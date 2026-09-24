@@ -132,7 +132,7 @@ describe('ACP transport selection', () => {
     expect(acpHarnessArgv('goose')).toEqual(['acp'])
     expect(acpHarnessArgv('codex')).toEqual([])
   })
-  test('defaults to cli, honours the flag and ORCH_TRANSPORT', () => {
+  test('defaults to cli, honors the flag and ORCH_TRANSPORT', () => {
     expect(resolveTransportName(undefined, undefined)).toBe('cli')
     expect(resolveTransportName(undefined, '')).toBe('cli')
     expect(resolveTransportName('cli', 'acp')).toBe('cli')
@@ -190,7 +190,7 @@ describe('ACP transport selection', () => {
     ).toBe('grok-4.5')
   })
 
-  test('an explicit grok model the ACP session did not honour is refused with its anchor', () => {
+  test('an explicit grok model the ACP session did not honor is refused with its anchor', () => {
     expect(() =>
       grokEffectiveModel(
         {
@@ -204,7 +204,7 @@ describe('ACP transport selection', () => {
   })
 })
 
-describe('ACP event fixtures normalise to orch outcomes', () => {
+describe('ACP event fixtures normalize to orch outcomes', () => {
   test('a structured reply is ok with text and tokens', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_STRUCTURED_OK)
     expect(result.status).toBe('ok')

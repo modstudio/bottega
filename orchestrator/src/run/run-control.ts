@@ -1,7 +1,7 @@
 // concern: run-control
 /**
  * Knows run rows, chains, detached continuation, events, output, and exit
- * behaviour and resume-tree selection. Must not know transports, worktree mechanics,
+ * behavior and resume-tree selection. Must not know transports, worktree mechanics,
  * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'

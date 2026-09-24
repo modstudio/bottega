@@ -26,9 +26,9 @@ describe('orchestrator database path decision', () => {
   })
 })
 
-test('the unauthorised default-store refusal names the condition and remedy', () => {
+test('the unauthorized default-store refusal names the condition and remedy', () => {
   expect(unauthorizedDatabaseInitializationMessage('/state/orch.db')).toBe(
-    `refusing to initialize the default store: cannot establish an authorised ${PLATFORM_NAME} installation: /state/orch.db\n` +
+    `refusing to initialize the default store: cannot establish an authorized ${PLATFORM_NAME} installation: /state/orch.db\n` +
       'invariant: A default store is initialized only by a checkout or an installed distribution.\n' +
       `cleared by: run orch init-db from a checkout or reinstall ${PLATFORM_NAME}`,
   )

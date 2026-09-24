@@ -11,7 +11,7 @@ type CheckboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'class
 }
 
 /**
- * A native checkbox, kept for its semantics and form behaviour, drawn entirely
+ * A native checkbox, kept for its semantics and form behavior, drawn entirely
  * by us: the box is the input itself and the mark sits over it.
  */
 export function Checkbox({ indeterminate = false, className, ref, ...props }: CheckboxProps) {

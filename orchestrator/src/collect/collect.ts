@@ -367,7 +367,7 @@ export function collectResult(
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
     throw new Error(
-      `unrecognised argument: ${unknown}\nworking form: orch result <run-id> [--quiet] [--artifacts]`,
+      `unrecognized argument: ${unknown}\nworking form: orch result <run-id> [--quiet] [--artifacts]`,
     )
   }
   const id = Number(argv[1])
@@ -530,7 +530,7 @@ export async function collectWait(
       continue
     }
     throw new Error(
-      `unrecognised argument: ${arg}\n` + 'working form: orch wait <run-id>... [--timeout SECONDS]',
+      `unrecognized argument: ${arg}\n` + 'working form: orch wait <run-id>... [--timeout SECONDS]',
     )
   }
   const ids = rest

@@ -39,7 +39,7 @@ export function quadraticWeightedKappa(
 
 export type BradleyTerryStrength = { agent: string; strength: number }
 
-/** Hunter (2004) iterative minorisation, regularised by one split pseudo-duel per pair. */
+/** Hunter (2004) iterative minorisation, regularized by one split pseudo-duel per pair. */
 export function bradleyTerry(
   agents: readonly string[],
   wins: (winner: string, loser: string) => number,

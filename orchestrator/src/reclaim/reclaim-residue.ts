@@ -289,7 +289,7 @@ function reclaimProcess(subject: string, options: Options) {
   const verb = options.dryRun ? 'would reclaim' : 'reclaimed'
   return {
     ok: true,
-    action: `${verb} process for run ${runId}; ${decision.action === 'signal' ? 'verified identity and signal' : 'identity unverified, recorded pid as released without signalling'}`,
+    action: `${verb} process for run ${runId}; ${decision.action === 'signal' ? 'verified identity and signal' : 'identity unverified, recorded pid as released without signaling'}`,
   }
 }
 

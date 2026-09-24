@@ -30,8 +30,8 @@ const SNIPPET_LENGTH = 240
 export function searchSnippet(text: string, query: string, directlyLinked: boolean): string {
   const clean = text.replace(/\s+/g, ' ').trim()
   const at = directlyLinked ? -1 : clean.toLocaleLowerCase().indexOf(query.toLocaleLowerCase())
-  const centre = at < 0 ? 0 : at
-  const start = Math.max(0, Math.min(centre - 80, clean.length - SNIPPET_LENGTH))
+  const center = at < 0 ? 0 : at
+  const start = Math.max(0, Math.min(center - 80, clean.length - SNIPPET_LENGTH))
   const excerpt = clean.slice(start, start + SNIPPET_LENGTH)
   return `${start > 0 ? '…' : ''}${excerpt}${start + SNIPPET_LENGTH < clean.length ? '…' : ''}`
 }

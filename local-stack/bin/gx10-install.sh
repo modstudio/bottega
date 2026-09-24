@@ -40,7 +40,7 @@ case "$DRV" in
   580.*) say "driver" "$DRV (good line)" ;;
   590.*) fail "driver" "$DRV — 590.x has a reported CUDAGraph deadlock on GB10; stay on 580.x" ;;
   "")    fail "driver" "nvidia-smi not answering" ;;
-  *)     say "driver" "$DRV (unrecognised line — verify before trusting)" ;;
+  *)     say "driver" "$DRV (unrecognized line — verify before trusting)" ;;
 esac
 
 MEM=$(free -g | awk '/^Mem:/{print $2}')

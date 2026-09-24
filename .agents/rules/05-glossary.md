@@ -5,7 +5,7 @@ always: true
 
 # Glossary
 
-**Run** — one bounded execution of a job by an agent, recorded for judgement.
+**Run** — one bounded execution of a job by an agent, recorded for judgment.
 
 **Chain** — the root run and its later turns; it inherits the last turn's state and the root carries the outcome.
 
@@ -19,7 +19,7 @@ always: true
 
 **Review tier** — the review breadth and round budget selected from the higher of change risk and cognitive size.
 
-**Fidelity** — the writing-job judgement of whether the delivered change built what the specification asked for.
+**Fidelity** — the writing-job judgment of whether the delivered change built what the specification asked for.
 
 **Escape** — an outside change that overlaps a run's own diff and therefore blocks that chain from landing.
 

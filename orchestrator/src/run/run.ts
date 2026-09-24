@@ -197,7 +197,7 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
  * This was `/Users/<someone>/Projects/<name>`, which is a fact about one
  * laptop written into the router. It worked, and it is also the single line
  * that made this tool unadoptable: nobody else's machine looks like that, and
- * the failure would be silent — an unrecognised layout yields `null`, which
+ * the failure would be silent — an unrecognized layout yields `null`, which
  * reads as "no project" rather than as "this tool has never been told where
  * anything is".
  *

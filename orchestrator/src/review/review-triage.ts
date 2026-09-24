@@ -17,7 +17,7 @@ import {
 /**
  * Initial safety floor. Re-set this from the observed triage distribution once
  * this repository has enough review data; until then the conservative value
- * prevents a handful of findings from changing reviewer behaviour.
+ * prevents a handful of findings from changing reviewer behavior.
  */
 export const MIN_REVIEW_TRIAGED = 10
 

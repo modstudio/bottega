@@ -317,7 +317,7 @@ function persistMonitorConditions(
   return persistedConditions
 }
 
-/** Observe machine state, record the pass, and make no judgement-shaped repair. */
+/** Observe machine state, record the pass, and make no judgment-shaped repair. */
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
   clock = Date.now(),
@@ -737,7 +737,7 @@ export function monitorHistory(limit = 20): MonitorHistoryRow[] {
 
 /**
  * Map one stored history row's snake_case condition onto the printable shape.
- * Lives beside monitorHistory so the persisted column names are normalised in
+ * Lives beside monitorHistory so the persisted column names are normalized in
  * one place rather than at each call site that wants to print them.
  */
 export function displayConditions(conditions: unknown[]): HumanMonitorCondition[] {

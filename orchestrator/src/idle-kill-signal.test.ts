@@ -1,4 +1,4 @@
-// Decisions of terminateProcessGroup's signalling path, beside idle-kill.ts; the file that owns the idle decisions is frozen.
+// Decisions of terminateProcessGroup's signaling path, beside idle-kill.ts; the file that owns the idle decisions is frozen.
 import { expect, test } from 'bun:test'
 import { isGroupKillablePgid, terminateProcessGroup } from './idle-kill.ts'
 

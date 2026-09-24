@@ -5,7 +5,7 @@
     <key>Label</key>
     <string>com.user.orch-canon-eval</string>
 
-    <!-- Behavioural canon evals: known-answer probes against the current pack.
+    <!-- Behavioral canon evals: known-answer probes against the current pack.
 
          DAILY, after the morning refresh has settled. These are --probe runs
          and never routing evidence. The command skips an eval whose canon_sha

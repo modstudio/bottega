@@ -10,7 +10,7 @@ type Case = {
 describe('terminal blocker rows', () => {
   test.each([
     {
-      name: 'a recognised declared blocker records the detector kind',
+      name: 'a recognized declared blocker records the detector kind',
       facts: {
         declared: [
           {
@@ -32,7 +32,7 @@ describe('terminal blocker rows', () => {
       ],
     },
     {
-      name: 'an unrecognised declared blocker records a null kind',
+      name: 'an unrecognized declared blocker records a null kind',
       facts: {
         declared: [{ what: 'tool missing', why: 'binary was unavailable', impact: null }],
         output: '',

@@ -30,25 +30,25 @@ Build screens from `hub/web/src/ui`, and leave no control wearing the browser's 
 appearance. `ui/` imports nothing from the app, its layers are declared in
 `architecture.ts`, and `hub/web/lint/layout-only-classname.grit` refuses appearance
 classes passed to its components: change a component's look through a variant it owns and
-pass it margin, size and placement only. Browser behaviour, such as the dialog element,
+pass it margin, size and placement only. Browser behavior, such as the dialog element,
 the popover attribute and anchor positioning, is used beneath our own styling; no
-component library is added, and a component's keyboard behaviour follows its WAI-ARIA APG
+component library is added, and a component's keyboard behavior follows its WAI-ARIA APG
 pattern.
 
 Presentation that knows no domain belongs in `ui/`, while a component that knows what a
 project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
-name and a colour; `ProjectMark` knows where a project's colour comes from.
+name and a color; `ProjectMark` knows where a project's color comes from.
 
-Colour, type and measurement come from `hub/web/src/styles/tokens.css` through the
+Color, type and measurement come from `hub/web/src/styles/tokens.css` through the
 Tailwind bridge in `hub/web/src/styles/theme.css`: raw values, then the meanings the
-`dark` class overrides, then shared measurements. Name a token; never write a colour
-literal or a default Tailwind palette class. Colour that reports a status is selected by
+`dark` class overrides, then shared measurements. Name a token; never write a color
+literal or a default Tailwind palette class. Color that reports a status is selected by
 `data-tone`, which derives that role's whole triad from one anchor. Check a new pair's
-contrast in the browser against WCAG AA, and mix colour in sRGB because mixing in OKLCH
+contrast in the browser against WCAG AA, and mix color in sRGB because mixing in OKLCH
 rotates hue.
 
 A meaning that differs between light and dark is defined in the token file, so no screen
-carries a `dark:` colour decision of its own. Colour supplied by data is not a token: the
+carries a `dark:` color decision of its own. Color supplied by data is not a token: the
 element receives its pair and the token file decides which one applies, as `data-project`
 does.
 

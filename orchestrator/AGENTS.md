@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Route work to external agents, record what each run cost and how good it was, and use that history to choose who gets the next job of that kind. Design, judgement and synthesis stay with the architect; the agent types.
+Route work to external agents, record what each run cost and how good it was, and use that history to choose who gets the next job of that kind. Design, judgment and synthesis stay with the architect; the agent types.
 
 ## Belongs here
 

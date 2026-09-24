@@ -71,7 +71,7 @@ export function scrubbedGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Pr
  * Git env for a read of a foreign checkout.
  *
  * `git rev-parse --local-env-vars` excludes GIT_CONFIG_GLOBAL on purpose (it
- * is global-behaviour, like GIT_EDITOR). Inspection still must not pick up a
+ * is global-behavior, like GIT_EDITOR). Inspection still must not pick up a
  * worker's global config file, so isolation is stated here rather than as a
  * side effect of the shared scrub.
  */

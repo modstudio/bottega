@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react'
 
 /**
- * A project's name beside a bar in its register colour, the fastest way to tell
- * whose row is whose. The colour is set per element through `--project`.
+ * A project's name beside a bar in its register color, the fastest way to tell
+ * whose row is whose. The color is set per element through `--project`.
  */
 export function ProjectName({
   name,

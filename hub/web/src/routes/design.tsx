@@ -20,9 +20,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs } from '@/ui/tabs/tabs'
 
 /**
- * A project's colour comes from its register settings, so the catalogue needs a
+ * A project's color comes from its register settings, so the catalogue needs a
  * stand-in pair. These are sample data, not tokens; no screen carries a literal
- * colour of its own.
+ * color of its own.
  */
 const SAMPLE_PROJECT_COLORS = { sample: { light: '#6b2145', dark: '#ff8fb8' } }
 

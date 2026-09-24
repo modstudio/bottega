@@ -65,8 +65,8 @@ type BacktestJob = {
 
 export type RoutingBacktest = {
   seed: number
-  /** Earlier judgement/dispatch pairs excluded because the judgement did not exist yet. */
-  causalExcludedJudgements: number
+  /** Earlier judgment/dispatch pairs excluded because the judgment did not exist yet. */
+  causalExcludedJudgments: number
   unscoredDecisions: number
   jobs: BacktestJob[]
 }
@@ -281,7 +281,7 @@ function events(includeVoided = false): Event[] {
     )
     .all() as Row[]
   return rows.map((row) => {
-    // Scored evidence did not exist until the person recorded the judgement.
+    // Scored evidence did not exist until the person recorded the judgment.
     // An eligible unjudged failure existed when its chain terminated. Every
     // dispatch remains a decision even when it never becomes evidence.
     const evidenceAt = isRoutingEvidence({
@@ -362,7 +362,7 @@ function replay(
   cooldowns: boolean,
 ): RoutingBacktest {
   const jobs: BacktestJob[] = []
-  let causalExcludedJudgements = 0
+  let causalExcludedJudgments = 0
   const unscoredDecisions = all.filter(
     (event) => !event.scored && (!jobName || event.job === jobName),
   ).length
@@ -385,7 +385,7 @@ function replay(
       .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id - b.id)
     for (const [index, event] of rows.entries()) {
       const earlier = rows.slice(0, index)
-      causalExcludedJudgements += earlier.filter(
+      causalExcludedJudgments += earlier.filter(
         (candidate) => candidate.evidenceAt !== null && candidate.evidenceAt >= event.startedAt,
       ).length
       const byAvailability = (a: Event, b: Event) =>
@@ -447,7 +447,7 @@ function replay(
       thompsonSelections,
     })
   }
-  return { seed, causalExcludedJudgements, unscoredDecisions, jobs }
+  return { seed, causalExcludedJudgments, unscoredDecisions, jobs }
 }
 
 export function routingBacktest(

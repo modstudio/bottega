@@ -186,7 +186,7 @@ export async function runDiffCommand(
     )
   }
   // A patch preamble is ignored by `git apply`, while keeping the base in the
-  // stdout artefact even under --quiet or when stderr is not captured.
+  // stdout artifact even under --quiet or when stderr is not captured.
   write(`base: ${row.base_commit} (recorded)\n`)
   write(`since: ${c.since} (${sinceNote})\n`)
   write('commits:\n')

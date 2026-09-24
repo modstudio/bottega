@@ -21,7 +21,7 @@ export type VendorTerminationRuling<Question> = {
  * A raw stdout/stderr stream ending in a vendor termination marker means the
  * vendor killed the session. Whatever else the run appears to be — an ACP stop
  * reason, a schema mismatch, a parsed question, a worker contract reporting
- * done — is an artefact of a stream that was cut off. Vendor truncation
+ * done — is an artifact of a stream that was cut off. Vendor truncation
  * therefore outranks every vendor-derived classification. It does NOT outrank
  * confinement (escaped, confinement_unverified), which outranks everything by
  * existing design.

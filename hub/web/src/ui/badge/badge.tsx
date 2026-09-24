@@ -32,7 +32,7 @@ type BadgeProps = Omit<HTMLAttributes<HTMLSpanElement>, 'className'> & {
   emphasis?: keyof typeof emphases
   /** Replaces the tone's icon; `false` removes it. */
   icon?: LucideIcon | false
-  /** A leading dot in the tone's colour, for a state that is live. Replaces the icon. */
+  /** A leading dot in the tone's color, for a state that is live. Replaces the icon. */
   dot?: boolean
   /** The label is an identifier: kept as written and set in mono. */
   identifier?: boolean

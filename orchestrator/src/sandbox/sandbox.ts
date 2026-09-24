@@ -346,7 +346,7 @@ function shellCommand(argv: string[]): string {
     .join(' ')
 }
 
-/** Initialise the run-scoped manager and return an argv-safe sandbox launch. */
+/** Initialize the run-scoped manager and return an argv-safe sandbox launch. */
 export async function sandboxLaunchArgv(
   profile: SandboxRuntimeConfig,
   bin: string,

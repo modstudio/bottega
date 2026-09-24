@@ -72,7 +72,7 @@ describe('scoped operator docs', () => {
         name: 'file_issue',
         arguments: {
           kind: 'suggestion',
-          what_happened: 'An unrecognised process wants to file',
+          what_happened: 'An unrecognized process wants to file',
           expected: 'Only established reporter kinds can file',
           evidence: 'reporter_kind was synthetic',
           not_established: 'No identity contract exists for the synthetic kind',

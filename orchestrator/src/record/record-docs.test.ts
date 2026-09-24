@@ -16,7 +16,7 @@ describe('record service doc lint', () => {
   test('allows a clean append to a legacy document', () => {
     expect(
       recordDocLintRefusal(
-        doc('This was formerly different.\n\nCurrent behaviour is direct.'),
+        doc('This was formerly different.\n\nCurrent behavior is direct.'),
         doc('This was formerly different.'),
       ),
     ).toBeNull()

@@ -8,7 +8,7 @@ always: true
 ## State what is
 
 Canon, documentation and comments state the current rule, constraint or
-behaviour and what to do about it. Never narrate former names, abandoned
+behavior and what to do about it. Never narrate former names, abandoned
 approaches, dated decisions or the sequence by which the current state arose;
 Git holds that record. A reason explains why the rule is current without
 telling its history.

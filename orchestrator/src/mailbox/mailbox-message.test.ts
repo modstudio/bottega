@@ -42,7 +42,7 @@ describe('run mailbox', () => {
               JSON.stringify({
                 result: {
                   isError: true,
-                  content: [{ text: 'this process is not a recognised orchestrator worker' }],
+                  content: [{ text: 'this process is not a recognized orchestrator worker' }],
                 },
               }) + '\n',
             err: '',
@@ -330,7 +330,7 @@ describe('run mailbox', () => {
     expect(mailboxOrch('tell', String(root), 'note after turn one').code).toBe(0)
     expect(messagesForRun(root)[0]!.read_at).toBeNull()
 
-    const unrecognised = mailboxOrchInput(
+    const unrecognized = mailboxOrchInput(
       ['ask-server'],
       JSON.stringify({
         jsonrpc: '2.0',
@@ -343,7 +343,7 @@ describe('run mailbox', () => {
       }) + '\n',
       { ORCH_RUN_ID: '', ORCH_RUN_TOKEN: '' },
     )
-    expect(unrecognised.code).toBe(0)
+    expect(unrecognized.code).toBe(0)
     expect(messagesForRun(root)[0]!.read_at).toBeNull()
 
     const resumed = mailboxOrchInput(

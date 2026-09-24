@@ -38,7 +38,7 @@ const strategies: Readonly<Record<string, AgentAuthStrategy>> = {
     classify: ({ exitCode }) => {
       if (exitCode === 0) return { status: 'ready', detail: STORED_LOGIN_DETAIL }
       if (exitCode === 1) return { status: 'signed-out', detail: 'not logged in' }
-      return { status: 'unknown', detail: 'auth check returned an unrecognised exit code' }
+      return { status: 'unknown', detail: 'auth check returned an unrecognized exit code' }
     },
   },
   grok: {
@@ -51,7 +51,7 @@ const strategies: Readonly<Record<string, AgentAuthStrategy>> = {
       if (firstLine === 'You are logged in with grok.com.') {
         return { status: 'ready', detail: STORED_LOGIN_DETAIL }
       }
-      return { status: 'unknown', detail: 'auth check output was not recognised' }
+      return { status: 'unknown', detail: 'auth check output was not recognized' }
     },
   },
 }

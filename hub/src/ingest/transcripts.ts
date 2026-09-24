@@ -251,7 +251,7 @@ export async function ingestTranscripts(
        * somebody else's ticket. This at least asks about THIS session.
        *
        * Seeded only from DIRECT attributions, never from another borrowed key:
-       * chaining would let one worktree leg colour an entire day. Same project
+       * chaining would let one worktree leg color an entire day. Same project
        * only, because a session moves between repos and the nearest leg in time
        * may be in a different one.
        */

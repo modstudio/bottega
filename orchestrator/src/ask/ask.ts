@@ -151,7 +151,7 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
    * bounds an accident and a casual misuse, not a determined local attacker,
    * who can read the environment of a process they already own.
    */
-  const authorised = (): boolean => authenticatedWorkerRun(runId, token)
+  const authorized = (): boolean => authenticatedWorkerRun(runId, token)
 
   const server = new McpServer({ name: 'orch-ask', version: '1' })
   const text = (value: string, isError?: true) => ({
@@ -162,8 +162,8 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
     text(
       `No ${field} was supplied. Call ${field === 'question' ? 'ask_orchestrator' : 'message_orchestrator'} again with the ${field} in the \`${field}\` field. Do not decide the matter yourself.`,
     )
-  const unauthorised = () =>
-    'This process is not a recognised orchestrator worker. Return status "blocked" with your question in the final answer.'
+  const unauthorized = () =>
+    'This process is not a recognized orchestrator worker. Return status "blocked" with your question in the final answer.'
 
   // Preprocessing keeps the wire schema honest (`question` and `body` remain
   // required) while ensuring an omitted value reaches the handler. Otherwise
@@ -197,9 +197,9 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
     async ({ question, options, recommendation, why }) => {
       if (!question.trim()) return missing('question')
       try {
-        const result = authorised()
+        const result = authorized()
           ? await ask({ runId, question, options, recommendation, why, timeoutMs })
-          : { answered: false as const, reason: unauthorised() }
+          : { answered: false as const, reason: unauthorized() }
         return text(result.answered ? result.answer : result.reason)
         // Not `isError`. A timeout is a legitimate outcome carrying an
         // instruction the worker must follow; flagged as an error, agents
@@ -232,7 +232,7 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
     async ({ body }) => {
       if (!body.trim()) return missing('body')
       try {
-        if (!authorised()) throw new Error(unauthorised())
+        if (!authorized()) throw new Error(unauthorized())
         const saved = messageArchitect(runId, body)
         return text(`Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.`)
       } catch (error) {
@@ -251,7 +251,7 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
     },
     async () => {
       try {
-        if (!authorised()) throw new Error(unauthorised())
+        if (!authorized()) throw new Error(unauthorized())
         const messages = checkMessages(runId)
         const body = messages.length
           ? messages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +

@@ -67,13 +67,13 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
 }
 
 describe('pull request task-key matching', () => {
-  test('head token mutation: recognises a key token in the head branch', () => {
+  test('head token mutation: recognizes a key token in the head branch', () => {
     expect(
       pullRequestCarriesKey({ headRefName: 'DEV-616-ship', title: 'Ship work' }, 'DEV-616'),
     ).toBe(true)
   })
 
-  test('title token mutation: recognises a key token in the title', () => {
+  test('title token mutation: recognizes a key token in the title', () => {
     expect(
       pullRequestCarriesKey({ headRefName: 'release', title: 'Ship DEV-616 now' }, 'DEV-616'),
     ).toBe(true)

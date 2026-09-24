@@ -51,7 +51,7 @@ def git(args, cwd):
     env.pop("ORCH_GUARDED_GIT_COMMON_DIR", None)
     env.pop("ORCH_ALLOWED_GIT_REF", None)
     # Inspection must not pick up a worker GIT_CONFIG_GLOBAL; git excludes
-    # that name from --local-env-vars (it is global-behaviour).
+    # that name from --local-env-vars (it is global-behavior).
     env["GIT_CONFIG_GLOBAL"] = "/dev/null"
     try:
         return subprocess.run(

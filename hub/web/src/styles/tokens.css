@@ -247,9 +247,9 @@
 }
 
 /*
- * A project's colour is data rather than a token: the register supplies the
+ * A project's color is data rather than a token: the register supplies the
  * pair on the element as `--project-light` and `--project-dark`. Which of the
- * two applies is decided here, so no screen carries a dark colour decision.
+ * two applies is decided here, so no screen carries a dark color decision.
  */
 [data-project] {
   --project: var(--project-light, var(--border-strong));

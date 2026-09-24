@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
  * string. Those are what make a rename a hunt. So comment lines are skipped and
  * code lines are not.
  *
- * The frozen exceptions are named in `shared/brand.ts` and honoured here: `orch`
+ * The frozen exceptions are named in `shared/brand.ts` and honored here: `orch`
  * and `hub` are per-concern binaries rather than the platform's name, and are
  * wired into PATH, launchd, and a hook that runs in every session on this
  * machine. Renaming one of those is a migration with a rollout.

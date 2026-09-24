@@ -88,7 +88,7 @@ function describeFinding(finding: DeadCodeFinding) {
 function assertProductionSourcesAnalyzed(findings: DeadCodeFinding[]) {
   if (!productionSourcesAnalyzed(findings)) {
     throw new Error(
-      'knip production pass analysed no sources: known-live dependency commander was reported unused',
+      'knip production pass analyzed no sources: known-live dependency commander was reported unused',
     )
   }
 }

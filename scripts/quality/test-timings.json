@@ -275,7 +275,7 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/judgement.test.ts",
+      "path": "orchestrator/src/judgment.test.ts",
       "wallMs": 122,
       "tests": 36,
       "cliShaped": false,

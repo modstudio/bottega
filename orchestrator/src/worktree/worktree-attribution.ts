@@ -135,7 +135,7 @@ export function markedWorktreeSource(path: string): Worktree['source'] | undefin
   }
 }
 
-/** Recognise current markers and the naming schemes used before markers existed. */
+/** Recognize current markers and the naming schemes used before markers existed. */
 export function isOrchWorktree(path: string, branchTemplate?: string): boolean {
   if (existsSync(join(path, ORCH_RUN_MARKER))) return true
   return worktreeNameRunId(basename(path), branchTemplate) !== null
@@ -195,7 +195,7 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
   return { removable: true, branch, detail: 'committed work is retained by its branch' }
 }
 
-/** Recognise only the conventional unmarked reader clone location left by an interrupted create. */
+/** Recognize only the conventional unmarked reader clone location left by an interrupted create. */
 export function isUnmarkedBorrowedReaderClone(input: {
   path: string
   repoRoot: string
@@ -253,7 +253,7 @@ function runRowExists(id: number): boolean {
 }
 
 /** Filesystem-safe encoding of an absolute path for the orphan extraction dir. */
-function sanitiseOrphanExtractionPath(path: string): string {
+function sanitizeOrphanExtractionPath(path: string): string {
   const real = existsSync(path) ? realpathOrSpelled(path) : resolve(path)
   return real.replace(/^[\\/]+/, '').replace(/[^A-Za-z0-9._-]+/g, '--')
 }
@@ -264,7 +264,7 @@ function extractionDest(
   runsDir = resolveRunsDirectory(process.env),
 ): string {
   if (runId !== null && runRowExists(runId)) return join(runsDir, String(runId), 'artifacts')
-  return join(runsDir, 'orphans', sanitiseOrphanExtractionPath(tree))
+  return join(runsDir, 'orphans', sanitizeOrphanExtractionPath(tree))
 }
 
 function writeExtractionJson(dest: string, record: WorktreeExtraction): void {

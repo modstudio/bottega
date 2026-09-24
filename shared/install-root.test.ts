@@ -100,14 +100,14 @@ describe('installation identity', () => {
     commit: 'abcdef1234567890',
   }
 
-  test('an installed root with a valid manifest is authorised', () => {
+  test('an installed root with a valid manifest is authorized', () => {
     const root = scratch()
     writeFileSync(join(root, DIST_MANIFEST), JSON.stringify(manifest))
     expect(isAuthorizedPlatformInstallation(root, {}, false)).toBeTrue()
     expect(readDistributionManifest(root)).toEqual(manifest)
   })
 
-  test('a checkout remains authorised by its existing checkout condition', () => {
+  test('a checkout remains authorized by its existing checkout condition', () => {
     const root = scratch()
     writeFileSync(
       join(root, 'package.json'),
@@ -125,7 +125,7 @@ describe('installation identity', () => {
     const root = scratch()
     writeFileSync(join(root, DIST_MANIFEST), '{')
     expect(() => isAuthorizedPlatformInstallation(root, {}, false)).toThrow(
-      `cannot establish an authorised ${PLATFORM_NAME} installation: distribution manifest ${join(root, DIST_MANIFEST)} is damaged:`,
+      `cannot establish an authorized ${PLATFORM_NAME} installation: distribution manifest ${join(root, DIST_MANIFEST)} is damaged:`,
     )
     expect(() => isAuthorizedPlatformInstallation(root, {}, false)).toThrow(
       `cleared by: reinstall ${PLATFORM_NAME} at ${root}`,

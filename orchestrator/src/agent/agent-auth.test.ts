@@ -49,7 +49,7 @@ describe('agent auth classification', () => {
     })
     expect(classifyAgentAuth('grok', capture({ stdout: 'A new vendor message\n' }))).toEqual({
       status: 'unknown',
-      detail: 'auth check output was not recognised',
+      detail: 'auth check output was not recognized',
     })
   })
 

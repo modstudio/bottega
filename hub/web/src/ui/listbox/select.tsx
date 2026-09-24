@@ -11,7 +11,7 @@ export type SelectOption = { value: string; label: string; note?: string; disabl
 
 /**
  * A single choice from a list, drawn entirely by us: a native select's popup is
- * the operating system's and no CSS reaches it. Keyboard behaviour follows the
+ * the operating system's and no CSS reaches it. Keyboard behavior follows the
  * WAI-ARIA select-only combobox pattern.
  */
 export function Select({

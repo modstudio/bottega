@@ -44,7 +44,7 @@ describe('vendor capacity classification', () => {
     expect(classify(`${capacityMessage}\n401 unauthorized`)).toBe('capacity')
   })
 
-  test('recognises close capacity variants without treating a bare 503 as capacity', () => {
+  test('recognizes close capacity variants without treating a bare 503 as capacity', () => {
     expect(classify('The selected model is overloaded.')).toBe('capacity')
     expect(classify('The server is busy.')).toBe('capacity')
     expect(classify('Unable to serve this request due to capacity constraints.')).toBe('capacity')
@@ -56,7 +56,7 @@ describe('vendor capacity classification', () => {
 })
 
 describe('failure text clustering', () => {
-  test('normalises the measured 14-day failure shapes without volatile values', () => {
+  test('normalizes the measured 14-day failure shapes without volatile values', () => {
     const fixtures = [
       ['exit 143, empty output', 'exit <n>, empty output'],
       [
@@ -73,7 +73,7 @@ describe('failure text clustering', () => {
     for (const [text, expected] of fixtures) expect(clusterErrorText(text)).toBe(expected)
   })
 
-  test('orders UUID, request, labelled and decimal normalization without collisions', () => {
+  test('orders UUID, request, labeled and decimal normalization without collisions', () => {
     expect(clusterErrorText('request 123e4567-e89b-12d3-a456-426614174000 failed')).toBe(
       clusterErrorText('request 987fcdeb-51a2-43d7-9123-456789abcdef failed'),
     )

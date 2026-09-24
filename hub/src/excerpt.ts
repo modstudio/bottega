@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
  * CANNOT DERIVE:") or a bare worktree path, which collide every bit as hard.
  * Tightening it to skip labels and paths moved it to 187. Still no better.
  *
- * So this extracts one field rather than summarising prose: the lens, which is
+ * So this extracts one field rather than summarizing prose: the lens, which is
  * the thing the rows actually differ by. Three spellings are live across the
  * workflows, and it is present on 152 of 319 runs; adding it takes runs that
  * are distinguishable by project, job and head from 142 to 160. A modest gain,

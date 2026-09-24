@@ -10,7 +10,7 @@ import {
 } from './routing-backtest.ts'
 
 describe('routing backtest statistics', () => {
-  test('maps both judgement extremes to whole Beta observations', () => {
+  test('maps both judgment extremes to whole Beta observations', () => {
     expect(betaContribution(-0.5)).toEqual({ successes: 0, failures: 1 })
     expect(betaContribution(1)).toEqual({ successes: 1, failures: 0 })
   })
@@ -48,7 +48,7 @@ describe('routing backtest statistics', () => {
     )
     insert.run(first, 'full', 'right', '2026-01-03T00:00:00.000Z')
     insert.run(second, 'full', 'right', '2026-01-02T01:00:00.000Z')
-    expect(routingBacktest('summarize', 123).causalExcludedJudgements).toBe(1)
+    expect(routingBacktest('summarize', 123).causalExcludedJudgments).toBe(1)
   })
 
   test('replays a successful unscored dispatch as a decision without quality evidence', () => {
@@ -173,7 +173,7 @@ describe('routing backtest statistics', () => {
 
     expect(nullRootLatency).toEqual(shortRootLatency)
     expect(longRootLatency).toEqual(shortRootLatency)
-    expect(shortRootLatency.causalExcludedJudgements).toBe(0)
+    expect(shortRootLatency.causalExcludedJudgments).toBe(0)
   })
 
   test('dispatch chronology is invariant when run ids and started_at disagree', () => {
@@ -197,7 +197,7 @@ describe('routing backtest statistics', () => {
     db().exec('DELETE FROM score; DELETE FROM run;')
     const chronologicalIds = addChronology(false)
     expect(reversedIds).toEqual(chronologicalIds)
-    expect(reversedIds.causalExcludedJudgements).toBe(0)
+    expect(reversedIds.causalExcludedJudgments).toBe(0)
   })
 
   test('quota cooldown is operational state, not scoring evidence, and a probe clears it', () => {

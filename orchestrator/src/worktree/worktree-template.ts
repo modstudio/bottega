@@ -8,7 +8,7 @@
  * One argument in a project's create command.
  *
  * A string is always passed, including when one of its placeholders is empty.
- * The other two forms make the exceptional behaviours visible at the argument
+ * The other two forms make the exceptional behaviors visible at the argument
  * that requests them: omission names the empty value that removes the argument,
  * and expansion is the one deliberate boundary where a seed string becomes
  * several argv entries.
@@ -392,7 +392,7 @@ function shSingleQuote(value: string): string {
 }
 
 /**
- * Split a seed the way the shell splits words, honouring quotes inside the spec.
+ * Split a seed the way the shell splits words, honoring quotes inside the spec.
  *
  * `--tables='a,b'` and a value containing a space stay one word. Whitespace
  * splits; `;` and other operators remain ordinary characters in the resulting

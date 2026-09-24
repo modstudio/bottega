@@ -7,7 +7,7 @@ import { addRun, dir, score as seedScore } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import { db } from './database/db.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
-import { judgeRun, scoreRun } from './judgement.ts'
+import { judgeRun, scoreRun } from './judgment.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
 import { candidates } from './route/route.ts'
 import { pairPartners } from './score/duel.ts'
@@ -80,7 +80,7 @@ beforeEach(() => {
 })
 
 describe('score ruling', () => {
-  test('an owner score revives evidence expired while no judgement was available', async () => {
+  test('an owner score revives evidence expired while no judgment was available', async () => {
     const id = insert()
     db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE id=?").run(id)
 

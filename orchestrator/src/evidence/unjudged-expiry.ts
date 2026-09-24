@@ -1,5 +1,5 @@
 // concern: unjudged expiry
-/** Reads the owed-judgement ledger and records an expired row locally and for hosted sync. */
+/** Reads the owed-judgment ledger and records an expired row locally and for hosted sync. */
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'

@@ -307,7 +307,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
 
       <SectionHead
         title="Score by agent, job and prompt bucket"
-        detail="the router's own scoreboard, over judgements not runs"
+        detail="the router's own scoreboard, over judgments not runs"
       />
       <div className="overflow-x-auto border border-border-default">
         <Table>
@@ -520,7 +520,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
           A run that produced nothing counts against the agent.
         </strong>{' '}
         Reading only successful runs made failure invisible: an agent that fails most of the time
-        but scores well on the few that land looked flawless. The denominator here is judgements,
+        but scores well on the few that land looked flawless. The denominator here is judgments,
         which includes failures.
       </p>
     </>

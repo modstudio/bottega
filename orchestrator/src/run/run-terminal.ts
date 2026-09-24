@@ -347,7 +347,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
    * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.
    *
    * A worker that timed out or crashed half way through an implementation has
-   * left the most interesting artefact this system produces: a partial change
+   * left the most interesting artifact this system produces: a partial change
    * set showing exactly how far it got. Reading it only on success would
    * discard the evidence precisely where it is most useful, and would make a
    * timeout indistinguishable from a run that did nothing.
@@ -462,7 +462,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
      * answer` refuses a single ruling because it demands one per open
      * question — so the correct fallback made the run unanswerable.
      *
-     * Matched on the question text, normalised, which is what the worker is
+     * Matched on the question text, normalized, which is what the worker is
      * repeating verbatim from its own tool call.
      */
     const existingQuestionTexts = (

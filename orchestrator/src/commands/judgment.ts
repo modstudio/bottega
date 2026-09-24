@@ -1,5 +1,5 @@
 // concern: cli
-/** Registers judgement adapters and validates their CLI-only inputs. */
+/** Registers judgment adapters and validates their CLI-only inputs. */
 
 import { timingSafeEqual } from 'node:crypto'
 import { lstatSync, readFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
 import { writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
-import { judgeRun, scoreRun } from '../judgement.ts'
+import { judgeRun, scoreRun } from '../judgment.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { recalibrate } from '../score/recalibration.ts'
 import { collect, log, optionFlags, write } from './support.ts'
@@ -119,7 +119,7 @@ const cleanupPresentation: CleanupPresentation = {
     `kept branch ${branch}: ${after === null ? `${unique} commit(s) reachable only from this branch` : `deleting it would lose commits reachable from no other ref; ${after} commit(s) after the cut`} — merge it, or orch discard ${id} --force to delete it after checking no other run owns it`,
 }
 
-function addJudgementOptions(command: Command, judge: boolean): Command {
+function addJudgmentOptions(command: Command, judge: boolean): Command {
   command.option('--finding <value>', '', collect, [])
   for (const name of commonValueFlags.filter((name) => name !== '--finding'))
     command.option(`${name} <value>`)
@@ -129,7 +129,7 @@ function addJudgementOptions(command: Command, judge: boolean): Command {
 }
 
 export function register(program: Command): void {
-  addJudgementOptions(program.command('judge <run-id> [words...]'), true).action(
+  addJudgmentOptions(program.command('judge <run-id> [words...]'), true).action(
     async (id, words, options) => {
       const flags = optionFlags(options)
       writableDb()
@@ -157,7 +157,7 @@ export function register(program: Command): void {
     },
   )
 
-  addJudgementOptions(program.command('score <run-id> [words...]'), false).action(
+  addJudgmentOptions(program.command('score <run-id> [words...]'), false).action(
     async (id, words, options) => {
       const flags = optionFlags(options)
       writableDb()

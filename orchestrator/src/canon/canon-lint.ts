@@ -180,13 +180,20 @@ function stripReferenceSuffix(reference: string): string {
   return reference.replace(/:(?:[A-Za-z_$][\w$]*|\d+(?:-\d+)?)$/, '')
 }
 
+function globStar(pattern: string, index: number): { source: string; index: number } {
+  if (pattern[index + 1] !== '*') return { source: '[^/]*', index }
+  if (pattern[index + 2] === '/') return { source: '(?:.*/)?', index: index + 2 }
+  return { source: '.*', index: index + 1 }
+}
+
 function globPattern(pattern: string): RegExp {
   let source = '^'
   for (let index = 0; index < pattern.length; index++) {
     const character = pattern[index]!
     if (character === '*') {
-      if (pattern[index + 1] === '*') index++
-      source += '.*'
+      const glob = globStar(pattern, index)
+      source += glob.source
+      index = glob.index
     } else if (character === '?') source += '[^/]'
     else if (character === '[') {
       const end = pattern.indexOf(']', index + 1)
@@ -514,6 +521,23 @@ function tierDeclarationFinding(file: CanonFile, kind: 'rule' | 'context'): Find
   ]
 }
 
+function contextPathFindings(file: CanonFile, trackedPaths: string[]): Finding[] {
+  const metadata = canonFrontmatter(file.text)
+  if (!metadata) return []
+  return metadata.paths.flatMap((pattern) =>
+    trackedPaths.some((path) => globPattern(pattern).test(path))
+      ? []
+      : [
+          {
+            file: file.path,
+            line: 1,
+            rule: 'canon/context-path-glob',
+            message: `context ${file.path} path glob ${JSON.stringify(pattern)} matches no tracked file; correct the glob in the canon store with orch doc set, then orch canon hydrate`,
+          },
+        ],
+  )
+}
+
 function cardHeadingFindings(file: CanonFile): Finding[] {
   const required = ['## Purpose', '## Belongs here', '## Does not belong here', '## May depend on']
   const lines = file.text.split(/\r?\n/)
@@ -542,6 +566,7 @@ function contentFindings(classified: Classified, input: CanonLintInput): CanonFi
   if (kind === 'rule' || kind === 'context') {
     findings.push(...tierDeclarationFinding(file, kind))
   }
+  if (kind === 'context') findings.push(...contextPathFindings(file, input.trackedPaths))
   if (kind === 'card') findings.push(...cardHeadingFindings(file))
   return findings
 }

@@ -36,7 +36,7 @@ export const CONTINUE_WORKING_FORMS =
   `  orch continue <id> "<what next>"\n` +
   `  orch continue <id> --file <path>\n  orch continue <id>  (message on stdin)`
 
-/** Empty, whitespace-only, or a single token beginning with `--` is a mis-parse. */
+/** Empty, whitespace-only, or a single token beginning with `--` is a misparse. */
 export function misparsedMessage(text: string): 'empty' | 'dash-token' | null {
   const trimmed = text.trim()
   if (!trimmed) return 'empty'
@@ -54,7 +54,7 @@ export function refuseMisparsedMessage(text: string, noun: string, workingForms:
   }
   if (kind === 'dash-token') {
     throw new Error(
-      `received ${JSON.stringify(text)} as a ${noun}; a single token beginning with -- is a mis-parse, not a decision\n` +
+      `received ${JSON.stringify(text)} as a ${noun}; a single token beginning with -- is a misparse, not a decision\n` +
         `working forms:\n${workingForms}`,
     )
   }
@@ -190,7 +190,7 @@ function takeFilePath(
 
 /**
  * Walk argv after the run id. `--q<id>` / `--file` / command booleans are
- * recognised only before the first positional message word; after that every
+ * recognized only before the first positional message word; after that every
  * remaining word is message text, including flag-shaped ones.
  */
 const ANSWER_BOOLEANS = new Set([

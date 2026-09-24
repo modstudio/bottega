@@ -18,12 +18,12 @@ export {
  * out code-writing is that parallel workers make conflicting IMPLICIT
  * decisions — a background in one style, a sprite in another, and nothing
  * merges. The load-bearing word is *implicit*. A worker that must stop and ask
- * whenever it reaches a judgement call converts an implicit decision into an
+ * whenever it reaches a judgment call converts an implicit decision into an
  * explicit one and routes it to the single place holding the whole design.
  *
  * So the worker is not a small architect. It is a builder with a spec, and the
- * one thing it must never do is decide. That is a behavioural contract, and a
- * behavioural contract stated only in prose is a request. Bound to a schema it
+ * one thing it must never do is decide. That is a behavioral contract, and a
+ * behavioral contract stated only in prose is a request. Bound to a schema it
  * is enforced: `status` is an enum the model cannot answer outside of, so
  * "blocked" is a value rather than a phrase somebody has to notice in a
  * paragraph.
@@ -930,7 +930,7 @@ export function parseWorkerReplyWithCount(
    * Worse than losing it would be BELIEVING the first: it says `done` with no
    * files, which is a confident report of having finished nothing.
    *
-   * So the objects are scanned out by brace depth, honouring strings and
+   * So the objects are scanned out by brace depth, honoring strings and
    * escapes, and offered newest first. Depth-scanned rather than regexed
    * because a JSON object nests, and a brace inside a summary string is not a
    * brace.
@@ -974,7 +974,7 @@ export function parseWorkerReplyWithCount(
       // would silently accept an unfinished run; treating it as unparseable
       // sends it down the path that says so.
       /**
-       * `blocked` is still accepted, and normalised.
+       * `blocked` is still accepted, and normalized.
        *
        * The word was renamed to `asking` because a "blocker" here means the
        * opposite — an environment problem rather than a worker behaving

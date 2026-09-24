@@ -8,7 +8,7 @@ import { platform } from 'node:os'
 const PROCESS_START_TIME =
   /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3]\d [0-2]\d:[0-5]\d:[0-5]\d \d{4}$/
 
-/** Test whether a recorded process still exists without signalling it. */
+/** Test whether a recorded process still exists without signaling it. */
 export function pidAlive(pid: number | null): boolean {
   if (!pid) return false
   try {

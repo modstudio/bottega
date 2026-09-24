@@ -31,7 +31,7 @@ Validate input where it enters through a command, tool, procedure, or file read.
 
 ## Keep surfaces thin and services thick
 
-A command, tool, or procedure validates, authorises, and calls its service. Queries, decisions, and transactions belong to the service. This rule is enforced by review.
+A command, tool, or procedure validates, authorizes, and calls its service. Queries, decisions, and transactions belong to the service. This rule is enforced by review.
 
 ## Keep transactions whole
 

@@ -10,7 +10,7 @@ export type UnjudgedOwnerFacts = {
   windowMs: number
 }
 
-/** Decide whether an owed judgement still has a live-enough owner to provide it. */
+/** Decide whether an owed judgment still has a live-enough owner to provide it. */
 export function shouldExpireUnjudgedOwner(facts: UnjudgedOwnerFacts): boolean {
   if (facts.ownerSessionId === null) return true
   const ownerLastActivity = Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)

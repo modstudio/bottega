@@ -139,7 +139,7 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('every tool gives an unauthorised caller blocked-status guidance', async () => {
+  test('every tool gives an unauthorized caller blocked-status guidance', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET run_token = ? WHERE id = ?').run('right-token', run)
     const { client, close } = await askClient(run, 'wrong-token')

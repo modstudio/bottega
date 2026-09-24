@@ -522,7 +522,7 @@ describe('schema coexistence', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('two concurrent migrates serialise on the schema lock', async () => {
+  test('two concurrent migrates serialize on the schema lock', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-concurrent-migrate-'))
     const path = join(dir, 'store.db')
     const run = () => {

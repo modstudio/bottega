@@ -116,7 +116,7 @@ export function resolveDatabase(
   const path = resolveOrchestratorDatabase(env)
   if (env.ORCH_DB) {
     // ORCH_DB is independently sufficient. When HOME is available, retaining
-    // the default path lets linked-worktree binaries still recognise an
+    // the default path lets linked-worktree binaries still recognize an
     // override that points back at the shared store.
     let mainStorePath = path
     try {
@@ -181,7 +181,7 @@ export function missingDatabaseMessage(path = DB_PATH): string {
 
 export function unauthorizedDatabaseInitializationMessage(path = DB_PATH): string {
   return (
-    `refusing to initialize the default store: cannot establish an authorised ${PLATFORM_NAME} installation: ${path}\n` +
+    `refusing to initialize the default store: cannot establish an authorized ${PLATFORM_NAME} installation: ${path}\n` +
     'invariant: A default store is initialized only by a checkout or an installed distribution.\n' +
     `cleared by: run orch init-db from a checkout or reinstall ${PLATFORM_NAME}`
   )

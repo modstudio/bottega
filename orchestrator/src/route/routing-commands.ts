@@ -93,7 +93,7 @@ export function routingBacktestCommand(
   }
   const printTrajectory = (result: RoutingBacktest, voided: RoutingBacktest, indent = '') => {
     log(
-      `${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}; unscored decisions ${result.unscoredDecisions}`,
+      `${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgments}; unscored decisions ${result.unscoredDecisions}`,
     )
     const jobs = [...new Set([...result.jobs, ...voided.jobs].map((row) => row.job))]
     for (const job of jobs) {
@@ -116,7 +116,7 @@ export function routingBacktestCommand(
     const cooldownMoves = movedSelections(result, cooldownDisabled)
     const outputAssumptions = {
       ...assumptions,
-      causalExclusions: `${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`,
+      causalExclusions: `${result.causalExcludedJudgments} earlier judgment/dispatch pairs excluded`,
       unscoredDecisions: `${result.unscoredDecisions} dispatches have no score and contribute no quality evidence`,
       cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections`,
     }
@@ -141,14 +141,14 @@ export function routingBacktestCommand(
   const voidedIncluded = routingBacktestEnsemble(jobFilter, { includeVoided: true })
   const cooldownDisabled = routingBacktestEnsemble(jobFilter, { cooldowns: false })
   const cooldownMoves = movedSelections(
-    { seed: 0, causalExcludedJudgements: 0, unscoredDecisions: 0, jobs: result.jobs },
-    { seed: 0, causalExcludedJudgements: 0, unscoredDecisions: 0, jobs: cooldownDisabled.jobs },
+    { seed: 0, causalExcludedJudgments: 0, unscoredDecisions: 0, jobs: result.jobs },
+    { seed: 0, causalExcludedJudgments: 0, unscoredDecisions: 0, jobs: cooldownDisabled.jobs },
   )
-  const causalExcludedJudgements = result.trajectories[0]?.causalExcludedJudgements ?? 0
+  const causalExcludedJudgments = result.trajectories[0]?.causalExcludedJudgments ?? 0
   const unscoredDecisions = result.trajectories[0]?.unscoredDecisions ?? 0
   const outputAssumptions = {
     ...assumptions,
-    causalExclusions: `${causalExcludedJudgements} earlier judgement/dispatch pairs excluded per trajectory`,
+    causalExclusions: `${causalExcludedJudgments} earlier judgment/dispatch pairs excluded per trajectory`,
     unscoredDecisions: `${unscoredDecisions} dispatches have no score and contribute no quality evidence`,
     cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections across all seeds`,
   }
@@ -225,7 +225,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
           `  best     ${g.best.agent.padEnd(11)} ${((g.best.score! * 100).toFixed(0) + '%').padStart(5)}` +
             ` raw, ${((g.best.shrunk! * 100).toFixed(0) + '%').padStart(5)} shrunk` +
             // "judged", not "scored": the percentage now includes failed runs
-            // at the `unusable` weight, so labelling it with the verdict count
+            // at the `unusable` weight, so labeling it with the verdict count
             // alone described a smaller denominator than the number came from.
             `  over ${g.best.evidence} judged` +
             (g.best.failures ? ` (incl. ${g.best.failures} failed)` : '') +
@@ -258,7 +258,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
         `  evidence ${cell.name}: ` +
           (cell.counts.length
             ? cell.counts.map((row) => `${row.agent}=${row.evidence}`).join(', ')
-            : 'no judgements'),
+            : 'no judgments'),
       )
     }
     log(`  routes to ${g.routesTo}   (${g.reason})`)
@@ -381,7 +381,7 @@ export function pickCommand(
     rows
       .filter((candidate) => candidate.evidence > 0)
       .map((candidate) => `${candidate.agent}=${candidate.evidence}`)
-      .join(', ') || 'no judgements'
+      .join(', ') || 'no judgments'
   log(
     `${jobName} -> ${p.agent}   (${p.reason})\n` +
       `  deciding cell: ${ev.level === 'lens' ? `lens ${ev.lens}` : ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide'}\n` +

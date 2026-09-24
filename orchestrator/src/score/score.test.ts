@@ -137,7 +137,7 @@ describe('what the views print beside a percentage', () => {
   })
   test('evidence is what MIN_SAMPLE counts, so it is what a surface must print', () => {
     // One good verdict plus two unjudged failures: the mean is 0 over THREE
-    // judgements. A surface printing "0% of 1" beside it is incoherent — a 0%
+    // judgments. A surface printing "0% of 1" beside it is incoherent — a 0%
     // on a single `right` verdict cannot happen.
     score(addRun({ agent: 'agy', job: 'review-lens-inline' }), 'full', 'right')
     addRun({ agent: 'agy', job: 'review-lens-inline', status: 'failed' })

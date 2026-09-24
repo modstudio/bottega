@@ -79,7 +79,7 @@ export function resolveInstallationPaths(
 
 function damagedManifest(path: string, root: string, detail: string): Error {
   return new Error(
-    `cannot establish an authorised ${PLATFORM_NAME} installation: distribution manifest ${path} is damaged: ${detail}\n` +
+    `cannot establish an authorized ${PLATFORM_NAME} installation: distribution manifest ${path} is damaged: ${detail}\n` +
       'invariant: An installed distribution has a valid distribution manifest.\n' +
       `cleared by: reinstall ${PLATFORM_NAME} at ${root}`,
   )
@@ -143,7 +143,7 @@ function installationIdentity(
   }
 }
 
-/** Answer exactly: is this an authorised platform installation? */
+/** Answer exactly: is this an authorized platform installation? */
 export function isAuthorizedPlatformInstallation(
   fromDirectory: string,
   env: InstallEnvironment,

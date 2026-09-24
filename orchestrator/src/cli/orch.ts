@@ -16,7 +16,7 @@ if (argv.length === 1 && argv[0] === '--version') {
 
 if (argv[0] === 'init-db') {
   if (argv.length !== 1) {
-    console.error('unrecognised argument\nworking form: orch init-db')
+    console.error('unrecognized argument\nworking form: orch init-db')
     process.exit(1)
   }
   try {
@@ -51,7 +51,7 @@ try {
   try {
     // ORCH_DB is always passed to detached workers. Keep that emergency seam
     // independent of the ordinary resolver so collection still works while a
-    // neighbouring source file is temporarily broken during an edit.
+    // neighboring source file is temporarily broken during an edit.
     const path = process.env.ORCH_DB || (await import('../database/database-location.ts')).DB_PATH
     const database = new Database(path, { readonly: true })
     // The degraded path is deliberately only collection: output and status,

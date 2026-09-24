@@ -12,7 +12,7 @@ review composition and calibration, canon and context injection, attribution,
 and the task and workflow surfaces other projects consume.
 
 Buy established plumbing. Prefer mechanisms already run in production on this
-machine for authentication and organisations, database access and migrations,
+machine for authentication and organizations, database access and migrations,
 tenancy enforcement, transports, queues, object storage and hosting. A
 hand-rolled mechanism where a maintained one exists is a defect: name and
 replace it rather than extending it.
@@ -31,7 +31,7 @@ specifying and dispatching work. This cannot be delegated to a networkless
 worker or answered from memory. Give the worker the conclusion as a ruling,
 not the research question.
 
-Separate novel product behaviour from its ordinary internal machinery because
+Separate novel product behavior from its ordinary internal machinery because
 the halves usually have different build-or-buy answers. Record negative
 results in the specification so later work does not pay to repeat the same
 search.

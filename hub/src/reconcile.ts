@@ -98,7 +98,7 @@ export async function reconcileOpenIntervals(
         runId: null,
         status: null,
         removesMs: 0,
-        reason: 'ref is not a recognised orch run ref; needs a decision',
+        reason: 'ref is not a recognized orch run ref; needs a decision',
       })
       return
     }

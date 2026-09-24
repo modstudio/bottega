@@ -58,7 +58,7 @@ export function childEnv(
    * detached worker on that same file even after its cwd changes to a worktree.
    *
    * Reported by a worker that checked the command before building on it, which
-   * is exactly the behaviour the contract asks for and exactly how this was
+   * is exactly the behavior the contract asks for and exactly how this was
    * found.
    *
    * Residual exposure: the canon accepts that a worktree worker reads the real
@@ -88,7 +88,7 @@ type ProcessInventory =
   | { ascertainable: false; reason: string }
 
 type TerminateRunProcessesResult =
-  | { outcome: 'signalled'; signalled: number[]; acceptableIds: number[] }
+  | { outcome: 'signaled'; signaled: number[]; acceptableIds: number[] }
   | { outcome: 'identity-mismatch'; acceptableIds: number[] }
   | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
   | { outcome: 'no-pid'; acceptableIds: number[] }
@@ -236,7 +236,7 @@ export function terminateRunProcesses(
   const acceptableIds = acceptableRunProcessIds(id)
   const inventory = processTable()
   if (!inventory.ascertainable) {
-    console.error(`orch: ${inventory.reason}; nothing signalled`)
+    console.error(`orch: ${inventory.reason}; nothing signaled`)
     return { outcome: 'unascertainable', acceptableIds, reason: inventory.reason }
   }
   if (!inventory.rows.some((candidate) => candidate.pid === row.pid)) {
@@ -251,21 +251,21 @@ export function terminateRunProcesses(
   ])
   if (pids === null) {
     console.error(
-      `orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`,
+      `orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signaled`,
     )
     return { outcome: 'identity-mismatch', acceptableIds }
   }
-  const signalled: number[] = []
+  const signaled: number[] = []
   for (const pid of pids) {
     try {
       process.kill(pid, 'SIGTERM')
-      signalled.push(pid)
+      signaled.push(pid)
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
     }
   }
-  return signalled.length
-    ? { outcome: 'signalled', signalled, acceptableIds }
+  return signaled.length
+    ? { outcome: 'signaled', signaled, acceptableIds }
     : { outcome: 'gone', acceptableIds }
 }
 

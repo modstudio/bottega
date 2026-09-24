@@ -328,6 +328,30 @@ describe('canon strict comparison', () => {
 })
 
 describe('canon structure rules', () => {
+  test('context path globs require a matching tracked file', () => {
+    const files = [
+      {
+        path: '.agents/contexts/a.md',
+        text: `---\ndescription: A context\npaths:\n  - orchestrator/src/**/judgment.ts\n---\n`,
+      },
+    ]
+    expect(
+      lint(files, { trackedPaths: ['orchestrator/src/judgment.ts'] }).findings.filter(
+        (finding) => finding.rule === 'canon/context-path-glob',
+      ),
+    ).toEqual([])
+    expect(
+      lint(files, { trackedPaths: ['orchestrator/src/routing.ts'] }).findings.filter(
+        (finding) => finding.rule === 'canon/context-path-glob',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        file: '.agents/contexts/a.md',
+        message: expect.stringContaining('orchestrator/src/**/judgment.ts'),
+      }),
+    ])
+  })
+
   test('frontmatter requires descriptions and context paths', () => {
     expect(
       rules(

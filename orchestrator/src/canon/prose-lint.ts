@@ -76,7 +76,7 @@ export function lintProse(text: string): ProseFinding[] {
         line: lineNumber,
         rule: 'history',
         message: `matches banned history pattern ${historyPattern.source}`,
-        remedy: 'state only the current rule, constraint, behaviour, or reason',
+        remedy: 'state only the current rule, constraint, behavior, or reason',
       })
     }
     const issuePattern = ISSUE_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
@@ -92,7 +92,7 @@ export function lintProse(text: string): ProseFinding[] {
         line: lineNumber,
         rule: 'issue',
         message: `matches banned issue pattern ${issuePattern.source}`,
-        remedy: 'state the current rule or behaviour without narrating an open or former issue',
+        remedy: 'state the current rule or behavior without narrating an open or former issue',
       })
     }
 

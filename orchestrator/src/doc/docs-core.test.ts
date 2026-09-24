@@ -52,9 +52,9 @@ describe('scoped operator docs', () => {
         subject: null,
         slug: 'legacy-prose',
         title: 'Legacy prose',
-        body: 'This was formerly different.\n\nCurrent behaviour is direct.',
+        body: 'This was formerly different.\n\nCurrent behavior is direct.',
       }),
-    ).resolves.toMatchObject({ body: expect.stringContaining('Current behaviour is direct.') })
+    ).resolves.toMatchObject({ body: expect.stringContaining('Current behavior is direct.') })
   })
 
   test('set refuses a finding introduced while editing a legacy document', async () => {

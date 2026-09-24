@@ -224,7 +224,7 @@ export async function projectCommand(
      * Merged DEEPLY, because one level was not enough.
      *
      * A settings blob holds unrelated concerns written at different times —
-     * tracker vocabulary, trunk name, colour, the whole worktree lifecycle —
+     * tracker vocabulary, trunk name, color, the whole worktree lifecycle —
      * and replacing it wholesale to change one drops the others. A shallow
      * merge only moved the problem down a level: updating `worktree.notes`
      * replaced the entire `worktree` object and silently discarded its

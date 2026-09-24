@@ -89,7 +89,7 @@ function stripPostBaselineApplicationObjects(d: Database): void {
       (row) => !baselineNames.has(`${row.type}:${row.name}`),
     )
 
-    // Remove dependants before their tables. Indexes and triggers would fall
+    // Remove dependents before their tables. Indexes and triggers would fall
     // with a table, but dropping them explicitly also handles additions to a
     // baseline table. Views go first because they may read a later table.
     for (const type of ['trigger', 'view', 'index'] as const) {
@@ -402,7 +402,7 @@ describe('hub migration journal', () => {
     reset.close()
   })
 
-  test('two concurrent migrates serialise on the schema lock', async () => {
+  test('two concurrent migrates serialize on the schema lock', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-concurrent-migrate-'))
     const path = join(dir, 'store.db')
     const run = () => {

@@ -199,7 +199,7 @@ function gitConfigOk(args: string[], cwd: string): string | null {
 /**
  * Git's output with NOT ONE BYTE CHANGED.
  *
- * A patch is a byte-exact artefact: `git apply` reads trailing newlines as
+ * A patch is a byte-exact artifact: `git apply` reads trailing newlines as
  * part of the hunk, so trimming one turns a valid patch into `corrupt patch at
  * line 301`. That is not hypothetical — `orch diff 638 > p && git apply p`
  * failed exactly that way on the first real implementation run, while the same

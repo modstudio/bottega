@@ -12,7 +12,7 @@ import {
 } from '../services/endpoints.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
-import { CODE_QUERIES, DOC_QUERIES, type DocBenchmarkQuery, type LabelledQuery } from './queries.ts'
+import { CODE_QUERIES, DOC_QUERIES, type DocBenchmarkQuery, type LabeledQuery } from './queries.ts'
 
 const EMBED_BATCH_SIZE = 64
 const RERANK_CANDIDATES = 20
@@ -94,7 +94,7 @@ async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise
 }
 
 function reportSet(
-  queries: LabelledQuery[],
+  queries: LabeledQuery[],
   rankings: { keyword: Ranking[]; embeddings: Ranking[]; reranked: Ranking[] },
 ) {
   const missedIds = rankings.keyword
@@ -131,7 +131,7 @@ async function main() {
   await probeEndpoints(endpoints)
 
   const startedAt = performance.now()
-  const queries: LabelledQuery[] = [...CODE_QUERIES, ...DOC_QUERIES]
+  const queries: LabeledQuery[] = [...CODE_QUERIES, ...DOC_QUERIES]
   const documents = chunks.map(chunkDocument)
   const corpusVectors = await embedBatches(endpoints.embedUrl, documents)
   const queryVectors = await embedBatches(
@@ -167,7 +167,7 @@ async function main() {
     })
   }
 
-  const rankingsFor = (querySet: LabelledQuery[]) => {
+  const rankingsFor = (querySet: LabeledQuery[]) => {
     const ids = new Set(querySet.map((query) => query.id))
     return {
       keyword: keywordRankings.filter((ranking) => ids.has(ranking.queryId)),
