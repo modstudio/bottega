@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import {
   hasRealQuestions,
   isAsking,
@@ -30,7 +31,7 @@ import {
   EMPTY_CANON_SHA,
   resolveCanonEvalProject,
 } from './canon-eval-pack.ts'
-import { releaseEvalOwnedScratchWorktree } from './canon-eval-scratch.ts'
+import { decideEvalOwnedScratchRelease } from './canon-eval-scratch.ts'
 import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
@@ -431,6 +432,43 @@ function insertEval(row: {
       row.why,
       nowIso(),
     )
+}
+
+const evalScratchPresentation: CleanupPresentation = {
+  log: () => {},
+  error: () => {},
+  setExitCode: () => {},
+  keptBranchLine: (branch) => branch,
+}
+
+function recordedEvalScratchRunId(repo: string): number | null {
+  const treeRoot = join(repo, '.claude', 'worktrees')
+  const prefix = `${treeRoot}/`
+  const rows = db()
+    .query(`SELECT id, worktree FROM run WHERE worktree IS NOT NULL ORDER BY id DESC`)
+    .all() as { id: number; worktree: string }[]
+  return (
+    rows.find((row) => row.worktree === treeRoot || row.worktree.startsWith(prefix))?.id ?? null
+  )
+}
+
+async function releaseEvalOwnedScratchWorktree(repo: string, runId: number | null): Promise<void> {
+  const id = runId ?? recordedEvalScratchRunId(repo)
+  if (
+    decideEvalOwnedScratchRelease({
+      scratchOwnedByEval: true,
+      runCreated: id !== null,
+    }) !== 'release' ||
+    id === null
+  ) {
+    return
+  }
+  await discardRun(id, {
+    force: false,
+    evalOwnedScratch: true,
+    auditReason: 'canon-eval scratch',
+    presentation: evalScratchPresentation,
+  })
 }
 
 /**

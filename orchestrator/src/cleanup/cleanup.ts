@@ -563,8 +563,12 @@ export function discardWorktree(
  * still happened.
  */
 
+function discardReclaimable(options: CleanupOptions): boolean {
+  return options.force || options.evalOwnedScratch === true
+}
+
 export async function discardRun(id: number, options: CleanupOptions): Promise<void> {
-  const force = options.force || options.evalOwnedScratch === true
+  const force = discardReclaimable(options)
   let authority = authorizeRunMutation(id, 'discard')
   const rootRow = db()
     .query(
