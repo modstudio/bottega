@@ -6,12 +6,44 @@ import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/sch
 import { applyMigrations } from '../database/migrations.ts'
 import { RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
-import { syncRecord, unreachableSpaceProject } from './record-sync.ts'
+import { outboxOrder, syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
 const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
 const STAMP = '2026-09-15T01:01:00.000Z'
+
+test('outbox ordering sends run rows before run-dependent rows', () => {
+  const rows = [
+    { kind: 'score', id: 21649 },
+    { kind: 'run', id: 21650 },
+    { kind: 'landing', id: 21648 },
+    { kind: 'review', id: 21651 },
+    { kind: 'run', id: 21652 },
+    { kind: 'review_lens', id: 21653 },
+    { kind: 'review_finding', id: 21654 },
+    { kind: 'contention', id: 21655 },
+    { kind: 'test_flake', id: 21656 },
+  ]
+
+  const ordered = rows.toSorted((left, right) => {
+    const [leftPhase, leftId] = outboxOrder(left.kind, left.id)
+    const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
+    return leftPhase - rightPhase || leftId - rightId
+  })
+
+  expect(ordered).toEqual([
+    { kind: 'run', id: 21650 },
+    { kind: 'run', id: 21652 },
+    { kind: 'landing', id: 21648 },
+    { kind: 'test_flake', id: 21656 },
+    { kind: 'score', id: 21649 },
+    { kind: 'review', id: 21651 },
+    { kind: 'review_lens', id: 21653 },
+    { kind: 'review_finding', id: 21654 },
+    { kind: 'contention', id: 21655 },
+  ])
+})
 
 type HostedExclusion = {
   rowReason: string | null
