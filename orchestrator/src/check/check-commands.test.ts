@@ -15,7 +15,10 @@ import { applyMigrations } from '../database/migrations.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 
 const cli = resolve(import.meta.dir, '../cli/orch.ts')
-const britishSample = readFileSync(join(import.meta.dir, 'fixtures/british-samples.txt'), 'utf8').trim()
+const britishSample = readFileSync(
+  join(import.meta.dir, 'fixtures/spelling-samples/british-samples.txt'),
+  'utf8',
+).trim()
 
 function run(database: string, ...argv: string[]) {
   return Bun.spawnSync(['bun', '--no-env-file', cli, 'check', '--enabled', ...argv], {
