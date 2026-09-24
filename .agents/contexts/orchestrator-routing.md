@@ -49,11 +49,11 @@ Every command here drives the numerator down. **`orch score` is the only thing t
 
 # Routing
 
-A job declares the capabilities it needs; an agent that lacks one is excluded rather than ranked. History decides only once a job has `MIN_SAMPLE` judgements; below that the declared preference wins.
+A job declares the capabilities it needs; an agent that lacks one is excluded rather than ranked. History decides only once a job has `MIN_SAMPLE` judgments; below that the declared preference wins.
 
-Pairwise judgements are collected at score time. `orch stats` reports Bradley-Terry strengths once a job has enough duels. Routing still does not use them. An off-policy backtest cannot decide a routing change, because disagreements have no counterfactual outcome; the standing challenger draw is the online experiment that can.
+Pairwise judgments are collected at score time. `orch stats` reports Bradley-Terry strengths once a job has enough duels. Routing still does not use them. An off-policy backtest cannot decide a routing change, because disagreements have no counterfactual outcome; the standing challenger draw is the online experiment that can.
 
-**A run that produced nothing counts as delivery `none`.** Failed and abandoned runs fold into the mean at that `WEIGHT`, so a failure is evidence. The threshold counts **judgements**, not verdicts.
+**A run that produced nothing counts as delivery `none`.** Failed and abandoned runs fold into the mean at that `WEIGHT`, so a failure is evidence. The threshold counts **judgments**, not verdicts.
 
 **Exploration goes to agents that might win, not to ones already known not to work here.**
 
@@ -61,17 +61,17 @@ Pairwise judgements are collected at score time. `orch stats` reports Bradley-Te
 
 **Proven scores are shrunk toward the field before they are ranked:** `(points + MIN_SAMPLE * prior) / (evidence + MIN_SAMPLE)`, prior being the mean raw score of every proven agent on that job. Reports keep the raw mean beside the shrunk score.
 
-**Thompson sampling is the live ranker.** A real dispatch draws from the posterior; status surfaces use the posterior mean, so `orch pick` does not spend a draw. The standing-challenger floor decays from `STANDING_EXPLORE_RATE` with the proven leader's judgement count, bottoming at `STANDING_EXPLORE_FLOOR`. A model swapped behind an agent name starts a fresh posterior and does not inherit the old mean.
+**Thompson sampling is the live ranker.** A real dispatch draws from the posterior; status surfaces use the posterior mean, so `orch pick` does not spend a draw. The standing-challenger floor decays from `STANDING_EXPLORE_RATE` with the proven leader's judgment count, bottoming at `STANDING_EXPLORE_FLOOR`. A model swapped behind an agent name starts a fresh posterior and does not inherit the old mean.
 
-For findings jobs, reviewer precision breaks a tie inside the noise band when the named lens has enough triage evidence. A measured precision outranks an unknown cell; an unknown is not zero. Precision never reaches across a real quality gap. Findings jobs route on the named lens once at least two eligible agents each have `MIN_SAMPLE` judgements in that lens cell (one eligible agent's `MIN_SAMPLE` suffices). Until then they use the job-wide cell. A lens cell never combines with a stack cell; unrecorded runs remain job-wide evidence.
+For findings jobs, reviewer precision breaks a tie inside the noise band when the named lens has enough triage evidence. A measured precision outranks an unknown cell; an unknown is not zero. Precision never reaches across a real quality gap. Findings jobs route on the named lens once at least two eligible agents each have `MIN_SAMPLE` judgments in that lens cell (one eligible agent's `MIN_SAMPLE` suffices). Until then they use the job-wide cell. A lens cell never combines with a stack cell; unrecorded runs remain job-wide evidence.
 
-A failing behavioural canon eval closes exploration for the default eval agent until that eval passes. It does not erase proven routing evidence and it does not override `--agent`. Harness failures are not wrong answers and do not close exploration.
+A failing behavioral canon eval closes exploration for the default eval agent until that eval passes. It does not erase proven routing evidence and it does not override `--agent`. Harness failures are not wrong answers and do not close exploration.
 
-# A judgement has two axes
+# A judgment has two axes
 
-**DELIVERY:** `none` | `partial` | `full`. **QUALITY:** `wrong` | `mixed` | `right` — not asked when nothing arrived, and the schema refuses the combination. Delivery failure is plumbing; quality failure is judgement. The matrix is `WEIGHT` in `score.ts`.
+**DELIVERY:** `none` | `partial` | `full`. **QUALITY:** `wrong` | `mixed` | `right` — not asked when nothing arrived, and the schema refuses the combination. Delivery failure is plumbing; quality failure is judgment. The matrix is `WEIGHT` in `score.ts`.
 
-**A run is one judgement, not two.** A failure counts as `none` only if nobody judged it explicitly.
+**A run is one judgment, not two.** A failure counts as `none` only if nobody judged it explicitly.
 
 **No answer is negative, a wrong answer is zero.** Nothing arriving should push routing away; a wrong answer stays a weaker candidate. Failed and abandoned runs score at the `none` weight.
 
@@ -111,7 +111,7 @@ There is one `scoreboard()` and the views call it. A test asserts every cell mat
 
 # Activity counters and score windows
 
-The routing matrix and guide do not take a dashboard activity window. Their bound is `EVIDENCE_WINDOW`, the most recent judgements for a job, agent, and the agent's current model. A model swap starts a fresh posterior. Per-repo tallies report activity, not routing evidence, and take neither window. Empty-window sums are coalesced, because SQLite `SUM` over no rows is null while `COUNT` is zero.
+The routing matrix and guide do not take a dashboard activity window. Their bound is `EVIDENCE_WINDOW`, the most recent judgments for a job, agent, and the agent's current model. A model swap starts a fresh posterior. Per-repo tallies report activity, not routing evidence, and take neither window. Empty-window sums are coalesced, because SQLite `SUM` over no rows is null while `COUNT` is zero.
 
 # When an agent runs out of plan
 
@@ -159,6 +159,6 @@ The window is a serving flag. Check concurrency at the endpoint, not the model c
 
 **The endpoint must serve `/v1/responses`**, not merely `/v1/chat/completions`. vLLM serves it; llama.cpp bridges it; Ollama does not.
 
-**Run Codex where it can see the repository, against a tunnelled endpoint.** Bind the server to localhost on the model host and forward it. Never bind it to `0.0.0.0` on a routable interface. Do not use `--oss` / `--local-provider`. Do not name the provider `oss`.
+**Run Codex where it can see the repository, against a tunneled endpoint.** Bind the server to localhost on the model host and forward it. Never bind it to `0.0.0.0` on a routable interface. Do not use `--oss` / `--local-provider`. Do not name the provider `oss`.
 
 Host facts: `orch doc show local-model-host-incidents --scope machine`.

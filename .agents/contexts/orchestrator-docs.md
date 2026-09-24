@@ -50,7 +50,7 @@ The register seeds itself once from the run history. That is **data, not code**.
 
 **The stack is why this is not merely tidying.** Agents are not uniformly good, and a router keyed only on job type averages strength on one stack and weakness on another into a number true of neither. Stack rather than project so two apps on the same stack pool their evidence.
 
-**Narrowing needs two proven agents on that stack.** One is not a comparison; it is a smaller evidence base for a decision that would have been made anyway, and it is actively worse — an agent with many job-wide judgements and few here is demoted to unproven and loses to whichever reached `MIN_SAMPLE` on this stack first. Below the bar, job-wide evidence answers exactly as before, and `orch pick` says which it used.
+**Narrowing needs two proven agents on that stack.** One is not a comparison; it is a smaller evidence base for a decision that would have been made anyway, and it is actively worse — an agent with many job-wide judgments and few here is demoted to unproven and loses to whichever reached `MIN_SAMPLE` on this stack first. Below the bar, job-wide evidence answers exactly as before, and `orch pick` says which it used.
 
 # Project facts are declared, not inferred
 
@@ -92,12 +92,12 @@ Hub binds loopback (`127.0.0.1`) because the payload hands out the full text of 
 
 The ratio is reported against four denominators (`LENSES` in `metric.ts`), because each is wrong in its own direction and agreement between them is the only real signal: per task (blind to work carrying no ticket), per product line (rewards volume), per commit (commit habit rather than effort), per file touched (depth of change).
 
-**Files are categorised, not filtered.** Generated output has to come out whatever else happens. Tests are their own category rather than deleted. Docs and config are separated for the same reason: the mix is itself information.
+**Files are categorized, not filtered.** Generated output has to come out whatever else happens. Tests are their own category rather than deleted. Docs and config are separated for the same reason: the mix is itself information.
 
 **Spend is split canon vs untracked.** Work outside the registered repos ships no task key, so counting it against a canon denominator inflates the ratio against work it never touched. It is reported on its own instead of divided by something it did not contribute to.
 
 The repo a message belongs to comes from its own cwd, with a numbered-clone suffix stripped.
 
-The ratio's direction compares the **halves of the window**, not consecutive days. Each half is totalled and divided once rather than averaged over daily ratios. The calendar midpoint of the window divides the halves; excluded days do not move that boundary. Two kinds of day cannot be read as a ratio: today (spend accrues in real time while commits land later), and a day with tasks but almost no tokens (a gap, not efficiency; the threshold scales to the window's own median). Both are still drawn so the chart never hides what it did not use. Lower is better. Inside the noise these bursts generate, a small change is reported as flat; with few tasks in either half it says unknown.
+The ratio's direction compares the **halves of the window**, not consecutive days. Each half is totaled and divided once rather than averaged over daily ratios. The calendar midpoint of the window divides the halves; excluded days do not move that boundary. Two kinds of day cannot be read as a ratio: today (spend accrues in real time while commits land later), and a day with tasks but almost no tokens (a gap, not efficiency; the threshold scales to the window's own median). Both are still drawn so the chart never hides what it did not use. Lower is better. Inside the noise these bursts generate, a small change is reported as flat; with few tasks in either half it says unknown.
 
 The chart itself — panels, hover, stacking — belongs to hub.

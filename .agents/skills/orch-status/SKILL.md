@@ -153,7 +153,7 @@ List only architect actions established by the published interfaces:
 - every in-scope inbox question, with its canonical root answer ID and question;
 - any `CLAIMED DONE, NOT LANDED` task, requiring reconciliation of the board
   claim with trunk; and
-- any in-progress task labelled `STALLED`, requiring a decision to resume,
+- any in-progress task labeled `STALLED`, requiring a decision to resume,
   reassign, close, or otherwise act.
 
 Under `--all`, keep the session ID beside every run, question, and stalled task.
