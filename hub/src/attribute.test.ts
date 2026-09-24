@@ -1,8 +1,21 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { attribute, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
+import { writeTransaction } from './db.ts'
 
-beforeAll(resetFixtureStore)
+beforeAll(() => {
+  resetFixtureStore()
+  writeTransaction((conn) => {
+    conn.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+        ('alpha-alp-5347','ALP-5347','alpha','mcp','2026-01-01','2026-01-01'),
+        ('alpha-alp-5362','ALP-5362','alpha','mcp','2026-01-01','2026-01-01'),
+        ('alpha-bet-40','BET-40','alpha','mcp','2026-01-01','2026-01-01'),
+        ('beta-bet-2533','BET-2533','beta','mcp','2026-01-01','2026-01-01'),
+        ('gamma-gam-986','GAM-986','gamma','mcp','2026-01-01','2026-01-01');
+    `)
+  })
+})
 
 describe('worktree attribution', () => {
   // The fixture carries every worktree shape the attribution has to preserve.
@@ -55,6 +68,28 @@ describe('attribute()', () => {
   test('prompt prose is the last resort', () => {
     const a = attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on ALP-5347 please'] })
     expect(a).toEqual({ project: 'alpha', key: 'ALP-5347', via: 'prompt' })
+  })
+
+  test('tracker membership, not the registered prefix, decides whether a key belongs to the project', () => {
+    expect(attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on BET-40 please'] })).toEqual(
+      {
+        project: 'alpha',
+        key: 'BET-40',
+        via: 'prompt',
+      },
+    )
+    expect(
+      attribute({ cwd: '/fixtures/repos/alpha', commitSubjects: ['BET-40 implement the change'] }),
+    ).toEqual({ project: 'alpha', key: 'BET-40', via: 'commit' })
+
+    expect(attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on BET-2533'] })).toEqual({
+      project: 'alpha',
+      key: null,
+      via: null,
+    })
+    expect(
+      attribute({ cwd: '/fixtures/repos/alpha', commitSubjects: ['BET-2533 unrelated change'] }),
+    ).toEqual({ project: 'alpha', key: null, via: null })
   })
 
   test('an injected payload never names a task', () => {

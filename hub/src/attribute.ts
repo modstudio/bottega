@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { db } from './db.ts'
 import type { OrchRun } from './ingest/runs.ts'
 import { type Project, projectRoot, projects } from './projects.ts'
+import { taskIdentityDecision } from './task-identity.ts'
 
 /** Every ticket key this estate issues, resolved only when attribution first needs it. */
 function keyPrefixes(): string {
@@ -84,13 +86,9 @@ export function projectOf(cwd: string | undefined | null): Project | null {
   return projects().find((project) => project.name === clone)?.name ?? null
 }
 
-/** Whether a key has a prefix registered for the already-known project. */
+/** Whether the already-known project's tracker has issued this key. */
 function keyBelongsToProject(key: string, project: Project): boolean {
-  const prefix = key.split('-')[0]!.toUpperCase()
-  const registered = projects().find((candidate) => candidate.name === project)
-  return (registered?.settings.keyPrefixes ?? [])
-    .map((value) => value.toUpperCase())
-    .includes(prefix)
+  return !('none' in taskIdentityDecision(db(), key, project))
 }
 
 export type Attribution = {
@@ -133,6 +131,20 @@ export function isInjected(text: string): boolean {
   return INJECTED.some((m) => text.includes(m))
 }
 
+function taskKeyFrom(
+  texts: string[],
+  project: Project | null,
+  skipInjected: boolean,
+): string | null {
+  for (const text of texts) {
+    if (skipInjected && isInjected(text)) continue
+    const key = text.match(keyPattern())?.[0]?.toUpperCase()
+    if (!key) continue
+    if (!project || keyBelongsToProject(key, project)) return key
+  }
+  return null
+}
+
 /**
  * Decide the task a span of work belongs to.
  *
@@ -157,26 +169,14 @@ export function attribute(input: {
     return { project, key: fromWorktree, via: 'worktree' }
   }
 
-  for (const subject of input.commitSubjects ?? []) {
-    const m = subject.match(keyPattern())
-    if (m?.[0]) {
-      const key = m[0].toUpperCase()
-      return { project, key, via: 'commit' }
-    }
-  }
+  const fromCommit = taskKeyFrom(input.commitSubjects ?? [], project, false)
+  if (fromCommit) return { project, key: fromCommit, via: 'commit' }
 
-  for (const prompt of input.prompts ?? []) {
-    if (isInjected(prompt)) continue
-    const m = prompt.match(keyPattern())
-    if (m?.[0]) {
-      const key = m[0].toUpperCase()
-      // A key from prose only counts when it belongs to the repo the work was
-      // happening in. Cross-project chatter is common — a session in one project
-      // discussing another project's ticket is not time spent on that ticket.
-      if (project && !keyBelongsToProject(key, project)) continue
-      return { project, key, via: 'prompt' }
-    }
-  }
+  // A key from prose only counts when it belongs to the repo the work was
+  // happening in. Cross-project chatter is common — a session in one project
+  // discussing another project's ticket is not time spent on that ticket.
+  const fromPrompt = taskKeyFrom(input.prompts ?? [], project, true)
+  if (fromPrompt) return { project, key: fromPrompt, via: 'prompt' }
 
   return { project, key: null, via: null }
 }
