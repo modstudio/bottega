@@ -3,7 +3,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
 import {
-  confirmSoftDelete,
+  confirmCount,
   createHostedTaskInTransaction,
   type HostedTask,
   type TaskIdentity,
@@ -337,7 +337,7 @@ export async function reapHostedNotes(
       : []
     if (found.length < input.deleted.length)
       throw new Error('local cache is behind the record; the next maintenance pass will recompute')
-    confirmSoftDelete(found.length, input.confirmation)
+    confirmCount(found.length, input.confirmation, 'bulk-only')
     if (found.length)
       await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now() WHERE space_id=${identity.spaceId}::uuid
       AND number IN ${tx(found.map((row) => row.number))}`

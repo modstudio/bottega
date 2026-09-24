@@ -1,5 +1,6 @@
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
+import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
@@ -118,6 +119,36 @@ export const hostedDeleteDocument = (
     `/v1/tasks/${encodeURIComponent(key)}/documents/${id}`,
     'DELETE',
     undefined,
+    options,
+  )
+
+export const hostedListTasks = (options?: Parameters<typeof request>[3]) =>
+  request<{
+    tasks: HostedTask[]
+    comments: HostedComment[]
+    documents: HostedDocument[]
+    statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
+    cursor: string
+  }>('/v1/tasks', 'GET', undefined, options)
+
+export const hostedTaskPresence = (
+  pairs: HostedTaskPresencePair[],
+  options?: Parameters<typeof request>[3],
+) =>
+  request<{
+    present: HostedTaskPresencePair[]
+    refused: Array<HostedTaskPresencePair & { reason: 'not-a-member' }>
+  }>('/v1/tasks/presence', 'POST', { pairs }, options)
+
+export const hostedDeleteTasks = (
+  ids: string[],
+  confirmation: number | undefined,
+  options?: Parameters<typeof request>[3],
+) =>
+  request<{ tasks: number; comments: number; documents: number; statusEvents: number }>(
+    '/v1/tasks',
+    'DELETE',
+    { ids, confirmation },
     options,
   )
 

@@ -2,6 +2,7 @@ import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
+import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
   addHostedComment,
   createHostedDocument,
@@ -29,6 +30,8 @@ type Dependencies = {
   createDocument?: typeof createHostedDocument
   patchDocument?: typeof patchHostedDocument
   deleteDocuments?: typeof softDeleteHostedDocuments
+  presence?: typeof hostedTaskPresence
+  deleteTasks?: typeof softDeleteHostedTasks
   mirror?: typeof mirrorHostedTasks
   counts?: typeof hostedTaskCounts
 }
@@ -107,6 +110,8 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
 
 async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, body, keyMatch, closeMatch } = ctx
+  const bulk = await taskBulkRoute(ctx)
+  if (bulk) return bulk
   if (request.method === 'POST' && url.pathname === '/v1/tasks')
     return json(
       await call(dependencies.create, createHostedTask)(
@@ -142,6 +147,34 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
       body as Parameters<typeof mirrorHostedTasks>[2],
     ),
   )
+}
+
+async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
+  const { request, url, config, dependencies, who, body } = ctx
+  if (request.method === 'POST' && url.pathname === '/v1/tasks/presence')
+    return json(
+      await call(dependencies.presence, hostedTaskPresence)(
+        config.recordDatabaseUrl,
+        who,
+        Array.isArray(body?.pairs)
+          ? (body.pairs as Array<{ space_id: string; key: string }>).filter(
+              (pair) => typeof pair?.space_id === 'string' && typeof pair?.key === 'string',
+            )
+          : [],
+      ),
+    )
+  if (request.method === 'DELETE' && url.pathname === '/v1/tasks')
+    return json(
+      await call(dependencies.deleteTasks, softDeleteHostedTasks)(
+        config.recordDatabaseUrl,
+        who,
+        Array.isArray(body?.ids)
+          ? body.ids.filter((id): id is string => typeof id === 'string')
+          : [],
+        typeof body?.confirmation === 'number' ? body.confirmation : undefined,
+      ),
+    )
+  return null
 }
 
 async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {

@@ -1,5 +1,4 @@
 import { newRecordId } from '../../shared/record/schema.ts'
-import { recordSpaceMembership } from '../../shared/record-space-membership.ts'
 import { db, writeTransaction } from './db.ts'
 import { isTaskMirrorAdoption, type MirrorAdoption } from './hosted-tasks.ts'
 import { projects } from './projects.ts'
@@ -13,6 +12,7 @@ import {
   type TaskFetch,
 } from './task-client.ts'
 import { resolveTask } from './task-identity.ts'
+import { taskProjectSpaceDisposition } from './task-project-space.ts'
 
 type Options = { dryRun?: boolean; baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 type ChildRow = {
@@ -58,15 +58,9 @@ export function selectTaskPushRows(
   registered: readonly RegisteredSpace[],
   identity: HostedTaskIdentity,
 ) {
-  const registration = new Map(registered.map((project) => [project.name, project]))
   const reason = (projectName: string): SkipReason | null => {
-    const project = registration.get(projectName)
-    if (!project) return 'unmapped'
-    const declared = project.settings.space
-    if (!declared) return null
-    const membership = recordSpaceMembership(declared, identity.memberships)
-    if (!membership) return 'unmapped'
-    return membership.spaceId === identity.activeSpaceId ? null : 'different-space'
+    const disposition = taskProjectSpaceDisposition(projectName, registered, identity)
+    return disposition.belongsToActiveSpace ? null : disposition.reason
   }
   const skipped = new Map<
     string,

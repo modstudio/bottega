@@ -15,11 +15,36 @@ describe('hosted task references', () => {
 
   test('the relationship catalog supplies all hosted task references', () => {
     expect(hostedTaskRelationships).toEqual([
-      { table: 'hub_task_comment', idColumn: 'task_id', keyColumn: 'task_key' },
-      { table: 'hub_task_document', idColumn: 'task_id', keyColumn: 'task_key' },
-      { table: 'hub_task_status_event', idColumn: 'task_id', keyColumn: 'task_key' },
-      { table: 'hub_task', idColumn: 'parent_id', keyColumn: 'parent_key' },
-      { table: 'hub_note', idColumn: 'promoted_task_id', keyColumn: 'promoted_task' },
+      {
+        table: 'hub_task_comment',
+        idColumn: 'task_id',
+        keyColumn: 'task_key',
+        onTaskDelete: 'soft-delete-child',
+      },
+      {
+        table: 'hub_task_document',
+        idColumn: 'task_id',
+        keyColumn: 'task_key',
+        onTaskDelete: 'soft-delete-child',
+      },
+      {
+        table: 'hub_task_status_event',
+        idColumn: 'task_id',
+        keyColumn: 'task_key',
+        onTaskDelete: 'soft-delete-child',
+      },
+      {
+        table: 'hub_task',
+        idColumn: 'parent_id',
+        keyColumn: 'parent_key',
+        onTaskDelete: 'clear-incoming',
+      },
+      {
+        table: 'hub_note',
+        idColumn: 'promoted_task_id',
+        keyColumn: 'promoted_task',
+        onTaskDelete: 'clear-incoming',
+      },
     ])
     expect(
       hostedTaskReference('hub_note', {

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { nextNoteNumber } from './hosted-notes.ts'
-import { confirmSoftDelete } from './hosted-tasks.ts'
+import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
 import { applyHostedNoteChanges } from './note-cache.ts'
 
@@ -22,7 +22,7 @@ describe('hosted-only note safety', () => {
   })
 
   test('reap refuses a confirmation count mismatch', () => {
-    expect(() => confirmSoftDelete(2, 1)).toThrow('confirmation count 2')
+    expect(() => confirmCount(2, 1, 'bulk-only')).toThrow('confirmation count 2')
   })
   test('an unreachable hosted write refuses and leaves the cache unchanged', async () => {
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM note').get()!.count

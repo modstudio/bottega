@@ -356,8 +356,14 @@ export async function patchHostedDocument(
   })
 }
 
-export function confirmSoftDelete(count: number, confirmation?: number) {
-  if (count > 1 && confirmation !== count)
+export type ConfirmationPolicy = 'exact-always' | 'bulk-only'
+
+export function confirmCount(
+  count: number,
+  confirmation: number | undefined,
+  policy: ConfirmationPolicy,
+) {
+  if ((policy === 'exact-always' || count > 1) && confirmation !== count)
     throw new Error(`refusing to delete ${count} rows without confirmation count ${count}`)
 }
 
@@ -372,7 +378,7 @@ export async function softDeleteHostedDocuments(
       await tx`SELECT id FROM hub_task_document WHERE
       space_id=${identity.spaceId}::uuid AND id IN ${tx(ids)} AND deleted_at IS NULL FOR UPDATE`,
     )
-    confirmSoftDelete(found.length, confirmation)
+    confirmCount(found.length, confirmation, 'bulk-only')
     if (found.length)
       await tx`UPDATE hub_task_document SET deleted_at=now(),updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND id IN ${tx(found.map((row) => row.id))}`

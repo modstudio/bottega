@@ -62,8 +62,8 @@ import {
   updateTaskDocument,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
+import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
-import { pushTasks } from './task-push.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTask } from './tracker-new.ts'
 
@@ -115,6 +115,7 @@ const taskCommandShapes = new Map<
   ['comment', { positionalCount: 2, valueFlags: new Set(['--project']) }],
   ['import', { positionalCount: 1, valueFlags: new Set() }],
   ['push', { positionalCount: 0, valueFlags: new Set() }],
+  ['prune-foreign', { positionalCount: 0, valueFlags: new Set(['--confirm', '--project']) }],
   [
     'doc new',
     {
@@ -224,7 +225,8 @@ const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--paren
                [--body "..."|--body-file PATH] [--version TOKEN]
   hub task doc rm <ID>
   hub task import <file.json> backfill from a clustered commit history
-  hub task push [--dry-run]   migrate and verify the local task cache`
+  hub task push [--dry-run]   migrate and verify the local task cache
+  hub task prune-foreign [--dry-run] [--confirm N] [--project NAME] [--only-present-elsewhere] [--json]`
 
 const USAGE = `hub — every project's tasks in flight, what each cost, and scheduled reports
 
@@ -674,13 +676,8 @@ async function task() {
     await importTasks(file)
     return
   }
-  if (sub === 'push') {
-    const result = await pushTasks({ dryRun: has('dry-run') })
-    console.log(JSON.stringify(result, null, 2))
-    if (result.match === false) process.exitCode = 1
-    return
-  }
-  throw new Error('hub task <new|list|show|set|close|comment|import|push>')
+  if (sub === 'push' || sub === 'prune-foreign') return runHostedTaskMaintenance(sub, argv)
+  throw new Error('hub task <new|list|show|set|close|comment|import|push|prune-foreign>')
 }
 
 async function note() {
@@ -847,7 +844,7 @@ try {
     cmd === 'sync' ||
     cmd === 'tasks' ||
     cmd === 'serve' ||
-    cmd === 'task' ||
+    (cmd === 'task' && argv[1] !== 'prune-foreign') ||
     cmd === 'send' ||
     cmd === 'report' ||
     cmd === 'reconcile' ||
