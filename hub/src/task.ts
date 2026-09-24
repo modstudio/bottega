@@ -481,7 +481,7 @@ export function getTaskDocument(idValue: number | string): TaskDocument {
   const id = documentId(idValue)
   const document = db()
     .query<TaskDocument, [number]>(
-      `SELECT id, task_key, role, title, body, version, created_at, updated_at
+      `SELECT id, record_id, task_key, role, title, body, version, created_at, updated_at
        FROM task_document WHERE id = ?`,
     )
     .get(id)
