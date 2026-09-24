@@ -14,6 +14,7 @@ const number = (value: string | number | bigint | null | undefined) => Number(va
 const rows = <T>(value: unknown) => value as T[]
 
 type RawInterval = {
+  task_id: string | null
   task_key: string | null
   project_name: string | null
   source: string
@@ -26,6 +27,7 @@ type RawInterval = {
 }
 
 type RawEvent = {
+  task_id: string
   task_key: string
   project: string
   at: SqlTime
@@ -39,6 +41,7 @@ function asInterval(row: RawInterval): MeasureInterval {
     endAt: iso(row.end_at),
     open: number(row.open),
     userId: row.user_id,
+    taskId: row.task_id,
     taskKey: row.task_key,
     project: row.project_name,
     vendorTokens: number(row.vendor_tokens),
@@ -48,6 +51,7 @@ function asInterval(row: RawInterval): MeasureInterval {
 
 function asEvent(row: RawEvent): MeasureStatusEvent {
   return {
+    taskId: row.task_id,
     taskKey: row.task_key,
     project: row.project,
     at: iso(row.at),
@@ -63,28 +67,30 @@ export async function loadHostedMeasureRows(
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const events = rows<RawEvent>(
       await tx`
-      SELECT e.task_key, t.project, e.at, e.to_status
+      SELECT t.id AS task_id, e.task_key, t.project, e.at, e.to_status
       FROM hub_task_status_event e
       JOIN hub_task t ON t.space_id=e.space_id AND t.key=e.task_key
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${window.from}::timestamptz AND e.at < ${window.to}::timestamptz
         AND e.to_status='done'`,
     ).map(asEvent)
-    const shippedKeys = [...new Set(events.map((event) => event.taskKey))]
+    const shippedIds = [...new Set(events.map((event) => event.taskId))]
     const overlapping = rows<RawInterval>(
       await tx`
-      SELECT i.task_key, i.project_name, i.source, i.start_at, i.end_at, i.open, i.user_id,
+      SELECT t.id AS task_id, i.task_key, i.project_name, i.source, i.start_at, i.end_at, i.open, i.user_id,
         i.vendor_tokens, i.vendor_cost_usd
       FROM hub_interval i
+      LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
       WHERE i.start_at < ${window.to}::timestamptz AND i.end_at >= ${window.from}::timestamptz`,
     )
-    const earlier = shippedKeys.length
+    const earlier = shippedIds.length
       ? rows<RawInterval>(
           await tx`
-          SELECT i.task_key, i.project_name, i.source, i.start_at, i.end_at, i.open, i.user_id,
+          SELECT t.id AS task_id, i.task_key, i.project_name, i.source, i.start_at, i.end_at, i.open, i.user_id,
             i.vendor_tokens, i.vendor_cost_usd
           FROM hub_interval i
-          WHERE i.task_key IN ${tx(shippedKeys)} AND i.start_at < ${window.from}::timestamptz`,
+          JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
+          WHERE t.id IN ${tx(shippedIds)} AND i.start_at < ${window.from}::timestamptz`,
         )
       : []
     return { intervals: [...overlapping, ...earlier].map(asInterval), events }

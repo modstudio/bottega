@@ -8,6 +8,8 @@ const period = {
 }
 
 const row = (patch: Partial<HostedReportRow> = {}): HostedReportRow => ({
+  space_id: 'space-a',
+  task_id: 'task-a',
   task_key: 'DEV-785',
   project_name: 'workshop',
   start_at: '2026-09-18T10:00:00.000Z',
@@ -26,6 +28,7 @@ test('hosted report rows project task facts, unions and vendor tokens', () => {
     [
       row(),
       row({
+        task_id: null,
         task_key: null,
         task_project: null,
         task_title: null,
@@ -35,7 +38,7 @@ test('hosted report rows project task facts, unions and vendor tokens', () => {
         vendor_tokens: 999,
       }),
     ],
-    new Set(['DEV-785']),
+    new Set(['task-a']),
     period,
   )
 
@@ -56,4 +59,27 @@ test('hosted report rows project task facts, unions and vendor tokens', () => {
     agentTokens: 2_199,
   })
   expect(gathered.engagedMs).toBe(5_400_000)
+})
+
+test('hosted reports group and close equal labels by task id', () => {
+  const gathered = gatherHostedReport(
+    [
+      row({ task_id: 'task-a', space_id: 'space-a', vendor_tokens: 100 }),
+      row({
+        task_id: 'task-b',
+        space_id: 'space-b',
+        project_name: 'other-workshop',
+        task_project: 'other-workshop',
+        vendor_tokens: 200,
+      }),
+    ],
+    new Set(['task-b']),
+    period,
+  )
+
+  expect(gathered.items).toHaveLength(2)
+  expect(gathered.items.map((item) => ({ project: item.project, closed: item.closed }))).toEqual([
+    { project: 'workshop', closed: false },
+    { project: 'other-workshop', closed: true },
+  ])
 })

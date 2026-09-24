@@ -22,6 +22,7 @@ function interval(
   return {
     open: 0,
     userId: null,
+    taskId: 'task-758',
     taskKey: 'DEV-758',
     project: PLATFORM_SLUG,
     vendorTokens: 0,
@@ -32,6 +33,7 @@ function interval(
 
 function event(overrides: Partial<MeasureStatusEvent> = {}): MeasureStatusEvent {
   return {
+    taskId: 'task-758',
     taskKey: 'DEV-758',
     project: PLATFORM_SLUG,
     at: '2026-09-17T13:00:00.000Z',
@@ -311,7 +313,7 @@ describe('shipped and cycle time', () => {
       events: [
         event({ at: '2026-09-17T12:10:00.000Z' }),
         event({ at: '2026-09-17T12:50:00.000Z' }),
-        event({ taskKey: 'DEV-759', at: '2026-09-17T12:20:00.000Z' }),
+        event({ taskId: 'task-759', taskKey: 'DEV-759', at: '2026-09-17T12:20:00.000Z' }),
       ],
     }
     const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
@@ -327,6 +329,7 @@ describe('shipped and cycle time', () => {
           startAt: '2026-09-17T10:00:00.000Z',
           endAt: '2026-09-17T10:05:00.000Z',
           taskKey: 'DEV-1',
+          taskId: 'task-1',
           userId: MAYA,
         }),
         interval({
@@ -334,6 +337,7 @@ describe('shipped and cycle time', () => {
           startAt: '2026-09-17T11:00:00.000Z',
           endAt: '2026-09-17T11:05:00.000Z',
           taskKey: 'DEV-2',
+          taskId: 'task-2',
           userId: MAYA,
         }),
         interval({
@@ -341,13 +345,14 @@ describe('shipped and cycle time', () => {
           startAt: '2026-09-17T09:00:00.000Z',
           endAt: '2026-09-17T09:05:00.000Z',
           taskKey: 'DEV-3',
+          taskId: 'task-3',
           userId: MAYA,
         }),
       ],
       events: [
-        event({ taskKey: 'DEV-1', at: '2026-09-17T12:10:00.000Z' }),
-        event({ taskKey: 'DEV-2', at: '2026-09-17T12:20:00.000Z' }),
-        event({ taskKey: 'DEV-3', at: '2026-09-17T12:30:00.000Z' }),
+        event({ taskId: 'task-1', taskKey: 'DEV-1', at: '2026-09-17T12:10:00.000Z' }),
+        event({ taskId: 'task-2', taskKey: 'DEV-2', at: '2026-09-17T12:20:00.000Z' }),
+        event({ taskId: 'task-3', taskKey: 'DEV-3', at: '2026-09-17T12:30:00.000Z' }),
       ],
     }
     const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
@@ -371,6 +376,36 @@ describe('shipped and cycle time', () => {
     expect(measures.shipped.count).toBe(0)
     expect(measures.cycleTime).toBeUndefined()
     expect('cycleTime' in measures).toBe(false)
+  })
+
+  test('equal task labels in separate spaces remain separate by record id', () => {
+    const rows = {
+      intervals: [
+        interval({
+          source: 'orch',
+          startAt: '2026-09-17T10:00:00.000Z',
+          endAt: '2026-09-17T10:05:00.000Z',
+          taskId: 'task-space-a',
+          taskKey: 'DEV-1',
+        }),
+        interval({
+          source: 'orch',
+          startAt: '2026-09-17T11:00:00.000Z',
+          endAt: '2026-09-17T11:05:00.000Z',
+          taskId: 'task-space-b',
+          taskKey: 'DEV-1',
+        }),
+      ],
+      events: [
+        event({ taskId: 'task-space-a', taskKey: 'DEV-1', at: '2026-09-17T12:10:00.000Z' }),
+        event({ taskId: 'task-space-b', taskKey: 'DEV-1', at: '2026-09-17T12:20:00.000Z' }),
+      ],
+    }
+
+    const measures = computeMeasures(rows, WINDOW, { kind: 'space' })
+    if (measures.scope === 'person') throw new Error('expected space')
+    expect(measures.shipped.count).toBe(2)
+    expect(measures.cycleTime?.n).toBe(2)
   })
 
   test('a shipped task with no intervals is omitted from the cycle-time distribution', () => {

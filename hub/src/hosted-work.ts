@@ -337,6 +337,7 @@ export async function hostedTaskDetail(
       endAt: iso(row.end_at)!,
       open: number(row.open),
       userId: row.user_id,
+      taskId: String(shapedTask.id),
       taskKey: key,
       project: String(shapedTask.project),
       vendorTokens: number(row.vendor_tokens),
@@ -346,6 +347,7 @@ export async function hostedTaskDetail(
       closedAt === null
         ? []
         : statusHistory.map((row) => ({
+            taskId: String(shapedTask.id),
             taskKey: key,
             project: String(shapedTask.project),
             at: iso(row.at as SqlTime)!,
