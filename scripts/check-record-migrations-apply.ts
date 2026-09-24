@@ -12,6 +12,9 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
+const rerun = 'bun scripts/check-record-migrations-apply.ts'
+
+class CheckFailure extends Error {}
 
 function firstLine(sql: string): string {
   return (
@@ -24,6 +27,22 @@ function firstLine(sql: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function phaseFailure(phase: string, error: unknown): CheckFailure {
+  return new CheckFailure(
+    `${phase} failed: ${errorMessage(error)}. Check that @electric-sql/pglite is installed (bun install) and the migrations folder is readable, then rerun ${rerun}.`,
+  )
+}
+
+function migrationFailure(
+  migration: MigrationMeta,
+  statement: string,
+  error: unknown,
+): CheckFailure {
+  return new CheckFailure(
+    `shared/record/migrations/${migration.name}/migration.sql failed at ${JSON.stringify(firstLine(statement))}: ${errorMessage(error)}. Fix that migration (never edit a generated one; regenerate it or add a custom one per .agents/contexts/orchestrator-record.md), then rerun ${rerun}.`,
+  )
 }
 
 async function provision(database: PGlite): Promise<void> {
@@ -40,7 +59,8 @@ async function provision(database: PGlite): Promise<void> {
       id serial PRIMARY KEY,
       hash text NOT NULL,
       created_at bigint,
-      name text
+      name text,
+      applied_at timestamp with time zone DEFAULT now()
     );
   `)
 }
@@ -50,30 +70,61 @@ async function applyMigration(transaction: Transaction, migration: MigrationMeta
     try {
       await transaction.exec(chunk)
     } catch (error) {
-      throw new Error(
-        `migration ${migration.name} failed at ${JSON.stringify(firstLine(chunk))}: ${errorMessage(error)}`,
-      )
+      throw migrationFailure(migration, chunk, error)
     }
   }
-  await transaction.query(
-    'INSERT INTO drizzle.__drizzle_migrations (hash, created_at, name) VALUES ($1, $2, $3)',
-    [migration.hash, migration.folderMillis, migration.name],
-  )
+  const journalInsert =
+    'INSERT INTO drizzle.__drizzle_migrations (hash, created_at, name) VALUES ($1, $2, $3)'
+  try {
+    await transaction.query(journalInsert, [migration.hash, migration.folderMillis, migration.name])
+  } catch (error) {
+    throw migrationFailure(migration, journalInsert, error)
+  }
 }
 
 async function main(): Promise<void> {
-  const migrations = readMigrationFiles({ migrationsFolder })
-  const database = new PGlite()
+  let database: PGlite | undefined
+  let failure: unknown
+  let applied = 0
   try {
-    await database.waitReady
-    await provision(database)
-    await database.transaction(async (transaction) => {
-      for (const migration of migrations) await applyMigration(transaction, migration)
-    })
-    console.log(`record migrations apply: ${migrations.length} applied`)
+    let migrations: MigrationMeta[]
+    try {
+      migrations = readMigrationFiles({ migrationsFolder })
+    } catch (error) {
+      throw phaseFailure('reading migrations', error)
+    }
+    try {
+      database = new PGlite()
+      await database.waitReady
+    } catch (error) {
+      throw phaseFailure('starting PGlite', error)
+    }
+    try {
+      await provision(database)
+    } catch (error) {
+      throw phaseFailure('provisioning PGlite', error)
+    }
+    try {
+      await database.transaction(async (transaction) => {
+        for (const migration of migrations) await applyMigration(transaction, migration)
+      })
+    } catch (error) {
+      throw error instanceof CheckFailure ? error : phaseFailure('replaying migrations', error)
+    }
+    applied = migrations.length
+  } catch (error) {
+    failure = error
   } finally {
-    await database.close()
+    if (database) {
+      try {
+        await database.close()
+      } catch (error) {
+        failure ??= phaseFailure('closing PGlite', error)
+      }
+    }
   }
+  if (failure) throw failure
+  console.log(`record migrations apply: ${applied} applied`)
 }
 
 try {
