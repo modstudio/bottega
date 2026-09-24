@@ -1,7 +1,41 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { answeredReviewClaimable, unscoredFiledIssueLoopRuns } from './issue-dispatch.ts'
+import {
+  answeredReviewClaimable,
+  filedIssueStateForProject,
+  unscoredFiledIssueLoopRuns,
+} from './issue-dispatch.ts'
+
+test('project-scoped filed issue state keeps its project and an unregistered cwd keeps nothing', () => {
+  const state = {
+    waiting: [
+      { key: 'DEV-1', title: 'here', project: 'here' },
+      { key: 'DEV-2', title: 'elsewhere', project: 'elsewhere' },
+    ],
+    unworked: [{ key: 'DEV-3', title: null, project: 'here' }],
+    held: [
+      { runId: 1, path: '/here', why: 'held', project: 'here' },
+      { runId: 2, path: '/unknown', why: 'held', project: null },
+    ],
+    unscored: [
+      { runId: 3, job: 'diagnose', issueKey: 'DEV-1', project: 'here' },
+      { runId: 4, job: 'diagnose', issueKey: 'DEV-2', project: 'elsewhere' },
+    ],
+  }
+  expect(filedIssueStateForProject(state, 'here')).toEqual({
+    waiting: [{ key: 'DEV-1', title: 'here' }],
+    unworked: [{ key: 'DEV-3', title: null }],
+    blocked: null,
+    unscored: [{ runId: 3, job: 'diagnose', issueKey: 'DEV-1' }],
+  })
+  expect(filedIssueStateForProject(state, null)).toEqual({
+    waiting: [],
+    unworked: [],
+    blocked: null,
+    unscored: [],
+  })
+})
 
 describe('filed-issue claiming', () => {
   test('explicit-key mode accepts review with a valid seed answer but queue mode does not', () => {

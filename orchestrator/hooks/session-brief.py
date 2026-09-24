@@ -95,8 +95,10 @@ def main() -> int:
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
-        inbox_p = _start(orch, "inbox", "--all", "--active", "--json", env=inbox_env)
-        waiting_p = _start(orch, "fix-defect", "--waiting", "--json")
+        inbox_p = _start(
+            orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
+        )
+        waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
         monitor_failure = None
         if sid:
             try:
@@ -194,7 +196,17 @@ def main() -> int:
         inbox_failure = None
         if inbox.returncode == 0:
             try:
-                questions = json.loads(inbox.stdout)
+                inbox_result = json.loads(inbox.stdout)
+                if (
+                    not isinstance(inbox_result, dict)
+                    or not isinstance(inbox_result.get("cwd_registered"), bool)
+                    or (
+                        inbox_result.get("project") is not None
+                        and not isinstance(inbox_result.get("project"), str)
+                    )
+                ):
+                    raise ValueError("invalid scoped inbox JSON")
+                questions = inbox_result.get("rows")
                 if not isinstance(questions, list) or not all(
                     isinstance(item, dict)
                     and item.get("session_liveness") in ("live", "unknown")
@@ -230,7 +242,17 @@ def main() -> int:
         waiting_failure = None
         if waiting.returncode == 0:
             try:
-                issue_state = json.loads(waiting.stdout)
+                waiting_result = json.loads(waiting.stdout)
+                if (
+                    not isinstance(waiting_result, dict)
+                    or not isinstance(waiting_result.get("cwd_registered"), bool)
+                    or (
+                        waiting_result.get("project") is not None
+                        and not isinstance(waiting_result.get("project"), str)
+                    )
+                ):
+                    raise ValueError("invalid scoped filed issue waiting JSON")
+                issue_state = waiting_result.get("state")
                 if not isinstance(issue_state, dict):
                     raise ValueError("invalid filed issue waiting JSON")
                 waiting_issues = issue_state.get("waiting")

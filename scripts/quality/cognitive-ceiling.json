@@ -681,8 +681,8 @@
   {
     "file": "orchestrator/src/run/run-inbox.ts",
     "function": "runInboxCommand",
-    "line": 31,
-    "score": 84,
+    "line": 68,
+    "score": 81,
     "key": "orchestrator/src/run/run-inbox.ts\u0000runInboxCommand"
   },
   {

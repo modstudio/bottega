@@ -3,25 +3,47 @@
 import { db } from '../database/db.ts'
 import { dispatchFiledIssues, filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { fileNote } from '../mcp/mcp.ts'
+import { projectAt } from '../project/projects.ts'
 import { searchRecords } from '../search.ts'
 import { state } from '../state/serve.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
 
+async function fixDefectWaitingResult(cwd?: string): Promise<{
+  state: Awaited<ReturnType<typeof filedIssueQueueState>>
+  json: string
+}> {
+  if (cwd === undefined) {
+    const state = await filedIssueQueueState()
+    return { state, json: JSON.stringify(state) }
+  }
+  const project = projectAt(cwd)
+  const state = await filedIssueQueueState(project?.name ?? null)
+  return {
+    state,
+    json: JSON.stringify({
+      cwd_registered: project !== null,
+      project: project?.name ?? null,
+      state,
+    }),
+  }
+}
+
 export async function fixDefectCommand(
   key: string | undefined,
-  options: { waiting: boolean; json: boolean },
+  options: { waiting: boolean; json: boolean; cwd?: string },
   presentation: Presentation,
 ): Promise<void> {
   if (options.waiting) {
-    const state = await filedIssueQueueState()
-    if (options.json) presentation.log(JSON.stringify(state))
+    const result = await fixDefectWaitingResult(options.cwd)
+    if (options.json) presentation.log(result.json)
     else
-      for (const issue of state.waiting)
+      for (const issue of result.state.waiting)
         presentation.log(`${issue.key}  ${issue.title ?? ''}`.trimEnd())
     return
   }
   if (options.json) throw new Error('--json requires --waiting')
+  if (options.cwd !== undefined) throw new Error('--cwd requires --waiting')
   if (await dispatchFiledIssues(key)) presentation.setExitCode(1)
 }
 
