@@ -46,7 +46,7 @@ const recordSession = memoryRecordSession()
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
-const actorUrl = process.env.ORCH_RECORD_URL
+const { ORCH_RECORD_URL: actorUrl, RECORD_AUTH_DATABASE_URL: authUrl } = process.env
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
@@ -88,7 +88,7 @@ realPostgres('RLS proof against real Postgres', () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
     process.env.RECORD_HUB_URL = 'https://hub.example.test'
-    invitationAuth = recordAuth(actorUrl!, process.env, undefined, undefined, async (input) => {
+    invitationAuth = recordAuth(actorUrl!, process.env, authUrl, undefined, async (input) => {
       invitationEmails.push(input)
     })
     invitationClient = invitationApiClient(invitationAuth, recordSession.token)

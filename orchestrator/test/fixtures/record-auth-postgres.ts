@@ -150,7 +150,7 @@ export function registerInvitationAuthProofs(
 
 function registerNewInviteeInvitationProofs(actorUrl: string, password: string): void {
   const createInvitee = async (email: string) => {
-    const auth = recordAuth(actorUrl)
+    const auth = recordAuth(actorUrl, process.env, process.env.RECORD_AUTH_DATABASE_URL)
     const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
     if (!owner.token) throw new Error('owner sign-in has no bearer token')
     const ownerSession = await auth.api.getSession({ headers: bearerHeaders(owner.token) })
