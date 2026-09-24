@@ -7,6 +7,7 @@ import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.t
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
 
 export const RECORD_WRITE_REMEDY = 'cleared by: orch record doctor'
+export const MISSING_HOSTED_REVISION_REMEDY = 'cleared by: orch record migrate'
 
 export type DocDelivery = 'inject' | 'demand'
 export type DocRevisionOp =
@@ -50,8 +51,8 @@ export function decideDocRevisionWrite(input: {
     return {
       allow: false,
       reason:
-        'refusing canon write: this row has no hosted revision id, so its revision cannot be checked; ' +
-        'this is unexpected and should be reported',
+        "refusing canon write: this hosted row's latest revision is missing, so its revision cannot be checked\n" +
+        MISSING_HOSTED_REVISION_REMEDY,
     }
   }
   if (input.isCreate && input.expected === undefined) return { allow: true }

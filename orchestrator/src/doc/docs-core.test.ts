@@ -130,7 +130,8 @@ describe('scoped operator docs', () => {
     await expect(
       deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
     ).rejects.toThrow(
-      'this row has no hosted revision id, so its revision cannot be checked; this is unexpected and should be reported',
+      "this hosted row's latest revision is missing, so its revision cannot be checked\n" +
+        'cleared by: orch record migrate',
     )
   })
 

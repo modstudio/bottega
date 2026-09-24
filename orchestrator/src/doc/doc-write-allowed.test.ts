@@ -110,8 +110,8 @@ describe('decideDocRevisionWrite', () => {
     expect(decision).toEqual({
       allow: false,
       reason:
-        'refusing canon write: this row has no hosted revision id, so its revision cannot be checked; ' +
-        'this is unexpected and should be reported',
+        "refusing canon write: this hosted row's latest revision is missing, so its revision cannot be checked\n" +
+        'cleared by: orch record migrate',
     })
     if (!decision.allow) expect(decision.reason).not.toContain('--expect')
   })
