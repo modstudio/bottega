@@ -602,8 +602,28 @@ export const importBoundaries: ImportBoundary[] = [
       './record-projects.ts',
       './record-runs.ts',
       './record-runs-window-query.ts',
+      './record-api-projects.ts',
     ],
     'Enforce the record-api concern boundary.',
+  ),
+  boundary(
+    'record-api-projects-boundary',
+    'orchestrator/src/record/record-api-projects.ts',
+    ['hono', 'zod', './record-auth.ts', './record-projects.ts'],
+    'Keep hosted project routes independent of SQL and local execution.',
+  ),
+  boundary(
+    'record-project-columns-boundary',
+    'orchestrator/src/record/record-project-columns.ts',
+    [],
+    'Keep the hosted project column mapping pure and independent of SQL, HTTP, and stores.',
+    ['../project/projects.ts'],
+  ),
+  boundary(
+    'record-project-write-boundary',
+    'orchestrator/src/record/record-project-write.ts',
+    [],
+    'Keep the hosted project rename decision pure and independent of SQL, HTTP, and stores.',
   ),
   boundary(
     'record-api-client-boundary',

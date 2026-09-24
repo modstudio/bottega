@@ -14,15 +14,17 @@ import {
   type ProjectSettings,
   projectByName,
   projects,
-  removeProject,
+  pushProjects,
+  removeWrittenProject,
   renameProject,
   retiredProjectByName,
-  retireProject,
+  retireWrittenProject,
   sniffStack,
-  unretireProject,
+  unretireWrittenProject,
   upsertProject,
   validateProjectSettings,
   worktreeWarnings,
+  writeHostedProject,
 } from './projects.ts'
 
 type ProjectFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -158,6 +160,7 @@ async function addProjectCommand(
   if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const wasRetired = Boolean(retiredProjectByName(name))
+  await writeHostedProject(candidate)
   upsertProject(candidate)
   if (has('json')) {
     presentation.log(JSON.stringify(projectByName(name)))
@@ -175,19 +178,19 @@ async function addProjectCommand(
   }
 }
 
-function retireProjectCommand(
+async function retireProjectCommand(
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-): void {
+): Promise<void> {
   const name = argv[2]
   if (!name) throw new Error('orch project retire <name> [--undo]')
   if (flags.has('undo')) {
-    unretireProject(name)
+    await unretireWrittenProject(name)
     presentation.log(`un-retired ${name}`)
     return
   }
-  const outcome = retireProject(name)
+  const outcome = await retireWrittenProject(name)
   presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
 }
 
@@ -290,6 +293,10 @@ export async function projectCommand(
     )
     if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
     assertRegisterBranches(candidate)
+    await writeHostedProject({
+      ...candidate,
+      previousName: nextName !== name ? name : undefined,
+    })
     if (nextName !== name) await renameProject(name, nextName)
     const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
     const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
@@ -378,14 +385,26 @@ export async function projectCommand(
   if (sub === 'remove') {
     const name = argv[2]
     if (!name) throw new Error('orch project remove <name>')
-    presentation.log(removeProject(name) ? `removed ${name}` : `no project "${name}"`)
+    presentation.log(
+      (await removeWrittenProject(name)) ? `removed ${name}` : `no project "${name}"`,
+    )
     return
   }
 
   if (sub === 'retire') {
-    retireProjectCommand(argv, flags, presentation)
+    await retireProjectCommand(argv, flags, presentation)
     return
   }
 
-  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove | retire`)
+  if (sub === 'push') {
+    const names = await pushProjects()
+    if (has('json')) {
+      presentation.log(JSON.stringify(names))
+      return
+    }
+    presentation.log(`pushed ${names.length} project${names.length === 1 ? '' : 's'}`)
+    return
+  }
+
+  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove | retire | push`)
 }

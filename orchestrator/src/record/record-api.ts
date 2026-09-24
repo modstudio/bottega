@@ -7,6 +7,7 @@ import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   ConfigEntry,
@@ -25,7 +26,11 @@ import type {
   RecordDocRevision,
 } from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
-import type { RecordProject } from './record-projects.ts'
+import {
+  type RecordProject,
+  RecordProjectError,
+  type RecordProjectUpsertInput,
+} from './record-projects.ts'
 import type {
   RecordCursor,
   RecordRun,
@@ -75,6 +80,8 @@ type Deps = {
   ): Promise<Record<string, unknown>[]>
   readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
   readProjects(input: Tenant): Promise<RecordProject[]>
+  upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ name: string }>
+  retireProject(input: Tenant & { name: string }): Promise<{ name: string }>
   listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
   readDoc(input: Tenant & { id: string }): Promise<RecordDoc | null>
   listDocRevisions(input: Tenant & { id: string }): Promise<RecordDocRevision[] | null>
@@ -426,20 +433,18 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const review = await deps.readReview({ ...tenant, id: id.data })
     return review ? context.json(review) : context.json({ error: 'review not found' }, 404)
   })
-  app.get('/v1/projects', async (context) => {
-    const tenant = scope(context)
-    return tenant ? context.json(await deps.readProjects(tenant)) : noSpace(context)
-  })
   const writeError = (context: Context<ApiEnvironment>, error: unknown) => {
     if (
       error instanceof RecordDocError ||
       error instanceof RecordVerdictError ||
-      error instanceof ConfigServiceError
+      error instanceof ConfigServiceError ||
+      error instanceof RecordProjectError
     ) {
       return context.json({ error: error.message }, error.status)
     }
     throw error
   }
+  registerRecordProjectRoutes(app, deps, { scope, noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({

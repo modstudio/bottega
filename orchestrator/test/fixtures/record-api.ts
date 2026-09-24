@@ -366,6 +366,12 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       revisions.set(id, list)
       return { id, revisionId }
     },
+    async upsertProject(input) {
+      return { name: input.name }
+    },
+    async retireProject(name) {
+      return { name }
+    },
     async renameSubject(input) {
       const matchingDocs = [...docs.values()].filter((doc) => doc.subject === input.from)
       const matchingRevisions = [...revisions.values()]

@@ -419,6 +419,42 @@ export function upsertProject(p: {
     )
 }
 
+export async function writeHostedProject(p: {
+  name: string
+  previousName?: string
+  path: string
+  stack?: string | null
+  canon?: boolean
+  settings?: ProjectSettings
+  retiredAt?: string | null
+}): Promise<void> {
+  await recordApiClient().upsertProject({
+    name: p.name,
+    previousName: p.previousName,
+    path: p.path.replace(/\/$/, ''),
+    stack: p.stack ?? null,
+    canon: Boolean(p.canon),
+    settings: p.settings ?? {},
+    retiredAt: p.retiredAt ?? null,
+  })
+}
+
+export async function pushProjects(): Promise<string[]> {
+  const names: string[] = []
+  for (const project of [...projects(), ...projects({ retired: true })]) {
+    await writeHostedProject({
+      name: project.name,
+      path: project.path,
+      stack: project.stack,
+      canon: project.canon,
+      settings: project.settings,
+      retiredAt: project.retiredAt,
+    })
+    names.push(project.name)
+  }
+  return names
+}
+
 /** Change only the hosted-record destination read by sync. */
 export function setProjectRecordSpace(name: string, space: string): void {
   const project = projectByName(name)
@@ -535,6 +571,15 @@ export function removeProject(name: string): boolean {
   return db().query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
 }
 
+export async function removeWrittenProject(name: string): Promise<boolean> {
+  const project = projectByName(name)
+  if (!project) return false
+  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
+  if (refusal) throw new Error(refusal.join('\n'))
+  await recordApiClient().retireProject(name)
+  return removeProject(name)
+}
+
 export function retireProject(name: string): 'retired' | 'already-retired' {
   writableDb()
   const project = projectRowByName(name)
@@ -544,6 +589,13 @@ export function retireProject(name: string): 'retired' | 'already-retired' {
   return 'retired'
 }
 
+export async function retireWrittenProject(name: string): Promise<'retired' | 'already-retired'> {
+  const project = projectRowByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  await recordApiClient().retireProject(name)
+  return retireProject(name)
+}
+
 export function unretireProject(name: string): boolean {
   writableDb()
   const project = projectRowByName(name)
@@ -551,6 +603,20 @@ export function unretireProject(name: string): boolean {
   if (!project.retiredAt) return false
   db().query('UPDATE project SET retired_at=NULL WHERE id=?').run(project.id)
   return true
+}
+
+export async function unretireWrittenProject(name: string): Promise<boolean> {
+  const project = projectRowByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  await writeHostedProject({
+    name: project.name,
+    path: project.path,
+    stack: project.stack,
+    canon: project.canon,
+    settings: project.settings,
+    retiredAt: null,
+  })
+  return unretireProject(name)
 }
 
 /**

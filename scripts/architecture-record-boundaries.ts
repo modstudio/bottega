@@ -81,7 +81,13 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-projects-boundary',
     'orchestrator/src/record/record-projects.ts',
-    ['bun', '../../../shared/record/tenant.ts'],
+    [
+      'bun',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/tenant.ts',
+      './record-project-columns.ts',
+      './record-project-write.ts',
+    ],
     'Keep hosted project record access isolated from other production modules.',
   ),
   boundary(
