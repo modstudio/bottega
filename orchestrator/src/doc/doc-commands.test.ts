@@ -116,6 +116,8 @@ describe('scoped operator docs', () => {
           'ref',
           'set',
           'TGT-7',
+          '--project',
+          'target-invented',
           '--sources',
           sources,
           '--note',
@@ -123,12 +125,21 @@ describe('scoped operator docs', () => {
         ])
       ).code,
     ).toBe(0)
-    expect((await command(['port', 'ref', 'resolve', 'TGT-7', '--json'])).code).toBe(0)
-    expect(ledgerRef('TGT-7')).toMatchObject({ task_key: 'TGT-7', resolved_at: expect.any(String) })
+    expect(
+      (await command(['port', 'ref', 'resolve', 'TGT-7', '--project', 'target-invented', '--json']))
+        .code,
+    ).toBe(0)
+    expect(ledgerRef(pair.target_project_id, 'TGT-7')).toMatchObject({
+      task_key: 'TGT-7',
+      resolved_at: expect.any(String),
+    })
     expect(listLedgerRefs()).toEqual([])
     expect(listLedgerRefs(true)).toHaveLength(1)
-    expect((await command(['port', 'ref', 'delete-error', 'TGT-7'])).code).toBe(0)
-    expect(ledgerRef('TGT-7')).toBeNull()
+    expect(
+      (await command(['port', 'ref', 'delete-error', 'TGT-7', '--project', 'target-invented']))
+        .code,
+    ).toBe(0)
+    expect(ledgerRef(pair.target_project_id, 'TGT-7')).toBeNull()
 
     expect(
       (
@@ -143,7 +154,7 @@ describe('scoped operator docs', () => {
     expect(listDoctrineRules(true)).toMatchObject([{ number: 4, retired_at: expect.any(String) }])
   }, 20_000)
 
-  test('orch port refuses unknown registered project names and task prefixes', async () => {
+  test('orch port refuses unknown registered project names', async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     const unknown = await command(['port', 'baseline', 'show', 'source-invented', 'missing'])
     expect(unknown.code).toBe(1)
@@ -156,13 +167,15 @@ describe('scoped operator docs', () => {
       'ref',
       'set',
       'NONE-1',
+      '--project',
+      'missing',
       '--sources',
       sources,
       '--note',
       '',
     ])
     expect(prefix.code).toBe(1)
-    expect(prefix.err).toContain('no registered project owns task key')
+    expect(prefix.err).toContain('unknown project "missing"')
   })
 
   test('nested command errors name the recognized group and list its verbs', async () => {
@@ -234,6 +247,7 @@ describe('scoped operator docs', () => {
         name: 'set_port_ledger_ref',
         arguments: {
           task_key: 'TGT-8',
+          project: 'target-invented',
           note: 'native',
           sources: [
             { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
@@ -242,7 +256,7 @@ describe('scoped operator docs', () => {
       })
       const resolved = await client.callTool({
         name: 'resolve_port_ledger_ref',
-        arguments: { task_key: 'TGT-8' },
+        arguments: { project: 'target-invented', task_key: 'TGT-8' },
       })
       expect(value(resolved)).toMatchObject({ task_key: 'TGT-8', resolved_at: expect.any(String) })
       const active = await client.callTool({ name: 'list_port_ledger_refs', arguments: {} })

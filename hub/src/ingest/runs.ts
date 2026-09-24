@@ -1,5 +1,5 @@
 import type { OrchRun } from '../../../shared/orch-contract.ts'
-import { attributeRun } from '../attribute.ts'
+import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { readRuns } from '../orch.ts'
 
@@ -41,6 +41,7 @@ export function chainVendorTokens(r: OrchRun): number | null {
 }
 
 export async function ingestRuns(since: string): Promise<{ rows: number; skipped: number }> {
+  refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
   const snapshot = nowIso()

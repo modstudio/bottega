@@ -196,7 +196,7 @@ async function hub(args: string[]): Promise<string> {
 }
 
 async function comment(key: string, body: string) {
-  await hub(['task', 'comment', key, body])
+  await hub(['task', 'comment', key, body, '--project', PLATFORM_SLUG])
 }
 
 async function handoff(key: string, title: string, body: string) {
@@ -204,7 +204,9 @@ async function handoff(key: string, title: string, body: string) {
   const path = join(dir, 'body.md')
   try {
     writeFileSync(path, body)
-    const documents = JSON.parse(await hub(['task', 'doc', 'list', key, '--json'])) as {
+    const documents = JSON.parse(
+      await hub(['task', 'doc', 'list', key, '--project', PLATFORM_SLUG, '--json']),
+    ) as {
       id: number
       role: string | null
     }[]
@@ -233,6 +235,8 @@ async function handoff(key: string, title: string, body: string) {
         'doc',
         'new',
         key,
+        '--project',
+        PLATFORM_SLUG,
         '--title',
         title,
         '--role',
@@ -638,7 +642,7 @@ async function recordIssueFailure(
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
 export async function workIssue(key: string): Promise<void> {
   const started = Date.now()
-  const shown = JSON.parse(await hub(['task', 'show', key, '--json']))
+  const shown = JSON.parse(await hub(['task', 'show', key, '--project', PLATFORM_SLUG, '--json']))
   const issue = parseFiledIssue(shown)
   const priorRecord = await priorIssueRecord(shown)
   if (issue.kind !== 'defect') {

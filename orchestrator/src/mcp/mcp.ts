@@ -811,9 +811,9 @@ export function createDocsMcpServer(): McpServer {
     'get_port_ledger_ref',
     {
       description: 'Look up the source provenance recorded for a target task key.',
-      inputSchema: { task_key: z.string() },
+      inputSchema: { project: z.string(), task_key: z.string() },
     },
-    async ({ task_key }) => text(ledgerRef(task_key)),
+    async ({ project, task_key }) => text(ledgerRef(registeredProject(project).id, task_key)),
   )
 
   server.registerTool(
@@ -822,14 +822,16 @@ export function createDocsMcpServer(): McpServer {
       description: 'Record source projects, commits, paths, and notes for a staged target task.',
       inputSchema: {
         task_key: z.string(),
+        project: z.string(),
         note: z.string(),
         sources: z.array(ledgerSourceSchema).min(1),
       },
     },
-    async ({ task_key, note, sources }) =>
+    async ({ project, task_key, note, sources }) =>
       text(
         setLedgerRef({
           taskKey: task_key,
+          targetProjectId: registeredProject(project).id,
           note,
           sources: sources.map((source) => ({
             source_project_id: registeredProject(source.project).id,
@@ -845,11 +847,11 @@ export function createDocsMcpServer(): McpServer {
     'resolve_port_ledger_ref',
     {
       description: 'Mark a staged target task resolved while preserving its source provenance.',
-      inputSchema: { task_key: z.string() },
+      inputSchema: { project: z.string(), task_key: z.string() },
     },
-    async ({ task_key }) => {
-      const ref = resolveLedgerRef(task_key)
-      if (!ref) throw new Error(`no port ledger ref for task "${task_key}"`)
+    async ({ project, task_key }) => {
+      const ref = resolveLedgerRef(registeredProject(project).id, task_key)
+      if (!ref) throw new Error(`no port ledger ref for task "${project}:${task_key}"`)
       return text(ref)
     },
   )
@@ -859,9 +861,10 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Correction only: permanently delete a port ledger ref that was recorded in error.',
-      inputSchema: { task_key: z.string() },
+      inputSchema: { project: z.string(), task_key: z.string() },
     },
-    async ({ task_key }) => text({ removed: removeLedgerRef(task_key) }),
+    async ({ project, task_key }) =>
+      text({ removed: removeLedgerRef(registeredProject(project).id, task_key) }),
   )
 
   server.registerTool(

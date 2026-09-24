@@ -3,10 +3,24 @@ import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from './migrations.ts'
 import {
   formatTaskIdentityDoctor,
+  observedTaskKeyPrefixes,
   resolveTask,
   taskIdentityDecision,
   taskIdentityDoctor,
 } from './task-identity.ts'
+
+test('observed task prefixes include task rows and claim-only identities', () => {
+  const conn = new Database(':memory:')
+  applyMigrations(conn)
+  conn.exec(`
+    INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+    VALUES ('task-record','B2B-40','alpha','mcp','2026-01-01','2026-01-01');
+    INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen)
+    VALUES ('beta','claim-only','CLM-41','2026-01-01','2026-01-01');
+  `)
+  expect(observedTaskKeyPrefixes(conn).sort()).toEqual(['B2B', 'CLM'])
+  conn.close()
+})
 
 describe('resolveTask', () => {
   test('resolves one cached task and a project scope among shared claims', () => {

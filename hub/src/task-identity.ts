@@ -1,6 +1,22 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 
+const TASK_KEY_PREFIX_SOURCE = '[A-Z][A-Z0-9]*'
+const TASK_KEY_PATTERN = new RegExp(`^(${TASK_KEY_PREFIX_SOURCE})-\\d+$`)
+const TASK_KEY_PREFIX_PATTERN = new RegExp(`^${TASK_KEY_PREFIX_SOURCE}$`)
+
+export function isTaskKeyPrefix(value: string): boolean {
+  return TASK_KEY_PREFIX_PATTERN.test(value)
+}
+
+/** Prefixes observed in canonical task identity storage. */
+export function observedTaskKeyPrefixes(conn: Database = db()): string[] {
+  return conn
+    .query<{ key: string }, []>(`SELECT key FROM task UNION SELECT key FROM task_identity_claim`)
+    .all()
+    .flatMap(({ key }) => key.toUpperCase().match(TASK_KEY_PATTERN)?.[1] ?? [])
+}
+
 export const taskIdentityRelationships = [
   { table: 'task', keyColumn: 'parent_key', recordColumn: 'parent_record_id' },
   { table: 'task_comment', keyColumn: 'task_key', recordColumn: 'task_record_id' },

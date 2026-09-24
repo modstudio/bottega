@@ -294,8 +294,9 @@ export async function portCommand(
       return
     }
     for (const row of rows) {
+      const target = projects().find((project) => project.id === row.target_project_id)
       log(
-        `${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
+        `${target?.name ?? `project:${row.target_project_id}`} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
       )
     }
     return
@@ -303,9 +304,12 @@ export async function portCommand(
 
   if (group === 'ref' && action === 'show') {
     const taskKey = argv[3]
-    if (!taskKey) throw new Error('orch port ref show <task-key> [--json]')
-    const ref = ledgerRef(taskKey)
-    if (!ref) throw new Error(`no port ledger ref for task "${taskKey}"`)
+    const projectName = flag('project')
+    if (!taskKey || !projectName)
+      throw new Error('orch port ref show <task-key> --project PROJECT [--json]')
+    const target = namedProject(projectName)
+    const ref = ledgerRef(target.id, taskKey)
+    if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     if (has('json')) {
       log(JSON.stringify(ref))
       return
@@ -328,8 +332,11 @@ export async function portCommand(
     const taskKey = argv[3]
     const sourceJson = flag('sources')
     const note = flag('note')
-    if (!taskKey || sourceJson === undefined || note === undefined) {
-      throw new Error('orch port ref set <task-key> --sources JSON --note TEXT [--json]')
+    const projectName = flag('project')
+    if (!taskKey || !projectName || sourceJson === undefined || note === undefined) {
+      throw new Error(
+        'orch port ref set <task-key> --project PROJECT --sources JSON --note TEXT [--json]',
+      )
     }
     let raw: unknown
     try {
@@ -364,29 +371,38 @@ export async function portCommand(
         note: source.note,
       }
     })
-    const ref = setLedgerRef({ taskKey, note, sources })
+    const ref = setLedgerRef({
+      taskKey,
+      targetProjectId: namedProject(projectName).id,
+      note,
+      sources,
+    })
     output(ref, `recorded provenance for ${taskKey} from ${sources.length} source project(s)`)
     return
   }
 
   if (group === 'ref' && action === 'resolve') {
     const taskKey = argv[3]
-    if (!taskKey) throw new Error('orch port ref resolve <task-key> [--json]')
-    const ref = resolveLedgerRef(taskKey)
-    if (!ref) throw new Error(`no port ledger ref for task "${taskKey}"`)
+    const projectName = flag('project')
+    if (!taskKey || !projectName)
+      throw new Error('orch port ref resolve <task-key> --project PROJECT [--json]')
+    const ref = resolveLedgerRef(namedProject(projectName).id, taskKey)
+    if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
     return
   }
 
   if (group === 'ref' && action === 'delete-error') {
     const taskKey = argv[3]
-    if (!taskKey) throw new Error('orch port ref delete-error <task-key> [--json]')
-    const removed = removeLedgerRef(taskKey)
+    const projectName = flag('project')
+    if (!taskKey || !projectName)
+      throw new Error('orch port ref delete-error <task-key> --project PROJECT [--json]')
+    const removed = removeLedgerRef(namedProject(projectName).id, taskKey)
     output(
       { removed },
       removed
         ? `permanently deleted erroneous ledger ref ${taskKey}`
-        : `no port ledger ref for task "${taskKey}"`,
+        : `no port ledger ref for task "${projectName}:${taskKey}"`,
     )
     return
   }

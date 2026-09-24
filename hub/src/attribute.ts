@@ -1,16 +1,35 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { db } from './db.ts'
 import type { OrchRun } from './ingest/runs.ts'
 import { type Project, projectRoot, projects } from './projects.ts'
+import { isTaskKeyPrefix, observedTaskKeyPrefixes, taskIdentityDecision } from './task-identity.ts'
 
-/** Every ticket key this estate issues, resolved only when attribution first needs it. */
-function keyPrefixes(): string {
-  return [...new Set(projects().flatMap((project) => project.settings.keyPrefixes ?? []))]
-    .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|')
+/** Every ticket prefix registered or observed in this process's attribution pass. */
+let cachedKeyPrefixes: string | null = null
+
+/** Start a new attribution pass by snapshotting the current backing store. */
+export function refreshKeyPrefixes(): void {
+  cachedKeyPrefixes = null
 }
 
-/** A fresh bare-ticket matcher; constructing it is what lazily reads the register. */
+function keyPrefixes(): string {
+  if (cachedKeyPrefixes !== null) return cachedKeyPrefixes
+
+  cachedKeyPrefixes = [
+    ...new Set([
+      ...projects().flatMap((project) => project.settings.keyPrefixes ?? []),
+      ...observedTaskKeyPrefixes(db()),
+    ]),
+  ]
+    .map((prefix) => prefix.toUpperCase())
+    .filter(isTaskKeyPrefix)
+    .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  return cachedKeyPrefixes
+}
+
+/** A fresh bare-ticket matcher over the pass-cached recognizable prefixes. */
 export function keyPattern(): RegExp {
   const keys = keyPrefixes()
   return new RegExp(keys ? `\\b(?:${keys})-\\d+` : '(?!)', 'g')
@@ -84,15 +103,9 @@ export function projectOf(cwd: string | undefined | null): Project | null {
   return projects().find((project) => project.name === clone)?.name ?? null
 }
 
-/** Which project issues a given key, or null if no prefix claims it. */
-export function projectOfKey(key: string): Project | null {
-  const prefix = key.split('-')[0]!.toUpperCase()
-  for (const project of projects()) {
-    if ((project.settings.keyPrefixes ?? []).map((value) => value.toUpperCase()).includes(prefix)) {
-      return project.name
-    }
-  }
-  return null
+/** Whether the already-known project's tracker has issued this key. */
+function keyBelongsToProject(key: string, project: Project): boolean {
+  return !('none' in taskIdentityDecision(db(), key, project))
 }
 
 export type Attribution = {
@@ -135,6 +148,20 @@ export function isInjected(text: string): boolean {
   return INJECTED.some((m) => text.includes(m))
 }
 
+function taskKeyFrom(
+  texts: string[],
+  project: Project | null,
+  skipInjected: boolean,
+): string | null {
+  for (const text of texts) {
+    if (skipInjected && isInjected(text)) continue
+    const key = text.match(keyPattern())?.[0]?.toUpperCase()
+    if (!key) continue
+    if (!project || keyBelongsToProject(key, project)) return key
+  }
+  return null
+}
+
 /**
  * Decide the task a span of work belongs to.
  *
@@ -152,34 +179,30 @@ export function attribute(input: {
   commitSubjects?: string[]
   prompts?: string[]
 }): Attribution {
-  const project = projectOf(input.cwd)
+  return attributeForProject(input, projectOf(input.cwd))
+}
 
+function attributeForProject(
+  input: {
+    cwd?: string | null
+    commitSubjects?: string[]
+    prompts?: string[]
+  },
+  project: Project | null,
+): Attribution {
   const fromWorktree = input.cwd ? keyFromWorktree(input.cwd) : null
   if (fromWorktree) {
-    return { project: projectOfKey(fromWorktree) ?? project, key: fromWorktree, via: 'worktree' }
+    return { project, key: fromWorktree, via: 'worktree' }
   }
 
-  for (const subject of input.commitSubjects ?? []) {
-    const m = subject.match(keyPattern())
-    if (m?.[0]) {
-      const key = m[0].toUpperCase()
-      return { project: projectOfKey(key) ?? project, key, via: 'commit' }
-    }
-  }
+  const fromCommit = taskKeyFrom(input.commitSubjects ?? [], project, false)
+  if (fromCommit) return { project, key: fromCommit, via: 'commit' }
 
-  for (const prompt of input.prompts ?? []) {
-    if (isInjected(prompt)) continue
-    const m = prompt.match(keyPattern())
-    if (m?.[0]) {
-      const key = m[0].toUpperCase()
-      // A key from prose only counts when it belongs to the repo the work was
-      // happening in. Cross-project chatter is common — a session in one project
-      // discussing another project's ticket is not time spent on that ticket.
-      const owner = projectOfKey(key)
-      if (project && owner && owner !== project) continue
-      return { project: owner ?? project, key, via: 'prompt' }
-    }
-  }
+  // A key from prose only counts when it belongs to the repo the work was
+  // happening in. Cross-project chatter is common — a session in one project
+  // discussing another project's ticket is not time spent on that ticket.
+  const fromPrompt = taskKeyFrom(input.prompts ?? [], project, true)
+  if (fromPrompt) return { project, key: fromPrompt, via: 'prompt' }
 
   return { project, key: null, via: null }
 }
@@ -224,8 +247,7 @@ export function keyFromBranch(
   const m = branch.match(worktreeKeyPattern())
   if (!m) return null
   const key = `${m[1]!.toUpperCase()}-${m[2]}`
-  const owner = projectOfKey(key)
-  if (project && owner && owner !== project) return null
+  if (project && !keyBelongsToProject(key, project)) return null
   return key
 }
 
@@ -241,8 +263,7 @@ function keyFromPromptFile(
       const k = m[0]!.toUpperCase()
       // The same ownership rule prose keys already follow: a run in one project
       // mentioning an AB ticket is chatter, not time spent on it.
-      const owner = projectOfKey(k)
-      if (project && owner && owner !== project) continue
+      if (project && !keyBelongsToProject(k, project)) continue
       key = k
       break
     }
@@ -259,20 +280,20 @@ function keyFromPromptFile(
  * taskRecord reads this decision downstream through interval.task_key.
  */
 export function attributeRun(run: OrchRun): Attribution {
+  const project = run.repo ?? projectOf(run.cwd)
   const launchKey =
     typeof run.launch_key === 'string' && run.launch_key.trim()
       ? run.launch_key.trim().toUpperCase()
       : null
   if (launchKey) {
-    const project = projectOf(run.cwd)
     return {
-      project: projectOfKey(launchKey) ?? project,
+      project,
       key: launchKey,
       via: 'launch_key',
     }
   }
 
-  const result = attribute({ cwd: run.cwd, prompts: [run.prompt_head] })
+  const result = attributeForProject({ cwd: run.cwd, prompts: [run.prompt_head] }, project)
   if (!result.key) {
     const branch = keyFromBranch(run.branch, result.project)
     if (branch) return { ...result, key: branch, via: 'branch' }

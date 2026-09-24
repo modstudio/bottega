@@ -1,6 +1,6 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { keyPattern, projectOfKey } from '../attribute.ts'
+import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
 import { hostedMirrorTasks } from '../task-client.ts'
@@ -66,6 +66,7 @@ function blank(): DayActivity {
  * depth.
  */
 function scanGit(since: string) {
+  refreshKeyPrefixes()
   const days = new Map<string, DayActivity>()
   const tasks = new Map<string, GitTask>()
   const commits: { sha: string; repo: string; key: string; at: string }[] = []
@@ -111,7 +112,7 @@ function scanGit(since: string) {
           } else {
             tasks.set(key, {
               key,
-              project: projectOfKey(key) ?? repo,
+              project: repo,
               first: d,
               last: d,
               commits: 1,

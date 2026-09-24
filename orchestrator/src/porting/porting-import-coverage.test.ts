@@ -47,7 +47,7 @@ describe('port importer', () => {
           notes: 'Native notes.',
         },
         'BET-8': {
-          source: 'alpha-invented + beta-invented',
+          source: 'alpha-invented + gamma-invented',
           commits: ['def'],
           paths: ['src/b.ts'],
           notes: 'Two sources.',
@@ -55,6 +55,12 @@ describe('port importer', () => {
       }),
     })
     const state = JSON.parse(files.state)
+    state.pairs['gamma-invented->beta-invented'] = {
+      lastPortedSha: 'def',
+      scannedAt: '2026-01-02',
+      skipped: [],
+    }
+    files.state = JSON.stringify(state)
     const projectNames = [
       ...new Set(Object.keys(state.pairs).flatMap((pair) => pair.split('->'))),
     ] as string[]

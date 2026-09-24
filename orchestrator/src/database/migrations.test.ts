@@ -71,6 +71,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0044_workflow_cursor_autonomy',
       '0045_question_delivery',
       '0046_unvoid_audit',
+      '0047_project_task_identity',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -87,6 +88,59 @@ test('agent operator migration preserves cost facts and the routing free set', (
       { name: 'unexpected-local', billing: 'none', operated_by: 'self' },
       { name: 'unexpected-unknown', billing: 'unknown', operated_by: 'vendor' },
     ])
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
+test('project task identity migration backfills ledger project relationships', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-project-task-identity-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const identityMigration = journal.findIndex((entry) => entry.tag === '0047_project_task_identity')
+  const prior = journal.slice(0, identityMigration)
+  for (const entry of prior) {
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  }
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    const project = database
+      .query(
+        `INSERT INTO project (name,path,canon,settings) VALUES ('target','/target',1,'{}')
+         RETURNING id`,
+      )
+      .get() as { id: number }
+    const source = database
+      .query(
+        `INSERT INTO project (name,path,canon,settings) VALUES ('source','/source',1,'{}')
+         RETURNING id`,
+      )
+      .get() as { id: number }
+    database
+      .query(
+        `INSERT INTO port_ref (task_key,target_project_id,note,created_at)
+         VALUES ('SHARED-1',?,'note','2026-01-01')`,
+      )
+      .run(project.id)
+    database
+      .query(
+        `INSERT INTO port_ref_source (task_key,source_project_id,commits,paths,note)
+         VALUES ('SHARED-1',?,'[]','[]','source')`,
+      )
+      .run(source.id)
+
+    expect(applyMigrations(database)).toEqual(['0047_project_task_identity'])
+    expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
+      task_key: 'SHARED-1',
+      target_project_id: project.id,
+      source_project_id: source.id,
+    })
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

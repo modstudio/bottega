@@ -1,8 +1,25 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { attribute, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
+import { resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
+import { attribute, attributeRun, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
+import { writeTransaction } from './db.ts'
 
-beforeAll(resetFixtureStore)
+beforeAll(() => {
+  resetFixtureStore()
+  writeTransaction((conn) => {
+    conn.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+        ('alpha-alp-5347','ALP-5347','alpha','mcp','2026-01-01','2026-01-01'),
+        ('alpha-alp-5362','ALP-5362','alpha','mcp','2026-01-01','2026-01-01'),
+        ('alpha-bet-40','BET-40','alpha','mcp','2026-01-01','2026-01-01'),
+        ('alpha-b2b-40','B2B-40','alpha','mcp','2026-01-01','2026-01-01'),
+        ('beta-bet-2533','BET-2533','beta','mcp','2026-01-01','2026-01-01'),
+        ('gamma-gam-986','GAM-986','gamma','mcp','2026-01-01','2026-01-01'),
+        ('stopal-ops-40','OPS-40','stopal','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen)
+      VALUES ('stopal','stopal-41','CLM-41','2026-01-01','2026-01-01');
+    `)
+  })
+})
 
 describe('worktree attribution', () => {
   // The fixture carries every worktree shape the attribution has to preserve.
@@ -57,6 +74,79 @@ describe('attribute()', () => {
     expect(a).toEqual({ project: 'alpha', key: 'ALP-5347', via: 'prompt' })
   })
 
+  test('tracker membership, not the registered prefix, decides whether a key belongs to the project', () => {
+    expect(attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on BET-40 please'] })).toEqual(
+      {
+        project: 'alpha',
+        key: 'BET-40',
+        via: 'prompt',
+      },
+    )
+    expect(
+      attribute({ cwd: '/fixtures/repos/alpha', commitSubjects: ['BET-40 implement the change'] }),
+    ).toEqual({ project: 'alpha', key: 'BET-40', via: 'commit' })
+
+    expect(attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on BET-2533'] })).toEqual({
+      project: 'alpha',
+      key: null,
+      via: null,
+    })
+    expect(
+      attribute({ cwd: '/fixtures/repos/alpha', commitSubjects: ['BET-2533 unrelated change'] }),
+    ).toEqual({ project: 'alpha', key: null, via: null })
+  })
+
+  test('recognizes task prefixes in use even when the project did not register them', () => {
+    expect(attribute({ cwd: '/fixtures/repos/stopal', prompts: ['work on OPS-40'] })).toEqual({
+      project: 'stopal',
+      key: 'OPS-40',
+      via: 'prompt',
+    })
+    expect(
+      attribute({ cwd: '/fixtures/repos/stopal', commitSubjects: ['OPS-40 implement the change'] }),
+    ).toEqual({ project: 'stopal', key: 'OPS-40', via: 'commit' })
+    expect(attribute({ cwd: '/fixtures/repos/stopal', prompts: ['work on CLM-41'] })).toEqual({
+      project: 'stopal',
+      key: 'CLM-41',
+      via: 'prompt',
+    })
+    expect(attribute({ cwd: '/fixtures/repos/stopal', prompts: ['send as UTF-8'] })).toEqual({
+      project: 'stopal',
+      key: null,
+      via: null,
+    })
+  })
+
+  test('recognizes digit-bearing task prefixes', () => {
+    expect(attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on B2B-40'] })).toEqual({
+      project: 'alpha',
+      key: 'B2B-40',
+      via: 'prompt',
+    })
+  })
+
+  test('a run uses its recorded repo even when its cwd names another project', () => {
+    expect(
+      attributeRun(
+        runFixture({
+          repo: 'alpha',
+          cwd: '/fixtures/repos/beta/.claude/worktrees/BET-2533',
+          launch_key: 'ALP-5347',
+        }),
+      ),
+    ).toEqual({ project: 'alpha', key: 'ALP-5347', via: 'launch_key' })
+
+    expect(
+      attributeRun(
+        runFixture({
+          repo: 'alpha',
+          cwd: '/fixtures/repos/beta/.claude/worktrees/BET-2533',
+          launch_key: null,
+        }),
+      ),
+    ).toEqual({ project: 'alpha', key: 'BET-2533', via: 'worktree' })
+  })
+
   test('an injected payload never names a task', () => {
     // A pasted review pack or system reminder quoting a key is not evidence
     // that anyone worked on it.
@@ -105,6 +195,20 @@ describe('attribute()', () => {
     expect(named.key).not.toBeNull()
     expect(silent.key).toBeNull()
     expect([named.project, silent.project, worktree.project]).toEqual(['alpha', 'alpha', 'alpha'])
+  })
+
+  test('a shared key prefix never chooses a project', () => {
+    expect(
+      attribute({
+        cwd: '/fixtures/repos/zeta/.claude/worktrees/SHR-42',
+        commitSubjects: ['SHR-42 shared label'],
+      }),
+    ).toEqual({ project: 'zeta', key: 'SHR-42', via: 'worktree' })
+    expect(attribute({ cwd: null, prompts: ['work on SHR-42'] })).toEqual({
+      project: null,
+      key: 'SHR-42',
+      via: 'prompt',
+    })
   })
 })
 

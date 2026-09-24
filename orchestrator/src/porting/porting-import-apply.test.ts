@@ -130,10 +130,11 @@ describe('port importer', () => {
       'lastPortedSha is missing',
     )
   })
-  test('splits declared multi-sources, preserves qualifiers, and refuses unresolved sources and task prefixes', () => {
+  test('splits declared multi-sources, preserves qualifiers, and resolves targets from port pairs', () => {
     upsertProject({ name: 'alpha-invented', path: '/w/a', settings: { keyPrefixes: ['ALP'] } })
     upsertProject({ name: 'beta-invented', path: '/w/b', settings: { keyPrefixes: ['DUP'] } })
     upsertProject({ name: 'gamma-invented', path: '/w/c', settings: { keyPrefixes: ['DUP'] } })
+    upsertProject({ name: 'target-invented', path: '/w/target', settings: {} })
     const refs = JSON.stringify({
       'ALP-1': { source: 'alpha-invented + beta-invented', commits: [], paths: [], notes: '' },
       'ALP-2': {
@@ -146,7 +147,18 @@ describe('port importer', () => {
       'NONE-2': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
       'DUP-3': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
     })
-    const plan = planImport(fixture({ refs }), projects())
+    const plan = planImport(
+      fixture({
+        refs,
+        state: JSON.stringify({
+          pairs: {
+            'alpha-invented->target-invented': { lastPortedSha: 'a', skipped: [] },
+            'beta-invented->target-invented': { lastPortedSha: 'b', skipped: [] },
+          },
+        }),
+      }),
+      projects(),
+    )
     expect(
       plan.refs
         .find((ref) => ref.taskKey === 'ALP-1')
@@ -164,16 +176,9 @@ describe('port importer', () => {
           where: 'refs.json ALP-3',
           what: 'project "missing-invented (unknown)"',
         }),
-        expect.objectContaining({
-          where: 'refs.json NONE-2',
-          why: expect.stringContaining('no registered project'),
-        }),
-        expect.objectContaining({
-          where: 'refs.json DUP-3',
-          why: expect.stringContaining('several registered projects'),
-        }),
       ]),
     )
+    expect(plan.refs.map((ref) => ref.taskKey)).toEqual(expect.arrayContaining(['NONE-2', 'DUP-3']))
 
     const nonStringSource = planImport(
       fixture({
@@ -301,7 +306,8 @@ describe('port importer', () => {
     const priorPair = listPairs()
     const priorBaseline = baselineForPair(priorPair[0]!.id)
     const priorSkips = listSkips(priorPair[0]!.id)
-    const priorRef = ledgerRef('BET-7')
+    const targetProjectId = priorPair[0]!.target_project_id
+    const priorRef = ledgerRef(targetProjectId, 'BET-7')
     const priorDoc = getDoc('global', null, 'port-category-map')
     const replacement = planImport(fixture(), projects())
     replacement.doctrine.push({ ...replacement.doctrine[0]!, title: 'Duplicate' })
@@ -309,7 +315,7 @@ describe('port importer', () => {
     expect(listPairs()).toEqual(priorPair)
     expect(baselineForPair(priorPair[0]!.id)).toEqual(priorBaseline)
     expect(listSkips(priorPair[0]!.id)).toEqual(priorSkips)
-    expect(ledgerRef('BET-7')).toEqual(priorRef)
+    expect(ledgerRef(targetProjectId, 'BET-7')).toEqual(priorRef)
     expect(getDoc('global', null, 'port-category-map')).toEqual(priorDoc)
     expect(listDoctrineRules()).toHaveLength(1)
   })
