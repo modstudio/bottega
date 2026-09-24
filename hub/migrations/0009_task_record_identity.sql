@@ -4,11 +4,15 @@ DROP TABLE IF EXISTS temp.task_identity_migration_repairs;
 --> statement-breakpoint
 CREATE TEMP TABLE task_identity_migration_repairs (
   table_name TEXT NOT NULL,
-  row_id INTEGER NOT NULL,
+  row_id TEXT NOT NULL,
   task_key TEXT NOT NULL,
-  old_record_id TEXT NOT NULL,
-  new_record_id TEXT NOT NULL,
-  PRIMARY KEY (table_name, row_id)
+  old_record_id TEXT,
+  new_record_id TEXT,
+  old_external_id TEXT,
+  new_external_id TEXT,
+  reason TEXT NOT NULL,
+  projects TEXT,
+  PRIMARY KEY (table_name, row_id, reason)
 );
 --> statement-breakpoint
 UPDATE task
@@ -18,43 +22,84 @@ SET record_id = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) ||
   lower(hex(randomblob(6)))
 WHERE record_id IS NULL;
 --> statement-breakpoint
-UPDATE task_comment
-SET task_record_id = (SELECT record_id FROM task WHERE task.key = task_comment.task_key)
-WHERE task_record_id IS NULL;
+INSERT INTO task_identity_migration_repairs
+  (table_name,row_id,task_key,old_external_id,new_external_id,reason)
+SELECT 'task',task.record_id,task.key,task.external_id,
+  CASE WHEN count(claim.external_id) = 1 THEN min(claim.external_id) ELSE NULL END,
+  CASE WHEN count(claim.external_id) = 1
+    THEN 'external id did not match identity claim; normalized by project and key'
+    ELSE 'external id did not match identity claim; no unique project and key claim' END
+FROM task
+LEFT JOIN task_identity_claim claim ON claim.project = task.project AND claim.key = task.key
+WHERE NOT EXISTS (
+  SELECT 1 FROM task_identity_claim matching
+  WHERE matching.project = task.project AND matching.external_id = task.external_id
+)
+GROUP BY task.record_id,task.key,task.external_id
+HAVING task.external_id IS NOT CASE WHEN count(claim.external_id) = 1 THEN min(claim.external_id) ELSE NULL END;
 --> statement-breakpoint
-UPDATE task_document
-SET task_record_id = (SELECT record_id FROM task WHERE task.key = task_document.task_key)
-WHERE task_record_id IS NULL;
---> statement-breakpoint
-UPDATE task_status_event
-SET task_record_id = (SELECT record_id FROM task WHERE task.key = task_status_event.task_key)
-WHERE task_record_id IS NULL;
+UPDATE task
+SET external_id = (
+  SELECT new_external_id FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'task' AND repair.row_id = task.record_id
+)
+WHERE record_id IN (
+  SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task'
+);
 --> statement-breakpoint
 INSERT INTO task_identity_migration_repairs
-SELECT 'task_comment',child.id,child.task_key,child.task_record_id,parent.record_id
+  (table_name,row_id,task_key,old_record_id,new_record_id,reason)
+SELECT 'task_comment',child.id,child.task_key,child.task_record_id,parent.record_id,
+  CASE WHEN child.task_record_id IS NULL THEN 'missing task record id; attached by key'
+    ELSE 'dangling task record id; attached by key' END
 FROM task_comment child
 JOIN task parent ON parent.key = child.task_key
 LEFT JOIN task current ON current.record_id = child.task_record_id
-WHERE child.task_record_id IS NOT NULL AND current.record_id IS NULL;
+WHERE current.record_id IS NULL;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_repairs
-SELECT 'task_document',child.id,child.task_key,child.task_record_id,parent.record_id
+  (table_name,row_id,task_key,old_record_id,new_record_id,reason)
+SELECT 'task_document',child.id,child.task_key,child.task_record_id,parent.record_id,
+  CASE WHEN child.task_record_id IS NULL THEN 'missing task record id; attached by key'
+    ELSE 'dangling task record id; attached by key' END
 FROM task_document child
 JOIN task parent ON parent.key = child.task_key
 LEFT JOIN task current ON current.record_id = child.task_record_id
-WHERE child.task_record_id IS NOT NULL AND current.record_id IS NULL;
+WHERE current.record_id IS NULL;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_repairs
-SELECT 'task_status_event',child.id,child.task_key,child.task_record_id,parent.record_id
+  (table_name,row_id,task_key,old_record_id,new_record_id,reason)
+SELECT 'task_status_event',child.id,child.task_key,child.task_record_id,parent.record_id,
+  CASE WHEN child.task_record_id IS NULL THEN 'missing task record id; attached by key'
+    ELSE 'dangling task record id; attached by key' END
 FROM task_status_event child
 JOIN task parent ON parent.key = child.task_key
 LEFT JOIN task current ON current.record_id = child.task_record_id
-WHERE child.task_record_id IS NOT NULL AND current.record_id IS NULL;
+WHERE current.record_id IS NULL;
+--> statement-breakpoint
+INSERT INTO task_identity_migration_repairs
+  (table_name,row_id,task_key,old_record_id,new_record_id,reason,projects)
+SELECT repair.table_name,repair.row_id,repair.task_key,repair.old_record_id,repair.new_record_id,
+  'collided key; attribution uncertain',
+  (SELECT group_concat(project, ',') FROM (
+    SELECT DISTINCT claim.project
+    FROM task_identity_claim claim
+    WHERE claim.key = repair.task_key
+    ORDER BY claim.project
+  ))
+FROM task_identity_migration_repairs repair
+WHERE repair.table_name IN ('task_comment','task_document','task_status_event')
+  AND EXISTS (
+    SELECT 1 FROM task_identity_claim claim
+    WHERE claim.key = repair.task_key
+    GROUP BY claim.key HAVING count(DISTINCT claim.project) > 1
+  );
 --> statement-breakpoint
 UPDATE task_comment
 SET task_record_id = (
   SELECT new_record_id FROM task_identity_migration_repairs repair
   WHERE repair.table_name = 'task_comment' AND repair.row_id = task_comment.id
+    AND repair.reason <> 'collided key; attribution uncertain'
 )
 WHERE id IN (
   SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_comment'
@@ -64,6 +109,7 @@ UPDATE task_document
 SET task_record_id = (
   SELECT new_record_id FROM task_identity_migration_repairs repair
   WHERE repair.table_name = 'task_document' AND repair.row_id = task_document.id
+    AND repair.reason <> 'collided key; attribution uncertain'
 )
 WHERE id IN (
   SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_document'
@@ -73,6 +119,7 @@ UPDATE task_status_event
 SET task_record_id = (
   SELECT new_record_id FROM task_identity_migration_repairs repair
   WHERE repair.table_name = 'task_status_event' AND repair.row_id = task_status_event.id
+    AND repair.reason <> 'collided key; attribution uncertain'
 )
 WHERE id IN (
   SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_status_event'

@@ -31,7 +31,7 @@ const fresh = () => {
   return d
 }
 
-const migratedThrough = (lastIndex: number) => {
+const migratedThrough = (lastIndex: number, path = ':memory:') => {
   const folder = mkdtempSync(join(tmpdir(), 'hub-migration-stage-'))
   mkdirSync(join(folder, 'meta'))
   const entries = migrationJournal().slice(0, lastIndex + 1)
@@ -41,7 +41,7 @@ const migratedThrough = (lastIndex: number) => {
     join(folder, 'meta', '_journal.json'),
     JSON.stringify({ version: '7', dialect: 'sqlite', entries }),
   )
-  const database = new Database(':memory:')
+  const database = new Database(path)
   database.exec('PRAGMA foreign_keys = ON')
   applyMigrations(database, folder)
   rmSync(folder, { recursive: true, force: true })
@@ -522,21 +522,42 @@ describe('hub migration journal', () => {
     ).toEqual([
       {
         table_name: 'task_comment',
-        row_id: 10,
+        row_id: '1',
+        task_key: 'DEV-2',
+        old_record_id: null,
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_comment',
+        row_id: '10',
         task_key: 'DEV-2',
         old_record_id: 'dangling-comment',
         new_record_id: 'child-id',
       },
       {
         table_name: 'task_document',
-        row_id: 20,
+        row_id: '1',
+        task_key: 'DEV-2',
+        old_record_id: null,
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_document',
+        row_id: '20',
         task_key: 'DEV-2',
         old_record_id: 'dangling-document',
         new_record_id: 'child-id',
       },
       {
         table_name: 'task_status_event',
-        row_id: 30,
+        row_id: '1',
+        task_key: 'DEV-2',
+        old_record_id: null,
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_status_event',
+        row_id: '30',
         task_key: 'DEV-2',
         old_record_id: 'dangling-event',
         new_record_id: 'child-id',
@@ -570,6 +591,109 @@ describe('hub migration journal', () => {
       { task_record_id: 'child-id-new' },
     ])
     d.close()
+  })
+
+  test('task identity rebuild repairs a mixed row before tracker ingest converges shared keys', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-mixed-task-'))
+    const path = join(dir, 'hub.db')
+    const d = migratedThrough(8, path)
+    d.exec(`
+      INSERT INTO task(record_id,external_id,key,project,title,status,status_category,source,first_seen,last_seen)
+      VALUES ('01a0afc8-b7b1-742a-ab2c-31e3d53c34d0','019e9824-0c10-7a73-910c-a95bd485c93d',
+        'OPS-21','starship','Mixed survivor','started','active','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task(record_id,external_id,key,project,source,first_seen,last_seen) VALUES
+        ('ambiguous-record','wrong-ambiguous','AMB-1','starship','mcp','2026-01-01','2026-01-01'),
+        ('unclaimed-record','wrong-unclaimed','NONE-1','starship','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen) VALUES
+        ('stopal','019e9824-0c10-7a73-910c-a95bd485c93d','OPS-21','2026-01-01','2026-01-01'),
+        ('starship','c7dc4d23-ebee-4851-9314-69ac4d45a4ee','OPS-21','2026-01-01','2026-01-01'),
+        ('starship','ambiguous-one','AMB-1','2026-01-01','2026-01-01'),
+        ('starship','ambiguous-two','AMB-1','2026-01-01','2026-01-01');
+      INSERT INTO task_status_event(task_key,at,to_status)
+      VALUES ('OPS-21','2026-01-01','active');
+    `)
+
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(
+      d
+        .query(
+          `SELECT table_name,row_id,task_key,old_external_id,new_external_id,reason,projects
+           FROM task_identity_migration_repairs
+           WHERE table_name='task' OR reason='collided key; attribution uncertain'
+           ORDER BY table_name,row_id,reason`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        table_name: 'task',
+        row_id: '01a0afc8-b7b1-742a-ab2c-31e3d53c34d0',
+        task_key: 'OPS-21',
+        old_external_id: '019e9824-0c10-7a73-910c-a95bd485c93d',
+        new_external_id: 'c7dc4d23-ebee-4851-9314-69ac4d45a4ee',
+        reason: 'external id did not match identity claim; normalized by project and key',
+        projects: null,
+      },
+      {
+        table_name: 'task',
+        row_id: 'ambiguous-record',
+        task_key: 'AMB-1',
+        old_external_id: 'wrong-ambiguous',
+        new_external_id: null,
+        reason: 'external id did not match identity claim; no unique project and key claim',
+        projects: null,
+      },
+      {
+        table_name: 'task',
+        row_id: 'unclaimed-record',
+        task_key: 'NONE-1',
+        old_external_id: 'wrong-unclaimed',
+        new_external_id: null,
+        reason: 'external id did not match identity claim; no unique project and key claim',
+        projects: null,
+      },
+      {
+        table_name: 'task_status_event',
+        row_id: '1',
+        task_key: 'OPS-21',
+        old_external_id: null,
+        new_external_id: null,
+        reason: 'collided key; attribution uncertain',
+        projects: 'starship,stopal',
+      },
+    ])
+    d.close()
+
+    const ingest = Bun.spawnSync(
+      [
+        process.execPath,
+        '--no-env-file',
+        '-e',
+        `import { upsertTrackerTask } from './hub/src/ingest/trackers.ts';
+         const shared = {key:'OPS-21',title:'Shared label',status:'started',category:'active',updatedAt:null,assignee:null};
+         upsertTrackerTask({...shared,project:'starship',externalId:'c7dc4d23-ebee-4851-9314-69ac4d45a4ee'});
+         upsertTrackerTask({...shared,project:'stopal',externalId:'019e9824-0c10-7a73-910c-a95bd485c93d'});`,
+      ],
+      {
+        cwd: join(import.meta.dir, '../..'),
+        env: { ...process.env, HUB_DB: path, NODE_ENV: 'production' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    expect(new TextDecoder().decode(ingest.stderr)).toBe('')
+    expect(ingest.exitCode).toBe(0)
+
+    const result = new Database(path)
+    expect(
+      result
+        .query(`SELECT project,external_id FROM task WHERE key='OPS-21' ORDER BY project`)
+        .all(),
+    ).toEqual([
+      { project: 'starship', external_id: 'c7dc4d23-ebee-4851-9314-69ac4d45a4ee' },
+      { project: 'stopal', external_id: '019e9824-0c10-7a73-910c-a95bd485c93d' },
+    ])
+    result.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 
   test('task identity rebuild refuses and names an unresolvable child', () => {
