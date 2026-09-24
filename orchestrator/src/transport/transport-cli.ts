@@ -14,6 +14,7 @@ import {
   type TransportResult,
   type TransportStartOpts,
 } from './transport.ts'
+import { cliResultEvents } from './transport-result-events.ts'
 
 /** Codex reports "tokens used\\n<n>" on stderr; other agents report nothing. */
 function parseVendorTokens(blob: string): number | null {
@@ -146,12 +147,13 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           if (output) writeFileSync(opts.outPath, output)
         }
         const stopReason = reply?.stopReason ?? (cancelled ? 'timeout' : null)
-        const events: NormalizedEvent[] = []
-        if (sessionId) events.push({ kind: 'session', sessionId })
-        if (output) events.push({ kind: 'text', text: output })
-        if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
-        if (replyError) events.push({ kind: 'error', error: replyError })
-        if (stopReason) events.push({ kind: 'stop', reason: stopReason })
+        const terminalEvents: NormalizedEvent[] = []
+        if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
+        if (output) terminalEvents.push({ kind: 'text', text: output })
+        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd })
+        if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
+        if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
+        const events = cliResultEvents(liveEvents, terminalEvents)
         const folded = outcomeFromTransport({
           asking: false,
           error: replyError,
