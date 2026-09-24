@@ -10,12 +10,14 @@ import {
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
+import { taskIdentityRelationships } from './task-identity.ts'
 
 type Options = { dryRun?: boolean; baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 type ChildRow = {
   id: number
   record_id: string | null
   task_key: string
+  task_record_id: string | null
   [key: string]: unknown
 }
 type MirroredChild = {
@@ -124,7 +126,18 @@ function persistMirrorBatch(
   writeTransaction((conn) => {
     if (name === 'tasks') {
       const update = conn.query(`UPDATE task SET record_id=? WHERE key=? AND record_id IS NULL`)
-      for (const row of newlyAssigned) update.run(row.id as string, row.key as string)
+      for (const row of newlyAssigned) {
+        const id = row.id as string
+        const key = row.key as string
+        update.run(id, key)
+        for (const relationship of taskIdentityRelationships)
+          conn
+            .query(
+              `UPDATE ${relationship.table} SET ${relationship.recordColumn}=?
+               WHERE ${relationship.keyColumn}=? AND ${relationship.recordColumn} IS NULL`,
+            )
+            .run(id, key)
+      }
     } else {
       const table = {
         comments: 'task_comment',
@@ -167,14 +180,18 @@ export async function pushTasks(options: Options = {}) {
   const taskByKey = new Map(tasks.map((row) => [row.key, row]))
   const child = (table: string): MirroredChild[] => {
     const rows = db().query<ChildRow, []>(`SELECT * FROM ${table} ORDER BY id`).all()
-    return rows.map((row) => ({
-      ...row,
-      id: row.record_id ?? newRecordId(),
-      legacy_local_id: row.id,
-      newly_assigned: row.record_id === null,
-      project_name: taskByKey.get(row.task_key)?.project_name ?? '',
-      deleted_at: null,
-    }))
+    return rows.map((row) => {
+      const { task_record_id: _taskRecordId, ...hostedRow } = row
+      return {
+        ...hostedRow,
+        id: row.record_id ?? newRecordId(),
+        record_id: row.record_id,
+        legacy_local_id: row.id,
+        newly_assigned: row.record_id === null,
+        project_name: taskByKey.get(row.task_key)?.project_name ?? '',
+        deleted_at: null,
+      }
+    })
   }
   const comments = child('task_comment').map((row) => ({
     ...row,

@@ -193,9 +193,10 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
     // told us about knows its own title and status; git knows neither, and
     // letting the git leg overwrite it would blank the view every collect.
     const taskStmt = conn.query(
-      `INSERT INTO task (key, project, source, opened_at, updated_at, first_seen, last_seen)
-     VALUES (?,?,'git',?,?,?,?)
+      `INSERT INTO task (record_id,key, project, source, opened_at, updated_at, first_seen, last_seen)
+     VALUES (?,?,?,'git',?,?,?,?)
      ON CONFLICT(key) DO UPDATE SET
+       record_id = COALESCE(task.record_id, excluded.record_id),
        last_seen  = excluded.last_seen,
        updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at)`,
     )
@@ -221,7 +222,8 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       )
     }
     if (taskMirrorSucceeded)
-      for (const t of tasks.values()) taskStmt.run(t.key, t.project, t.first, t.last, at, at)
+      for (const t of tasks.values())
+        taskStmt.run(newRecordId(), t.key, t.project, t.first, t.last, at, at)
     conn
       .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)

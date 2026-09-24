@@ -57,6 +57,13 @@
       "when": 1789660800001,
       "tag": "0007_interval_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789660800002,
+      "tag": "0008_task_identity",
+      "breakpoints": true
     }
   ]
 }

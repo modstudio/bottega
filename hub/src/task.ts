@@ -15,15 +15,18 @@ import {
   hostedPatchTask,
   type TaskFetch,
 } from './task-client.ts'
+import { taskRecordIdFor } from './task-identity.ts'
 
 export type TaskRow = {
   record_id: string | null
+  external_id: string | null
   key: string
   project: string
   title: string | null
   status: string | null
   status_category: StatusCategory | null
   parent_key: string | null
+  parent_record_id: string | null
   body: string | null
   assignee: string | null
   opened_at: string | null
@@ -38,6 +41,7 @@ export type TaskComment = {
   id: number
   record_id: string | null
   task_key: string
+  task_record_id: string | null
   body: string
   created_at: string
 }
@@ -107,6 +111,7 @@ export type TaskDocumentSummary = {
   id: number
   record_id: string | null
   task_key: string
+  task_record_id: string | null
   role: TaskDocumentRole | null
   title: string
   updated_at: string
@@ -157,14 +162,16 @@ function assertParent(key: string | null | undefined) {
 type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
+  const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key) : null
   conn
     .query(`INSERT INTO task
-    (record_id,key,project,title,status,status_category,parent_key,body,assignee,opened_at,closed_at,
+    (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
      updated_at,source,first_seen,last_seen)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(key) DO UPDATE SET record_id=excluded.record_id,project=excluded.project,
       title=excluded.title,status=excluded.status,status_category=excluded.status_category,
-      parent_key=excluded.parent_key,body=excluded.body,assignee=excluded.assignee,
+      parent_key=excluded.parent_key,parent_record_id=excluded.parent_record_id,
+      body=excluded.body,assignee=excluded.assignee,
       opened_at=excluded.opened_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at,
       source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen`)
     .run(
@@ -175,6 +182,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       row.status,
       row.status_category,
       row.parent_key,
+      parentRecordId,
       row.body,
       row.assignee,
       row.opened_at,
@@ -191,10 +199,11 @@ function cacheStatusEvent(
   row: import('./hosted-tasks.ts').HostedStatusEvent | undefined,
 ) {
   if (!row) return
+  const taskRecordId = taskRecordIdFor(conn, row.task_key)
   conn
-    .query(`INSERT OR IGNORE INTO task_status_event(record_id,task_key,at,from_status,to_status)
-    VALUES (?,?,?,?,?)`)
-    .run(row.id, row.task_key, row.at, row.from_status, row.to_status)
+    .query(`INSERT OR IGNORE INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
+    VALUES (?,?,?,?,?,?)`)
+    .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
 }
 
 export async function createTask(
@@ -258,9 +267,9 @@ export async function createTask(
     cacheTask(conn, hosted)
     if (comment)
       conn
-        .query(`INSERT INTO task_comment (record_id,task_key,body,created_at)
-      VALUES (?,?,?,?)`)
-        .run(comment.id, comment.task_key, comment.body, comment.created_at)
+        .query(`INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at)
+      VALUES (?,?,?,?,?)`)
+        .run(comment.id, comment.task_key, hosted.id, comment.body, comment.created_at)
   })
   return showTask(hosted.key).task
 }
@@ -301,7 +310,7 @@ export function showTask(key: string): {
   if (!task) throw new Error(`no task ${upper}`)
   const comments = db()
     .query<TaskComment, [string]>(
-      `SELECT id, record_id, task_key, body, created_at FROM task_comment
+      `SELECT id, record_id, task_key, task_record_id, body, created_at FROM task_comment
       WHERE task_key = ? ORDER BY created_at, id`,
     )
     .all(upper)
@@ -447,8 +456,10 @@ export async function commentTask(
   const comment = await hostedCommentTask(upper, body, options.hosted)
   const result = writeTransaction((conn) => {
     const inserted = conn
-      .query(`INSERT INTO task_comment (record_id,task_key,body,created_at) VALUES (?,?,?,?)`)
-      .run(comment.id, upper, body, comment.created_at)
+      .query(
+        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
+      )
+      .run(comment.id, upper, current.record_id, body, comment.created_at)
     conn
       .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`)
       .run(comment.updated_at, comment.updated_at, upper)
@@ -458,6 +469,7 @@ export async function commentTask(
     id: Number(result.lastInsertRowid),
     record_id: comment.id,
     task_key: upper,
+    task_record_id: current.record_id,
     body,
     created_at: comment.created_at,
   }
@@ -471,7 +483,7 @@ export function listTaskDocuments(key: string): TaskDocumentSummary[] {
   if (!task) throw new Error(`no task ${upper}`)
   return db()
     .query<TaskDocumentSummary, [string]>(
-      `SELECT id, record_id, task_key, role, title, updated_at FROM task_document
+      `SELECT id, record_id, task_key, task_record_id, role, title, updated_at FROM task_document
       WHERE task_key = ? ORDER BY created_at, id`,
     )
     .all(upper)
@@ -481,7 +493,7 @@ export function getTaskDocument(idValue: number | string): TaskDocument {
   const id = documentId(idValue)
   const document = db()
     .query<TaskDocument, [number]>(
-      `SELECT id, record_id, task_key, role, title, body, version, created_at, updated_at
+      `SELECT id, record_id, task_key, task_record_id, role, title, body, version, created_at, updated_at
        FROM task_document WHERE id = ?`,
     )
     .get(id)
@@ -511,12 +523,13 @@ export async function createTaskDocument(
   const result = writeTransaction((conn) =>
     conn
       .query(
-        `INSERT INTO task_document (record_id,task_key,role,title,body,version,created_at,updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO task_document (record_id,task_key,task_record_id,role,title,body,version,created_at,updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         hosted.id,
         upper,
+        task.record_id,
         documentRole(input.role),
         input.title,
         input.body ?? '',

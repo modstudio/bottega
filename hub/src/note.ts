@@ -188,12 +188,14 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
     notes.map(
       (note): TaskRow => ({
         record_id: null,
+        external_id: null,
         key: String(note.id),
         project: note.project,
         title: note.text,
         status: null,
         status_category: null,
         parent_key: null,
+        parent_record_id: null,
         body: null,
         assignee: null,
         opened_at: note.created_at,

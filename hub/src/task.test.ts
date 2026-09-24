@@ -141,6 +141,8 @@ describe('local task tracker', () => {
       { hosted },
     )
     expect(child.parent_key).toBe(parent.key)
+    expect(child.record_id).not.toBeNull()
+    expect(child.parent_record_id).toBe(parent.record_id)
     expect(showTask(child.key).task.parent_key).toBe(parent.key)
   })
 
@@ -153,6 +155,7 @@ describe('local task tracker', () => {
       conn.query(`UPDATE task SET assignee = 'Local Owner' WHERE key = ?`).run(local.key),
     )
     upsertTrackerTask({
+      externalId: 'tracker-local-key',
       key: local.key,
       project: 'gamma',
       title: 'Tracker replacement',
@@ -226,12 +229,14 @@ describe('local task tracker', () => {
       ['DEV-5', 'open', 'unrelated words only'],
     ].map(([key, status, title]) => ({
       record_id: null,
+      external_id: null,
       key: key!,
       project: 'workshop',
       status: status!,
       status_category: 'open' as const,
       title: title!,
       parent_key: null,
+      parent_record_id: null,
       body: null,
       assignee: null,
       opened_at: null,
@@ -281,6 +286,7 @@ describe('local task tracker', () => {
       { hosted },
     )
     const comment = await commentTask(task.key, 'A useful comment', { hosted })
+    expect(comment.task_record_id).toBe(task.record_id)
     const ordinary = await createTaskDocument(
       { task: task.key, title: 'Notes', body: '# Notes' },
       { hosted },

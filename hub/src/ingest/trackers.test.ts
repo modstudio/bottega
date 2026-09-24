@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { resolveAssigneeIds } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
+import { db } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import {
@@ -142,6 +143,7 @@ describe('tracker assignees', () => {
     expect(calls).toBe(0)
 
     upsertTrackerTask({
+      externalId: 'tracker-alp-899',
       key: 'ALP-899',
       project: 'alpha',
       title: 'No assignment field',
@@ -151,5 +153,36 @@ describe('tracker assignees', () => {
       assignee: null,
     })
     expect(showTask('ALP-899').task.assignee).toBeNull()
+    expect(showTask('ALP-899').task.external_id).toBe('tracker-alp-899')
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM task_identity_claim WHERE key='ALP-899'",
+        )
+        .get()?.count,
+    ).toBe(1)
+  })
+
+  test('a missing incoming external id advances the stored identity claim', () => {
+    const task = {
+      externalId: 'tracker-alp-900',
+      key: 'ALP-900',
+      project: 'alpha' as const,
+      title: 'Retained tracker identity',
+      status: 'started',
+      category: 'active' as const,
+      updatedAt: null,
+      assignee: null,
+    }
+    upsertTrackerTask(task, '2026-09-23T10:00:00.000Z')
+    upsertTrackerTask({ ...task, externalId: null }, '2026-09-24T10:00:00.000Z')
+
+    expect(
+      db()
+        .query<{ external_id: string; last_seen: string }, []>(
+          "SELECT external_id,last_seen FROM task_identity_claim WHERE key='ALP-900'",
+        )
+        .get(),
+    ).toEqual({ external_id: 'tracker-alp-900', last_seen: '2026-09-24T10:00:00.000Z' })
   })
 })

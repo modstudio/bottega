@@ -53,6 +53,7 @@ import {
   updateTaskDocument,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
+import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 import { pushTasks } from './task-push.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTask } from './tracker-new.ts'
@@ -844,6 +845,9 @@ try {
         `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
       )
       console.log(`schema version ${schemaVersionLabel(db())}`)
+      {
+        for (const line of formatTaskIdentityDoctor(taskIdentityDoctor())) console.log(line)
+      }
       break
     case 'collect':
       if (has('watch')) {

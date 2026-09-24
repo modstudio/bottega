@@ -260,6 +260,7 @@ export type ToolCaller = {
 }
 
 export type TrackerTask = {
+  externalId: string | null
   key: string
   project: string
   title: string
@@ -406,6 +407,7 @@ function workspaceSource(
             per_page: 100,
           })) as {
             tasks?: {
+              id?: string
               short_id?: string
               summary?: string
               status?: string
@@ -417,6 +419,7 @@ function workspaceSource(
           for (const t of r.tasks ?? []) {
             if (!t.short_id) continue
             out.push({
+              externalId: t.id ?? null,
               key: t.short_id.toUpperCase(),
               project,
               title: decode(t.summary ?? ''),
@@ -442,6 +445,7 @@ function workspaceSource(
         per_page: 5,
       })) as {
         tasks?: {
+          id?: string
           short_id?: string
           summary?: string
           status?: string
@@ -453,6 +457,7 @@ function workspaceSource(
       if (!hit) return null
       const [assignee] = await assignees(m, [{ id: hit.assignee_id, taskKey: key }])
       return {
+        externalId: hit.id ?? null,
         key,
         project,
         title: decode(hit.summary ?? ''),
@@ -497,6 +502,7 @@ function cursorMcpSource(
           })) as {
             data?: {
               items?: {
+                id?: string
                 humanKey?: string
                 title?: string
                 status?: string
@@ -509,6 +515,7 @@ function cursorMcpSource(
           for (const t of r.data?.items ?? []) {
             if (!t.humanKey) continue
             out.push({
+              externalId: t.id ?? null,
               key: t.humanKey.toUpperCase(),
               project,
               title: decode(t.title ?? ''),
@@ -527,6 +534,7 @@ function cursorMcpSource(
     async lookup(m, key) {
       const r = (await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })) as {
         data?: {
+          id?: string
           humanKey?: string
           title?: string
           status?: string
@@ -537,6 +545,7 @@ function cursorMcpSource(
       const t = r.data
       if (!t?.humanKey) return null
       return {
+        externalId: t.id ?? null,
         key,
         project,
         title: decode(t.title ?? ''),
@@ -572,6 +581,7 @@ function arrayMcpSource(
       const out: TrackerTask[] = []
       for (const status of openStatuses) {
         const r = (await m.callTool(trackerWireAction('array-mcp', 'search'), { status })) as {
+          id?: string
           key?: string
           title?: string
           status?: string
@@ -580,6 +590,7 @@ function arrayMcpSource(
         for (const t of Array.isArray(r) ? r : []) {
           if (!t.key) continue
           out.push({
+            externalId: t.id ?? null,
             key: t.key.toUpperCase(),
             project,
             title: decode(t.title ?? ''),
@@ -594,6 +605,7 @@ function arrayMcpSource(
     },
     async lookup(m, key) {
       const r = (await m.callTool(trackerWireAction('array-mcp', 'get'), { search: key })) as {
+        id?: string
         key?: string
         title?: string
         status?: string
@@ -603,6 +615,7 @@ function arrayMcpSource(
       const hit = (Array.isArray(r) ? r : []).find((t) => t.key?.toUpperCase() === key)
       if (!hit) return null
       return {
+        externalId: hit.id ?? null,
         key,
         project,
         title: decode(hit.title ?? ''),
