@@ -10,6 +10,7 @@ import {
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
+import { taskIdentityRelationships } from './task-identity.ts'
 
 type Options = { dryRun?: boolean; baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 type ChildRow = {
@@ -129,31 +130,13 @@ function persistMirrorBatch(
         const id = row.id as string
         const key = row.key as string
         update.run(id, key)
-        conn
-          .query(
-            'UPDATE task SET parent_record_id=? WHERE parent_key=? AND parent_record_id IS NULL',
-          )
-          .run(id, key)
-        conn
-          .query(
-            'UPDATE task_comment SET task_record_id=? WHERE task_key=? AND task_record_id IS NULL',
-          )
-          .run(id, key)
-        conn
-          .query(
-            'UPDATE task_document SET task_record_id=? WHERE task_key=? AND task_record_id IS NULL',
-          )
-          .run(id, key)
-        conn
-          .query(
-            'UPDATE task_status_event SET task_record_id=? WHERE task_key=? AND task_record_id IS NULL',
-          )
-          .run(id, key)
-        conn
-          .query(
-            'UPDATE note SET promoted_task_record_id=? WHERE promoted_task=? AND promoted_task_record_id IS NULL',
-          )
-          .run(id, key)
+        for (const relationship of taskIdentityRelationships)
+          conn
+            .query(
+              `UPDATE ${relationship.table} SET ${relationship.recordColumn}=?
+               WHERE ${relationship.keyColumn}=? AND ${relationship.recordColumn} IS NULL`,
+            )
+            .run(id, key)
       }
     } else {
       const table = {

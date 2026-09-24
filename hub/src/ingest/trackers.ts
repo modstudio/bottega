@@ -11,6 +11,7 @@ import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { projects } from '../projects.ts'
 import { hostedMirrorTasks } from '../task-client.ts'
+import { claimTaskIdentity, taskRecordIdFor } from '../task-identity.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -161,14 +162,16 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
       at,
       at,
     )
-  if (t.externalId)
-    conn
-      .query(
-        `INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen)
-         VALUES (?,?,?,?,?) ON CONFLICT(project,external_id) DO UPDATE SET
-         key=excluded.key,last_seen=excluded.last_seen`,
-      )
-      .run(t.project, t.externalId, t.key, at, at)
+  const effectiveExternalId = conn
+    .query<{ external_id: string | null }, [string]>('SELECT external_id FROM task WHERE key=?')
+    .get(t.key)?.external_id
+  if (effectiveExternalId)
+    claimTaskIdentity(conn, {
+      project: t.project,
+      externalId: effectiveExternalId,
+      key: t.key,
+      at,
+    })
 }
 
 export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
@@ -272,10 +275,7 @@ function writeTrackerCache(
       const was = before.get(task.key)
       upsertTrackerTaskOn(conn, task, at)
       if (!local.has(task.key) && was !== undefined && was !== task.category) {
-        const taskRecordId =
-          conn
-            .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE key=?')
-            .get(task.key)?.record_id ?? null
+        const taskRecordId = taskRecordIdFor(conn, task.key)
         event.run(newRecordId(), task.key, taskRecordId, at, was, task.category)
         changed++
       }

@@ -722,6 +722,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/worktree/worktree-types.ts', []),
   module('hub/src/fixture-question-reclaim.ts', ['./db.ts', './orch.ts', './reconcile.ts']),
+  module('hub/src/task-identity.ts', ['bun:sqlite', './db.ts']),
   module('hub/src/serve-lifecycle.ts', [
     '../../shared/process-identity.ts',
     '../../shared/state-directory.ts',

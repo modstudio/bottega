@@ -318,4 +318,62 @@ describe('hosted-only task safety', () => {
         .get()?.task_record_id,
     ).toBe('01990000-0000-7000-8000-000000000101')
   })
+
+  test('cache pull reconciles a child applied before its parent', () => {
+    const at = '2026-09-24T12:00:00.000Z'
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task(key,project,title,status,status_category,source,first_seen,last_seen)
+           VALUES ('DEV-991','workshop','parent before hosting','open','open','local',?,?)`,
+        )
+        .run(at, at),
+    )
+    const common = {
+      project: 'workshop',
+      project_name: 'workshop',
+      status: 'open',
+      status_category: 'open' as const,
+      body: null,
+      assignee: null,
+      opened_at: at,
+      closed_at: null,
+      source: 'local' as const,
+      first_seen: at,
+      last_seen: at,
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    }
+    applyHostedTaskChanges({
+      tasks: [
+        {
+          ...common,
+          id: '01990000-0000-7000-8000-000000000201',
+          key: 'DEV-992',
+          title: 'child first',
+          parent_key: 'DEV-991',
+        },
+        {
+          ...common,
+          id: '01990000-0000-7000-8000-000000000200',
+          key: 'DEV-991',
+          title: 'parent second',
+          parent_key: null,
+        },
+      ],
+      comments: [],
+      documents: [],
+      statusEvents: [],
+      cursor: at,
+    })
+
+    expect(
+      db()
+        .query<{ parent_record_id: string }, []>(
+          "SELECT parent_record_id FROM task WHERE key='DEV-992'",
+        )
+        .get()?.parent_record_id,
+    ).toBe('01990000-0000-7000-8000-000000000200')
+  })
 })

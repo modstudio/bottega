@@ -15,6 +15,7 @@ import {
   hostedPatchTask,
   type TaskFetch,
 } from './task-client.ts'
+import { taskRecordIdFor } from './task-identity.ts'
 
 export type TaskRow = {
   record_id: string | null
@@ -161,11 +162,7 @@ function assertParent(key: string | null | undefined) {
 type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
-  const parentRecordId = row.parent_key
-    ? (conn
-        .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-        .get(row.parent_key)?.record_id ?? null)
-    : null
+  const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key) : null
   conn
     .query(`INSERT INTO task
     (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
@@ -202,10 +199,7 @@ function cacheStatusEvent(
   row: import('./hosted-tasks.ts').HostedStatusEvent | undefined,
 ) {
   if (!row) return
-  const taskRecordId =
-    conn
-      .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-      .get(row.task_key)?.record_id ?? null
+  const taskRecordId = taskRecordIdFor(conn, row.task_key)
   conn
     .query(`INSERT OR IGNORE INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
     VALUES (?,?,?,?,?,?)`)

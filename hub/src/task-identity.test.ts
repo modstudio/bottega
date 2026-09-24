@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from './migrations.ts'
-import { taskIdentityDoctor } from './task-identity-doctor.ts'
+import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 
 describe('task identity doctor', () => {
   test('counts missing identities and reports cross-project key claims', () => {
@@ -16,12 +16,16 @@ describe('task identity doctor', () => {
       INSERT INTO task_comment(task_key,body,created_at)
       VALUES ('SHARED-1','legacy','2026-01-01');
     `)
-    expect(taskIdentityDoctor(conn)).toMatchObject({
+    const result = taskIdentityDoctor(conn)
+    expect(result).toMatchObject({
       tasksWithoutRecordId: 1,
       trackerTasksWithoutExternalId: 1,
       commentsWithoutTaskRecordId: 1,
       sharedKeys: [{ key: 'SHARED-1', projects: ['alpha', 'beta'], lastSeen: '2026-01-03' }],
     })
+    expect(formatTaskIdentityDoctor(result)).toContain(
+      'task identity  shared key SHARED-1 projects=alpha,beta last_seen=2026-01-03',
+    )
     conn.close()
   })
 })

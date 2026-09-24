@@ -1,9 +1,30 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { hostedTaskChanges, type TaskFetch } from './task-client.ts'
+import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
+
+function reconcileParentRecordIds(conn: Database) {
+  for (const relationship of taskIdentityRelationships) {
+    if (relationship.table !== 'task') continue
+    const unresolved = conn
+      .query<{ key: string }, []>(
+        `SELECT DISTINCT ${relationship.keyColumn} key FROM ${relationship.table}
+         WHERE ${relationship.keyColumn} IS NOT NULL AND ${relationship.recordColumn} IS NULL`,
+      )
+      .all()
+    const update = conn.query(
+      `UPDATE ${relationship.table} SET ${relationship.recordColumn}=?
+       WHERE ${relationship.keyColumn}=? AND ${relationship.recordColumn} IS NULL`,
+    )
+    for (const { key } of unresolved) {
+      const recordId = taskRecordIdFor(conn, key)
+      if (recordId) update.run(recordId, key)
+    }
+  }
+}
 
 function localId(conn: Database, table: string, recordId: string, legacy: number | null) {
   const byRecord = conn
@@ -24,11 +45,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     conn.query(`DELETE FROM task WHERE key=?`).run(row.key)
     return
   }
-  const parentRecordId = row.parent_key
-    ? (conn
-        .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-        .get(row.parent_key)?.record_id ?? null)
-    : null
+  const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key) : null
   conn
     .query(`INSERT INTO task
       (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
@@ -62,10 +79,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
 
 function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
   const id = localId(conn, 'task_comment', row.id, row.legacy_local_id)
-  const taskRecordId =
-    conn
-      .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-      .get(row.task_key)?.record_id ?? null
+  const taskRecordId = taskRecordIdFor(conn, row.task_key)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_comment WHERE id=?`).run(id)
   } else if (id) {
@@ -85,10 +99,7 @@ function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
   const id = localId(conn, 'task_document', row.id, row.legacy_local_id)
-  const taskRecordId =
-    conn
-      .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-      .get(row.task_key)?.record_id ?? null
+  const taskRecordId = taskRecordIdFor(conn, row.task_key)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_document WHERE id=?`).run(id)
   } else if (id) {
@@ -129,10 +140,7 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
   const id = localId(conn, 'task_status_event', row.id, row.legacy_local_id)
-  const taskRecordId =
-    conn
-      .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-      .get(row.task_key)?.record_id ?? null
+  const taskRecordId = taskRecordIdFor(conn, row.task_key)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_status_event WHERE id=?`).run(id)
   } else if (id) {
@@ -155,6 +163,7 @@ export function applyHostedTaskChanges(changes: HostedChanges) {
     changes.tasks.forEach((row) => {
       applyHostedTask(conn, row)
     })
+    reconcileParentRecordIds(conn)
     changes.comments.forEach((row) => {
       applyComment(conn, row)
     })

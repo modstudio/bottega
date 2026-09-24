@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
+import { taskRecordIdFor } from './task-identity.ts'
 
 const CURSOR_KEY = 'collect.hosted-notes.cursor'
 export function applyHostedNote(conn: Database, row: HostedNote) {
@@ -9,11 +10,7 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     conn.query('DELETE FROM note WHERE id=?').run(row.number)
     return
   }
-  const promotedTaskRecordId = row.promoted_task
-    ? (conn
-        .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
-        .get(row.promoted_task)?.record_id ?? null)
-    : null
+  const promotedTaskRecordId = row.promoted_task ? taskRecordIdFor(conn, row.promoted_task) : null
   conn
     .query(`INSERT INTO note(record_id,id,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id,
