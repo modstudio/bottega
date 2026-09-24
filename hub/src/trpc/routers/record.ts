@@ -25,6 +25,7 @@ import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 const uuid = z.string().uuid()
+const email = z.string().trim().toLowerCase().email()
 const limit = z.number().int().min(1).max(100).default(20)
 const filter = z.string().min(1).optional()
 const delivery = z.enum(['none', 'partial', 'full'])
@@ -392,7 +393,8 @@ export const recordRouter = t.router({
     .input(
       subscriptionCadenceInput.extend({
         scope: subscriptionScope,
-        recipientUserIds: z.array(uuid).min(1),
+        recipientUserIds: z.array(uuid),
+        recipientEmails: z.array(email),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -404,7 +406,8 @@ export const recordRouter = t.router({
       subscriptionCadenceInput.extend({
         id: uuid,
         scope: subscriptionScope,
-        recipientUserIds: z.array(uuid).min(1),
+        recipientUserIds: z.array(uuid),
+        recipientEmails: z.array(email),
       }),
     )
     .mutation(async ({ ctx, input }) => {

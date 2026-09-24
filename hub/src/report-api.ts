@@ -1,10 +1,12 @@
 import {
   appendHostedSend,
   createHostedReportSubscription,
+  hostedEmailRecipientByToken,
   hostedReportCounts,
   listHostedReportSubscriptions,
   listHostedSends,
   mirrorHostedReports,
+  unsubscribeHostedEmailRecipient,
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
@@ -129,6 +131,24 @@ export async function reportApi(
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
+  const emailUnsubscribe = /^\/v1\/report-unsubscribe\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+  const oneClickUnsubscribe = /^\/unsubscribe\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+  if (emailUnsubscribe && request.method === 'GET')
+    return json(
+      await call(dependencies.emailRecipientByToken, hostedEmailRecipientByToken)(
+        config.recordDatabaseUrl,
+        emailUnsubscribe[1]!,
+        emailUnsubscribe[2]!,
+      ),
+    )
+  const postedUnsubscribe = emailUnsubscribe ?? oneClickUnsubscribe
+  if (postedUnsubscribe && request.method === 'POST')
+    return json({
+      unsubscribed: await call(
+        dependencies.unsubscribeEmailRecipient,
+        unsubscribeHostedEmailRecipient,
+      )(config.recordDatabaseUrl, postedUnsubscribe[1]!, postedUnsubscribe[2]!),
+    })
   if (!url.pathname.startsWith('/v1/report-subscriptions') && !url.pathname.startsWith('/v1/sends'))
     return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)

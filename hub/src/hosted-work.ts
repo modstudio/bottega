@@ -512,7 +512,7 @@ export async function hostedSettings(
       status: string
       error: string | null
       test: string | number
-      recipient_details: { user_id: string; name: string; email: string }[]
+      recipient_details: { user_id: string | null; name: string; email: string }[]
     }>(
       await tx`
       SELECT at,"window",recipients,projects,items,status,error,test,
@@ -522,13 +522,14 @@ export async function hostedSettings(
       FROM hub_send
       WHERE space_id=${identity.spaceId}::uuid ORDER BY at DESC LIMIT 8`,
     )
-    const members = rows<{ user_id: string; name: string; email: string }>(
-      await tx`SELECT m.user_id,u.name,u.email FROM membership m JOIN "user" u ON u.id=m.user_id
+    const members = rows<{ user_id: string; name: string; email: string; role: string }>(
+      await tx`SELECT m.user_id,u.name,u.email,m.role FROM membership m JOIN "user" u ON u.id=m.user_id
       WHERE m.space_id=${identity.spaceId}::uuid ORDER BY lower(u.name),lower(u.email),u.id`,
     )
     return {
       allProjects: projects,
-      members,
+      members: members.map(({ role: _, ...member }) => member),
+      callerRole: members.find((member) => member.user_id === identity.userId)?.role ?? 'member',
       sends: sends.map((row) => ({
         ...row,
         at: iso(row.at)!,

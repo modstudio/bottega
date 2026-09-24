@@ -38,6 +38,7 @@ import { Route as RunsIdRouteImport } from './routes/runs.$id'
 import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
 import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
 import { Route as FlightTasksKeyRouteImport } from './routes/flight.tasks.$key'
+import { Route as UnsubscribeSpaceIdTokenRouteImport } from './routes/unsubscribe.$spaceId.$token'
 import { Route as DocsScopeSubjectSlugRouteImport } from './routes/docs.$scope.$subject.$slug'
 
 const IndexRoute = IndexRouteImport.update({
@@ -185,6 +186,11 @@ const FlightTasksKeyRoute = FlightTasksKeyRouteImport.update({
   path: '/tasks/$key',
   getParentRoute: () => FlightRoute,
 } as any)
+const UnsubscribeSpaceIdTokenRoute = UnsubscribeSpaceIdTokenRouteImport.update({
+  id: '/unsubscribe/$spaceId/$token',
+  path: '/unsubscribe/$spaceId/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
   id: '/$scope/$subject/$slug',
   path: '/$scope/$subject/$slug',
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesByTo {
@@ -253,6 +260,7 @@ export interface FileRoutesByTo {
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesById {
@@ -286,6 +294,7 @@ export interface FileRoutesById {
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRouteTypes {
@@ -320,6 +329,7 @@ export interface FileRouteTypes {
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -352,6 +362,7 @@ export interface FileRouteTypes {
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   id:
     | '__root__'
@@ -384,6 +395,7 @@ export interface FileRouteTypes {
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   fileRoutesById: FileRoutesById
 }
@@ -411,6 +423,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
   AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
+  UnsubscribeSpaceIdTokenRoute: typeof UnsubscribeSpaceIdTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -618,6 +631,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FlightTasksKeyRouteImport
       parentRoute: typeof FlightRoute
     }
+    '/unsubscribe/$spaceId/$token': {
+      id: '/unsubscribe/$spaceId/$token'
+      path: '/unsubscribe/$spaceId/$token'
+      fullPath: '/unsubscribe/$spaceId/$token'
+      preLoaderRoute: typeof UnsubscribeSpaceIdTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/$scope/$subject/$slug': {
       id: '/docs/$scope/$subject/$slug'
       path: '/$scope/$subject/$slug'
@@ -726,6 +746,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
   AcceptInvitationIdRoute: AcceptInvitationIdRoute,
+  UnsubscribeSpaceIdTokenRoute: UnsubscribeSpaceIdTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

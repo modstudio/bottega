@@ -166,6 +166,7 @@ export function isHostedPath(pathname: string) {
   if (path.startsWith('/done/tasks/')) return true
   if (path.startsWith('/reviews/')) return true
   if (path.startsWith('/accept-invitation/')) return true
+  if (path.startsWith('/unsubscribe/')) return true
   if (path.startsWith('/docs/')) return true
   return false
 }

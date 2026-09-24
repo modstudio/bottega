@@ -257,13 +257,20 @@ export const hubReportSubscriptionRecipient = pgTable.withRLS(
     subscriptionId: uuid('subscription_id')
       .notNull()
       .references(() => hubReportSubscription.id),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => user.id),
+    userId: uuid('user_id').references(() => user.id),
+    email: text(),
+    unsubscribeToken: text('unsubscribe_token'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [
     unique('hub_report_subscription_recipient_unique').on(table.subscriptionId, table.userId),
+    unique('hub_report_subscription_recipient_email_unique').on(table.subscriptionId, table.email),
+    unique('hub_report_subscription_recipient_unsubscribe_token_unique').on(table.unsubscribeToken),
+    check(
+      'hub_report_subscription_recipient_kind_check',
+      sql`(${table.userId} IS NOT NULL AND ${table.email} IS NULL AND ${table.unsubscribeToken} IS NULL)
+        OR (${table.userId} IS NULL AND ${table.email} IS NOT NULL AND ${table.unsubscribeToken} IS NOT NULL)`,
+    ),
     ...tenantPolicies('hub_report_subscription_recipient', table.spaceId),
   ],
 )
@@ -327,9 +334,7 @@ export const hubSendRecipient = pgTable.withRLS(
     sendId: uuid('send_id')
       .notNull()
       .references(() => hubSend.id),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => user.id),
+    userId: uuid('user_id').references(() => user.id),
     name: text().notNull(),
     email: text().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),

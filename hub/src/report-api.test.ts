@@ -51,3 +51,32 @@ test('the hosted route cannot update or remove a subscription in another space',
   expect(await update?.json()).toEqual({ error: 'report subscription not found' })
   expect(await remove?.json()).toEqual({ error: 'report subscription not found' })
 })
+
+test('email unsubscribe lookup and one-click POST need no session', async () => {
+  const dependencies = {
+    emailRecipientByToken: (_url: string, spaceId: string, token: string) => ({
+      ...(spaceId === ownSpace ? {} : { invalidSpace: true }),
+      email: `${token}@example.test`,
+      subscription: 'daily report',
+      space: 'Workshop',
+    }),
+    unsubscribeEmailRecipient: (_url: string, spaceId: string, token: string) =>
+      spaceId === ownSpace && token === 'mail-token',
+  }
+  const lookup = await reportApi(
+    new Request(`https://hub.example.test/v1/report-unsubscribe/${ownSpace}/mail-token`),
+    config,
+    dependencies,
+  )
+  const unsubscribe = await reportApi(
+    new Request(`https://hub.example.test/unsubscribe/${ownSpace}/mail-token`, { method: 'POST' }),
+    config,
+    dependencies,
+  )
+  expect(await lookup?.json()).toEqual({
+    email: 'mail-token@example.test',
+    subscription: 'daily report',
+    space: 'Workshop',
+  })
+  expect(await unsubscribe?.json()).toEqual({ unsubscribed: true })
+})

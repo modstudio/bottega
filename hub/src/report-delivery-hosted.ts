@@ -104,11 +104,18 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       })
       if (!loaded) throw new Error('report subscription is no longer enabled')
       const recipients = await withHostedTenant(databaseUrl, identity(value), async (tx) =>
-        rows<{ user_id: string; name: string; email: string; is_member: number }>(
-          await tx`SELECT r.user_id,u.name,u.email,
-            CASE WHEN m.user_id IS NULL THEN 0 ELSE 1 END AS is_member
+        rows<{
+          user_id: string | null
+          name: string
+          email: string
+          is_member: number
+          unsubscribe_token: string | null
+        }>(
+          await tx`SELECT r.user_id,COALESCE(u.name,r.email) AS name,COALESCE(u.email,r.email) AS email,
+            CASE WHEN r.user_id IS NULL OR m.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_member,
+            r.unsubscribe_token
           FROM hub_report_subscription_recipient r
-          JOIN "user" u ON u.id=r.user_id
+          LEFT JOIN "user" u ON u.id=r.user_id
           LEFT JOIN membership m ON m.space_id=r.space_id AND m.user_id=r.user_id
           WHERE r.subscription_id=${value.subscriptionId}::uuid
             AND r.space_id=${value.spaceId}::uuid ORDER BY r.created_at,r.id`,
@@ -117,6 +124,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           name: row.name || row.email,
           email: row.email,
           isMember: Boolean(Number(row.is_member)),
+          unsubscribeToken: row.unsubscribe_token,
         })),
       )
       const scope =
@@ -131,7 +139,10 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           : loaded.scope_kind === 'members'
             ? loaded.member_names.join(', ')
             : loaded.space_name
-      const recipientIdentity = identity(value, recipients[0]?.userId)
+      const recipientIdentity = identity(
+        value,
+        recipients.find((recipient) => recipient.userId)?.userId ?? undefined,
+      )
       const [measures, report] = await Promise.all([
         hostedMeasures(databaseUrl, recipientIdentity, period, scope),
         hostedGatherReport(databaseUrl, recipientIdentity, period, scope),
@@ -145,7 +156,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       }
     },
     async recipientsAreMembers(value, recipientUserIds) {
-      if (!recipientUserIds.length) return false
+      if (!recipientUserIds.length) return true
       return withHostedTenant(databaseUrl, identity(value, recipientUserIds[0]), async (tx) => {
         const member = rows<{ count: number }>(
           await tx`SELECT count(*)::int AS count FROM membership
@@ -222,6 +233,10 @@ export function sesReportMailClient(
                 Text: { Data: input.text, Charset: 'UTF-8' },
                 Html: { Data: input.html, Charset: 'UTF-8' },
               },
+              Headers: input.headers?.map((header) => ({
+                Name: header.name,
+                Value: header.value,
+              })),
             },
           },
         }),

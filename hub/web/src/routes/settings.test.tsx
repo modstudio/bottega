@@ -13,6 +13,7 @@ const member = {
 function renderSettings(recipients = [member]) {
   queryClient.setQueryData(trpc.record.settings.queryOptions({ hours: 48 }).queryKey, {
     allProjects: ['workshop'],
+    callerRole: 'owner',
     members: [member],
     sends: [
       {

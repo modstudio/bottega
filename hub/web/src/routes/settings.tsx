@@ -8,6 +8,7 @@ import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Dialog } from '@/ui/dialog/dialog'
 import { EmptyState } from '@/ui/empty-state/empty-state'
+import { Input } from '@/ui/field/input'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
@@ -25,6 +26,7 @@ type Draft = {
   zone: string
   enabled: boolean
   recipientUserIds: string[]
+  recipientEmails: string[]
 }
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
@@ -34,11 +36,13 @@ function SubscriptionDialog({
   row,
   projects,
   members,
+  canManageEmails,
   onClose,
 }: {
   row?: Subscription
   projects: string[]
   members: Member[]
+  canManageEmails: boolean
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<Draft>({
@@ -50,8 +54,14 @@ function SubscriptionDialog({
     weekday: row?.weekday ?? 'monday',
     zone: row?.zone ?? DEFAULT_ZONE,
     enabled: row?.enabled ?? true,
-    recipientUserIds: row?.recipients.map((recipient) => recipient.user_id) ?? [],
+    recipientUserIds:
+      row?.recipients.flatMap((recipient) => (recipient.user_id ? [recipient.user_id] : [])) ?? [],
+    recipientEmails:
+      row?.recipients
+        .filter((recipient) => !recipient.user_id)
+        .map((recipient) => recipient.email) ?? [],
   })
+  const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
   const create = useMutation({
@@ -98,7 +108,12 @@ function SubscriptionDialog({
         : draft.scope === 'members'
           ? ({ kind: 'members', userIds: draft.memberUserIds } as const)
           : ({ kind: 'space' } as const)
-    const input = { ...cadence, scope, recipientUserIds: draft.recipientUserIds }
+    const input = {
+      ...cadence,
+      scope,
+      recipientUserIds: draft.recipientUserIds,
+      recipientEmails: draft.recipientEmails,
+    }
     if (row) return update.mutate({ id: row.id, ...input })
     create.mutate(input)
   }
@@ -148,7 +163,7 @@ function SubscriptionDialog({
               variant="primary"
               disabled={
                 pending ||
-                !draft.recipientUserIds.length ||
+                (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
                 (draft.scope === 'members' && !draft.memberUserIds.length)
               }
               onClick={save}
@@ -195,6 +210,49 @@ function SubscriptionDialog({
           selected={draft.recipientUserIds}
           onChange={(recipientUserIds) => change({ recipientUserIds })}
         />
+        <div className="grid gap-2">
+          <span className="text-sm text-text-muted">Email addresses</span>
+          {canManageEmails ? (
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                aria-label="Add email address"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+              <Button
+                variant="secondary"
+                disabled={!email.trim()}
+                onClick={() => {
+                  const normalized = email.trim().toLowerCase()
+                  if (normalized && !draft.recipientEmails.includes(normalized))
+                    change({ recipientEmails: [...draft.recipientEmails, normalized] })
+                  setEmail('')
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          ) : null}
+          {draft.recipientEmails.map((address) => (
+            <div key={address} className="flex items-center gap-2 text-sm">
+              <span>{address}</span>
+              {canManageEmails ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    change({
+                      recipientEmails: draft.recipientEmails.filter((value) => value !== address),
+                    })
+                  }
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
         <Select
           label="Cadence"
           value={draft.cadence}
@@ -330,7 +388,9 @@ export function SettingsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {row.recipients.map((recipient) => recipient.name).join(', ')}
+                      {row.recipients
+                        .map((recipient) => (recipient.user_id ? recipient.name : recipient.email))
+                        .join(', ')}
                     </TableCell>
                     <TableCell>
                       <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
@@ -350,6 +410,7 @@ export function SettingsPage() {
               row={editing}
               projects={data.allProjects}
               members={data.members}
+              canManageEmails={data.callerRole === 'owner' || data.callerRole === 'admin'}
               onClose={() => {
                 setCreating(false)
                 setEditing(undefined)
