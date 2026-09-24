@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
+    "@electric-sql/pglite": "0.5.8",
     "@types/bun": "latest",
     "@typescript-eslint/parser": "8.70.0",
     "dependency-cruiser": "18.3.1",

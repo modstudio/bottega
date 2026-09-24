@@ -279,6 +279,7 @@ const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-machine-state.ts'),
   staticCheck('scripts/check-cascade-preservation.ts'),
   staticCheck('scripts/check-postgres-migrations.ts'),
+  staticCheck('scripts/check-record-migrations-apply.ts'),
   staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
   staticCheck('scripts/check-architecture.ts'),
   staticCheck('scripts/check-review-boundary.ts'),
