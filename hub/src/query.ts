@@ -2,7 +2,7 @@ import { engagedMs } from '../../shared/interval.ts'
 import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
-import { resolveTask } from './task-identity.ts'
+import { taskIdentityDecision } from './task-identity.ts'
 import {
   type DayIntervalRow,
   type DayRow,
@@ -13,6 +13,7 @@ import {
   projectSpendGrid,
   projectTasksInWindow,
   type RatioSummary,
+  taskIdentity,
   type WindowIntervalRow,
 } from './task-projections.ts'
 
@@ -35,8 +36,12 @@ export function intervalsInWindow(from: string, to: string): WindowIntervalRow[]
     .all(from, to)
   return rows.map((row) => {
     if (!row.task_key) return row
-    try {
-      const recordId = resolveTask(conn, row.task_key, row.project ?? undefined)
+    const decision = taskIdentityDecision(conn, row.task_key, row.project ?? undefined)
+    if ('several' in decision) {
+      throw new Error(`task ${row.task_key} is ambiguous; pass --project`)
+    }
+    if ('one' in decision) {
+      const recordId = decision.one
       const task = conn
         .query<
           {
@@ -65,9 +70,8 @@ export function intervalsInWindow(from: string, to: string): WindowIntervalRow[]
         task_updated_at: task.updated_at,
         task_closed_at: task.closed_at,
       }
-    } catch {
-      return row
     }
+    return row
   })
 }
 
@@ -377,11 +381,16 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
     .all()
 
   const intervalIdentity = (row: { task_key: string; project: string | null }) => {
-    try {
-      return resolveTask(db(), row.task_key, row.project ?? undefined)
-    } catch {
-      return null
+    const decision = taskIdentityDecision(db(), row.task_key, row.project ?? undefined)
+    if ('one' in decision) {
+      return taskIdentity({
+        recordId: decision.one,
+        key: row.task_key,
+        project: row.project,
+      })
     }
+    if ('several' in decision) throw new Error(`task ${row.task_key} is ambiguous; pass --project`)
+    return null
   }
   const recent = db()
     .query<{ task_key: string; project: string | null }, [string]>(

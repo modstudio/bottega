@@ -93,7 +93,7 @@ function HostedAwareTaskSheet({
 }
 
 function taskIdentity(taskKey: string, recordId?: string) {
-  return recordId ? { key: taskKey, recordId } : { key: taskKey }
+  return { key: taskKey, scope: recordId ? { recordId } : {} }
 }
 
 function TaskSheet({

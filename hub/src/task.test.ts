@@ -287,10 +287,11 @@ describe('local task tracker', () => {
       { project: 'workshop', title: 'Inspectable task', body: 'Task body' },
       { hosted },
     )
-    const comment = await commentTask(task.key, 'A useful comment', { hosted })
+    const comment = await commentTask(task.key, {}, 'A useful comment', { hosted })
     expect(comment.task_record_id).toBe(task.record_id)
     const ordinary = await createTaskDocument(
       { task: task.key, title: 'Notes', body: '# Notes' },
+      {},
       { hosted },
     )
     const handoff = await createTaskDocument(
@@ -300,6 +301,7 @@ describe('local task tracker', () => {
         body: '# Handoff',
         role: 'handoff',
       },
+      {},
       { hosted },
     )
     writeTransaction((conn) => {

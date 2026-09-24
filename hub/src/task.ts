@@ -15,7 +15,7 @@ import {
   hostedPatchTask,
   type TaskFetch,
 } from './task-client.ts'
-import { resolveTask, taskRecordIdFor } from './task-identity.ts'
+import { resolveTask, taskIdentityDecision, taskRecordIdFor } from './task-identity.ts'
 
 export type TaskScope = { project?: string; recordId?: string }
 
@@ -208,10 +208,11 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
 function cacheStatusEvent(
   conn: import('bun:sqlite').Database,
   row: import('./hosted-tasks.ts').HostedStatusEvent | undefined,
+  project: string,
   resolvedTaskRecordId?: string | null,
 ) {
   if (!row) return
-  const taskRecordId = resolvedTaskRecordId ?? taskRecordIdFor(conn, row.task_key)
+  const taskRecordId = resolvedTaskRecordId ?? taskRecordIdFor(conn, row.task_key, project)
   conn
     .query(`INSERT OR IGNORE INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
     VALUES (?,?,?,?,?,?)`)
@@ -375,11 +376,11 @@ export function taskRecord(key: string, scope: TaskScope = {}) {
     )
     .all(record.task.key, record.task.project)
     .filter((run) => {
-      try {
-        return resolveTask(db(), run.task_key, record.task.project) === record.task.record_id
-      } catch {
-        return false
-      }
+      const decision = taskIdentityDecision(db(), run.task_key, record.task.project)
+      if ('one' in decision) return decision.one === record.task.record_id
+      if ('several' in decision)
+        throw new Error(`task ${run.task_key} is ambiguous; pass --project`)
+      return false
     })
     .flatMap((run): TaskRun[] => {
       const parsed = runRef(run.ref)
@@ -412,6 +413,7 @@ export function taskRecord(key: string, scope: TaskScope = {}) {
 
 export async function setTask(
   key: string,
+  scope: TaskScope,
   changes: {
     title?: string
     status?: string
@@ -419,11 +421,11 @@ export async function setTask(
     body?: string
     assignee?: string | null
   },
-  options: { force?: boolean; hosted?: HostedOptions; scope?: TaskScope } = {},
+  options: { force?: boolean; hosted?: HostedOptions } = {},
 ): Promise<TaskRow> {
   assertHostedTaskWriteConfigured(options.hosted)
   const upper = key.toUpperCase()
-  const current = showTask(upper, options.scope).task
+  const current = showTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   if (
     changes.body !== undefined &&
@@ -452,33 +454,35 @@ export async function setTask(
   )
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
-    cacheStatusEvent(conn, hosted.status_event, current.record_id)
+    cacheStatusEvent(conn, hosted.status_event, current.project, current.record_id)
   })
   return showTask(upper, { recordId: current.record_id! }).task
 }
 
 export async function closeTask(
   key: string,
-  options: { hosted?: HostedOptions; scope?: TaskScope } = {},
+  scope: TaskScope,
+  options: { hosted?: HostedOptions } = {},
 ) {
   assertHostedTaskWriteConfigured(options.hosted)
-  const current = showTask(key, options.scope).task
+  const current = showTask(key, scope).task
   const hosted = await hostedCloseTask(current.key, options.hosted)
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
-    cacheStatusEvent(conn, hosted.status_event, current.record_id)
+    cacheStatusEvent(conn, hosted.status_event, current.project, current.record_id)
   })
   return showTask(current.key, { recordId: current.record_id! }).task
 }
 
 export async function commentTask(
   key: string,
+  scope: TaskScope,
   body: string,
-  options: { hosted?: HostedOptions; scope?: TaskScope } = {},
+  options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
   assertHostedTaskWriteConfigured(options.hosted)
   const upper = key.toUpperCase()
-  const current = showTask(upper, options.scope).task
+  const current = showTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const comment = await hostedCommentTask(current.key, body, options.hosted)
   const result = writeTransaction((conn) => {
@@ -532,11 +536,12 @@ export async function createTaskDocument(
     body?: string
     role?: string
   },
-  options: { hosted?: HostedOptions; scope?: TaskScope } = {},
+  scope: TaskScope,
+  options: { hosted?: HostedOptions } = {},
 ): Promise<TaskDocument> {
   assertHostedTaskWriteConfigured(options.hosted)
   const upper = input.task.toUpperCase()
-  const task = showTask(upper, options.scope).task
+  const task = showTask(upper, scope).task
   if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
   const version = documentVersion()
   const hosted = await hostedCreateDocument(

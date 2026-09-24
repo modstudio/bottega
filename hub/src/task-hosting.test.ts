@@ -133,7 +133,7 @@ describe('hosted-only task safety', () => {
   test('close never prunes after a hosted close failure', async () => {
     let pruned = false
     await expect(
-      closeThenPrune('DEV-1', false, {
+      closeThenPrune('DEV-1', {}, false, {
         close: async () => {
           throw new Error('hosted close failed')
         },

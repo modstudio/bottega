@@ -47,8 +47,10 @@ const input = z.object({
 
 const taskIdentityInput = {
   key: z.string().min(1).max(64),
-  project: z.string().min(1).max(64).optional(),
-  recordId: z.string().min(1).max(128).optional(),
+  scope: z.object({
+    project: z.string().min(1).max(64).optional(),
+    recordId: z.string().min(1).max(128).optional(),
+  }),
 }
 
 type ViewData = Awaited<ReturnType<typeof view>>
@@ -85,7 +87,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
   return t.router({
     task: t.procedure.input(z.object(taskIdentityInput)).query(({ input: value }) => {
       try {
-        return deps.taskRecord(value.key, { project: value.project, recordId: value.recordId })
+        return deps.taskRecord(value.key, value.scope)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
@@ -100,15 +102,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         }),
       )
       .mutation(({ input: value }) =>
-        write(() =>
-          deps.setTask(
-            value.key,
-            { status: value.status },
-            {
-              scope: { project: value.project, recordId: value.recordId },
-            },
-          ),
-        ),
+        write(() => deps.setTask(value.key, value.scope, { status: value.status })),
       ),
     setTitle: t.procedure
       .input(
@@ -118,15 +112,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         }),
       )
       .mutation(({ input: value }) =>
-        write(() =>
-          deps.setTask(
-            value.key,
-            { title: value.title },
-            {
-              scope: { project: value.project, recordId: value.recordId },
-            },
-          ),
-        ),
+        write(() => deps.setTask(value.key, value.scope, { title: value.title })),
       ),
     comment: t.procedure
       .input(
@@ -136,11 +122,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         }),
       )
       .mutation(({ input: value }) =>
-        write(() =>
-          deps.commentTask(value.key, value.body, {
-            scope: { project: value.project, recordId: value.recordId },
-          }),
-        ),
+        write(() => deps.commentTask(value.key, value.scope, value.body)),
       ),
     setDocument: t.procedure
       .input(

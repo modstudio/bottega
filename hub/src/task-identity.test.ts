@@ -1,7 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from './migrations.ts'
-import { formatTaskIdentityDoctor, resolveTask, taskIdentityDoctor } from './task-identity.ts'
+import {
+  formatTaskIdentityDoctor,
+  resolveTask,
+  taskIdentityDecision,
+  taskIdentityDoctor,
+} from './task-identity.ts'
 
 describe('resolveTask', () => {
   test('resolves one cached task and a project scope among shared claims', () => {
@@ -14,12 +19,20 @@ describe('resolveTask', () => {
         ('alpha','alpha-external','SAME-1','2026-01-01','2026-01-01'),
         ('beta','beta-external','SAME-1','2026-01-01','2026-01-01');
     `)
+    expect(taskIdentityDecision(conn, 'same-1', 'beta')).toEqual({ one: 'beta-record' })
+    expect(taskIdentityDecision(conn, 'none-1')).toEqual({ none: true })
+    expect(taskIdentityDecision(conn, 'same-1', 'alpha')).toMatchObject({
+      uncachedOnly: [{ project: 'alpha', recordId: null }],
+    })
+    expect(taskIdentityDecision(conn, 'same-1')).toMatchObject({
+      several: [{ project: 'alpha' }, { project: 'beta' }],
+    })
     expect(resolveTask(conn, 'same-1', 'beta')).toBe('beta-record')
     expect(() => resolveTask(conn, 'same-1')).toThrow('alpha SAME-1 (not cached)')
     expect(() => resolveTask(conn, 'same-1')).toThrow('beta SAME-1 beta-record')
     expect(() => resolveTask(conn, 'same-1')).toThrow('pass --project')
     expect(() => resolveTask(conn, 'same-1', 'alpha')).toThrow(
-      "stage 3's re-collection will bring it back",
+      "task SAME-1 exists in alpha but is not cached on this machine because another project's task holds the same key here; pass --project beta to reach the cached task. Re-collect the missing project to bring it back.",
     )
     conn.close()
   })

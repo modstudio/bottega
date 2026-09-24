@@ -243,6 +243,17 @@ function foldVendors(rows: IntervalRow[]): AgentSpend[] {
   return [...by.values()].sort((a, b) => b.tokens - a.tokens)
 }
 
+/** The one identity formula shared by hosted, local, and unattributed task evidence. */
+export function taskIdentity(row: {
+  spaceId?: string
+  recordId?: string | null
+  key: string | null
+  project?: string | null
+}) {
+  if (row.spaceId) return `${row.spaceId}\0${row.key ?? ''}`
+  return row.recordId ?? `unattributed:${row.project ?? 'unknown'}:${row.key ?? ''}`
+}
+
 export function projectTasksInWindow(
   rows: WindowIntervalRow[],
   projectRows: ProjectionProject[],
@@ -250,9 +261,12 @@ export function projectTasksInWindow(
 ): ProjectedTask[] {
   const groups = new Map<string, WindowIntervalRow[]>()
   for (const row of rows) {
-    const id = row.space_id
-      ? `${row.space_id}\0${row.task_key}`
-      : (row.task_record_id ?? `unattributed:${row.project ?? 'unknown'}:${row.task_key ?? ''}`)
+    const id = taskIdentity({
+      spaceId: row.space_id,
+      recordId: row.task_record_id,
+      key: row.task_key,
+      project: row.project,
+    })
     groups.set(id, [...(groups.get(id) ?? []), row])
   }
   const project = (spaceId: string | undefined, name: string | null) =>
@@ -359,11 +373,14 @@ export function projectFlightDone(input: {
       (!input.filters.project || row.project === input.filters.project) &&
       sourceMatches(row, input.filters.source),
   )
-  const identity = (row: { spaceId?: string; recordId?: string; key: string | null }) =>
-    row.spaceId ? `${row.spaceId}\0${row.key}` : (row.recordId ?? `unattributed:${row.key}`)
   const closed = new Set(
     input.completed.map((row) =>
-      identity({ spaceId: row.space_id, recordId: row.task_record_id, key: row.key }),
+      taskIdentity({
+        spaceId: row.space_id,
+        recordId: row.task_record_id,
+        key: row.key,
+        project: row.project,
+      }),
     ),
   )
   const inFlight = (row: ProjectedTask) =>
@@ -371,7 +388,7 @@ export function projectFlightDone(input: {
   const wanted =
     input.name === 'done'
       ? rows.filter(
-          (row) => row.key && (closed.has(identity(row)) || row.statusCategory === 'done'),
+          (row) => row.key && (closed.has(taskIdentity(row)) || row.statusCategory === 'done'),
         )
       : rows.filter(inFlight)
   const unmapped = rows.filter(
@@ -406,8 +423,12 @@ export function projectFlightDone(input: {
       ? projectRuns(
           input.intervals.filter(
             (item) =>
-              item.space_id === row.spaceId &&
-              (row.spaceId ? item.task_key === row.key : item.task_record_id === row.recordId),
+              taskIdentity({
+                spaceId: item.space_id,
+                recordId: item.task_record_id,
+                key: item.task_key,
+                project: item.project,
+              }) === taskIdentity(row),
           ),
           input.now,
         )
@@ -461,7 +482,12 @@ export function projectBoardCards(
   return rows.map((row) => {
     const project =
       projectRows.find((item) => item.spaceId === row.space_id && item.name === row.project) ?? null
-    const identity = row.space_id ? `${row.space_id}\0${row.key}` : row.record_id
+    const identity = taskIdentity({
+      spaceId: row.space_id,
+      recordId: row.record_id,
+      key: row.key,
+      project: row.project,
+    })
     return {
       spaceId: row.space_id,
       spaceName: row.space_name,
@@ -476,7 +502,7 @@ export function projectBoardCards(
       sourceProtocol: row.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
       capabilities: trackerCapabilities({ source: row.source as TrackerRowSource, project }),
       updatedAt: row.updated_at ?? row.last_seen,
-      workingNow: identity ? live.has(identity) : false,
+      workingNow: live.has(identity),
     }
   })
 }
@@ -492,7 +518,14 @@ export function projectBoard(input: {
   const eligible = input.rows.filter(
     (row) =>
       ['active', 'review'].includes(row.status_category ?? '') ||
-      recent.has(row.space_id ? `${row.space_id}\0${row.key}` : (row.record_id ?? '')) ||
+      recent.has(
+        taskIdentity({
+          spaceId: row.space_id,
+          recordId: row.record_id,
+          key: row.key,
+          project: row.project,
+        }),
+      ) ||
       (row.source === 'local' && !['done', 'dropped'].includes(row.status_category ?? '')),
   )
   const count = (bucket: (row: BoardSourceRow) => string) =>

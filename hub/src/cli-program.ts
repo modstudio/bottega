@@ -467,9 +467,9 @@ async function task() {
   async function closeAndPruneTask(key: string) {
     const { closed, pruned, pruneError } = await closeThenPrune(
       key,
+      { project: flag('project') },
       has('keep-branches'),
       {},
-      flag('project'),
     )
     printRow(closed)
     if (pruneError) {
@@ -506,7 +506,7 @@ async function task() {
           body: newBody(),
           role: flag('role'),
         },
-        { scope: { project: flag('project') } },
+        { project: flag('project') },
       )
       // This is a value for the caller to pass back, not presentational output.
       // Bun inspects a numeric console argument and ANSI-wraps it when
@@ -643,9 +643,8 @@ async function task() {
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
     printRow(
-      await setTask(argv[2] ?? '', changes, {
+      await setTask(argv[2] ?? '', { project: flag('project') }, changes, {
         force: has('force'),
-        scope: { project: flag('project') },
       }),
     )
     return
@@ -657,7 +656,7 @@ async function task() {
   if (sub === 'comment') {
     const body = argv[3]
     if (!body) throw new Error('hub task comment <KEY> "..."')
-    const comment = await commentTask(argv[2] ?? '', body, { scope: { project: flag('project') } })
+    const comment = await commentTask(argv[2] ?? '', { project: flag('project') }, body)
     console.log(`${comment.task_key} commented ${comment.created_at}`)
     return
   }
