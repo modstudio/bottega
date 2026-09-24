@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, beforeAll, beforeEach } from 'bun:test'
+import { afterAll, beforeEach } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,7 +15,9 @@ process.env.HUB_ORCH = fixture
 const databaseDir = mkdtempSync(join(tmpdir(), 'hub-test-'))
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
-let configDir: string
+const configDir = mkdtempSync(join(tmpdir(), 'hub-test-config-'))
+process.env[CONFIG_HOME_ENV] = configDir
+delete process.env.ORCH_RECORD_API_URL
 process.env.HUB_DB = join(databaseDir, FROZEN_STATE_NAMES.hubDatabase)
 const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
@@ -24,12 +26,6 @@ const database = new Database(process.env.HUB_DB, { create: true })
 database.exec('PRAGMA foreign_keys = ON;')
 applyMigrations(database)
 database.close()
-
-beforeAll(() => {
-  configDir = mkdtempSync(join(tmpdir(), 'hub-test-config-'))
-  process.env[CONFIG_HOME_ENV] = configDir
-  delete process.env.ORCH_RECORD_API_URL
-})
 
 beforeEach(assertTestHubDatabase)
 

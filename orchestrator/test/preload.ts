@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, afterEach, beforeAll, beforeEach } from 'bun:test'
+import { afterAll, afterEach, beforeEach } from 'bun:test'
 import {
   chmodSync,
   copyFileSync,
@@ -55,9 +55,11 @@ const originalPath = process.env.PATH
 const originalSandbox = process.env.ORCH_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
-let configDir: string
+const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
+process.env[CONFIG_HOME_ENV] = configDir
+delete process.env.ORCH_RECORD_API_URL
 process.env.ORCH_DB = store
 process.env.HUB_DB = join(dir, FROZEN_STATE_NAMES.hubDatabase)
 process.env.ORCH_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
@@ -175,12 +177,6 @@ const { db } = await import('../src/database/db.ts')
  */
 let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
-
-beforeAll(() => {
-  configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
-  process.env[CONFIG_HOME_ENV] = configDir
-  delete process.env.ORCH_RECORD_API_URL
-})
 
 beforeEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
