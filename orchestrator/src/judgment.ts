@@ -49,6 +49,7 @@ import {
 } from './score/score.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import {
+  refuseChildTurnVoid,
   refuseUnvoid,
   refuseVerdict,
   type VerdictRefusal,
@@ -714,6 +715,8 @@ export async function scoreRun(
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
+  const childTurnVoidRefusal = refuseChildTurnVoid(requestedId, id, flags.has('void'))
+  if (childTurnVoidRefusal) throw new Error(childTurnVoidRefusal)
   if (recordRequestedUnvoid(id, row.evidence_excluded, flags, options, presentation)) return
   // A pick-time harness refusal never selected an agent, but it is still a
   // real failed row the owning session must be able to clear from its ledger.

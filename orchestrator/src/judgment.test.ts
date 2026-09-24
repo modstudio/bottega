@@ -96,10 +96,15 @@ describe('score ruling', () => {
     ).toEqual({ evidence_excluded: null, delivery: 'full', quality: 'right' })
   })
 
-  test('a leaf id scores the root of its conversation', async () => {
+  test('a child void writes nothing, while a child verdict still scores the root', async () => {
     const root = insert()
     const child = insert()
     db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+    await expect(score(child, [], { void: true })).rejects.toThrow(`run orch score ${root} --void`)
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(root)).toEqual({
+      evidence_excluded: null,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM score').get()).toEqual({ n: 0 })
     await score(child, ['full', 'right'])
     expect(db().query('SELECT run_id FROM score').all()).toEqual([{ run_id: root }])
   })
