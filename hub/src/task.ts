@@ -353,6 +353,7 @@ export function taskRecord(key: string, scope: TaskScope = {}) {
   const runs = db()
     .query<
       {
+        task_key: string
         ref: string
         agent: string | null
         job: string | null
@@ -364,7 +365,7 @@ export function taskRecord(key: string, scope: TaskScope = {}) {
       },
       [string, string]
     >(
-      `SELECT ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
+      `SELECT task_key, ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
             MAX(open) running, SUM(vendor_tokens) vendor_tokens,
             SUM(vendor_cost_usd) vendor_cost_usd
        FROM interval
@@ -375,7 +376,7 @@ export function taskRecord(key: string, scope: TaskScope = {}) {
     .all(record.task.key, record.task.project)
     .filter((run) => {
       try {
-        return resolveTask(db(), record.task.key, record.task.project) === record.task.record_id
+        return resolveTask(db(), run.task_key, record.task.project) === record.task.record_id
       } catch {
         return false
       }

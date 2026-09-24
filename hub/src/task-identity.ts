@@ -23,7 +23,7 @@ export function taskRecordIdFor(conn: Database, key: string, project?: string): 
   }
 }
 
-export type TaskIdentityCandidate = {
+type TaskIdentityCandidate = {
   project: string
   key: string
   recordId: string | null

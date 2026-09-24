@@ -92,6 +92,10 @@ function HostedAwareTaskSheet({
   return <TaskSheet taskKey={taskKey} recordId={recordId} onClose={onClose} />
 }
 
+function taskIdentity(taskKey: string, recordId?: string) {
+  return recordId ? { key: taskKey, recordId } : { key: taskKey }
+}
+
 function TaskSheet({
   taskKey,
   recordId,
@@ -101,7 +105,7 @@ function TaskSheet({
   recordId?: string
   onClose: () => void
 }) {
-  const identity = { key: taskKey, ...(recordId ? { recordId } : {}) }
+  const identity = taskIdentity(taskKey, recordId)
   const record = useQuery(trpc.work.task.queryOptions(identity))
   const [title, setTitle] = useState('')
   const [comment, setComment] = useState('')

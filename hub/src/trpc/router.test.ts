@@ -185,7 +185,14 @@ describe('work.task', () => {
       view: fakeView,
       taskRecord: ((key: string, scope: unknown) => {
         seen.push(key, scope)
-        return { task: { key }, source: 'local', project: null, runs: [], comments: [], documents: [] }
+        return {
+          task: { key },
+          source: 'local',
+          project: null,
+          runs: [],
+          comments: [],
+          documents: [],
+        }
       }) as never,
     })
     await router.createCaller({}).task({ key: 'SAME-1', project: 'alpha', recordId: 'task-alpha' })
