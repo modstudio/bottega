@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { EMPTY_CANON_SHA, decideCanonEvalPack } from './canon-eval-pack.ts'
+import { decideCanonEvalPack, EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 
 describe('canon eval pack gate', () => {
   const project = { name: 'registered', path: '/projects/registered' }
