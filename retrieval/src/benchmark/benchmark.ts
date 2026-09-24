@@ -110,6 +110,8 @@ function reportSet(
     reranked: Ranking[]
     index?: Ranking[]
     codeIndex?: Ranking[]
+    codeIndexExcludeTests?: Ranking[]
+    codeIndexDownrankTests?: Ranking[]
   },
 ) {
   const missedIds = rankings.keyword
@@ -121,6 +123,8 @@ function reportSet(
         rankings.reranked,
         ...(rankings.index ? [rankings.index] : []),
         ...(rankings.codeIndex ? [rankings.codeIndex] : []),
+        ...(rankings.codeIndexExcludeTests ? [rankings.codeIndexExcludeTests] : []),
+        ...(rankings.codeIndexDownrankTests ? [rankings.codeIndexDownrankTests] : []),
       ].every((method) => {
         const ranking = method.find((candidate) => candidate.queryId === queryId)
         return (
@@ -136,6 +140,12 @@ function reportSet(
       embeddingsPlusRerank: scoreRankings(rankings.reranked),
       ...(rankings.index ? { index: scoreRankings(rankings.index) } : {}),
       ...(rankings.codeIndex ? { codeIndex: scoreRankings(rankings.codeIndex) } : {}),
+      ...(rankings.codeIndexExcludeTests
+        ? { codeIndexExcludeTests: scoreRankings(rankings.codeIndexExcludeTests) }
+        : {}),
+      ...(rankings.codeIndexDownrankTests
+        ? { codeIndexDownrankTests: scoreRankings(rankings.codeIndexDownrankTests) }
+        : {}),
     },
     missedByEveryMethodAt5: queries
       .filter((query) => missedIds.includes(query.id))
@@ -165,6 +175,8 @@ async function main() {
   const keywordRankings: Ranking[] = []
   const indexRankings: Ranking[] = []
   const codeIndexRankings: Ranking[] = []
+  const codeIndexExcludeTestsRankings: Ranking[] = []
+  const codeIndexDownrankTestsRankings: Ranking[] = []
 
   for (const [index, query] of queries.entries()) {
     const embedded = rankByEmbedding(chunks, corpusVectors, queryVectors[index] ?? [])
@@ -213,31 +225,50 @@ async function main() {
   }
 
   for (const query of REAL_CODE_QUERIES) {
-    const output = await searchCode({ name: PLATFORM_SLUG, path: repositoryRoot }, query.query, 5)
-    codeIndexRankings.push({
-      queryId: query.id,
-      goldLabels: query.goldLabels,
-      chunks: output.results.map((result, index) => ({
-        id: `code-index:${query.id}:${index}`,
-        path: result.path,
-        identity: { kind: 'code' as const, path: result.path },
-        startLine: result.startLine,
-        endLine: result.endLine,
-        text: result.snippet,
-      })),
-    })
+    for (const [testPolicy, rankings] of [
+      ['include', codeIndexRankings],
+      ['exclude', codeIndexExcludeTestsRankings],
+      ['downrank', codeIndexDownrankTestsRankings],
+    ] as const) {
+      const output = await searchCode(
+        { name: PLATFORM_SLUG, path: repositoryRoot },
+        query.query,
+        5,
+        { testPolicy },
+      )
+      rankings.push({
+        queryId: query.id,
+        goldLabels: query.goldLabels,
+        chunks: output.results.map((result, index) => ({
+          id: `code-index-${testPolicy}:${query.id}:${index}`,
+          path: result.path,
+          identity: { kind: 'code' as const, path: result.path },
+          startLine: result.startLine,
+          endLine: result.endLine,
+          text: result.snippet,
+        })),
+      })
+    }
   }
 
   const rankingsFor = (querySet: LabeledQuery[]) => {
     const ids = new Set(querySet.map((query) => query.id))
     const indexed = indexRankings.filter((ranking) => ids.has(ranking.queryId))
     const codeIndexed = codeIndexRankings.filter((ranking) => ids.has(ranking.queryId))
+    const codeIndexExcludeTests = codeIndexExcludeTestsRankings.filter((ranking) =>
+      ids.has(ranking.queryId),
+    )
+    const codeIndexDownrankTests = codeIndexDownrankTestsRankings.filter((ranking) =>
+      ids.has(ranking.queryId),
+    )
     return {
       keyword: keywordRankings.filter((ranking) => ids.has(ranking.queryId)),
       embeddings: embeddingRankings.filter((ranking) => ids.has(ranking.queryId)),
       reranked: rerankedRankings.filter((ranking) => ids.has(ranking.queryId)),
       ...(indexed.length ? { index: indexed } : {}),
       ...(codeIndexed.length ? { codeIndex: codeIndexed } : {}),
+      ...(codeIndexExcludeTests.length ? { codeIndexExcludeTests } : {}),
+      ...(codeIndexDownrankTests.length ? { codeIndexDownrankTests } : {}),
     }
   }
 

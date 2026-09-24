@@ -1,5 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { chunkDoc, chunkText, docIdentity, splitChunksToModelLimit } from './chunks.ts'
+import {
+  chunkDoc,
+  chunkText,
+  docIdentity,
+  isTestCodePath,
+  splitChunksToModelLimit,
+} from './chunks.ts'
+
+test('recognizes code test files and test directory segments', () => {
+  expect(isTestCodePath('src/example.test.ts')).toBe(true)
+  expect(isTestCodePath('src/example.test.tsx')).toBe(true)
+  expect(isTestCodePath('src/test/example.ts')).toBe(true)
+  expect(isTestCodePath('test/example.ts')).toBe(true)
+  expect(isTestCodePath('src/testing/example.ts')).toBe(false)
+  expect(isTestCodePath('src/example.ts')).toBe(false)
+})
 
 describe('chunkText', () => {
   test('bounds retrieval units and overlaps their context', () => {

@@ -87,6 +87,7 @@ export async function indexedSearch<
     environment?: NodeJS.ProcessEnv
     databasePath?: string
     clients?: SearchClients
+    downrank?: (row: Row) => boolean
   } = {},
 ): Promise<{
   query: string
@@ -157,15 +158,22 @@ export async function indexedSearch<
         (left, right) =>
           right.rerankScore - left.rerankScore || left.row.id.localeCompare(right.row.id),
       )
-      .slice(0, k)
+    const ordered = options.downrank
+      ? [
+          ...ranked.filter(({ row }) => !options.downrank!(row)),
+          ...ranked.filter(({ row }) => options.downrank!(row)),
+        ]
+      : ranked
     return {
       query,
       k,
       contract: currentContract,
       refresh,
-      results: ranked.map(({ row, rerankScore }) =>
-        project(row, { embeddingScore: embeddingScores.get(row.id)!, rerankScore }),
-      ),
+      results: ordered
+        .slice(0, k)
+        .map(({ row, rerankScore }) =>
+          project(row, { embeddingScore: embeddingScores.get(row.id)!, rerankScore }),
+        ),
     }
   } finally {
     database.close()
