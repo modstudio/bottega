@@ -5,7 +5,7 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
 import type { AskLoopback } from '../ask/ask.ts'
-import { compilePack, recordPack } from '../canon/canon.ts'
+import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
 import {
   type ConfinementEvent,
   type FreezeFailure,
@@ -109,6 +109,7 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
+import { operatorKnowledgeSection } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -232,6 +233,8 @@ export async function run(opts: {
   /** Pilot opt-in. Default `cli`. */
   transport?: TransportName
   cwd?: string
+  /** Internal override for callers whose execution cwd is not their canon source. */
+  canonPack?: Pack
   /** Shell directory that launched the root run, before implicit caller resolution. */
   launchCwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
@@ -445,7 +448,7 @@ export async function run(opts: {
   let pack: ReturnType<typeof compilePack> | null = null
   if (!opts.resume) {
     try {
-      pack = compilePack({ job: opts.job, cwd: callerCwd })
+      pack = opts.canonPack ?? compilePack({ job: opts.job, cwd: callerCwd })
       recordPack(pack)
     } catch (cause) {
       const message = (cause as Error).message
@@ -483,9 +486,7 @@ export async function run(opts: {
       })
     }
   }
-  const docsSection = pack?.docs.length
-    ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}`
-    : ''
+  const docsSection = operatorKnowledgeSection(pack ?? null)
   let prompt =
     writesJob && (!opts.resume || opts.resume.fresh)
       ? [

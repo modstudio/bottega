@@ -317,6 +317,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/health/doctor.ts',
     [
       'node:fs',
+      '../../../shared/brand.ts',
       '../agent/agent-auth.ts',
       '../agent/agent-registry.ts',
       '../agent/agents.ts',

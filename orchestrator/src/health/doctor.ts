@@ -1,6 +1,7 @@
 // concern: doctor
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
@@ -44,6 +45,20 @@ type DoctorPresentation = {
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
+}
+
+export function canonEvalDoctorDecision(input: {
+  pass: boolean
+  recordedSha: string
+  currentSha: string | null
+  currentCanonError: string | null
+}): { result: 'pass (current canon)' | 'pass' | 'FAIL'; unavailableReason: string | null } {
+  const result = input.pass
+    ? input.currentSha !== null && input.recordedSha === input.currentSha
+      ? 'pass (current canon)'
+      : 'pass'
+    : 'FAIL'
+  return { result, unavailableReason: input.currentCanonError }
 }
 
 function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | undefined) {
@@ -136,14 +151,24 @@ export async function doctorCommand(
       log(`  ${ev.slug.padEnd(30)} skipped  —  never run`)
       continue
     }
-    const currentSha = currentCanonEvalSha(ev)
+    let currentSha: string | null = null
+    let currentCanonError: string | null = null
+    try {
+      currentSha = currentCanonEvalSha(ev, { project: PLATFORM_SLUG })
+    } catch (error) {
+      currentCanonError = error instanceof Error ? error.message : String(error)
+    }
     for (const row of rows) {
-      const result = row.pass
-        ? row.canon_sha === currentSha
-          ? 'pass (current canon)'
-          : 'pass'
-        : 'FAIL'
+      const { result } = canonEvalDoctorDecision({
+        pass: row.pass,
+        recordedSha: row.canon_sha,
+        currentSha,
+        currentCanonError,
+      })
       log(`  ${ev.slug.padEnd(30)} ${result.padEnd(20)} ${row.agent}  ${row.at}`)
+    }
+    if (currentCanonError !== null) {
+      log(`  ${ev.slug.padEnd(30)} current canon unavailable — ${currentCanonError}`)
     }
   }
   const failingEvalSlugs = [
