@@ -38,6 +38,8 @@ export type DeliverySubscription = {
 
 export type RenderedReport = { subject: string; text: string; html: string }
 export type DeliveryStatus = 'skipped' | 'failed'
+const escapeHtml = (value: string) =>
+  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 
 export type DeliveryRepository = {
   discover(): Promise<DeliveryCandidate[]>
@@ -213,17 +215,35 @@ export function renderReport(
   }
   const base = {
     subject: `Report: ${subscription.scopeName}`,
-    text: renderText(subscription.report, new Map(), presentation),
-    html: renderHtml(subscription.report, new Map(), presentation),
+    text: renderText(subscription.report, new Map(), presentation, {
+      details: !subscription.sections?.length,
+    }),
+    html: renderHtml(subscription.report, new Map(), presentation, {
+      details: !subscription.sections?.length,
+    }),
   }
   if (!subscription.sections?.length) return base
-  const sectionText = subscription.sections.map((section) =>
-    renderText(section.report, new Map(), { ...presentation, scopeName: section.name, measures: section.measures }),
+  const sectionText = subscription.sections.map(
+    (section) =>
+      `${section.name}\n${renderText(section.report, new Map(), {
+        ...presentation,
+        scopeName: section.name,
+        measures: section.measures,
+      })}`,
   )
-  const sectionHtml = subscription.sections.map((section) =>
-    renderHtml(section.report, new Map(), { ...presentation, scopeName: section.name, measures: section.measures })
-      .replace(/^.*?<body[^>]*>/s, '')
-      .replace(/<\/body>.*$/s, ''),
+  const sectionHtml = subscription.sections.map(
+    (section) =>
+      `<h2 style="font-family:sans-serif;font-size:18px">${escapeHtml(section.name)}</h2>${renderHtml(
+        section.report,
+        new Map(),
+        {
+          ...presentation,
+          scopeName: section.name,
+          measures: section.measures,
+        },
+      )
+        .replace(/^.*?<body[^>]*>/s, '')
+        .replace(/<\/body>.*$/s, '')}`,
   )
   return {
     ...base,

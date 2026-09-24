@@ -39,7 +39,9 @@ async function reportList(json: boolean) {
         ? `project ${row.project_name}`
         : row.scope_kind === 'members'
           ? `members ${row.members.map((member) => member.user_id).join(',')}`
-          : 'space'
+          : row.scope_kind === 'projects'
+            ? `projects ${row.projects.map((project) => `${project.space_name}/${project.project_name}`).join(',')}`
+            : 'space'
     const when =
       row.cadence === 'weekly'
         ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`

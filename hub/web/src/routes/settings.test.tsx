@@ -14,6 +14,8 @@ function renderSettings(recipients = [member]) {
   queryClient.setQueryData(trpc.record.settings.queryOptions({ hours: 48 }).queryKey, {
     allProjects: ['workshop'],
     callerRole: 'owner',
+    isPersonalSpace: true,
+    manageableProjects: [],
     members: [member],
     sends: [
       {
@@ -34,6 +36,7 @@ function renderSettings(recipients = [member]) {
         scope_kind: 'project' as const,
         project_name: 'workshop',
         members: [],
+        projects: [],
         cadence: 'weekly' as const,
         hour: 8,
         weekday: 'monday' as const,

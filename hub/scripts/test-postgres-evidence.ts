@@ -2,6 +2,7 @@
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { bindTenant } from '../../shared/record/tenant.ts'
 import {
   deleteIntervals,
   type IntervalEvidence,
@@ -57,6 +58,7 @@ const SECOND_USER = '01990000-0000-7000-8000-000000000651'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
+const PROJECT_B = '01990000-0000-7000-8000-00000000066c'
 const interval: IntervalEvidence = {
   task_key: 'DEV-655',
   project_name: PLATFORM_SLUG,
@@ -84,7 +86,8 @@ try {
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now())`
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
-    VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
+    VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
+      (${PROJECT_B}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
   await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
     VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_B}::uuid,${USER}::uuid,'member','write',now()),
@@ -129,6 +132,12 @@ try {
     if ((await count(SPACE_A, 'hub_day')) !== 1) throw new Error('day upsert did not land')
     if ((await count(SPACE_B, 'hub_interval')) !== 0 || (await count(SPACE_B, 'hub_day')) !== 0)
       throw new Error('another space observed hosted hub evidence')
+    const crossSpaceProjects = await client.begin(async (tx) => {
+      await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B] })
+      return tx`SELECT id FROM project WHERE id IN (${PROJECT_A}::uuid,${PROJECT_B}::uuid)`
+    })
+    if (crossSpaceProjects.length !== 2)
+      throw new Error('app.space_ids did not admit a two-space project read')
     await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { source: interval.source, ref: interval.ref, start_at: interval.start_at },
     ])
@@ -476,6 +485,26 @@ try {
       recipientColumns.some((column) => column.is_nullable !== 'YES')
     )
       throw new Error('report email recipient columns did not migrate as nullable')
+    const projectSubscriptionColumns =
+      await admin`SELECT column_name,is_nullable FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='hub_report_subscription_project'
+      ORDER BY column_name`
+    if (
+      ![
+        'id',
+        'space_id',
+        'subscription_id',
+        'project_id',
+        'project_space_id',
+        'project_name',
+        'created_at',
+      ].every((name) =>
+        projectSubscriptionColumns.some(
+          (column) => column.column_name === name && column.is_nullable === 'NO',
+        ),
+      )
+    )
+      throw new Error('report subscription project table or snapshot columns did not migrate')
     const recipientKindCheck = await admin`SELECT pg_get_constraintdef(oid) definition
       FROM pg_constraint WHERE conname='hub_report_subscription_recipient_kind_check'`
     if (
@@ -511,6 +540,48 @@ try {
     }
     if (!memberEmailRefused) throw new Error('a member added an email report recipient')
     await admin`UPDATE membership SET role='owner' WHERE space_id=${SPACE_A}::uuid AND user_id=${USER}::uuid`
+    await admin`UPDATE membership SET role='admin' WHERE space_id=${SPACE_B}::uuid AND user_id=${USER}::uuid`
+    await admin`UPDATE "user" SET personal_space_id=${SPACE_A}::uuid WHERE id=${USER}::uuid`
+    const projectsSubscription = await createHostedReportSubscription(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B] },
+      {
+        scope: { kind: 'projects', projectIds: [PROJECT_A, PROJECT_B] },
+        cadence: 'daily',
+        hour: 8,
+        zone: 'America/New_York',
+        recipientUserIds: [USER],
+      },
+    )
+    if (projectsSubscription.projects.length !== 2)
+      throw new Error('projects subscription did not retain both chosen project ids')
+    await admin`UPDATE membership SET role='member' WHERE space_id=${SPACE_B}::uuid AND user_id=${USER}::uuid`
+    const demotedDelivery = await hostedDeliveryRepository(actorUrl).load(
+      {
+        subscriptionId: projectsSubscription.id,
+        spaceId: SPACE_A,
+        cadence: 'daily',
+        hour: 8,
+        weekday: null,
+        zone: 'America/New_York',
+        createdAt: projectsSubscription.created_at,
+        lastPeriodEnd: null,
+      },
+      {
+        from: '2026-09-17T00:00:00.000Z',
+        to: '2026-09-18T00:00:00.000Z',
+        key: '2026-09-18T00:00:00.000Z',
+      },
+    )
+    if (
+      demotedDelivery.scope.kind !== 'projects' ||
+      demotedDelivery.scope.projectIds.join() !== PROJECT_A ||
+      !demotedDelivery.exclusions?.some(
+        (line) => line.includes(PLATFORM_SLUG) && line.includes('owner or admin'),
+      )
+    )
+      throw new Error('demoted project was not excluded with its snapshotted name and reason')
+    await unsubscribeHostedReportSubscription(actorUrl, identity, projectsSubscription.id)
     const emailSubscription = await createHostedReportSubscription(actorUrl, identity, {
       scope: { kind: 'space' },
       cadence: 'daily',
@@ -996,6 +1067,7 @@ try {
   await admin`DELETE FROM hub_send_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_subscription_member WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_report_subscription_project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_subscription_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM hub_report_subscription WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
   await admin`DELETE FROM membership WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`

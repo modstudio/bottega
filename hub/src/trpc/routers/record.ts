@@ -102,6 +102,7 @@ const subscriptionScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('space') }).strict(),
   z.object({ kind: z.literal('project'), project: z.string().min(1).max(64) }).strict(),
   z.object({ kind: z.literal('members'), userIds: z.array(uuid).min(1) }).strict(),
+  z.object({ kind: z.literal('projects'), projectIds: z.array(uuid).min(1) }).strict(),
 ])
 
 function optionalSnapshot<T extends { machineId: string; takenAt: string }>(

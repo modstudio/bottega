@@ -6,9 +6,9 @@ import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hostedMeasures } from './hosted-measures.ts'
-import { computeMeasures } from './measures.ts'
 import { gatherHostedReport, hostedGatherReport } from './hosted-report-gather.ts'
 import { withHostedTenant } from './hosted-tasks.ts'
+import { computeMeasures } from './measures.ts'
 import type {
   DeliveryCandidate,
   DeliveryPeriod,
@@ -112,7 +112,9 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         identity(value, ownerUserId),
         async (tx) =>
           rows<{ space_id: string }>(
-            await tx`SELECT space_id FROM membership WHERE user_id=${ownerUserId}::uuid`,
+            await tx`SELECT DISTINCT project_space_id AS space_id
+              FROM hub_report_subscription_project
+              WHERE subscription_id=${value.subscriptionId}::uuid AND space_id=${value.spaceId}::uuid`,
           ).map((row) => row.space_id),
       )
       const deliveryIdentity = {
@@ -150,17 +152,20 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
               rows<{
                 project_id: string
                 project_name: string | null
+                snapshot_name: string
                 space_id: string | null
+                snapshot_space_id: string
                 space_name: string | null
                 role: string | null
                 retired_at: string | Date | null
               }>(
-                await tx`SELECT x.project_id,p.name AS project_name,p.space_id,sp.name AS space_name,
+                await tx`SELECT x.project_id,p.name AS project_name,x.project_name AS snapshot_name,
+                  p.space_id,x.project_space_id AS snapshot_space_id,sp.name AS space_name,
                   m.role,p.retired_at
                 FROM hub_report_subscription_project x
                 LEFT JOIN project p ON p.id=x.project_id
-                LEFT JOIN space sp ON sp.id=p.space_id
-                LEFT JOIN membership m ON m.space_id=p.space_id AND m.user_id=${ownerUserId}::uuid
+                LEFT JOIN space sp ON sp.id=x.project_space_id
+                LEFT JOIN membership m ON m.space_id=x.project_space_id AND m.user_id=${ownerUserId}::uuid
                 WHERE x.subscription_id=${value.subscriptionId}::uuid AND x.space_id=${value.spaceId}::uuid
                 ORDER BY sp.name,p.name,p.id`,
               ),
@@ -175,7 +180,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           (project.role === 'owner' || project.role === 'admin'),
       )
       const exclusions = selectedProjects.flatMap((project) => {
-        const name = `${project.space_name ?? 'deleted space'}/${project.project_name ?? project.project_id}`
+        const name = `${project.space_name ?? project.snapshot_space_id}/${project.snapshot_name}`
         if (!project.project_name || project.retired_at) return [`${name}: project was deleted`]
         if (project.role !== 'owner' && project.role !== 'admin')
           return [`${name}: subscription owner is no longer an owner or admin`]
@@ -187,8 +192,11 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           : loaded.scope_kind === 'members'
             ? ({ kind: 'members', userIds: loaded.member_ids } as const)
             : loaded.scope_kind === 'projects'
-              ? ({ kind: 'projects', projectIds: validProjects.map((row) => row.project_id) } as const)
-            : ({ kind: 'space' } as const)
+              ? ({
+                  kind: 'projects',
+                  projectIds: validProjects.map((row) => row.project_id),
+                } as const)
+              : ({ kind: 'space' } as const)
       const scopeName =
         loaded.scope_kind === 'project'
           ? loaded.project_name!
@@ -196,10 +204,14 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
             ? loaded.member_names.join(', ')
             : loaded.scope_kind === 'projects'
               ? 'Selected projects'
-            : loaded.space_name
-      const recipientIdentity = loaded.scope_kind === 'projects'
-        ? deliveryIdentity
-        : identity(value, recipients.find((recipient) => recipient.userId)?.userId ?? undefined)
+              : loaded.space_name
+      const recipientIdentity =
+        loaded.scope_kind === 'projects'
+          ? {
+              ...deliveryIdentity,
+              spaceIds: [...new Set(validProjects.map((project) => project.space_id!))],
+            }
+          : identity(value, recipients.find((recipient) => recipient.userId)?.userId ?? undefined)
       if (loaded.scope_kind === 'projects' && validProjects.length === 0) {
         return {
           recipients,
@@ -221,16 +233,26 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         current.push(project)
         sectionGroups.set(project.space_id!, current)
       }
-      const sections = loaded.scope_kind === 'projects'
-        ? await Promise.all([...sectionGroups.values()].map(async (projects) => {
-            const sectionScope = { kind: 'projects' as const, projectIds: projects.map((row) => row.project_id) }
-            const [sectionMeasures, sectionReport] = await Promise.all([
-              hostedMeasures(databaseUrl, deliveryIdentity, period, sectionScope),
-              hostedGatherReport(databaseUrl, deliveryIdentity, period, sectionScope),
-            ])
-            return { name: projects[0]!.space_name!, measures: sectionMeasures, report: sectionReport }
-          }))
-        : undefined
+      const sections =
+        loaded.scope_kind === 'projects'
+          ? await Promise.all(
+              [...sectionGroups.values()].map(async (projects) => {
+                const sectionScope = {
+                  kind: 'projects' as const,
+                  projectIds: projects.map((row) => row.project_id),
+                }
+                const [sectionMeasures, sectionReport] = await Promise.all([
+                  hostedMeasures(databaseUrl, recipientIdentity, period, sectionScope),
+                  hostedGatherReport(databaseUrl, recipientIdentity, period, sectionScope),
+                ])
+                return {
+                  name: projects[0]!.space_name!,
+                  measures: sectionMeasures,
+                  report: sectionReport,
+                }
+              }),
+            )
+          : undefined
       return {
         recipients,
         scope,

@@ -3,6 +3,8 @@ CREATE TABLE "hub_report_subscription_project" (
 	"space_id" uuid NOT NULL,
 	"subscription_id" uuid NOT NULL,
 	"project_id" uuid NOT NULL,
+	"project_space_id" uuid NOT NULL,
+	"project_name" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "hub_report_subscription_project_unique" UNIQUE("subscription_id","project_id")
 );

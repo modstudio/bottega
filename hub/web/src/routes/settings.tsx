@@ -17,9 +17,10 @@ type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]
 type Member = Settings['members'][number]
 type Draft = {
-  scope: 'space' | 'project' | 'members'
+  scope: 'space' | 'project' | 'members' | 'projects'
   project: string
   memberUserIds: string[]
+  projectIds: string[]
   cadence: 'daily' | 'weekly'
   hour: number
   weekday: Weekday
@@ -36,12 +37,16 @@ function SubscriptionDialog({
   row,
   projects,
   members,
+  manageableProjects,
+  isPersonalSpace,
   canManageEmails,
   onClose,
 }: {
   row?: Subscription
   projects: string[]
   members: Member[]
+  manageableProjects: Settings['manageableProjects']
+  isPersonalSpace: boolean
   canManageEmails: boolean
   onClose: () => void
 }) {
@@ -49,6 +54,10 @@ function SubscriptionDialog({
     scope: row?.scope_kind ?? 'space',
     project: row?.project_name ?? projects[0] ?? '',
     memberUserIds: row?.members.map((member) => member.user_id) ?? [],
+    projectIds:
+      row?.projects
+        .map((project) => project.project_id)
+        .filter((id) => manageableProjects.some((project) => project.id === id)) ?? [],
     cadence: row?.cadence ?? 'daily',
     hour: row?.hour ?? 9,
     weekday: row?.weekday ?? 'monday',
@@ -107,7 +116,9 @@ function SubscriptionDialog({
         ? ({ kind: 'project', project: draft.project } as const)
         : draft.scope === 'members'
           ? ({ kind: 'members', userIds: draft.memberUserIds } as const)
-          : ({ kind: 'space' } as const)
+          : draft.scope === 'projects'
+            ? ({ kind: 'projects', projectIds: draft.projectIds } as const)
+            : ({ kind: 'space' } as const)
     const input = {
       ...cadence,
       scope,
@@ -164,7 +175,8 @@ function SubscriptionDialog({
               disabled={
                 pending ||
                 (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
-                (draft.scope === 'members' && !draft.memberUserIds.length)
+                (draft.scope === 'members' && !draft.memberUserIds.length) ||
+                (draft.scope === 'projects' && !draft.projectIds.length)
               }
               onClick={save}
             >
@@ -183,6 +195,7 @@ function SubscriptionDialog({
             { value: 'space', label: 'Space' },
             { value: 'project', label: 'Project' },
             { value: 'members', label: 'Members' },
+            ...(isPersonalSpace ? [{ value: 'projects', label: 'Projects across spaces' }] : []),
           ]}
           onChange={(scope) => change({ scope: scope as Draft['scope'] })}
         />
@@ -202,6 +215,40 @@ function SubscriptionDialog({
             selected={draft.memberUserIds}
             onChange={(memberUserIds) => change({ memberUserIds })}
           />
+        ) : null}
+        {draft.scope === 'projects' ? (
+          <div className="grid gap-2">
+            <span className="text-sm text-text-muted">Projects across spaces</span>
+            {[...new Set(manageableProjects.map((project) => project.space_name))].map(
+              (spaceName) => (
+                <div key={spaceName} className="grid gap-1">
+                  <span className="text-sm">{spaceName}</span>
+                  {manageableProjects
+                    .filter((project) => project.space_name === spaceName)
+                    .map((project) => (
+                      <label
+                        key={project.id}
+                        htmlFor={`scope-project-${project.id}`}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <Checkbox
+                          id={`scope-project-${project.id}`}
+                          checked={draft.projectIds.includes(project.id)}
+                          onChange={(event) =>
+                            change({
+                              projectIds: event.target.checked
+                                ? [...draft.projectIds, project.id]
+                                : draft.projectIds.filter((id) => id !== project.id),
+                            })
+                          }
+                        />
+                        {project.name}
+                      </label>
+                    ))}
+                </div>
+              ),
+            )}
+          </div>
         ) : null}
         <MemberChecks
           label="Recipients"
@@ -377,7 +424,9 @@ export function SettingsPage() {
                         ? `Project: ${row.project_name}`
                         : row.scope_kind === 'members'
                           ? `Members: ${row.members.map((member) => member.name).join(', ')}`
-                          : 'Space'}
+                          : row.scope_kind === 'projects'
+                            ? `Projects: ${row.projects.map((project) => `${project.space_name}/${project.project_name}`).join(', ')}`
+                            : 'Space'}
                     </TableCell>
                     <TableCell muted>
                       {row.cadence === 'weekly'
@@ -410,6 +459,8 @@ export function SettingsPage() {
               row={editing}
               projects={data.allProjects}
               members={data.members}
+              manageableProjects={data.manageableProjects}
+              isPersonalSpace={data.isPersonalSpace}
               canManageEmails={data.callerRole === 'owner' || data.callerRole === 'admin'}
               onClose={() => {
                 setCreating(false)

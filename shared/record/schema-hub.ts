@@ -260,6 +260,8 @@ export const hubReportSubscriptionProject = pgTable.withRLS(
     projectId: uuid('project_id')
       .notNull()
       .references(() => project.id),
+    projectSpaceId: uuid('project_space_id').notNull(),
+    projectName: text('project_name').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [

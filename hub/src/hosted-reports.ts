@@ -154,7 +154,10 @@ function planSubscriptionScope(
     subscriptionSpaceId: string
     eligibleProjectIds?: readonly string[]
   },
-): Pick<PlannedReportSubscription, 'scope_kind' | 'project_name' | 'member_user_ids' | 'project_ids'> {
+): Pick<
+  PlannedReportSubscription,
+  'scope_kind' | 'project_name' | 'member_user_ids' | 'project_ids'
+> {
   if (!scope || !['space', 'project', 'members', 'projects'].includes(scope.kind))
     throw new Error('scope must be space, a project in this space, members, or projects')
   if (scope.kind === 'project') {
@@ -177,7 +180,12 @@ function planSubscriptionScope(
     if (!projects.length) throw new Error('projects scope requires at least one project')
     if (projects.some((projectId) => !(facts.eligibleProjectIds ?? []).includes(projectId)))
       throw new Error('every report project must belong to a space you own or administer')
-    return { scope_kind: 'projects', project_name: null, member_user_ids: [], project_ids: projects }
+    return {
+      scope_kind: 'projects',
+      project_name: null,
+      member_user_ids: [],
+      project_ids: projects,
+    }
   }
   return { scope_kind: 'space', project_name: null, member_user_ids: [], project_ids: [] }
 }
@@ -384,11 +392,12 @@ export async function selectHostedReportSubscriptions(tx: SQL, spaceId: string) 
     WHERE m.space_id=${spaceId}::uuid ORDER BY m.created_at,m.id`,
   )
   const projects = rows<HostedReportProject & { subscription_id: string }>(
-    await tx`SELECT x.id,x.subscription_id,x.project_id,p.name AS project_name,
-      p.space_id,sp.name AS space_name
+    await tx`SELECT x.id,x.subscription_id,x.project_id,
+      COALESCE(p.name,x.project_name) AS project_name,
+      x.project_space_id AS space_id,sp.name AS space_name
     FROM hub_report_subscription_project x
-    JOIN project p ON p.id=x.project_id
-    JOIN space sp ON sp.id=p.space_id
+      LEFT JOIN project p ON p.id=x.project_id
+      LEFT JOIN space sp ON sp.id=x.project_space_id
     WHERE x.space_id=${spaceId}::uuid ORDER BY sp.name,p.name,p.id`,
   )
   const bySubscription = new Map<string, HostedReportRecipient[]>()
@@ -443,9 +452,11 @@ export async function createHostedReportSubscription(
       WHERE m.space_id=${identity.spaceId}::uuid`,
     )
     const callerMembership = members.find((row) => row.user_id === identity.userId)
-    const eligibleProjects = rows<{ id: string }>(await tx`SELECT p.id FROM project p
+    const eligibleProjects = rows<{ id: string; space_id: string; name: string }>(
+      await tx`SELECT p.id,p.space_id,p.name FROM project p
       JOIN membership m ON m.space_id=p.space_id AND m.user_id=${identity.userId}::uuid
-      WHERE m.role IN ('owner','admin') AND p.retired_at IS NULL`)
+      WHERE m.role IN ('owner','admin') AND p.retired_at IS NULL`,
+    )
     const owner = rows<{ personal_space_id: string | null }>(
       await tx`SELECT personal_space_id FROM "user" WHERE id=${identity.userId}::uuid`,
     )[0]
@@ -468,10 +479,13 @@ export async function createHostedReportSubscription(
       await tx`INSERT INTO hub_report_subscription_member
         (id,space_id,subscription_id,user_id,created_at)
         VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
-    for (const projectId of planned.project_ids)
+    for (const projectId of planned.project_ids) {
+      const project = eligibleProjects.find((row) => row.id === projectId)!
       await tx`INSERT INTO hub_report_subscription_project
-        (id,space_id,subscription_id,project_id,created_at)
-        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${projectId}::uuid,now())`
+        (id,space_id,subscription_id,project_id,project_space_id,project_name,created_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${projectId}::uuid,
+        ${project.space_id}::uuid,${project.name},now())`
+    }
     for (const userId of planned.recipient_user_ids)
       await tx`INSERT INTO hub_report_subscription_recipient
         (id,space_id,subscription_id,user_id,created_at)
@@ -500,9 +514,11 @@ export async function updateHostedReportSubscription(
       WHERE m.space_id=${identity.spaceId}::uuid`,
     )
     const callerMembership = members.find((row) => row.user_id === identity.userId)
-    const eligibleProjects = rows<{ id: string }>(await tx`SELECT p.id FROM project p
+    const eligibleProjects = rows<{ id: string; space_id: string; name: string }>(
+      await tx`SELECT p.id,p.space_id,p.name FROM project p
       JOIN membership m ON m.space_id=p.space_id AND m.user_id=${identity.userId}::uuid
-      WHERE m.role IN ('owner','admin') AND p.retired_at IS NULL`)
+      WHERE m.role IN ('owner','admin') AND p.retired_at IS NULL`,
+    )
     const owner = rows<{ personal_space_id: string | null }>(
       await tx`SELECT personal_space_id FROM "user" WHERE id=${identity.userId}::uuid`,
     )[0]
@@ -535,10 +551,13 @@ export async function updateHostedReportSubscription(
         VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${userId}::uuid,now())`
     await tx`DELETE FROM hub_report_subscription_project
       WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid`
-    for (const projectId of planned.project_ids)
+    for (const projectId of planned.project_ids) {
+      const project = eligibleProjects.find((row) => row.id === projectId)!
       await tx`INSERT INTO hub_report_subscription_project
-        (id,space_id,subscription_id,project_id,created_at)
-        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${projectId}::uuid,now())`
+        (id,space_id,subscription_id,project_id,project_space_id,project_name,created_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${id}::uuid,${projectId}::uuid,
+        ${project.space_id}::uuid,${project.name},now())`
+    }
     await tx`DELETE FROM hub_report_subscription_recipient
       WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid AND user_id IS NOT NULL`
     for (const userId of planned.recipient_user_ids)
@@ -573,6 +592,7 @@ export async function hostedEmailRecipientByToken(url: string, spaceId: string, 
           s.cadence || ' ' || CASE s.scope_kind
             WHEN 'project' THEN 'project ' || s.project_name
             WHEN 'members' THEN 'members'
+            WHEN 'projects' THEN 'selected projects'
             ELSE 'space'
           END || ' report' AS subscription,
           sp.name AS space
