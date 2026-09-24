@@ -50,6 +50,10 @@ test('session honesty and unknown attribution render beside their numbers', () =
   expect(html).toContain('Silences longer than ten minutes are not counted.')
   expect(html).toContain('0.3 hours uncounted silence')
   expect(html).toContain('attribution is mostly unknown')
+  expect(html).toContain('Tasks done')
+  expect(html).toContain('Tasks moved to done in this window.')
+  expect(html).toContain('Cycle time for tasks done')
+  expect(html).not.toMatch(/landed|shipped/i)
   expect(html).toContain('n=2')
 })
 
@@ -62,7 +66,7 @@ test('absent cycle time and person-only outcome measures render nothing', () => 
     cost: { ...shared.cost, unknownShare: undefined },
   }
   const html = renderToStaticMarkup(<MeasuresSummary measures={person} />)
-  expect(html).not.toContain('How many tasks landed')
+  expect(html).not.toContain('Tasks done')
   expect(html).not.toContain('cycle time')
   expect(html).not.toContain('n=')
 })

@@ -297,7 +297,8 @@ describe('hosted report delivery', () => {
     expect(rendered.text).toContain('Silences longer than ten minutes are not counted.')
     expect(rendered.text).toContain('0.8 hours of silence was uncounted.')
     expect(rendered.text).toContain('2 agent-hours had unknown attribution.')
-    expect(rendered.text).toContain('Median cycle time was 5 hours across 2 items.')
+    expect(rendered.text).toContain('2 tasks moved to done in this window.')
+    expect(rendered.text).toContain('Median cycle time for tasks done was 5 hours across 2 tasks.')
     expect(rendered.text).toContain('BY PROJECT')
     expect(rendered.text).toContain('DEV-785 · 1h 0m engaged · 1.2K agent tokens')
     expect(rendered.text).toContain('Restore the formatted report')
@@ -308,6 +309,7 @@ describe('hosted report delivery', () => {
     expect(rendered.html).toContain('Restore the formatted report')
     expect(rendered.html).toContain('This measure is not additive.')
     expect(rendered.html).toContain('Silences longer than ten minutes are not counted.')
+    expect(rendered.html).not.toMatch(/landed|shipped/i)
     expect(rendered.text.toLowerCase()).not.toMatch(/ranking|composite|lines per|spent|worked/)
   })
 

@@ -43,4 +43,7 @@ test('reports page uses the shared agent-token abbreviation', () => {
   )
   expect(html).toContain('3.4M agent tokens')
   expect(html).not.toContain('3,400,000')
+  expect(html).toContain('Done')
+  expect(html).toContain('Tasks moved to done in this window')
+  expect(html).not.toContain('Landed')
 })
