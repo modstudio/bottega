@@ -365,6 +365,7 @@ type MirrorBody = {
 }
 
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
+type MirrorLegacyLocalIdHolder = { id: string; spaceId: string; legacyLocalId: number }
 type MirrorCollisionDecision =
   | { action: 'insert' | 'update-same-row' | 'idempotent-duplicate' }
   | { action: 'refuse'; reason: string }
@@ -374,8 +375,20 @@ export function mirrorCollisionDecision(
   existing: MirrorIdentity | null,
   sameRow: 'update' | 'idempotent',
   identity: 'natural-key' | 'id' = 'natural-key',
+  legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null = null,
 ): MirrorCollisionDecision {
-  if (!existing) return { action: 'insert' }
+  if (!existing) {
+    if (legacyLocalIdHolder && legacyLocalIdHolder.id !== incoming.id)
+      return {
+        action: 'refuse',
+        reason:
+          `refusing to mirror ${incoming.naturalKey} with id ${incoming.id}: legacy local id ` +
+          `${legacyLocalIdHolder.legacyLocalId} in space ${legacyLocalIdHolder.spaceId} already ` +
+          `belongs to id ${legacyLocalIdHolder.id}; restore this local row's record id to ` +
+          `${legacyLocalIdHolder.id}, or ask the hosted-space operator to resolve the local id collision`,
+      }
+    return { action: 'insert' }
+  }
   if (
     existing.spaceId === incoming.spaceId &&
     (identity === 'id' || existing.naturalKey === incoming.naturalKey)
@@ -429,6 +442,13 @@ async function mirrorCommentRow(tx: SQL, identity: TaskIdentity, row: HostedComm
   const existing = rows<{ id: string; space_id: string; legacy_local_id: number | null }>(
     await tx`SELECT id,space_id,legacy_local_id FROM hub_task_comment WHERE id=${row.id}::uuid`,
   )[0]
+  const legacyLocalIdHolder =
+    !existing && row.legacy_local_id !== null
+      ? rows<{ id: string; space_id: string }>(
+          await tx`SELECT id,space_id FROM hub_task_comment
+            WHERE space_id=${identity.spaceId}::uuid AND legacy_local_id=${row.legacy_local_id}`,
+        )[0]
+      : undefined
   const decision = mirrorCollisionDecision(
     {
       id: row.id,
@@ -440,6 +460,13 @@ async function mirrorCommentRow(tx: SQL, identity: TaskIdentity, row: HostedComm
     ),
     'update',
     'id',
+    legacyLocalIdHolder
+      ? {
+          id: legacyLocalIdHolder.id,
+          spaceId: legacyLocalIdHolder.space_id,
+          legacyLocalId: row.legacy_local_id!,
+        }
+      : null,
   )
   applyMirrorDecision(decision)
   if (decision.action === 'update-same-row') {
@@ -451,14 +478,20 @@ async function mirrorCommentRow(tx: SQL, identity: TaskIdentity, row: HostedComm
   }
   await tx`INSERT INTO hub_task_comment
     (id,legacy_local_id,space_id,project_name,task_key,body,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-    ON CONFLICT (space_id,legacy_local_id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
+    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 async function mirrorDocumentRow(tx: SQL, identity: TaskIdentity, row: HostedDocument) {
   const existing = rows<{ id: string; space_id: string; legacy_local_id: number | null }>(
     await tx`SELECT id,space_id,legacy_local_id FROM hub_task_document WHERE id=${row.id}::uuid`,
   )[0]
+  const legacyLocalIdHolder =
+    !existing && row.legacy_local_id !== null
+      ? rows<{ id: string; space_id: string }>(
+          await tx`SELECT id,space_id FROM hub_task_document
+            WHERE space_id=${identity.spaceId}::uuid AND legacy_local_id=${row.legacy_local_id}`,
+        )[0]
+      : undefined
   const decision = mirrorCollisionDecision(
     {
       id: row.id,
@@ -470,6 +503,13 @@ async function mirrorDocumentRow(tx: SQL, identity: TaskIdentity, row: HostedDoc
     ),
     'update',
     'id',
+    legacyLocalIdHolder
+      ? {
+          id: legacyLocalIdHolder.id,
+          spaceId: legacyLocalIdHolder.space_id,
+          legacyLocalId: row.legacy_local_id!,
+        }
+      : null,
   )
   applyMirrorDecision(decision)
   if (decision.action === 'update-same-row') {
@@ -482,14 +522,20 @@ async function mirrorDocumentRow(tx: SQL, identity: TaskIdentity, row: HostedDoc
   }
   await tx`INSERT INTO hub_task_document
     (id,legacy_local_id,space_id,project_name,task_key,role,title,body,version,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-    ON CONFLICT (space_id,legacy_local_id) DO UPDATE SET role=excluded.role,title=excluded.title,body=excluded.body,version=excluded.version,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
+    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 async function mirrorStatusEventRow(tx: SQL, identity: TaskIdentity, row: HostedStatusEvent) {
   const existing = rows<{ id: string; space_id: string; legacy_local_id: number | null }>(
     await tx`SELECT id,space_id,legacy_local_id FROM hub_task_status_event WHERE id=${row.id}::uuid`,
   )[0]
+  const legacyLocalIdHolder =
+    !existing && row.legacy_local_id !== null
+      ? rows<{ id: string; space_id: string }>(
+          await tx`SELECT id,space_id FROM hub_task_status_event
+            WHERE space_id=${identity.spaceId}::uuid AND legacy_local_id=${row.legacy_local_id}`,
+        )[0]
+      : undefined
   const decision = mirrorCollisionDecision(
     {
       id: row.id,
@@ -501,6 +547,13 @@ async function mirrorStatusEventRow(tx: SQL, identity: TaskIdentity, row: Hosted
     ),
     'idempotent',
     'id',
+    legacyLocalIdHolder
+      ? {
+          id: legacyLocalIdHolder.id,
+          spaceId: legacyLocalIdHolder.space_id,
+          legacyLocalId: row.legacy_local_id!,
+        }
+      : null,
   )
   const proceed = applyMirrorDecision(decision)
   if (
@@ -513,8 +566,7 @@ async function mirrorStatusEventRow(tx: SQL, identity: TaskIdentity, row: Hosted
   if (!proceed) return
   await tx`INSERT INTO hub_task_status_event
     (id,legacy_local_id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-    ON CONFLICT (space_id,legacy_local_id) DO NOTHING`
+    VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 export async function mirrorHostedTasks(url: string, identity: TaskIdentity, body: MirrorBody) {

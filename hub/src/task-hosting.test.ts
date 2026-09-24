@@ -14,6 +14,19 @@ describe('hosted-only task safety', () => {
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
     const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
     expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })
+    expect(
+      mirrorCollisionDecision(
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
+        null,
+        'update',
+        'id',
+        { id: 'id-2', spaceId: 'space-a', legacyLocalId: 760 },
+      ),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror comment 760 with id id-1: legacy local id 760 in space space-a already belongs to id id-2; restore this local row's record id to id-2, or ask the hosted-space operator to resolve the local id collision",
+    })
     expect(mirrorCollisionDecision(incoming, incoming, 'update')).toEqual({
       action: 'update-same-row',
     })
