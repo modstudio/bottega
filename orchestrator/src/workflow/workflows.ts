@@ -19,6 +19,7 @@ import {
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
 type WorkflowMode = {
@@ -403,6 +404,17 @@ const selectedWorkflow = (slug: string, version: number | undefined, d: Database
     : showWorkflow(slug, version, d)
 const selectedCatalogue = (version: number | undefined, d: Database) =>
   version === undefined ? productionStepCatalogue(d) : showStepCatalogue(version, d)
+
+export function workflowModeStepLists(
+  slug: string,
+  d: Database = db(),
+  selection: WorkflowSelection = {},
+): WorkflowModeStepList[] {
+  return selectedWorkflow(slug, selection.version, d).definition.modes.map((mode) => ({
+    mode: mode.slug,
+    steps: mode.steps,
+  }))
+}
 
 function missingWorkflowArguments(
   definition: WorkflowDefinition,

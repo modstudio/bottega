@@ -10,6 +10,7 @@ import {
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
+import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 export type WorkflowCursorContext = {
@@ -311,8 +312,11 @@ function getWorkflowStepWithCursorImpl(
     selection,
     row ? cursorAutonomy(row) : autonomy,
   )
-  const index = composition.steps.findIndex((step) => step.slug === stepSlug)
-  if (index < 0) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
+  const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
+    { mode, steps: composition.steps.map((step) => step.slug) },
+  ])
+  const index = composition.steps.findIndex((step) => step.slug === resolvedStepSlug)
+  if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
   const requested = composition.steps[index]!
   if (index === 0 && startDecision === 'retire') {
     row = insertCursor(composition, context, d, autonomy)
@@ -341,7 +345,15 @@ function getWorkflowStepWithCursorImpl(
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
-  return getWorkflowStep(slug, project, stepSlug, effectiveArgs, d, selection, cursorAutonomy(row))
+  return getWorkflowStep(
+    slug,
+    project,
+    resolvedStepSlug,
+    effectiveArgs,
+    d,
+    selection,
+    cursorAutonomy(row),
+  )
 }
 
 export function getWorkflowStepWithCursor(
