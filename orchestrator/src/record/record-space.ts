@@ -3,7 +3,8 @@
 
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from './record-auth.ts'
+import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
+import { setActiveRecordSpace } from './record-auth.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
@@ -147,15 +148,16 @@ export async function inviteToActiveRecordSpace(
   url: string,
   email: string,
   role: RecordSpaceRole,
-  auth: ReturnType<typeof recordAuth> = recordAuth(url),
+  client: Pick<RecordApiClient, 'inviteMember'> = recordApiClient(),
 ): Promise<string> {
   const current = await currentRecordUserSession(url)
   if (!current.activeSpaceId) {
     throw new Error('record session has no active space; run `orch record space switch <slug>`')
   }
-  const invitation = await auth.api.createInvitation({
-    headers: bearerHeaders(current.token),
-    body: { email, role, organizationId: current.activeSpaceId },
+  const invitation = await client.inviteMember({
+    email,
+    role,
+    organizationId: current.activeSpaceId,
   })
   return invitation.id
 }

@@ -81,6 +81,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         memberships: [],
       }
     },
+    async inviteMember() {
+      return { id: newRecordId() }
+    },
     async putSnapshot() {
       return { takenAt: new Date().toISOString() }
     },

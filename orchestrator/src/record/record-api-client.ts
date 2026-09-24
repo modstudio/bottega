@@ -59,6 +59,11 @@ export type RecordDocImportInput = {
 
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
+  inviteMember(input: {
+    email: string
+    role: 'member' | 'admin' | 'owner'
+    organizationId: string
+  }): Promise<{ id: string }>
   putSnapshot(
     kind: SnapshotKind,
     input: { machineId: string; payload: unknown },
@@ -159,7 +164,15 @@ async function request<T>(
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-    const error = typeof record.error === 'string' ? record.error : `record API ${response.status}`
+    const nested =
+      record.error && typeof record.error === 'object'
+        ? (record.error as Record<string, unknown>)
+        : {}
+    const error =
+      (typeof record.error === 'string' && record.error) ||
+      (typeof record.message === 'string' && record.message) ||
+      (typeof nested.message === 'string' && nested.message) ||
+      `record API ${response.status}`
     throw recordApiUnreachable(new Error(error))
   }
   return (init.schema ? init.schema(body) : (body as T)) as T
@@ -191,6 +204,11 @@ export function recordApiClient(): RecordApiClient {
   if (process.env.NODE_ENV === 'test') throw new Error(TEST_REFUSAL)
   return {
     whoami: () => request('/v1/whoami'),
+    inviteMember: (input) =>
+      request('/api/auth/organization/invite-member', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),

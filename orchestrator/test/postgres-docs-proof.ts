@@ -22,6 +22,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
   }
   return {
     whoami: unused,
+    inviteMember: unused,
     putSnapshot: unused,
     listSnapshots: unused,
     listDocs: async (query) => {

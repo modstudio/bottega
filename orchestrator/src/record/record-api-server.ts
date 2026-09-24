@@ -78,7 +78,7 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
 
 export function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(config.recordUrl, environment)
+  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
   const migrations = recordMigrationCount()
   const app = recordApi({
     recordUrl: config.recordUrl,

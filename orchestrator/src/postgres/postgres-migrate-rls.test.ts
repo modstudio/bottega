@@ -23,6 +23,7 @@ import { registerProjectSpaceProofs } from '../../test/postgres-project-space-pr
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -76,7 +77,8 @@ realPostgres('RLS proof against real Postgres', () => {
   let repairToken = ''
   let pendingInvitation = ''
   let invitationAuth: ReturnType<typeof recordAuth>
-  const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[3]>>[0]> = []
+  let invitationClient: Pick<RecordApiClient, 'inviteMember'>
+  const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[4]>>[0]> = []
   const authProjectA = newRecordId()
   const authProjectB = newRecordId()
   const authRunA = newRecordId()
@@ -86,9 +88,16 @@ realPostgres('RLS proof against real Postgres', () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
     process.env.RECORD_HUB_URL = 'https://hub.example.test'
-    invitationAuth = recordAuth(actorUrl!, process.env, undefined, async (input) => {
+    invitationAuth = recordAuth(actorUrl!, process.env, undefined, undefined, async (input) => {
       invitationEmails.push(input)
     })
+    invitationClient = {
+      inviteMember: async (input) => {
+        const token = recordSession.token()
+        if (!token) throw new Error('record test session has no token')
+        return invitationAuth.api.createInvitation({ headers: bearerHeaders(token), body: input })
+      },
+    }
     await migratePostgres()
 
     succeeds(
@@ -240,7 +249,7 @@ realPostgres('RLS proof against real Postgres', () => {
       actorUrl!,
       SIGN_UP_AUTH.emailB,
       'member',
-      invitationAuth,
+      invitationClient,
     )
     succeeds(
       'postgres',
@@ -384,7 +393,7 @@ realPostgres('RLS proof against real Postgres', () => {
     await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member'),
+      inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member', invitationClient),
     ).rejects.toThrow('not allowed to invite users')
   })
 
@@ -398,10 +407,10 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'admin-sent@example.test', 'member', invitationAuth),
+      inviteToActiveRecordSpace(actorUrl!, 'admin-sent@example.test', 'member', invitationClient),
     ).resolves.toBeString()
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'admin-owner@example.test', 'owner', invitationAuth),
+      inviteToActiveRecordSpace(actorUrl!, 'admin-owner@example.test', 'owner', invitationClient),
     ).rejects.toThrow('not allowed to invite a user with this role')
   })
 
@@ -411,7 +420,7 @@ realPostgres('RLS proof against real Postgres', () => {
       actorUrl!,
       'owner-sent@example.test',
       'member',
-      invitationAuth,
+      invitationClient,
     )
     expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
   })
@@ -476,7 +485,7 @@ realPostgres('RLS proof against real Postgres', () => {
          'member','pending',now() - interval '1 day',now());`,
     )
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, email, 'member', invitationAuth),
+      inviteToActiveRecordSpace(actorUrl!, email, 'member', invitationClient),
     ).resolves.toBeString()
   })
 

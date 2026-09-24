@@ -13,6 +13,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
       personalSpaceId: null,
       memberships: [],
     }),
+    inviteMember: async () => ({ id: newRecordId() }),
     putSnapshot: async () => ({ takenAt: new Date().toISOString() }),
     listSnapshots: async () => ({ items: [] }),
     listDocs: async () => ({ items: [], nextCursor: null }),
