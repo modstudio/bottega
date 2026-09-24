@@ -755,23 +755,7 @@ realPostgres('RLS proof against real Postgres', () => {
         version: 2,
       })
       expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
-      const docsMemberSpace = newRecordId()
-      succeeds(
-        'postgres',
-        'postgres',
-        `INSERT INTO space (id,name,slug,created_at)
-         VALUES ('${docsMemberSpace}','docs-member-${docsMemberSpace}','docs-member-${docsMemberSpace}',now());
-         INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
-         VALUES ('${newRecordId()}','${docsMemberSpace}','${created.user.id}','member','write',now())
-         ON CONFLICT (space_id,user_id) DO NOTHING;`,
-      )
-      await proveHostedDocs({
-        origin,
-        token: created.token,
-        otherToken: tokenB,
-        memberSpaceId: docsMemberSpace,
-        scoreRunId: httpRun,
-      })
+      await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
     } finally {
       server.stop(true)
     }

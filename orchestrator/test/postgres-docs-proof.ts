@@ -3,6 +3,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
+import { succeeds } from './fixtures/postgres-rls.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'
 
 function unused(): Promise<never> {
@@ -132,8 +133,6 @@ export async function proveHostedDocs(input: {
   origin: string
   token: string
   otherToken: string
-  memberSpaceId: string
-  scoreRunId: string
 }): Promise<void> {
   const headers = {
     Authorization: `Bearer ${input.token}`,
@@ -142,10 +141,22 @@ export async function proveHostedDocs(input: {
   const whoami = await fetch(`${input.origin}/v1/whoami`, { headers })
   expect(whoami.status).toBe(200)
   const identity = (await whoami.json()) as {
+    user: { id: string }
     activeSpaceId: string
     personalSpaceId: string
   }
   expect(identity.activeSpaceId).toBe(identity.personalSpaceId)
+  const memberSpaceId = newRecordId()
+  succeeds(
+    'postgres',
+    'postgres',
+    `
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${memberSpaceId}','docs-member-${memberSpaceId}','docs-member-${memberSpaceId}',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('${newRecordId()}','${memberSpaceId}','${identity.user.id}','member','write',now());
+  `,
+  )
   const selectSpace = async (spaceId: string) => {
     const response = await fetch(`${input.origin}/v1/active-space`, {
       method: 'PUT',
@@ -154,7 +165,7 @@ export async function proveHostedDocs(input: {
     })
     expect(response.status).toBe(200)
   }
-  await selectSpace(input.memberSpaceId)
+  await selectSpace(memberSpaceId)
   const put = await fetch(`${input.origin}/v1/docs`, {
     method: 'PUT',
     headers,
@@ -193,7 +204,7 @@ export async function proveHostedDocs(input: {
   ).toBe(true)
   const personalDetail = await fetch(`${input.origin}/v1/docs/${created.id}`, { headers })
   expect(personalDetail.status).toBe(200)
-  await selectSpace(input.memberSpaceId)
+  await selectSpace(memberSpaceId)
 
   const revisions = await fetch(`${input.origin}/v1/docs/${created.id}/revisions`, { headers })
   expect(revisions.status).toBe(200)
@@ -249,7 +260,11 @@ export async function proveHostedDocs(input: {
   await proveCanonRefusal(input.origin, headers)
   await selectSpace(identity.personalSpaceId)
 
-  const scored = await fetch(`${input.origin}/v1/runs/${input.scoreRunId}/score`, {
+  const runs = await fetch(`${input.origin}/v1/runs?limit=1`, { headers })
+  expect(runs.status).toBe(200)
+  const runId = ((await runs.json()) as { items: { id: string }[] }).items[0]?.id
+  expect(runId).toBeString()
+  const scored = await fetch(`${input.origin}/v1/runs/${runId}/score`, {
     method: 'PUT',
     headers,
     body: JSON.stringify({
