@@ -1,6 +1,7 @@
 import {
   type HostedStatusEvent,
   type HostedTask,
+  isMirrorExpectedSpaceMismatch,
   isTaskMirrorAdoption,
   type MirrorAdoption,
 } from '../hosted-tasks.ts'
@@ -102,17 +103,46 @@ export async function createCollectorMirrorPass(
       return false
     })
 
+  const refuseChangedSpace = <T extends { project_name: string }>(
+    error: unknown,
+    rows: readonly T[],
+    kind: CollectorMirrorKind,
+  ) => {
+    if (!isMirrorExpectedSpaceMismatch(error)) return false
+    identity = null
+    identityError = error instanceof Error ? error : new Error(String(error))
+    for (const row of rows) skip(row.project_name, 'identity-unreadable', kind)
+    return true
+  }
+
   return {
     async mirrorTasks(rows) {
       const selected = select(rows.map(hostedTaskBody), 'tasks')
       if (!selected.length) return
-      const response = await hostedMirrorTasks({ tasks: selected })
-      const adoptions: MirrorAdoption[] = response.adoptions ?? []
-      persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
+      try {
+        const response = await hostedMirrorTasks({
+          tasks: selected,
+          expectedSpaceId: identity!.activeSpaceId,
+        })
+        const adoptions: MirrorAdoption[] = response.adoptions ?? []
+        persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
+      } catch (error) {
+        if (refuseChangedSpace(error, selected, 'tasks')) return
+        throw error
+      }
     },
     async mirrorStatusEvents(rows) {
       const selected = select(rows, 'statusEvents')
-      if (selected.length) await hostedMirrorTasks({ tasks: [], statusEvents: selected })
+      if (!selected.length) return
+      try {
+        await hostedMirrorTasks({
+          tasks: [],
+          statusEvents: selected,
+          expectedSpaceId: identity!.activeSpaceId,
+        })
+      } catch (error) {
+        if (!refuseChangedSpace(error, selected, 'statusEvents')) throw error
+      }
     },
     reportSkipped() {
       for (const entry of [...skipped.values()].sort(

@@ -69,6 +69,7 @@ mock.module('../mcp.ts', () => ({
 
 let refuseMirror = false
 let refuseIdentity = false
+let changeActiveSpace = false
 const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started' }
 const mirrored = new Map<string, string[]>()
 const mirroredEvents: Array<{ task_key: string; project_name: string }> = []
@@ -86,7 +87,13 @@ mock.module('../task-client.ts', () => ({
   hostedMirrorTasks: async (body: {
     tasks: Array<{ id: string; key: string }>
     statusEvents?: Array<{ task_key: string; project_name: string }>
+    expectedSpaceId?: string
   }) => {
+    if (changeActiveSpace)
+      throw new Error(
+        `hosted hub refused the request (409): mirror expected space ${body.expectedSpaceId}, actual space space-changed; re-run after the active space settles`,
+      )
+    if (body.expectedSpaceId !== 'space-active') throw new Error('missing expected active space')
     for (const task of body.tasks ?? []) {
       const ids = mirrored.get(task.key) ?? []
       ids.push(task.id)
@@ -123,6 +130,7 @@ beforeEach(() => {
   mirroredEvents.length = 0
   refuseMirror = false
   refuseIdentity = false
+  changeActiveSpace = false
   trackerStatuses.ALP = 'started'
   trackerStatuses.STO = 'started'
 })
@@ -216,6 +224,25 @@ test('an unreadable identity keeps collected tasks local and performs no hosted 
   expect(mirrored.size).toBe(0)
   expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
     'reason=identity-unreadable',
+  )
+  errors.mockRestore()
+})
+
+test('an active-space change keeps collected tasks local and skips the rest of the pass', async () => {
+  changeActiveSpace = true
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+
+  const result = await ingestTrackers()
+
+  expect(db().query(`SELECT 1 FROM task WHERE key='ALP-1'`).get()).toBeTruthy()
+  expect(db().query(`SELECT 1 FROM task WHERE key='STO-1'`).get()).toBeTruthy()
+  expect(mirrored.size).toBe(0)
+  expect(result.every((row) => row.error === undefined)).toBeTrue()
+  expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+    'reason=identity-unreadable',
+  )
+  expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+    're-run after the active space settles',
   )
   errors.mockRestore()
 })

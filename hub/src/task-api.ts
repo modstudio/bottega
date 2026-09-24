@@ -5,6 +5,7 @@ import {
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
   addHostedComment,
+  assertMirrorExpectedSpace,
   createHostedDocument,
   createHostedTask,
   getHostedTask,
@@ -140,6 +141,10 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
     return value ? json(value) : json({ error: 'task not found' }, 404)
   }
   if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
+  assertMirrorExpectedSpace(
+    typeof body?.expectedSpaceId === 'string' ? body.expectedSpaceId : undefined,
+    who.spaceId,
+  )
   return json(
     await call(dependencies.mirror, mirrorHostedTasks)(
       config.recordDatabaseUrl,
