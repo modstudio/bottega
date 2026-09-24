@@ -9,9 +9,9 @@ import {
   sourcedAttributionFindings,
 } from './check-attribution.ts'
 import {
+  commentTaskKeyRefusal,
   DEFAULT_COMMENT_HISTORY_PHRASES,
   formatCommentFinding,
-  trackedCommentFindings,
 } from './check-comments.ts'
 import { formatSpellingFinding, spellingFindings, typosVersionRefusal } from './check-spelling.ts'
 
@@ -191,11 +191,29 @@ function commentRules(project: Project, report: boolean) {
   }
 }
 
-function commentsCommand(argv: string[], presentation: Presentation): void {
+async function commentsCommand(argv: string[], presentation: Presentation): Promise<void> {
   const cwd = presentation.cwd()
   const project = selectedProject(argv, cwd)
   const root = checkout(project, flagValue(argv, 'project') !== undefined, cwd)
   const report = argv.includes('--report')
+  const refusal = commentTaskKeyRefusal(
+    project.settings.checks?.commentTaskKeys === true && !report,
+    project.name,
+    project.settings.keyPrefixes,
+  )
+  if (refusal) throw new Error(refusal)
+  let trackedCommentFindings: (
+    root: string,
+    rules: ReturnType<typeof commentRules>,
+  ) => ReturnType<typeof import('./check-comments.ts').commentFindings>
+  try {
+    ;({ trackedCommentFindings } = await import('./check-comment-extraction.ts'))
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `could not load the comment extraction adapter: ${detail}; run bun install in the checkout and retry`,
+    )
+  }
   const findings = trackedCommentFindings(root, commentRules(project, report))
   for (const finding of findings) presentation.log(formatCommentFinding(finding))
   if (findings.length && !report) presentation.setExitCode(1)
@@ -238,7 +256,7 @@ async function enabledCheckFailed(
     ]
     if (name === 'spelling') spellingCommand(checkArgv, checkPresentation)
     else if (name === 'attribution') await attributionCommand(checkArgv, checkPresentation)
-    else commentsCommand(checkArgv, checkPresentation)
+    else await commentsCommand(checkArgv, checkPresentation)
   } catch (error) {
     presentation.log(error instanceof Error ? error.message : String(error))
     failed = true
@@ -274,6 +292,6 @@ export async function checkCommand(argv: string[], presentation: Presentation): 
     await enabledCommand(argv, presentation)
   } else if (kind === 'spelling') spellingCommand(argv, presentation)
   else if (kind === 'attribution') await attributionCommand(argv, presentation)
-  else if (kind === 'comments') commentsCommand(argv, presentation)
+  else if (kind === 'comments') await commentsCommand(argv, presentation)
   else throw new Error('unknown: orch check. Try --enabled | spelling | attribution | comments')
 }

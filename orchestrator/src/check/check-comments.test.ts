@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { commentsInSource } from './check-comment-extraction.ts'
 import {
   type CommentSource,
   commentFindings,
-  commentsInSource,
+  commentTaskKeyRefusal,
   DEFAULT_COMMENT_HISTORY_PHRASES,
 } from './check-comments.ts'
 
@@ -52,6 +53,21 @@ describe('comment hygiene decisions', () => {
         (finding) => finding.rule,
       ),
     ).toEqual(['history-allow'])
+  })
+
+  test('a multiline comment cannot take an allow reason from the next line', () => {
+    expect(
+      commentFindings(comment('/* history-ok:\n * later text */'), {
+        historyPhrases: ['later text'],
+      }).map((finding) => finding.rule),
+    ).toEqual(['history-allow'])
+  })
+
+  test('task-key checking refuses an empty prefix list', () => {
+    expect(commentTaskKeyRefusal(true, 'fixture', [])).toContain(
+      `orch project set fixture --settings '{"keyPrefixes":["<PREFIX>"]}'`,
+    )
+    expect(commentTaskKeyRefusal(false, 'fixture', [])).toBeNull()
   })
 
   test('multiline findings retain the source line', () => {
