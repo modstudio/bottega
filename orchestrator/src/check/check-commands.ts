@@ -102,6 +102,17 @@ function rangeFindings(range: string, root: string): SourcedAttributionFinding[]
   return findings
 }
 
+function projectRangeFindings(project: Project, root: string, explicit?: string) {
+  const trunk = project.settings.trunk?.trim()
+  const range = explicit ?? (trunk ? `origin/${trunk}..HEAD` : null)
+  if (!range) {
+    throw new Error(
+      `project ${project.name} has no trunk for the default range; pass --range <rev-range>`,
+    )
+  }
+  return rangeFindings(range, root)
+}
+
 type AttributionMode =
   | { kind: 'message'; file: string }
   | { kind: 'pr'; value: string }
@@ -117,7 +128,7 @@ function attributionMode(argv: string[], stdinIsTTY: boolean | undefined): Attri
   if (selected > 1) throw new Error('choose only one of --message, --range, or --pr')
   if (message !== undefined) return { kind: 'message', file: message }
   if (pr !== undefined) return { kind: 'pr', value: pr }
-  if (rangeIndex < 0 && stdinIsTTY === false) return { kind: 'stdin' }
+  if (rangeIndex < 0 && stdinIsTTY !== true) return { kind: 'stdin' }
   const value =
     rangeIndex >= 0 && argv[rangeIndex + 1] && !argv[rangeIndex + 1]!.startsWith('--')
       ? argv[rangeIndex + 1]
@@ -146,16 +157,12 @@ async function attributionCommand(argv: string[], presentation: Presentation): P
     }
     findings = sourcedAttributionFindings('pr', `${value.title}\n${value.body}`)
   } else if (mode.kind === 'stdin') {
-    findings = sourcedAttributionFindings('stdin', await presentation.stdinText())
+    const text = await presentation.stdinText()
+    findings = text.length
+      ? sourcedAttributionFindings('stdin', text)
+      : projectRangeFindings(project, root)
   } else {
-    const trunk = project.settings.trunk?.trim()
-    const range = mode.value ?? (trunk ? `origin/${trunk}..HEAD` : null)
-    if (!range) {
-      throw new Error(
-        `project ${project.name} has no trunk for the default range; pass --range <rev-range>`,
-      )
-    }
-    findings = rangeFindings(range, root)
+    findings = projectRangeFindings(project, root, mode.value)
   }
 
   for (const finding of findings) presentation.log(formatAttributionFinding(finding))
