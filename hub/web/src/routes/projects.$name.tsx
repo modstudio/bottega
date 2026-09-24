@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
@@ -11,6 +10,7 @@ import { Textarea } from '@/ui/field/textarea'
 import { FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Sheet } from '@/ui/sheet/sheet'
 import { toast } from '@/ui/toast/toast'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 
