@@ -1,6 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { mcpModules } from './architecture-mcp-modules.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
@@ -112,12 +113,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
-  module('orchestrator/src/mcp/mcp-tool-list.ts', [
-    '@modelcontextprotocol/sdk/client/index.js',
-    '@modelcontextprotocol/sdk/client/stdio.js',
-    '@modelcontextprotocol/sdk/client/streamableHttp.js',
-  ]),
-  module('orchestrator/src/mcp/mcp-compatibility.ts', []),
+  ...mcpModules,
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',
     './codex-mcp-scope.ts',
@@ -148,17 +144,6 @@ export const modules: ArchitectureModule[] = [
     './agent-registry.ts',
     './agents.ts',
     '../database/db.ts',
-  ]),
-  module('orchestrator/src/mcp/mcp-doc-write.ts', []),
-  module('orchestrator/src/mcp/mcp-prompts.ts', [
-    '@modelcontextprotocol/sdk/server/mcp.js',
-    'zod',
-    '../project/projects.ts',
-    '../workflow/autonomy.ts',
-    '../workflow/autonomy-scopes.ts',
-    '../workflow/workflow-render.ts',
-    '../workflow/workflow-cursor.ts',
-    '../workflow/workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
   module('orchestrator/src/workflow/autonomy.ts', []),
