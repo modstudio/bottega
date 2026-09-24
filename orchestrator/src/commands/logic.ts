@@ -80,6 +80,7 @@ export function register(program: Command): void {
     .option('--message <file>')
     .option('--range [rev-range]')
     .option('--pr <number-or-url>')
+    .option('--report')
     .allowExcessArguments(false)
     .action((kind, options) =>
       checkCommand(productArgv('check', kind ? [kind] : [], options), {

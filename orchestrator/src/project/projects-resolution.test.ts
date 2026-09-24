@@ -40,14 +40,33 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
-  test('checks accept only the two optional boolean switches', () => {
-    expect(validateProjectSettings({ checks: { spelling: true, attribution: false } })).toEqual([])
+  test('checks accept the optional policy shapes', () => {
+    expect(
+      validateProjectSettings({
+        checks: {
+          spelling: true,
+          attribution: false,
+          commentTaskKeys: true,
+          commentHistory: { phrases: ['used to'] },
+        },
+      }),
+    ).toEqual([])
     expect(
       validateProjectSettings({ checks: { spelling: 'yes' } as unknown as { spelling: boolean } }),
     ).toContain('checks.spelling must be a boolean')
     expect(
       validateProjectSettings({ checks: { unknown: true } as unknown as { spelling: boolean } }),
     ).toContain('checks.unknown is not a recognized check')
+    expect(
+      validateProjectSettings({
+        checks: { commentTaskKeys: 'yes' },
+      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+    ).toContain('checks.commentTaskKeys must be a boolean')
+    expect(
+      validateProjectSettings({
+        checks: { commentHistory: { phrases: [''] } },
+      }),
+    ).toContain('checks.commentHistory.phrases must be an array of non-empty strings')
     expect(
       validateProjectSettings({ checks: null } as unknown as Parameters<
         typeof validateProjectSettings

@@ -23,6 +23,7 @@
     "@anthropic-ai/sandbox-runtime": "^0.0.75",
     "@ast-grep/lang-bash": "0.0.8",
     "@ast-grep/lang-php": "0.0.7",
+    "@ast-grep/lang-python": "0.0.6",
     "@ast-grep/napi": "0.45.3",
     "@aws-sdk/client-sesv2": "^3.1135.0",
     "@better-auth/drizzle-adapter": "1.7.5",

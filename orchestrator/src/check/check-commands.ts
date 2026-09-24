@@ -8,6 +8,11 @@ import {
   type SourcedAttributionFinding,
   sourcedAttributionFindings,
 } from './check-attribution.ts'
+import {
+  DEFAULT_COMMENT_HISTORY_PHRASES,
+  formatCommentFinding,
+  trackedCommentFindings,
+} from './check-comments.ts'
 import { formatSpellingFinding, spellingFindings, typosVersionRefusal } from './check-spelling.ts'
 
 type Presentation = {
@@ -170,12 +175,46 @@ async function attributionCommand(argv: string[], presentation: Presentation): P
   if (findings.length) presentation.setExitCode(1)
 }
 
-type EnabledCheck = 'spelling' | 'attribution'
+function commentRules(project: Project, report: boolean) {
+  const history = project.settings.checks?.commentHistory
+  return {
+    taskKeyPrefixes:
+      report || project.settings.checks?.commentTaskKeys === true
+        ? (project.settings.keyPrefixes ?? [])
+        : [],
+    historyPhrases:
+      report || history === true
+        ? DEFAULT_COMMENT_HISTORY_PHRASES
+        : typeof history === 'object'
+          ? history.phrases
+          : [],
+  }
+}
+
+function commentsCommand(argv: string[], presentation: Presentation): void {
+  const cwd = presentation.cwd()
+  const project = selectedProject(argv, cwd)
+  const root = checkout(project, flagValue(argv, 'project') !== undefined, cwd)
+  const report = argv.includes('--report')
+  const findings = trackedCommentFindings(root, commentRules(project, report))
+  for (const finding of findings) presentation.log(formatCommentFinding(finding))
+  if (findings.length && !report) presentation.setExitCode(1)
+}
+
+type EnabledCheck = 'spelling' | 'attribution' | 'comments'
 
 function projectEnabledChecks(project: Project): EnabledCheck[] {
-  return (['spelling', 'attribution'] as const).filter(
-    (name) => project.settings.checks?.[name] === true,
-  )
+  const enabled: EnabledCheck[] = []
+  if (project.settings.checks?.spelling === true) enabled.push('spelling')
+  if (project.settings.checks?.attribution === true) enabled.push('attribution')
+  if (
+    project.settings.checks?.commentTaskKeys === true ||
+    project.settings.checks?.commentHistory === true ||
+    typeof project.settings.checks?.commentHistory === 'object'
+  ) {
+    enabled.push('comments')
+  }
+  return enabled
 }
 
 async function enabledCheckFailed(
@@ -198,7 +237,8 @@ async function enabledCheckFailed(
       ...(name === 'attribution' && !common.includes('--pr') ? ['--range'] : []),
     ]
     if (name === 'spelling') spellingCommand(checkArgv, checkPresentation)
-    else await attributionCommand(checkArgv, checkPresentation)
+    else if (name === 'attribution') await attributionCommand(checkArgv, checkPresentation)
+    else commentsCommand(checkArgv, checkPresentation)
   } catch (error) {
     presentation.log(error instanceof Error ? error.message : String(error))
     failed = true
@@ -234,5 +274,6 @@ export async function checkCommand(argv: string[], presentation: Presentation): 
     await enabledCommand(argv, presentation)
   } else if (kind === 'spelling') spellingCommand(argv, presentation)
   else if (kind === 'attribution') await attributionCommand(argv, presentation)
-  else throw new Error('unknown: orch check. Try --enabled | spelling | attribution')
+  else if (kind === 'comments') commentsCommand(argv, presentation)
+  else throw new Error('unknown: orch check. Try --enabled | spelling | attribution | comments')
 }

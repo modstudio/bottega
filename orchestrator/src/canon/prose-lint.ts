@@ -11,6 +11,20 @@ export type ProseFinding = {
 const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
 const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
 
+/** Phrase-level history patterns available to comment checks; single-word prose rules stay local. */
+export const DEFAULT_COMMENT_HISTORY_PHRASES = [
+  'used to',
+  'was called',
+  'was named',
+  'no longer',
+  'that changed',
+  'that has changed',
+  'this changed',
+  'this has changed',
+  'it changed',
+  'it has changed',
+] as const
+
 const HISTORY_PATTERNS = [
   /\bused to\b/i,
   /\bwas (?:called|named)\b/i,
