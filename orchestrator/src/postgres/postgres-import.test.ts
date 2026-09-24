@@ -15,7 +15,7 @@ import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
-import { importProjects } from './postgres-import.ts'
+import { importProjects, PROJECT_SETTINGS_NOT_IMPORTED } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
@@ -39,6 +39,14 @@ type ImportedProject = Record<string, unknown> & {
   name: string
   key_prefixes: string[]
 }
+
+test('project-level autonomy is deliberately not imported', () => {
+  const settings = { autonomy: { mode: 'supervised' } }
+  const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
+  const unknown = Object.keys(settings).filter((key) => !notImported.has(key))
+
+  expect(unknown).toEqual([])
+})
 
 async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
@@ -162,9 +170,7 @@ realPostgres('project import against copied live SQLite data', () => {
       worktree: 'worktree',
       workerMcpServers: 'worker_mcp_servers',
     }
-    // `space` names the record space a project's evidence syncs to. The imported
-    // row expresses that as its own space_id, so it has no column of its own.
-    const notImported = new Set(['space'])
+    const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
     expect(
       [...sourceKeySet].filter((key) => !(key in columnForSetting) && !notImported.has(key)),
     ).toEqual([])

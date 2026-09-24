@@ -30,6 +30,12 @@ export type ProjectImportOptions = {
   spaceId: string
 }
 
+export const PROJECT_SETTINGS_NOT_IMPORTED = [
+  { key: 'space', reason: "the imported row's space_id carries this value" },
+  { key: 'autonomy', reason: 'local-register policy is not carried by the hosted project row' },
+  { key: 'checks', reason: 'local-register policy is not carried by the hosted project row' },
+] as const satisfies ReadonlyArray<{ key: keyof Required<ProjectSettings>; reason: string }>
+
 const PROJECT_SETTING_COLUMNS = {
   color: 'color',
   colorDark: 'color_dark',
@@ -49,7 +55,7 @@ const PROJECT_SETTING_COLUMNS = {
   worktree: 'worktree',
   workerMcpServers: 'worker_mcp_servers',
 } satisfies Record<
-  Exclude<keyof Required<ProjectSettings>, 'space' | 'autonomy' | 'checks'>,
+  Exclude<keyof Required<ProjectSettings>, (typeof PROJECT_SETTINGS_NOT_IMPORTED)[number]['key']>,
   string
 >
 
@@ -75,8 +81,9 @@ function projectSettings(row: SourceProject): JsonObject {
     throw new Error(`project ${row.name} settings is not valid JSON`)
   }
   const settings = object(parsed, `project ${row.name} settings`)
+  const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
   const unknown = Object.keys(settings).filter(
-    (key) => key !== 'space' && key !== 'checks' && !Object.hasOwn(PROJECT_SETTING_COLUMNS, key),
+    (key) => !notImported.has(key) && !Object.hasOwn(PROJECT_SETTING_COLUMNS, key),
   )
   if (unknown.length) {
     throw new Error(`project ${row.name} has unmapped settings keys: ${unknown.sort().join(', ')}`)
