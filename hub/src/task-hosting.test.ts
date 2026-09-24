@@ -5,7 +5,12 @@ import { confirmSoftDelete, mirrorCollisionDecision } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
-import { hostedCreateTask, hostedTaskIdentity } from './task-client.ts'
+import {
+  hostedCreateTask,
+  hostedDeleteTasks,
+  hostedTaskIdentity,
+  hostedTaskPresence,
+} from './task-client.ts'
 import { closeThenPrune } from './task-close.ts'
 
 beforeAll(resetFixtureStore)
@@ -256,6 +261,90 @@ describe('hosted-only task safety', () => {
         { spaceId: 'space-b', slug: 'stopal' },
       ],
     })
+  })
+
+  test('the task API authorizes presence reads and bulk deletes through the active identity', async () => {
+    const whoami = async () =>
+      Response.json({
+        user: { id: 'user-1' },
+        activeSpaceId: 'space-a',
+        memberships: [
+          { space_id: 'space-a', slug: 'active' },
+          { space_id: 'space-b', slug: 'other' },
+        ],
+      })
+    const presence = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/presence', {
+        method: 'POST',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ pairs: [{ space_id: 'space-b', key: 'STO-1' }] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: whoami,
+        presence: async (_url, identity, pairs) => ({
+          present: identity.spaceIds?.includes('space-b') ? pairs : [],
+          refused: [],
+        }),
+      },
+    )
+    expect(await presence?.json()).toEqual({
+      present: [{ space_id: 'space-b', key: 'STO-1' }],
+      refused: [],
+    })
+
+    const deletion = await taskApi(
+      new Request('https://hub.example.test/v1/tasks', {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: ['task-1'], confirmation: 1 }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: whoami,
+        deleteTasks: async (_url, identity, ids, confirmation) => ({
+          tasks: identity.spaceId === 'space-a' && ids.length === confirmation ? 1 : 0,
+          comments: 2,
+          documents: 3,
+          statusEvents: 4,
+        }),
+      },
+    )
+    expect(await deletion?.json()).toEqual({
+      tasks: 1,
+      comments: 2,
+      documents: 3,
+      statusEvents: 4,
+    })
+  })
+
+  test('task clients carry presence pairs and bulk-delete confirmation in request bodies', async () => {
+    const requests: Array<{ path: string; method: string; body: unknown }> = []
+    const fetch = async (input: string, init?: RequestInit) => {
+      requests.push({
+        path: new URL(input).pathname,
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      })
+      return new URL(input).pathname.endsWith('/presence')
+        ? Response.json({ present: [], refused: [] })
+        : Response.json({ tasks: 1, comments: 2, documents: 3, statusEvents: 4 })
+    }
+    const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
+    await hostedTaskPresence([{ space_id: 'space-b', key: 'STO-1' }], options)
+    await hostedDeleteTasks(['task-1'], 1, options)
+    expect(requests).toEqual([
+      {
+        path: '/v1/tasks/presence',
+        method: 'POST',
+        body: { pairs: [{ space_id: 'space-b', key: 'STO-1' }] },
+      },
+      {
+        path: '/v1/tasks',
+        method: 'DELETE',
+        body: { ids: ['task-1'], confirmation: 1 },
+      },
+    ])
   })
 
   test('hosted refusals preserve server errors and remedies without suggesting local configuration', async () => {

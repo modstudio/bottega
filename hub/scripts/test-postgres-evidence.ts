@@ -25,6 +25,7 @@ import {
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
+import { hostedTaskPresence, softDeleteHostedTasks } from '../src/hosted-task-prune.ts'
 import {
   createHostedDocument,
   createHostedTask,
@@ -82,6 +83,7 @@ try {
     VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
   await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
     VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now()),
+      (${newRecordId()}::uuid,${SPACE_B}::uuid,${USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now())`
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
@@ -761,6 +763,82 @@ try {
       otherMeasures.shipped.count !== 0
     )
       throw new Error('another space observed hosted measures')
+
+    const pruneId = '01990000-0000-7000-8000-000000000760'
+    const guardId = '01990000-0000-7000-8000-000000000761'
+    const parentHolderId = '01990000-0000-7000-8000-000000000762'
+    const pruneKey = 'DEV-760'
+    await admin`INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,status,status_category,source,
+       first_seen,last_seen,created_at,updated_at) VALUES
+      (${pruneId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},${PLATFORM_SLUG},
+       'prune','open','open','mcp',${stamp}::timestamptz,${stamp}::timestamptz,
+       ${stamp}::timestamptz,${stamp}::timestamptz),
+      (${guardId}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},${pruneKey},${PLATFORM_SLUG},
+       'guard','open','open','mcp',${stamp}::timestamptz,${stamp}::timestamptz,
+       ${stamp}::timestamptz,${stamp}::timestamptz),
+      (${parentHolderId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-762',${PLATFORM_SLUG},
+       'child','open','open','mcp',${stamp}::timestamptz,${stamp}::timestamptz,
+       ${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`UPDATE hub_task SET parent_key=${pruneKey},parent_id=${pruneId}::uuid
+      WHERE id=${parentHolderId}::uuid`
+    await admin`INSERT INTO hub_task_comment
+      (id,space_id,project_name,task_key,task_id,body,created_at,updated_at) VALUES
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},${pruneId}::uuid,
+       'by id',${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_task_document
+      (id,space_id,project_name,task_key,title,body,version,created_at,updated_at) VALUES
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},'by key','body','v1',
+       ${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_task_status_event
+      (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at) VALUES
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},${stamp}::timestamptz,
+       NULL,'open',${stamp}::timestamptz,${stamp}::timestamptz)`
+    await admin`INSERT INTO hub_note
+      (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,
+       promoted_task,promoted_task_id,updated_at) VALUES
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},760,${PLATFORM_SLUG},'prune link',
+       '[]',1,${stamp}::timestamptz,${stamp}::timestamptz,${pruneKey},${pruneId}::uuid,
+       ${stamp}::timestamptz)`
+    const membershipIdentity = {
+      userId: USER,
+      spaceId: SPACE_A,
+      spaceIds: [SPACE_A, SPACE_B],
+    }
+    const presence = await hostedTaskPresence(actorUrl, membershipIdentity, [
+      { space_id: SPACE_B, key: pruneKey },
+      { space_id: '01990000-0000-7000-8000-000000000699', key: pruneKey },
+    ])
+    if (presence.present.length !== 1 || presence.refused[0]?.reason !== 'not-a-member')
+      throw new Error('task presence did not distinguish member and non-member spaces')
+    const deleted = await softDeleteHostedTasks(actorUrl, membershipIdentity, [pruneId, guardId], 1)
+    if (
+      deleted.tasks !== 1 ||
+      deleted.comments !== 1 ||
+      deleted.documents !== 1 ||
+      deleted.statusEvents !== 1
+    )
+      throw new Error(`task prune returned wrong table counts: ${JSON.stringify(deleted)}`)
+    const pruneEvidence = await admin`
+      SELECT
+        (SELECT deleted_at IS NOT NULL FROM hub_task WHERE id=${pruneId}::uuid) task_deleted,
+        (SELECT deleted_at IS NULL FROM hub_task WHERE id=${guardId}::uuid) guard_active,
+        (SELECT parent_id IS NULL FROM hub_task WHERE id=${parentHolderId}::uuid) parent_cleared,
+        (SELECT promoted_task_id IS NULL FROM hub_note WHERE number=760 AND space_id=${SPACE_A}::uuid) promotion_cleared,
+        (SELECT count(*)::int FROM hub_task_comment WHERE space_id=${SPACE_A}::uuid AND task_key=${pruneKey} AND deleted_at IS NOT NULL) comments,
+        (SELECT count(*)::int FROM hub_task_document WHERE space_id=${SPACE_A}::uuid AND task_key=${pruneKey} AND deleted_at IS NOT NULL) documents,
+        (SELECT count(*)::int FROM hub_task_status_event WHERE space_id=${SPACE_A}::uuid AND task_key=${pruneKey} AND deleted_at IS NOT NULL) events`
+    const proof = pruneEvidence[0]!
+    if (
+      !proof.task_deleted ||
+      !proof.guard_active ||
+      !proof.parent_cleared ||
+      !proof.promotion_cleared ||
+      Number(proof.comments) !== 1 ||
+      Number(proof.documents) !== 1 ||
+      Number(proof.events) !== 1
+    )
+      throw new Error(`task prune Postgres evidence failed: ${JSON.stringify(proof)}`)
   } finally {
     await client.close()
   }
