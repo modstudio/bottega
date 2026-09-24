@@ -92,7 +92,7 @@ function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<
   return new Set(output ? output.split('\n') : [])
 }
 
-function reviewCoverageVerdict(
+export function reviewCoverageVerdict(
   repoRoot: string,
   review: ReviewCoverageInput,
   tip: string,
@@ -155,11 +155,12 @@ function reviewCoverageVerdict(
     `refs/remotes/origin/${trunk}`,
   ]).ok
   const newBaseArgs = ['merge-base', tip, reviewTrunkRef(remoteTrackingRefExists, trunk)]
+  const newBaseDisplayArgs = ['merge-base', tip, trunk]
   const newBaseResult = runner(newBaseArgs)
   if (!newBaseResult.ok) {
     return {
       kind: 'invalid',
-      reason: `git ${newBaseArgs.join(' ')} failed: ${newBaseResult.err}`,
+      reason: `git ${newBaseDisplayArgs.join(' ')} failed: ${newBaseResult.err}`,
       resolution: resolved.resolution,
     }
   }
