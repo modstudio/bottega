@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { db } from './db.ts'
 import type { OrchRun } from './ingest/runs.ts'
 import { type Project, projectRoot, projects } from './projects.ts'
-import { taskIdentityDecision } from './task-identity.ts'
+import { isTaskKeyPrefix, observedTaskKeyPrefixes, taskIdentityDecision } from './task-identity.ts'
 
 /** Every ticket prefix registered or observed in this process's attribution pass. */
 let cachedKeyPrefixes: string | null = null
@@ -16,18 +16,14 @@ export function refreshKeyPrefixes(): void {
 function keyPrefixes(): string {
   if (cachedKeyPrefixes !== null) return cachedKeyPrefixes
 
-  const observed = db()
-    .query<{ key: string }, []>(`SELECT key FROM task UNION SELECT key FROM task_identity_claim`)
-    .all()
-    .flatMap(({ key }) => key.toUpperCase().match(/^([A-Z]+)-\d+$/)?.[1] ?? [])
   cachedKeyPrefixes = [
     ...new Set([
       ...projects().flatMap((project) => project.settings.keyPrefixes ?? []),
-      ...observed,
+      ...observedTaskKeyPrefixes(db()),
     ]),
   ]
     .map((prefix) => prefix.toUpperCase())
-    .filter((prefix) => /^[A-Z]+$/.test(prefix))
+    .filter(isTaskKeyPrefix)
     .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
   return cachedKeyPrefixes
@@ -183,8 +179,17 @@ export function attribute(input: {
   commitSubjects?: string[]
   prompts?: string[]
 }): Attribution {
-  const project = projectOf(input.cwd)
+  return attributeForProject(input, projectOf(input.cwd))
+}
 
+function attributeForProject(
+  input: {
+    cwd?: string | null
+    commitSubjects?: string[]
+    prompts?: string[]
+  },
+  project: Project | null,
+): Attribution {
   const fromWorktree = input.cwd ? keyFromWorktree(input.cwd) : null
   if (fromWorktree) {
     return { project, key: fromWorktree, via: 'worktree' }
@@ -275,12 +280,12 @@ function keyFromPromptFile(
  * taskRecord reads this decision downstream through interval.task_key.
  */
 export function attributeRun(run: OrchRun): Attribution {
+  const project = run.repo ?? projectOf(run.cwd)
   const launchKey =
     typeof run.launch_key === 'string' && run.launch_key.trim()
       ? run.launch_key.trim().toUpperCase()
       : null
   if (launchKey) {
-    const project = projectOf(run.cwd)
     return {
       project,
       key: launchKey,
@@ -288,7 +293,7 @@ export function attributeRun(run: OrchRun): Attribution {
     }
   }
 
-  const result = attribute({ cwd: run.cwd, prompts: [run.prompt_head] })
+  const result = attributeForProject({ cwd: run.cwd, prompts: [run.prompt_head] }, project)
   if (!result.key) {
     const branch = keyFromBranch(run.branch, result.project)
     if (branch) return { ...result, key: branch, via: 'branch' }

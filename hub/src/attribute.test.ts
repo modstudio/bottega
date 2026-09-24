@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { attribute, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
+import { resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
+import { attribute, attributeRun, isInjected, keyFromBranch, keyFromWorktree } from './attribute.ts'
 import { writeTransaction } from './db.ts'
 
 beforeAll(() => {
@@ -11,6 +11,7 @@ beforeAll(() => {
         ('alpha-alp-5347','ALP-5347','alpha','mcp','2026-01-01','2026-01-01'),
         ('alpha-alp-5362','ALP-5362','alpha','mcp','2026-01-01','2026-01-01'),
         ('alpha-bet-40','BET-40','alpha','mcp','2026-01-01','2026-01-01'),
+        ('alpha-b2b-40','B2B-40','alpha','mcp','2026-01-01','2026-01-01'),
         ('beta-bet-2533','BET-2533','beta','mcp','2026-01-01','2026-01-01'),
         ('gamma-gam-986','GAM-986','gamma','mcp','2026-01-01','2026-01-01'),
         ('stopal-ops-40','OPS-40','stopal','mcp','2026-01-01','2026-01-01');
@@ -114,6 +115,36 @@ describe('attribute()', () => {
       key: null,
       via: null,
     })
+  })
+
+  test('recognizes digit-bearing task prefixes', () => {
+    expect(attribute({ cwd: '/fixtures/repos/alpha', prompts: ['work on B2B-40'] })).toEqual({
+      project: 'alpha',
+      key: 'B2B-40',
+      via: 'prompt',
+    })
+  })
+
+  test('a run uses its recorded repo even when its cwd names another project', () => {
+    expect(
+      attributeRun(
+        runFixture({
+          repo: 'alpha',
+          cwd: '/fixtures/repos/beta/.claude/worktrees/BET-2533',
+          launch_key: 'ALP-5347',
+        }),
+      ),
+    ).toEqual({ project: 'alpha', key: 'ALP-5347', via: 'launch_key' })
+
+    expect(
+      attributeRun(
+        runFixture({
+          repo: 'alpha',
+          cwd: '/fixtures/repos/beta/.claude/worktrees/BET-2533',
+          launch_key: null,
+        }),
+      ),
+    ).toEqual({ project: 'alpha', key: 'BET-2533', via: 'worktree' })
   })
 
   test('an injected payload never names a task', () => {
