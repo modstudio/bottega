@@ -5,7 +5,7 @@ import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
-import { leaseHolder, watch } from './collect.ts'
+import { leaseHolder, releaseLease, watch } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
@@ -591,12 +591,17 @@ export function serve(port: number) {
     },
   })
   if (port !== 0) {
-    startRevisionMonitor('serve', holder, async () => {
-      const drained = server.stop(false)
-      await Promise.race([drained, Bun.sleep(SERVE_DRAIN_MS)])
-      server.stop(true)
-      await stopWatch()
-    })
+    startRevisionMonitor(
+      'serve',
+      holder,
+      async () => {
+        const drained = server.stop(false)
+        await Promise.race([drained, Bun.sleep(SERVE_DRAIN_MS)])
+        server.stop(true)
+        await stopWatch()
+      },
+      () => releaseLease(holder),
+    )
   }
   console.log(`hub serving on http://127.0.0.1:${server.port}`)
   return server

@@ -5,7 +5,7 @@ import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
 import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
-import { watch, withLease } from './collect.ts'
+import { releaseLease, watch, withLease } from './collect.ts'
 import { DB_PATH, db, migrateDatabase, nowIso, requireDatabase, writeTransaction } from './db.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { ingestGit } from './ingest/git.ts'
@@ -856,7 +856,12 @@ try {
         console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
         const holder = `collect:${process.pid}`
         let stop = async () => {}
-        startRevisionMonitor('collect', holder, () => stop())
+        startRevisionMonitor(
+          'collect',
+          holder,
+          () => stop(),
+          () => releaseLease(holder),
+        )
         stop = watch(holder, (e) => console.error(`hub: collect failed: ${e.message}`))
         // Hold the process open for launchd, which restarts anything that exits.
         await new Promise(() => {})
