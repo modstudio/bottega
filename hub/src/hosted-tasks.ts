@@ -383,18 +383,26 @@ export function mirrorCollisionDecision(
   newlyAssigned = false,
   naturalKeyHolder: MirrorIdentity | null = null,
 ): MirrorCollisionDecision {
-  if (!existing) {
-    if (naturalKeyHolder && naturalKeyHolder.id !== incoming.id) {
-      return {
-        action: 'refuse',
-        reason:
-          `refusing to mirror ${incoming.naturalKey} with id ${incoming.id}: ` +
-          `${naturalKeyHolder.naturalKey} in space ${naturalKeyHolder.spaceId} already belongs to ` +
-          `id ${naturalKeyHolder.id}; restore this local row's record id to ` +
-          `${naturalKeyHolder.id}, change the task key in that space, or ask the hosted-space ` +
-          `operator to resolve the task key collision`,
-      }
+  if (existing && existing.spaceId !== incoming.spaceId)
+    return {
+      action: 'refuse',
+      reason:
+        `refusing to mirror ${incoming.naturalKey}: id ${incoming.id} already belongs to ` +
+        `${existing.naturalKey} in space ${existing.spaceId}; restore this local row's record id ` +
+        `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
     }
+  if (identity === 'natural-key' && naturalKeyHolder && naturalKeyHolder.id !== incoming.id) {
+    return {
+      action: 'refuse',
+      reason:
+        `refusing to mirror ${incoming.naturalKey} with id ${incoming.id}: ` +
+        `${naturalKeyHolder.naturalKey} in space ${naturalKeyHolder.spaceId} already belongs to ` +
+        `id ${naturalKeyHolder.id}; restore this local row's record id to ` +
+        `${naturalKeyHolder.id}, change the task key in that space, or ask the hosted-space ` +
+        `operator to resolve the task key collision`,
+    }
+  }
+  if (!existing) {
     if (legacyLocalIdHolder && legacyLocalIdHolder.id !== incoming.id) {
       if (newlyAssigned && legacyLocalIdHolder.spaceId === incoming.spaceId)
         return { action: 'adopt', id: legacyLocalIdHolder.id }
@@ -409,18 +417,7 @@ export function mirrorCollisionDecision(
     }
     return { action: 'insert' }
   }
-  if (
-    existing.spaceId === incoming.spaceId &&
-    (identity === 'id' || existing.naturalKey === incoming.naturalKey)
-  )
-    return { action: sameRow === 'update' ? 'update-same-row' : 'idempotent-duplicate' }
-  return {
-    action: 'refuse',
-    reason:
-      `refusing to mirror ${incoming.naturalKey}: id ${incoming.id} already belongs to ` +
-      `${existing.naturalKey} in space ${existing.spaceId}; restore this local row's record id ` +
-      `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
-  }
+  return { action: sameRow === 'update' ? 'update-same-row' : 'idempotent-duplicate' }
 }
 
 function applyMirrorDecision(decision: MirrorCollisionDecision): boolean {
@@ -449,23 +446,32 @@ async function mirrorTaskRow(tx: SQL, identity: TaskIdentity, row: HostedTask) {
   const existing = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
   )[0]
-  const keyHolder = existing
-    ? undefined
-    : rows<{ id: string; space_id: string; key: string }>(
-        await tx`SELECT id,space_id,key FROM hub_task
-          WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
-      )[0]
-  applyMirrorDecision(
-    mirrorCollisionDecision(
-      { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
-      selectedMirrorIdentity(existing, (selected) => `task ${selected.key}`),
-      'update',
-      'natural-key',
-      null,
-      false,
-      selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
-    ),
+  const keyHolder = rows<{ id: string; space_id: string; key: string }>(
+    await tx`SELECT id,space_id,key FROM hub_task
+      WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
+  )[0]
+  const decision = mirrorCollisionDecision(
+    { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
+    selectedMirrorIdentity(existing, (selected) => `task ${selected.key}`),
+    'update',
+    'natural-key',
+    null,
+    false,
+    selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
   )
+  applyMirrorDecision(decision)
+  if (decision.action === 'update-same-row') {
+    await tx`UPDATE hub_task SET
+      project_name=${row.project_name},key=${row.key},project=${row.project},title=${row.title},
+      status=${row.status},status_category=${row.status_category},parent_key=${row.parent_key},
+      body=${row.body},assignee=${row.assignee},opened_at=${row.opened_at}::timestamptz,
+      closed_at=${row.closed_at}::timestamptz,source=${row.source},
+      first_seen=${row.first_seen}::timestamptz,last_seen=${row.last_seen}::timestamptz,
+      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
+      WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid AND
+        (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git')))`
+    return
+  }
   const changed = rows<{ id: string }>(
     await tx`INSERT INTO hub_task
     (id,space_id,project_name,key,project,title,status,status_category,parent_key,body,assignee,
