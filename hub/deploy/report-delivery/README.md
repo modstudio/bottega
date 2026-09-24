@@ -12,6 +12,7 @@ delivery:
 fly apps create bottega-hub-report-delivery --org bottega
 fly secrets set -a bottega-hub-report-delivery \
   HUB_RECORD_DATABASE_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
+  HUB_HOSTED_URL='https://app.bottega.run' \
   SES_REGION='us-east-2' \
   SES_FROM_ADDRESS='<display name and verified sender address>' \
   SES_ACCESS_KEY_ID='<access-key-id>' \

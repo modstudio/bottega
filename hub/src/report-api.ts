@@ -1,8 +1,8 @@
 import {
   appendHostedSend,
   createHostedReportSubscription,
-  hostedReportCounts,
   hostedEmailRecipientByToken,
+  hostedReportCounts,
   listHostedReportSubscriptions,
   listHostedSends,
   mirrorHostedReports,

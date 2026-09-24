@@ -1,5 +1,5 @@
-import { SQL } from 'bun'
 import { randomBytes } from 'node:crypto'
+import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskIdentity } from './hosted-tasks.ts'
 

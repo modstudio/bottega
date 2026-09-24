@@ -4,7 +4,13 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT r.email, s.cadence || ' report', sp.name
+  SELECT r.email,
+    s.cadence || ' ' || CASE s.scope_kind
+      WHEN 'project' THEN 'project ' || s.project_name
+      WHEN 'members' THEN 'members'
+      ELSE 'space'
+    END || ' report',
+    sp.name
   FROM hub_report_subscription_recipient r
   JOIN hub_report_subscription s ON s.id = r.subscription_id
   JOIN space sp ON sp.id = r.space_id

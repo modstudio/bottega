@@ -23,8 +23,8 @@ import {
   hostedEmailRecipientByToken,
   listHostedReportSubscriptions,
   listHostedSends,
-  unsubscribeHostedReportSubscription,
   unsubscribeHostedEmailRecipient,
+  unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from '../src/hosted-task-prune.ts'
