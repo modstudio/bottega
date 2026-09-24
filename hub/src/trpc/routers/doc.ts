@@ -8,6 +8,7 @@ const t = initTRPC.context<Context>().create()
 
 const scope = z.enum(DOC_SCOPES)
 const subject = z.string().nullable()
+const expectedRevision = z.string().trim().min(1, 'Expected revision is required').optional()
 
 async function fromOrch<T>(fn: () => Promise<T>): Promise<T> {
   try {
@@ -43,6 +44,7 @@ export const docRouter = t.router({
         body: z.string(),
         reason: z.string().trim().min(1, 'Reason is required'),
         delivery: z.enum(['inject', 'demand']).optional(),
+        expectedRevision,
       }),
     )
     .mutation(({ input }) => fromOrch(() => docSet(input))),
@@ -53,10 +55,13 @@ export const docRouter = t.router({
         subject,
         slug: z.string(),
         reason: z.string().trim().min(1, 'Reason is required'),
+        expectedRevision,
       }),
     )
     .mutation(({ input }) =>
-      fromOrch(() => docRemove(input.scope, input.subject, input.slug, input.reason)),
+      fromOrch(() =>
+        docRemove(input.scope, input.subject, input.slug, input.reason, input.expectedRevision),
+      ),
     ),
   history: t.procedure
     .input(z.object({ scope, subject, slug: z.string() }))

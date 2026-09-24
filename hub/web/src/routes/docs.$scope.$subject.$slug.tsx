@@ -33,6 +33,12 @@ function subjectFromParam(param: string): string | null {
   return param === '_' ? null : param
 }
 
+function mutationErrorMessage(message: string) {
+  return message.includes('refusing stale document update')
+    ? `${message} Reload the doc before trying again.`
+    : message
+}
+
 function DocPage() {
   const navigate = useNavigate()
   const { scope, subject: subjectParam, slug } = Route.useParams()
@@ -124,7 +130,13 @@ function DocPage() {
     }
     if (!scoped) return
     if (!reason.trim()) return
-    remove.mutate({ scope, subject, slug, reason })
+    remove.mutate({
+      scope,
+      subject,
+      slug,
+      reason,
+      expectedRevision: doc.data?.revision ?? undefined,
+    })
   }
 
   if (!scoped) {
@@ -166,7 +178,18 @@ function DocPage() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })}
+                onClick={() =>
+                  save.mutate({
+                    scope,
+                    subject,
+                    slug,
+                    title,
+                    body,
+                    delivery,
+                    reason,
+                    expectedRevision: doc.data?.revision ?? undefined,
+                  })
+                }
                 disabled={save.isPending || !title || !reason.trim()}
               >
                 <Save size={14} />
@@ -212,12 +235,12 @@ function DocPage() {
       ) : null}
       {save.error ? (
         <p data-tone="error" className="text-status-text">
-          {save.error.message}
+          {mutationErrorMessage(save.error.message)}
         </p>
       ) : null}
       {remove.error ? (
         <p data-tone="error" className="text-status-text">
-          {remove.error.message}
+          {mutationErrorMessage(remove.error.message)}
         </p>
       ) : null}
 

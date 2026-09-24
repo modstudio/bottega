@@ -16,9 +16,13 @@ const docGet = mock(
 )
 const docSet = mock(async (_input: unknown) => ({}) as unknown)
 const docRemove = mock(
-  async (_scope: string, _subject: string | null, _slug: string, _reason: string) => ({
-    removed: false,
-  }),
+  async (
+    _scope: string,
+    _subject: string | null,
+    _slug: string,
+    _reason: string,
+    _expectedRevision?: string,
+  ) => ({ removed: false }),
 )
 const docHistory = mock(
   async (_scope: string, _subject: string | null, _slug: string) => [] as unknown[],
@@ -77,6 +81,7 @@ const row = {
   title: 'Hello',
   body: 'Hi',
   delivery: 'inject' as const,
+  revision: 'revision-1',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -311,6 +316,7 @@ describe('doc router', () => {
       title: 'Hello',
       body: 'Hi',
       reason: 'updated',
+      expectedRevision: 'revision-1',
     }
     docSet.mockResolvedValueOnce(row)
     const got = await caller.doc.set(input)
@@ -325,8 +331,9 @@ describe('doc router', () => {
       subject: null,
       slug: 'hello',
       reason: 'obsolete',
+      expectedRevision: 'revision-1',
     })
-    expect(docRemove).toHaveBeenCalledWith('global', null, 'hello', 'obsolete')
+    expect(docRemove).toHaveBeenCalledWith('global', null, 'hello', 'obsolete', 'revision-1')
     expect(got).toEqual({ removed: true })
   })
 
@@ -347,6 +354,17 @@ describe('doc router', () => {
         subject: null,
         slug: 'hello',
         reason: '',
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(
+      caller.doc.set({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        title: 'Hello',
+        body: 'Hi',
+        reason: 'updated',
+        expectedRevision: ' ',
       }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     const revisions = [
