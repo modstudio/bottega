@@ -1,0 +1,3 @@
+CREATE POLICY "membership_auth_all" ON "membership" AS PERMISSIVE FOR ALL TO "record_auth" USING (true) WITH CHECK (true);--> statement-breakpoint
+CREATE POLICY "space_auth_all" ON "space" AS PERMISSIVE FOR ALL TO "record_auth" USING (true) WITH CHECK (true);--> statement-breakpoint
+CREATE POLICY "invitation_auth_all" ON "invitation" AS PERMISSIVE FOR ALL TO "record_auth" USING (true) WITH CHECK (true);

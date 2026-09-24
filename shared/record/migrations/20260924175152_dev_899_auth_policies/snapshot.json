@@ -1,8 +1,8 @@
 {
-  "id": "b8b4b1d5-845f-4c98-87b7-efec4a1520ad",
-  "prevIds": ["3b2077b5-99a8-4230-a8d9-bdedbde6f214"],
   "version": "8",
   "dialect": "postgres",
+  "id": "f04ba270-ceb3-4af8-a2af-92da9fe88a46",
+  "prevIds": ["b8b4b1d5-845f-4c98-87b7-efec4a1520ad"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -9427,6 +9427,17 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": ["record_auth"],
+      "using": "true",
+      "withCheck": "true",
+      "name": "membership_auth_all",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "membership"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["public"],
       "using": "\"project\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"project\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
@@ -9559,6 +9570,17 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": ["record_auth"],
+      "using": "true",
+      "withCheck": "true",
+      "name": "space_auth_all",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "space"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["public"],
       "using": "\"invitation\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"invitation\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
@@ -9619,6 +9641,17 @@
       "using": "lower(\"invitation\".\"email\") = (\n    SELECT lower(u.email) FROM \"user\" u\n    WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid\n  )",
       "withCheck": "lower(\"invitation\".\"email\") = (\n    SELECT lower(u.email) FROM \"user\" u\n    WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid\n  )",
       "name": "invitation_invitee_update",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "invitation"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": ["record_auth"],
+      "using": "true",
+      "withCheck": "true",
+      "name": "invitation_auth_all",
       "entityType": "policies",
       "schema": "public",
       "table": "invitation"
