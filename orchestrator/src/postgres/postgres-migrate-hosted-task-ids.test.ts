@@ -11,7 +11,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 const migrationUrl = process.env.ORCH_TEST_HOSTED_TASK_ID_MIGRATION_URL
 const realPostgres = migrationUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
-const taskIdBackfill = '20260924181109_dev_895_hosted_task_ids_backfill'
+const taskIdBackfill = '20260924190350_dev_895_hosted_task_ids_backfill'
 let priorMigrations = ''
 
 const PARENT_ID = '01990000-0000-7000-8000-000000008950'

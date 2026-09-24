@@ -1,6 +1,6 @@
 {
-  "id": "923df7f6-abab-4567-b1bb-7f0cf7f4345a",
-  "prevIds": ["dae170aa-e843-4b29-8063-e50b75160b8c"],
+  "id": "177ab7a0-d9fc-4477-9858-8cd2368dab57",
+  "prevIds": ["3cd62506-5e35-4e08-ad98-45cf9886b173"],
   "version": "8",
   "dialect": "postgres",
   "ddl": [
@@ -4399,6 +4399,19 @@
       "generated": null,
       "identity": null,
       "name": "deleted_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "doc"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "latest_revision_id",
       "entityType": "columns",
       "schema": "public",
       "table": "doc"
