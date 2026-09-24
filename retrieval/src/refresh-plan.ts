@@ -13,9 +13,11 @@ export type StoredVectorRow = {
 }
 
 export type CurrentChunk = { chunk: Chunk; contentHash: string }
+export type PlannedUpsert = CurrentChunk & { observedContentHash: string | null }
+export type PlannedDelete = { chunkId: string; observedContentHash: string }
 export type RefreshPlan = {
-  embed: CurrentChunk[]
-  delete: string[]
+  embed: PlannedUpsert[]
+  delete: PlannedDelete[]
   unchanged: string[]
 }
 
@@ -26,8 +28,8 @@ export function planRefresh(current: CurrentChunk[], stored: StoredVectorRow[]):
     embed: [],
     delete: stored
       .filter((row) => !currentIds.has(row.chunkId))
-      .map((row) => row.chunkId)
-      .sort(),
+      .map((row) => ({ chunkId: row.chunkId, observedContentHash: row.contentHash }))
+      .sort((left, right) => left.chunkId.localeCompare(right.chunkId)),
     unchanged: [],
   }
   for (const candidate of current) {
@@ -38,7 +40,7 @@ export function planRefresh(current: CurrentChunk[], stored: StoredVectorRow[]):
       row.dimension === EMBEDDING_DIMENSION &&
       row.instructionVersion === INSTRUCTION_VERSION
     if (matches) plan.unchanged.push(candidate.chunk.id)
-    else plan.embed.push(candidate)
+    else plan.embed.push({ ...candidate, observedContentHash: row?.contentHash ?? null })
   }
   plan.embed.sort((left, right) => left.chunk.id.localeCompare(right.chunk.id))
   plan.unchanged.sort()

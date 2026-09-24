@@ -17,6 +17,7 @@ export const DocSearchOutputSchema = z
         embedded: z.number().int(),
         deleted: z.number().int(),
         unchanged: z.number().int(),
+        stale: z.number().int(),
       })
       .strict(),
     results: z.array(

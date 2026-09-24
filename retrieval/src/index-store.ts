@@ -5,7 +5,7 @@ import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { EMBEDDING_DIMENSION, EMBEDDING_MODEL, INSTRUCTION_VERSION } from './contract.ts'
-import type { RefreshPlan, StoredVectorRow } from './index.ts'
+import type { PlannedDelete, PlannedUpsert, StoredVectorRow } from './refresh-plan.ts'
 
 const RETRIEVAL_BUSY_TIMEOUT_MS = 15_000
 
@@ -20,9 +20,20 @@ type IndexedRow = StoredVectorRow & {
   vector: Uint8Array
 }
 
-type EmbeddedRefreshRow = RefreshPlan['embed'][number] & {
+type VectorUpsert = PlannedUpsert & {
   document: string
   vector: number[]
+}
+
+export type PreparedRefresh = {
+  delete: PlannedDelete[]
+  upsert: VectorUpsert[]
+}
+
+export type AppliedRefresh = {
+  embedded: number
+  deleted: number
+  stale: number
 }
 
 export function configureIndexDatabase(database: Database): void {
@@ -89,11 +100,7 @@ function vectorBlob(vector: number[]): Uint8Array {
   return new Uint8Array(new Float32Array(vector).buffer)
 }
 
-export function applyRefresh(
-  database: Database,
-  plan: RefreshPlan,
-  embedded: EmbeddedRefreshRow[],
-): void {
+export function applyRefresh(database: Database, prepared: PreparedRefresh): AppliedRefresh {
   const upsert = database.query(`
     INSERT INTO document_vector (
       chunk_id, content_hash, model, dimension, instruction_version,
@@ -107,10 +114,27 @@ export function applyRefresh(
       document=excluded.document, vector=excluded.vector
   `)
   const remove = database.query('DELETE FROM document_vector WHERE chunk_id = ?')
-  database
+  const currentHash = database.query<{ content_hash: string }, [string]>(
+    'SELECT content_hash FROM document_vector WHERE chunk_id = ?',
+  )
+  return database
     .transaction(() => {
-      for (const chunkId of plan.delete) remove.run(chunkId)
-      for (const candidate of embedded) {
+      const counts: AppliedRefresh = { embedded: 0, deleted: 0, stale: 0 }
+      for (const candidate of prepared.delete) {
+        const current = currentHash.get(candidate.chunkId)?.content_hash ?? null
+        if (current !== candidate.observedContentHash) {
+          counts.stale++
+          continue
+        }
+        remove.run(candidate.chunkId)
+        counts.deleted++
+      }
+      for (const candidate of prepared.upsert) {
+        const current = currentHash.get(candidate.chunk.id)?.content_hash ?? null
+        if (current !== candidate.observedContentHash) {
+          counts.stale++
+          continue
+        }
         const identity = candidate.chunk.identity
         if (identity.kind !== 'doc') throw new Error('retrieval index accepts document chunks only')
         upsert.run(
@@ -128,7 +152,9 @@ export function applyRefresh(
           candidate.document,
           vectorBlob(candidate.vector),
         )
+        counts.embedded++
       }
+      return counts
     })
     .immediate()
 }

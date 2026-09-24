@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Chunk } from './corpus/chunks.ts'
-import { planRefresh } from './index.ts'
+import { planRefresh } from './refresh-plan.ts'
 
 const chunk = (id: string): Chunk => ({
   id,
@@ -41,8 +41,17 @@ describe('retrieval refresh plan', () => {
       stored('vanished', 'gone'),
     ])
 
-    expect(plan.embed.map(({ chunk: value }) => value.id)).toEqual(['changed', 'contract', 'new'])
-    expect(plan.delete).toEqual(['vanished'])
+    expect(
+      plan.embed.map(({ chunk: value, observedContentHash }) => ({
+        id: value.id,
+        observedContentHash,
+      })),
+    ).toEqual([
+      { id: 'changed', observedContentHash: 'old-hash' },
+      { id: 'contract', observedContentHash: 'contract-hash' },
+      { id: 'new', observedContentHash: null },
+    ])
+    expect(plan.delete).toEqual([{ chunkId: 'vanished', observedContentHash: 'gone' }])
     expect(plan.unchanged).toEqual(['same'])
   })
 })

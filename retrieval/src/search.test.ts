@@ -51,7 +51,7 @@ test('refreshes and searches the SQLite Float32 index with bounded Unicode snipp
       },
     })
 
-    expect(result.refresh).toEqual({ embedded: 1, deleted: 0, unchanged: 0 })
+    expect(result.refresh).toEqual({ embedded: 1, deleted: 0, unchanged: 0, stale: 0 })
     expect(Array.from(result.results[0]!.snippet)).toHaveLength(500)
     expect(result.results[0]).toMatchObject({ truncated: true, rerankScore: 0.9 })
   } finally {

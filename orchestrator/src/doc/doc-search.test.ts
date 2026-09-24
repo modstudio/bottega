@@ -7,7 +7,7 @@ test('orch adapter parses the retrieval JSON contract', async () => {
     query: 'meaning',
     k: 1,
     contract: { model: 'model', dimension: 1024, instructionVersion: 'doc-search-v1' },
-    refresh: { embedded: 2, deleted: 1, unchanged: 3 },
+    refresh: { embedded: 2, deleted: 1, unchanged: 3, stale: 0 },
     results: [
       {
         scope: 'project',

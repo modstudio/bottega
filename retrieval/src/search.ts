@@ -13,8 +13,8 @@ import {
   RERANK_CANDIDATES,
 } from './contract.ts'
 import { type Chunk, chunkDocument, loadDocCorpus } from './corpus/chunks.ts'
-import { planRefresh } from './index.ts'
 import { applyRefresh, indexedRows, openIndexDatabase, storedRows } from './index-store.ts'
+import { planRefresh } from './refresh-plan.ts'
 import { embed, endpointsFromEnvironment, rerank } from './services/endpoints.ts'
 import { cosineTopK } from './vector-ranking.ts'
 
@@ -76,7 +76,7 @@ export async function search(
         })),
       )
     }
-    applyRefresh(database, plan, embeddedRows)
+    const applied = applyRefresh(database, { delete: plan.delete, upsert: embeddedRows })
 
     const [queryVector] = await clients.embed(endpoints.embedUrl, [queryDocument(query)])
     const queryArray = new Float32Array(queryVector ?? [])
@@ -123,9 +123,10 @@ export async function search(
       k,
       contract: currentContract,
       refresh: {
-        embedded: plan.embed.length,
-        deleted: plan.delete.length,
+        embedded: applied.embedded,
+        deleted: applied.deleted,
         unchanged: plan.unchanged.length,
+        stale: applied.stale,
       },
       results: ranked.map(({ row, rerankScore }) => {
         const characters = Array.from(row.text)

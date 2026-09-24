@@ -45,12 +45,12 @@ export const modules: ArchitectureModule[] = [
   module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
   module('retrieval/src/contract.ts', []),
   module('retrieval/src/services/endpoints.ts', ['../contract.ts']),
-  module('retrieval/src/index.ts', ['./contract.ts', './corpus/chunks.ts']),
+  module('retrieval/src/refresh-plan.ts', ['./contract.ts', './corpus/chunks.ts']),
   module('retrieval/src/vector-ranking.ts', []),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('retrieval/src/index-store.ts', ['node:fs', 'node:path', 'bun:sqlite', './contract.ts', './index.ts']),
+  module('retrieval/src/index-store.ts', ['node:fs', 'node:path', 'bun:sqlite', './contract.ts', './refresh-plan.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('retrieval/src/search.ts', ['node:crypto', 'node:path', '../../shared/orch-contract.ts', '../../shared/state-directory.ts', './contract.ts', './corpus/chunks.ts', './index-store.ts', './index.ts', './services/endpoints.ts', './vector-ranking.ts']),
+  module('retrieval/src/search.ts', ['node:crypto', 'node:path', '../../shared/orch-contract.ts', '../../shared/state-directory.ts', './contract.ts', './corpus/chunks.ts', './index-store.ts', './refresh-plan.ts', './services/endpoints.ts', './vector-ranking.ts']),
   module('retrieval/src/search-cli.ts', [
     '../../shared/orch-contract.ts',
     './search.ts',
