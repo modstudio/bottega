@@ -1,7 +1,11 @@
 export type ForcedRlsDmlFinding = {
   table: string
-  operation: 'DELETE' | 'INSERT' | 'UPDATE'
-  reason: 'force-enabled' | 'force-not-restored'
+  operation: 'DELETE' | 'DO' | 'EXECUTE' | 'INSERT' | 'UPDATE'
+  reason:
+    | 'force-enabled'
+    | 'force-not-restored'
+    | 'dynamic-sql-force-enabled'
+    | 'dynamic-sql-force-not-restored'
 }
 
 export type ForcedRlsMigrationAnalysis = {
@@ -11,12 +15,13 @@ export type ForcedRlsMigrationAnalysis = {
 
 type MigrationEvent =
   | { kind: 'force'; table: string; forced: boolean }
-  | { kind: 'dml'; table: string; operation: ForcedRlsDmlFinding['operation'] }
+  | { kind: 'dml'; table: string; operation: 'DELETE' | 'INSERT' | 'UPDATE' }
+  | { kind: 'dynamic'; operation: 'DO' | 'EXECUTE' }
 
 const identifier = `(?:"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*)`
 const qualifiedIdentifier = String.raw`${identifier}(?:\s*\.\s*${identifier})?`
 const migrationEvent = new RegExp(
-  String.raw`\bALTER\s+TABLE\s+(?:ONLY\s+)?(${qualifiedIdentifier})\s+(NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b|\b(UPDATE)\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(INSERT)\s+INTO\s+(${qualifiedIdentifier})|\b(DELETE)\s+FROM\s+(?:ONLY\s+)?(${qualifiedIdentifier})`,
+  String.raw`\bALTER\s+TABLE\s+(?:ONLY\s+)?(${qualifiedIdentifier})\s+(NO\s+)?FORCE\s+ROW\s+LEVEL\s+SECURITY\b|\b(UPDATE)\s+(?:ONLY\s+)?(${qualifiedIdentifier})|\b(INSERT)\s+INTO\s+(${qualifiedIdentifier})|\b(DELETE)\s+FROM\s+(?:ONLY\s+)?(${qualifiedIdentifier})|(?:^|;)\s*(DO|EXECUTE)\b`,
   'giu',
 )
 
@@ -37,6 +42,13 @@ function singleQuotedStringEnd(sql: string, start: number): number {
   return sql.length
 }
 
+function dollarQuotedStringEnd(sql: string, start: number): number | null {
+  const delimiter = sql.slice(start).match(/^\$(?:[a-z_][a-z0-9_]*)?\$/i)?.[0]
+  if (!delimiter) return null
+  const close = sql.indexOf(delimiter, start + delimiter.length)
+  return close < 0 ? sql.length : close + delimiter.length
+}
+
 function maskedSpanEnd(sql: string, start: number): number | null {
   if (sql.startsWith('--', start)) {
     const newline = sql.indexOf('\n', start)
@@ -46,7 +58,8 @@ function maskedSpanEnd(sql: string, start: number): number | null {
     const close = sql.indexOf('*/', start + 2)
     return close < 0 ? sql.length : close + 2
   }
-  return sql[start] === "'" ? singleQuotedStringEnd(sql, start) : null
+  if (sql[start] === "'") return singleQuotedStringEnd(sql, start)
+  return sql[start] === '$' ? dollarQuotedStringEnd(sql, start) : null
 }
 
 function maskCommentsAndStrings(sql: string): string {
@@ -69,7 +82,8 @@ function migrationEvents(sql: string): MigrationEvent[] {
     if (match[1]) return { kind: 'force', table: tableName(match[1]), forced: !match[2] }
     if (match[3]) return { kind: 'dml', operation: 'UPDATE', table: tableName(match[4]) }
     if (match[5]) return { kind: 'dml', operation: 'INSERT', table: tableName(match[6]) }
-    return { kind: 'dml', operation: 'DELETE', table: tableName(match[8]) }
+    if (match[7]) return { kind: 'dml', operation: 'DELETE', table: tableName(match[8]) }
+    return { kind: 'dynamic', operation: match[9]!.toUpperCase() as 'DO' | 'EXECUTE' }
   })
 }
 
@@ -79,13 +93,30 @@ export function analyzeForcedRlsDml(
 ): ForcedRlsMigrationAnalysis {
   const initiallyForced = new Set([...initiallyForcedTables].map((table) => table.toLowerCase()))
   const forcedTables = new Set(initiallyForced)
+  const knownForcedTables = new Set(initiallyForced)
   const findings: ForcedRlsDmlFinding[] = []
-  const liftedDml = new Map<string, Set<ForcedRlsDmlFinding['operation']>>()
+  const liftedDml = new Map<string, Set<'DELETE' | 'INSERT' | 'UPDATE'>>()
+  const liftedDynamic = new Map<'DO' | 'EXECUTE', Set<string>>()
 
   for (const event of migrationEvents(sql)) {
     if (event.kind === 'force') {
-      if (event.forced) forcedTables.add(event.table)
+      if (event.forced) {
+        forcedTables.add(event.table)
+        knownForcedTables.add(event.table)
+      }
       else forcedTables.delete(event.table)
+      continue
+    }
+    if (event.kind === 'dynamic') {
+      if (forcedTables.size > 0) {
+        findings.push({
+          table: '*',
+          operation: event.operation,
+          reason: 'dynamic-sql-force-enabled',
+        })
+      } else if (knownForcedTables.size > 0) {
+        liftedDynamic.set(event.operation, new Set(knownForcedTables))
+      }
       continue
     }
     if (forcedTables.has(event.table)) {
@@ -102,6 +133,10 @@ export function analyzeForcedRlsDml(
     for (const operation of operations) {
       findings.push({ table, operation, reason: 'force-not-restored' })
     }
+  }
+  for (const [operation, tables] of liftedDynamic) {
+    if ([...tables].every((table) => forcedTables.has(table))) continue
+    findings.push({ table: '*', operation, reason: 'dynamic-sql-force-not-restored' })
   }
   return { findings, forcedTables }
 }

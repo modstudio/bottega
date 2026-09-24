@@ -1,3 +1,5 @@
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
 ALTER TABLE "doc" NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "doc_revision" NO FORCE ROW LEVEL SECURITY;

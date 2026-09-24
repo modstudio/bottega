@@ -30,3 +30,40 @@ test('rejects a lifted update when FORCE ROW LEVEL SECURITY is not restored', ()
     ).findings,
   ).toEqual([{ table: 'doc', operation: 'INSERT', reason: 'force-not-restored' }])
 })
+
+test('masks a dollar-quoted fake FORCE lift but still rejects the real update', () => {
+  const result = analyzeForcedRlsDml(
+    `SELECT $$ALTER TABLE doc NO FORCE ROW LEVEL SECURITY$$;
+     UPDATE doc SET body = body;`,
+    new Set(['doc']),
+  )
+  expect(result.findings).toEqual([
+    { table: 'doc', operation: 'UPDATE', reason: 'force-enabled' },
+  ])
+})
+
+test('rejects a top-level DO block while FORCE ROW LEVEL SECURITY is active', () => {
+  const result = analyzeForcedRlsDml(
+    `DO $migration$
+     BEGIN
+       UPDATE doc SET body = body;
+     END
+     $migration$;`,
+    new Set(['doc']),
+  )
+  expect(result.findings).toEqual([
+    { table: '*', operation: 'DO', reason: 'dynamic-sql-force-enabled' },
+  ])
+})
+
+test('accepts EXECUTE inside a CREATE FUNCTION body', () => {
+  const result = analyzeForcedRlsDml(
+    `CREATE FUNCTION move_doc() RETURNS void LANGUAGE plpgsql AS $$
+     BEGIN
+       EXECUTE 'UPDATE doc SET body = body';
+     END
+     $$;`,
+    new Set(['doc']),
+  )
+  expect(result.findings).toEqual([])
+})
