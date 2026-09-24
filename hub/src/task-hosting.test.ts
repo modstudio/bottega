@@ -379,7 +379,11 @@ describe('hosted-only task safety', () => {
       cursor: at,
     })
     expect(
-      db().query<{ key: string; title: string }, [string]>('SELECT key,title FROM task WHERE record_id=?').get(id),
+      db()
+        .query<{ key: string; title: string }, [string]>(
+          'SELECT key,title FROM task WHERE record_id=?',
+        )
+        .get(id),
     ).toEqual({ key: 'DEV-981', title: 'renamed' })
   })
 

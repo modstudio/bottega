@@ -381,7 +381,9 @@ export async function ingestTrackers(
   )
   const local = new Set(
     d
-      .query<{ key: string; project: string }, []>(`SELECT key, project FROM task WHERE source = 'local'`)
+      .query<{ key: string; project: string }, []>(
+        `SELECT key, project FROM task WHERE source = 'local'`,
+      )
       .all()
       .map((row) => trackerTaskIdentity(row.project, row.key)),
   )
@@ -451,12 +453,10 @@ export async function ingestTrackers(
           // against a `before` that the first already superseded, recording a
           // transition that did not happen. Last wins: the lookup is the fresher read.
           const unique = new Map(tasks.map((t) => [t.key, t]))
-          let activity = [...unique.values()].some(
-            (t) => {
-              const identity = trackerTaskIdentity(t.project, t.key)
-              return !local.has(identity) && differs(t, existing.get(identity))
-            },
-          )
+          let activity = [...unique.values()].some((t) => {
+            const identity = trackerTaskIdentity(t.project, t.key)
+            return !local.has(identity) && differs(t, existing.get(identity))
+          })
 
           const mirrorError = await mirrorTrackerSnapshot([...unique.values()], local, before, at)
           if (mirrorError) {

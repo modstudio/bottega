@@ -1,5 +1,16 @@
 PRAGMA defer_foreign_keys = ON;
 --> statement-breakpoint
+DROP TABLE IF EXISTS temp.task_identity_migration_repairs;
+--> statement-breakpoint
+CREATE TEMP TABLE task_identity_migration_repairs (
+  table_name TEXT NOT NULL,
+  row_id INTEGER NOT NULL,
+  task_key TEXT NOT NULL,
+  old_record_id TEXT NOT NULL,
+  new_record_id TEXT NOT NULL,
+  PRIMARY KEY (table_name, row_id)
+);
+--> statement-breakpoint
 UPDATE task
 SET record_id = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
   substr(lower(hex(randomblob(2))), 2) || '-' ||
@@ -18,6 +29,54 @@ WHERE task_record_id IS NULL;
 UPDATE task_status_event
 SET task_record_id = (SELECT record_id FROM task WHERE task.key = task_status_event.task_key)
 WHERE task_record_id IS NULL;
+--> statement-breakpoint
+INSERT INTO task_identity_migration_repairs
+SELECT 'task_comment',child.id,child.task_key,child.task_record_id,parent.record_id
+FROM task_comment child
+JOIN task parent ON parent.key = child.task_key
+LEFT JOIN task current ON current.record_id = child.task_record_id
+WHERE child.task_record_id IS NOT NULL AND current.record_id IS NULL;
+--> statement-breakpoint
+INSERT INTO task_identity_migration_repairs
+SELECT 'task_document',child.id,child.task_key,child.task_record_id,parent.record_id
+FROM task_document child
+JOIN task parent ON parent.key = child.task_key
+LEFT JOIN task current ON current.record_id = child.task_record_id
+WHERE child.task_record_id IS NOT NULL AND current.record_id IS NULL;
+--> statement-breakpoint
+INSERT INTO task_identity_migration_repairs
+SELECT 'task_status_event',child.id,child.task_key,child.task_record_id,parent.record_id
+FROM task_status_event child
+JOIN task parent ON parent.key = child.task_key
+LEFT JOIN task current ON current.record_id = child.task_record_id
+WHERE child.task_record_id IS NOT NULL AND current.record_id IS NULL;
+--> statement-breakpoint
+UPDATE task_comment
+SET task_record_id = (
+  SELECT new_record_id FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'task_comment' AND repair.row_id = task_comment.id
+)
+WHERE id IN (
+  SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_comment'
+);
+--> statement-breakpoint
+UPDATE task_document
+SET task_record_id = (
+  SELECT new_record_id FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'task_document' AND repair.row_id = task_document.id
+)
+WHERE id IN (
+  SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_document'
+);
+--> statement-breakpoint
+UPDATE task_status_event
+SET task_record_id = (
+  SELECT new_record_id FROM task_identity_migration_repairs repair
+  WHERE repair.table_name = 'task_status_event' AND repair.row_id = task_status_event.id
+)
+WHERE id IN (
+  SELECT row_id FROM task_identity_migration_repairs WHERE table_name = 'task_status_event'
+);
 --> statement-breakpoint
 UPDATE task
 SET parent_record_id = (SELECT parent.record_id FROM task parent WHERE parent.key = task.parent_key)
@@ -38,15 +97,42 @@ END;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_guard(detail)
 SELECT 'unresolved task_comment rows: ' || group_concat(id || ':' || task_key, ', ')
-FROM task_comment WHERE task_record_id IS NULL HAVING count(*) > 0;
+FROM task_comment child
+WHERE task_record_id IS NULL
+  OR NOT EXISTS (SELECT 1 FROM task WHERE task.record_id = child.task_record_id)
+HAVING count(*) > 0;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_guard(detail)
 SELECT 'unresolved task_document rows: ' || group_concat(id || ':' || task_key, ', ')
-FROM task_document WHERE task_record_id IS NULL HAVING count(*) > 0;
+FROM task_document child
+WHERE task_record_id IS NULL
+  OR NOT EXISTS (SELECT 1 FROM task WHERE task.record_id = child.task_record_id)
+HAVING count(*) > 0;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_guard(detail)
 SELECT 'unresolved task_status_event rows: ' || group_concat(id || ':' || task_key, ', ')
-FROM task_status_event WHERE task_record_id IS NULL HAVING count(*) > 0;
+FROM task_status_event child
+WHERE task_record_id IS NULL
+  OR NOT EXISTS (SELECT 1 FROM task WHERE task.record_id = child.task_record_id)
+HAVING count(*) > 0;
+--> statement-breakpoint
+INSERT INTO task_identity_migration_guard(detail)
+SELECT 'unresolved task parent rows: ' || group_concat(key || ':' || parent_key, ', ')
+FROM task child
+WHERE parent_key IS NOT NULL AND (
+  parent_record_id IS NULL
+  OR NOT EXISTS (SELECT 1 FROM task WHERE task.record_id = child.parent_record_id)
+)
+HAVING count(*) > 0;
+--> statement-breakpoint
+INSERT INTO task_identity_migration_guard(detail)
+SELECT 'unresolved promoted note rows: ' || group_concat(id || ':' || promoted_task, ', ')
+FROM note child
+WHERE promoted_task IS NOT NULL AND (
+  promoted_task_record_id IS NULL
+  OR NOT EXISTS (SELECT 1 FROM task WHERE task.record_id = child.promoted_task_record_id)
+)
+HAVING count(*) > 0;
 --> statement-breakpoint
 DROP TRIGGER task_identity_migration_refusal;
 --> statement-breakpoint

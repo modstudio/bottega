@@ -130,7 +130,19 @@ test('fixture task reclaim deletes the task and all child rows in one fixture-st
           (record_id,key,project,title,status,status_category,opened_at,updated_at,source,first_seen,last_seen)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run('fixture-task-record', 'ALP-899', 'alpha', 'No assignment field', null, null, null, null, 'mcp', '', '')
+      .run(
+        'fixture-task-record',
+        'ALP-899',
+        'alpha',
+        'No assignment field',
+        null,
+        null,
+        null,
+        null,
+        'mcp',
+        '',
+        '',
+      )
     connection
       .query('INSERT INTO task_comment(task_key,task_record_id,body,created_at) VALUES (?,?,?,?)')
       .run('ALP-899', 'fixture-task-record', 'comment', '')

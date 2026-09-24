@@ -36,10 +36,7 @@ const migratedThrough = (lastIndex: number) => {
   mkdirSync(join(folder, 'meta'))
   const entries = migrationJournal().slice(0, lastIndex + 1)
   for (const entry of entries)
-    copyFileSync(
-      join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
-      join(folder, `${entry.tag}.sql`),
-    )
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
   writeFileSync(
     join(folder, 'meta', '_journal.json'),
     JSON.stringify({ version: '7', dialect: 'sqlite', entries }),
@@ -506,51 +503,86 @@ describe('hub migration journal', () => {
       VALUES ('DEV-2','doc','body','v1','2026-01-01','2026-01-01');
       INSERT INTO task_status_event(task_key,at,to_status)
       VALUES ('DEV-2','2026-01-01','open');
+      INSERT INTO task_comment(id,task_key,task_record_id,body,created_at)
+      VALUES (10,'DEV-2','dangling-comment','dangling','2026-01-01');
+      INSERT INTO task_document(id,task_key,task_record_id,title,body,version,created_at,updated_at)
+      VALUES (20,'DEV-2','dangling-document','dangling','body','v1','2026-01-01','2026-01-01');
+      INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status)
+      VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
       UPDATE note SET promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
     expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(
+      d
+        .query(
+          `SELECT table_name,row_id,task_key,old_record_id,new_record_id
+         FROM task_identity_migration_repairs ORDER BY table_name`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        table_name: 'task_comment',
+        row_id: 10,
+        task_key: 'DEV-2',
+        old_record_id: 'dangling-comment',
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_document',
+        row_id: 20,
+        task_key: 'DEV-2',
+        old_record_id: 'dangling-document',
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_status_event',
+        row_id: 30,
+        task_key: 'DEV-2',
+        old_record_id: 'dangling-event',
+        new_record_id: 'child-id',
+      },
+    ])
     expect(d.query('SELECT parent_record_id FROM task WHERE key="DEV-2"').get()).toEqual({
       parent_record_id: 'parent-id',
     })
-    expect(d.query('SELECT task_record_id FROM task_comment').get()).toEqual({
-      task_record_id: 'child-id',
-    })
-    expect(d.query('SELECT task_record_id FROM task_document').get()).toEqual({
-      task_record_id: 'child-id',
-    })
-    expect(d.query('SELECT task_record_id FROM task_status_event').get()).toEqual({
-      task_record_id: 'child-id',
-    })
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_comment').all()).toEqual([
+      { task_record_id: 'child-id' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_document').all()).toEqual([
+      { task_record_id: 'child-id' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_status_event').all()).toEqual([
+      { task_record_id: 'child-id' },
+    ])
     expect(
       d.query("SELECT promoted_task_record_id FROM note WHERE promoted_task='DEV-2'").get(),
     ).toEqual({
       promoted_task_record_id: 'child-id',
     })
     d.exec("UPDATE task SET record_id='child-id-new' WHERE record_id='child-id'")
-    expect(d.query('SELECT task_record_id FROM task_comment').get()).toEqual({
-      task_record_id: 'child-id-new',
-    })
-    expect(d.query('SELECT task_record_id FROM task_document').get()).toEqual({
-      task_record_id: 'child-id-new',
-    })
-    expect(d.query('SELECT task_record_id FROM task_status_event').get()).toEqual({
-      task_record_id: 'child-id-new',
-    })
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_comment').all()).toEqual([
+      { task_record_id: 'child-id-new' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_document').all()).toEqual([
+      { task_record_id: 'child-id-new' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_status_event').all()).toEqual([
+      { task_record_id: 'child-id-new' },
+    ])
     d.close()
   })
 
   test('task identity rebuild refuses and names an unresolvable child', () => {
     const d = migratedThrough(8)
     d.exec('PRAGMA foreign_keys = OFF')
-    d.exec(`INSERT INTO task_status_event(task_key,at,to_status)
-      VALUES ('MISSING-42','2026-01-01','open')`)
+    d.exec(`INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status) VALUES
+      (1,'MISSING-42',NULL,'2026-01-01','open'),
+      (2,'MISSING-43','dangling-record','2026-01-01','open')`)
     d.exec('PRAGMA foreign_keys = ON')
     expect(() => applyMigrations(d)).toThrow(
-      'unresolved task_status_event rows: 1:MISSING-42',
+      'unresolved task_status_event rows: 1:MISSING-42, 2:MISSING-43',
     )
-    expect(
-      d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get(),
-    ).toBeNull()
+    expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
     d.close()
   })
 
