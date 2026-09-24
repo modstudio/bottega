@@ -89,7 +89,10 @@ export const Route = createRootRoute({
     const pathname = useRouterState({ select: (state) => state.location.pathname })
     if (
       hosted &&
-      (pathname === '/sign-in' || pathname === '/forgot-password' || pathname === '/reset-password')
+      (pathname === '/sign-in' ||
+        pathname === '/forgot-password' ||
+        pathname === '/reset-password' ||
+        pathname.startsWith('/accept-invitation/'))
     ) {
       return (
         <HostedSignInFrame>

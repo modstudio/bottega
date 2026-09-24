@@ -9,7 +9,9 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import { membership, newRecordId, space, user } from '../../../shared/record/schema.ts'
 import { account, invitation, session, verification } from '../../../shared/record/schema-auth.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
+import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
@@ -163,11 +165,13 @@ async function sessionSpaceForUser(client: SQL, userId: string, personalSpaceId:
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail
+type InvitationSender = typeof sendRecordInvitationEmail
 
 export function recordAuth(
   url: string,
   environment: RecordAuthEnvironment = process.env,
   sendReset: ResetPasswordSender = sendPasswordResetEmail,
+  sendInvitation: InvitationSender = sendRecordInvitationEmail,
 ) {
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
@@ -236,6 +240,24 @@ export function recordAuth(
     },
     plugins: [
       organization({
+        invitationExpiresIn: RECORD_INVITATION_EXPIRES_IN_SECONDS,
+        sendInvitationEmail: async ({ id, email, organization: invitedSpace, inviter, role }) => {
+          if (!hubUrl)
+            throw new Error(
+              'RECORD_HUB_URL is required for invitation links; set it to the hosted hub origin',
+            )
+          const invitationUrl = new URL(`/accept-invitation/${id}`, hubUrl)
+          await sendInvitation(
+            {
+              to: email,
+              invitationUrl: invitationUrl.href,
+              spaceName: invitedSpace.name,
+              inviterName: inviter.user.name,
+              role,
+            },
+            environment,
+          )
+        },
         schema: {
           organization: { modelName: 'space' },
           member: {

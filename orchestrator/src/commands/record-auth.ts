@@ -60,7 +60,7 @@ export function register(program: Command): void {
   space
     .command('invite')
     .requiredOption('--email <email>')
-    .option('--role <role>', 'member or owner', 'member')
+    .option('--role <role>', 'member, admin, or owner', 'member')
     .action((options) =>
       recordSpaceInviteCommand(String(options.email), String(options.role), presentation),
     )

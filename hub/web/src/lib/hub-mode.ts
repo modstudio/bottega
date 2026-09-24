@@ -17,6 +17,7 @@ import {
   Route as RouteIcon,
   ScanSearch,
   Settings,
+  Users,
 } from 'lucide-react'
 
 export function isHostedMode() {
@@ -120,7 +121,10 @@ const HOSTED_NAV: NavSection[] = [
       {
         label: 'Settings',
         icon: Settings,
-        items: [{ to: '/settings', label: 'Hub settings', icon: Settings }],
+        items: [
+          { to: '/settings', label: 'Hub settings', icon: Settings },
+          { to: '/members', label: 'Members', icon: Users },
+        ],
       },
     ],
   },
@@ -151,7 +155,8 @@ export function isHostedPath(pathname: string) {
     path === '/notes' ||
     path === '/ratio' ||
     path === '/spend' ||
-    path === '/settings'
+    path === '/settings' ||
+    path === '/members'
   ) {
     return true
   }
@@ -160,6 +165,7 @@ export function isHostedPath(pathname: string) {
   if (path.startsWith('/board/tasks/')) return true
   if (path.startsWith('/done/tasks/')) return true
   if (path.startsWith('/reviews/')) return true
+  if (path.startsWith('/accept-invitation/')) return true
   if (path.startsWith('/docs/')) return true
   return false
 }

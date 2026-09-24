@@ -165,6 +165,8 @@ realPostgres('RLS proof against real Postgres', () => {
   let tokenB = ''
   let repairToken = ''
   let pendingInvitation = ''
+  let invitationAuth: ReturnType<typeof recordAuth>
+  const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[3]>>[0]> = []
   const authProjectA = newRecordId()
   const authProjectB = newRecordId()
   const authRunA = newRecordId()
@@ -173,6 +175,10 @@ realPostgres('RLS proof against real Postgres', () => {
   beforeAll(async () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
+    process.env.RECORD_HUB_URL = 'https://hub.example.test'
+    invitationAuth = recordAuth(actorUrl!, process.env, undefined, async (input) => {
+      invitationEmails.push(input)
+    })
     await migratePostgres()
 
     succeeds(
@@ -320,7 +326,12 @@ realPostgres('RLS proof against real Postgres', () => {
     )
 
     recordSession.setToken(tokenA)
-    pendingInvitation = await inviteToActiveRecordSpace(actorUrl!, SIGN_UP_AUTH.emailB, 'member')
+    pendingInvitation = await inviteToActiveRecordSpace(
+      actorUrl!,
+      SIGN_UP_AUTH.emailB,
+      'member',
+      invitationAuth,
+    )
     succeeds(
       'postgres',
       'postgres',
@@ -337,6 +348,7 @@ realPostgres('RLS proof against real Postgres', () => {
     installRecordSessionRunner(null)
     delete process.env.BETTER_AUTH_SECRET
     delete process.env.BETTER_AUTH_URL
+    delete process.env.RECORD_HUB_URL
     if (!container) return
     psql(
       'postgres',
@@ -461,13 +473,83 @@ realPostgres('RLS proof against real Postgres', () => {
     recordSession.setToken(repairToken)
     await expect(
       inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member'),
-    ).rejects.toThrow('requires the owner role')
+    ).rejects.toThrow('not allowed to invite users')
+  })
+
+  test('an admin may invite members but may not invite an owner', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE membership SET role='admin'
+       WHERE user_id=(SELECT id FROM "user" WHERE email='${SIGN_UP_AUTH.emailRepair}')
+         AND space_id='${authSpaceA}';`,
+    )
+    recordSession.setToken(repairToken)
+    await expect(
+      inviteToActiveRecordSpace(actorUrl!, 'admin-sent@example.test', 'member', invitationAuth),
+    ).resolves.toBeString()
+    await expect(
+      inviteToActiveRecordSpace(actorUrl!, 'admin-owner@example.test', 'owner', invitationAuth),
+    ).rejects.toThrow('not allowed to invite user with this role')
   })
 
   test('an owner does not list invitations they sent into their active space', async () => {
     recordSession.setToken(tokenA)
-    const invited = await inviteToActiveRecordSpace(actorUrl!, 'owner-sent@example.test', 'member')
+    const invited = await inviteToActiveRecordSpace(
+      actorUrl!,
+      'owner-sent@example.test',
+      'member',
+      invitationAuth,
+    )
     expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
+  })
+
+  test('organization invite and resend email the hosted link and renew seven-day expiry', async () => {
+    recordSession.setToken(tokenA)
+    const email = 'resend@example.test'
+    const before = invitationEmails.length
+    const invitation = await invitationAuth.api.createInvitation({
+      headers: bearerHeaders(tokenA),
+      body: { email, role: 'admin', organizationId: authSpaceA },
+    })
+    const firstTtl = Number(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT extract(epoch FROM (expires_at-created_at))::int FROM invitation WHERE id='${invitation.id}';`,
+      ),
+    )
+    expect(firstTtl).toBeGreaterThan(604_790)
+    expect(firstTtl).toBeLessThanOrEqual(604_800)
+    await invitationAuth.api.createInvitation({
+      headers: bearerHeaders(tokenA),
+      body: { email, role: 'admin', organizationId: authSpaceA, resend: true },
+    })
+    expect(invitationEmails.slice(before)).toEqual([
+      {
+        to: email,
+        invitationUrl: `https://hub.example.test/accept-invitation/${invitation.id}`,
+        spaceName: 'Auth A',
+        inviterName: 'Auth A',
+        role: 'admin',
+      },
+      {
+        to: email,
+        invitationUrl: `https://hub.example.test/accept-invitation/${invitation.id}`,
+        spaceName: 'Auth A',
+        inviterName: 'Auth A',
+        role: 'admin',
+      },
+    ])
+    const renewedTtl = Number(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT extract(epoch FROM (expires_at-now()))::int FROM invitation WHERE id='${invitation.id}';`,
+      ),
+    )
+    expect(renewedTtl).toBeGreaterThan(604_790)
+    expect(renewedTtl).toBeLessThanOrEqual(604_800)
   })
 
   test('an expired pending invitation does not block re-inviting', async () => {
@@ -481,7 +563,9 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${email}','${authUserA}',
          'member','pending',now() - interval '1 day',now());`,
     )
-    await expect(inviteToActiveRecordSpace(actorUrl!, email, 'member')).resolves.toBeString()
+    await expect(
+      inviteToActiveRecordSpace(actorUrl!, email, 'member', invitationAuth),
+    ).resolves.toBeString()
   })
 
   test('invitees see only their invitations and acceptance joins and switches space', async () => {
