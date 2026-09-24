@@ -551,7 +551,7 @@ export function discardWorktree(
  * Delete a writing run's worktree and branch.
  *
  * Never automatic. A failed implementation run leaves the most readable
- * artefact in the system — a partial change set showing exactly how far the
+ * artifact in the system — a partial change set showing exactly how far the
  * worker got — and cleaning up on failure would destroy it at the moment it
  * is most wanted. Throwing the tree away is a decision someone makes after
  * reading the diff.

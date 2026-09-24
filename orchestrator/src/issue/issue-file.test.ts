@@ -29,7 +29,7 @@ the cause`,
     },
   }
 
-  test('parses only the bounded filing fields and recognises one reported seed', () => {
+  test('parses only the bounded filing fields and recognizes one reported seed', () => {
     const issue = parseFiledIssue(shown)
     expect(issue).toMatchObject({
       key: 'DEV-9',

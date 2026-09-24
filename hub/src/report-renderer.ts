@@ -12,7 +12,7 @@ export type Item = {
   engaged: string
   engagedMs: number
   agentTokens: number
-  /** One business-readable sentence, written by the summariser. */
+  /** One business-readable sentence, written by the summarizer. */
   sentence?: string
 }
 
@@ -49,7 +49,7 @@ const esc = (s: string) =>
  * The email.
  *
  * Inline styles only, and tables for layout: an email client will not load a
- * stylesheet and cannot be trusted with flex or grid. Every colour is a literal
+ * stylesheet and cannot be trusted with flex or grid. Every color is a literal
  * hex for the same reason - a CSS variable resolves to nothing in Outlook.
  *
  * Structure follows the question a reader actually has: how much happened, then
@@ -213,7 +213,7 @@ export function renderHtml(
   }
 
   // The charset is declared HERE as well as in the MIME header. A title with an
-  // em dash in it renders as mojibake in any client that does not honour the
+  // em dash in it renders as mojibake in any client that does not honor the
   // part header - which is how "Product matching & resolution overhaul - epic"
   // reached a preview as "overhaul a EUR" nonsense. Two declarations cost
   // nothing; one missing declaration corrupts a reader's copy.
@@ -221,7 +221,7 @@ export function renderHtml(
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="format-detection" content="telephone=no">
   <style>
-    /* Media queries ARE honoured by the clients that matter on a phone - iOS
+    /* Media queries ARE honored by the clients that matter on a phone - iOS
        Mail, Outlook iOS and the Gmail app all render this head block. They are
        an enhancement, not the layout: every rule below narrows something that
        is already usable without it, so a client that strips the block still

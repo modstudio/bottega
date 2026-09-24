@@ -43,7 +43,7 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
 }
 
 /**
- * Owed a judgement: never scored, OR scored before the conversation moved on.
+ * Owed a judgment: never scored, OR scored before the conversation moved on.
  *
  * The second half was missing and it let the earliest turn win by accident. A
  * chain is one unit of work and takes one verdict, so a session that scored a
@@ -57,7 +57,7 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
  * latest turn finished is stale, and stale is a kind of unscored.
  *
  * A void closes the ledger whether or not a verdict was stored: excluded
- * evidence is not an owed judgement.
+ * evidence is not an owed judgment.
  */
 export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
    AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_id = r.id
@@ -67,7 +67,7 @@ export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL A
                             FROM run c WHERE c.parent_run_id = r.id))`
 
 /**
- * The evidence boundary: a run leaves the owed-judgement ledger in two ways,
+ * The evidence boundary: a run leaves the owed-judgment ledger in two ways,
  * a stored verdict or `evidence_excluded` set by a void. Every consumer of
  * that boundary reads these fragments. Do not restate them in SQL.
  *
@@ -232,7 +232,7 @@ export function pendingForSession(sid: string | null) {
   }[]
 }
 
-/** How many runs are owed a judgement, by the same rule, across every session. */
+/** How many runs are owed a judgment, by the same rule, across every session. */
 export function unscoredCount(sinceIso?: string): number {
   return (
     db()

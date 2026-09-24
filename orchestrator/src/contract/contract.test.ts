@@ -376,7 +376,7 @@ describe('a worker that stops to ask is not a worker that failed', () => {
 })
 
 describe('a worker asking is not a worker blocked', () => {
-  test('the old word is accepted and normalised', () => {
+  test('the old word is accepted and normalized', () => {
     const r = parseWorkerReply(
       JSON.stringify(
         workerReply({

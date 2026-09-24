@@ -654,7 +654,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
      *
      * codex writes its final message to the `-o` file as it finishes, so a
      * reply can be complete and valid while the process is killed a moment
-     * later — by a harness command timeout, by SIGTERM travelling down a
+     * later — by a harness command timeout, by SIGTERM traveling down a
      * process group. Gating the parse on `exitCode === 0` threw that reply away
      * and recorded "reply did not match the worker contract" over a reply that
      * matched it perfectly, which is a misleading epitaph for work that was
@@ -731,7 +731,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
        *
        * A writing agent proves completion with its contract. A read-only
        * agent's answer IS its output, and completeness belongs to the later
-       * delivery/quality judgement; requiring a writer-only contract here made
+       * delivery/quality judgment; requiring a writer-only contract here made
        * every read-only wall kill look like no answer even when substantial
        * work was already on disk.
        *

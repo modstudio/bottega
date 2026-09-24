@@ -152,7 +152,7 @@ describe('secret values', () => {
     )
   })
 
-  test('normalises UUID case and key/environment Unicode to NFC', () => {
+  test('normalizes UUID case and key/environment Unicode to NFC', () => {
     const dek = generateDataKey()
     const decomposed = {
       ...valueContext,
@@ -162,9 +162,9 @@ describe('secret values', () => {
     const envelope = sealValue({
       dek,
       valueContext: decomposed,
-      plaintext: textEncoder.encode('normalised'),
+      plaintext: textEncoder.encode('normalized'),
     })
-    const normalised = {
+    const normalized = {
       ...decomposed,
       spaceId: decomposed.spaceId.toLowerCase(),
       userId: decomposed.userId?.toLowerCase() ?? null,
@@ -173,8 +173,8 @@ describe('secret values', () => {
       environment: decomposed.environment.normalize('NFC'),
     }
 
-    expect(textDecoder.decode(openValue({ envelope, dek, valueContext: normalised }))).toBe(
-      'normalised',
+    expect(textDecoder.decode(openValue({ envelope, dek, valueContext: normalized }))).toBe(
+      'normalized',
     )
   })
 

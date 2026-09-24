@@ -137,7 +137,7 @@ function PhoneToolbar({
  *   └──────────────────────────────────────────────┴─────────┘
  *
  * As the card narrows it gives up room by kind, never by wrapping: meta goes
- * first, then the filters fold behind one labelled trigger. The measure is the
+ * first, then the filters fold behind one labeled trigger. The measure is the
  * card's own width, so a docked panel collapses the toolbar on any screen. On a
  * phone the toolbar is replaced by one band of cells, and `pageActions` (the
  * page header's own buttons) move into it.

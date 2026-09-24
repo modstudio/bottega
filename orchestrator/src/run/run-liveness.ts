@@ -66,7 +66,7 @@ export function chainTerminationAt(database: Database, memberId: number): string
  *
  * Counterpart of `resolveSupersededTurn` in failover.ts, which is child-only and
  * cannot touch a root: the root is routing evidence, and giving it a terminal
- * status inserts a judgement. That is the point here, not an accident. A chain
+ * status inserts a judgment. That is the point here, not an accident. A chain
  * that ended stale is a real outcome of a real agent; hiding it would make the
  * router's picture of that agent better than the truth.
  *
@@ -86,8 +86,8 @@ export function chainTerminationAt(database: Database, memberId: number): string
  *
  * The terminal turn's error and failure_kind are part of that state and travel
  * with its status. The deliberate kind exception is a stale or abandoned child: DEV-146
- * established that stranding or abandoning a chain inserts a judgement on the
- * root, while copying the child's NOT_EVIDENCE kind would erase that judgement
+ * established that stranding or abandoning a chain inserts a judgment on the
+ * root, while copying the child's NOT_EVIDENCE kind would erase that judgment
  * from routing. Those lifecycle outcomes therefore retain the root's kind.
  */
 export function resolveRootFromLastTurn(database: Database, rootId: number): number {

@@ -12,7 +12,7 @@ import {
   SHARED_OUTPUT_REASON,
 } from './evidence-query.ts'
 
-test('runs --unscored uses the shared definition of an owed judgement', () => {
+test('runs --unscored uses the shared definition of an owed judgment', () => {
   const wanted = addRun({ agent: 'grok', job: 'craft', session: 'owed-session' })
   addRun({ agent: 'grok', job: 'craft', probe: 1, session: 'owed-session' })
   addRun({ agent: 'grok', job: 'craft', status: 'failed', session: 'owed-session' })
@@ -41,7 +41,7 @@ describe('the activity window', () => {
     expect((state(1).totals as { failed: number }).failed).toBe(1)
   })
 
-  test('the scored counter excludes judgements on not-evidence runs', () => {
+  test('the scored counter excludes judgments on not-evidence runs', () => {
     score(agedRun(0, { agent: 'grok', job: 'craft' }), 'full', 'right')
     const interrupted = agedRun(0, { agent: 'grok', job: 'craft', status: 'failed' })
     db().query("UPDATE run SET failure_kind='interrupted' WHERE id=?").run(interrupted)

@@ -419,7 +419,7 @@ describe('operational monitor conditions', () => {
     }
   })
 
-  test('addresses stale and unscored runs to the session that owns their judgement', async () => {
+  test('addresses stale and unscored runs to the session that owns their judgment', async () => {
     const stale = addRun({
       agent: 'codex',
       job: 'implement',

@@ -540,7 +540,7 @@ function loadAjvValidator(): AjvValidator {
   return validator
 }
 
-/** Validate a reply against the same Codex-normalised schema the CLI path hands the vendor. */
+/** Validate a reply against the same Codex-normalized schema the CLI path hands the vendor. */
 export function valueMatchesStrictSchema(schema: unknown, value: unknown): boolean {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
   try {

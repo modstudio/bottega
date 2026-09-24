@@ -56,15 +56,15 @@ test('stop reports an unreadable process table and an inspect-then-signal remedy
       reason: 'process inventory failed with exit 1',
     }),
   ).toBe(
-    'stopped run 42; no process could be signalled because process inventory failed with exit 1; after checking ps -p 9001 -o command, run kill -TERM 9001 only if the command shows one of these ids: exec.ts 41, exec.ts 42',
+    'stopped run 42; no process could be signaled because process inventory failed with exit 1; after checking ps -p 9001 -o command, run kill -TERM 9001 only if the command shows one of these ids: exec.ts 41, exec.ts 42',
   )
 })
 
-test('stop uses the plain success line for signalled, no-pid and gone outcomes', () => {
+test('stop uses the plain success line for signaled, no-pid and gone outcomes', () => {
   expect(
     stoppedRunLine(42, 9001, {
-      outcome: 'signalled',
-      signalled: [9001],
+      outcome: 'signaled',
+      signaled: [9001],
       acceptableIds: [42],
     }),
   ).toBe('stopped run 42')

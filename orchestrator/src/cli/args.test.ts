@@ -22,7 +22,7 @@ import {
 const messageDir = mkdtempSync(join(tmpdir(), 'orch-args-test-'))
 afterAll(() => rmSync(messageDir, { recursive: true, force: true }))
 
-test('every registered top-level command is recognised as canon', () => {
+test('every registered top-level command is recognized as canon', () => {
   const commands = [
     'init-db',
     'migrate',
@@ -196,7 +196,7 @@ describe('answer text sources', () => {
 })
 
 describe('a message that is not a ruling is refused', () => {
-  test('empty, whitespace, and a single --token are mis-parses', () => {
+  test('empty, whitespace, and a single --token are misparses', () => {
     expect(misparsedMessage('')).toBe('empty')
     expect(misparsedMessage('   \n')).toBe('empty')
     expect(misparsedMessage('--file')).toBe('dash-token')

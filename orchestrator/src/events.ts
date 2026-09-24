@@ -450,7 +450,7 @@ function readEventLog(path: string): RunLogEvent[] {
   return events
 }
 
-function summariseEvent(event: RunLogEvent): PeekEventSummary {
+function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'tool_call') {
     return { type: 'tool_call', title: event.title, target: event.locations?.[0]?.path }
@@ -527,7 +527,7 @@ export function peekRun(
       ? Math.max(0, Math.round((now - lastAt) / 1000))
       : null,
     event_count: events.length,
-    events: events.slice(-limit).map(summariseEvent),
+    events: events.slice(-limit).map(summarizeEvent),
     files: worktreeFiles(row.worktree, locations),
     commits: worktreeCommits(row.worktree, row.base_commit),
     vendor_tokens: usage?.type === 'usage' ? usage.tokens : row.vendor_tokens,

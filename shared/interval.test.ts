@@ -37,7 +37,7 @@ describe('interval union', () => {
 
   test('touching spans merge into one', () => {
     // A run finishing at the same instant the next message lands is continuous
-    // work; a zero-width seam between them would be an artefact.
+    // work; a zero-width seam between them would be an artifact.
     expect(
       union([
         { start: 0, end: 1000 },

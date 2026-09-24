@@ -8,8 +8,8 @@ one. The architect designs, rules and judges in the harness. Bottega routes the
 building to external agents on flat-rate subscriptions and local models, scores
 what comes back, and sends the next job to whichever agent has earned it.
 
-The delegation costs nothing in judgement because workers are forbidden to make
-decisions: a worker reaching a judgement call stops and asks, and fidelity is a
+The delegation costs nothing in judgment because workers are forbidden to make
+decisions: a worker reaching a judgment call stops and asks, and fidelity is a
 scored axis so deviation is measured rather than trusted. See `AGENTS.md` for
 the reasoning.
 

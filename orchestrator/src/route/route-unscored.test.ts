@@ -11,7 +11,7 @@ import {
 } from '../evidence/evidence-query.ts'
 
 describe('what counts as unscored', () => {
-  test('only a successful, non-probe, unjudged run is owed a judgement', () => {
+  test('only a successful, non-probe, unjudged run is owed a judgment', () => {
     addRun({ agent: 'grok', job: 'craft' }) // owed
     addRun({ agent: 'grok', job: 'craft', probe: 1 }) // calibration
     addRun({ agent: 'grok', job: 'craft', status: 'failed' }) // already none
@@ -31,7 +31,7 @@ describe('what counts as unscored', () => {
     expect(unscoredCount()).toBe(1)
   })
 
-  test('the count honours the dashboard window', () => {
+  test('the count honors the dashboard window', () => {
     const old = addRun({ agent: 'grok', job: 'craft' })
     db()
       .query('UPDATE run SET started_at=? WHERE id=?')

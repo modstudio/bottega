@@ -1,4 +1,4 @@
-// concern: judgement
+// concern: judgment
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -50,7 +50,7 @@ import {
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { refuseVerdict, type VerdictRefusal } from './verdict/verdict-rules.ts'
 
-type JudgementFlags = {
+type JudgmentFlags = {
   has(name: string): boolean
   flag(name: string): string | undefined
   values(name: string): string[]
@@ -62,7 +62,7 @@ type JudgeOptions = {
   notEvidence: readonly string[]
 }
 type ScoreOptions = JudgeOptions & { dashboardAuthorized: boolean }
-type JudgementPresentation = {
+type JudgmentPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
   pairHint(partner: { id: number; agent: string }): string
@@ -126,7 +126,7 @@ type JudgeableRun = {
 function requireJudgeableRun(
   requestedId: number,
   row: JudgeableRun | null,
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   options: JudgeOptions,
 ): JudgeableRun {
   if (!row) throw new Error(`no run ${requestedId}`)
@@ -162,7 +162,7 @@ function requireJudgeableRun(
 function refuseForeignScore(
   id: number,
   owner: ReturnType<typeof judgeability>,
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   dashboardAuthorized: boolean,
 ): void {
   if (dashboardAuthorized || flags.has('force')) return
@@ -239,7 +239,7 @@ function reviveUnjudgedOwnerEvidence(id: number): void {
 type EvidenceExclusion = 'void' | 'blocked-by-tree'
 
 function requestedEvidenceExclusion(
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   options: ScoreOptions,
 ): EvidenceExclusion | null {
   if (!flags.has('blocked-by-tree')) return flags.has('void') ? 'void' : null
@@ -268,9 +268,9 @@ function recordEvidenceExclusion(
   id: number,
   row: { failure_kind: string | null; job: string },
   exclusion: EvidenceExclusion,
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   options: ScoreOptions,
-  presentation: JudgementPresentation,
+  presentation: JudgmentPresentation,
 ): void {
   let authority = authorizeRunMutation(id, 'void')
   const blocked = exclusion === 'blocked-by-tree'
@@ -322,9 +322,9 @@ function recordEvidenceExclusion(
 }
 export async function judgeRun(
   requestedId: number,
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   options: JudgeOptions,
-  presentation: JudgementPresentation,
+  presentation: JudgmentPresentation,
 ) {
   const loaded = db()
     .query(
@@ -538,7 +538,7 @@ const REVIEW_GRADE_FLAGS = ['reproduced', 'coverage', 'limits', 'overlap'] as co
 
 /** Review grades belong to a findings lens that produced output to grade. */
 function refuseReviewGradeFlags(
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   findingsJob: boolean,
   delivery: string | undefined,
   jobName: string,
@@ -558,7 +558,7 @@ function refuseReviewGradeFlags(
  * word fails before any work is done.
  */
 function refuseAxesEarly(
-  presentation: JudgementPresentation,
+  presentation: JudgmentPresentation,
   input: {
     delivery: string | undefined
     quality: string | undefined
@@ -631,9 +631,9 @@ function scoringHelp(
 
 export async function scoreRun(
   requestedId: number,
-  flags: JudgementFlags,
+  flags: JudgmentFlags,
   options: ScoreOptions,
-  presentation: JudgementPresentation,
+  presentation: JudgmentPresentation,
 ): Promise<void> {
   const row = db()
     .query(
@@ -694,11 +694,11 @@ export async function scoreRun(
   // the score table directly, which is the same exception made invisible;
   // `--scorer` records WHO judged it but grants no authority on its own.
   // `orch score 279 none` and `orch score 279 full right` are both complete
-  // judgements; quality is meaningless without something to judge.
+  // judgments; quality is meaningless without something to judge.
   //
   // Read positionally past the flags, not by index: `orch score 279 none
   // --note "..."` put `--note` in the quality slot and was rejected as an
-  // incoherent judgement, which is a confusing way to be told about a typo
+  // incoherent judgment, which is a confusing way to be told about a typo
   // you did not make.
   /**
    * A writing job is judged on a third axis, and is REQUIRED to be.

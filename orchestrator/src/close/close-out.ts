@@ -791,7 +791,7 @@ function attemptCloseOutRun(
                 detail: 'would release clean terminal worktree and keep its branch',
               }
             }
-            // The coordinator proves its own identity before descendants are signalled.
+            // The coordinator proves its own identity before descendants are signaled.
             const liveCoordinator = aliveConversationTurns(row.root_id).find(
               (turn) => turn.pid !== process.pid,
             )

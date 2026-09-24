@@ -1,5 +1,5 @@
 /**
- * Behavioural canon evals: known-answer probes that measure whether an agent
+ * Behavioral canon evals: known-answer probes that measure whether an agent
  * given the compiled pack actually follows one quoted canon sentence.
  *
  * Evals are `--probe` runs. They never become routing evidence.
@@ -409,7 +409,7 @@ function insertEval(row: {
 }
 
 /**
- * A behavioural failure is an eval result, not an unfinished agent run. Once
+ * A behavioral failure is an eval result, not an unfinished agent run. Once
  * the reply has been judged, close the probe's question and record the run as
  * successfully delivered. `probe=1` keeps that `ok` row out of routing and
  * pending-score evidence; pass/fail belongs to canon_eval.

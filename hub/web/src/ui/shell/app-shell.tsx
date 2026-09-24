@@ -57,7 +57,7 @@ export function useDockedPanel() {
   }, [change])
 }
 
-// The inline padding centres an 18px icon in the collapsed rail, so labels open
+// The inline padding centers an 18px icon in the collapsed rail, so labels open
 // beside icons that never move.
 const linkBase =
   'relative flex h-10 items-center gap-3 border border-transparent px-[1.0625rem] text-text-secondary outline-none transition-colors hover:bg-control-hover hover:text-text-primary focus-visible:bg-control-hover data-[status=active]:border-border-default data-[status=active]:bg-surface-sunken data-[status=active]:text-text-primary [&_svg]:size-[18px] [&_svg]:shrink-0 [&_svg]:stroke-[1.5]'
@@ -141,18 +141,18 @@ function GroupEntry({
 function NavList({
   sections,
   renderLink,
-  labelled,
+  labeled,
   isActive,
   onNavigate,
 }: {
   sections: readonly NavSection[]
   renderLink: RenderLink
   /** `icons`: labels only for assistive technology. `full`: groups unfold in place. */
-  labelled: 'icons' | 'always' | 'full'
+  labeled: 'icons' | 'always' | 'full'
   isActive: (to: string) => boolean
   onNavigate?: () => void
 }) {
-  const labelClass = labelled === 'icons' ? 'sr-only' : 'truncate'
+  const labelClass = labeled === 'icons' ? 'sr-only' : 'truncate'
   const link = (item: NavItem) => (
     <div key={item.to}>
       {renderLink(item, {
@@ -169,7 +169,7 @@ function NavList({
           {section.entries.map((entry) =>
             !isGroup(entry) ? (
               link(entry)
-            ) : labelled === 'full' ? (
+            ) : labeled === 'full' ? (
               <div key={entry.label} className="flex flex-col gap-px">
                 <div className="px-3 pt-2 pb-1 font-medium text-sm text-text-muted">
                   {entry.label}
@@ -236,7 +236,7 @@ function MobileMenu({
           <NavList
             sections={sections}
             renderLink={renderLink}
-            labelled="full"
+            labeled="full"
             isActive={isActive}
             onNavigate={onClose}
           />
@@ -381,7 +381,7 @@ export function AppShell({
               <NavList
                 sections={nav}
                 renderLink={renderLink}
-                labelled={collapsed ? 'icons' : 'always'}
+                labeled={collapsed ? 'icons' : 'always'}
                 isActive={isActive}
               />
             </div>

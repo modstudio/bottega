@@ -326,7 +326,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   // A read-only run's key is an address on its record, not an input to the
-  // worktree lifecycle. Writing runs retain the explicit-key-only behaviour
+  // worktree lifecycle. Writing runs retain the explicit-key-only behavior
   // enforced by preflight and consumed below by createWithTool.
   const attributedKey = writesJob
     ? (opts.key ?? null)
@@ -355,7 +355,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     )
     if (resolvedTaskBranch && !resolvedTaskBranch.worktree && worktreeTool?.create) {
       // A command-backed declaration cannot attach an existing ref; it retains
-      // the prior new-branch behaviour instead.
+      // the prior new-branch behavior instead.
       resolvedTaskBranch = null
     }
   }

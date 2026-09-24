@@ -88,7 +88,7 @@ export function IconButton({
 
 /**
  * A button that sits inside a sentence: it inherits the surrounding size and
- * colour and is marked by its underline, because a control with its own height
+ * color and is marked by its underline, because a control with its own height
  * and padding would break the line it belongs to.
  */
 export function TextButton({

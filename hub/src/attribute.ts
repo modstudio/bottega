@@ -44,7 +44,7 @@ function worktreeKeyPattern(): RegExp {
   return new RegExp(keys ? `(?<![A-Za-z0-9])(${keys})[-_](\\d+)` : '(?!)', 'i')
 }
 
-/** The ticket key a worktree path names, normalised, or null. */
+/** The ticket key a worktree path names, normalized, or null. */
 export function keyFromWorktree(cwd: string): string | null {
   const dir = cwd.match(WORKTREE_DIR)?.[1]
   if (!dir) return null

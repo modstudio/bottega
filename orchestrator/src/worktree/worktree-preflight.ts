@@ -79,7 +79,7 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
 /**
  * Cut a worktree using the PROJECT'S OWN tool.
  *
- * Not an optimisation and not politeness. In these repositories a checkout is a
+ * Not an optimization and not politeness. In these repositories a checkout is a
  * running application — a generated `.env`, a cloned vendor tree, a database at
  * a chosen size, a port, a queue worker — and their own script says what a bare
  * `git worktree add` leaves you with: no .env, no vendor, compose interpolating

@@ -138,7 +138,7 @@ export type Agent = {
    * Without one, `orch do` waits on the child for ever: a hung agent hangs the
    * caller, and thirty minutes later another process sweeps the row to `stale`
    * while the parent is still blocked on it. The ceilings are set from measured
-   * behaviour with room above the worst case, not from a guess — grok's longest
+   * behavior with room above the worst case, not from a guess — grok's longest
    * honest review-lens in this database ran 867s, so 25 minutes leaves it
    * headroom while still bounding a hang.
    *

@@ -1,5 +1,5 @@
 /**
- * The product mark: a workshop's arched doorway. Drawn in the current colour,
+ * The product mark: a workshop's arched doorway. Drawn in the current color,
  * so it follows the theme; `public/favicon.svg` is the same drawing on a tile.
  */
 export function AppMark({ className }: { className?: string }) {

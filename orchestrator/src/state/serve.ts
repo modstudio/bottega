@@ -193,7 +193,7 @@ export function state(sinceDays: number | null = null) {
     agent: c.agent,
     // `judged`, not `scored`: it counts failures too, and a key that keeps the
     // old name while changing meaning is how the page came to render
-    // "36/32 scored" — more judgements than runs, which is nonsense on sight.
+    // "36/32 scored" — more judgments than runs, which is nonsense on sight.
     runs: c.runs,
     judged: c.evidence,
     failures: c.failures,

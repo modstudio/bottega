@@ -34,7 +34,7 @@ export type Fidelity = 'drifted' | 'partial' | 'faithful'
  *
  * Deliberately coarse. Three levels an axis is what a person can apply the same
  * way twice, months apart, which matters more than resolution when the whole
- * corpus is 1,425 judgements (`orch stats`, measured 2026-09-06) and five
+ * corpus is 1,425 judgments (`orch stats`, measured 2026-09-06) and five
  * decide a route.
  */
 export const WEIGHT: Record<Delivery, Record<Quality, number> | number> = {
@@ -55,7 +55,7 @@ export const WEIGHT: Record<Delivery, Record<Quality, number> | number> = {
  * the wrong thing, and the honest encoding is full marks minus what the drift
  * cost.
  *
- * Half a judgement for total drift, matched to one quality step, because that
+ * Half a judgment for total drift, matched to one quality step, because that
  * is what it is worth: an implementation that solved the wrong problem is about
  * as useful as one that solved the right problem badly, and both leave the
  * architect with rework rather than with nothing.
@@ -72,7 +72,7 @@ export const FIDELITY_PENALTY: Record<Fidelity, number> = {
 }
 
 /**
- * What one judgement is worth. Null quality is only legal with delivery 'none'.
+ * What one judgment is worth. Null quality is only legal with delivery 'none'.
  *
  * Fidelity is optional and absent for every read-only job, so the two-axis
  * arithmetic is untouched by its introduction: an existing score with no
@@ -105,14 +105,14 @@ export function weigh(
   return Math.max(base + pen, WEIGHT.none as number)
 }
 
-/** The best a judgement can be, so a percentage has a denominator. */
+/** The best a judgment can be, so a percentage has a denominator. */
 /**
  * The vocabulary, in one place.
  *
  * The previous four-verdict scale had `unusable` in the schema and offered it
  * nowhere anyone was scoring — the CLI hint, the run-completion line, the Stop
  * hook and the gate's deny message all said `good|partial|bad`. It was used once
- * in fifty-eight judgements, and a run that returned 57 bytes of vendor error
+ * in fifty-eight judgments, and a run that returned 57 bytes of vendor error
  * was filed as a quality problem because nothing better was on offer. Exported
  * from here so a level cannot exist that the prompts do not mention.
  */

@@ -86,7 +86,7 @@ export type TerminalDockerRetentionReason =
   | 'no recorded worktree'
   | 'unresolvable repository root'
   | 'live sharer present'
-  | 'normalisation failed'
+  | 'normalization failed'
   | 'cleanup lease or lock unavailable'
 
 type TerminalWorktreeSafety =
@@ -102,7 +102,7 @@ function worktreeIdentity(path: string): string {
  * caller spelled, so a trailing separator or an unresolved symlink makes two
  * rows for one tree; raw SQL equality then misses the other and releases a tree
  * whose other owner is still running. A bounded DISTINCT set keeps one notion
- * of tree ownership without normalising every run row.
+ * of tree ownership without normalizing every run row.
  */
 export function worktreePathSpellings(database: Database, worktree: string): string[] {
   const identity = worktreeIdentity(worktree)
@@ -129,7 +129,7 @@ function terminalWorktreeSafety(
   try {
     identity = worktreeIdentity(worktree)
   } catch {
-    return { safe: false, reason: 'normalisation failed' }
+    return { safe: false, reason: 'normalization failed' }
   }
   let repoRoot: string | null
   try {
@@ -143,7 +143,7 @@ function terminalWorktreeSafety(
       return { safe: false, reason: 'live sharer present' }
     }
   } catch {
-    return { safe: false, reason: 'normalisation failed' }
+    return { safe: false, reason: 'normalization failed' }
   }
   return { safe: true, worktree, repoRoot }
 }
@@ -156,7 +156,7 @@ function terminalDockerRetentionReason(
   return safety.safe ? null : safety.reason
 }
 
-/** Explain why a surviving run-labelled resource was retained by a terminal turn in its chain. */
+/** Explain why a surviving run-labeled resource was retained by a terminal turn in its chain. */
 export function terminalDockerRetentionReasonForRun(
   database: Database,
   runId: number,
@@ -255,7 +255,7 @@ export function teardownTerminalRunResources(
       skipped ||= result.skipped
       if (result.skipped) {
         retainedReason =
-          terminalDockerRetentionReason(database, row.worktree) ?? 'normalisation failed'
+          terminalDockerRetentionReason(database, row.worktree) ?? 'normalization failed'
       }
       for (const error of result.errors) failures.add(error)
       if (skipped) break
@@ -295,7 +295,7 @@ export function teardownTerminalRunResources(
   const finalRetentionReason: TerminalDockerRetentionReason | null = skipped
     ? (retainedReason ??
       terminalDockerRetentionReason(database, row.worktree) ??
-      'normalisation failed')
+      'normalization failed')
     : null
   return {
     complete: failures.size === 0,

@@ -298,7 +298,7 @@ export const JOBS: Record<string, Job> = {
   },
   craft: {
     name: 'craft',
-    what: 'Check architecture, domain modelling, tests, comments and naming.',
+    what: 'Check architecture, domain modeling, tests, comments and naming.',
     needs: { readsRepo: true },
     prefer: ['grok', 'codex'],
     contextTokens: DEEP,
@@ -339,7 +339,7 @@ export const JOBS: Record<string, Job> = {
    * stop and ask when it hits a design decision converts an implicit decision
    * into an explicit one and routes it to the single place holding the whole
    * picture. So the shape that is safe here is not "many agents implementing",
-   * it is "one agent implementing one bounded spec, escalating every judgement
+   * it is "one agent implementing one bounded spec, escalating every judgment
    * call to the architect". That is what `needs.resumable` encodes: an agent
    * that cannot be resumed cannot be asked to escalate, because starting over
    * would cost more than guessing, and a channel that costs more than guessing

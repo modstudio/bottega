@@ -63,7 +63,7 @@ function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory
       </span>
     )
   }
-  // One tag: the tracker's own word, coloured by the hub's category.
+  // One tag: the tracker's own word, colored by the hub's category.
   const label = row.source === 'local' ? row.statusCategory : (row.status ?? row.statusCategory)
   return (
     <Badge {...taskStatusLook(row.statusCategory)} title={`Hub status: ${row.statusCategory}`}>
@@ -852,7 +852,7 @@ export function BoardView() {
         )}
         <p className="mt-5 text-text-muted">
           Source glyphs distinguish hub, external trackers, and git-derived records without using
-          state colour{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
+          state color{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
           <TextButton onClick={() => setWhy((open) => !open)}>why these cards?</TextButton>
         </p>
         {why ? (

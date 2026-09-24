@@ -18,11 +18,11 @@ type AgentOnJob = {
   scored: number
   /** Runs that produced nothing to judge. Counted against the agent, as `unusable`. */
   failures: number
-  /** Verdicts plus failures: everything this is entitled to call a judgement. */
+  /** Verdicts plus failures: everything this is entitled to call a judgment. */
   evidence: number
   /** Mean verdict weight, or null until anything has been judged. */
   score: number | null
-  /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgements. */
+  /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgments. */
   shrunk: number | null
   /** Median run time; a mean is hostage to the one call that hung. */
   latencyMs: number | null
@@ -40,7 +40,7 @@ export type JobGuide = {
   best: AgentOnJob | null
   /** Fastest agent tried; null when only one was, since that is not a comparison. */
   quickest: AgentOnJob | null
-  /** True once `best` rests on MIN_SAMPLE judgements rather than one or two. */
+  /** True once `best` rests on MIN_SAMPLE judgments rather than one or two. */
   decided: boolean
   /** Eligible agents nobody has tried, where a run buys the most information. */
   untried: string[]
@@ -60,7 +60,7 @@ export type JobGuide = {
  * Two agents can each be the right answer to the same job - one because it
  * judges better, one because it turns around faster - so both are named rather
  * than collapsed into a single winner. `decided` is the honest part: with fewer
- * than MIN_SAMPLE judgements a leader is whoever happened to go first, and
+ * than MIN_SAMPLE judgments a leader is whoever happened to go first, and
  * presenting that as a recommendation would launder a guess into a finding.
  */
 export function guide(onlyJob?: string, promptBytes?: number, lens?: string): JobGuide[] {

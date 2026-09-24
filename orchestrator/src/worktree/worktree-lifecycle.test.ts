@@ -146,7 +146,7 @@ describe('inline recipe element support', () => {
     })
   })
 
-  test('recognises target shapes that reuse legacy key names', () => {
+  test('recognizes target shapes that reuse legacy key names', () => {
     expect(recipeElementSupport({ env: [], serve: { default: [] }, stop: 'stop-app' })).toEqual({
       supported: ['stop'],
       unsupported: ['env', 'serve'],

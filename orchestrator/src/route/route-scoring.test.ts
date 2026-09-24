@@ -63,7 +63,7 @@ describe('the scoring matrix', () => {
     )
   })
 
-  test('the schema refuses an incoherent judgement', () => {
+  test('the schema refuses an incoherent judgment', () => {
     const id = addRun({ agent: 'grok', job: 'craft' })
     // Nothing came back, yet a quality is asserted about it.
     expect(() => score(id, 'none', 'right')).toThrow()
@@ -81,7 +81,7 @@ describe('the scoring matrix', () => {
 })
 
 describe('the noise band', () => {
-  test('is one judgement step over MIN_SAMPLE, which is what its comment claims', () => {
+  test('is one judgment step over MIN_SAMPLE, which is what its comment claims', () => {
     expect(QUALITY_STEP).toBe(weigh('full', 'right') - weigh('full', 'mixed'))
     expect(NOISE_BAND).toBeCloseTo(QUALITY_STEP / MIN_SAMPLE)
     expect(NOISE_BAND).toBeCloseTo(0.1)
@@ -89,7 +89,7 @@ describe('the noise band', () => {
 
   test('it is NOT the full spread of the scale, which is a different question', () => {
     // A review lens proposed (WEIGHT_MAX - weigh('none')) / MIN_SAMPLE / 2 =
-    // 0.15. That measures the whole scale; the band measures one judgement.
+    // 0.15. That measures the whole scale; the band measures one judgment.
     const spread = weigh('full', 'right') - weigh('none', null)
     expect(spread).toBe(1.5)
     expect(NOISE_BAND).not.toBeCloseTo(spread / MIN_SAMPLE / 2)

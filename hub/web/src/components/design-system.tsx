@@ -134,11 +134,11 @@ export function responseSubtitle(response: {
 }
 
 /**
- * The register's colour for a project, as CSS variables the stylesheet reads.
+ * The register's color for a project, as CSS variables the stylesheet reads.
  *
- * The old dashboard drew a 3px bar in the project's colour beside every project
+ * The old dashboard drew a 3px bar in the project's color beside every project
  * name and down the edge of every board card, and it was the fastest way to
- * tell whose row you were looking at. Colours live in the register
+ * tell whose row you were looking at. Colors live in the register
  * (settings.color / settings.colorDark), so the app reads them from the same
  * project list every screen already loads.
  */
@@ -163,7 +163,7 @@ export function projectVars(
   return { '--project-light': c.light, '--project-dark': c.dark ?? c.light } as CSSProperties
 }
 
-/** A project name with its colour bar; "elsewhere" when the row has none. */
+/** A project name with its color bar; "elsewhere" when the row has none. */
 export function ProjectMark({
   name,
   colors: suppliedColors,
@@ -188,8 +188,8 @@ export function SourceMark({
   project?: string | null
   protocol?: string | null
 }) {
-  // Source is a glyph, not a colour: project and status colours already carry
-  // facts, and a third colour would make two independent facts look like one.
+  // Source is a glyph, not a color: project and status colors already carry
+  // facts, and a third color would make two independent facts look like one.
   const title =
     source === 'local'
       ? 'hub'

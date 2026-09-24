@@ -6,7 +6,7 @@ type CellLook = {
   numeric?: boolean
   /** Keep the content on one line. */
   nowrap?: boolean
-  /** Secondary information in the muted text colour. */
+  /** Secondary information in the muted text color. */
   muted?: boolean
   /** Layout only: width and placement. */
   className?: string

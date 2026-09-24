@@ -77,7 +77,7 @@ function newestSpawnMeasurements(): SpawnMeasurement[] | null {
     files?: SpawnMeasurement[]
   }
   if (!Array.isArray(artifact.files)) {
-    throw new Error(`${artifacts[0]}: gate timing artefact has no files table`)
+    throw new Error(`${artifacts[0]}: gate timing artifact has no files table`)
   }
   return artifact.files.filter(
     (row) => row.file.startsWith('src/') && row.file.endsWith('.test.ts'),
@@ -87,7 +87,7 @@ function newestSpawnMeasurements(): SpawnMeasurement[] | null {
 const measurements = newestSpawnMeasurements()
 if (!measurements) {
   console.log(
-    'check-test-spawns: static rule ok; no gate timing artefact, fixed spawn rule not measured',
+    'check-test-spawns: static rule ok; no gate timing artifact, fixed spawn rule not measured',
   )
   process.exit(0)
 }

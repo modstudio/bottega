@@ -291,7 +291,7 @@ describe('failure classification', () => {
     }
   })
 
-  test('an unrecognised failure is reported as other, never swallowed', () => {
+  test('an unrecognized failure is reported as other, never swallowed', () => {
     expect(classify('something nobody has seen before')).toBe('other')
     expect(classify(null)).toBe('other')
   })
@@ -315,7 +315,7 @@ describe('routing counts failures as evidence', () => {
   })
 
   test('a failed run that someone also scored counts once, not twice', () => {
-    // A run contributes exactly one judgement. Counting the failure AND the
+    // A run contributes exactly one judgment. Counting the failure AND the
     // score doubled the evidence for the same run, so an agent could be
     // declared proven on half the runs it should have needed.
     const id = addRun({ agent: 'codex', job: 'craft', status: 'failed' })
@@ -323,7 +323,7 @@ describe('routing counts failures as evidence', () => {
     const c = candidates('craft').find((x) => x.agent === 'codex')!
     expect(c.scored).toBe(1)
     expect(c.failures).toBe(0) // already represented by the score
-    expect(c.evidence).toBe(1) // one run, one judgement
+    expect(c.evidence).toBe(1) // one run, one judgment
     expect(c.score).toBe(weigh('none', null))
   })
 
@@ -360,7 +360,7 @@ describe('routing counts failures as evidence', () => {
     addRun({ agent: 'codex', job: 'safety' }) // ok, unscored
     const c = candidates('safety').find((x) => x.agent === 'codex')!
     expect(c.evidence).toBeLessThanOrEqual(4)
-    expect(c.evidence).toBe(3) // the unscored OK run is not yet a judgement
+    expect(c.evidence).toBe(3) // the unscored OK run is not yet a judgment
   })
 
   test('a woken box is usable at once, not in an hour', () => {

@@ -7,7 +7,7 @@ import { register as registerConfig } from '../commands/config.ts'
 import { register as registerDocs } from '../commands/docs.ts'
 import { register as registerHealth } from '../commands/health.ts'
 import { register as registerInbox } from '../commands/inbox.ts'
-import { register as registerJudgement } from '../commands/judgement.ts'
+import { register as registerJudgment } from '../commands/judgment.ts'
 import { register as registerLogic } from '../commands/logic.ts'
 import { register as registerRecordAuth } from '../commands/record-auth.ts'
 import { register as registerReview } from '../commands/review.ts'
@@ -39,7 +39,7 @@ registerHealth(program)
 registerInbox(program)
 registerCleanup(program)
 registerConfig(program)
-registerJudgement(program)
+registerJudgment(program)
 registerRouting(program)
 registerLogic(program)
 registerSync(program)

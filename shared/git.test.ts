@@ -29,7 +29,7 @@ describe('borrowed checkout identity', () => {
 })
 
 describe('shared git environment decisions', () => {
-  test('the shared scrub removes repository-location variables git lists and orch routing, not global-behaviour GIT_*', () => {
+  test('the shared scrub removes repository-location variables git lists and orch routing, not global-behavior GIT_*', () => {
     const contaminated: NodeJS.ProcessEnv = {
       UNRELATED: 'preserved',
       GIT_DIR: '/worker/git-dir',

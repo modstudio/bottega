@@ -60,10 +60,10 @@ export const FAILURE_KINDS = [
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
    * it is the harness at fault, plus the vendor's exact invalid-schema message
-   * as a last defence when its strict validator learns a constraint before us.
+   * as a last defense when its strict validator learns a constraint before us.
    */
   'harness',
-  /** The agent satisfied the reply schema but violated its behavioural contract. */
+  /** The agent satisfied the reply schema but violated its behavioral contract. */
   'contract',
   /** A clean review reply that does not establish it reviewed the dispatched change. */
   'unevidenced',
@@ -104,7 +104,7 @@ export function clusterErrorText(value: string | null | undefined): string {
 const PATTERNS: [FailureKind, RegExp][] = [
   /**
    * Exit codes observed in run.exit_code, grouped by failure_kind and agent on
-   * 2026-09-02. Vendor documentation names none of these behaviours; these are
+   * 2026-09-02. Vendor documentation names none of these behaviors; these are
    * the database's facts. A dash means no such run had been observed.
    *
    * | vendor | external SIGTERM | external SIGKILL | own timeout |
@@ -142,7 +142,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   ['idle', /idle-killed after /],
   // Codex should never reach the vendor with a schema OpenAI strict mode will
   // reject: agents.ts normalizes and validates it before launch. Keep the
-  // vendor's last line of defence classified as our harness fault, never as
+  // vendor's last line of defense classified as our harness fault, never as
   // scoreable evidence about the model.
   ['harness', /Invalid schema for response_format/i],
   [
@@ -272,7 +272,7 @@ export function classify(
    *
    * Decisive where it is a signal death, and consulted BEFORE the text: the
    * text is the vendor's, the exit code is the operating system's. A caller
-   * that does not know passes nothing and gets the old text-only behaviour.
+   * that does not know passes nothing and gets the old text-only behavior.
    */
   exitCode?: number | null,
   /** Whether OUR timer fired. Our own timeout is a timeout, not an interruption. */
@@ -370,7 +370,7 @@ export const FAILS_OVER: FailureKind[] = [
  * on the job it is best at: on review-lens grok is stored at 76 ok against 14
  * `other` and 4 stale - 81%, behind codex's 93% - and every one of those
  * eighteen is a harness kill. Counting only what grok was actually allowed to
- * finish, it is 76 for 76. The router had been reading an artefact of how `orch
+ * finish, it is 76 for 76. The router had been reading an artifact of how `orch
  * do` was invoked as a fact about the model, which is the identical mistake
  * `unreachable` was carved out to stop.
  */
@@ -415,7 +415,7 @@ export function notify(title: string, message: string): void {
 }
 
 /**
- * Blockers an agent volunteered in prose, recognised so they can be counted.
+ * Blockers an agent volunteered in prose, recognized so they can be counted.
  *
  * Read-only jobs — review-lens, understand, craft — carry no return contract,
  * so a worker with something to report has nowhere structured to put it. They

@@ -29,7 +29,7 @@ describe('dead-code ratchet', () => {
     })
   })
 
-  test('normalising excludes line numbers from the stable comparison', () => {
+  test('normalizing excludes line numbers from the stable comparison', () => {
     const reportAt = (line: number) =>
       normalizeKnipReport({
         issues: [
@@ -46,7 +46,7 @@ describe('dead-code ratchet', () => {
     })
   })
 
-  test('an unused known-live dependency means production analysed no sources', () => {
+  test('an unused known-live dependency means production analyzed no sources', () => {
     expect(
       productionSourcesAnalyzed([
         {

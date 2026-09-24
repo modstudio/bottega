@@ -18,7 +18,7 @@ export type { FileKind } from '../../../shared/file-kind.ts'
 /**
  * What kind of file a change touched.
  *
- * Categorised rather than filtered, because the mix is itself information: a
+ * Categorized rather than filtered, because the mix is itself information: a
  * day of docs and config is not a day of product code, and knowing that is
  * worth more than a single number pretending they are the same.
  *

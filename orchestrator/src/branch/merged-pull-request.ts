@@ -31,7 +31,7 @@ export type PullRequestNameCheck<T extends PullRequestHead = MergedPullRequest> 
 function command(cwd: string, argv: string[], label: string): string {
   let process: ReturnType<typeof Bun.spawnSync>
   try {
-    // Output is parsed, so a forced-colour environment must not reach gh or git.
+    // Output is parsed, so a forced-color environment must not reach gh or git.
     const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
     process = Bun.spawnSync(argv, {
       cwd,

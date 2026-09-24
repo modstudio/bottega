@@ -225,13 +225,13 @@ describe('tracker source construction', () => {
     ).toThrow('project adanim tracker is missing envPrefix')
   })
 
-  test('names an unrecognised protocol', () => {
+  test('names an unrecognized protocol', () => {
     expect(() =>
       trackerSourceFor({
         name: 'future',
         settings: { tracker: { protocol: 'future-mcp', envPrefix: 'FUTURE' } },
       }),
-    ).toThrow('project future tracker has unrecognised protocol future-mcp')
+    ).toThrow('project future tracker has unrecognized protocol future-mcp')
   })
 
   test('a correctly configured tracker still builds', () => {

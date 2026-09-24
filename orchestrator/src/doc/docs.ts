@@ -5,7 +5,7 @@
  * canon. Project, agent, and job facts attach to one named
  * subject; resume briefs attach to a project (the epic is the slug); machine facts
  * describe the host itself. Worker prompts receive job injects; agent and machine
- * notes serve routing and architectural judgement, while resume notes serve session
+ * notes serve routing and architectural judgment, while resume notes serve session
  * recovery. Canon docs are the source for the global and
  * project hydrated instruction tree and enter worker packs through the canon path.
  */
@@ -271,7 +271,7 @@ export function listDocs(filters: { scope?: string; subject?: string | null } = 
     .all(...values) as Doc[]
 }
 
-/** A browseable projection: body contents are fetched only through getDoc. */
+/** A browsable projection: body contents are fetched only through getDoc. */
 export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
   if (filters.scope !== undefined) validScope(filters.scope)
   if (filters.scopes !== undefined) {
@@ -556,7 +556,7 @@ export async function setDoc(
     const status = frontmatter.top.status
     if (status !== 'open' && status !== 'consumed') {
       throw new Error(
-        `resume doc "${input.slug}" has unrecognised status "${status}"; permitted values are "open" and "consumed"`,
+        `resume doc "${input.slug}" has unrecognized status "${status}"; permitted values are "open" and "consumed"`,
       )
     }
   }
@@ -717,7 +717,7 @@ type ResolvedStatus = {
  * the rest of the recovery artifact byte-for-byte. A column-zero `status:` inside
  * a quoted multi-line scalar is therefore read as a key; adopting a YAML parser is
  * a separate decision. The last column-zero occurrence wins, matching the prior
- * parser behaviour and the common YAML-loader treatment of duplicate keys. When
+ * parser behavior and the common YAML-loader treatment of duplicate keys. When
  * there is no column-zero status, the last nested occurrence wins instead.
  */
 function resolveStatus(yaml: string): ResolvedStatus | null {
@@ -802,7 +802,7 @@ export function resumeAge(fromMs: number, now = Date.now()): string {
 type OpenResume = { slug: string; title: string; age: string; at: number }
 type UnreadableResume = {
   slug: string
-  reason: 'no-frontmatter' | 'no-readable-status' | 'unrecognised-status'
+  reason: 'no-frontmatter' | 'no-readable-status' | 'unrecognized-status'
 }
 export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
@@ -831,7 +831,7 @@ export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
       continue
     }
     if (fm.status !== 'open' && fm.status !== 'consumed') {
-      unreadable.push({ slug: doc.slug, reason: 'unrecognised-status' })
+      unreadable.push({ slug: doc.slug, reason: 'unrecognized-status' })
       continue
     }
     if (fm.status !== 'open') continue

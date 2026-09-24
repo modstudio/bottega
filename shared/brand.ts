@@ -34,7 +34,7 @@
  *   own configuration; renaming it there is a migration, not a substitution.
  *
  * Renaming one of those is a migration with a rollout, not a find-and-replace,
- * which is exactly why they are listed rather than left to judgement.
+ * which is exactly why they are listed rather than left to judgment.
  */
 
 /** The platform: the system, the repository, the thing all the concerns share. */

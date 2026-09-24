@@ -636,7 +636,7 @@ export function trackerSourceFor(
   const protocols = ['workspace-mcp', 'cursor-mcp', 'array-mcp']
   if (!tracker.protocol || !protocols.includes(tracker.protocol)) {
     throw new Error(
-      `project ${project.name} tracker has unrecognised protocol ${tracker.protocol ?? '(missing)'}`,
+      `project ${project.name} tracker has unrecognized protocol ${tracker.protocol ?? '(missing)'}`,
     )
   }
   const env = tracker.envPrefix ?? project.settings.envPrefix
@@ -661,7 +661,7 @@ export function trackerSourceFor(
     return arrayMcpSource(project.name, env, statuses, tracker.states)
   }
   // Exhaustive above; kept explicit so a future protocol cannot silently build nothing.
-  throw new Error(`project ${project.name} tracker has unrecognised protocol ${tracker.protocol}`)
+  throw new Error(`project ${project.name} tracker has unrecognized protocol ${tracker.protocol}`)
 }
 
 function assertKnownStatus(project: TrackerProject, status: string): void {

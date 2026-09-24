@@ -8,7 +8,7 @@ Unattended daily maintenance for the machine, run by `launchd`.
 | Projects refresh | 06:30 | each project's own `scripts/sync/main` |
 | Local model tunnel | always, when configured | SSH local forwarding, kept alive |
 | Orch monitor | every 4 hours (provisional) | record and report stuck operational state |
-| Orch canon eval | 07:00 | behavioural canon probes (`orch canon eval`), routing-neutral |
+| Orch canon eval | 07:00 | behavioral canon probes (`orch canon eval`), routing-neutral |
 
 None has a TTY, so interactive prompts are skipped. If the machine is asleep at
 the scheduled time, launchd runs the job on the next wake.
@@ -27,7 +27,7 @@ fixed.
 Detection reads the script, so a project that gains `--full` is picked up with
 no change here.
 
-Exit codes from `scripts/sync/main` are honoured: `0` ok, `2` nothing enabled,
+Exit codes from `scripts/sync/main` are honored: `0` ok, `2` nothing enabled,
 `3` needs first-time setup, anything else a failure. One project failing never
 aborts the rest.
 

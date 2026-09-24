@@ -153,7 +153,7 @@ function assertParent(key: string | null | undefined) {
   if (!found) throw new Error(`no task ${key}`)
 }
 
-/** Check, allocate, insert, and record an override under one serialised write transaction. */
+/** Check, allocate, insert, and record an override under one serialized write transaction. */
 type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {

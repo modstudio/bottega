@@ -11,7 +11,7 @@
  *
  * That is not hypothetical. On 2026-09-02 runs 620, 621 and 622 died within
  * sixteen seconds of each other, from another session's work in one application, while
- * this file's neighbour `agents.ts` was momentarily unparseable during a
+ * this file's neighbor `agents.ts` was momentarily unparseable during a
  * refactor. That session lost three surveys and could only report that orch
  * "was dropping runs for a stretch". Nothing was charged to any agent —
  * `interrupted` is already excluded from evidence — but the work was gone and

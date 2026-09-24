@@ -21,13 +21,13 @@ export type Candidate = {
    * Failed or abandoned runs that nobody judged explicitly.
    *
    * Excludes a failure someone scored, because that already counts under
-   * `scored` — a run is one judgement, not two.
+   * `scored` — a run is one judgment, not two.
    */
   failures: number
-  /** Explicit judgements whose delivery was none, used by the exploration filter. */
+  /** Explicit judgments whose delivery was none, used by the exploration filter. */
   none: number
   /**
-   * Everything the router is entitled to count as a judgement about this agent:
+   * Everything the router is entitled to count as a judgment about this agent:
    * explicit verdicts plus unjudged failures. This, not `scored`, is what
    * MIN_SAMPLE measures, and it never exceeds the number of runs behind it.
    */
@@ -36,7 +36,7 @@ export type Candidate = {
   evidenceModel: string | null
   /** Mean verdict weight, or null until anything has been judged. */
   score: number | null
-  /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgements. */
+  /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgments. */
   shrunk: number | null
   /** Median run time for this job, robust to the one call that hung. */
   latencyMs: number | null
@@ -66,10 +66,10 @@ export type Candidate = {
  */
 export const COOLDOWN_MIN = 60
 
-/** Below this many JUDGEMENTS — verdicts plus unjudged failures — a score is noise. */
+/** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 export const MIN_SAMPLE = 5
 
-/** Only this many of an agent's most recent judgements describe its current ability. */
+/** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
 
 /**
@@ -216,7 +216,7 @@ export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
  * Score difference below which two agents are treated as equally good.
  *
  * One quality step over MIN_SAMPLE runs moves the mean by 0.5/5 = 0.1, so a gap
- * smaller than that is not even one judgement's worth of evidence. Ranking on it
+ * smaller than that is not even one judgment's worth of evidence. Ranking on it
  * would be ranking on noise, which is what lets the cheaper or faster agent win
  * a tie honestly.
  *
@@ -224,14 +224,14 @@ export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
  * coincidence. WEIGHT_MAX/2 is 0.5 and one quality step is also 0.5, so the two
  * agreed on today's numbers and would have parted company the moment anyone
  * touched the matrix, with the comment above still confidently describing the
- * old behaviour. A local review lens caught the smell and proposed scaling by
+ * old behavior. A local review lens caught the smell and proposed scaling by
  * the full spread instead (−0.5 to 1, so 0.15); that is a different intent
- * again, and not the one written down. The band is one JUDGEMENT'S worth, so it
- * is derived from a judgement step.
+ * again, and not the one written down. The band is one JUDGMENT'S worth, so it
+ * is derived from a judgment step.
  */
 export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
 
-/** Linear width of the judgement-weight range mapped onto a Beta probability. */
+/** Linear width of the judgment-weight range mapped onto a Beta probability. */
 export const BETA_SCALE = 1.5
 
 /**
@@ -241,9 +241,9 @@ export const BETA_SCALE = 1.5
 export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
 
 export function betaContribution(weight: number): { successes: number; failures: number } {
-  // Map the judgement range [-0.5, 1] linearly onto [0, 1]: `none` is one
+  // Map the judgment range [-0.5, 1] linearly onto [0, 1]: `none` is one
   // whole failure and full/right is one whole success. Thus successes +=
-  // (w + 0.5) / 1.5 and failures += 1 - that for every judgement.
+  // (w + 0.5) / 1.5 and failures += 1 - that for every judgment.
   const successes = (weight + 0.5) / BETA_SCALE
   return { successes, failures: 1 - successes }
 }
@@ -414,7 +414,7 @@ export function candidates(
                         AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
                        THEN 1 ELSE 0 END) AS scored,
               -- Only failures NOBODY JUDGED. A run contributes exactly one
-              -- judgement: an explicit score if it has one, otherwise the
+              -- judgment: an explicit score if it has one, otherwise the
               -- implicit delivery=none that failing amounts to. Counting both
               -- made a single failed-and-scored run worth two — the weight came
               -- out the same, but the evidence count doubled, so an agent could
@@ -431,7 +431,7 @@ export function candidates(
               --
               -- The same list gates EXPLICIT scores. Seven codex harness
               -- failures had been scored 'none' by hand and each counted as a
-              -- -0.5 judgement against codex on review-lens - the outage rule,
+              -- -0.5 judgment against codex on review-lens - the outage rule,
               -- undone by whoever was tidying their pending list. A run that
               -- is not evidence is not evidence whoever looks at it.
               SUM(CASE WHEN r.status IN ('failed','stale') AND s.delivery IS NULL
@@ -706,7 +706,7 @@ export function scoreboard(onlyJob?: string): Scored[] {
  * Quality decides alone whenever the gap is real. Inside NOISE_BAND the
  * evidence does not separate the agents, so the tie goes to the one that costs
  * no quota, and then to the faster one — the two things measured on every run
- * that are facts rather than judgements.
+ * that are facts rather than judgments.
  */
 /**
  * Evidence for this job in one optional dimension, if there is enough of it,
@@ -717,7 +717,7 @@ export function scoreboard(onlyJob?: string): Scored[] {
  * number that is true of neither. Keying on stack lets the difference show.
  *
  * THE BACKOFF IS THE WHOLE DESIGN, and without it this would be a mistake.
- * Routing already needs MIN_SAMPLE judgements before a score means anything,
+ * Routing already needs MIN_SAMPLE judgments before a score means anything,
  * and splitting the key multiplies the cells: a corpus that supports a handful
  * of job-level verdicts supports almost no stack-level ones, so every cell
  * would starve permanently and routing would fall back to declared preference
@@ -768,7 +768,7 @@ export function evidenceFor(
      * The point of the stack key is to COMPARE agents on that stack. One agent
      * over the threshold is not a comparison — it is a narrower evidence base
      * for a decision that would have been made anyway, and it is actively
-     * worse than the job-wide view: an agent with thirty job-wide judgements
+     * worse than the job-wide view: an agent with thirty job-wide judgments
      * and three on this stack is demoted to "unproven" and loses to whichever
      * one happened to accumulate five here first. That is the incumbency
      * problem this file already solves for exploration, arriving by a

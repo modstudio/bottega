@@ -34,7 +34,7 @@ export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
   {
     path: 'scripts/sync/config.sh',
     reason:
-      "another project's sync module, referenced to compare dependency-checking behaviour across projects.",
+      "another project's sync module, referenced to compare dependency-checking behavior across projects.",
   },
   {
     path: 'scripts/new-instance.sh',

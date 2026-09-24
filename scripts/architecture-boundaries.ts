@@ -441,8 +441,8 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep job catalogue command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
   boundary(
-    'judgement-boundary',
-    'orchestrator/src/judgement.ts',
+    'judgment-boundary',
+    'orchestrator/src/judgment.ts',
     [
       'node:fs',
       '../../shared/record/schema.ts',
@@ -461,7 +461,7 @@ export const importBoundaries: ImportBoundary[] = [
       './score/score-outbox.ts',
       './verdict/verdict-rules.ts',
     ],
-    'Keep judgement independent of transports, worktrees, routing, the CLI, durable execution, dispatch, and cleanup.',
+    'Keep judgment independent of transports, worktrees, routing, the CLI, durable execution, dispatch, and cleanup.',
   ),
   boundary(
     'landing-outbox-boundary',

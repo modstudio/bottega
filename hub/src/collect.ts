@@ -31,7 +31,7 @@ type PollState = { nextAt: number; quiet: number; failures: number }
  * A changing tracker stays on the five-minute floor. Quiet trackers step to
  * ten and then fifteen minutes. Failures double out to an hour, so an outage
  * cannot produce a request every tick. State is deliberately process-local:
- * restarting or explicitly collecting means "fresh now", not "honour an old
+ * restarting or explicitly collecting means "fresh now", not "honor an old
  * delay". The injected clock keeps this policy deterministic in tests.
  */
 export class TrackerPollSchedule {

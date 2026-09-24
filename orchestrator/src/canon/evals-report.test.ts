@@ -5,7 +5,7 @@ import { CANON_EVALS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH } from './evals.ts'
 
 describe('metric canon headline and calendar halves', () => {})
 
-describe('behavioural canon evals', () => {
+describe('behavioral canon evals', () => {
   const askingReply = {
     status: 'asking',
     summary: 'need a ruling',

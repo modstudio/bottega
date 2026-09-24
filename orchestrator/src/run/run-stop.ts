@@ -17,7 +17,7 @@ import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 
 export type TerminateRunProcessesResult =
-  | { outcome: 'signalled'; signalled: number[]; acceptableIds: number[] }
+  | { outcome: 'signaled'; signaled: number[]; acceptableIds: number[] }
   | { outcome: 'identity-mismatch'; acceptableIds: number[] }
   | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
   | { outcome: 'no-pid'; acceptableIds: number[] }
@@ -34,7 +34,7 @@ export function stoppedRunLine(
   }
   if (pid && termination.outcome === 'unascertainable') {
     const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
-    return `stopped run ${id}; no process could be signalled because ${termination.reason}; after checking ps -p ${pid} -o command, run kill -TERM ${pid} only if the command shows one of these ids: ${commands}`
+    return `stopped run ${id}; no process could be signaled because ${termination.reason}; after checking ps -p ${pid} -o command, run kill -TERM ${pid} only if the command shows one of these ids: ${commands}`
   }
   return `stopped run ${id}`
 }

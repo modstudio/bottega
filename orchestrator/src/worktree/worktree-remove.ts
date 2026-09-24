@@ -213,7 +213,7 @@ function removeWithTool(
   // The marker is the proof that orch made and owns this disposable checkout.
   // A project's removal guard can therefore be forced only when the operator
   // explicitly asked and this exact proof is still present. Names and branch
-  // templates also recognise old trees for sweep, but are deliberately not
+  // templates also recognize old trees for sweep, but are deliberately not
   // strong enough evidence for destructive fallback here.
   if (forceOrchTree && existsSync(join(w.path, ORCH_RUN_MARKER))) {
     return removeWorktree(w, keepBranch)

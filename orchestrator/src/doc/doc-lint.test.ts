@@ -48,7 +48,7 @@ describe('stored document lint', () => {
 
   test('a clean design record passes with optional provisional in place', () => {
     const body =
-      '## What it is\n\nCurrent behaviour.\n\n## Why this design\n\nA direct rule.\n\n' +
+      '## What it is\n\nCurrent behavior.\n\n## Why this design\n\nA direct rule.\n\n' +
       '## Build or buy\n\nBuilt locally.\n\n## Provisional\n\nExit when the gate reports coverage.\n\n' +
       '## How it is measured\n\nRun `bun run check`.\n'
     expect(lintDoc(doc(body, { slug: 'design-thing' }))).toEqual([])

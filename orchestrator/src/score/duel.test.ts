@@ -3,7 +3,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { duelMatrices, parseRunIds, recordDuels } from './duel.ts'
 
-describe('pairwise judgements', () => {
+describe('pairwise judgments', () => {
   test('--better-than accepts a comma list of run ids', () => {
     expect(parseRunIds('12,13,99', '--better-than')).toEqual([12, 13, 99])
     expect(() => parseRunIds('', '--better-than')).toThrow('at least one run id')

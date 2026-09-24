@@ -30,7 +30,7 @@ describe('contention ledger', () => {
   })
 })
 
-describe('one-shot contention writes honour the stale-schema invariant', () => {
+describe('one-shot contention writes honor the stale-schema invariant', () => {
   test('a busy_timeout-0 write after another process bumped user_version records nothing', () => {
     expect(db()).toBeDefined()
     const { tryWriteContention, DB_PATH: path } = require('./db.ts') as typeof import('./db.ts')

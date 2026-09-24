@@ -146,7 +146,7 @@ export function DesignCatalog() {
   return (
     <>
       <SectionTitle detail="Meanings from styles/tokens.css; toggle the theme to compare">
-        Colour
+        Color
       </SectionTitle>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {surfaces.map(([name, className]) => (
@@ -195,7 +195,7 @@ export function DesignCatalog() {
         </Row>
       </div>
 
-      <SectionTitle detail="Rounded tags; a tone sets colour and icon, labels are Title Case">
+      <SectionTitle detail="Rounded tags; a tone sets color and icon, labels are Title Case">
         Badge
       </SectionTitle>
       <div className="border border-border-default px-4">

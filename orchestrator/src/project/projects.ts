@@ -79,7 +79,7 @@ export type Project = {
    * Per-project settings, as JSON.
    *
    * A blob rather than columns because what a project needs to declare is not
-   * knowable in advance — a tracker's status vocabulary, a display colour, the
+   * knowable in advance — a tracker's status vocabulary, a display color, the
    * branch its trunk is called — and every one of those added as a column would
    * be another thing the code has to know about. The shapes that ARE relied on
    * are named in `ProjectSettings`, so the reliance is at least written down.
@@ -136,9 +136,9 @@ export type ProjectSettings = {
    * every other concern it keeps for itself.
    */
   requireCleanMain?: boolean
-  /** Display colour, for anything that draws a project. */
+  /** Display color, for anything that draws a project. */
   color?: string
-  /** Display colour used on dark surfaces. */
+  /** Display color used on dark surfaces. */
   colorDark?: string
   /** Prefix used for project-scoped environment variables. */
   envPrefix?: string
@@ -367,7 +367,7 @@ export function retiredProjectAt(cwd: string): Project | null {
  *
  * Returns null for anywhere unregistered rather than guessing from the path
  * shape. Guessing is what the old `/Users/<someone>/Projects/<name>` regex did,
- * and its failure mode was silent: an unrecognised layout produced `null` that
+ * and its failure mode was silent: an unrecognized layout produced `null` that
  * read as "no project" rather than as "this tool has never been told about your
  * machine".
  */
@@ -937,7 +937,7 @@ export function sniffStack(path: string): string | null {
  * state — a `create` command with no branch template, so every run was handed
  * `orch/<id>`, which its own script correctly refuses. The merge is deep now
  * and cannot do that again, but nothing would have NOTICED, and the state is
- * cheap to recognise: a tool that can make a worktree and not remove one is
+ * cheap to recognize: a tool that can make a worktree and not remove one is
  * incoherent however it got that way.
  *
  * Reported, never enforced. A half-configured project should say so and keep

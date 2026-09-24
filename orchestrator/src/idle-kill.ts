@@ -211,7 +211,7 @@ function signalTree(
   const pgid = self?.pgid ?? null
   const selfPgid = deps.selfPgid()
   // Signal the process group, not the child. The named #1 cause of lost work
-  // is signalling only the direct child when it is a shell or wrapper that
+  // is signaling only the direct child when it is a shell or wrapper that
   // does not forward signals: the real worker never sees SIGTERM, rides out
   // the grace period, and is SIGKILLed with no cleanup.
   // Unknown coordinator pgid means walk descendants — never group-kill on an

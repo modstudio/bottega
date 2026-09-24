@@ -27,8 +27,8 @@ export type BlockerRow = {
  * distinguishable, as measured and claimed facts are: one is the worker's own
  * account, the other is our reading of its prose.
  *
- * A declared blocker gets the first kind the detector recognises in the
- * worker's what and why. An unrecognised blocker is still recorded with a
+ * A declared blocker gets the first kind the detector recognizes in the
+ * worker's what and why. An unrecognized blocker is still recorded with a
  * null kind rather than discarded.
  *
  * Detect output only when nothing was declared. A worker that filled the

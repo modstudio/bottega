@@ -330,7 +330,7 @@ describe('scoped operator docs', () => {
     ).rejects.toThrow('resume doc "duplicate-status" has more than one top-level status field')
   })
 
-  test('setDoc refuses an unrecognised resume status and names the value and the permitted two', async () => {
+  test('setDoc refuses an unrecognized resume status and names the value and the permitted two', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     await expect(
       setDoc({
@@ -341,7 +341,7 @@ describe('scoped operator docs', () => {
         body: resumeBody('pending'),
       }),
     ).rejects.toThrow(
-      'resume doc "pending-brief" has unrecognised status "pending"; permitted values are "open" and "consumed"',
+      'resume doc "pending-brief" has unrecognized status "pending"; permitted values are "open" and "consumed"',
     )
   })
 
@@ -367,7 +367,7 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('listOpenResumes reports a stored unrecognised status as unreadable rather than dropping it', async () => {
+  test('listOpenResumes reports a stored unrecognized status as unreadable rather than dropping it', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     await setDoc({
       scope: 'resume',
@@ -382,7 +382,7 @@ describe('scoped operator docs', () => {
 
     expect(listOpenResumes('/w/known')).toEqual({
       open: [],
-      unreadable: [{ slug: 'pending-brief', reason: 'unrecognised-status' }],
+      unreadable: [{ slug: 'pending-brief', reason: 'unrecognized-status' }],
     })
   })
 
@@ -428,7 +428,7 @@ describe('scoped operator docs', () => {
       unreadable: [
         { slug: 'no-frontmatter', reason: 'no-frontmatter' },
         { slug: 'no-status', reason: 'no-readable-status' },
-        { slug: 'pending-brief', reason: 'unrecognised-status' },
+        { slug: 'pending-brief', reason: 'unrecognized-status' },
       ],
     })
   })

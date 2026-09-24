@@ -82,7 +82,7 @@ function sameStore(a: string, b: string): boolean {
 }
 
 /**
- * ORCH_DB used to authorise a linked-worktree binary to write whatever it named,
+ * ORCH_DB used to authorize a linked-worktree binary to write whatever it named,
  * and the dispatcher exports the live path to every worker. A worker's own test
  * leg therefore held a write handle on the live store from a tree whose binary
  * should only ever have read it (DEV-314's class, third instance 2026-09-07:
@@ -291,7 +291,7 @@ export function tryWriteContention(
     if (!d || !contentionTableExists(d)) return
     writeTransaction(() => insertContention(d, row), d)
   } catch {
-    /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */
+    /* CONSTRAINTS: recording must not change lock, landing or detector behavior */
   }
 }
 
@@ -441,7 +441,7 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
 /**
  * What "unscored" means, in one place.
  *
- * A run is owed a judgement only if it produced an answer somebody could read:
+ * A run is owed a judgment only if it produced an answer somebody could read:
  * it succeeded, it is not a calibration probe, and nobody has judged it. A
  * failed run is not owed one — failing is already an implicit `delivery=none` —
  * and neither is a run still in flight.
@@ -456,7 +456,7 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  *
  * A worker that asks two questions produces three rows, and only the first is
  * the unit of work — the other two are turns inside it. Asking for a verdict on
- * each would demand three judgements for one implementation, and would let an
+ * each would demand three judgments for one implementation, and would let an
  * agent reach the routing threshold by being inquisitive rather than by being
  * good. The root row carries the chain's outcome (see the roll-up in run.ts
  * and resolveRootFromLastTurn), so scoring the root scores the whole thing.

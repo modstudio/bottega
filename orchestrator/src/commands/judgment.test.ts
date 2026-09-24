@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
-import { scoreNote } from './judgement.ts'
+import { scoreNote } from './judgment.ts'
 
 const trackResidue = trackedTestResidue()
 

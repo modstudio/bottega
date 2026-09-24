@@ -1,18 +1,18 @@
 // concern: retrieval-queries
-/** Fixed code statements and agent-shaped doc questions with their labelled answers. */
+/** Fixed code statements and agent-shaped doc questions with their labeled answers. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export type LabelledQuery = {
+export type LabeledQuery = {
   id: string
   query: string
   goldLabels: string[]
 }
 
-export type BenchmarkQuery = LabelledQuery & {
+export type BenchmarkQuery = LabeledQuery & {
   provenance: { path: string; excerpt: string }
 }
 
-export type DocBenchmarkQuery = LabelledQuery & {
+export type DocBenchmarkQuery = LabeledQuery & {
   scope: 'project' | 'global' | 'agent' | 'machine' | 'job' | 'canon'
   provenance: { doc: string; excerpt: string }
 }
@@ -123,7 +123,7 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
   ),
   rule(
     'comment-history',
-    'Canon, documentation and comments state the current rule, constraint or behaviour and what to do about it.',
+    'Canon, documentation and comments state the current rule, constraint or behavior and what to do about it.',
     'scripts/check-comment-hygiene.ts',
     '.agents/rules/50-writing.md',
   ),
@@ -305,11 +305,11 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
   ),
   doc(
     'doc-worker-decision',
-    'What should a worker do when implementation reaches a genuine judgement call?',
+    'What should a worker do when implementation reaches a genuine judgment call?',
     'canon',
     PLATFORM_SLUG,
     '.agents/rules/00-principles.md',
-    'A worker that reaches a judgement call stops and asks.',
+    'A worker that reaches a judgment call stops and asks.',
   ),
   doc(
     'doc-transaction-owner',

@@ -52,7 +52,7 @@ describe('tracker register', () => {
     expect(registrations[0]).toMatchObject({ project: 'working', source: { env: 'WORKING' } })
     expect(registrations[1]).toEqual({
       project: 'broken',
-      error: 'project broken tracker has unrecognised protocol future-mcp',
+      error: 'project broken tracker has unrecognized protocol future-mcp',
     })
   })
 
