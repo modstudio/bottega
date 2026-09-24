@@ -18,11 +18,13 @@ import {
 } from '../contract/contract.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { checkDoc, compilePack } from './canon.ts'
+import { type CanonEvalProject, decideCanonEvalPack, EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 const CANON_EVAL_LENS = 'canon-eval'
@@ -314,14 +316,32 @@ function createScratchRepo(ev: CanonEval): { repo: string; mainHead: string } {
   return { repo, mainHead: git(repo, ['rev-parse', 'main']) }
 }
 
-/** Compile an eval against the same minimal repository shape used when it runs. */
-export function currentCanonEvalSha(ev: CanonEval): string {
-  const { repo } = createScratchRepo(ev)
-  try {
-    return compilePack({ job: ev.job, cwd: repo }).sha256
-  } finally {
-    rmSync(repo, { recursive: true, force: true })
-  }
+function evalProject(input: { project?: string; cwd: string }): CanonEvalProject {
+  return decideCanonEvalPack({
+    requestedProjectName: input.project,
+    requestedProject: input.project ? projectByName(input.project) : null,
+    cwdProject: projectAt(input.cwd),
+  }).project
+}
+
+function evalPack(ev: CanonEval, project: CanonEvalProject): ReturnType<typeof compilePack> {
+  const pack = compilePack({ job: ev.job, cwd: project.path })
+  decideCanonEvalPack({
+    requestedProjectName: project.name,
+    requestedProject: project,
+    cwdProject: null,
+    pack,
+  })
+  return pack
+}
+
+/** Compile the pack an eval would receive without creating or running its scratch repository. */
+export function currentCanonEvalSha(
+  ev: CanonEval,
+  opts: { project?: string; cwd?: string } = {},
+): string {
+  const project = evalProject({ project: opts.project, cwd: opts.cwd ?? process.cwd() })
+  return evalPack(ev, project).sha256
 }
 
 function parseEvalReply(
@@ -376,10 +396,10 @@ function lastPassSha(slug: string, agent: string): string | null {
   const row = db()
     .query(
       `SELECT canon_sha FROM canon_eval
-      WHERE slug=? AND agent=? AND pass=1
+      WHERE slug=? AND agent=? AND pass=1 AND canon_sha<>?
       ORDER BY id DESC LIMIT 1`,
     )
-    .get(slug, agent) as { canon_sha: string } | null
+    .get(slug, agent, EMPTY_CANON_SHA) as { canon_sha: string } | null
   return row?.canon_sha ?? null
 }
 
@@ -440,18 +460,21 @@ export async function runCanonEvals(opts: {
   slug?: string
   agent?: string
   force?: boolean
+  project?: string
+  cwd?: string
 }): Promise<CanonEvalRecord[]> {
   const agent = opts.agent ?? DEFAULT_EVAL_AGENT
   if (!AGENTS[agent]) {
     throw new Error(`unknown agent "${agent}". Known: ${Object.keys(AGENTS).join(', ')}`)
   }
   const selected = opts.slug ? [evalBySlug(opts.slug)] : CANON_EVALS
+  const project = evalProject({ project: opts.project, cwd: opts.cwd ?? process.cwd() })
   return withHermeticGitEnv(async () => {
     const results: CanonEvalRecord[] = []
     for (const ev of selected) {
+      const pack = evalPack(ev, project)
       const { repo, mainHead } = createScratchRepo(ev)
       try {
-        const pack = compilePack({ job: ev.job, cwd: repo })
         const prior = lastPassSha(ev.slug, agent)
         if (!opts.force && prior === pack.sha256) {
           results.push({
@@ -473,6 +496,7 @@ export async function runCanonEvals(opts: {
           agent,
           probe: true,
           cwd: repo,
+          canonPack: pack,
           lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
           label: `canon-eval:${ev.slug}`,
         })
@@ -546,8 +570,11 @@ export function latestCanonEvals(): CanonEvalLatest[] {
   return rows.map((row) => ({
     slug: row.slug,
     agent: row.agent,
-    pass: row.pass === 1,
-    why: row.why,
+    pass: row.pass === 1 && row.canon_sha !== EMPTY_CANON_SHA,
+    why:
+      row.canon_sha === EMPTY_CANON_SHA
+        ? 'not established: result was recorded against an empty canon pack'
+        : row.why,
     canon_sha: row.canon_sha,
     at: row.at,
     run_id: row.run_id,
@@ -560,12 +587,12 @@ function lastKnownGoodCanonEvals(): CanonEvalKnownGood[] {
     .query(
       `SELECT slug, agent, canon_sha, at
        FROM canon_eval
-      WHERE pass=1 AND id IN (
-        SELECT MAX(id) FROM canon_eval WHERE pass=1 GROUP BY slug, agent
+      WHERE pass=1 AND canon_sha<>? AND id IN (
+        SELECT MAX(id) FROM canon_eval WHERE pass=1 AND canon_sha<>? GROUP BY slug, agent
       )
       ORDER BY slug, agent`,
     )
-    .all() as CanonEvalKnownGood[]
+    .all(EMPTY_CANON_SHA, EMPTY_CANON_SHA) as CanonEvalKnownGood[]
 }
 
 export function failingCanonEvalSlugs(): string[] {

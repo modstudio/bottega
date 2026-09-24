@@ -5,7 +5,7 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
 import type { AskLoopback } from '../ask/ask.ts'
-import { compilePack, recordPack } from '../canon/canon.ts'
+import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
 import {
   type ConfinementEvent,
   type FreezeFailure,
@@ -232,6 +232,8 @@ export async function run(opts: {
   /** Pilot opt-in. Default `cli`. */
   transport?: TransportName
   cwd?: string
+  /** Internal override for callers whose execution cwd is not their canon source. */
+  canonPack?: Pack
   /** Shell directory that launched the root run, before implicit caller resolution. */
   launchCwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
@@ -445,7 +447,7 @@ export async function run(opts: {
   let pack: ReturnType<typeof compilePack> | null = null
   if (!opts.resume) {
     try {
-      pack = compilePack({ job: opts.job, cwd: callerCwd })
+      pack = opts.canonPack ?? compilePack({ job: opts.job, cwd: callerCwd })
       recordPack(pack)
     } catch (cause) {
       const message = (cause as Error).message

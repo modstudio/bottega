@@ -322,6 +322,8 @@ async function canonCommand(
       slug: flag('slug'),
       agent: flag('agent'),
       force: has('force'),
+      project: flag('project'),
+      cwd,
     })
     if (has('json')) log(JSON.stringify(rows))
     else {

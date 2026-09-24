@@ -1,7 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { workerReply } from '../../test/fixtures/replies.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
-import { CANON_EVALS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH } from './evals.ts'
+import { db, nowIso } from '../database/db.ts'
+import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
+import {
+  CANON_EVALS,
+  canonEvalsReport,
+  failingCanonEvalSlugs,
+  latestCanonEvals,
+  TRACKED_EVAL_PATH,
+  UNTRACKED_EVAL_PATH,
+} from './evals.ts'
 
 describe('metric canon headline and calendar halves', () => {})
 
@@ -124,5 +134,27 @@ describe('behavioral canon evals', () => {
     expect(bySlug['reports-evidence-not-claims']!.check(proseReview as ReviewReply)).toMatchObject({
       pass: false,
     })
+  })
+})
+
+describe('canon eval establishment', () => {
+  test('a legacy pass against the empty pack is reported as not established', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
+    db()
+      .query(
+        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+         VALUES ('legacy-empty', ?, ?, 'codex', 'model', 1, 'passed', ?)`,
+      )
+      .run(runId, EMPTY_CANON_SHA, nowIso())
+
+    expect(latestCanonEvals()).toEqual([
+      expect.objectContaining({
+        slug: 'legacy-empty',
+        pass: false,
+        why: 'not established: result was recorded against an empty canon pack',
+      }),
+    ])
+    expect(failingCanonEvalSlugs()).toEqual(['legacy-empty'])
+    expect(canonEvalsReport().last_known_good).toEqual([])
   })
 })
