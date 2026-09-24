@@ -22,6 +22,45 @@ describe('hosted-only task safety', () => {
     })
     expect(
       mirrorCollisionDecision(
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment with no local id' },
+        'update',
+        'id',
+      ),
+    ).toEqual({ action: 'update-same-row' })
+    expect(
+      mirrorCollisionDecision(
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'status event 42' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'status event with no local id' },
+        'idempotent',
+        'id',
+      ),
+    ).toEqual({ action: 'idempotent-duplicate' })
+    expect(
+      mirrorCollisionDecision(
+        { id: 'id-1', spaceId: 'space-b', naturalKey: 'document 12' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'document with no local id' },
+        'update',
+        'id',
+      ),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror document 12: id id-1 already belongs to document with no local id in space space-a; restore this local row's record id to the id for document 12, or ask the hosted-space operator to resolve the id collision",
+    })
+    expect(
+      mirrorCollisionDecision(
+        incoming,
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'task OPS-12' },
+        'update',
+      ),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        "refusing to mirror task DEV-1: id id-1 already belongs to task OPS-12 in space space-a; restore this local row's record id to the id for task DEV-1, or ask the hosted-space operator to resolve the id collision",
+    })
+    expect(
+      mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-b', naturalKey: 'task OPS-12' },
         'update',
