@@ -88,21 +88,14 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
   return true
 }
 
-/** Returns the number of score outbox rows enqueued or refreshed. */
 export function backfillScoreRecords(database: Database, machineId: string): number {
   const rows = database
     .query<{ run_id: number }, []>(
       `SELECT s.run_id
          FROM score s JOIN run r ON r.id=s.run_id
         WHERE r.record_id IS NOT NULL
-          AND (
-            NOT EXISTS (
-              SELECT 1 FROM outbox o WHERE o.kind='score' AND o.record_id=r.record_id
-            )
-            OR EXISTS (
-              SELECT 1 FROM outbox o
-               WHERE o.kind='score' AND o.record_id=r.record_id AND o.synced_at IS NULL
-            )
+          AND NOT EXISTS (
+            SELECT 1 FROM outbox o WHERE o.kind='score' AND o.record_id=r.record_id
           )
         ORDER BY s.run_id`,
     )
