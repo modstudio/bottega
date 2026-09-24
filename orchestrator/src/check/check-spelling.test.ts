@@ -8,14 +8,15 @@ import {
   typosVersionRefusal,
 } from './check-spelling.ts'
 
-const fixture = readFileSync(join(import.meta.dir, 'fixtures/typos-findings.jsonl'), 'utf8')
+const samples = join(import.meta.dir, 'fixtures/spelling-samples')
+const fixture = readFileSync(join(samples, 'typos-findings.jsonl'), 'utf8')
+const formattedFindings = readFileSync(join(samples, 'formatted-findings.txt'), 'utf8')
+  .trim()
+  .split('\n')
 
 describe('typos findings', () => {
   test('fixture JSON becomes the stable one-line report', () => {
-    expect(spellingFindings(fixture).map(formatSpellingFinding)).toEqual([
-      'notes/readme.md:4:8 teh -> the',
-      'src/code.ts:12:1 cataloguee -> catalogue, catalogued',
-    ])
+    expect(spellingFindings(fixture).map(formatSpellingFinding)).toEqual(formattedFindings)
   })
 
   test('non-finding JSON events do not become reports', () => {

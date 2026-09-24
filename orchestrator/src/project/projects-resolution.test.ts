@@ -47,7 +47,7 @@ describe('projects are data, not code', () => {
     ).toContain('checks.spelling must be a boolean')
     expect(
       validateProjectSettings({ checks: { unknown: true } as unknown as { spelling: boolean } }),
-    ).toContain('checks.unknown is not a recognised check')
+    ).toContain('checks.unknown is not a recognized check')
     expect(
       validateProjectSettings({ checks: null } as unknown as Parameters<
         typeof validateProjectSettings

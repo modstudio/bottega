@@ -1,0 +1,2 @@
+notes/readme.md:4:8 teh -> the
+src/code.ts:12:1 cataloguee -> catalogue, catalogued
