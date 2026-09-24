@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { RECORD_AUTH_ROLE } from '../../../shared/record/schema.ts'
 import { RECORD_SIGN_UP_INVITATION_REQUIRED, recordAuth } from '../../src/record/record-auth.ts'
 
 export const SIGN_UP_AUTH = {
@@ -121,4 +122,9 @@ export function registerInvitationAuthProofs(
     proveInvitationPredicate(query))
   test('sign-up requires the same pending invitation state without leaking its status', () =>
     proveInvitationOnlySignUp(actorUrl, succeeds, password))
+  test('the auth role cannot read non-auth record tables', () => {
+    const denied = query(RECORD_AUTH_ROLE, 'auth-password', 'SELECT count(*) FROM hub_task;')
+    expect(denied.code).not.toBe(0)
+    expect(denied.stderr).toContain('permission denied for table hub_task')
+  })
 }

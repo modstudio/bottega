@@ -253,6 +253,10 @@ export const modules: ArchitectureModule[] = [
     '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',
   ]),
+  module('orchestrator/src/mail/invitation-mailer.ts', [
+    '@aws-sdk/client-sesv2',
+    '../../../shared/brand.ts',
+  ]),
   module('hub/src/report-renderer.ts', ['../../shared/compact-number.ts', './measures.ts']),
   module('hub/src/report-delivery.ts', ['./measures.ts', './report-renderer.ts']),
   module('hub/src/report-delivery-hosted.ts', [
@@ -381,6 +385,7 @@ export const modules: ArchitectureModule[] = [
     './record-auth.ts',
     './record-session.ts',
   ]),
+  module('orchestrator/src/record/record-invitation.ts', []),
   module('orchestrator/src/record/record-space-move.ts', [
     'bun',
     '../postgres/postgres-migrate.ts',
