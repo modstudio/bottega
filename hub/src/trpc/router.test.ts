@@ -337,6 +337,53 @@ describe('doc router', () => {
     expect(got).toEqual({ removed: true })
   })
 
+  test('set and remove classify stale revision refusals as conflicts', async () => {
+    const refusal =
+      'orch doc exited 1: refusing stale document update: expected revision revision-1, current revision revision-2'
+    const conflict = {
+      code: 'CONFLICT',
+      message:
+        'This document changed since you opened it. Reload to see the current version; your edit was not saved.',
+    }
+    docSet.mockRejectedValueOnce(new Error(refusal))
+    await expect(
+      caller.doc.set({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        title: 'Hello',
+        body: 'Hi',
+        reason: 'updated',
+        expectedRevision: 'revision-1',
+      }),
+    ).rejects.toMatchObject(conflict)
+
+    docRemove.mockRejectedValueOnce(new Error(refusal))
+    await expect(
+      caller.doc.remove({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        reason: 'obsolete',
+        expectedRevision: 'revision-1',
+      }),
+    ).rejects.toMatchObject(conflict)
+  })
+
+  test('other doc write errors remain bad requests with orch context removed', async () => {
+    docSet.mockRejectedValueOnce(new Error('orch doc exited 1: write failed'))
+    await expect(
+      caller.doc.set({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        title: 'Hello',
+        body: 'Hi',
+        reason: 'updated',
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'write failed' })
+  })
+
   test('set and remove require a non-empty reason, and history forwards the address', async () => {
     await expect(
       caller.doc.set({

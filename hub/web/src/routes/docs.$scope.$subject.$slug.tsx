@@ -33,12 +33,6 @@ function subjectFromParam(param: string): string | null {
   return param === '_' ? null : param
 }
 
-function mutationErrorMessage(message: string) {
-  return message.includes('refusing stale document update')
-    ? `${message} Reload the doc before trying again.`
-    : message
-}
-
 function DocPage() {
   const navigate = useNavigate()
   const { scope, subject: subjectParam, slug } = Route.useParams()
@@ -235,12 +229,12 @@ function DocPage() {
       ) : null}
       {save.error ? (
         <p data-tone="error" className="text-status-text">
-          {mutationErrorMessage(save.error.message)}
+          {save.error.message}
         </p>
       ) : null}
       {remove.error ? (
         <p data-tone="error" className="text-status-text">
-          {mutationErrorMessage(remove.error.message)}
+          {remove.error.message}
         </p>
       ) : null}
 
