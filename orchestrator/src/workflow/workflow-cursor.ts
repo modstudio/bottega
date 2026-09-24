@@ -10,7 +10,8 @@ import {
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
-import { composeWorkflow, getWorkflowStep, resolveWorkflowStepReference } from './workflows.ts'
+import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null

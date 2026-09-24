@@ -19,12 +19,7 @@ import {
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
-import {
-  resolveWorkflowStepReference,
-  type WorkflowModeStepList,
-} from './workflow-step-reference.ts'
-
-export { resolveWorkflowStepReference }
+import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string }
 type WorkflowMode = {

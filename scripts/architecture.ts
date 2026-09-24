@@ -184,6 +184,7 @@ export const modules: ArchitectureModule[] = [
     './workflow-render.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
+    './workflow-step-reference.ts',
   ]),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
