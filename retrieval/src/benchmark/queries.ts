@@ -124,7 +124,7 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
   rule(
     'comment-history',
     'Canon, documentation and comments state the current rule, constraint or behavior and what to do about it.',
-    'scripts/check-comment-hygiene.ts',
+    'orchestrator/src/check/check-comments.ts',
     '.agents/rules/50-writing.md',
   ),
   rule(
