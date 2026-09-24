@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "managed_context" boolean DEFAULT false NOT NULL;

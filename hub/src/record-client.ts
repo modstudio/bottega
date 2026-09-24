@@ -107,6 +107,7 @@ const projectSchema = z.object({
   name: z.string(),
   keyPrefixes: z.array(z.string()),
   stack: z.string().nullable(),
+  managedContext: z.boolean(),
   landingBranch: z.string().nullable(),
   color: z.string().nullable(),
   colorDark: z.string().nullable(),

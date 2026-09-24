@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { refuseCanonWrite } from './doc-write-allowed.ts'
+import { globalCanonWriteTargets } from './docs.ts'
 
 const rule = {
   slug: '.agents/rules/10-code.md',
@@ -37,5 +38,23 @@ describe('refuseCanonWrite tree facts', () => {
         ],
       }),
     ).toContain('canon/history')
+  })
+})
+
+describe('globalCanonWriteTargets', () => {
+  const candidate = (name: string, managedContext?: boolean) => ({
+    name,
+    path: `/w/${name}`,
+    settings: { managedContext },
+  })
+
+  test('selects only projects opted into managed context', () => {
+    const managed = candidate('managed', true)
+    expect(globalCanonWriteTargets([candidate('unmanaged'), managed])).toEqual([managed])
+  })
+
+  test('falls back to checking global rows alone when no project is opted in', () => {
+    expect(globalCanonWriteTargets([candidate('unmanaged', false)])).toEqual([null])
+    expect(globalCanonWriteTargets([])).toEqual([null])
   })
 })

@@ -50,7 +50,7 @@ test('project-level autonomy is deliberately not imported', () => {
 
 async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
-    SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon,
+    SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
       mcp_probe_tool, docs, release, states, tracker, worktree, retired_at, created_at
@@ -158,6 +158,7 @@ realPostgres('project import against copied live SQLite data', () => {
       envPrefix: 'env_prefix',
       gate: 'gate',
       keyPrefixes: 'key_prefixes',
+      managedContext: 'managed_context',
       mcp: 'mcp_probe_tool',
       mcpServer: 'mcp_server',
       productionBranch: 'production_branch',

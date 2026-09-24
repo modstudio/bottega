@@ -56,7 +56,7 @@ function printProjectRows(all: Project[], presentation: ProjectPresentation): vo
     const retiredMark = p.retiredAt ? '  retired' : ''
     presentation.log(
       `${p.name.padEnd(14)} ${(p.stack ?? '—').padEnd(22)} ` +
-        `${p.canon ? 'canon' : '     '}  ${p.path}${retiredMark}`,
+        `${p.canon ? 'canon' : '     '}  managed-context=${p.settings.managedContext === true}  ${p.path}${retiredMark}`,
     )
     const keys = Object.keys(p.settings)
     if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)

@@ -158,6 +158,7 @@ export const project = pgTable.withRLS(
     checkoutPath: text('checkout_path'),
     stack: text(),
     canon: boolean().notNull().default(true),
+    managedContext: boolean('managed_context').notNull().default(false),
     landingBranch: text('landing_branch'),
     productionBranch: text('production_branch'),
     gate: text(),
