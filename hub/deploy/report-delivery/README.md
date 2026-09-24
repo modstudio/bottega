@@ -61,3 +61,19 @@ state:
 ```sh
 fly secrets unset -a bottega-hub-report-delivery HUB_REPORT_DELIVERY_ENABLED
 ```
+
+## Updating
+
+Build and push a new image, then update the scheduled Machine in place:
+
+```sh
+docker build --file hub/deploy/report-delivery/Dockerfile --tag <new image> .
+docker push <new image>
+fly machine update <scheduled machine id> \
+  --image <new image> \
+  -a bottega-hub-report-delivery
+```
+
+The in-place update keeps the hourly schedule and applies staged secrets. Never use
+`fly deploy` for this app: it creates new unscheduled Machines and applies every staged
+secret.

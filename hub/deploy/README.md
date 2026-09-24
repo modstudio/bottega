@@ -9,7 +9,11 @@ server uses to call the record API.
 ```sh
 fly apps create bottega-hub --org bottega
 fly secrets set -a bottega-hub \
-  HUB_RECORD_API_URL='https://api.bottega.run'
+  HUB_RECORD_API_URL='https://api.bottega.run' \
+  SES_REGION='us-east-2' \
+  SES_FROM_ADDRESS='<display name and verified sender address>' \
+  SES_ACCESS_KEY_ID='<access-key-id>' \
+  SES_SECRET_ACCESS_KEY='<secret-access-key>'
 fly deploy --config hub/deploy/fly.toml \
   --build-arg VITE_HUB_MODE=hosted \
   --build-arg VITE_RECORD_API_URL='https://api.bottega.run'
