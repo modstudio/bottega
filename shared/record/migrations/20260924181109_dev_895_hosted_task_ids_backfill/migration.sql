@@ -1,3 +1,13 @@
+ALTER TABLE "hub_task" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_task_comment" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_task_document" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_task_status_event" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_note" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
 UPDATE hub_task child
 SET parent_id = parent.id
 FROM hub_task parent
@@ -58,3 +68,13 @@ BEGIN
     unresolved_parent, unresolved_comment, unresolved_document, unresolved_status_event,
     unresolved_promotion;
 END $$;
+--> statement-breakpoint
+ALTER TABLE "hub_task" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_task_comment" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_task_document" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_task_status_event" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "hub_note" FORCE ROW LEVEL SECURITY;
