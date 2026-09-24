@@ -9,12 +9,18 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     conn.query('DELETE FROM note WHERE id=?').run(row.number)
     return
   }
+  const promotedTaskRecordId = row.promoted_task
+    ? (conn
+        .query<{ record_id: string | null }, [string]>('SELECT record_id FROM task WHERE key=?')
+        .get(row.promoted_task)?.record_id ?? null)
+    : null
   conn
-    .query(`INSERT INTO note(record_id,id,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id,
+    .query(`INSERT INTO note(record_id,id,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id,
     project=excluded.project,text=excluded.text,area=excluded.area,anchors=excluded.anchors,
     sightings=excluded.sightings,created_at=excluded.created_at,last_seen_at=excluded.last_seen_at,
-    stale_at=excluded.stale_at,stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task`)
+    stale_at=excluded.stale_at,stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task,
+    promoted_task_record_id=excluded.promoted_task_record_id`)
     .run(
       row.id,
       row.number,
@@ -28,6 +34,7 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
       row.stale_at,
       row.stale_reason,
       row.promoted_task,
+      promotedTaskRecordId,
     )
 }
 export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledgement) {

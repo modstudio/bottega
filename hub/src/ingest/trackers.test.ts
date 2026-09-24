@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { resolveAssigneeIds } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
+import { db } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import {
@@ -142,6 +143,7 @@ describe('tracker assignees', () => {
     expect(calls).toBe(0)
 
     upsertTrackerTask({
+      externalId: 'tracker-alp-899',
       key: 'ALP-899',
       project: 'alpha',
       title: 'No assignment field',
@@ -151,5 +153,13 @@ describe('tracker assignees', () => {
       assignee: null,
     })
     expect(showTask('ALP-899').task.assignee).toBeNull()
+    expect(showTask('ALP-899').task.external_id).toBe('tracker-alp-899')
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM task_identity_claim WHERE key='ALP-899'",
+        )
+        .get()?.count,
+    ).toBe(1)
   })
 })

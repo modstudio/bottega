@@ -270,7 +270,18 @@ describe('hosted-only task safety', () => {
           deleted_at: null,
         },
       ],
-      comments: [],
+      comments: [
+        {
+          id: '01990000-0000-7000-8000-000000000103',
+          legacy_local_id: null,
+          task_key: 'DEV-990',
+          project_name: 'workshop',
+          body: 'pulled',
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+      ],
       statusEvents: [],
       documents: [
         {
@@ -299,5 +310,12 @@ describe('hosted-only task safety', () => {
         )
         .get()?.count,
     ).toBe(0)
+    expect(
+      db()
+        .query<{ task_record_id: string }, []>(
+          `SELECT task_record_id FROM task_comment WHERE task_key='DEV-990'`,
+        )
+        .get()?.task_record_id,
+    ).toBe('01990000-0000-7000-8000-000000000101')
   })
 })

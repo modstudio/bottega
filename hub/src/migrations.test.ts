@@ -132,7 +132,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      'f7bcd5b03f4774bf7d0c1e16349904fe728b989d6bb5cf59124cc5792a24fbd2',
+      '725ae1dc3270693faad473803f2191979de4ca47b41693dee9c2931b07f63f75',
     )
     d.close()
   })
@@ -168,13 +168,19 @@ describe('hub migration journal', () => {
       '0005_note_record_ids',
       '0006_send_record_id',
       '0007_interval_attribution',
+      '0008_task_identity',
     ])
     stripPostBaselineApplicationObjects(d)
     const after = applicationSchemaRows(d)
     expect(
       after.map((row) => ({
         ...row,
-        sql: row.sql?.replace(/, record_id TEXT\)/g, ')').replace(/, user_id TEXT/g, ''),
+        sql: row.sql
+          ?.replace(/, record_id TEXT/g, '')
+          .replace(/, external_id TEXT/g, '')
+          .replace(/, parent_record_id TEXT/g, '')
+          .replace(/, task_record_id TEXT/g, '')
+          .replace(/, user_id TEXT/g, ''),
       })),
     ).toEqual(before)
     d.close()
@@ -282,6 +288,7 @@ describe('hub migration journal', () => {
       '0005_note_record_ids',
       '0006_send_record_id',
       '0007_interval_attribution',
+      '0008_task_identity',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -476,6 +483,41 @@ describe('hub migration journal', () => {
     expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
     d.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('task identity backfill fills every existing key relationship', () => {
+    const d = fresh()
+    d.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+      VALUES ('parent-id','DEV-1','workshop','local','2026-01-01','2026-01-01');
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen,parent_key)
+      VALUES ('child-id','DEV-2','workshop','local','2026-01-01','2026-01-01','DEV-1');
+      INSERT INTO task_comment(task_key,body,created_at) VALUES ('DEV-2','body','2026-01-01');
+      INSERT INTO task_document(task_key,title,body,version,created_at,updated_at)
+      VALUES ('DEV-2','doc','body','v1','2026-01-01','2026-01-01');
+      INSERT INTO task_status_event(task_key,at,to_status)
+      VALUES ('DEV-2','2026-01-01','open');
+      UPDATE note SET promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
+    `)
+    expect(applyMigrations(d)).toEqual([])
+    expect(d.query('SELECT parent_record_id FROM task WHERE key="DEV-2"').get()).toEqual({
+      parent_record_id: 'parent-id',
+    })
+    expect(d.query('SELECT task_record_id FROM task_comment').get()).toEqual({
+      task_record_id: 'child-id',
+    })
+    expect(d.query('SELECT task_record_id FROM task_document').get()).toEqual({
+      task_record_id: 'child-id',
+    })
+    expect(d.query('SELECT task_record_id FROM task_status_event').get()).toEqual({
+      task_record_id: 'child-id',
+    })
+    expect(
+      d.query("SELECT promoted_task_record_id FROM note WHERE promoted_task='DEV-2'").get(),
+    ).toEqual({
+      promoted_task_record_id: 'child-id',
+    })
+    d.close()
   })
 
   test('reload mode reloads the query layer after user_version changes', () => {

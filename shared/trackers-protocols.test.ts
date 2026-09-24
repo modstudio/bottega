@@ -216,6 +216,32 @@ describe('tracker create protocols', () => {
 })
 
 describe('tracker source construction', () => {
+  test('maps immutable external ids from each captured protocol response shape', async () => {
+    const cases = [
+      {
+        protocol: 'workspace-mcp',
+        reply: {
+          tasks: [{ id: 'workspace-uuid', short_id: 'WOR-1', summary: 'One', status: 'todo' }],
+        },
+      },
+      {
+        protocol: 'cursor-mcp',
+        reply: {
+          data: { items: [{ id: 'cursor-uuid', humanKey: 'CUR-1', title: 'One', status: 'todo' }] },
+        },
+      },
+      {
+        protocol: 'array-mcp',
+        reply: [{ id: 'array-uuid', key: 'ARR-1', title: 'One', status: 'todo' }],
+      },
+    ] as const
+    for (const entry of cases) {
+      const source = trackerSourceFor(project('identity', entry.protocol))!
+      const tasks = await source.fetch({ callTool: async () => entry.reply })
+      expect(tasks.map((task) => task.externalId)).toEqual([`${entry.protocol.split('-')[0]}-uuid`])
+    }
+  })
+
   test('names a project whose tracker is missing envPrefix', () => {
     expect(() =>
       trackerSourceFor({

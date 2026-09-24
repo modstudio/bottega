@@ -106,6 +106,7 @@ export const trackerProjects = () =>
     .map((project) => project.name)
 
 type ExistingTask = {
+  external_id: string | null
   project: string
   title: string | null
   status: string | null
@@ -118,6 +119,7 @@ function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
   if (!old) return true
   return (
     old.project !== t.project ||
+    (t.externalId !== null && old.external_id !== t.externalId) ||
     old.title !== t.title ||
     old.status !== t.status ||
     old.status_category !== t.category ||
@@ -128,12 +130,15 @@ function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
 
 /** Write the tracker-owned fields without ever replacing a locally-owned task. */
 function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
+  const recordId = newRecordId()
   conn
     .query(
-      `INSERT INTO task (key, project, title, status, status_category, updated_at, assignee,
+      `INSERT INTO task (record_id, external_id, key, project, title, status, status_category, updated_at, assignee,
                        closed_at, source, first_seen, last_seen)
-     VALUES (?,?,?,?,?,?,?,?, 'mcp', ?, ?)
+     VALUES (?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)
      ON CONFLICT(key) DO UPDATE SET
+       record_id=COALESCE(task.record_id, excluded.record_id),
+       external_id=COALESCE(excluded.external_id, task.external_id),
        project=excluded.project, title=excluded.title, status=excluded.status,
        status_category=excluded.status_category,
        updated_at=COALESCE(excluded.updated_at, task.updated_at),
@@ -143,6 +148,8 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
      WHERE task.source <> 'local'`,
     )
     .run(
+      recordId,
+      t.externalId,
       t.key,
       t.project,
       t.title,
@@ -154,6 +161,14 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
       at,
       at,
     )
+  if (t.externalId)
+    conn
+      .query(
+        `INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen)
+         VALUES (?,?,?,?,?) ON CONFLICT(project,external_id) DO UPDATE SET
+         key=excluded.key,last_seen=excluded.last_seen`,
+      )
+      .run(t.project, t.externalId, t.key, at, at)
 }
 
 export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
@@ -249,14 +264,19 @@ function writeTrackerCache(
   let changed = 0
   writeTransaction((conn) => {
     const event = conn.query(
-      `INSERT OR IGNORE INTO task_status_event (task_key, at, from_status, to_status)
-       VALUES (?,?,?,?)`,
+      `INSERT OR IGNORE INTO task_status_event
+       (record_id, task_key, task_record_id, at, from_status, to_status)
+       VALUES (?,?,?,?,?,?)`,
     )
     for (const task of tasks) {
       const was = before.get(task.key)
       upsertTrackerTaskOn(conn, task, at)
       if (!local.has(task.key) && was !== undefined && was !== task.category) {
-        event.run(task.key, at, was, task.category)
+        const taskRecordId =
+          conn
+            .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE key=?')
+            .get(task.key)?.record_id ?? null
+        event.run(newRecordId(), task.key, taskRecordId, at, was, task.category)
         changed++
       }
     }
@@ -352,7 +372,7 @@ export async function ingestTrackers(
   const existing = new Map(
     d
       .query<ExistingTask & { key: string }, []>(
-        `SELECT key, project, title, status, status_category, updated_at, assignee
+        `SELECT key, external_id, project, title, status, status_category, updated_at, assignee
          FROM task WHERE source <> 'local'`,
       )
       .all()

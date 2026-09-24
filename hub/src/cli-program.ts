@@ -53,6 +53,7 @@ import {
   updateTaskDocument,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
+import { taskIdentityDoctor } from './task-identity-doctor.ts'
 import { pushTasks } from './task-push.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTask } from './tracker-new.ts'
@@ -844,6 +845,30 @@ try {
         `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
       )
       console.log(`schema version ${schemaVersionLabel(db())}`)
+      {
+        const identity = taskIdentityDoctor()
+        console.log(`task identity  tasks without record id ${identity.tasksWithoutRecordId}`)
+        console.log(
+          `task identity  tracker tasks without external id ${identity.trackerTasksWithoutExternalId}`,
+        )
+        console.log(
+          `task identity  comments without task record id ${identity.commentsWithoutTaskRecordId}`,
+        )
+        console.log(
+          `task identity  documents without task record id ${identity.documentsWithoutTaskRecordId}`,
+        )
+        console.log(
+          `task identity  status events without task record id ${identity.statusEventsWithoutTaskRecordId}`,
+        )
+        console.log(`task identity  parents without record id ${identity.parentsWithoutRecordId}`)
+        console.log(
+          `task identity  promoted notes without task record id ${identity.promotedNotesWithoutTaskRecordId}`,
+        )
+        for (const collision of identity.sharedKeys)
+          console.log(
+            `task identity  shared key ${collision.key} projects=${collision.projects.join(',')} last_seen=${collision.lastSeen}`,
+          )
+      }
       break
     case 'collect':
       if (has('watch')) {
