@@ -116,6 +116,45 @@ async function handledEarlyDocCommand(
   return true
 }
 
+function handledReadDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+): boolean {
+  const { has } = flags
+  if (sub === 'list') {
+    const rows = listDocs({
+      scope: address.scope,
+      ...(has('subject') || has('user') ? { subject: address.subject } : {}),
+      owner: address.owner,
+    })
+    if (has('json')) presentation.log(JSON.stringify(rows))
+    else if (rows.length) {
+      presentation.log(
+        'scope    subject          slug                     title                    delivery  bytes  updated',
+      )
+      for (const d of rows) {
+        presentation.log(
+          `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
+            `${d.title.padEnd(24)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
+        )
+      }
+    }
+    return true
+  }
+  if (sub !== 'show' && sub !== 'get') return false
+  const slug = argv[2]
+  if (!slug || !address.scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
+  const doc = getDoc(address.scope, address.subject, slug, address.owner)
+  if (!doc)
+    throw new Error(`no ${address.scope} doc "${slug}"; use orch doc list --scope ${address.scope}`)
+  if (has('json')) presentation.log(JSON.stringify(doc))
+  else presentation.write(doc.body)
+  return true
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -128,36 +167,7 @@ export async function docCommand(
   const subject = has('user') ? null : (flag('subject') ?? null)
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
-  if (sub === 'list') {
-    const rows = listDocs({ scope, ...(has('subject') || has('user') ? { subject } : {}), owner })
-    if (has('json')) {
-      presentation.log(JSON.stringify(rows))
-      return
-    }
-    if (!rows.length) return
-    presentation.log(
-      'scope    subject          slug                     title                    delivery  bytes  updated',
-    )
-    for (const d of rows) {
-      presentation.log(
-        `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-          `${d.title.padEnd(24)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
-      )
-    }
-    return
-  }
-  if (sub === 'show' || sub === 'get') {
-    const slug = argv[2]
-    if (!slug || !scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
-    const doc = getDoc(scope, subject, slug, owner)
-    if (!doc) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
-    if (has('json')) {
-      presentation.log(JSON.stringify(doc))
-      return
-    }
-    presentation.write(doc.body)
-    return
-  }
+  if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
   if (sub === 'set') {
     const slug = argv[2]
     const title = flag('title')

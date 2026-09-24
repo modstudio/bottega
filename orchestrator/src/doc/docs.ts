@@ -30,6 +30,20 @@ import { RECORD_SIGN_IN_REMEDY } from '../record/record-auth.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
+  type Doc,
+  type DocRevision,
+  type DocRevisionMetadata,
+  listDocMetadataStore,
+  listDocsStore,
+  type DocListFilters as StoreDocListFilters,
+  type DocMetadata as StoreDocMetadata,
+} from './doc-read-store.ts'
+
+export type { Doc, DocRevision, DocRevisionMetadata }
+export type DocListFilters = StoreDocListFilters
+export type DocMetadata = StoreDocMetadata
+
+import {
   assertLocalRevisionWrite,
   currentDocRevision,
   docWriteIdentity,
@@ -37,62 +51,15 @@ import {
 } from './doc-revision-store.ts'
 import {
   consumeDocBody,
-  type DocRevisionOp,
   globalCanonWriteTargets,
   importedDocDelivery,
+  ownerVisible,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseProjectOrGlobalInject,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
 
-export type Doc = {
-  id: number
-  scope: DocScope
-  subject: string | null
-  owner: string | null
-  project_id: number | null
-  slug: string
-  title: string
-  body: string
-  delivery: 'inject' | 'demand'
-  created_at: string
-  updated_at: string
-  record_id: string | null
-  revision: string | null
-}
-
-export type DocMetadata = Pick<
-  Doc,
-  'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at' | 'revision'
-> & {
-  bytes: number
-}
-
-export type DocRevision = {
-  id: number
-  doc_id: number
-  scope: DocScope
-  subject: string | null
-  owner: string | null
-  project_id: number | null
-  slug: string
-  op: DocRevisionOp
-  title: string
-  body: string
-  delivery: 'inject' | 'demand'
-  author: string
-  reason: string
-  session_id: string | null
-  at: string
-  record_id: string | null
-}
-export type DocRevisionMetadata = Omit<
-  DocRevision,
-  'title' | 'body' | 'delivery' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'
-> & {
-  bytes: number
-}
 export type DocWriteContext = {
   author?: string
   reason: string
@@ -176,16 +143,6 @@ function assertInjectSize(input: {
       )
     }
   }
-}
-
-export type DocListFilters = {
-  scope?: string
-  subject?: string | null
-  scopes?: string[]
-  match?: string
-  bodyMatch?: string
-  updatedAtOrder?: 'asc' | 'desc'
-  owner?: string | null
 }
 
 const LATEST_REVISION_SQL =
@@ -277,86 +234,10 @@ function validSubjects(scope: DocScope): string {
   return values.join(', ') || '(none)'
 }
 
-export function listDocs(
-  filters: { scope?: string; subject?: string | null; owner?: string | null } = {},
-): Doc[] {
-  if (filters.scope !== undefined) validScope(filters.scope)
-  const where: string[] = []
-  const values: string[] = []
-  if (filters.scope !== undefined) {
-    where.push('scope = ?')
-    values.push(filters.scope)
-  }
-  if (filters.subject !== undefined) {
-    where.push(filters.subject === null ? 'subject IS NULL' : 'subject = ?')
-    if (filters.subject !== null) values.push(filters.subject)
-  }
-  if (filters.owner !== undefined) {
-    where.push(filters.owner === null ? 'owner IS NULL' : 'owner = ?')
-    if (filters.owner !== null) values.push(filters.owner)
-  } else where.push('owner IS NULL')
-  return db()
-    .query(
-      `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-        "ORDER BY scope, COALESCE(subject, ''), slug",
-    )
-    .all(...values) as Doc[]
-}
-
+export const listDocs = listDocsStore
 /** A browsable projection: body contents are fetched only through getDoc. */
-export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
-  if (filters.scope !== undefined) validScope(filters.scope)
-  if (filters.scopes !== undefined) {
-    for (const scope of filters.scopes) validScope(scope)
-  }
-  if (filters.scope !== undefined && filters.scopes !== undefined) {
-    throw new Error('use scope or scopes, not both')
-  }
-
-  const where: string[] = []
-  const values: string[] = []
-  if (filters.scope !== undefined) {
-    where.push('scope = ?')
-    values.push(filters.scope)
-  }
-  if (filters.scopes !== undefined) {
-    if (filters.scopes.length === 0) where.push('0')
-    else {
-      where.push(`scope IN (${filters.scopes.map(() => '?').join(', ')})`)
-      values.push(...filters.scopes)
-    }
-  }
-  if (filters.subject !== undefined) {
-    where.push(filters.subject === null ? 'subject IS NULL' : 'subject = ?')
-    if (filters.subject !== null) values.push(filters.subject)
-  }
-  if (filters.owner !== undefined) {
-    where.push(filters.owner === null ? 'owner IS NULL' : 'owner = ?')
-    if (filters.owner !== null) values.push(filters.owner)
-  } else where.push('owner IS NULL')
-  if (filters.match !== undefined) {
-    where.push(`(
-      instr(lower(title), lower(?)) > 0 OR
-      instr(lower(slug), lower(?)) > 0 OR
-      instr(lower(COALESCE(subject, '')), lower(?)) > 0
-    )`)
-    values.push(filters.match, filters.match, filters.match)
-  }
-  if (filters.bodyMatch !== undefined) {
-    where.push('instr(lower(body), lower(?)) > 0')
-    values.push(filters.bodyMatch)
-  }
-
-  const order = filters.updatedAtOrder
-    ? `updated_at ${filters.updatedAtOrder.toUpperCase()}, scope, COALESCE(subject, ''), slug`
-    : "scope, COALESCE(subject, ''), slug"
-  return db()
-    .query(
-      `SELECT d.id, d.scope, d.subject, d.slug, d.title, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
-       FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
-    )
-    .all(...values) as DocMetadata[]
-}
+export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] =>
+  listDocMetadataStore(filters)
 
 export function getDoc(
   scope: string,
@@ -365,11 +246,12 @@ export function getDoc(
   owner: string | null = null,
 ): Doc | null {
   validScope(scope)
-  return db()
+  const row = db()
     .query(
       `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d WHERE scope = ? AND subject IS ? AND owner IS ? AND slug = ?`,
     )
     .get(scope, subject, owner, slug) as Doc | null
+  return row && ownerVisible(row.owner, owner) ? row : null
 }
 
 export async function signedInDocOwner(): Promise<string> {

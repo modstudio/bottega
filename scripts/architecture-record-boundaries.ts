@@ -57,6 +57,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../doc/doc-write-allowed.ts',
+      './record-canon-facts.ts',
     ],
     'Enforce the record-docs concern boundary.',
   ),

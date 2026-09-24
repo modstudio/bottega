@@ -3,16 +3,15 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
   decideDocRevisionWrite,
   recordDocLintRefusal,
-  refuseCanonWrite,
   refuseDocWrite,
 } from '../doc/doc-write-allowed.ts'
+import { canonFacts } from './record-canon-facts.ts'
 
 export type RecordDoc = {
   id: string
@@ -161,113 +160,6 @@ async function projectId(
   const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
   if (rows.length !== 1) throw new RecordDocError(`record project is absent: ${name}`, 422)
   return String(rows[0]!.id)
-}
-
-async function canonFacts(
-  tx: SQL,
-  spaceId: string,
-  scope: string,
-  subject: string | null,
-  slug: string,
-  body: string,
-  owner: string | null = null,
-) {
-  if (scope !== 'canon') {
-    return {
-      globalCanonSlugs: [] as string[],
-      projectCanonSlugs: [] as string[],
-      currentCanon: [] as { slug: string; body: string }[],
-      nextCanon: [] as { slug: string; body: string }[],
-      canonRefusal: null,
-    }
-  }
-  const global = await tx`
-    SELECT slug, body FROM doc
-    WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL AND owner_user_id IS NULL AND deleted_at IS NULL
-  `
-  const user = owner
-    ? await tx`
-        SELECT slug, body, owner_user_id FROM doc
-        WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL
-          AND owner_user_id=${owner}::uuid AND deleted_at IS NULL
-      `
-    : []
-  const project = subject
-    ? await tx`
-        SELECT slug, body FROM doc
-        WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${subject} AND deleted_at IS NULL
-      `
-    : []
-  const asRows = (rows: Record<string, unknown>[]) =>
-    rows.map((row) => ({ slug: String(row.slug), body: String(row.body) }))
-  const globalRows = asRows(global)
-  const projectRows = asRows(project)
-  const replace = (rows: { slug: string; body: string }[]) => [
-    ...rows.filter((row) => row.slug !== slug),
-    { slug, body },
-  ]
-  const userRows = asRows(user)
-  const changed = owner ? replace(userRows) : subject ? replace(projectRows) : replace(globalRows)
-  const currentCanon = composeCanonRows(
-    globalRows.map((row) => ({ ...row, subject: null })),
-    userRows.map((row) => ({ ...row, subject: null, owner })),
-    projectRows.map((row) => ({ ...row, subject })),
-  ).map(({ slug, body }) => ({ slug, body }))
-  let canonRefusal: string | null = null
-  let nextCanon = currentCanon
-  try {
-    nextCanon = composeCanonRows(
-      (owner || subject ? globalRows : changed).map((row) => ({ ...row, subject: null })),
-      (owner ? changed : userRows).map((row) => ({ ...row, subject: null, owner })),
-      (subject ? changed : projectRows).map((row) => ({ ...row, subject })),
-    ).map(({ slug: rowSlug, body: rowBody }) => ({ slug: rowSlug, body: rowBody }))
-  } catch (error) {
-    canonRefusal = error instanceof Error ? error.message : String(error)
-  }
-  if (owner && !canonRefusal) {
-    const targets = await tx`
-      SELECT name FROM project
-      WHERE space_id=${spaceId}::uuid
-        AND retired_at IS NULL
-        AND COALESCE((settings->>'managedContext')::boolean, false)
-      ORDER BY name
-    `
-    const names = targets.length
-      ? targets.map((row: Record<string, unknown>) => String(row.name))
-      : [null]
-    for (const name of names) {
-      const rows = name
-        ? await tx`
-            SELECT slug, body FROM doc
-            WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${name}
-              AND owner_user_id IS NULL AND deleted_at IS NULL
-          `
-        : []
-      try {
-        const targetCurrent = composeCanonRows(
-          globalRows.map((row) => ({ ...row, subject: null })),
-          userRows.map((row) => ({ ...row, subject: null, owner })),
-          asRows(rows).map((row) => ({ ...row, subject: name })),
-        ).map(({ slug: rowSlug, body: rowBody }) => ({ slug: rowSlug, body: rowBody }))
-        const targetNext = composeCanonRows(
-          globalRows.map((row) => ({ ...row, subject: null })),
-          changed.map((row) => ({ ...row, subject: null, owner })),
-          asRows(rows).map((row) => ({ ...row, subject: name })),
-        ).map(({ slug: rowSlug, body: rowBody }) => ({ slug: rowSlug, body: rowBody }))
-        canonRefusal = refuseCanonWrite({ current: targetCurrent, next: targetNext })
-      } catch (error) {
-        canonRefusal = error instanceof Error ? error.message : String(error)
-      }
-      if (canonRefusal) break
-    }
-  }
-  return {
-    globalCanonSlugs: globalRows.map((row) => row.slug),
-    projectCanonSlugs: projectRows.map((row) => row.slug),
-    currentCanon,
-    nextCanon,
-    canonRefusal,
-  }
 }
 
 function assertWrite(refusal: string | null): void {

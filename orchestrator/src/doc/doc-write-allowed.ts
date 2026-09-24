@@ -20,6 +20,7 @@ export type DocRevisionOp =
   | 'backfill'
 
 export type CanonRow = { slug: string; body: string }
+export { composeCanonRows }
 
 /** Owned rows are visible only to their signed-in owner; unowned rows remain shared. */
 export function ownerVisible(owner: string | null, signedInUserId: string | null): boolean {

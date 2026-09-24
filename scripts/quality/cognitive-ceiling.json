@@ -253,15 +253,9 @@
   {
     "file": "orchestrator/src/doc/doc-commands.ts",
     "function": "docCommand",
-    "line": 64,
-    "score": 108,
+    "line": 158,
+    "score": 99,
     "key": "orchestrator/src/doc/doc-commands.ts\u0000docCommand"
-  },
-  {
-    "file": "orchestrator/src/doc/docs.ts",
-    "function": "listDocMetadata",
-    "line": 191,
-    "score": 20
   },
   {
     "file": "orchestrator/src/doc/docs.ts",
