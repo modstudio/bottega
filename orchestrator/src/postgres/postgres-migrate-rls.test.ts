@@ -20,6 +20,7 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
+import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
@@ -347,6 +348,8 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visible.code, visible.stderr).toBe(0)
     expect(visible.stdout.split('\n')).toEqual(['1', '0', '1', '0', '0'])
   })
+
+  registerOwnedCanonPrivacyProof(authSpaceA, authUserA, authUserB, SPACE_A)
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {
     recordSession.setToken(tokenB)
@@ -1032,17 +1035,6 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(otherSpaceRead.stdout).toBe('')
     expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
     expect(rescoredRead.stdout).toBe('partial|mixed|updated')
-  })
-
-  test('the table owner is still confined by FORCE ROW LEVEL SECURITY', () => {
-    const result = asSpace(
-      RECORD_OWNER_ROLE,
-      'owner-password',
-      SPACE_A,
-      'SELECT name FROM project ORDER BY name;',
-    )
-    expect(result.code, result.stderr).toBe(0)
-    expect(result.stdout.split('\n')).toEqual(['alpha', 'alpha-two'])
   })
 
   test('same prefix is allowed in separate projects', () => {

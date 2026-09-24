@@ -30,3 +30,14 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   resume: 'project',
   canon: 'project',
 } as const satisfies Record<DocScope, DocSubjectKind | null>
+
+export const DOC_SCOPE_ALLOWS_OWNER = {
+  project: false,
+  machine: false,
+  agent: false,
+  job: false,
+  global: false,
+  stack: false,
+  resume: false,
+  canon: true,
+} as const satisfies Record<DocScope, boolean>

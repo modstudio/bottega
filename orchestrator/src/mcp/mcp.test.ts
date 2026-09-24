@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
+import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
@@ -77,5 +82,51 @@ describe('orch MCP', () => {
       missingIssueReportFields({ kind: 'defect', reproduce_command: 'bun run check' }),
     ).toEqual(['environment'])
     expect(missingIssueReportFields(completeSuggestion)).toEqual([])
+  })
+
+  test('get_doc_revision resolves user canon only when user is true', async () => {
+    const owner = '01990000-0000-7000-8000-000000000001'
+    const revision = db()
+      .query<{ id: number }, [string]>(
+        `INSERT INTO doc_revision
+          (doc_id,scope,subject,owner,slug,op,title,body,delivery,author,reason,at)
+         VALUES (1,'canon',NULL,?1,'.agents/rules/private.md','create','Private','body',
+           'demand','operator','mcp owner proof','2026-01-01')
+         RETURNING id`,
+      )
+      .get(owner)!
+    const session = memoryRecordSession()
+    const priorApiUrl = process.env.ORCH_RECORD_API_URL
+    process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
+    session.setToken('fixture-session')
+    installRecordSessionRunner(session.runner)
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const ordinary = await client.callTool({
+        name: 'get_doc_revision',
+        arguments: { id: revision.id },
+      })
+      expect(ordinary.isError).toBe(true)
+
+      const owned = await client.callTool({
+        name: 'get_doc_revision',
+        arguments: { id: revision.id, user: true },
+      })
+      expect(owned.isError).not.toBe(true)
+      expect(JSON.parse((owned.content as { text: string }[])[0]!.text)).toMatchObject({
+        id: revision.id,
+        owner,
+      })
+    } finally {
+      await client.close()
+      await server.close()
+      installRecordSessionRunner(null)
+      if (priorApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = priorApiUrl
+    }
   })
 })

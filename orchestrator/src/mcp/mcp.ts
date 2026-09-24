@@ -21,6 +21,7 @@ import {
   listDocRevisions,
   listDocs,
   setDoc,
+  signedInDocOwner,
 } from '../doc/docs.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -619,19 +620,24 @@ export function createDocsMcpServer(): McpServer {
           .enum(['asc', 'desc'])
           .optional()
           .describe('Order by updated_at; omit for scope, subject, slug order.'),
+        user: z.boolean().optional(),
       },
     },
-    async ({ scope, subject, scopes, match, body_match, updated_at_order }) =>
-      text(
+    async ({ scope, subject, scopes, match, body_match, updated_at_order, user }) => {
+      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+      const owner = user ? await signedInDocOwner() : null
+      return text(
         listDocMetadata({
-          scope,
-          subject,
+          scope: user ? 'canon' : scope,
+          subject: user ? null : subject,
           scopes,
           match,
           bodyMatch: body_match,
           updatedAtOrder: updated_at_order,
+          owner,
         }),
-      ),
+      )
+    },
   )
 
   server.registerTool(
@@ -639,13 +645,22 @@ export function createDocsMcpServer(): McpServer {
     {
       description: 'Get one operator document.',
       inputSchema: {
-        scope: z.string(),
+        scope: z.string().optional(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
+        user: z.boolean().optional(),
       },
     },
-    async ({ scope, subject, slug }) => {
-      const doc = getDoc(scope, subject ?? null, slug)
+    async ({ scope, subject, slug, user }) => {
+      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+      if (!user && !scope) throw new Error('scope is required unless user is true')
+      const resolvedScope = user ? 'canon' : scope!
+      const doc = getDoc(
+        resolvedScope,
+        user ? null : (subject ?? null),
+        slug,
+        user ? await signedInDocOwner() : null,
+      )
       if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
       return text(doc)
     },
@@ -762,22 +777,34 @@ export function createDocsMcpServer(): McpServer {
       description:
         'List revision metadata for one operator document, newest first; bodies are omitted.',
       inputSchema: {
-        scope: z.string(),
+        scope: z.string().optional(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
+        user: z.boolean().optional(),
       },
     },
-    async ({ scope, subject, slug }) => text(listDocRevisions(scope, subject ?? null, slug)),
+    async ({ scope, subject, slug, user }) => {
+      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+      if (!user && !scope) throw new Error('scope is required unless user is true')
+      return text(
+        listDocRevisions(
+          user ? 'canon' : scope!,
+          user ? null : (subject ?? null),
+          slug,
+          user ? await signedInDocOwner() : null,
+        ),
+      )
+    },
   )
 
   server.registerTool(
     'get_doc_revision',
     {
       description: 'Get one operator document revision, including its body.',
-      inputSchema: { id: z.number().int().positive() },
+      inputSchema: { id: z.number().int().positive(), user: z.boolean().optional() },
     },
-    async ({ id }) => {
-      const revision = getDocRevision(id)
+    async ({ id, user }) => {
+      const revision = getDocRevision(id, user ? await signedInDocOwner() : null)
       if (!revision) throw new Error(`no doc revision ${id}`)
       return text(revision)
     },

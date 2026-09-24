@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideDocRevisionWrite,
   globalCanonWriteTargets,
+  ownerVisible,
   refuseCanonWrite,
+  userCanonWriteTargets,
 } from './doc-write-allowed.ts'
 
 const rule = {
@@ -59,6 +61,21 @@ describe('globalCanonWriteTargets', () => {
   test('falls back to checking global rows alone when no project is opted in', () => {
     expect(globalCanonWriteTargets([candidate('unmanaged', false)])).toEqual([null])
     expect(globalCanonWriteTargets([])).toEqual([null])
+  })
+
+  test('user writes select every managed project or the user set alone', () => {
+    const managed = candidate('managed', true)
+    expect(userCanonWriteTargets([candidate('unmanaged'), managed])).toEqual([managed])
+    expect(userCanonWriteTargets([])).toEqual([null])
+  })
+})
+
+describe('ownerVisible', () => {
+  test('shares unowned rows and restricts owned rows to their owner', () => {
+    expect(ownerVisible(null, null)).toBe(true)
+    expect(ownerVisible('user-1', 'user-1')).toBe(true)
+    expect(ownerVisible('user-1', 'user-2')).toBe(false)
+    expect(ownerVisible('user-1', null)).toBe(false)
   })
 })
 

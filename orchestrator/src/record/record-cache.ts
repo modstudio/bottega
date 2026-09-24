@@ -78,6 +78,7 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
   }
   const scope = String(item.scope)
   const subject = item.subject == null ? null : String(item.subject)
+  const owner = item.owner == null ? null : String(item.owner)
   const slug = String(item.slug)
   const title = String(item.title)
   const body = String(item.body)
@@ -89,15 +90,17 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
     .get(recordId)
   if (existing) {
     local
-      .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, subject=? WHERE id=?')
-      .run(title, body, delivery, updatedAt, subject, existing.id)
+      .query(
+        'UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, subject=?, owner=? WHERE id=?',
+      )
+      .run(title, body, delivery, updatedAt, subject, owner, existing.id)
     return
   }
   const byAddress = local
-    .query<{ id: number }, [string, string | null, string]>(
-      'SELECT id FROM doc WHERE scope=? AND subject IS ? AND slug=?',
+    .query<{ id: number }, [string, string | null, string | null, string]>(
+      'SELECT id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
     )
-    .get(scope, subject, slug)
+    .get(scope, subject, owner, slug)
   if (byAddress) {
     local
       .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
@@ -106,10 +109,10 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(scope, subject, null, slug, title, body, delivery, createdAt, updatedAt, recordId)
+    .run(scope, subject, owner, null, slug, title, body, delivery, createdAt, updatedAt, recordId)
 }
 
 function applyScore(local: Database, item: Record<string, unknown>): void {

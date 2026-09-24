@@ -327,7 +327,7 @@ function packedCanonMarkdown(projectName: string | null): {
   if (!projectName) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
   const globalRows = listDocs({ scope: 'canon', subject: null })
   const projectRows = listDocs({ scope: 'canon', subject: projectName })
-  const rows = composeCanonRows(globalRows, projectRows)
+  const rows = composeCanonRows(globalRows, [], projectRows)
   if (!rows.length) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
   const classified = rows.map((row) => ({
     row,
@@ -536,7 +536,7 @@ export function findingsForPack(pack: Pack): { doc: PackDoc; findings: Finding[]
 
 function getDocForPack(packed: PackDoc): Doc {
   return db()
-    .query('SELECT * FROM doc WHERE scope=? AND subject IS ? AND slug=?')
+    .query('SELECT * FROM doc WHERE scope=? AND subject IS ? AND owner IS NULL AND slug=?')
     .get(packed.scope, packed.subject, packed.slug) as Doc
 }
 

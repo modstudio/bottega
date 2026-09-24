@@ -24,6 +24,28 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('owned canon is visible only through its owner address locally', async () => {
+    const owner = '01990000-0000-7000-8000-000000000091'
+    const created = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      owner,
+      slug: '.agents/rules/private-owner.md',
+      title: 'Private owner',
+      body: '---\ndescription: Private owner\n---\n\nPrivate rule.\n',
+      reason: 'prove owner visibility',
+      allowCanonBootstrap: true,
+    })
+    expect(listDocs({ scope: 'canon', subject: null }).some((row) => row.id === created.id)).toBe(
+      false,
+    )
+    expect(listDocs({ scope: 'canon', subject: null, owner })).toContainEqual(created)
+    expect(getDoc('canon', null, created.slug)).toBeNull()
+    expect(getDoc('canon', null, created.slug, owner)?.id).toBe(created.id)
+    expect(listDocRevisions('canon', null, created.slug)).toEqual([])
+    expect(listDocRevisions('canon', null, created.slug, owner)).toHaveLength(1)
+  })
+
   test('canon updates compare the exposed hosted revision in both local write checks', async () => {
     const created = await writeDoc({
       scope: 'canon',
@@ -166,6 +188,35 @@ describe('scoped operator docs', () => {
         body: 'This was formerly different.\n\nCurrent behavior is direct.',
       }),
     ).resolves.toMatchObject({ body: expect.stringContaining('Current behavior is direct.') })
+  })
+
+  test('restore permits findings already present on the live user canon row', async () => {
+    const owner = '01990000-0000-7000-8000-000000000092'
+    const created = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      owner,
+      slug: '.agents/rules/legacy-user.md',
+      title: 'Legacy user canon',
+      body: '---\ndescription: Legacy user canon\n---\n\nCurrent rule.\n',
+      reason: 'create owned restore fixture',
+      allowCanonBootstrap: true,
+    })
+    const revision = listDocRevisions('canon', null, created.slug, owner)[0]!
+    const legacyBody = '---\ndescription: Legacy user canon\n---\n\nThis was formerly different.\n'
+    db().query('UPDATE doc SET body=? WHERE id=?').run(legacyBody, created.id)
+    db().query('UPDATE doc_revision SET body=? WHERE id=?').run(legacyBody, revision.id)
+
+    await expect(
+      restoreDoc(
+        'canon',
+        null,
+        created.slug,
+        revision.id,
+        { reason: 'restore owned legacy revision', expectedRevision: created.revision! },
+        owner,
+      ),
+    ).resolves.toMatchObject({ owner, body: legacyBody })
   })
 
   test('set refuses a finding introduced while editing a legacy document', async () => {

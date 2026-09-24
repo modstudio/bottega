@@ -11,6 +11,7 @@ import {
   recordDocLintRefusal,
   refuseDocWrite,
 } from '../doc/doc-write-allowed.ts'
+import { canonFacts } from './record-canon-facts.ts'
 
 export type RecordDoc = {
   id: string
@@ -18,6 +19,7 @@ export type RecordDoc = {
   spaceName: string
   scope: string
   subject: string | null
+  owner: string | null
   slug: string
   title: string
   body: string
@@ -33,6 +35,7 @@ export type RecordDocRevision = {
   docId: string
   scope: string
   subject: string | null
+  owner: string | null
   slug: string
   op: DocRevisionOp
   title: string
@@ -49,6 +52,7 @@ export type RecordDocImportInput = {
   doc: {
     scope: string
     subject: string | null
+    owner?: string | null
     slug: string
     title: string
     body: string
@@ -61,6 +65,7 @@ export type RecordDocImportInput = {
   revisions: Array<{
     scope: string
     subject: string | null
+    owner?: string | null
     slug: string
     op: DocRevisionOp
     title: string
@@ -115,6 +120,7 @@ function docRow(row: Record<string, unknown>): RecordDoc {
     spaceName: String(row.space_name),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
+    owner: row.owner_user_id == null ? null : String(row.owner_user_id),
     slug: String(row.slug),
     title: String(row.title),
     body: String(row.body),
@@ -132,6 +138,7 @@ function revisionRow(row: Record<string, unknown>): RecordDocRevision {
     docId: String(row.doc_id),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
+    owner: row.owner_user_id == null ? null : String(row.owner_user_id),
     slug: String(row.slug),
     op: String(row.op) as DocRevisionOp,
     title: String(row.title),
@@ -153,48 +160,6 @@ async function projectId(
   const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
   if (rows.length !== 1) throw new RecordDocError(`record project is absent: ${name}`, 422)
   return String(rows[0]!.id)
-}
-
-async function canonFacts(
-  tx: SQL,
-  spaceId: string,
-  scope: string,
-  subject: string | null,
-  slug: string,
-  body: string,
-) {
-  if (scope !== 'canon') {
-    return {
-      globalCanonSlugs: [] as string[],
-      projectCanonSlugs: [] as string[],
-      currentCanon: [] as { slug: string; body: string }[],
-      nextCanon: [] as { slug: string; body: string }[],
-    }
-  }
-  const global = await tx`
-    SELECT slug, body FROM doc
-    WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL AND deleted_at IS NULL
-  `
-  const project = subject
-    ? await tx`
-        SELECT slug, body FROM doc
-        WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${subject} AND deleted_at IS NULL
-      `
-    : []
-  const asRows = (rows: Record<string, unknown>[]) =>
-    rows.map((row) => ({ slug: String(row.slug), body: String(row.body) }))
-  const globalRows = asRows(global)
-  const projectRows = asRows(project)
-  const replace = (rows: { slug: string; body: string }[]) => [
-    ...rows.filter((row) => row.slug !== slug),
-    { slug, body },
-  ]
-  return {
-    globalCanonSlugs: globalRows.map((row) => row.slug),
-    projectCanonSlugs: projectRows.map((row) => row.slug),
-    currentCanon: subject ? projectRows : globalRows,
-    nextCanon: subject ? replace(projectRows) : replace(globalRows),
-  }
 }
 
 function assertWrite(refusal: string | null): void {
@@ -280,6 +245,7 @@ export async function upsertRecordDoc(
   input: Tenant & {
     scope: string
     subject: string | null
+    owner?: string | null
     slug: string
     title: string
     body: string
@@ -296,12 +262,16 @@ export async function upsertRecordDoc(
     expectedRevision?: string
   },
 ): Promise<{ id: string; revisionId: string }> {
+  if (input.owner && (input.scope !== 'canon' || input.subject !== null)) {
+    throw new RecordDocError('user canon requires scope canon and no subject')
+  }
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, slug, body, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
+        AND COALESCE(owner_user_id::text, '')=${input.owner ?? ''}
         AND slug=${input.slug}
         AND deleted_at IS NULL
       FOR UPDATE
@@ -319,7 +289,9 @@ export async function upsertRecordDoc(
       input.subject,
       input.slug,
       input.body,
+      input.owner ?? null,
     )
+    assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
         scope: input.scope,
@@ -360,15 +332,16 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
+            owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
       `
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, slug, title, body, delivery, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, project_id, created_at, updated_at
         ) VALUES (
-          ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.slug},
+          ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
           ${input.title}, ${input.body}, ${input.delivery}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
@@ -380,6 +353,7 @@ export async function upsertRecordDoc(
       docId,
       scope: input.scope,
       subject: input.subject,
+      owner: input.owner ?? null,
       slug: input.slug,
       projectId: resolvedProject,
       op,
@@ -403,6 +377,7 @@ async function insertRevision(
     docId: string
     scope: string
     subject: string | null
+    owner: string | null
     slug: string
     projectId: string | null
     op: DocRevisionOp
@@ -428,10 +403,10 @@ async function insertRevision(
   if (!existing[0]) {
     await tx`
       INSERT INTO doc_revision (
-        id, space_id, doc_id, scope, subject, slug, project_id, op, title, body, delivery,
+        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery,
         author, reason, session_id, at
       ) VALUES (
-        ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject},
+        ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
         ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
         ${input.delivery}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
       )
@@ -477,6 +452,7 @@ export async function deleteRecordDoc(
       docId: input.id,
       scope: String(doc.scope),
       subject: doc.subject == null ? null : String(doc.subject),
+      owner: doc.owner_user_id == null ? null : String(doc.owner_user_id),
       slug: String(doc.slug),
       projectId: doc.project_id == null ? null : String(doc.project_id),
       op: 'delete',
@@ -527,6 +503,7 @@ export async function consumeRecordDoc(
       docId: input.id,
       scope: String(doc.scope),
       subject: doc.subject == null ? null : String(doc.subject),
+      owner: doc.owner_user_id == null ? null : String(doc.owner_user_id),
       slug: String(doc.slug),
       projectId: doc.project_id == null ? null : String(doc.project_id),
       op: 'consume',
@@ -576,7 +553,16 @@ export async function restoreRecordDoc(
     const slug = String(revision.slug)
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
-    const facts = await canonFacts(tx, input.spaceId, scope, subject, slug, body)
+    const facts = await canonFacts(
+      tx,
+      input.spaceId,
+      scope,
+      subject,
+      slug,
+      body,
+      revision.owner_user_id == null ? null : String(revision.owner_user_id),
+    )
+    assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
         scope,
@@ -600,6 +586,7 @@ export async function restoreRecordDoc(
       docId: input.id,
       scope,
       subject,
+      owner: revision.owner_user_id == null ? null : String(revision.owner_user_id),
       slug,
       projectId: revision.project_id == null ? null : String(revision.project_id),
       op: 'restore',
@@ -671,6 +658,7 @@ async function existingDocAtAddress(
     WHERE space_id=${spaceId}::uuid
       AND scope=${doc.scope}
       AND COALESCE(subject, '')=${doc.subject ?? ''}
+      AND COALESCE(owner_user_id::text, '')=${doc.owner ?? ''}
       AND slug=${doc.slug}
     ORDER BY (deleted_at IS NULL) DESC, updated_at DESC, id DESC
     LIMIT 1
@@ -710,7 +698,7 @@ async function writeImportedDoc(
     await tx`
       UPDATE doc
       SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
-          project_id=${projectId}::uuid,
+          owner_user_id=${doc.owner ?? null}::uuid, project_id=${projectId}::uuid,
           created_at=${doc.createdAt}::timestamptz,
           updated_at=${doc.updatedAt}::timestamptz,
           deleted_at=${doc.deletedAt}::timestamptz
@@ -720,10 +708,10 @@ async function writeImportedDoc(
   }
   await tx`
     INSERT INTO doc (
-      id, space_id, scope, subject, slug, title, body, delivery, project_id,
+      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, project_id,
       created_at, updated_at, deleted_at
     ) VALUES (
-      ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.slug},
+      ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.owner ?? null}::uuid, ${doc.slug},
       ${doc.title}, ${doc.body}, ${doc.delivery}, ${projectId}::uuid,
       ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
     )
@@ -733,6 +721,9 @@ async function writeImportedDoc(
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] }> {
+  if (input.doc.owner && (input.doc.scope !== 'canon' || input.doc.subject !== null)) {
+    throw new RecordDocError('user canon requires scope canon and no subject')
+  }
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, input.doc)
     assertRevisionWrite({
@@ -779,6 +770,7 @@ export async function importRecordDoc(
           docId: id,
           scope: revision.scope,
           subject: revision.subject,
+          owner: revision.owner ?? null,
           slug: revision.slug,
           projectId: resolvedProject,
           op: revision.op,

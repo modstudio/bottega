@@ -13,6 +13,7 @@ const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is
 export type RecordDocUpsertInput = {
   scope: string
   subject: string | null
+  owner?: string | null
   slug: string
   title: string
   body: string
@@ -33,6 +34,7 @@ export type RecordDocImportInput = {
   doc: {
     scope: string
     subject: string | null
+    owner?: string | null
     slug: string
     title: string
     body: string
@@ -45,6 +47,7 @@ export type RecordDocImportInput = {
   revisions: Array<{
     scope: string
     subject: string | null
+    owner?: string | null
     slug: string
     op: DocRevisionOp
     title: string

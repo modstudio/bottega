@@ -19,13 +19,13 @@ import type {
   MachineKey,
 } from './record-config.ts'
 import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
-import type {
-  RecordDoc,
-  RecordDocImportInput,
-  RecordDocListInput,
-  RecordDocRevision,
+import {
+  type RecordDoc,
+  RecordDocError,
+  type RecordDocImportInput,
+  type RecordDocListInput,
+  type RecordDocRevision,
 } from './record-docs.ts'
-import { RecordDocError } from './record-docs.ts'
 import {
   type RecordProject,
   RecordProjectError,
@@ -39,8 +39,7 @@ import type {
   RecordRunsWindowInput,
 } from './record-runs.ts'
 import { runsWindowQuery } from './record-runs-window-query.ts'
-import type { RecordSnapshot, SnapshotKind } from './record-snapshots.ts'
-import { SNAPSHOT_KINDS } from './record-snapshots.ts'
+import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
@@ -48,12 +47,7 @@ export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type AuthHandler = { handler(request: Request): Response | Promise<Response> }
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
-type Tenant = {
-  url: string
-  userId: string
-  spaceId: string
-  spaceIds: string[]
-}
+type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = {
   recordUrl: string
   allowedOrigins?: string[]
@@ -244,6 +238,7 @@ const docImportSchema = z.object({
   doc: z.object({
     scope: z.string().min(1),
     subject: z.string().nullable(),
+    owner: z.string().uuid().nullable().optional(),
     slug: z.string().min(1),
     title: z.string(),
     body: z.string(),
@@ -257,6 +252,7 @@ const docImportSchema = z.object({
     z.object({
       scope: z.string().min(1),
       subject: z.string().nullable(),
+      owner: z.string().uuid().nullable().optional(),
       slug: z.string().min(1),
       op: revisionOpSchema,
       title: z.string(),
@@ -818,6 +814,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .object({
         scope: z.string().min(1),
         subject: z.string().nullable(),
+        owner: z.string().uuid().nullable().optional(),
         slug: z.string().min(1),
         title: z.string(),
         body: z.string(),

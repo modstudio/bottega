@@ -12,6 +12,7 @@ type LocalDoc = {
   record_id: string | null
   scope: string
   subject: string | null
+  owner: string | null
   slug: string
   title: string
   body: string
@@ -27,6 +28,7 @@ type LocalRevision = {
   record_id: string | null
   scope: string
   subject: string | null
+  owner: string | null
   slug: string
   op: DocRevisionOp
   title: string
@@ -67,6 +69,7 @@ function asRevision(row: LocalRevision): RecordDocImportInput['revisions'][numbe
   return {
     scope: row.scope,
     subject: row.subject,
+    owner: row.owner,
     slug: row.slug,
     op: row.op,
     title: row.title,
@@ -92,6 +95,7 @@ function groupFromLive(
       doc: {
         scope: doc.scope,
         subject: doc.subject,
+        owner: doc.owner,
         slug: doc.slug,
         title: doc.title,
         body: doc.body,
@@ -122,6 +126,7 @@ function groupFromDeleted(revisions: LocalRevision[], names: Map<number, string>
       doc: {
         scope: last.scope,
         subject: last.subject,
+        owner: last.owner,
         slug: last.slug,
         title: last.title,
         body: last.body,
@@ -140,13 +145,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, slug, title, body, delivery, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, slug, op, title, body, delivery, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )
@@ -176,7 +181,7 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, slug, title, body, delivery, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()

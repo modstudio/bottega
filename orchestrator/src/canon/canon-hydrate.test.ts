@@ -1,11 +1,35 @@
 import { describe, expect, test } from 'bun:test'
-import { composeCanonRows, planHydration } from './canon-hydrate.ts'
+import { type AddressedCanonRow, composeCanonRows, planHydration } from './canon-hydrate.ts'
 
 describe('planHydration', () => {
+  test('three levels compose in order and every pairwise collision refuses', () => {
+    const global = [{ subject: null, owner: null, slug: 'AGENTS.md', body: 'global' }]
+    const user = [{ subject: null, owner: 'user-1', slug: '.agents/rules/user.md', body: 'user' }]
+    const project = [
+      { subject: 'known', owner: null, slug: '.agents/rules/project.md', body: 'project' },
+    ]
+    expect(composeCanonRows(global, user, project).map((row) => row.body)).toEqual([
+      'global',
+      'user',
+      'project',
+    ])
+    const pairs: [AddressedCanonRow[], AddressedCanonRow[]][] = [
+      [global, user],
+      [global, project],
+      [user, project],
+    ]
+    for (const [left, right] of pairs) {
+      expect(() => composeCanonRows(left, [{ ...right[0]!, slug: left[0]!.slug }], [])).toThrow(
+        'canon path collision',
+      )
+    }
+  })
+
   test('global and project rows rendering to one path refuse and name both', () => {
     expect(() =>
       composeCanonRows(
         [{ subject: null, slug: '.agents/rules/shared.md', body: 'global' }],
+        [],
         [{ subject: 'known', slug: '.agents/rules/shared.md', body: 'project' }],
       ),
     ).toThrow(
