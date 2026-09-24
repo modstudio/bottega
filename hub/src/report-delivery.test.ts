@@ -295,6 +295,38 @@ describe('hosted report delivery', () => {
     ])
   })
 
+  test('a mixed subscription without a hosted origin skips before sending', async () => {
+    const fake = fakeRepository([candidate('12')], async () =>
+      subscription({
+        recipients: [
+          ...subscription().recipients,
+          {
+            userId: null,
+            name: 'outside@example.test',
+            email: 'outside@example.test',
+            isMember: true,
+            unsubscribeToken: 'unguessable-token',
+          },
+        ],
+      }),
+    )
+    let sent = 0
+    await runReportDeliveryPass({
+      repository: fake.repository,
+      mail: {
+        async send() {
+          sent++
+        },
+      },
+      now,
+    })
+    expect(sent).toBe(0)
+    expect(fake.rows[0]).toMatchObject({
+      status: 'skipped',
+      reason: 'HUB_HOSTED_URL is required for email-recipient unsubscribe links',
+    })
+  })
+
   test('one subscription failure is recorded and does not stop another', async () => {
     const fake = fakeRepository([candidate('3'), candidate('4')], async (value) => {
       if (value.subscriptionId === '3') throw new Error('render facts unavailable')

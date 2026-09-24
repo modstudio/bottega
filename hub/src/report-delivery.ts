@@ -282,6 +282,39 @@ async function renderSubscription(
   }
 }
 
+async function prepareDispatch(
+  input: { repository: DeliveryRepository; hostedOrigin?: string },
+  candidate: DeliveryCandidate,
+  period: DeliveryPeriod,
+  subscription: DeliverySubscription,
+) {
+  const members = await input.repository.recipientsAreMembers(
+    candidate,
+    subscription.recipients.flatMap((recipient) => (recipient.userId ? [recipient.userId] : [])),
+  )
+  if (!members) {
+    await recordSkip(
+      input.repository,
+      candidate,
+      period,
+      subscription,
+      'a recipient is no longer a member of this space',
+      false,
+    )
+    return null
+  }
+  if (!subscription.recipients.some((recipient) => recipient.unsubscribeToken)) {
+    return { hostedOrigin: null }
+  }
+  try {
+    return { hostedOrigin: requiredHostedOrigin(input.hostedOrigin) }
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause)
+    await recordSkip(input.repository, candidate, period, subscription, reason, false)
+    return null
+  }
+}
+
 async function dispatchReport(
   input: {
     repository: DeliveryRepository
@@ -301,21 +334,8 @@ async function dispatchReport(
     )
     return 'dry-run'
   }
-  const members = await input.repository.recipientsAreMembers(
-    candidate,
-    subscription.recipients.flatMap((recipient) => (recipient.userId ? [recipient.userId] : [])),
-  )
-  if (!members) {
-    await recordSkip(
-      input.repository,
-      candidate,
-      period,
-      subscription,
-      'a recipient is no longer a member of this space',
-      false,
-    )
-    return 'skipped'
-  }
+  const prepared = await prepareDispatch(input, candidate, period, subscription)
+  if (!prepared) return 'skipped'
   const intentId = await input.repository.recordIntent(candidate, period, {
     recipients: subscription.recipients,
     items: subscription.report.items.length,
@@ -324,7 +344,7 @@ async function dispatchReport(
   try {
     for (const recipient of subscription.recipients) {
       const unsubscribeUrl = recipient.unsubscribeToken
-        ? `${requiredHostedOrigin(input.hostedOrigin)}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
+        ? `${prepared.hostedOrigin}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
         : null
       await input.mail.send({
         ...rendered,
