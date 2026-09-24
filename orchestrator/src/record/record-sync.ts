@@ -59,6 +59,20 @@ import { validateRecordVerdict } from './record-verdicts.ts'
 type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 type Payload = Record<string, unknown>
 
+export function outboxOrder(kind: string, id: number): readonly [phase: number, id: number] {
+  if (kind === 'run') return [0, id]
+  switch (kind) {
+    case 'score':
+    case 'review':
+    case 'review_lens':
+    case 'review_finding':
+    case 'contention':
+      return [2, id]
+    default:
+      return [1, id]
+  }
+}
+
 export type RecordSyncResult = {
   pushed: number
   failed: number
@@ -851,6 +865,11 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         'SELECT id, kind, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
       )
       .all()
+      .sort((left, right) => {
+        const [leftPhase, leftId] = outboxOrder(left.kind, left.id)
+        const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
+        return leftPhase - rightPhase || leftId - rightId
+      })
     const principals = new Map<string | null, RecordPrincipal>()
     // A project whose declared space this user cannot reach blocks only its own
     // rows. Halting the whole outbox would let one project's misconfiguration
