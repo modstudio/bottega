@@ -244,6 +244,7 @@ const docImportSchema = z.object({
   doc: z.object({
     scope: z.string().min(1),
     subject: z.string().nullable(),
+    owner: z.string().uuid().nullable().optional(),
     slug: z.string().min(1),
     title: z.string(),
     body: z.string(),
@@ -257,6 +258,7 @@ const docImportSchema = z.object({
     z.object({
       scope: z.string().min(1),
       subject: z.string().nullable(),
+      owner: z.string().uuid().nullable().optional(),
       slug: z.string().min(1),
       op: revisionOpSchema,
       title: z.string(),
@@ -818,6 +820,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .object({
         scope: z.string().min(1),
         subject: z.string().nullable(),
+        owner: z.string().uuid().nullable().optional(),
         slug: z.string().min(1),
         title: z.string(),
         body: z.string(),

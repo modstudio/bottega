@@ -7,6 +7,7 @@ type RevisionDoc = {
   id: number
   scope: string
   subject: string | null
+  owner: string | null
   project_id: number | null
   slug: string
   title: string
@@ -51,12 +52,13 @@ export function currentDocRevision(
   scope: string,
   subject: string | null,
   slug: string,
+  owner: string | null = null,
 ): string | null {
   const row = db()
     .query(
-      'SELECT record_id FROM doc_revision WHERE scope=? AND subject IS ? AND slug=? ORDER BY id DESC LIMIT 1',
+      'SELECT record_id FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC LIMIT 1',
     )
-    .get(scope, subject, slug) as { record_id: string | null } | null
+    .get(scope, subject, owner, slug) as { record_id: string | null } | null
   return row?.record_id ?? null
 }
 
@@ -70,13 +72,14 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, author, reason, session_id, at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
       doc.scope,
       doc.subject,
+      doc.owner,
       doc.project_id,
       doc.slug,
       op,

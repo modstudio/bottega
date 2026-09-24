@@ -21,6 +21,11 @@ export type DocRevisionOp =
 
 export type CanonRow = { slug: string; body: string }
 
+/** Owned rows are visible only to their signed-in owner; unowned rows remain shared. */
+export function ownerVisible(owner: string | null, signedInUserId: string | null): boolean {
+  return owner === null || owner === signedInUserId
+}
+
 export type GlobalCanonWriteTarget = {
   name: string
   path: string
@@ -33,6 +38,9 @@ export function globalCanonWriteTargets(
   const optedIn = registered.filter((project) => project.settings.managedContext === true)
   return optedIn.length ? optedIn : [null]
 }
+
+/** User canon is checked against every managed project, or by itself when none opt in. */
+export const userCanonWriteTargets = globalCanonWriteTargets
 
 export function importedDocDelivery(scope: string): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
@@ -131,6 +139,7 @@ function refuseCanonPathCollision(input: {
       input.globalSlugs
         .filter((slug) => input.subject !== null || slug !== input.slug)
         .map((slug) => ({ slug, body: '', subject: null })),
+      [],
       input.projectSlugs
         .filter((slug) => input.subject === null || slug !== input.slug)
         .map((slug) => ({ slug, body: '', subject: input.subject ?? '' })),
@@ -138,11 +147,13 @@ function refuseCanonPathCollision(input: {
     if (input.subject === null) {
       composeCanonRows(
         [{ slug: input.slug, body: '', subject: null }],
+        [],
         input.projectSlugs.map((slug) => ({ slug, body: '', subject: '' })),
       )
     } else {
       composeCanonRows(
         input.globalSlugs.map((slug) => ({ slug, body: '', subject: null })),
+        [],
         [{ slug: input.slug, body: '', subject: input.subject }],
       )
     }

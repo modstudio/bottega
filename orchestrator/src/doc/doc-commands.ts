@@ -21,6 +21,7 @@ import {
   removeDoc,
   restoreDoc,
   setDoc,
+  signedInDocOwner,
   storedDocsHaveRepositoryReferences,
 } from './docs.ts'
 
@@ -33,6 +34,10 @@ type DocPresentation = {
   stdinIsTTY: boolean
   cwd(): string
   exitCode?(code: number): void
+}
+
+export function validateUserAddress(user: boolean, hasSubject: boolean): void {
+  if (user && hasSubject) throw new Error('--user cannot be used with --subject')
 }
 
 function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
@@ -118,11 +123,13 @@ export async function docCommand(
   presentation: DocPresentation,
 ): Promise<void> {
   const { has, flag } = flags
-  const scope = flag('scope')
-  const subject = flag('subject') ?? null
+  validateUserAddress(has('user'), has('subject'))
+  const scope = has('user') ? 'canon' : flag('scope')
+  const subject = has('user') ? null : (flag('subject') ?? null)
+  const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (sub === 'list') {
-    const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
+    const rows = listDocs({ scope, ...(has('subject') || has('user') ? { subject } : {}), owner })
     if (has('json')) {
       presentation.log(JSON.stringify(rows))
       return
@@ -142,7 +149,7 @@ export async function docCommand(
   if (sub === 'show' || sub === 'get') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
-    const doc = getDoc(scope, subject, slug)
+    const doc = getDoc(scope, subject, slug, owner)
     if (!doc) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
     if (has('json')) {
       presentation.log(JSON.stringify(doc))
@@ -174,6 +181,7 @@ export async function docCommand(
     const doc = await setDoc({
       scope,
       subject,
+      owner,
       slug,
       title,
       body,
@@ -219,11 +227,17 @@ export async function docCommand(
       throw new Error(
         'orch doc rm <slug> --scope S [--subject X] --reason TEXT [--expect REVISION]',
       )
-    const removed = await removeDoc(scope, subject, slug, {
-      reason,
-      author: flag('author'),
-      expectedRevision: flag('expect'),
-    })
+    const removed = await removeDoc(
+      scope,
+      subject,
+      slug,
+      {
+        reason,
+        author: flag('author'),
+        expectedRevision: flag('expect'),
+      },
+      owner,
+    )
     if (has('json')) {
       presentation.log(JSON.stringify({ removed }))
       return
@@ -267,7 +281,10 @@ export async function docCommand(
       )
     }
     const addressSubject = rawAddressSubject === '-' ? null : rawAddressSubject
-    const revisions = listDocRevisions(addressScope, addressSubject, slug)
+    if (has('user') && (addressScope !== 'canon' || addressSubject !== null)) {
+      throw new Error('--user history address must be canon -')
+    }
+    const revisions = listDocRevisions(addressScope, addressSubject, slug, owner)
     if (sub === 'history') {
       if (has('json')) presentation.log(JSON.stringify(revisions))
       else
@@ -288,7 +305,7 @@ export async function docCommand(
           `doc diff revisions must belong to ${addressScope}/${addressSubject ?? '_'}/${slug}`,
         )
       }
-      presentation.write(diffDocRevisions(a, b))
+      presentation.write(diffDocRevisions(a, b, owner))
       return
     }
     const revisionId = Number(argv[5])
@@ -298,11 +315,18 @@ export async function docCommand(
         'orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]',
       )
     }
-    const restored = await restoreDoc(addressScope, addressSubject, slug, revisionId, {
-      reason,
-      author: flag('author'),
-      expectedRevision: flag('expect'),
-    })
+    const restored = await restoreDoc(
+      addressScope,
+      addressSubject,
+      slug,
+      revisionId,
+      {
+        reason,
+        author: flag('author'),
+        expectedRevision: flag('expect'),
+      },
+      owner,
+    )
     presentation.log(
       has('json')
         ? JSON.stringify(restored)

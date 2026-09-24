@@ -348,6 +348,34 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visible.stdout.split('\n')).toEqual(['1', '0', '1', '0', '0'])
   })
 
+  test('another user in the same space cannot read owned canon', () => {
+    const ownedDoc = newRecordId()
+    const membership = newRecordId()
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+       VALUES ('${membership}','${authSpaceA}','${authUserB}','member','write',now());
+       INSERT INTO doc
+         (id,space_id,scope,subject,owner_user_id,slug,title,body,delivery,created_at,updated_at)
+       VALUES
+         ('${ownedDoc}','${authSpaceA}','canon',NULL,'${authUserA}','AGENTS.md','private','private','demand',now(),now());`,
+    )
+    const visible = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.user_id='${authUserB}'; SET app.space_id='${authSpaceA}';
+       SELECT count(*) FROM doc WHERE id='${ownedDoc}';`,
+    )
+    expect(visible.code, visible.stderr).toBe(0)
+    expect(visible.stdout).toBe('0')
+    succeeds(
+      'postgres',
+      'postgres',
+      `DELETE FROM doc WHERE id='${ownedDoc}'; DELETE FROM membership WHERE id='${membership}';`,
+    )
+  })
+
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {
     recordSession.setToken(tokenB)
     const output: string[] = []

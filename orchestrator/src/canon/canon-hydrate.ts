@@ -4,26 +4,35 @@ import { posix } from 'node:path'
 import { type CanonFile, classifyCanonFile } from './canon-lint.ts'
 
 export type CanonRow = { slug: string; body: string }
-export type AddressedCanonRow = CanonRow & { subject: string | null }
+export type AddressedCanonRow = CanonRow & { subject: string | null; owner?: string | null }
 export type HydrationPlan = {
   writes: { path: string; body: string }[]
   links: { path: string; target: string }[]
   deletes: string[]
 }
 
-/** Global canon precedes project canon; duplicate mirror paths have no precedence rule. */
-export function composeCanonRows<G extends AddressedCanonRow, P extends AddressedCanonRow>(
-  globalRows: G[],
-  projectRows: P[],
-): (G | P)[] {
-  const globalBySlug = new Map(globalRows.map((row) => [row.slug, row]))
-  for (const row of projectRows) {
-    if (!globalBySlug.has(row.slug)) continue
-    throw new Error(
-      `refusing canon path collision: canon/_/${row.slug} and canon/${row.subject}/${row.slug} render to the same path`,
-    )
+/** Global, user, then project canon; duplicate mirror paths have no precedence rule. */
+export function composeCanonRows<
+  G extends AddressedCanonRow,
+  U extends AddressedCanonRow,
+  P extends AddressedCanonRow,
+>(globalRows: G[], userRows: U[], projectRows: P[]): (G | U | P)[] {
+  const levels = [globalRows, userRows, projectRows] as AddressedCanonRow[][]
+  const address = (row: AddressedCanonRow) =>
+    row.owner ? `canon/@${row.owner}/${row.slug}` : `canon/${row.subject ?? '_'}/${row.slug}`
+  const seen = new Map<string, AddressedCanonRow>()
+  for (const rows of levels) {
+    for (const row of rows) {
+      const prior = seen.get(row.slug)
+      if (prior) {
+        throw new Error(
+          `refusing canon path collision: ${address(prior)} and ${address(row)} render to the same path`,
+        )
+      }
+      seen.set(row.slug, row)
+    }
   }
-  return [...globalRows, ...projectRows]
+  return [...globalRows, ...userRows, ...projectRows]
 }
 
 function generatedLinks(rows: CanonRow[]): { path: string; target: string }[] {

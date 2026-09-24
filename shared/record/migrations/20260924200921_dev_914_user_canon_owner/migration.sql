@@ -1,0 +1,14 @@
+ALTER TABLE "doc" ADD COLUMN "owner_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "doc_revision" ADD COLUMN "owner_user_id" uuid;--> statement-breakpoint
+DROP INDEX "doc_live_address";--> statement-breakpoint
+CREATE UNIQUE INDEX "doc_live_address" ON "doc" ("space_id","scope",COALESCE("subject", ''),COALESCE("owner_user_id"::text, ''),"slug") WHERE "deleted_at" IS NULL;--> statement-breakpoint
+ALTER TABLE "doc" ADD CONSTRAINT "doc_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "user"("id");--> statement-breakpoint
+ALTER TABLE "doc_revision" ADD CONSTRAINT "doc_revision_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "user"("id");--> statement-breakpoint
+CREATE POLICY "doc_owner_select" ON "doc" AS RESTRICTIVE FOR SELECT TO public USING ("doc"."owner_user_id" IS NULL OR "doc"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_owner_insert" ON "doc" AS RESTRICTIVE FOR INSERT TO public WITH CHECK ("doc"."owner_user_id" IS NULL OR "doc"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_owner_update" ON "doc" AS RESTRICTIVE FOR UPDATE TO public USING ("doc"."owner_user_id" IS NULL OR "doc"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("doc"."owner_user_id" IS NULL OR "doc"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_owner_delete" ON "doc" AS RESTRICTIVE FOR DELETE TO public USING ("doc"."owner_user_id" IS NULL OR "doc"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_revision_owner_select" ON "doc_revision" AS RESTRICTIVE FOR SELECT TO public USING ("doc_revision"."owner_user_id" IS NULL OR "doc_revision"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_revision_owner_insert" ON "doc_revision" AS RESTRICTIVE FOR INSERT TO public WITH CHECK ("doc_revision"."owner_user_id" IS NULL OR "doc_revision"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_revision_owner_update" ON "doc_revision" AS RESTRICTIVE FOR UPDATE TO public USING ("doc_revision"."owner_user_id" IS NULL OR "doc_revision"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("doc_revision"."owner_user_id" IS NULL OR "doc_revision"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "doc_revision_owner_delete" ON "doc_revision" AS RESTRICTIVE FOR DELETE TO public USING ("doc_revision"."owner_user_id" IS NULL OR "doc_revision"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);

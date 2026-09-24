@@ -12,7 +12,7 @@ import {
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
-import { listDocs, removeDoc, setDoc } from '../doc/docs.ts'
+import { listDocs, removeDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
   acceptPackDiff,
@@ -89,6 +89,7 @@ function requestedProject(flags: CanonFlags) {
 function canonRows(project: string) {
   return composeCanonRows(
     listDocs({ scope: 'canon', subject: null }),
+    [],
     listDocs({ scope: 'canon', subject: project }),
   )
 }
@@ -164,6 +165,7 @@ async function canonImportCommand(
   const current = canonRows(project.name).map(({ slug, body }) => ({ slug, body }))
   const next = composeCanonRows(
     global,
+    [],
     rows.map((row) => ({ ...row, subject: project.name })),
   ).map(({ slug, body }) => ({ slug, body }))
   const projectRows = listDocs({ scope: 'canon', subject: project.name })
@@ -241,9 +243,15 @@ function canonHydrateCommand(flags: CanonFlags, presentation: CanonPresentation)
   presentation.log(`hydrated ${count} paths`)
 }
 
-function canonListCommand(flags: CanonFlags, presentation: CanonPresentation): void {
-  const project = requestedProject(flags)
-  for (const row of canonRows(project.name)) {
+async function canonListCommand(flags: CanonFlags, presentation: CanonPresentation): Promise<void> {
+  const rows = flags.has('user')
+    ? composeCanonRows(
+        listDocs({ scope: 'canon', subject: null }),
+        listDocs({ scope: 'canon', subject: null, owner: await signedInDocOwner() }),
+        [],
+      )
+    : canonRows(requestedProject(flags).name)
+  for (const row of rows) {
     const tier = classifyCanonFile({ path: row.slug, text: row.body })
     presentation.log(
       `${row.subject ?? '_'}  ${row.slug}  ${tier ?? 'invalid'}  ${Buffer.byteLength(row.body)}  ${row.updated_at}`,
@@ -423,7 +431,7 @@ async function canonStoreCommand(
 ): Promise<boolean> {
   if (sub === 'import') await canonImportCommand(flags, presentation)
   else if (sub === 'hydrate') canonHydrateCommand(flags, presentation)
-  else if (sub === 'list') canonListCommand(flags, presentation)
+  else if (sub === 'list') await canonListCommand(flags, presentation)
   else return false
   return true
 }
