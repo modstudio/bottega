@@ -270,7 +270,12 @@ export const modules: ArchitectureModule[] = [
     './hosted-secrets.ts',
   ]),
   module('shared/machine-config.ts', ['node:fs', 'node:path', 'zod', './config-directory.ts']),
-  module('shared/config-client.ts', ['./record-session.ts', './record-remedies.ts']),
+  module('shared/config-client.ts', [
+    './http-json.ts',
+    './record-session.ts',
+    './record-remedies.ts',
+  ]),
+  module('shared/http-json.ts', []),
   module('shared/keychain.ts', []),
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', []),

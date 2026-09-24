@@ -1,7 +1,12 @@
 import { db, nowIso, writeTransaction } from './db.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
-import { ingestTrackers, type TrackerResult, trackerProjects } from './ingest/trackers.ts'
+import {
+  ingestTrackers,
+  type TrackerResult,
+  trackerLegError,
+  trackerProjects,
+} from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { pullHostedNotes } from './note-cache.ts'
 import { rollUpDays } from './query.ts'
@@ -49,7 +54,11 @@ export class TrackerPollSchedule {
 
   record(result: TrackerResult) {
     if (result.project === 'backfill') return
-    const previous = this.state.get(result.project) ?? { nextAt: 0, quiet: 0, failures: 0 }
+    const previous = this.state.get(result.project) ?? {
+      nextAt: 0,
+      quiet: 0,
+      failures: 0,
+    }
     const failed = Boolean(result.error || result.skipped)
     const failures = failed ? previous.failures + 1 : 0
     const quiet = failed ? previous.quiet : result.activity ? 0 : previous.quiet + 1
@@ -58,7 +67,11 @@ export class TrackerPollSchedule {
       : result.activity
         ? SLOW_MS
         : Math.min(SLOW_MS * (quiet + 1), QUIET_MAX_MS)
-    this.state.set(result.project, { nextAt: this.clock() + delay, quiet, failures })
+    this.state.set(result.project, {
+      nextAt: this.clock() + delay,
+      quiet,
+      failures,
+    })
   }
 }
 
@@ -77,6 +90,19 @@ async function settleLeg(source: string, work: () => Promise<unknown>): Promise<
     console.error(`hub: ${source} collect failed: ${message}`)
     return { source, ok: false, error: message }
   }
+}
+
+const HOSTED_COLLECT_LEGS = [
+  ['hosted evidence', syncEvidence],
+  ['hosted tasks', pullHostedTasks],
+  ['hosted notes', pullHostedNotes],
+  ['hosted reports', pullHostedReports],
+] as const
+
+async function hostedCollectLegs(): Promise<CollectLegResult[]> {
+  const results: CollectLegResult[] = []
+  for (const [source, work] of HOSTED_COLLECT_LEGS) results.push(await settleLeg(source, work))
+  return results
 }
 
 /** Long enough to outlast a slow pass, short enough that a dead holder frees it. */
@@ -188,8 +214,10 @@ export function leaseHolder(): string | null {
 const stamp = (key: string) =>
   writeTransaction((conn) =>
     conn
-      .query(`INSERT INTO setting (key, value) VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .query(
+        `INSERT INTO setting (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
       .run(key, JSON.stringify(nowIso())),
   )
 
@@ -251,22 +279,12 @@ async function collectSlow(scheduled = false) {
     await settleLeg('tasks', async () => {
       trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
       if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
-      const failures = trackerResults.filter((result) => result.error || result.skipped)
-      if (failures.length)
-        throw new Error(
-          failures
-            .map((result) => `${result.project}: ${result.error ?? result.skipped}`)
-            .join('; '),
-        )
+      const error = trackerLegError(trackerResults)
+      if (error) throw new Error(error)
     }),
   )
   stamp('collect.slow.at')
-  if (process.env.HUB_HOSTED_URL) {
-    results.push(await settleLeg('hosted evidence', syncEvidence))
-    results.push(await settleLeg('hosted tasks', pullHostedTasks))
-    results.push(await settleLeg('hosted notes', pullHostedNotes))
-    results.push(await settleLeg('hosted reports', pullHostedReports))
-  }
+  if (process.env.HUB_HOSTED_URL) results.push(...(await hostedCollectLegs()))
   stamp('collect.at')
   return results
 }
@@ -282,22 +300,20 @@ export async function collectOnce(since: string, only?: string) {
     results.push(
       await settleLeg('tasks', async () => {
         const trackerResults = await ingestTrackers()
-        const failures = trackerResults.filter((result) => result.error || result.skipped)
-        if (failures.length)
-          throw new Error(
-            failures
-              .map((result) => `${result.project}: ${result.error ?? result.skipped}`)
-              .join('; '),
-          )
+        for (const result of trackerResults) {
+          const note = result.skipped
+            ? `skipped: ${result.skipped}`
+            : result.error
+              ? `FAILED: ${result.error}`
+              : `${result.tasks} tasks, ${result.changed} status changes`
+          console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
+        }
+        const error = trackerLegError(trackerResults)
+        if (error) throw new Error(error)
       }),
     )
   }
-  if (!only && process.env.HUB_HOSTED_URL) {
-    results.push(await settleLeg('hosted evidence', syncEvidence))
-    results.push(await settleLeg('hosted tasks', pullHostedTasks))
-    results.push(await settleLeg('hosted notes', pullHostedNotes))
-    results.push(await settleLeg('hosted reports', pullHostedReports))
-  }
+  if (!only && process.env.HUB_HOSTED_URL) results.push(...(await hostedCollectLegs()))
   rollUpDays()
   stamp('collect.at')
   return results

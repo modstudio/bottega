@@ -50,3 +50,26 @@ test('config client refuses a non-JSON response with its source and response fac
     'hosted config refused the response from https://record.test/v1/whoami (status 200, content type text/html)',
   )
 })
+
+test('response diagnostics remove URL credentials, queries, and fragments', async () => {
+  const errors: string[] = []
+  for (const url of [
+    'https://username:password@record.test',
+    'https://record.test?token=query-secret#fragment-secret',
+  ]) {
+    const client = configClient(
+      { ORCH_RECORD_API_URL: url },
+      async () => new Response('html', { headers: { 'content-type': 'text/html' } }),
+      'test',
+    )
+    try {
+      await client.whoami()
+    } catch (error) {
+      errors.push((error as Error).message)
+    }
+  }
+  expect(errors).toHaveLength(2)
+  expect(errors.every((message) => message.includes('https://record.test/'))).toBe(true)
+  for (const secret of ['username', 'password', 'query-secret', 'fragment-secret'])
+    expect(errors.join('\n')).not.toContain(secret)
+})

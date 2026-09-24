@@ -8,6 +8,7 @@ import { taskIdentityDoctor } from '../task-identity.ts'
 import {
   ingestTrackers,
   trackerCredentials,
+  trackerLegError,
   trackerRegistrations,
   upsertTrackerTask,
 } from './trackers.ts'
@@ -27,6 +28,21 @@ describe('tracker register', () => {
     const results = await ingestTrackers()
     expect(results.map((result) => result.project)).toEqual(['alpha'])
     expect(results[0]!.skipped).toContain('FIXTURE_NO_CREDENTIALS_MCP_URL')
+    expect(
+      db()
+        .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.trackers.at'`)
+        .get()?.value,
+    ).toBeString()
+    expect(trackerLegError(results)).toBeNull()
+  })
+
+  test('only tracker errors fail the tasks leg', () => {
+    expect(
+      trackerLegError([{ project: 'missing', tasks: 0, changed: 0, skipped: 'not configured' }]),
+    ).toBeNull()
+    expect(trackerLegError([{ project: 'down', tasks: 0, changed: 0, error: 'unreachable' }])).toBe(
+      'down: unreachable',
+    )
   })
 
   test('an unusable tracker remains an error beside a usable source', () => {

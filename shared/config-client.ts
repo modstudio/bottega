@@ -1,3 +1,4 @@
+import { jsonBody } from './http-json.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { readRecordSessionToken } from './record-session.ts'
 
@@ -93,24 +94,14 @@ function createConfigClient(
       if (signal?.aborted) throw signal.reason
       throw new ConfigClientError('unreachable', route)
     }
-    const contentType = response.headers.get('content-type') ?? 'missing'
-    const isJson = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(contentType)
-    if (!isJson)
+    const body = await jsonBody(response, `${baseUrl}${route}`)
+    if (!body.ok)
       throw new ConfigClientError('response', route, response.status, {
-        url: `${baseUrl}${route}`,
-        contentType,
+        url: body.url,
+        contentType: body.contentType,
       })
-    let value: T
-    try {
-      value = (await response.json()) as T
-    } catch {
-      throw new ConfigClientError('response', route, response.status, {
-        url: `${baseUrl}${route}`,
-        contentType,
-      })
-    }
     if (!response.ok) throw new ConfigClientError('response', route, response.status)
-    return value
+    return body.value as T
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
   return {
@@ -138,7 +129,11 @@ function createConfigClient(
       }),
     deleteEntry: (
       key: string,
-      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+      },
     ) =>
       request<{ deleted: true }>(`/v1/config/entries/${encodeURIComponent(key)}`, {
         method: 'DELETE',
@@ -168,7 +163,11 @@ function createConfigClient(
       }),
     deleteSecret: (
       key: string,
-      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+      },
     ) =>
       request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'DELETE',
@@ -203,7 +202,9 @@ function createConfigClient(
         body: JSON.stringify({ publicKey, label }),
       }),
     revokeMachineKey: (keyId: string) =>
-      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, { method: 'POST' }),
+      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, {
+        method: 'POST',
+      }),
   }
 }
 

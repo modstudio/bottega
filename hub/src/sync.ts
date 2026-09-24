@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
@@ -100,12 +101,23 @@ async function request(
 ) {
   const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}${path}`, {
     method,
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
     body: JSON.stringify(body),
   })
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const bodyResult = await jsonBody(response, url)
+  if (!bodyResult.ok)
+    throw new Error(
+      `hosted evidence refused the response from ${bodyResult.url} (status ${bodyResult.status}, content type ${bodyResult.contentType}): expected JSON. Set HUB_HOSTED_URL and run \`orch record doctor\`.`,
+    )
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`hub hosted evidence ${response.status}${text ? `: ${text}` : ''}`)
+    const value = bodyResult.value as Record<string, unknown> | null
+    throw new Error(
+      `hub hosted evidence ${response.status}${value?.error ? `: ${String(value.error)}` : ''}`,
+    )
   }
 }
 
@@ -124,8 +136,18 @@ function commitLedger<T>(table: string, plan: SyncTablePlan<T>) {
 }
 
 export type SyncResult = {
-  interval: { changed: number; deleted: number; deleteSkipped: boolean; local: number }
-  day: { changed: number; deleted: number; deleteSkipped: boolean; local: number }
+  interval: {
+    changed: number
+    deleted: number
+    deleteSkipped: boolean
+    local: number
+  }
+  day: {
+    changed: number
+    deleted: number
+    deleteSkipped: boolean
+    local: number
+  }
 }
 
 export async function syncEvidence(
@@ -140,7 +162,12 @@ export async function syncEvidence(
       deleteSkipped: interval.deleteSkipped,
       local: interval.localCount,
     },
-    day: { changed: day.changed.length, deleted: 0, deleteSkipped: false, local: day.localCount },
+    day: {
+      changed: day.changed.length,
+      deleted: 0,
+      deleteSkipped: false,
+      local: day.localCount,
+    },
   }
   if (options.dryRun) return result
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
@@ -150,7 +177,9 @@ export async function syncEvidence(
   if (!token) throw new Error('record session is absent; run `orch record sign-in`')
   const fetchImpl = options.fetch ?? fetch
   for (const group of batches(interval.changed.map((entry) => entry.row)))
-    await request(fetchImpl, baseUrl, token, '/v1/evidence/intervals', 'PUT', { rows: group })
+    await request(fetchImpl, baseUrl, token, '/v1/evidence/intervals', 'PUT', {
+      rows: group,
+    })
   for (const group of batches(
     interval.deleted.map((key) => {
       const values = JSON.parse(key) as [string, string, string]
@@ -164,7 +193,9 @@ export async function syncEvidence(
     await request(fetchImpl, baseUrl, token, '/v1/evidence/intervals', 'DELETE', { keys: group })
   commitLedger('interval', interval)
   for (const group of batches(day.changed.map((entry) => entry.row)))
-    await request(fetchImpl, baseUrl, token, '/v1/evidence/days', 'PUT', { rows: group })
+    await request(fetchImpl, baseUrl, token, '/v1/evidence/days', 'PUT', {
+      rows: group,
+    })
   commitLedger('day', day)
   return result
 }

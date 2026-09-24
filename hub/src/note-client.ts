@@ -1,3 +1,4 @@
+import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedTask } from './hosted-tasks.ts'
@@ -24,13 +25,22 @@ async function request<T>(
   try {
     response = await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}${path}`, {
       method,
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
   }
-  const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const bodyResult = await jsonBody(response, url)
+  if (!bodyResult.ok)
+    throw new Error(
+      `hosted notes refused the response from ${bodyResult.url} (status ${bodyResult.status}, content type ${bodyResult.contentType}): expected JSON. ${REMEDY}`,
+    )
+  const value = bodyResult.value as Record<string, unknown> | null
   if (!response.ok)
     throw new Error(
       `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,

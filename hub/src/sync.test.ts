@@ -1,6 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { db, writeTransaction } from './db.ts'
 import { evidenceApi } from './evidence-api.ts'
 import { batches, contentHash, diffRows, signedInRecordUserId, syncEvidence } from './sync.ts'
+
+beforeEach(resetFixtureStore)
 
 describe('evidence sync planning', () => {
   test('captures the signed-in record user and keeps an absent session null', async () => {
@@ -76,6 +80,27 @@ describe('evidence sync planning', () => {
     expect(
       batches(Array.from({ length: 1_001 }, (_, index) => index)).map((x) => x.length),
     ).toEqual([500, 500, 1])
+  })
+
+  test('an HTML success response does not advance the evidence ledger', async () => {
+    writeTransaction((conn) => {
+      conn
+        .query(`INSERT INTO day(day,collected_at) VALUES (?,?)`)
+        .run('2026-09-24', '2026-09-24T12:00:00.000Z')
+    })
+
+    await expect(
+      syncEvidence({
+        baseUrl: 'https://user:password@hub.example.test?token=query-secret',
+        token: 'session',
+        fetch: async () =>
+          new Response('<html>app</html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          }),
+      }),
+    ).rejects.toThrow('hosted evidence refused the response from https://hub.example.test/')
+    expect(db().query('SELECT * FROM record_ledger').all()).toEqual([])
   })
 })
 
