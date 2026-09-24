@@ -95,6 +95,7 @@ test('turn ref looks up the turn id not the root (mutation: look up parsed.root 
 })
 
 const fixtureTask = (overrides: Partial<FixtureTask> = {}): FixtureTask => ({
+  record_id: 'fixture-task-record',
   key: 'ALP-899',
   project: 'alpha',
   title: 'No assignment field',
@@ -126,22 +127,34 @@ test('fixture task reclaim deletes the task and all child rows in one fixture-st
     connection
       .query(
         `INSERT INTO task
-          (key,project,title,status,status_category,opened_at,updated_at,source,first_seen,last_seen)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          (record_id,key,project,title,status,status_category,opened_at,updated_at,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run('ALP-899', 'alpha', 'No assignment field', null, null, null, null, 'mcp', '', '')
+      .run(
+        'fixture-task-record',
+        'ALP-899',
+        'alpha',
+        'No assignment field',
+        null,
+        null,
+        null,
+        null,
+        'mcp',
+        '',
+        '',
+      )
     connection
-      .query('INSERT INTO task_comment(task_key,body,created_at) VALUES (?,?,?)')
-      .run('ALP-899', 'comment', '')
+      .query('INSERT INTO task_comment(task_key,task_record_id,body,created_at) VALUES (?,?,?,?)')
+      .run('ALP-899', 'fixture-task-record', 'comment', '')
     connection
       .query(
-        `INSERT INTO task_document(task_key,title,body,version,created_at,updated_at)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO task_document(task_key,task_record_id,title,body,version,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?)`,
       )
-      .run('ALP-899', 'document', 'body', 'v1', '', '')
+      .run('ALP-899', 'fixture-task-record', 'document', 'body', 'v1', '', '')
     connection
-      .query('INSERT INTO task_status_event(task_key,at,to_status) VALUES (?,?,?)')
-      .run('ALP-899', '', 'open')
+      .query('INSERT INTO task_status_event(task_key,task_record_id,at,to_status) VALUES (?,?,?,?)')
+      .run('ALP-899', 'fixture-task-record', '', 'open')
   })
 
   const dryRun = await reclaimFixtureQuestions(true, new Set())

@@ -447,6 +447,7 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   if (cached) return cached
   const d = new Database(':memory:')
   try {
+    d.exec('PRAGMA foreign_keys = ON')
     for (const entry of migrationJournal(folder)) {
       executeMigrationSource(d, migrationSource(entry, folder))
     }

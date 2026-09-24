@@ -230,9 +230,9 @@ describe('suggestion notes', () => {
     writeTransaction((conn) => {
       const at = new Date().toISOString()
       conn
-        .query(`INSERT INTO task(key,project,title,status,status_category,source,first_seen,last_seen)
-        VALUES ('DEV-9998','workshop','promoted','open','open','local',?,?)`)
-        .run(at, at)
+        .query(`INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
+        VALUES (?,'DEV-9998','workshop','promoted','open','open','local',?,?)`)
+        .run(crypto.randomUUID(), at, at)
       conn.query(`UPDATE note SET promoted_task='DEV-9998' WHERE id=?`).run(promoted.id)
     })
     await drop(dropped.id, 'resolved')

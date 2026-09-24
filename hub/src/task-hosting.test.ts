@@ -265,8 +265,8 @@ describe('hosted-only task safety', () => {
         VALUES ('01990000-0000-7000-8000-000000000101','DEV-990','workshop','old','open','open','local',?,?)`)
         .run(at, at)
       conn
-        .query(`INSERT INTO task_document(record_id,task_key,title,body,version,created_at,updated_at)
-        VALUES ('01990000-0000-7000-8000-000000000102','DEV-990','old','body','v1',?,?)`)
+        .query(`INSERT INTO task_document(record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
+        VALUES ('01990000-0000-7000-8000-000000000102','DEV-990','01990000-0000-7000-8000-000000000101','old','body','v1',?,?)`)
         .run(at, at)
     })
     applyHostedTaskChanges({
@@ -341,16 +341,54 @@ describe('hosted-only task safety', () => {
     ).toBe('01990000-0000-7000-8000-000000000101')
   })
 
-  test('cache pull reconciles a child applied before its parent', () => {
-    const at = '2026-09-24T12:00:00.000Z'
+  test('cache pull updates a task by hosted record id when its label changes', () => {
+    const at = '2026-09-24T11:00:00.000Z'
+    const id = '01990000-0000-7000-8000-000000000180'
     writeTransaction((conn) =>
       conn
-        .query(
-          `INSERT INTO task(key,project,title,status,status_category,source,first_seen,last_seen)
-           VALUES ('DEV-991','workshop','parent before hosting','open','open','local',?,?)`,
-        )
-        .run(at, at),
+        .query(`INSERT INTO task(record_id,key,project,title,source,first_seen,last_seen)
+          VALUES (?,'DEV-980','workshop','old label','local',?,?)`)
+        .run(id, at, at),
     )
+    applyHostedTaskChanges({
+      tasks: [
+        {
+          id,
+          key: 'DEV-981',
+          project: 'workshop',
+          project_name: 'workshop',
+          title: 'renamed',
+          status: 'open',
+          status_category: 'open',
+          parent_key: null,
+          body: null,
+          assignee: null,
+          opened_at: at,
+          closed_at: null,
+          source: 'local',
+          first_seen: at,
+          last_seen: at,
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+      ],
+      comments: [],
+      documents: [],
+      statusEvents: [],
+      cursor: at,
+    })
+    expect(
+      db()
+        .query<{ key: string; title: string }, [string]>(
+          'SELECT key,title FROM task WHERE record_id=?',
+        )
+        .get(id),
+    ).toEqual({ key: 'DEV-981', title: 'renamed' })
+  })
+
+  test('cache pull reconciles a child applied before its parent', () => {
+    const at = '2026-09-24T12:00:00.000Z'
     const common = {
       project: 'workshop',
       project_name: 'workshop',

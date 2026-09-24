@@ -155,13 +155,10 @@ export function claimTaskIdentity(
 }
 
 export type TaskIdentityDoctor = {
-  tasksWithoutRecordId: number
   trackerTasksWithoutExternalId: number
-  commentsWithoutTaskRecordId: number
-  documentsWithoutTaskRecordId: number
-  statusEventsWithoutTaskRecordId: number
   parentsWithoutRecordId: number
   promotedNotesWithoutTaskRecordId: number
+  collidedKeyUncertainties: number
   sharedKeys: { key: string; projects: string[]; lastSeen: string }[]
 }
 
@@ -176,23 +173,24 @@ export function taskIdentityDoctor(conn: Database = db()): TaskIdentityDoctor {
        ORDER BY key`,
     )
     .all()
-  const missingRelationships = taskIdentityRelationships.map((relationship) =>
-    count(
-      conn,
-      `SELECT COUNT(*) count FROM ${relationship.table} WHERE ${relationship.keyColumn} IS NOT NULL AND ${relationship.recordColumn} IS NULL`,
-    ),
-  )
   return {
-    tasksWithoutRecordId: count(conn, 'SELECT COUNT(*) count FROM task WHERE record_id IS NULL'),
     trackerTasksWithoutExternalId: count(
       conn,
       "SELECT COUNT(*) count FROM task WHERE source='mcp' AND external_id IS NULL",
     ),
-    parentsWithoutRecordId: missingRelationships[0]!,
-    commentsWithoutTaskRecordId: missingRelationships[1]!,
-    documentsWithoutTaskRecordId: missingRelationships[2]!,
-    statusEventsWithoutTaskRecordId: missingRelationships[3]!,
-    promotedNotesWithoutTaskRecordId: missingRelationships[4]!,
+    parentsWithoutRecordId: count(
+      conn,
+      'SELECT COUNT(*) count FROM task WHERE parent_key IS NOT NULL AND parent_record_id IS NULL',
+    ),
+    promotedNotesWithoutTaskRecordId: count(
+      conn,
+      'SELECT COUNT(*) count FROM note WHERE promoted_task IS NOT NULL AND promoted_task_record_id IS NULL',
+    ),
+    collidedKeyUncertainties: count(
+      conn,
+      `SELECT COUNT(*) count FROM task_identity_migration_repairs
+       WHERE reason IN ('collided key; attribution uncertain', 'tracker label collision')`,
+    ),
     sharedKeys: claims.map((row) => ({
       key: row.key,
       projects: row.projects.split(',').sort(),
@@ -203,13 +201,10 @@ export function taskIdentityDoctor(conn: Database = db()): TaskIdentityDoctor {
 
 export function formatTaskIdentityDoctor(identity: TaskIdentityDoctor): string[] {
   return [
-    `task identity  tasks without record id ${identity.tasksWithoutRecordId}`,
     `task identity  tracker tasks without external id ${identity.trackerTasksWithoutExternalId}`,
-    `task identity  comments without task record id ${identity.commentsWithoutTaskRecordId}`,
-    `task identity  documents without task record id ${identity.documentsWithoutTaskRecordId}`,
-    `task identity  status events without task record id ${identity.statusEventsWithoutTaskRecordId}`,
     `task identity  parents without record id ${identity.parentsWithoutRecordId}`,
     `task identity  promoted notes without task record id ${identity.promotedNotesWithoutTaskRecordId}`,
+    `task identity  collided key uncertainties ${identity.collidedKeyUncertainties}`,
     ...identity.sharedKeys.map(
       (collision) =>
         `task identity  shared key ${collision.key} projects=${collision.projects.join(',')} last_seen=${collision.lastSeen}`,

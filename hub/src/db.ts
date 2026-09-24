@@ -149,8 +149,19 @@ export function unauthorizedHubMigrationMessage(path = DB_PATH): string {
   )
 }
 
+export function formatMigrationRepairSummary(
+  repairs: { reason: string; count: number }[],
+): string | null {
+  if (!repairs.length) return null
+  return `task_identity_migration_repairs: ${repairs.map((repair) => `${repair.reason}=${repair.count}`).join(', ')}`
+}
+
 /** The only production path that creates or changes the hub schema. */
-export function migrateDatabase(): { path: string; versions: string[] } {
+export function migrateDatabase(): {
+  path: string
+  versions: string[]
+  repairs: { reason: string; count: number }[]
+} {
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
   if (
@@ -167,7 +178,30 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   const d = new Database(DB_PATH, { create: true })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-    return { path: DB_PATH, versions: applyMigrations(d) }
+    const repairCounts = () => {
+      const exists = d
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='task_identity_migration_repairs'",
+        )
+        .get()?.count
+      return new Map(
+        exists
+          ? d
+              .query<{ reason: string; count: number }, []>(
+                `SELECT reason,COUNT(*) count FROM task_identity_migration_repairs
+                 GROUP BY reason ORDER BY reason`,
+              )
+              .all()
+              .map((row) => [row.reason, row.count] as const)
+          : [],
+      )
+    }
+    const before = repairCounts()
+    const versions = applyMigrations(d)
+    const repairs = [...repairCounts()]
+      .map(([reason, count]) => ({ reason, count: count - (before.get(reason) ?? 0) }))
+      .filter((row) => row.count > 0)
+    return { path: DB_PATH, versions, repairs }
   } finally {
     d.close()
   }

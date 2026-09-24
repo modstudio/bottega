@@ -39,6 +39,7 @@ export type FixtureInterval = {
 }
 
 export type FixtureTask = {
+  record_id: string
   key: string
   project: string
   title: string | null
@@ -129,7 +130,7 @@ export async function reclaimFixtureQuestions(
   const selected = fixtureQuestionsWithoutRuns(questions, refs)
   if (dryRun) {
     const tasks = database
-      .query('SELECT key, project, title, opened_at FROM task ORDER BY key')
+      .query('SELECT record_id, key, project, title, opened_at FROM task ORDER BY key')
       .all() as FixtureTask[]
     return {
       rows: selected,
@@ -140,7 +141,7 @@ export async function reclaimFixtureQuestions(
   let selectedTasks: FixtureTask[] = []
   writeTransaction((connection) => {
     const tasks = connection
-      .query('SELECT key, project, title, opened_at FROM task ORDER BY key')
+      .query('SELECT record_id, key, project, title, opened_at FROM task ORDER BY key')
       .all() as FixtureTask[]
     selectedTasks = fixtureTasksToReclaim(tasks, registeredProjects)
     if (selected.length || selectedIntervals.length || selectedTasks.length) {
@@ -148,15 +149,9 @@ export async function reclaimFixtureQuestions(
       for (const row of selected) removeQuestion.run(row.question_id)
       const removeInterval = connection.query('DELETE FROM interval WHERE id=?')
       for (const interval of selectedIntervals) removeInterval.run(interval.id)
-      const removeTaskComments = connection.query('DELETE FROM task_comment WHERE task_key=?')
-      const removeTaskDocuments = connection.query('DELETE FROM task_document WHERE task_key=?')
-      const removeTaskEvents = connection.query('DELETE FROM task_status_event WHERE task_key=?')
-      const removeTask = connection.query('DELETE FROM task WHERE key=?')
+      const removeTask = connection.query('DELETE FROM task WHERE record_id=?')
       for (const task of selectedTasks) {
-        removeTaskComments.run(task.key)
-        removeTaskDocuments.run(task.key)
-        removeTaskEvents.run(task.key)
-        removeTask.run(task.key)
+        removeTask.run(task.record_id)
       }
     }
   })

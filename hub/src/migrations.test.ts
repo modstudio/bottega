@@ -3,8 +3,15 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
+import {
+  closeDatabaseForFixture,
+  db,
+  enableSchemaReload,
+  formatMigrationRepairSummary,
+  writeTransaction,
+} from './db.ts'
 import {
   applyMigrations,
   CONNECTION_SCHEMA_INVARIANT,
@@ -29,6 +36,23 @@ const fresh = () => {
   d.exec('PRAGMA foreign_keys = ON')
   applyMigrations(d)
   return d
+}
+
+const migratedThrough = (lastIndex: number, path = ':memory:') => {
+  const folder = mkdtempSync(join(tmpdir(), 'hub-migration-stage-'))
+  mkdirSync(join(folder, 'meta'))
+  const entries = migrationJournal().slice(0, lastIndex + 1)
+  for (const entry of entries)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries }),
+  )
+  const database = new Database(path)
+  database.exec('PRAGMA foreign_keys = ON')
+  applyMigrations(database, folder)
+  rmSync(folder, { recursive: true, force: true })
+  return database
 }
 
 const baselineFresh = () => {
@@ -132,7 +156,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '725ae1dc3270693faad473803f2191979de4ca47b41693dee9c2931b07f63f75',
+      '049f49f927ef5e57e3e17c3746c53add8180451f80b4381f7f0fdec889e4b4af',
     )
     d.close()
   })
@@ -156,9 +180,8 @@ describe('hub migration journal', () => {
     ahead.close()
   })
 
-  test('a matching pre-journal store adopts 0000 without rebuilding its schema', () => {
+  test('a matching pre-journal store adopts 0000 and reaches the current schema', () => {
     const d = baselineFresh()
-    const before = applicationSchemaRows(d)
     expect(applyMigrations(d)).toEqual([
       '0000_hub_baseline',
       '0001_note',
@@ -169,20 +192,9 @@ describe('hub migration journal', () => {
       '0006_send_record_id',
       '0007_interval_attribution',
       '0008_task_identity',
+      '0009_task_record_identity',
     ])
-    stripPostBaselineApplicationObjects(d)
-    const after = applicationSchemaRows(d)
-    expect(
-      after.map((row) => ({
-        ...row,
-        sql: row.sql
-          ?.replace(/, record_id TEXT/g, '')
-          .replace(/, external_id TEXT/g, '')
-          .replace(/, parent_record_id TEXT/g, '')
-          .replace(/, task_record_id TEXT/g, '')
-          .replace(/, user_id TEXT/g, ''),
-      })),
-    ).toEqual(before)
+    expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
   })
 
@@ -289,6 +301,7 @@ describe('hub migration journal', () => {
       '0006_send_record_id',
       '0007_interval_attribution',
       '0008_task_identity',
+      '0009_task_record_identity',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -485,8 +498,8 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('task identity backfill fills every existing key relationship', () => {
-    const d = fresh()
+  test('task identity rebuild backfills relationships and cascades record-id updates', () => {
+    const d = migratedThrough(8)
     d.exec(`
       INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
       VALUES ('parent-id','DEV-1','workshop','local','2026-01-01','2026-01-01');
@@ -497,26 +510,254 @@ describe('hub migration journal', () => {
       VALUES ('DEV-2','doc','body','v1','2026-01-01','2026-01-01');
       INSERT INTO task_status_event(task_key,at,to_status)
       VALUES ('DEV-2','2026-01-01','open');
-      UPDATE note SET promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
+      INSERT INTO task_comment(id,task_key,task_record_id,body,created_at)
+      VALUES (10,'DEV-2','dangling-comment','dangling','2026-01-01');
+      INSERT INTO task_document(id,task_key,task_record_id,title,body,version,created_at,updated_at)
+      VALUES (20,'DEV-2','dangling-document','dangling','body','v1','2026-01-01','2026-01-01');
+      INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status)
+      VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
+      UPDATE note SET project='workshop',promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
-    expect(applyMigrations(d)).toEqual([])
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(
+      d
+        .query(
+          `SELECT table_name,row_id,task_key,old_record_id,new_record_id
+         FROM task_identity_migration_repairs
+         WHERE table_name IN ('task_comment','task_document','task_status_event')
+         ORDER BY table_name`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        table_name: 'task_comment',
+        row_id: '1',
+        task_key: 'DEV-2',
+        old_record_id: null,
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_comment',
+        row_id: '10',
+        task_key: 'DEV-2',
+        old_record_id: 'dangling-comment',
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_document',
+        row_id: '1',
+        task_key: 'DEV-2',
+        old_record_id: null,
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_document',
+        row_id: '20',
+        task_key: 'DEV-2',
+        old_record_id: 'dangling-document',
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_status_event',
+        row_id: '1',
+        task_key: 'DEV-2',
+        old_record_id: null,
+        new_record_id: 'child-id',
+      },
+      {
+        table_name: 'task_status_event',
+        row_id: '30',
+        task_key: 'DEV-2',
+        old_record_id: 'dangling-event',
+        new_record_id: 'child-id',
+      },
+    ])
     expect(d.query('SELECT parent_record_id FROM task WHERE key="DEV-2"').get()).toEqual({
       parent_record_id: 'parent-id',
     })
-    expect(d.query('SELECT task_record_id FROM task_comment').get()).toEqual({
-      task_record_id: 'child-id',
-    })
-    expect(d.query('SELECT task_record_id FROM task_document').get()).toEqual({
-      task_record_id: 'child-id',
-    })
-    expect(d.query('SELECT task_record_id FROM task_status_event').get()).toEqual({
-      task_record_id: 'child-id',
-    })
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_comment').all()).toEqual([
+      { task_record_id: 'child-id' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_document').all()).toEqual([
+      { task_record_id: 'child-id' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_status_event').all()).toEqual([
+      { task_record_id: 'child-id' },
+    ])
     expect(
       d.query("SELECT promoted_task_record_id FROM note WHERE promoted_task='DEV-2'").get(),
     ).toEqual({
       promoted_task_record_id: 'child-id',
     })
+    expect(
+      d
+        .query(
+          `SELECT reason,COUNT(*) count FROM task_identity_migration_repairs
+           GROUP BY reason ORDER BY reason`,
+        )
+        .all(),
+    ).toEqual([
+      { reason: 'dangling task record id; attached by key', count: 3 },
+      { reason: 'missing parent record id; attached by project and key', count: 1 },
+      { reason: 'missing promoted task record id; attached by project and key', count: 1 },
+      { reason: 'missing task record id; attached by key', count: 3 },
+    ])
+    d.exec("UPDATE task SET record_id='child-id-new' WHERE record_id='child-id'")
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_comment').all()).toEqual([
+      { task_record_id: 'child-id-new' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_document').all()).toEqual([
+      { task_record_id: 'child-id-new' },
+    ])
+    expect(d.query('SELECT DISTINCT task_record_id FROM task_status_event').all()).toEqual([
+      { task_record_id: 'child-id-new' },
+    ])
+    d.close()
+  })
+
+  test('task identity rebuild mints ordered UUID-v7 ids and keeps its repair report', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-task-id-report-'))
+    const path = join(dir, 'hub.db')
+    const d = migratedThrough(8, path)
+    const prior = newRecordId()
+    const priorTimestamp = Number.parseInt(prior.slice(0, 8) + prior.slice(9, 13), 16)
+    while (Date.now() <= priorTimestamp) {}
+    d.exec(`
+      INSERT INTO task(key,project,source,first_seen,last_seen)
+      VALUES ('MINT-1','workshop','local','2026-01-01','2026-01-01')
+    `)
+    const before = Date.now()
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    const after = Date.now()
+    const minted = d
+      .query<{ record_id: string }, []>("SELECT record_id FROM task WHERE key='MINT-1'")
+      .get()!.record_id
+    expect(minted).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    const mintedTimestamp = Number.parseInt(minted.slice(0, 8) + minted.slice(9, 13), 16)
+    expect(mintedTimestamp).toBeGreaterThanOrEqual(before)
+    expect(mintedTimestamp).toBeLessThanOrEqual(after)
+    expect(minted > prior).toBe(true)
+    d.close()
+
+    const reopened = new Database(path)
+    expect(
+      reopened
+        .query(
+          `SELECT table_name,task_key,new_record_id,reason,projects
+           FROM task_identity_migration_repairs
+           WHERE reason='missing task record id; minted UUID v7'`,
+        )
+        .get(),
+    ).toEqual({
+      table_name: 'task',
+      task_key: 'MINT-1',
+      new_record_id: minted,
+      reason: 'missing task record id; minted UUID v7',
+      projects: 'workshop',
+    })
+    reopened.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('hub migrate formats a one-line repair summary naming the durable table', () => {
+    expect(
+      formatMigrationRepairSummary([
+        { reason: 'missing task record id; minted UUID v7', count: 1 },
+        { reason: 'dangling task record id; attached by key', count: 2 },
+      ]),
+    ).toBe(
+      'task_identity_migration_repairs: missing task record id; minted UUID v7=1, dangling task record id; attached by key=2',
+    )
+    expect(formatMigrationRepairSummary([])).toBeNull()
+  })
+
+  test('task identity rebuild repairs a mixed tracker row and records shared-key uncertainty', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-mixed-task-'))
+    const path = join(dir, 'hub.db')
+    const d = migratedThrough(8, path)
+    d.exec(`
+      INSERT INTO task(record_id,external_id,key,project,title,status,status_category,source,first_seen,last_seen)
+      VALUES ('01a0afc8-b7b1-742a-ab2c-31e3d53c34d0','019e9824-0c10-7a73-910c-a95bd485c93d',
+        'OPS-21','starship','Mixed survivor','started','active','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task(record_id,external_id,key,project,source,first_seen,last_seen) VALUES
+        ('ambiguous-record','wrong-ambiguous','AMB-1','starship','mcp','2026-01-01','2026-01-01'),
+        ('unclaimed-record','wrong-unclaimed','NONE-1','starship','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen) VALUES
+        ('stopal','019e9824-0c10-7a73-910c-a95bd485c93d','OPS-21','2026-01-01','2026-01-01'),
+        ('starship','c7dc4d23-ebee-4851-9314-69ac4d45a4ee','OPS-21','2026-01-01','2026-01-01'),
+        ('starship','ambiguous-one','AMB-1','2026-01-01','2026-01-01'),
+        ('starship','ambiguous-two','AMB-1','2026-01-01','2026-01-01');
+      INSERT INTO task_status_event(task_key,at,to_status)
+      VALUES ('OPS-21','2026-01-01','active');
+    `)
+
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(
+      d
+        .query(
+          `SELECT table_name,row_id,task_key,old_external_id,new_external_id,reason,projects
+           FROM task_identity_migration_repairs
+           WHERE table_name='task' OR reason='collided key; attribution uncertain'
+           ORDER BY table_name,row_id,reason`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        table_name: 'task',
+        row_id: '01a0afc8-b7b1-742a-ab2c-31e3d53c34d0',
+        task_key: 'OPS-21',
+        old_external_id: '019e9824-0c10-7a73-910c-a95bd485c93d',
+        new_external_id: 'c7dc4d23-ebee-4851-9314-69ac4d45a4ee',
+        reason: 'external id did not match identity claim; normalized by project and key',
+        projects: null,
+      },
+      {
+        table_name: 'task',
+        row_id: 'ambiguous-record',
+        task_key: 'AMB-1',
+        old_external_id: 'wrong-ambiguous',
+        new_external_id: null,
+        reason: 'external id did not match identity claim; no unique project and key claim',
+        projects: null,
+      },
+      {
+        table_name: 'task',
+        row_id: 'unclaimed-record',
+        task_key: 'NONE-1',
+        old_external_id: 'wrong-unclaimed',
+        new_external_id: null,
+        reason: 'external id did not match identity claim; no unique project and key claim',
+        projects: null,
+      },
+      {
+        table_name: 'task_status_event',
+        row_id: '1',
+        task_key: 'OPS-21',
+        old_external_id: null,
+        new_external_id: null,
+        reason: 'collided key; attribution uncertain',
+        projects: 'starship,stopal',
+      },
+    ])
+    expect(d.query(`SELECT project,external_id FROM task WHERE key='OPS-21'`).get()).toEqual({
+      project: 'starship',
+      external_id: 'c7dc4d23-ebee-4851-9314-69ac4d45a4ee',
+    })
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('task identity rebuild refuses and names an unresolvable child', () => {
+    const d = migratedThrough(8)
+    d.exec('PRAGMA foreign_keys = OFF')
+    d.exec(`INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status) VALUES
+      (1,'MISSING-42',NULL,'2026-01-01','open'),
+      (2,'MISSING-43','dangling-record','2026-01-01','open')`)
+    d.exec('PRAGMA foreign_keys = ON')
+    expect(() => applyMigrations(d)).toThrow(
+      'unresolved task_status_event rows: 1:MISSING-42, 2:MISSING-43',
+    )
+    expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
     d.close()
   })
 

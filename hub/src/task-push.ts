@@ -10,7 +10,7 @@ import {
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
-import { taskIdentityRelationships } from './task-identity.ts'
+import { resolveTask } from './task-identity.ts'
 
 type Options = { dryRun?: boolean; baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 type ChildRow = {
@@ -125,18 +125,13 @@ function persistMirrorBatch(
   if (!newlyAssigned.length && !adoptions.length) return
   writeTransaction((conn) => {
     if (name === 'tasks') {
-      const update = conn.query(`UPDATE task SET record_id=? WHERE key=? AND record_id IS NULL`)
+      const update = conn.query(`UPDATE task SET record_id=? WHERE record_id=?`)
       for (const row of newlyAssigned) {
         const id = row.id as string
         const key = row.key as string
-        update.run(id, key)
-        for (const relationship of taskIdentityRelationships)
-          conn
-            .query(
-              `UPDATE ${relationship.table} SET ${relationship.recordColumn}=?
-               WHERE ${relationship.keyColumn}=? AND ${relationship.recordColumn} IS NULL`,
-            )
-            .run(id, key)
+        const project = row.project as string
+        const previousRecordId = resolveTask(conn, key, project)
+        update.run(id, previousRecordId)
       }
     } else {
       const table = {
