@@ -82,6 +82,16 @@ export class RecordDocError extends Error {
 type Tenant = { url: string } & TenantPrincipal
 type RecordCursor = { at: string; id: string }
 
+export type RecordDocListInput = {
+  scope?: string
+  subject?: string | null
+  updatedSince?: string
+  limit: number
+  cursor: RecordCursor | null
+  includeDeleted: boolean
+  acrossReadableSpaces: boolean
+}
+
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
@@ -189,23 +199,16 @@ function assertWrite(refusal: string | null): void {
   if (refusal) throw new RecordDocError(refusal)
 }
 
-export async function listRecordDocs(
-  input: Tenant & {
-    scope?: string
-    subject?: string | null
-    updatedSince?: string
-    limit: number
-    cursor: RecordCursor | null
-    includeDeleted: boolean
-  },
-): Promise<RecordDoc[]> {
+export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
   return tenant(input, async (tx) => {
+    const spaceIds = input.spaceIds?.length ? input.spaceIds : [input.spaceId]
+    const selectedSpaceIds = input.acrossReadableSpaces ? spaceIds : [input.spaceId]
     const rows = await tx`
       SELECT d.*, s.name AS space_name, p.name AS project_name
       FROM doc d
       JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
-      WHERE d.space_id=${input.spaceId}::uuid
+      WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
         AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
         AND (
           ${input.subject === undefined}::boolean

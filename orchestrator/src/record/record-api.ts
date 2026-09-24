@@ -18,7 +18,12 @@ import type {
   MachineKey,
 } from './record-config.ts'
 import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
-import type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-docs.ts'
+import type {
+  RecordDoc,
+  RecordDocImportInput,
+  RecordDocListInput,
+  RecordDocRevision,
+} from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
 import type { RecordProject } from './record-projects.ts'
 import type {
@@ -70,16 +75,7 @@ type Deps = {
   ): Promise<Record<string, unknown>[]>
   readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
   readProjects(input: Tenant): Promise<RecordProject[]>
-  listDocs(
-    input: Tenant & {
-      scope?: string
-      subject?: string | null
-      updatedSince?: string
-      limit: number
-      cursor: RecordCursor | null
-      includeDeleted: boolean
-    },
-  ): Promise<RecordDoc[]>
+  listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
   readDoc(input: Tenant & { id: string }): Promise<RecordDoc | null>
   listDocRevisions(input: Tenant & { id: string }): Promise<RecordDocRevision[] | null>
   upsertDoc(
@@ -749,6 +745,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
           .enum(['true', 'false'])
           .optional()
           .transform((value) => value === 'true'),
+        acrossReadableSpaces: z
+          .enum(['true', 'false'])
+          .optional()
+          .transform((value) => value === 'true'),
       })
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
@@ -766,6 +766,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       limit: query.data.limit,
       cursor,
       includeDeleted: Boolean(query.data.includeDeleted),
+      acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
     })
     return context.json(
       page(items, query.data.limit, (item) => ({

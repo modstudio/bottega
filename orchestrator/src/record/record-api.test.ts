@@ -196,6 +196,42 @@ describe('record API', () => {
     expect(seen).toEqual([['space-a', 'space-b'], ['space-a'], ['space-b']])
   })
 
+  test('doc lists opt into readable spaces while the default stays active-space scoped', async () => {
+    const seen: Array<{ spaceId: string; spaceIds: string[]; acrossReadableSpaces: boolean }> = []
+    const personal = {
+      ...identity,
+      memberships: [
+        ...identity.memberships,
+        { space_id: 'space-b', name: 'Space B', slug: 'space-b' },
+      ],
+    }
+    const app = appWith(personal, {
+      listDocs: async (input: {
+        spaceId: string
+        spaceIds: string[]
+        acrossReadableSpaces: boolean
+      }) => {
+        seen.push(input)
+        return []
+      },
+    })
+
+    expect((await app.request('/v1/docs')).status).toBe(200)
+    expect((await app.request('/v1/docs?acrossReadableSpaces=true')).status).toBe(200)
+    expect(seen).toEqual([
+      expect.objectContaining({
+        spaceId: 'space-a',
+        spaceIds: ['space-a', 'space-b'],
+        acrossReadableSpaces: false,
+      }),
+      expect.objectContaining({
+        spaceId: 'space-a',
+        spaceIds: ['space-a', 'space-b'],
+        acrossReadableSpaces: true,
+      }),
+    ])
+  })
+
   test('sets only a member space and refuses a non-member space', async () => {
     let selected = ''
     const member = appWith(identity, {

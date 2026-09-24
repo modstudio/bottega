@@ -132,11 +132,29 @@ export async function proveHostedDocs(input: {
   origin: string
   token: string
   otherToken: string
+  memberSpaceId: string
+  scoreRunId: string
 }): Promise<void> {
   const headers = {
     Authorization: `Bearer ${input.token}`,
     'content-type': 'application/json',
   }
+  const whoami = await fetch(`${input.origin}/v1/whoami`, { headers })
+  expect(whoami.status).toBe(200)
+  const identity = (await whoami.json()) as {
+    activeSpaceId: string
+    personalSpaceId: string
+  }
+  expect(identity.activeSpaceId).toBe(identity.personalSpaceId)
+  const selectSpace = async (spaceId: string) => {
+    const response = await fetch(`${input.origin}/v1/active-space`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ spaceId }),
+    })
+    expect(response.status).toBe(200)
+  }
+  await selectSpace(input.memberSpaceId)
   const put = await fetch(`${input.origin}/v1/docs`, {
     method: 'PUT',
     headers,
@@ -155,6 +173,28 @@ export async function proveHostedDocs(input: {
   const created = (await put.json()) as { id: string; revisionId: string }
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
+  await selectSpace(identity.personalSpaceId)
+  const personalDefault = await fetch(`${input.origin}/v1/docs?scope=machine`, { headers })
+  expect(personalDefault.status).toBe(200)
+  expect(
+    ((await personalDefault.json()) as { items: { id: string }[] }).items.some(
+      (doc) => doc.id === created.id,
+    ),
+  ).toBe(false)
+  const personalLens = await fetch(
+    `${input.origin}/v1/docs?scope=machine&acrossReadableSpaces=true`,
+    { headers },
+  )
+  expect(personalLens.status).toBe(200)
+  expect(
+    ((await personalLens.json()) as { items: { id: string }[] }).items.some(
+      (doc) => doc.id === created.id,
+    ),
+  ).toBe(true)
+  const personalDetail = await fetch(`${input.origin}/v1/docs/${created.id}`, { headers })
+  expect(personalDetail.status).toBe(200)
+  await selectSpace(input.memberSpaceId)
+
   const revisions = await fetch(`${input.origin}/v1/docs/${created.id}/revisions`, { headers })
   expect(revisions.status).toBe(200)
   expect(
@@ -207,9 +247,9 @@ export async function proveHostedDocs(input: {
   })
   expect(inject.status).toBe(400)
   await proveCanonRefusal(input.origin, headers)
+  await selectSpace(identity.personalSpaceId)
 
-  const runId = newRecordId()
-  const scored = await fetch(`${input.origin}/v1/runs/${runId}/score`, {
+  const scored = await fetch(`${input.origin}/v1/runs/${input.scoreRunId}/score`, {
     method: 'PUT',
     headers,
     body: JSON.stringify({

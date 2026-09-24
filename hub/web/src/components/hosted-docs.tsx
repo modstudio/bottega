@@ -23,7 +23,9 @@ function HostedDocsList() {
   const [pages, setPages] = useState<Doc[][]>([])
   const [cursor, setCursor] = useState<string>()
   const [search, setSearch] = useState('')
-  const query = useQuery(trpc.record.docs.queryOptions({ limit: 100, cursor }))
+  const query = useQuery(
+    trpc.record.docs.queryOptions({ limit: 100, cursor, acrossReadableSpaces: true }),
+  )
   const applied = query.data
   const all = applied
     ? cursor
@@ -35,6 +37,7 @@ function HostedDocsList() {
     return text ? all.filter((doc) => `${doc.slug} ${doc.title}`.toLowerCase().includes(text)) : all
   }, [all, search])
   const columns: CollectionColumn<Doc>[] = [
+    { id: 'space', label: 'Space', render: (doc) => doc.spaceName },
     { id: 'scope', label: 'Scope', render: (doc) => doc.scope },
     { id: 'subject', label: 'Subject', render: (doc) => doc.subject ?? '-' },
     { id: 'slug', label: 'Slug', render: (doc) => <strong>{doc.slug}</strong> },
