@@ -46,7 +46,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
     importDoc: async () => ({ id, revisionIds: [id] }),
-    importUserCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
+    importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id, revisionId: id }),
     consumeDoc: async () => ({ id, revisionId: id, alreadyConsumed: false }),
     restoreDoc: async () => ({ id, revisionId: id }),
@@ -93,15 +93,16 @@ describe('record API', () => {
   test('binds user canon imports to the authenticated owner and ignores bootstrap authority', async () => {
     const calls: Record<string, unknown>[] = []
     const app = appWith(identity, {
-      importUserCanon: async (input: Record<string, unknown>) => {
+      importCanon: async (input: Record<string, unknown>) => {
         calls.push(input)
         return { rows: [], deletions: [], findings: [], bootstrap: false }
       },
     })
-    const response = await app.request('/v1/docs/user-canon/import', {
+    const response = await app.request('/v1/docs/canon/import', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        address: { kind: 'user' },
         rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Rule.' }],
         expectedRevisions: {},
         reason: 'test',
@@ -116,6 +117,33 @@ describe('record API', () => {
     ])
     expect(calls[0]).not.toHaveProperty('bootstrap')
     expect(calls[0]).not.toHaveProperty('owner')
+  })
+
+  test('does not accept client bootstrap authority for project canon', async () => {
+    const calls: Record<string, unknown>[] = []
+    const app = appWith(identity, {
+      importCanon: async (input: Record<string, unknown>) => {
+        calls.push(input)
+        return { rows: [], deletions: [], findings: [], bootstrap: false }
+      },
+    })
+    const response = await app.request('/v1/docs/canon/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        address: { kind: 'project', subject: 'alpha' },
+        rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Rule.' }],
+        expectedRevisions: {},
+        reason: 'test',
+        author: 'tester',
+        bootstrap: true,
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(calls).toEqual([
+      expect.objectContaining({ address: { kind: 'project', subject: 'alpha' } }),
+    ])
+    expect(calls[0]).not.toHaveProperty('bootstrap')
   })
 
   test('requires an unvoid note and passes the authenticated tenant to the service', async () => {

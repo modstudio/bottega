@@ -2,6 +2,11 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { addAgent, refreshAgents, removeAgent } from '../agent/agent-registry.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -12,7 +17,7 @@ test('worker load measurement resolves a registered agent name to its harness', 
   const home = join(root, 'home')
   const priorHome = process.env.HOME
   try {
-    Bun.spawnSync(['git', 'init'], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+    spawnFixtureGitSync(['init'], { cwd: root })
     mkdirSync(join(home, '.claude'), { recursive: true })
     writeFileSync(join(home, '.claude', 'CLAUDE.md'), 'Architect instructions.')
     writeFileSync(join(root, 'CLAUDE.md'), 'Project instructions.')
@@ -54,9 +59,18 @@ test('worker load measurement resolves a registered agent name to its harness', 
 test('canon import can drop a citer and its target after deciding the complete next set', async () => {
   const root = mkdtempSync(join(tmpdir(), 'canon-import-removal-'))
   try {
-    Bun.spawnSync(['git', 'init'], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+    const client = createMemoryRecordApiClient()
+    const imports: unknown[] = []
+    installRecordApiClient({
+      ...client,
+      importCanon: async (input) => {
+        imports.push(input)
+        return client.importCanon(input)
+      },
+    })
+    spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Current guidance.\n')
-    Bun.spawnSync(['git', 'add', 'AGENTS.md'], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
     upsertProject({ name: 'canon-import-removal', path: root, canon: true, settings: {} })
     const target = '.agents/reference/old-target.md'
     await setDoc({
@@ -92,8 +106,95 @@ test('canon import can drop a citer and its target after deciding the complete n
 
     expect(getDoc('canon', 'canon-import-removal', target)).toBeNull()
     expect(getDoc('canon', 'canon-import-removal', '.agents/reference/old-citer.md')).toBeNull()
-    expect(output).toContain('removed .agents/reference/old-target.md')
-    expect(output).toContain('removed .agents/reference/old-citer.md')
+    expect(imports).toHaveLength(1)
+    expect(imports[0]).toEqual(
+      expect.objectContaining({
+        address: { kind: 'project', subject: 'canon-import-removal' },
+        rows: [expect.objectContaining({ slug: 'AGENTS.md' })],
+      }),
+    )
+    expect(output).toContain('delete .agents/reference/old-target.md')
+    expect(output).toContain('delete .agents/reference/old-citer.md')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('project canon import bootstraps findings and refuses findings on the next import', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-import-bootstrap-'))
+  try {
+    installRecordApiClient(createMemoryRecordApiClient())
+    spawnFixtureGitSync(['init'], { cwd: root })
+    writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n')
+    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
+    upsertProject({ name: 'canon-import-bootstrap', path: root, canon: true, settings: {} })
+    const values = new Map([
+      ['project', 'canon-import-bootstrap'],
+      ['cwd', root],
+      ['reason', 'test bootstrap'],
+    ])
+    const presentation = { log: () => {}, exitCode: () => {}, cwd: () => root }
+
+    await dispatchCanonCommand(
+      ['canon', 'import'],
+      { has: (name) => values.has(name), flag: (name) => values.get(name) },
+      presentation,
+    )
+    expect(getDoc('canon', 'canon-import-bootstrap', 'AGENTS.md')?.body).toContain('123')
+
+    writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\nIt used to differ.\n')
+    await expect(
+      dispatchCanonCommand(
+        ['canon', 'import'],
+        { has: (name) => values.has(name), flag: (name) => values.get(name) },
+        presentation,
+      ),
+    ).rejects.toThrow('refusing canon write')
+    expect(getDoc('canon', 'canon-import-bootstrap', 'AGENTS.md')?.body).not.toContain('used to')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('project canon import dry-run prints the plan and writes neither store', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-import-dry-run-'))
+  try {
+    const client = createMemoryRecordApiClient()
+    let hostedWrites = 0
+    installRecordApiClient({
+      ...client,
+      importCanon: async (input) => {
+        hostedWrites++
+        return client.importCanon(input)
+      },
+    })
+    spawnFixtureGitSync(['init'], { cwd: root })
+    writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n')
+    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
+    upsertProject({ name: 'canon-import-dry-run', path: root, canon: true, settings: {} })
+    const output: string[] = []
+    const values = new Map<string, string | true>([
+      ['project', 'canon-import-dry-run'],
+      ['cwd', root],
+      ['reason', 'test dry run'],
+      ['dry-run', true],
+    ])
+
+    await dispatchCanonCommand(
+      ['canon', 'import'],
+      {
+        has: (name) => values.has(name),
+        flag: (name) =>
+          typeof values.get(name) === 'string' ? String(values.get(name)) : undefined,
+      },
+      { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: () => root },
+    )
+
+    expect(hostedWrites).toBe(0)
+    expect(getDoc('canon', 'canon-import-dry-run', 'AGENTS.md')).toBeNull()
+    expect(output).toContain('write AGENTS.md')
+    expect(output).toContain('bootstrap: yes')
+    expect(output).toContain('would import 1 canon rows, remove 0')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

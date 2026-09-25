@@ -98,6 +98,7 @@ function combinedLoadFindings(
 
 /** Rules that inspect tracked paths, source identifiers, or package scripts. */
 const TREE_DEPENDENT_CANON_RULES = [
+  'canon/context-path-glob',
   'canon/reference-path',
   'canon/reference-heading',
   'canon/reference-symbol',

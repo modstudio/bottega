@@ -14,8 +14,9 @@ import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
+import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
-import { listDocs, removeDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import {
@@ -34,11 +35,11 @@ import {
   mainCheckoutHydrationRefusal,
   planHydration,
 } from './canon-hydrate.ts'
+import { planCanonImport } from './canon-import-policy.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts } from './canon-load-files.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
-import { decideNextCanonSet } from './canon-write-gate.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { userCanonHydrateCommand, userCanonImportCommand } from './user-canon-commands.ts'
 
@@ -47,6 +48,37 @@ type CanonPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
   cwd(): string
+}
+
+const CANON_FLAG_NAMES = [
+  'cwd',
+  'job',
+  'slug',
+  'agent',
+  'project',
+  'user',
+  'reason',
+  'baseline',
+  'accept',
+  'all',
+  'json',
+  'force',
+  'strict',
+  'write-baseline',
+  'check',
+  'harness',
+  'role',
+  'dry-run',
+] as const
+
+function refuseUnsupportedFlags(flags: CanonFlags, accepted: readonly string[]): void {
+  const allowed = new Set(accepted)
+  const unsupported = CANON_FLAG_NAMES.filter((name) => flags.has(name) && !allowed.has(name))
+  if (unsupported.length) {
+    throw new Error(
+      `unsupported canon import flag${unsupported.length === 1 ? '' : 's'}: ${unsupported.map((name) => `--${name}`).join(', ')}`,
+    )
+  }
 }
 
 function printCanonAudit(result: CanonAuditResult, log: (...values: unknown[]) => void): void {
@@ -107,14 +139,50 @@ function requestedProject(flags: CanonFlags) {
   return project
 }
 
-function canonRows(project: string) {
-  return storedRepositoryCanonRows(project)
+function projectCanonImportPlan(
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  requestedCwd: string,
+) {
+  const root = canonGitRoot(requestedCwd)
+  const collected = collectCanonLintInput(root)
+  const renderedRows = collected.files
+    .filter((file) => file.symlinkTarget === undefined && classifyCanonFile(file) !== null)
+    .map(({ path, text }) => ({ slug: path, body: text }))
+  if (renderedRows.length === 0) {
+    throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
+  }
+  const global = listDocs({ scope: 'canon', subject: null })
+  const globalBySlug = new Map(global.map((row) => [row.slug, row]))
+  for (const row of renderedRows) {
+    const globalRow = globalBySlug.get(row.slug)
+    if (globalRow && globalRow.body !== row.body) {
+      throw new Error(
+        `refusing canon import: rendered ${row.slug} differs from canon/_/${row.slug}; edit the global canon row`,
+      )
+    }
+  }
+  const rows = renderedRows.filter((row) => !globalBySlug.has(row.slug))
+  const projectRows = listDocs({ scope: 'canon', subject: project.name })
+  const plan = planCanonImport({
+    address: { kind: 'project' },
+    current: projectRows.map(({ slug, body }) => ({ slug, body })),
+    desired: rows,
+    hasHistory: hasCanonImportHistory({
+      kind: 'project',
+      subject: project.name,
+      projectId: project.id,
+    }),
+    surroundings: [{ global, project: [] }],
+    trackedPaths: collected.trackedPaths,
+    packageScripts: collected.packageScripts,
+    sourceTexts: collected.sourceTexts,
+    workflowSteps: productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body })),
+  })
+  return { plan, rows }
 }
 
-function canonSlugsToRemove(currentSlugs: string[], treeSlugs: string[]): string[] {
-  if (treeSlugs.length === 0) return []
-  const tree = new Set(treeSlugs)
-  return currentSlugs.filter((slug) => !tree.has(slug))
+function canonRows(project: string) {
+  return storedRepositoryCanonRows(project)
 }
 
 function printHydrationPlan(
@@ -157,87 +225,46 @@ async function canonImportCommand(
   presentation: CanonPresentation,
 ): Promise<void> {
   if (flags.has('user')) {
+    refuseUnsupportedFlags(flags, ['user', 'dry-run'])
     await userCanonImportCommand(flags, presentation)
     return
   }
+  refuseUnsupportedFlags(flags, ['project', 'cwd', 'reason', 'dry-run'])
   const project = requestedProject(flags)
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')
   const requestedCwd = resolve(flags.flag('cwd') ?? project.path)
-  const root = canonGitRoot(requestedCwd)
-  const collected = collectCanonLintInput(root)
-  const renderedRows = collected.files
-    .filter((file) => file.symlinkTarget === undefined && classifyCanonFile(file) !== null)
-    .map(({ path, text }) => ({ slug: path, body: text }))
-  if (renderedRows.length === 0) {
-    throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
-  }
-  const global = listDocs({ scope: 'canon', subject: null })
-  const globalBySlug = new Map(global.map((row) => [row.slug, row]))
-  for (const row of renderedRows) {
-    const globalRow = globalBySlug.get(row.slug)
-    if (globalRow && globalRow.body !== row.body) {
-      throw new Error(
-        `refusing canon import: rendered ${row.slug} differs from canon/_/${row.slug}; edit the global canon row`,
+  const { plan, rows } = projectCanonImportPlan(project, requestedCwd)
+  for (const row of rows) presentation.log(`write ${row.slug}`)
+  for (const slug of plan.deletionSlugs) presentation.log(`delete ${slug}`)
+  if (flags.has('dry-run')) {
+    printFindings(plan.findings, presentation.log)
+    presentation.log(`bootstrap: ${plan.bootstrap ? 'yes' : 'no'}`)
+    if (plan.refusal) {
+      presentation.log(
+        plan.refusal === 'empty'
+          ? 'refusing canon import: desired canon set is empty'
+          : 'refusing canon import: introduced canon findings',
       )
+      presentation.exitCode(1)
+      return
     }
+    presentation.log(`would import ${rows.length} canon rows, remove ${plan.deletionSlugs.length}`)
+    return
   }
-  const rows = renderedRows.filter((row) => !globalBySlug.has(row.slug))
-  const current = canonRows(project.name).map(({ slug, body }) => ({ slug, body }))
-  const next = composeCanonRows(
-    global,
-    [],
-    rows.map((row) => ({ ...row, subject: project.name })),
-  ).map(({ slug, body }) => ({ slug, body }))
-  const projectRows = listDocs({ scope: 'canon', subject: project.name })
-  const projectSlugs = projectRows.map(({ slug }) => slug)
-  const projectBySlug = new Map(projectRows.map((row) => [row.slug, row]))
-  const removals = canonSlugsToRemove(
-    projectSlugs,
-    rows.map(({ slug }) => slug),
-  )
-  const findings = decideNextCanonSet({
-    current,
-    next,
-    trackedPaths: collected.trackedPaths,
-    packageScripts: collected.packageScripts,
-    sourceTexts: collected.sourceTexts,
-    workflowSteps: productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body })),
+  if (plan.refusal === 'empty') throw new Error('refusing canon import: desired canon set is empty')
+  if (plan.refusal === 'findings') throw new Error(canonFindingsRefusal(plan.findings)!)
+
+  const result = await importCanon({
+    address: { kind: 'project', subject: project.name, projectId: project.id },
+    rows: rows.map((row) => ({ ...row, title: row.slug })),
+    reason,
   })
-  const bootstrap = projectSlugs.length === 0
-  const refusal = bootstrap ? null : canonFindingsRefusal(findings)
-  if (refusal) throw new Error(refusal)
-  for (const row of rows) {
-    await setDoc({
-      scope: 'canon',
-      subject: project.name,
-      slug: row.slug,
-      title: row.slug,
-      body: row.body,
-      delivery: 'demand',
-      reason,
-      canonSet: rows,
-      allowCanonBootstrap: bootstrap,
-      expectedRevision: projectBySlug.get(row.slug)?.revision ?? undefined,
-    })
-  }
-  let removed = 0
-  for (const slug of removals) {
-    if (
-      await removeDoc('canon', project.name, slug, {
-        reason,
-        canonRemovalDecision: 'already-decided-next-set',
-        expectedRevision: projectBySlug.get(slug)?.revision ?? undefined,
-      })
-    ) {
-      presentation.log(`removed ${slug}`)
-      removed++
-    }
-  }
-  presentation.log(`imported ${rows.length} canon rows, removed ${removed}`)
-  if (bootstrap) {
+  printFindings(result.findings, presentation.log)
+  presentation.log(`imported ${result.rows.length} canon rows, removed ${result.deletions.length}`)
+  if (result.bootstrap) {
     presentation.log(
-      `empty canon store: bypassed introduced-findings comparison (${findings.length} findings)`,
+      `empty canon store: bypassed introduced-findings comparison (${result.findings.length} findings)`,
     )
   }
 }

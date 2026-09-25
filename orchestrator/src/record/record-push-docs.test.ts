@@ -122,7 +122,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       hosted.set(id, { id, ...input.doc })
       return { id, revisionIds }
     },
-    importUserCanon: unused,
+    importCanon: unused,
     deleteDoc: unused,
     consumeDoc: unused,
     restoreDoc: unused,

@@ -53,6 +53,21 @@ describe('decideNextCanonSet', () => {
     })
     expect(findings.map(({ rule }) => rule)).toContain('canon/size-always-on')
   })
+
+  test('skips context path glob checks without tree facts and applies them with tree facts', () => {
+    const context = {
+      slug: '.agents/contexts/example.md',
+      body: '---\ndescription: Example context\npaths: [missing/**]\n---\n\nCurrent rule.\n',
+    }
+    expect(decideNextCanonSet({ current: [], next: [context] })).toEqual([])
+    expect(
+      decideNextCanonSet({
+        ...inputs,
+        current: [],
+        next: [context],
+      }),
+    ).toContainEqual(expect.objectContaining({ rule: 'canon/context-path-glob' }))
+  })
 })
 
 describe('decideCanonRemoval', () => {

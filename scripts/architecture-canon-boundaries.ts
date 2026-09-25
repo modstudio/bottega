@@ -82,6 +82,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       `${source}canon-audit.ts`,
       `${source}canon-files.ts`,
       `${source}canon-hydrate.ts`,
+      `${source}canon-import-policy.ts`,
       `${source}canon-lint.ts`,
       `${source}canon-write-gate.ts`,
       `${source}canon-load-files.ts`,
@@ -92,6 +93,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/agent/worker-launch-env.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
+      'orchestrator/src/doc/canon-import.ts',
       `${source}evals.ts`,
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/workflow/workflow-tree-store.ts',
@@ -130,8 +132,19 @@ const canonAuditBoundarySpecs: ImportBoundary[] = [
 
 const userCanonBoundarySpecs: ImportBoundary[] = [
   {
-    name: 'user-canon-import-boundary',
-    file: 'orchestrator/src/doc/user-canon-import.ts',
+    name: 'canon-import-policy-boundary',
+    file: `${source}canon-import-policy.ts`,
+    allowed: [
+      `${source}canon-hydrate.ts`,
+      `${source}canon-write-gate.ts`,
+      `${source}user-canon-home.ts`,
+    ],
+    typeOnlyAllowed: [`${source}canon-lint.ts`],
+    reason: 'Keep canon import policy pure and independent of stores, transports, and commands.',
+  },
+  {
+    name: 'canon-import-boundary',
+    file: 'orchestrator/src/doc/canon-import.ts',
     allowed: [
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/record-api-client.ts',
@@ -140,7 +153,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep user canon batch mirroring independent of commands, filesystems, and unrelated stores.',
+      'Keep canon batch mirroring independent of commands, filesystems, and unrelated stores.',
   },
   {
     name: 'user-canon-commands-boundary',
@@ -149,7 +162,8 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'shared/ratchet.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
-      'orchestrator/src/doc/user-canon-import.ts',
+      'orchestrator/src/doc/canon-import.ts',
+      `${source}canon-import-policy.ts`,
       'orchestrator/src/project/projects.ts',
       `${source}canon-lint.ts`,
       `${source}canon-write-gate.ts`,

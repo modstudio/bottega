@@ -1,16 +1,12 @@
 // concern: user-canon-commands
 /** Knows user canon import and hydration command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
+import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
-import { importUserCanon } from '../doc/user-canon-import.ts'
 import { projects } from '../project/projects.ts'
-import { decideUserCanonImport } from './canon-write-gate.ts'
-import {
-  isUserCanonSlug,
-  mapUserCanonPath,
-  stripUserCanonManagedMarker,
-} from './user-canon-home.ts'
+import { planCanonImport } from './canon-import-policy.ts'
+import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlan,
   claudeHomeFromEnvironment,
@@ -52,11 +48,6 @@ export async function userCanonImportCommand(
     body: stripUserCanonManagedMarker(text),
   }))
   const currentRows = listDocs({ scope: 'canon', subject: null, owner })
-  const importedSlugs = new Set(rows.map(({ slug }) => slug))
-  const mappedCurrent = currentRows.filter(({ slug }) =>
-    mapUserCanonPath({ kind: 'canon', path: slug }),
-  )
-  const removals = mappedCurrent.filter(({ slug }) => !importedSlugs.has(slug))
   const global = listDocs({ scope: 'canon', subject: null }).map(({ slug, body }) => ({
     slug,
     body,
@@ -70,33 +61,43 @@ export async function userCanonImportCommand(
         }))
       : [],
   }))
-  const preview = decideUserCanonImport({
+  const preview = planCanonImport({
+    address: { kind: 'user' },
     current: currentRows.map(({ slug, body }) => ({ slug, body })),
-    next: [
-      ...currentRows
-        .filter(({ slug }) => !isUserCanonSlug(slug))
-        .map(({ slug, body }) => ({ slug, body })),
-      ...rows,
-    ],
+    desired: rows,
+    hasHistory: hasCanonImportHistory({ kind: 'user', owner }),
     surroundings,
   })
 
   for (const row of rows) presentation.log(`write ${row.slug}`)
-  for (const row of removals) presentation.log(`delete ${row.slug}`)
+  for (const slug of preview.deletionSlugs) presentation.log(`delete ${slug}`)
   if (flags.has('dry-run')) {
     printFindings(preview.findings, presentation.log)
-    if (!preview.bootstrap && preview.findings.length) {
-      presentation.log('refusing user canon import: introduced canon findings')
+    if (preview.refusal) {
+      presentation.log(
+        preview.refusal === 'empty'
+          ? 'refusing user canon import: desired canon set is empty'
+          : 'refusing user canon import: introduced canon findings',
+      )
       presentation.exitCode(1)
       return
     }
-    presentation.log(`would import ${rows.length} canon rows, remove ${removals.length}`)
+    presentation.log(
+      `would import ${rows.length} canon rows, remove ${preview.deletionSlugs.length}`,
+    )
     return
   }
 
+  if (preview.refusal === 'empty') {
+    throw new Error('refusing user canon import: desired canon set is empty')
+  }
+  if (preview.refusal === 'findings') {
+    throw new Error('refusing user canon import: introduced canon findings')
+  }
+
   const reason = 'imported from Claude home'
-  const result = await importUserCanon({
-    owner,
+  const result = await importCanon({
+    address: { kind: 'user', owner },
     rows: rows.map((row) => ({ ...row, title: row.slug })),
     reason,
   })

@@ -48,10 +48,10 @@ export const recordDocImportSchema = z.object({
   ),
 })
 
-export const recordUserCanonImportSchema = z.object({
+const canonImportBodySchema = z.object({
   rows: z.array(
     z.object({
-      slug: z.string().refine(isUserCanonSlug, 'slug has no Claude home mapping'),
+      slug: z.string().min(1),
       title: z.string(),
       body: z.string(),
     }),
@@ -60,3 +60,22 @@ export const recordUserCanonImportSchema = z.object({
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
 })
+
+export const recordCanonImportSchema = canonImportBodySchema
+  .extend({
+    address: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('user') }),
+      z.object({ kind: z.literal('project'), subject: z.string().trim().min(1) }),
+    ]),
+  })
+  .superRefine((input, context) => {
+    if (input.address.kind !== 'user') return
+    for (const [index, row] of input.rows.entries()) {
+      if (isUserCanonSlug(row.slug)) continue
+      context.addIssue({
+        code: 'custom',
+        path: ['rows', index, 'slug'],
+        message: 'slug has no Claude home mapping',
+      })
+    }
+  })
