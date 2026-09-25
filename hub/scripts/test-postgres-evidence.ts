@@ -574,15 +574,15 @@ try {
         recipientUserIds: [USER],
       },
     )
+    // Preview and confirm run in separate transactions, as record-space-move.ts does.
+    const moveTenant = { userId: USER, spaceId: SPACE_B, spaceIds: [SPACE_A, SPACE_B, SPACE_C] }
+    const preview = (await client.begin(async (tx) => {
+      await bindTenant(tx, moveTenant)
+      return tx`SELECT * FROM record_move_project_space('evidence-b','move-proof','evidence-c')`
+    })) as { row_count: number }[]
+    const total = preview.reduce((sum, row) => sum + Number(row.row_count), 0)
     const moveRows = await client.begin(async (tx) => {
-      await bindTenant(tx, {
-        userId: USER,
-        spaceId: SPACE_B,
-        spaceIds: [SPACE_A, SPACE_B, SPACE_C],
-      })
-      const preview = (await tx`SELECT * FROM record_move_project_space(
-        'evidence-b','move-proof','evidence-c')`) as { row_count: number }[]
-      const total = preview.reduce((sum, row) => sum + Number(row.row_count), 0)
+      await bindTenant(tx, moveTenant)
       return tx`SELECT * FROM record_move_project_space(
         'evidence-b','move-proof','evidence-c',${total}::bigint)`
     })
@@ -711,6 +711,7 @@ try {
     )
       throw new Error('test send did not send and record its excluded projects')
     await unsubscribeHostedReportSubscription(actorUrl, identity, projectsSubscription.id)
+    await unsubscribeHostedReportSubscription(actorUrl, identity, movedProjectSubscription.id)
     const emailSubscription = await createHostedReportSubscription(actorUrl, identity, {
       scope: { kind: 'space' },
       cadence: 'daily',
@@ -936,8 +937,9 @@ try {
       throw new Error('hosted spend adapter did not return the seeded interval')
     const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
     if (
-      pageSettings.sends.length !== 2 ||
-      pageSettings.sends.filter((send) => Number(send.test) === 1).length !== 1 ||
+      // Two sends of this space's subscription, plus the projects-scope skipped and partial test sends.
+      pageSettings.sends.length !== 4 ||
+      pageSettings.sends.filter((send) => Number(send.test) === 1).length !== 3 ||
       pageSettings.members.length !== 2 ||
       pageSettings.subscriptions.length !== 1
     )
