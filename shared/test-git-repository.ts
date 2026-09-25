@@ -7,8 +7,13 @@ let template: string | undefined
 const clones = new Set<string>()
 
 function git(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): void {
+  runTestGit(cwd, env, ...args)
+}
+
+export function runTestGit(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], { cwd, env, stdout: 'pipe', stderr: 'pipe' })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
 }
 
 afterEach(() => {
@@ -21,7 +26,7 @@ afterAll(() => {
   template = undefined
 })
 
-export function templateRepository(env: NodeJS.ProcessEnv, root = tmpdir()): string {
+function templateRepository(env: NodeJS.ProcessEnv, root = tmpdir()): string {
   if (template) return template
   template = mkdtempSync(join(root, 'git-template-'))
   git(template, env, 'init', '-b', 'main')

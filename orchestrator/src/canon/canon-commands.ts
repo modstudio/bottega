@@ -27,10 +27,16 @@ import {
   findingsForPack,
 } from './canon.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
-import { composeCanonRows, planHydration } from './canon-hydrate.ts'
+import {
+  composeCanonRows,
+  hydrationDrift,
+  mainCheckoutHydrationRefusal,
+  planHydration,
+} from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts } from './canon-load-files.ts'
+import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 import { decideNextCanonSet } from './canon-write-gate.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { userCanonHydrateCommand, userCanonImportCommand } from './user-canon-commands.ts'
@@ -94,11 +100,7 @@ function requestedProject(flags: CanonFlags) {
 }
 
 function canonRows(project: string) {
-  return composeCanonRows(
-    listDocs({ scope: 'canon', subject: null }),
-    [],
-    listDocs({ scope: 'canon', subject: project }),
-  )
+  return storedRepositoryCanonRows(project)
 }
 
 function canonSlugsToRemove(currentSlugs: string[], treeSlugs: string[]): string[] {
@@ -244,7 +246,12 @@ async function canonHydrateCommand(
   const requested = flags.flag('cwd')
   if (!requested) throw new Error('--cwd is required')
   const root = canonGitRoot(resolve(requested))
-  if (realpathSync(root) === realpathSync(project.path)) {
+  if (
+    mainCheckoutHydrationRefusal({
+      mainCheckout: realpathSync(root) === realpathSync(project.path),
+      check: flags.has('check'),
+    })
+  ) {
     throw new Error(
       `refusing to hydrate registered main checkout ${project.path}\n` +
         'invariant: canon hydration writes a disposable project tree, never the main checkout\n' +
@@ -256,7 +263,7 @@ async function canonHydrateCommand(
     tree: collectCanonTree(root),
   })
   printHydrationPlan(plan, presentation.log)
-  const count = plan.writes.length + plan.links.length + plan.deletes.length
+  const count = hydrationDrift(plan).length
   if (flags.has('check')) {
     if (count) presentation.exitCode(1)
     return

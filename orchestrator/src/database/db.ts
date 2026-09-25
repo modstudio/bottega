@@ -101,6 +101,16 @@ export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
   return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
 }
 
+/**
+ * Open a caller-owned connection that SQLite itself will refuse to write through.
+ * Without WAL sidecars it opens immutable, so it reads the store as of the open and never sees a later writer; a short-lived check tolerates that and a long-lived reader must not use it.
+ */
+export function openReadOnlyDatabase(path = DB_PATH): Database {
+  const sidecarsExist = existsSync(`${path}-wal`) || existsSync(`${path}-shm`)
+  const readOnlyPath = sidecarsExist ? path : `${pathToFileURL(path).href}?immutable=1`
+  return new Database(readOnlyPath, { readonly: true })
+}
+
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
   return db(true)

@@ -21,6 +21,8 @@
  * two Laravel apps are the same stack, so a verdict from one is real
  * evidence about the other.
  */
+
+import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
@@ -141,11 +143,11 @@ function parse(row: {
   }
 }
 
-export function projects(opts?: { retired?: boolean }): Project[] {
+export function projects(opts?: { retired?: boolean }, database: Database = db()): Project[] {
   const sql = opts?.retired
     ? 'SELECT * FROM project WHERE retired_at IS NOT NULL ORDER BY name'
     : 'SELECT * FROM project WHERE retired_at IS NULL ORDER BY name'
-  return (db().query(sql).all() as Parameters<typeof parse>[0][]).map(parse)
+  return (database.query(sql).all() as Parameters<typeof parse>[0][]).map(parse)
 }
 
 function projectRowByName(name: string, d = db()): Project | null {
@@ -194,9 +196,9 @@ export function retiredProjectAt(cwd: string): Project | null {
  * read as "no project" rather than as "this tool has never been told about your
  * machine".
  */
-export function projectAt(cwd: string): Project | null {
+export function projectAt(cwd: string, database: Database = db()): Project | null {
   let best: Project | null = null
-  for (const p of projects()) {
+  for (const p of projects(undefined, database)) {
     if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
       if (!best || p.path.length > best.path.length) best = p
     }
