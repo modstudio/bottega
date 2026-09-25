@@ -12,7 +12,13 @@ import {
 } from './workflow-cursor-transition.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { composeWorkflow, getWorkflowStep, resolveWorkflowMode, showWorkflow } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  productionWorkflows,
+  resolveWorkflowMode,
+  showWorkflow,
+} from './workflows.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null
@@ -172,9 +178,14 @@ export function decideCursorArguments(
 const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
 function cursorRebindableArguments(row: CursorRow, d: Database): Set<string> {
-  const definition = showWorkflow(row.workflow_slug, row.workflow_version, d).definition
+  const current = productionWorkflows(d).find(({ slug }) => slug === row.workflow_slug)
+  const definitions = [
+    showWorkflow(row.workflow_slug, row.workflow_version, d).definition,
+    ...(current ? [current.definition] : []),
+  ]
   return new Set(
-    definition.arguments
+    definitions
+      .flatMap((definition) => definition.arguments)
       .filter((argument) => argument.name !== 'key' && argument.rebind === true)
       .map((argument) => argument.name),
   )
@@ -325,6 +336,8 @@ export function composeWorkflowWithCursor(
       decideCursorStart(existing?.state ?? null) === 'reuse'
         ? takenOverFrom(existing, context)
         : null
+    if (existing && decideCursorStart(existing.state) === 'reuse')
+      applyCursorArguments(existing, args, d)
     const row = insertCursor(composition, context, d, autonomy)
     return {
       ...cursorComposition(row, d),
@@ -631,6 +644,7 @@ function awaitWorkflowRulingImpl(
     )
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
+  applyCursorArguments(row, args, d)
   const at = nowIso()
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,

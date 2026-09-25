@@ -147,7 +147,7 @@ describe('workflow projection and seeds', () => {
     expect(validateStepCatalogue(catalogue.definition)).toEqual([])
     expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
     for (const [slug, revision] of [
-      ['ship', 3],
+      ['ship', 4],
       ['fix-defect', 4],
     ] as const) {
       const version = showWorkflow(slug, 1, d)
@@ -172,6 +172,10 @@ describe('workflow projection and seeds', () => {
         },
       ])
       expect(validateWorkflowDefinition(version.definition)).toEqual([])
+      if (slug === 'ship')
+        expect(version.definition.arguments.find(({ name }) => name === 'worktree')).toMatchObject({
+          rebind: true,
+        })
     }
   })
   test('catalogue seed revision advances an existing store to the trunk-aware steps', () => {
@@ -314,7 +318,7 @@ describe('workflow projection and seeds', () => {
     expect(showWorkflow('ship', 3, d).status).toBe('production')
     expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
     for (const [slug, prior, next, revision] of [
-      ['ship', 2, 3, 3],
+      ['ship', 2, 3, 4],
       ['fix-defect', 1, 2, 4],
     ] as const) {
       expect(showWorkflow(slug, prior, d).status).toBe('retired')
