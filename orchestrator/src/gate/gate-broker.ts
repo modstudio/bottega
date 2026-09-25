@@ -10,6 +10,7 @@ import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import {
   boundedGateOutputTail,
+  brokerGateEnvironment,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
   isGateToolingPath,
@@ -123,7 +124,7 @@ function startGateExecution(
         .run(JSON.stringify(toolingPaths), command, request.id)
       child = spawn('sh', ['-lc', command], {
         cwd: plan.worktree,
-        env: { ...workerGateEnvironment(process.env), ...environment },
+        env: brokerGateEnvironment(workerGateEnvironment(process.env), process.env, environment),
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       })

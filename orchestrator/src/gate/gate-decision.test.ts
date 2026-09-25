@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   boundedGateOutputTail,
+  brokerGateEnvironment,
   decideGateCancellation,
   decideGateConcurrency,
   decideGateEligibility,
@@ -10,6 +11,25 @@ import {
   resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
+
+test('broker gate environment adds host paths without exposing secrets and applies overlay last', () => {
+  expect(
+    brokerGateEnvironment(
+      { PATH: '/bin' },
+      {
+        HOME: '/Users/operator',
+        TMPDIR: '/tmp/operator',
+        ANTHROPIC_API_KEY: 'secret',
+      },
+      { HOME: '/sandbox/home', ORCH_RUN_ID: '41' },
+    ),
+  ).toEqual({
+    PATH: '/bin',
+    HOME: '/sandbox/home',
+    TMPDIR: '/tmp/operator',
+    ORCH_RUN_ID: '41',
+  })
+})
 
 test('relative gate scripts resolve from main while PATH programs stay registered', () => {
   expect(resolveGateCommand('scripts/gate --plain', '/projects/app')).toBe(
