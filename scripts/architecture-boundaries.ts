@@ -9,6 +9,7 @@ import {
 } from './architecture-record-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
+import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
@@ -113,6 +114,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep canon write decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   ...canonBoundarySpecs,
+  ...settingsBoundarySpecs,
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',
@@ -319,6 +321,8 @@ export const importBoundaries: ImportBoundary[] = [
       '../canon/canon-write-gate.ts',
       '../canon/pack-budget.ts',
       '../canon/canon-lint.ts',
+      '../settings/settings.ts',
+      '../../../shared/docs.ts',
       './doc-lint.ts',
     ],
     'Keep document write decisions independent of stores, HTTP, filesystems, and CLI.',

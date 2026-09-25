@@ -11,8 +11,11 @@ import {
   type DocDelivery,
   type DocRevisionOp,
   decideDocRevisionWrite,
+  docWriteProjectName,
   recordDocLintRefusal,
   refuseDocWrite,
+  refuseOwnedDocAddress,
+  refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, userCanonImportFindings } from './record-canon-facts.ts'
 
@@ -279,9 +282,10 @@ export async function upsertRecordDoc(
     expectedRevision?: string
   },
 ): Promise<{ id: string; revisionId: string }> {
-  if (input.owner && (input.scope !== 'canon' || input.subject !== null)) {
-    throw new RecordDocError('user canon requires scope canon and no subject')
-  }
+  const ownedAddress =
+    refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
+    refuseSettingsAddress(input.scope, input.subject, input.owner)
+  if (ownedAddress) throw new RecordDocError(ownedAddress)
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, slug, body, latest_revision_id FROM doc
@@ -337,10 +341,7 @@ export async function upsertRecordDoc(
     const resolvedProject = await projectId(
       tx,
       input.spaceId,
-      input.projectName ??
-        (input.scope === 'project' || (input.scope === 'canon' && input.subject)
-          ? input.subject
-          : null),
+      input.projectName ?? docWriteProjectName(input.scope, input.subject),
     )
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
@@ -900,9 +901,10 @@ async function writeImportedDoc(
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] }> {
-  if (input.doc.owner && (input.doc.scope !== 'canon' || input.doc.subject !== null)) {
-    throw new RecordDocError('user canon requires scope canon and no subject')
-  }
+  const ownedAddress =
+    refuseOwnedDocAddress(input.doc.scope, input.doc.subject, input.doc.owner) ??
+    refuseSettingsAddress(input.doc.scope, input.doc.subject, input.doc.owner)
+  if (ownedAddress) throw new RecordDocError(ownedAddress)
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, input.doc)
     assertRevisionWrite({

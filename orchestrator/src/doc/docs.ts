@@ -54,12 +54,17 @@ import {
 import {
   canonFindingsRefusal,
   consumeDocBody,
+  docWriteProjectName,
+  forcedDocDelivery,
   globalCanonWriteTargets,
   importedDocDelivery,
   ownerVisible,
   refuseCanonWrite,
   refuseOversizedInject,
+  refuseOwnedDocAddress,
   refuseProjectOrGlobalInject,
+  refuseSettingsAddress,
+  refuseSettingsBody,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
 
@@ -176,7 +181,7 @@ function validateHistoricAddress(scope: string, slug: string): asserts scope is 
 
 function validate(scope: string, subject: string | null, slug: string): asserts scope is DocScope {
   validateHistoricAddress(scope, slug)
-  if (scope === 'canon' && subject === null) return
+  if (DOC_SCOPE_ALLOWS_OWNER[scope] && subject === null) return
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
   if (subjectKind === null) {
     if (subject !== null) throw new Error(`${scope} docs take no subject; remove --subject`)
@@ -357,6 +362,8 @@ function assertCanonRemovalAllowed(doc: Doc): void {
 function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): void {
   const inject = refuseProjectOrGlobalInject(input.scope, input.delivery)
   if (inject) throw new Error(inject)
+  const settings = refuseSettingsBody(input.scope, input.body)
+  if (settings) throw new Error(settings)
   assertInjectSize(input)
   assertCanonWriteAllowed(input)
 }
@@ -376,16 +383,17 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
 
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
-  if (input.owner && (!DOC_SCOPE_ALLOWS_OWNER[input.scope as DocScope] || input.subject !== null)) {
-    throw new Error('user canon requires scope canon and no subject')
-  }
+  const ownedAddress =
+    refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
+    refuseSettingsAddress(input.scope, input.subject, input.owner)
+  if (ownedAddress) throw new Error(ownedAddress)
   validate(input.scope, input.subject, input.slug)
   const identity = docWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
-  const delivery =
-    input.scope === 'canon' ? 'demand' : (input.delivery ?? prior?.delivery ?? 'inject')
+  const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
+  const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
   const hosted = await recordApiClient().upsertDoc({
@@ -396,10 +404,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     title: input.title,
     body: input.body,
     delivery,
-    projectName:
-      input.scope === 'project' || (input.scope === 'canon' && input.subject)
-        ? input.subject
-        : null,
+    projectName,
     reason: identity.reason,
     author: identity.author,
     forceInject: input.forceInject,
@@ -415,14 +420,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     if (existing) {
       db()
         .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-        .run(
-          input.title,
-          input.body,
-          input.scope === 'canon' ? 'demand' : (input.delivery ?? existing.delivery),
-          at,
-          hosted.id,
-          existing.id,
-        )
+        .run(input.title, input.body, delivery, at, hosted.id, existing.id)
       doc = getDoc(input.scope, input.subject, input.slug, owner)!
     } else {
       db()
@@ -434,13 +432,11 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
           input.scope,
           input.subject,
           owner,
-          input.scope === 'project' || (input.scope === 'canon' && input.subject)
-            ? projectByName(input.subject!)!.id
-            : null,
+          projectName ? projectByName(input.subject!)!.id : null,
           input.slug,
           input.title,
           input.body,
-          input.scope === 'canon' ? 'demand' : (input.delivery ?? 'inject'),
+          delivery,
           at,
           at,
           hosted.id,

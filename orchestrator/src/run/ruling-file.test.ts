@@ -267,6 +267,24 @@ describe('file ruling', () => {
     expect(writes).toEqual([])
   })
 
+  test('refuses filing a ruling as a settings doc', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner-session' })
+    const questionId = addAnsweredQuestion(run)
+    const writes: unknown[] = []
+    await expect(
+      file(
+        { questionId, as: 'doc', scope: 'settings' },
+        stores({
+          writeDoc: async (input) => {
+            writes.push(input)
+            return { id: 1, revision: 'r' }
+          },
+        }),
+      ),
+    ).rejects.toThrow('unknown doc scope "settings"')
+    expect(writes).toEqual([])
+  })
+
   test('refuses a foreign session and writes nothing', async () => {
     const run = addRun({
       agent: 'codex',

@@ -5,8 +5,23 @@ import {
   globalCanonWriteTargets,
   ownerVisible,
   refuseCanonWrite,
+  refuseOwnedDocAddress,
+  refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('owned settings share the owner-private address rule with canon', () => {
+  const owner = '01990000-0000-7000-8000-000000000091'
+  expect(refuseOwnedDocAddress('settings', null, owner)).toBeNull()
+  expect(refuseOwnedDocAddress('canon', null, owner)).toBeNull()
+  expect(refuseOwnedDocAddress('settings', 'alpha', owner)).toContain('canon or settings')
+  expect(refuseOwnedDocAddress('project', null, owner)).toContain('canon or settings')
+  expect(refuseOwnedDocAddress('settings', null, null)).toBeNull()
+  expect(refuseSettingsAddress('settings', null, owner)).toBeNull()
+  expect(refuseSettingsAddress('settings', 'alpha', null)).toBeNull()
+  expect(refuseSettingsAddress('settings', null, null)).toContain('owner and no subject')
+  expect(refuseSettingsAddress('canon', null, null)).toBeNull()
+})
 
 test('canon removal refusal names the citer and remedy', () => {
   expect(

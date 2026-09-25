@@ -1,10 +1,14 @@
 // concern: doc-write-allowed
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
+import { DOC_SCOPE_ALLOWS_OWNER, type DocScope } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
+import { refuseSettingsBody } from '../settings/settings.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
+
+export { refuseSettingsBody }
 
 export const RECORD_WRITE_REMEDY = 'cleared by: orch record doctor'
 export const MISSING_HOSTED_REVISION_REMEDY = 'cleared by: orch record migrate'
@@ -66,6 +70,42 @@ export function canonRemovalRefusal(findings: CanonFinding[]): string | null {
 
 export function importedDocDelivery(scope: string): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
+}
+
+export function forcedDocDelivery(scope: string): 'demand' | null {
+  return scope === 'canon' || scope === 'settings' ? 'demand' : null
+}
+
+export function docWriteProjectName(scope: string, subject: string | null): string | null {
+  if (scope === 'project') return subject
+  if ((scope === 'canon' || scope === 'settings') && subject) return subject
+  return null
+}
+
+export function refuseOwnedDocAddress(
+  scope: string,
+  subject: string | null,
+  owner: string | null | undefined,
+): string | null {
+  if (!owner) return null
+  if (DOC_SCOPE_ALLOWS_OWNER[scope as DocScope] === true && subject === null) return null
+  return (
+    'owned docs require scope canon or settings and no subject\n' +
+    'cleared by: omit the subject and use an owner only with canon or settings'
+  )
+}
+
+export function refuseSettingsAddress(
+  scope: string,
+  subject: string | null,
+  owner: string | null | undefined,
+): string | null {
+  if (scope !== 'settings') return null
+  if (Boolean(owner) === (subject === null)) return null
+  return (
+    'settings docs require an owner and no subject, or a project subject and no owner\n' +
+    'cleared by: orch settings import --user or --project <name>'
+  )
 }
 
 export type DocRevisionDecision = { allow: true } | { allow: false; reason: string }
@@ -222,6 +262,7 @@ export function refuseDocWrite(input: {
   return (
     refuseProjectOrGlobalInject(input.scope, input.delivery) ??
     refuseOversizedInject(input) ??
+    refuseSettingsBody(input.scope, input.body) ??
     refuseCanonPathCollision({
       scope: input.scope,
       subject: input.subject,

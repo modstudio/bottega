@@ -15,11 +15,13 @@ export const DOC_SCOPES = [
   'stack',
   'resume',
   'canon',
+  'settings',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
 export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
-  (scope): scope is Exclude<DocScope, 'canon'> => scope !== 'canon',
-) as [Exclude<DocScope, 'canon'>, ...Exclude<DocScope, 'canon'>[]]
+  (scope): scope is Exclude<DocScope, 'canon' | 'settings'> =>
+    scope !== 'canon' && scope !== 'settings',
+) as [Exclude<DocScope, 'canon' | 'settings'>, ...Exclude<DocScope, 'canon' | 'settings'>[]]
 export type FilingDocScope = (typeof FILING_DOC_SCOPES)[number]
 
 export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job'
@@ -33,6 +35,7 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   stack: 'stack',
   resume: 'project',
   canon: 'project',
+  settings: 'project',
 } as const satisfies Record<DocScope, DocSubjectKind | null>
 
 export function resolveDocSubject(
@@ -59,4 +62,5 @@ export const DOC_SCOPE_ALLOWS_OWNER = {
   stack: false,
   resume: false,
   canon: true,
+  settings: true,
 } as const satisfies Record<DocScope, boolean>
