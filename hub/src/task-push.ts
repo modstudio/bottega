@@ -1,6 +1,7 @@
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, writeTransaction } from './db.ts'
 import { isTaskMirrorAdoption, type MirrorAdoption } from './hosted-tasks.ts'
+import { installBindingFromIdentity, rememberHostedInstall } from './install-binding.ts'
 import { projects } from './projects.ts'
 import type { TaskRow } from './task.ts'
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
@@ -59,7 +60,12 @@ export function selectTaskPushRows(
   identity: HostedTaskIdentity,
 ) {
   const reason = (projectName: string): SkipReason | null => {
-    const disposition = taskProjectSpaceDisposition(projectName, registered, identity)
+    const disposition = taskProjectSpaceDisposition(
+      projectName,
+      registered,
+      identity,
+      installBindingFromIdentity(identity),
+    )
     return disposition.belongsToActiveSpace ? null : disposition.reason
   }
   const skipped = new Map<
@@ -205,6 +211,7 @@ export async function pushTasks(options: Options = {}) {
   }))
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(requestOptions)
+  rememberHostedInstall(identity.activeSpaceId)
   const selected = selectTaskPushRows(
     { tasks, comments, documents, statusEvents },
     projects(),

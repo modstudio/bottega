@@ -164,7 +164,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      'e0e8ab952f9ab4074d03a276930145ed6f138061bbdc2066d9ab50b951a830c7',
+      'b1f4a4a3c781bb0ca58396423defd56a8060674ce397fcceb231d7043cc903f2',
     )
     d.close()
   })
@@ -205,9 +205,35 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
+      '0014_install_binding',
     ])
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
+    expect(
+      d.query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE name='note'").get()?.sql,
+    ).not.toMatch(/AUTOINCREMENT/i)
     d.close()
+  })
+
+  test('install_binding binds only from hosted collect cursors, never record_id', () => {
+    const unbound = migratedThrough(13)
+    unbound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+      VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01'),
+             ('mcp-id','MCP-1','workshop','mcp','2026-01-01','2026-01-01')`)
+    expect(applyMigrations(unbound)).toEqual(['0014_install_binding'])
+    expect(
+      unbound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
+    ).toBeNull()
+    unbound.close()
+
+    const bound = migratedThrough(13)
+    bound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+      VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01')`)
+    bound.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
+    expect(applyMigrations(bound)).toEqual(['0014_install_binding'])
+    expect(
+      bound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
+    ).toEqual({ bound: 1 })
+    bound.close()
   })
 
   test('the adoption strip handles populated foreign-key cycles and restores enforcement', () => {
@@ -318,6 +344,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
+      '0014_install_binding',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -534,6 +561,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
+      '0014_install_binding',
     ])
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
@@ -644,7 +672,7 @@ describe('hub migration journal', () => {
        VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
     ).run()
 
-    expect(applyMigrations(d)).toEqual(['0013_workflow_questions'])
+    expect(applyMigrations(d)).toEqual(['0013_workflow_questions', '0014_install_binding'])
     expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
       {
         question_id: 40,
@@ -692,6 +720,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
+      '0014_install_binding',
     ])
     expect(
       d
@@ -807,6 +836,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
+      '0014_install_binding',
     ])
     const after = Date.now()
     const minted = d
@@ -877,6 +907,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
+      '0014_install_binding',
     ])
     expect(
       d

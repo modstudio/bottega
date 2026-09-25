@@ -215,7 +215,7 @@ describe('hosted-only task safety', () => {
           },
         },
       ),
-    ).rejects.toThrow('HUB_HOSTED_URL')
+    ).rejects.toThrow('hosted hub is unreachable')
     expect(db().query<{ count: number }, []>(`SELECT count(*) count FROM task`).get()!.count).toBe(
       before,
     )

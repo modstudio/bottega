@@ -3,13 +3,15 @@ import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
+import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
 } from './operator-waiting-email-contract.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
-const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
+const REMEDY = MISSING_HOSTED_URL_REMEDY
+const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export type HostedTaskIdentity = {
@@ -18,7 +20,7 @@ export type HostedTaskIdentity = {
   memberships: RecordSpaceMembership[]
 }
 
-export function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
+function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   return baseUrl
@@ -48,7 +50,7 @@ async function responseObject(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
+    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
@@ -229,7 +231,7 @@ async function taskIdentityResponse(
       },
     })
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
+    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
   }
   return { response, url }
 }

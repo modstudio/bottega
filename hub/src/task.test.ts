@@ -1,14 +1,19 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { upsertTrackerTask } from './ingest/trackers.ts'
+import { persistInstallBinding } from './install-binding.ts'
 import {
+  closeTask,
   commentTask,
   createTask,
   createTaskDocument,
+  deleteTaskDocument,
   duplicateCandidates,
   duplicateScore,
+  getTaskDocument,
+  setTask,
   showTask,
   taskRecord,
   updateTaskDocument,
@@ -91,22 +96,22 @@ const hosted = {
   },
 }
 
-describe('local task tracker', () => {
-  const seed = (key: string, project: string, source: 'mcp' | 'local' = 'local') => {
-    const stamp = new Date().toISOString()
-    const recordId = Bun.randomUUIDv7()
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `INSERT INTO task
+const seed = (key: string, project: string, source: 'mcp' | 'local' = 'local') => {
+  const stamp = new Date().toISOString()
+  const recordId = Bun.randomUUIDv7()
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task
         (record_id,key, project, title, status, status_category, source, first_seen, last_seen)
        VALUES (?, ?, ?, 'seed', 'open', 'open', ?, ?, ?)`,
-        )
-        .run(recordId, key, project, source, stamp, stamp),
-    )
-    return recordId
-  }
+      )
+      .run(recordId, key, project, source, stamp, stamp),
+  )
+  return recordId
+}
 
+describe('local task tracker', () => {
   test('issues above the highest existing number for the project prefix', async () => {
     seed('BET-700', 'beta')
     expect((await createTask({ project: 'beta', title: 'Next beta task' }, { hosted })).key).toBe(
@@ -356,5 +361,78 @@ describe('local task tracker', () => {
     expect(showTask('SAME-77', { recordId }).comments.map((row) => row.body)).toEqual([
       'alpha comment',
     ])
+  })
+})
+
+describe('local-authoritative task writes', () => {
+  const previousHostedUrl = process.env.HUB_HOSTED_URL
+  beforeAll(() => {
+    delete process.env.HUB_HOSTED_URL
+  })
+  beforeEach(resetFixtureStore)
+  afterAll(() => {
+    if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+    else process.env.HUB_HOSTED_URL = previousHostedUrl
+  })
+
+  test('mints the next key, then update close comment and documents write hub.db', async () => {
+    const created = await createTask({
+      project: 'beta',
+      title: `Local-authoritative write ${crypto.randomUUID()}`,
+    })
+    expect(created.key).toMatch(/^BET-\d+$/)
+    expect(created.source).toBe('local')
+    expect(created.record_id).toBeTruthy()
+
+    const renamed = await setTask(created.key, {}, { title: 'Renamed local beta' })
+    expect(renamed.title).toBe('Renamed local beta')
+
+    const comment = await commentTask(created.key, {}, 'a local comment')
+    expect(comment.body).toBe('a local comment')
+    expect(comment.task_record_id).toBe(created.record_id)
+
+    const document = await createTaskDocument(
+      {
+        task: created.key,
+        title: 'Notes',
+        body: 'first body',
+      },
+      {},
+    )
+    expect(document.body).toBe('first body')
+    const updated = await updateTaskDocument(document.id, {
+      body: 'second body',
+      expectedVersion: document.version,
+    })
+    expect(updated.body).toBe('second body')
+    expect(updated.version).not.toBe(document.version)
+    await expect(
+      updateTaskDocument(document.id, { body: 'stale', expectedVersion: document.version }),
+    ).rejects.toThrow(`task document ${document.id} changed since version ${document.version}`)
+    await deleteTaskDocument(document.id)
+    expect(() => getTaskDocument(document.id)).toThrow(`no task document ${document.id}`)
+
+    const closed = await closeTask(created.key, {})
+    expect(closed.status_category).toBe('done')
+    expect(closed.closed_at).toBeTruthy()
+  })
+
+  test('a remote-tracker project refuses local writes when hosting is absent', async () => {
+    await expect(createTask({ project: 'alpha', title: 'Must not mint locally' })).rejects.toThrow(
+      "project 'alpha' declares a remote tracker",
+    )
+  })
+
+  test('a hosted-bound install with HUB_HOSTED_URL unset refuses hub-protocol writes', async () => {
+    writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
+    await expect(
+      createTask({ project: 'workshop', title: 'Must not mint locally on a bound install' }),
+    ).rejects.toThrow("project 'workshop' belongs to a hosted space")
+  })
+
+  test('a never-bound project with no key prefix is refused locally', async () => {
+    await expect(
+      createTask({ project: 'nested', title: 'Cannot number this locally' }),
+    ).rejects.toThrow(`orch project set nested --settings '{"keyPrefixes":["ABC"]}'`)
   })
 })

@@ -1,11 +1,13 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { persistInstallBinding } from './install-binding.ts'
 import { hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
 import { taskRecordIdFor } from './task-identity.ts'
 
 const CURSOR_KEY = 'collect.hosted-notes.cursor'
 export function applyHostedNote(conn: Database, row: HostedNote) {
+  persistInstallBinding(conn)
   if (row.deleted_at) {
     conn.query('DELETE FROM note WHERE id=?').run(row.number)
     return
