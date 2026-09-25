@@ -33,11 +33,20 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { db, nowIso, writableDb } from '../database/db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import {
+  decideGateCancellation,
+  decideGateConcurrency,
+  decideGateEligibility,
+  formatGateResult,
+  shapeGateResult,
+} from '../gate/gate-decision.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { ASKED_VIA_LIVE } from '../run/question-vocabulary.ts'
+import { runScratchDir } from '../run/run-artifacts.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -62,6 +71,112 @@ const ASK_TIMEOUT_MS = boundedTimeout()
 const POLL_MS = 1_000
 
 export type AskResult = { answered: true; answer: string } | { answered: false; reason: string }
+
+function gateEligibility(runId: number, token: string) {
+  const row = db()
+    .query(
+      `SELECT r.job,p.settings FROM run r
+       LEFT JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+    )
+    .get(runId) as { job: string; settings: string | null } | null
+  let gate: string | null = null
+  try {
+    const settings = JSON.parse(row?.settings ?? '{}') as { gate?: unknown }
+    gate = typeof settings.gate === 'string' ? settings.gate : null
+  } catch {
+    gate = null
+  }
+  return decideGateEligibility({
+    authenticated: authenticatedWorkerRun(runId, token),
+    writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
+    gate,
+  })
+}
+
+function gateToolAvailable(runId: number, token: string): boolean {
+  if (!authenticatedWorkerRun(runId, token)) return false
+  const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
+  return Boolean(row && JOBS[row.job]?.needs.writesRepo)
+}
+
+async function requestGate(runId: number): Promise<string> {
+  writableDb()
+  let requested: { id: number } | { message: string }
+  try {
+    requested = writeTransaction(() => {
+      const run = db()
+        .query('SELECT status,gate_requests_closed FROM run WHERE id=?')
+        .get(runId) as { status: string; gate_requests_closed: number } | null
+      const cancellation = decideGateCancellation({
+        requestsClosed: run?.gate_requests_closed === 1,
+        runLive: run?.status === 'running' || run?.status === 'asking',
+      })
+      if (cancellation) return { message: cancellation }
+      const concurrent = decideGateConcurrency(
+        Boolean(
+          db()
+            .query('SELECT 1 FROM gate_execution WHERE run_id=? AND finished_at IS NULL LIMIT 1')
+            .get(runId),
+        ),
+      )
+      if (!concurrent.allowed) return { message: concurrent.message! }
+      return db()
+        .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+        .get(runId, nowIso()) as { id: number }
+    })
+  } catch (error) {
+    if (
+      String(error).includes('UNIQUE constraint failed') &&
+      db()
+        .query('SELECT 1 FROM gate_execution WHERE run_id=? AND finished_at IS NULL LIMIT 1')
+        .get(runId)
+    ) {
+      return decideGateConcurrency(true).message!
+    }
+    throw error
+  }
+  if ('message' in requested) return requested.message
+  const id = requested.id
+  for (;;) {
+    const row = db()
+      .query(
+        `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
+                g.cancelled_reason,r.status,r.gate_requests_closed
+         FROM gate_execution g JOIN run r ON r.id=g.run_id WHERE g.id=?`,
+      )
+      .get(id) as {
+      exit_code: number | null
+      timed_out: number | null
+      elapsed_ms: number | null
+      output_tail: string | null
+      output_artifact: string | null
+      cancelled_reason: string | null
+      status: string
+      gate_requests_closed: number
+    } | null
+    if (!row) return 'Gate run cancelled because its execution record is no longer available.'
+    const cancellation =
+      row.cancelled_reason ??
+      decideGateCancellation({
+        requestsClosed: row.gate_requests_closed === 1,
+        runLive: row.status === 'running' || row.status === 'asking',
+      })
+    if (cancellation) return cancellation
+    if (row.exit_code !== null && row.timed_out !== null && row.elapsed_ms !== null) {
+      return formatGateResult(
+        shapeGateResult({
+          exitCode: row.exit_code,
+          timedOut: row.timed_out === 1,
+          elapsedMs: row.elapsed_ms,
+          output: row.output_tail ?? '',
+          outputPath: `${runScratchDir(runId)}/gate-${id}.log`,
+          artifactPath: row.output_artifact ?? '(no artifact recorded)',
+        }),
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+  }
+}
 
 /**
  * Record a question and wait for the architect to rule on it.
@@ -224,6 +339,28 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
       }
     },
   )
+
+  // A no-gate writer sees the tool and receives the explicit no-op message.
+  // Readers and inline jobs do not receive an execution surface at all.
+  if (gateToolAvailable(runId, token)) {
+    server.registerTool(
+      'run_gate',
+      {
+        description:
+          "Run this project's registered gate in the run worktree through the supervising orchestrator. " +
+          'The command, directory, and environment are fixed by orch and take no worker input.',
+      },
+      async () => {
+        try {
+          const eligibility = gateEligibility(runId, token)
+          if (!eligibility.eligible) return text(eligibility.message)
+          return text(await requestGate(runId))
+        } catch (error) {
+          return text(`The registered gate could not be run (${String(error)}).`, true)
+        }
+      },
+    )
+  }
 
   server.registerTool(
     'message_orchestrator',

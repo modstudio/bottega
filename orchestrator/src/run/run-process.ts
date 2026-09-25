@@ -87,6 +87,12 @@ export type LiveCheckpoint = {
   guardEnvironment: NodeJS.ProcessEnv
 }
 export const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
+const liveGateTerminators = new Set<() => Promise<void>>()
+
+export function registerLiveGate(terminate: () => Promise<void>): () => void {
+  liveGateTerminators.add(terminate)
+  return () => liveGateTerminators.delete(terminate)
+}
 
 type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
 type ProcessInventory =
@@ -282,11 +288,12 @@ export function bindSignals() {
   if (signalsBound) return
   signalsBound = true
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
+    process.on(sig, async () => {
       if (terminating) return
       terminating = true
       setTimeout(() => process.exit(130), 5_000)
       for (const p of live) void terminateProcessGroup(p.pid ?? 0, { direct: p })
+      await Promise.all([...liveGateTerminators].map((terminate) => terminate()))
       for (const checkpoint of liveCheckpoints.values()) {
         const result = checkpointRun({
           database: db(),
@@ -305,7 +312,7 @@ export function bindSignals() {
           console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)
         }
       }
-      setTimeout(() => process.exit(130), 250)
+      process.exit(130)
     })
   }
 }

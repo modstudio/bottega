@@ -786,6 +786,9 @@ system cannot catch automatically, and hiding one costs far more than admitting
 it. Run the project's tests if you can, and report what actually happened rather
 than what you expect would happen.
 
+When the \`run_gate\` tool is available, run it before reporting done and report
+its last result in your reply's tests section.
+
 REPORT WHAT STOPPED YOU, IN "blockers"
 
 If anything prevented you from verifying your work — a tool that would not run,

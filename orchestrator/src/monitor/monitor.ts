@@ -45,6 +45,7 @@ import {
   unscoredRuns,
   unsettledClaimConditions,
   unsettledClaimInventory,
+  workerGateToolingConditions,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
@@ -360,6 +361,7 @@ export async function monitor(
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
   conditions.push(...stalledRunConditions(clock))
+  conditions.push(...workerGateToolingConditions(database))
   const recordTunnel = await observeRecordTunnel()
   conditions.push(...recordTunnel.conditions)
   errors.push(...recordTunnel.errors)
