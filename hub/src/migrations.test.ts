@@ -1,10 +1,18 @@
 import { Database } from 'bun:sqlite'
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { resetFixtureStore, runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
   closeDatabaseForFixture,
   db,
@@ -156,7 +164,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '049f49f927ef5e57e3e17c3746c53add8180451f80b4381f7f0fdec889e4b4af',
+      '6db84a2973bd8ae806028724dabfbda37402aae6dbd27bb849214b3cec4489a9',
     )
     d.close()
   })
@@ -193,6 +201,7 @@ describe('hub migration journal', () => {
       '0007_interval_attribution',
       '0008_task_identity',
       '0009_task_record_identity',
+      '0010_question_delivery',
     ])
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
@@ -302,6 +311,7 @@ describe('hub migration journal', () => {
       '0007_interval_attribution',
       '0008_task_identity',
       '0009_task_record_identity',
+      '0010_question_delivery',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -498,6 +508,110 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  test('question migration rewinds collection and the ordinary next collect fills provenance', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-question-upgrade-'))
+    const path = join(dir, 'hub.db')
+    const fakeOrch = join(dir, 'orch')
+    const askedAt = new Date(Date.now() - 7 * 86_400_000).toISOString()
+    const currentWatermark = new Date().toISOString()
+    const d = migratedThrough(9, path)
+    d.query(
+      `INSERT INTO question
+        (question_id,run_ref,root_ref,task_key,session_id,asked_at,answered_at)
+       VALUES (7001,'orch:7001','orch:7001',NULL,'upgrade-session',?,NULL)`,
+    ).run(askedAt)
+    d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
+      JSON.stringify(currentWatermark),
+    )
+    expect(applyMigrations(d)).toEqual(['0010_question_delivery'])
+    const rewound = JSON.parse(
+      d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
+        .value,
+    ) as string
+    expect(rewound < askedAt).toBe(true)
+    expect(applyMigrations(d)).toEqual([])
+    expect(
+      JSON.parse(
+        d
+          .query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'")
+          .get()!.value,
+      ),
+    ).toBe(rewound)
+    d.close()
+
+    const run = {
+      id: 7001,
+      started_at: askedAt,
+      agent: 'fixture',
+      job: 'implement',
+      repo: 'fixture',
+      cwd: null,
+      session_id: 'upgrade-session',
+      latency_ms: null,
+      vendor_tokens: null,
+      vendor_cost_usd: null,
+      prompt_head: 'fixture',
+      prompt_path: null,
+      branch: null,
+      probe: 1,
+      status: 'asking',
+      delivery: null,
+      quality: null,
+      questions: [
+        {
+          id: 7001,
+          run_id: 7001,
+          asked_at: askedAt,
+          answered_at: new Date(Date.now() - 6 * 86_400_000).toISOString(),
+          asked_via: 'reply',
+          answerer_kind: 'operator',
+          answer_channel: 'cli',
+          deliveries: [
+            {
+              id: 1,
+              question_id: 7001,
+              run_id: 7001,
+              mode: 'resume',
+              outcome: 'delivered',
+              at: new Date(Date.now() - 6 * 86_400_000).toISOString(),
+              error: null,
+            },
+          ],
+        },
+      ],
+    }
+    writeFileSync(
+      fakeOrch,
+      `#!/usr/bin/env bun\n` +
+        `if (process.argv.includes('project')) console.log('[]')\n` +
+        `else { const i=process.argv.indexOf('--since'); if (process.argv[i+1] <= ${JSON.stringify(askedAt)}) console.log(${JSON.stringify(JSON.stringify(run))}) }\n`,
+    )
+    chmodSync(fakeOrch, 0o755)
+    const collected = runHubFixtureProcess(
+      [
+        process.execPath,
+        '--no-env-file',
+        '-e',
+        `import { collectFast } from './hub/src/collect.ts'; await collectFast({ transcripts: async () => ({ rows: 0, skipped: 0 }) })`,
+      ],
+      {
+        env: { ...process.env, HUB_DB: path, HUB_ORCH: fakeOrch },
+        cwd: join(import.meta.dir, '../..'),
+      },
+    )
+    expect(collected.exitCode, collected.stderr.toString()).toBe(0)
+
+    const upgraded = new Database(path)
+    expect(
+      upgraded.query('SELECT answerer_kind FROM question WHERE question_id=7001').get(),
+    ).toEqual({ answerer_kind: 'operator' })
+    expect(
+      upgraded.query('SELECT mode,outcome FROM question_delivery WHERE question_id=7001').all(),
+    ).toEqual([{ mode: 'resume', outcome: 'delivered' }])
+    upgraded.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('task identity rebuild backfills relationships and cascades record-id updates', () => {
     const d = migratedThrough(8)
     d.exec(`
@@ -518,7 +632,7 @@ describe('hub migration journal', () => {
       VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
       UPDATE note SET project='workshop',promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
-    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity', '0010_question_delivery'])
     expect(
       d
         .query(
@@ -627,7 +741,7 @@ describe('hub migration journal', () => {
       VALUES ('MINT-1','workshop','local','2026-01-01','2026-01-01')
     `)
     const before = Date.now()
-    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity', '0010_question_delivery'])
     const after = Date.now()
     const minted = d
       .query<{ record_id: string }, []>("SELECT record_id FROM task WHERE key='MINT-1'")
@@ -691,7 +805,7 @@ describe('hub migration journal', () => {
       VALUES ('OPS-21','2026-01-01','active');
     `)
 
-    expect(applyMigrations(d)).toEqual(['0009_task_record_identity'])
+    expect(applyMigrations(d)).toEqual(['0009_task_record_identity', '0010_question_delivery'])
     expect(
       d
         .query(
