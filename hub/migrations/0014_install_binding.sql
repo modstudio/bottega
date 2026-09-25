@@ -50,7 +50,7 @@ CREATE UNIQUE INDEX note_acknowledgement_record_id ON note_acknowledgement(recor
 CREATE INDEX note_acknowledgement_session ON note_acknowledgement(session_id, acknowledged_at DESC);
 --> statement-breakpoint
 -- BACKFILL
-INSERT INTO install_binding (id, bound, active_space_id, bound_at)
+INSERT OR IGNORE INTO install_binding (id, bound, active_space_id, bound_at)
 SELECT 1, 1, NULL, datetime('now')
 WHERE EXISTS (SELECT 1 FROM setting WHERE key IN ('collect.hosted-tasks.cursor', 'collect.hosted-notes.cursor'));
 -- /BACKFILL
