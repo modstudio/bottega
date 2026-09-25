@@ -3,7 +3,12 @@
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
 import { inspectionGitEnv } from '../../../shared/git.ts'
-import type { CanonFile, CanonLintInput, CanonSourceText } from './canon-lint.ts'
+import {
+  type CanonFile,
+  type CanonLintInput,
+  type CanonSourceText,
+  isCanonCodeSourcePath,
+} from './canon-lint.ts'
 
 function git(cwd: string, args: string[]): string {
   const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -70,8 +75,6 @@ function readCanonFiles(
   })
 }
 
-const SOURCE_PATH = /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue)$/
-
 function readSourceTexts(
   root: string,
   entries: { mode: string; path: string }[],
@@ -79,7 +82,9 @@ function readSourceTexts(
   return entries
     .filter(
       ({ mode, path }) =>
-        mode !== '120000' && SOURCE_PATH.test(path) && existsSync(resolve(root, path)),
+        mode !== '120000' &&
+        (isCanonCodeSourcePath(path) || path.endsWith('.md')) &&
+        existsSync(resolve(root, path)),
     )
     .map(({ path }) => ({ path, text: readFileSync(resolve(root, path), 'utf8') }))
 }

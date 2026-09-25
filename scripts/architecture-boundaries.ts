@@ -83,6 +83,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/canon/canon-lint.ts',
     [
       'node:path',
+      'github-slugger',
       '../../../shared/canon-references.ts',
       '../../../shared/ratchet.ts',
       './canon-budget.ts',

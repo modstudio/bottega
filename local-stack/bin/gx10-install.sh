@@ -21,8 +21,8 @@ IMAGE="${IMAGE:-vllm/vllm-openai:cu130-nightly}"
 GPU_UTIL="${GPU_UTIL:-0.50}"
 # The context window, and it is a ROUTING input: a job whose working set will not
 # fit excludes this agent outright, so the number here decides what the local
-# model is allowed to do. Keep it in step with LOCAL_CONTEXT_TOKENS in
-# src/agent/agents.ts — `orch doctor` reads the served value back and reports a
+# model is allowed to do. Keep it in step with the registered agent's
+# contextTokens — `orch doctor` reads the served value back and reports a
 # mismatch rather than letting the two drift.
 # Why 131072 on this host: orch doc show local-model-host-hardware --scope machine
 MAX_LEN="${MAX_LEN:-131072}"

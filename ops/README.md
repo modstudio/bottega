@@ -34,8 +34,8 @@ aborts the rest.
 
 ## The local model tunnel
 
-Set `LOCAL_MODEL_HOST` to an SSH config alias before running `./install.sh` to
-install `com.user.local-model-tunnel`. When the variable is unset, installation
+Set `model_host.ssh_alias` in machine config to an SSH config alias before running
+`./install.sh` to install `com.user.local-model-tunnel`. When the key is unset, installation
 skips that job and prints that it was skipped.
 
 The launchd job forwards a local port to a model server bound to localhost on

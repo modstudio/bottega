@@ -1,6 +1,7 @@
 // concern: canon-lint
 /** Knows pure canon classification and lint rules. Must not know filesystems, stores, commands, or processes. */
 import { posix } from 'node:path'
+import GithubSlugger from 'github-slugger'
 import { CANON_REFERENCE_EXEMPTIONS } from '../../../shared/canon-references.ts'
 import { type Finding, introducedFindings } from '../../../shared/ratchet.ts'
 import {
@@ -23,6 +24,10 @@ export type CanonLintInput = {
   sourceTexts: CanonSourceText[]
 }
 export type CanonFinding = Finding & { measuredBytes?: number }
+
+export function isCanonCodeSourcePath(path: string): boolean {
+  return /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue)$/.test(path)
+}
 
 type CanonMeasurement = { path: string; bytes: number; limit: number }
 type CanonLintSummary = {
@@ -167,6 +172,15 @@ function markdownLinkTargets(file: CanonFile): LineSpan[] {
   )
 }
 
+function headingReference(target: string): { path: string; fragment: string } | null {
+  const hash = target.indexOf('#')
+  if (hash < 0) return null
+  const path = target.slice(0, hash)
+  const fragment = target.slice(hash + 1)
+  if (!fragment || (path && !path.endsWith('.md'))) return null
+  return { path, fragment }
+}
+
 function referencePieces(file: CanonFile): LineSpan[] {
   return [...inlineCodeSpans(file), ...markdownLinkTargets(file)].flatMap(({ content, line }) =>
     content
@@ -174,6 +188,22 @@ function referencePieces(file: CanonFile): LineSpan[] {
       .filter(Boolean)
       .map((piece) => ({ content: piece, line })),
   )
+}
+
+function headingReferencePieces(file: CanonFile): LineSpan[] {
+  const pieces = (spans: LineSpan[]) =>
+    spans.flatMap(({ content, line }) =>
+      content
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((piece) => ({ content: piece, line })),
+    )
+  return [
+    ...pieces(inlineCodeSpans(file)).filter(({ content }) =>
+      Boolean(headingReference(content)?.path),
+    ),
+    ...pieces(markdownLinkTargets(file)),
+  ]
 }
 
 function stripReferenceSuffix(reference: string): string {
@@ -254,38 +284,132 @@ function resolvedReferencePaths(
   return [...matched]
 }
 
+const DECLARATION_PATTERNS = [
+  /\b(?:function|func|const|let|var|class|interface|type|enum|def)\s+([A-Za-z_$][\w$]*)\b/g,
+  /\b([A-Za-z_$][\w$]*)\b\s*[=:]/g,
+  /\b([A-Za-z_$][\w$]*)\b\s*\?\s*:/g,
+  /['"][^'"\r\n]*\.([A-Za-z_$][\w$]*)['"]\s*:/g,
+  /(?:\b(?:public|private|protected|static|abstract|async|get|set)\s+)*\b([A-Za-z_$][\w$]*)\b\s*\([^)]*\)\s*(?:\{|=>|:)/g,
+  /\b(?:process|Bun)\.env\.([A-Z][A-Z0-9_]*)\b/g,
+  /\bos\.environ\.get\(\s*['"]([A-Z][A-Z0-9_]*)['"]\s*\)/g,
+  /\bos\.getenv\(\s*['"]([A-Z][A-Z0-9_]*)['"]\s*\)/g,
+] as const
+
+function addExportedIdentifiers(line: string, identifiers: Set<string>): void {
+  for (const exported of line.matchAll(/\bexport\s*\{([^}]*)\}/g)) {
+    for (const item of exported[1]!.split(',')) {
+      const name = item
+        .trim()
+        .replace(/^type\s+/, '')
+        .match(/^(?:[A-Za-z_$][\w$]*\s+as\s+)?([A-Za-z_$][\w$]*)$/)?.[1]
+      if (name) identifiers.add(name)
+    }
+  }
+}
+
+function addLineDeclarations(line: string, identifiers: Set<string>): void {
+  for (const pattern of DECLARATION_PATTERNS) {
+    for (const match of line.matchAll(pattern)) identifiers.add(match[1]!)
+  }
+  for (const match of line.matchAll(
+    /\b(?:process\.env|os\.environ)\[\s*(['"])([A-Z][A-Z0-9_]*)\1\s*\]/g,
+  )) {
+    identifiers.add(match[2]!)
+  }
+  addExportedIdentifiers(line, identifiers)
+}
+
+function uncommentedSourceLines(text: string): string[] {
+  const withoutBlockComments = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '')
+  return withoutBlockComments.split(/\r?\n/).filter((line) => !/^\s*(?:\/\/|--|#(?!\[))/.test(line))
+}
+
+function declaredIdentifiers(text: string): Set<string> {
+  const identifiers = new Set<string>()
+  for (const line of uncommentedSourceLines(text)) addLineDeclarations(line, identifiers)
+  return identifiers
+}
+
 function escapedIdentifier(identifier: string): string {
   return identifier.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
 }
 
-function containsDeclaration(text: string, identifier: string): boolean {
-  const word = escapedIdentifier(identifier)
-  const identifierPattern = new RegExp(`\\b${word}\\b`)
-  const keywordPattern = /\b(?:function|const|let|class|interface|type|enum|def|export)\b/
-  const assignmentOrTypePattern = new RegExp(`\\b${word}\\b\\s*[=:]`)
-  const callableDeclarationPattern = new RegExp(
-    `(?:\\b(?:public|private|protected|static|abstract|async|get|set)\\s+)*\\b${word}\\b\\s*\\([^)]*\\)\\s*(?:\\{|=>|:)`,
-  )
-  return text
-    .split(/\r?\n/)
-    .some(
-      (line) =>
-        identifierPattern.test(line) &&
-        (keywordPattern.test(line) ||
-          assignmentOrTypePattern.test(line) ||
-          callableDeclarationPattern.test(line)),
-    )
+function headingLabels(text: string): string[] {
+  const slugger = new GithubSlugger()
+  const lines = proseLines(text)
+  const labels: string[] = []
+  for (const [index, line] of lines.entries()) {
+    const atx = line.text.match(/^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/)?.[1]
+    const next = lines[index + 1]
+    const setext =
+      next?.line === line.line + 1 && /^ {0,3}(?:=+|-+)\s*$/.test(next.text)
+        ? line.text.trim()
+        : null
+    const heading = atx ?? setext
+    if (!heading) continue
+    const visible = heading
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/<[^>]+>/g, '')
+      .replace(/[`*_~]/g, '')
+    labels.push(slugger.slug(visible))
+  }
+  return labels
 }
 
-function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding[] {
+type ReferenceFacts = {
+  declarations: Map<string, Set<string>>
+  headings: Map<string, string[]>
+  occurrenceCorpus: string
+}
+
+function referenceFacts(input: CanonLintInput): ReferenceFacts {
+  const texts = new Map<string, string>()
+  for (const { path, text } of [...input.sourceTexts, ...input.files]) texts.set(path, text)
+  return {
+    declarations: new Map([...texts].map(([path, text]) => [path, declaredIdentifiers(text)])),
+    headings: new Map([...texts].map(([path, text]) => [path, headingLabels(text)])),
+    occurrenceCorpus: productionOccurrenceCorpus(input.sourceTexts),
+  }
+}
+
+function referenceHeadingFindings(
+  file: CanonFile,
+  input: CanonLintInput,
+  facts: ReferenceFacts,
+): CanonFinding[] {
+  return headingReferencePieces(file).flatMap(({ content, line }) => {
+    const reference = headingReference(content)
+    if (!reference) return []
+    const matchedPaths = reference.path
+      ? resolvedReferencePaths(reference.path, file.path, input.trackedPaths)
+      : [file.path]
+    if (!matchedPaths.length) return []
+    if (matchedPaths.some((path) => facts.headings.get(path)?.includes(reference.fragment))) {
+      return []
+    }
+    return [
+      {
+        file: file.path,
+        line,
+        rule: 'canon/reference-heading',
+        message: `Markdown heading ${content} does not resolve`,
+      },
+    ]
+  })
+}
+
+function referenceFindings(
+  file: CanonFile,
+  input: CanonLintInput,
+  facts: ReferenceFacts,
+): CanonFinding[] {
   const findings: CanonFinding[] = []
   const firstSegments = new Set(input.trackedPaths.map((path) => path.split('/')[0]!))
-  const texts = new Map([
-    ...input.sourceTexts.map(({ path, text }) => [path, text] as const),
-    ...input.files.map(({ path, text }) => [path, text] as const),
-  ])
   for (const { content: candidate, line } of referencePieces(file)) {
-    const unsuffixedPath = stripReferenceSuffix(candidate)
+    const withoutHeading = headingReference(candidate)?.path ?? candidate
+    if (!withoutHeading) continue
+    const unsuffixedPath = stripReferenceSuffix(withoutHeading)
     const path = unsuffixedPath.replace(/\/$/, '')
     if (
       isNonRepositoryShape(path) ||
@@ -315,7 +439,7 @@ function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding
     const identifier = anchor.match(/^:([A-Za-z_$][\w$]*)$/)?.[1]
     if (
       identifier &&
-      !matchedPaths.some((matched) => containsDeclaration(texts.get(matched) ?? '', identifier))
+      !matchedPaths.some((matched) => facts.declarations.get(matched)?.has(identifier))
     ) {
       findings.push({
         file: file.path,
@@ -328,9 +452,24 @@ function referenceFindings(file: CanonFile, input: CanonLintInput): CanonFinding
   return findings
 }
 
-function referenceCodeFindings(file: CanonFile, sourceTexts: CanonSourceText[]): CanonFinding[] {
-  const source = sourceTexts.map(({ text }) => text).join('\n')
+function productionSourceTexts(sourceTexts: CanonSourceText[]): CanonSourceText[] {
+  return sourceTexts.filter(
+    ({ path }) =>
+      isCanonCodeSourcePath(path) &&
+      !/\.(?:test|spec)\.[^/]+$/.test(path) &&
+      !/(?:^|\/)(?:test|fixtures)\//.test(path),
+  )
+}
+
+function productionOccurrenceCorpus(sourceTexts: CanonSourceText[]): string {
+  return productionSourceTexts(sourceTexts)
+    .flatMap(({ text }) => uncommentedSourceLines(text))
+    .join('\n')
+}
+
+function referenceCodeFindings(file: CanonFile, source: string): CanonFinding[] {
   return inlineCodeSpans(file).flatMap(({ content, line }) => {
+    if (FILE_REFERENCE.test(content)) return []
     const match = content.match(
       /^(?:([A-Za-z_$][\w$]*)\(\)|[A-Za-z_$][\w$]*\.([A-Za-z_$][\w$]*)(?:\(\))?|([A-Z][A-Z0-9_]*_[A-Z0-9_]*))$/,
     )
@@ -346,7 +485,7 @@ function referenceCodeFindings(file: CanonFile, sourceTexts: CanonSourceText[]):
         file: file.path,
         line,
         rule: 'canon/reference-code',
-        message: `identifier ${identifier} does not occur in tracked source`,
+        message: `identifier ${identifier} does not occur in tracked production source`,
       },
     ]
   })
@@ -377,13 +516,22 @@ function referenceScriptFindings(file: CanonFile, packageScripts: string[]): Can
   )
 }
 
-/** Runs the pure repository-reference rules against any markdown body. */
-export function lintCanonReferences(file: CanonFile, input: CanonLintInput): CanonFinding[] {
+function lintCanonReferencesWithFacts(
+  file: CanonFile,
+  input: CanonLintInput,
+  facts: ReferenceFacts,
+): CanonFinding[] {
   return [
-    ...referenceFindings(file, input),
-    ...referenceCodeFindings(file, input.sourceTexts),
+    ...referenceFindings(file, input, facts),
+    ...referenceHeadingFindings(file, input, facts),
+    ...referenceCodeFindings(file, facts.occurrenceCorpus),
     ...referenceScriptFindings(file, input.packageScripts),
   ]
+}
+
+/** Runs the pure repository-reference rules against any markdown body. */
+export function lintCanonReferences(file: CanonFile, input: CanonLintInput): CanonFinding[] {
+  return lintCanonReferencesWithFacts(file, input, referenceFacts(input))
 }
 
 function chainFiles(path: string, agentsByPath: Map<string, CanonFile>): CanonFile[] {
@@ -556,12 +704,16 @@ function cardHeadingFindings(file: CanonFile): Finding[] {
     : []
 }
 
-function contentFindings(classified: Classified, input: CanonLintInput): CanonFinding[] {
+function contentFindings(
+  classified: Classified,
+  input: CanonLintInput,
+  facts: ReferenceFacts,
+): CanonFinding[] {
   const { file, kind } = classified
   if (!kind || kind === 'alias' || kind === 'publication') return []
   const findings: CanonFinding[] = []
   proseFindings(file, findings)
-  findings.push(...lintCanonReferences(file, input))
+  findings.push(...lintCanonReferencesWithFacts(file, input, facts))
   if (kind === 'rule' || kind === 'context' || kind === 'reference') {
     findings.push(...frontmatterFinding(file, kind))
   }
@@ -606,10 +758,11 @@ export function lintCanon(input: CanonLintInput): CanonLintResult {
   const tierMeasurements = tierSummary(tiers)
   const chains = chainMeasurements(classified)
   const paths = new Set(input.files.map((file) => file.path))
+  const facts = referenceFacts(input)
   const findings = [
     ...sizeFindings(tiers, tierMeasurements),
     ...chains.findings,
-    ...classified.flatMap((item) => contentFindings(item, input)),
+    ...classified.flatMap((item) => contentFindings(item, input, facts)),
     ...input.files.flatMap((file) => symlinkFindings(file, paths)),
   ]
   findings.sort(
