@@ -2,10 +2,12 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import {
+  decideOperatorWaitingEmailReclaim,
   type OperatorWaitingEmailInput,
+  OPERATOR_EMAIL_INTENT_STALE_MS,
+  OPERATOR_EMAIL_MAX_ATTEMPTS,
   renderOperatorWaitingEmail,
 } from './operator-waiting-email-hosted.ts'
-import type { ReportMailClient } from './report-delivery.ts'
 
 const input: OperatorWaitingEmailInput = {
   kind: 'question',
@@ -31,23 +33,40 @@ test('rendered HTML contains the decision and obeys email CSS rules', () => {
   expect(rendered.html).not.toMatch(/display:\s*(flex|grid)|var\(--/i)
 })
 
-test('hosted endpoint authenticates and returns an existing status without sending twice', async () => {
-  const sent: string[] = []
-  const intents = new Map<string, { id: string; status: 'sent'; reason: null }>()
-  const mail: ReportMailClient = { send: async () => void sent.push('mail') }
+test('reclaim decision bounds attempts and leaves a fresh intent in flight', () => {
+  const now = new Date('2026-09-25T12:00:00.000Z')
+  const row = {
+    id: 'intent-1',
+    status: 'intent' as const,
+    reason: null,
+    attempts: 1,
+    updated_at: new Date(now.getTime() - OPERATOR_EMAIL_INTENT_STALE_MS + 1).toISOString(),
+  }
+  expect(decideOperatorWaitingEmailReclaim(row, now)).toBe('return')
+  expect(
+    decideOperatorWaitingEmailReclaim(
+      { ...row, updated_at: new Date(now.getTime() - OPERATOR_EMAIL_INTENT_STALE_MS).toISOString() },
+      now,
+    ),
+  ).toBe('reclaim')
+  expect(decideOperatorWaitingEmailReclaim({ ...row, status: 'failed' }, now)).toBe('reclaim')
+  expect(
+    decideOperatorWaitingEmailReclaim(
+      { ...row, status: 'failed', attempts: OPERATOR_EMAIL_MAX_ATTEMPTS },
+      now,
+    ),
+  ).toBe('abandon')
+  expect(decideOperatorWaitingEmailReclaim({ ...row, status: 'sent' }, now)).toBe('return')
+})
+
+test('hosted endpoint binds space and user from the credential', async () => {
+  const callers: Array<{ userId: string; spaceId: string }> = []
   const send: typeof import('./operator-waiting-email-hosted.ts').sendOperatorWaitingEmail = async (
-    _databaseUrl: string,
-    caller: { userId: string; spaceId: string },
-    body: OperatorWaitingEmailInput,
-    options = {},
+    _databaseUrl,
+    caller,
   ) => {
-    const key = `${caller.spaceId}:${caller.userId}:${body.kind}:${body.item_id}:${body.episode}`
-    const existing = intents.get(key)
-    if (existing) return existing
-    await options.mail?.send({} as never)
-    const result = { id: 'intent-1', status: 'sent' as const, reason: null }
-    intents.set(key, result)
-    return result
+    callers.push(caller)
+    return { id: 'intent-1', status: 'sent', reason: null }
   }
   const dependencies = {
     fetch: (async () =>
@@ -56,11 +75,10 @@ test('hosted endpoint authenticates and returns an existing status without sendi
         activeSpaceId: '01990000-0000-7000-8000-00000000070a',
         memberships: [],
       })) as unknown as typeof fetch,
-    mail,
+    mail: { send: async () => undefined },
     send,
   }
-  const request = () =>
-    new Request('https://hub.example.test/v1/operator-waiting-emails', {
+  const request = new Request('https://hub.example.test/v1/operator-waiting-emails', {
       method: 'POST',
       headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
       body: JSON.stringify(input),
@@ -69,15 +87,15 @@ test('hosted endpoint authenticates and returns an existing status without sendi
     recordApiUrl: 'https://record.example.test',
     recordDatabaseUrl: 'postgres://record',
   }
-  expect(await (await operatorWaitingEmailApi(request(), config, dependencies))!.json()).toEqual({
+  expect(await (await operatorWaitingEmailApi(request, config, dependencies))!.json()).toEqual({
     id: 'intent-1',
     status: 'sent',
     reason: null,
   })
-  expect(await (await operatorWaitingEmailApi(request(), config, dependencies))!.json()).toEqual({
-    id: 'intent-1',
-    status: 'sent',
-    reason: null,
-  })
-  expect(sent).toEqual(['mail'])
+  expect(callers).toEqual([
+    {
+      userId: '01990000-0000-7000-8000-000000000701',
+      spaceId: '01990000-0000-7000-8000-00000000070a',
+    },
+  ])
 })

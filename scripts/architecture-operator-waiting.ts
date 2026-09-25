@@ -42,13 +42,16 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './task-client.ts',
   ]),
   module('hub/src/operator-waiting-email-hosted.ts', [
+    'bun',
     '../../shared/record/schema.ts',
     './hosted-tasks.ts',
+    './operator-waiting-email-contract.ts',
     './report-delivery.ts',
     './report-delivery-hosted.ts',
   ]),
+  module('hub/src/operator-waiting-email-contract.ts', ['zod']),
   module('hub/src/operator-waiting-email-api.ts', [
-    'zod',
+    './operator-waiting-email-contract.ts',
     './operator-waiting-email-hosted.ts',
     './report-delivery.ts',
     './report-delivery-hosted.ts',

@@ -71,3 +71,27 @@ test('local loop records only successful pushes and logs failures for retry', as
   expect(recorded).toEqual([7])
   expect(errors).toEqual(['hub: operator waiting email push failed: Error: offline'])
 })
+
+test('local loop records abandonment once but leaves intent and failed results retryable', async () => {
+  const recorded: number[] = []
+  const errors: string[] = []
+  const statuses = ['intent', 'failed', 'abandoned'] as const
+  await deliverOperatorWaitingEmails({
+    delay: () => 30,
+    signedIn: async () => 'user',
+    readWaiting: async () => statuses.map((_, id) => item({ id: id + 1, episode: `e-${id}` })),
+    ledger: () => [],
+    now: () => new Date('2026-09-25T11:00:00.000Z'),
+    push: async (body) => {
+      const status = statuses[(body as { item_id: number }).item_id - 1]!
+      return { id: 'mail', status, reason: status === 'intent' ? null : 'delivery refused' }
+    },
+    record: (row) => recorded.push(row.id),
+    error: (message) => errors.push(message),
+  })
+  expect(recorded).toEqual([3])
+  expect(errors).toEqual([
+    'hub: operator waiting email push failed: Error: delivery refused',
+    'hub: operator waiting email abandoned after retries: delivery refused',
+  ])
+})

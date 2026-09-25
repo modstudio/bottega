@@ -47,6 +47,13 @@ import {
   hostedTaskDetail,
 } from '../src/hosted-work.ts'
 import { computeMeasures } from '../src/measures.ts'
+import type { OperatorWaitingEmailInput } from '../src/operator-waiting-email-contract.ts'
+import {
+  OperatorEmailBudgetExceededError,
+  OPERATOR_EMAIL_HOURLY_BUDGET,
+  OPERATOR_EMAIL_MAX_ATTEMPTS,
+  sendOperatorWaitingEmail,
+} from '../src/operator-waiting-email-hosted.ts'
 import {
   hostedDeliveryRepository,
   sendHostedReportSubscriptionTest,
@@ -154,6 +161,94 @@ try {
 
     const identity = { userId: USER, spaceId: SPACE_A }
     const stamp = '2026-09-17T12:10:00.000Z'
+    const waitingInput: OperatorWaitingEmailInput = {
+      kind: 'question',
+      item_id: 943_001,
+      episode: 'fresh-send',
+      project: PLATFORM_SLUG,
+      task_key: 'DEV-943',
+      question: 'Should this delivery proceed?',
+      options: ['Proceed', 'Stop'],
+      recommendation: 'Proceed',
+      why: 'This proves the hosted retry ledger.',
+      waiting_since: '2026-09-25T08:00:00.000Z',
+      link: 'http://127.0.0.1:7778/inbox/question/943001',
+      answer_command: 'orch answer 943 --q943001 --from-operator "Proceed"',
+    }
+    const waitingNow = new Date()
+    const sent: string[] = []
+    const mail = { send: async () => void sent.push('sent') }
+    const fresh = await sendOperatorWaitingEmail(actorUrl, identity, waitingInput, {
+      mail,
+      now: waitingNow,
+    })
+    const duplicate = await sendOperatorWaitingEmail(actorUrl, identity, waitingInput, {
+      mail,
+      now: waitingNow,
+    })
+    if (fresh.status !== 'sent' || duplicate.status !== 'sent' || sent.length !== 1)
+      throw new Error('operator waiting fresh send was not idempotent after sent')
+
+    const staleInput = { ...waitingInput, item_id: 943_002, episode: 'stale-intent' }
+    const failed = await sendOperatorWaitingEmail(actorUrl, identity, staleInput, {
+      mail: { send: async () => Promise.reject(new Error('stale fixture')) },
+      now: waitingNow,
+    })
+    await admin`UPDATE operator_waiting_email SET status='intent',
+      updated_at=${new Date(waitingNow.getTime() - 11 * 60_000).toISOString()}::timestamptz
+      WHERE id=${failed.id}::uuid`
+    const reclaimed = await sendOperatorWaitingEmail(actorUrl, identity, staleInput, {
+      mail,
+      now: waitingNow,
+    })
+    if (reclaimed.status !== 'sent' || sent.length !== 2)
+      throw new Error('stale operator waiting intent was not reclaimed')
+
+    const cappedInput = { ...waitingInput, item_id: 943_003, episode: 'attempt-cap' }
+    let capped = await sendOperatorWaitingEmail(actorUrl, identity, cappedInput, {
+      mail: { send: async () => Promise.reject(new Error('cap fixture')) },
+      now: waitingNow,
+    })
+    for (let attempt = 1; attempt < OPERATOR_EMAIL_MAX_ATTEMPTS; attempt++)
+      capped = await sendOperatorWaitingEmail(actorUrl, identity, cappedInput, {
+        mail: { send: async () => Promise.reject(new Error('cap fixture')) },
+        now: new Date(waitingNow.getTime() + attempt),
+      })
+    if (capped.status !== 'failed') throw new Error('operator waiting attempt cap failed early')
+    const abandoned = await sendOperatorWaitingEmail(actorUrl, identity, cappedInput, {
+      mail,
+      now: new Date(waitingNow.getTime() + OPERATOR_EMAIL_MAX_ATTEMPTS),
+    })
+    const cappedRows = await admin`SELECT attempts FROM operator_waiting_email
+      WHERE id=${abandoned.id}::uuid`
+    if (
+      abandoned.status !== 'abandoned' ||
+      Number(cappedRows[0]?.attempts) !== OPERATOR_EMAIL_MAX_ATTEMPTS ||
+      sent.length !== 2
+    )
+      throw new Error('operator waiting failed row was not abandoned at the attempt cap')
+
+    const secondIdentity = { userId: SECOND_USER, spaceId: SPACE_A }
+    for (let index = 0; index < OPERATOR_EMAIL_HOURLY_BUDGET; index++)
+      await sendOperatorWaitingEmail(
+        actorUrl,
+        secondIdentity,
+        { ...waitingInput, item_id: 944_000 + index, episode: `budget-${index}` },
+        { mail: { send: async () => undefined }, now: waitingNow },
+      )
+    await sendOperatorWaitingEmail(
+      actorUrl,
+      secondIdentity,
+      { ...waitingInput, item_id: 945_000, episode: 'over-budget' },
+      { mail: { send: async () => undefined }, now: waitingNow },
+    ).then(
+      () => {
+        throw new Error('operator waiting hourly budget accepted an extra send')
+      },
+      (error) => {
+        if (!(error instanceof OperatorEmailBudgetExceededError)) throw error
+      },
+    )
     const mirrored = {
       id: '01990000-0000-7000-8000-00000000065d',
       key: 'DEV-700',
@@ -1208,6 +1303,7 @@ try {
   await admin`DELETE FROM hub_task WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM hub_interval WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM hub_day WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM operator_waiting_email WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`

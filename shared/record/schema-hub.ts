@@ -398,7 +398,9 @@ export const operatorWaitingEmail = pgTable.withRLS(
     link: text().notNull(),
     status: text().notNull(),
     reason: text(),
+    attempts: integer().notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: updatedAt().defaultNow(),
     sentAt: timestamp('sent_at', { withTimezone: true }),
   },
   (table) => [
@@ -412,8 +414,9 @@ export const operatorWaitingEmail = pgTable.withRLS(
     check('operator_waiting_email_kind_check', sql`${table.kind} IN ('question','workflow')`),
     check(
       'operator_waiting_email_status_check',
-      sql`${table.status} IN ('intent','sent','failed')`,
+      sql`${table.status} IN ('intent','sent','failed','abandoned')`,
     ),
+    check('operator_waiting_email_attempts_check', sql`${table.attempts} > 0`),
     ...tenantPolicies('operator_waiting_email', table.spaceId),
   ],
 )

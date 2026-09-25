@@ -120,7 +120,13 @@ export async function deliverOperatorWaitingEmails(
         answer_command: item.answer_command,
       })
       if (result.status === 'failed') throw new Error(result.reason ?? 'hosted email failed')
-      ;(dependencies.record ?? recordPushed)(item)
+      if (result.status === 'sent' || result.status === 'abandoned') {
+        ;(dependencies.record ?? recordPushed)(item)
+        if (result.status === 'abandoned')
+          error(
+            `hub: operator waiting email abandoned after retries: ${result.reason ?? 'no reason recorded'}`,
+          )
+      }
     } catch (cause) {
       error(`hub: operator waiting email push failed: ${String(cause)}`)
     }

@@ -1,9 +1,9 @@
 // concern: operator-waiting-email-api
 /** Authenticated hosted endpoint for idempotent operator-waiting email delivery. */
 
-import { z } from 'zod'
+import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
-  type OperatorWaitingEmailInput,
+  OperatorEmailBudgetExceededError,
   sendOperatorWaitingEmail,
 } from './operator-waiting-email-hosted.ts'
 import type { ReportMailClient } from './report-delivery.ts'
@@ -17,23 +17,6 @@ type Dependencies = {
 }
 const TEST_REFUSAL =
   'hub operator waiting email API refuses real clients unless stubs are injected in tests'
-
-const bodySchema = z
-  .object({
-    kind: z.enum(['question', 'workflow']),
-    item_id: z.number().int().positive(),
-    episode: z.string().min(1),
-    project: z.string().min(1),
-    task_key: z.string().nullable(),
-    question: z.string().min(1),
-    options: z.array(z.string()),
-    recommendation: z.string().nullable(),
-    why: z.string().nullable(),
-    waiting_since: z.iso.datetime(),
-    link: z.url(),
-    answer_command: z.string().min(1),
-  })
-  .strict()
 
 export async function operatorWaitingEmailApi(
   request: Request,
@@ -69,14 +52,16 @@ export async function operatorWaitingEmailApi(
       { error: 'authorization and an active space are required' },
       { status: 401 },
     )
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null))
+  const parsed = operatorWaitingEmailRequestSchema.safeParse(
+    await request.json().catch(() => null),
+  )
   if (!parsed.success)
     return Response.json({ error: 'invalid operator waiting email body' }, { status: 400 })
   try {
     const result = await (dependencies.send ?? sendOperatorWaitingEmail)(
       config.recordDatabaseUrl,
       { userId: user.id, spaceId: identity.activeSpaceId },
-      parsed.data as OperatorWaitingEmailInput,
+      parsed.data,
       { mail: dependencies.mail ?? sesReportMailClient() },
     )
     return Response.json(
@@ -84,6 +69,8 @@ export async function operatorWaitingEmailApi(
       result.status === 'failed' ? { status: 502 } : undefined,
     )
   } catch (cause) {
+    if (cause instanceof OperatorEmailBudgetExceededError)
+      return Response.json({ error: cause.message }, { status: 429 })
     return Response.json(
       { error: cause instanceof Error ? cause.message : String(cause) },
       { status: 409 },
