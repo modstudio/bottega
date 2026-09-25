@@ -22,12 +22,16 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-operator-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
+    '../../../shared/docs.ts',
     '../../../shared/orch-contract.ts',
+    '../doc/docs.ts',
     '../operator/operator-waiting.ts',
+    '../run/ruling-file.ts',
     '../run/ruling-overturn.ts',
     '../run/run-answer.ts',
     '../run/run-inbox.ts',
     '../run/run-message-commands.ts',
+    './hub-notes.ts',
   ]),
   module('orchestrator/src/mcp/mcp-tool-list.ts', [
     '@modelcontextprotocol/sdk/client/index.js',

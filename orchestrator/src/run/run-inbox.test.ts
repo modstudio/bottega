@@ -96,6 +96,21 @@ test('inbox shows an overturned ruling and its reason', async () => {
   const output = await inbox({ all: true })
   expect(output).toContain('overturned: Wrong evidence')
 })
+test('inbox shows a filed ruling ref', async () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  db()
+    .query(
+      `INSERT INTO question
+        (run_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at)
+       VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
+    )
+    .run(run)
+  const output = await inbox({ all: true })
+  expect(output).toContain('filed: doc 12@rev-1')
+  expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
+    expect.objectContaining({ filed_as: 'doc', filed_ref: '12@rev-1' }),
+  )
+})
 test.each(['ok', 'failed'])(
   'inbox treats an asking child under a %s root as live',
   async (status) => {

@@ -505,7 +505,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-task-reference.ts', []),
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
   module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
-  module('orchestrator/src/run/ruling-overturn-authority.ts', []),
+  module('orchestrator/src/run/ruling-overturn-authority.ts', ['./run-mutation-owner.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/run/ruling-overturn.ts', ['../database/db.ts', './question-vocabulary.ts', './ruling-overturn-authority.ts', './run-authority.ts']),
   module('orchestrator/src/run/run-close.ts', [

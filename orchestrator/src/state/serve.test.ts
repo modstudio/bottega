@@ -61,6 +61,25 @@ describe('run detail', () => {
     ])
   })
 
+  test('publishes a filed ruling ref', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db()
+      .query(
+        `INSERT INTO question
+          (run_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at)
+         VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal','44','2026-09-22')`,
+      )
+      .run(id)
+    expect(runDetail(id)!.questions).toEqual([
+      expect.objectContaining({
+        question: 'Which?',
+        filed_as: 'canon-proposal',
+        filed_ref: '44',
+        filed_at: '2026-09-22',
+      }),
+    ])
+  })
+
   test('publishes local review lenses and findings in hosted detail shape', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     db().query("UPDATE run SET lens='correctness', model='gpt' WHERE id=?").run(id)

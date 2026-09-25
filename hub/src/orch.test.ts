@@ -12,16 +12,57 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   answerWaitingArgv,
   decodeRunsJson,
   docArgv,
+  fileRulingArgv,
   projectArgv,
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('operator file-ruling argv runs the verb through the orch seam with json', () => {
+  expect(fileRulingArgv({ questionId: 7, as: 'doc' })).toEqual([
+    'ruling',
+    'file',
+    '7',
+    '--as',
+    'doc',
+    '--from-operator',
+    '--channel',
+    'ui',
+    '--json',
+  ])
+  expect(
+    fileRulingArgv({
+      questionId: 7,
+      as: 'canon',
+      scope: 'project',
+      subject: PLATFORM_SLUG,
+      title: 'Which shape?',
+    }),
+  ).toEqual([
+    'ruling',
+    'file',
+    '7',
+    '--as',
+    'canon',
+    '--scope',
+    'project',
+    '--subject',
+    PLATFORM_SLUG,
+    '--title',
+    'Which shape?',
+    '--from-operator',
+    '--channel',
+    'ui',
+    '--json',
+  ])
+})
 
 test('operator answer argv preserves the ruling and records the UI operator channel', () => {
   expect(

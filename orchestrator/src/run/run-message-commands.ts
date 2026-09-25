@@ -20,6 +20,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { operatorAttributedRuling, rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 
@@ -116,6 +117,19 @@ export async function retryCommand(
   await retryRun(id, options, answerRunHelpers(presentation))
 }
 
+function answeredQuestionIds(runId: number, rulings: AnswerRunInput['rulings']): number[] {
+  if (typeof rulings !== 'string') return rulings.map((ruling) => ruling.questionId)
+  return (
+    db()
+      .query(
+        `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id
+          WHERE (owner.id=? OR owner.parent_run_id=?) AND q.answered_at IS NULL
+          ORDER BY q.id`,
+      )
+      .all(runId, runId) as { id: number }[]
+  ).map((row) => row.id)
+}
+
 export async function answerCommand(
   id: number,
   argv: string[],
@@ -125,12 +139,22 @@ export async function answerCommand(
   presentation: Presentation,
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
-  const result = await answerRun(
-    id,
-    await answerInputFromArgv(argv, recordOnly, json, flags, helpers),
-    helpers,
-  )
+  const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers)
+  const questionIds = answeredQuestionIds(id, input.rulings)
+  const result = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))
+  else {
+    for (const line of rulingFileOfferLines({
+      questionIds,
+      operatorAttributed: operatorAttributedRuling({
+        fromOperator: input.fromOperator,
+        channel: input.channel,
+      }),
+      json: false,
+    })) {
+      console.log(line)
+    }
+  }
 }
 
 export async function continueCommand(
