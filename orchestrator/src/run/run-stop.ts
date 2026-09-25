@@ -11,12 +11,15 @@ import {
   withCleanupLock,
 } from '../cleanup/cleanup.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { enqueueQuestionRecord } from './question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 
 export type TerminateRunProcessesResult =
   | { outcome: 'signaled'; signaled: number[]; acceptableIds: number[] }
@@ -244,6 +247,12 @@ export async function abandonRun(
         root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
     }
     authority = adoptRunMutation(authority, 'abandon')
+    const openQuestions = db()
+      .query<{ id: number }, [number, number]>(
+        `SELECT id FROM question WHERE answered_at IS NULL AND run_id IN
+          (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+      )
+      .all(authority.rootId, authority.rootId)
     const changed = db()
       .query(
         "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=? AND status='asking'",
@@ -257,7 +266,7 @@ export async function abandonRun(
     }
     db()
       .query(
-        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)',
+        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', revision=revision+1,
             answerer_kind=?, answer_channel=?, delivery_pending_at=NULL,
             awaiting_operator_at=NULL
           WHERE answered_at IS NULL AND run_id IN
@@ -271,6 +280,8 @@ export async function abandonRun(
         authority.rootId,
         authority.rootId,
       )
+    enqueueRunRecord(db(), row.id, machineId(), at)
+    for (const question of openQuestions) enqueueQuestionRecord(db(), question.id)
     db()
       .query(
         `UPDATE question SET delivery_pending_at=NULL

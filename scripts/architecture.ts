@@ -73,10 +73,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/run/question-delivery.ts', [
-    '../database/db.ts',
-    './question-vocabulary.ts',
-  ]),
   module('orchestrator/src/run/run-answer-liveness.ts', []),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
     '../database/db.ts',
@@ -188,6 +184,7 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     '../run/question-vocabulary.ts',
     '../run/question-mutation.ts',
+    '../run/question-outbox.ts',
     './workflow-render.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
@@ -594,6 +591,7 @@ export const modules: ArchitectureModule[] = [
     './run-process.ts',
     './run-resume-kind.ts',
     './question-vocabulary.ts',
+    './question-outbox.ts',
     './run-terminal-blockers.ts',
     './run-terminal-precedence.ts',
     '../sandbox/sandbox.ts',

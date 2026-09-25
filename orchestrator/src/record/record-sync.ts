@@ -2,6 +2,7 @@
 /** Knows ordered delivery of local outbox mutations to the hosted record. Must not know run phases. */
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
+import { sql as drizzleSql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { machine, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import {
@@ -11,6 +12,11 @@ import {
   landingReviewCarry as landingReviewCarryRecord,
   testFlake as testFlakeRecord,
 } from '../../../shared/record/schema-landing.ts'
+import {
+  hostedQuestionWins,
+  questionMutationAudit as questionMutationAuditRecord,
+  question as questionRecord,
+} from '../../../shared/record/schema-question.ts'
 import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
@@ -30,6 +36,7 @@ import {
   REVIEW_RECORD_PAYLOAD_COLUMNS,
   type ReviewRecordBackfillResult,
 } from '../review/review-outbox.ts'
+import { backfillQuestionRecords, QUESTION_RECORD_PAYLOAD_COLUMNS } from '../run/question-outbox.ts'
 import {
   backfillRunRecords,
   RUN_RECORD_PAYLOAD_COLUMNS,
@@ -63,6 +70,7 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
   if (kind === 'run') return [0, id]
   switch (kind) {
     case 'score':
+    case 'question':
     case 'review':
     case 'review_lens':
     case 'review_finding':
@@ -82,6 +90,7 @@ export type RecordSyncResult = {
     scores: number
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
+    questions: { minted: number; enqueued: number }
   }
 }
 export type RecordSyncOptions = {
@@ -489,6 +498,57 @@ function reviewValues(row: Payload, projectId: string | null) {
   }
 }
 
+function questionValues(row: Payload, projectId: string | null) {
+  return {
+    id: String(row.id),
+    spaceId: String(row.spaceId),
+    runId: nullableString(row.runId),
+    workflowKey: nullableString(row.workflowKey),
+    workflowCursorId: nullableBigint(row.workflowCursorId),
+    projectId,
+    machineId: String(row.machineId),
+    localId: bigint(row.localId),
+    revision: Number(row.revision),
+    askedAt: date(row.askedAt),
+    question: String(row.question),
+    options: jsonString(row.options),
+    recommendation: nullableString(row.recommendation),
+    why: nullableString(row.why),
+    askedVia: nullableString(row.askedVia),
+    answer: nullableString(row.answer),
+    answeredAt: nullableDate(row.answeredAt),
+    answeredBy: nullableString(row.answeredBy),
+    answererKind: nullableString(row.answererKind),
+    answerChannel: nullableString(row.answerChannel),
+    awaitingOperatorAt: nullableDate(row.awaitingOperatorAt),
+    relayedBy: nullableString(row.relayedBy),
+    overturnedAt: nullableDate(row.overturnedAt),
+    overturnedBy: nullableString(row.overturnedBy),
+    overturnReason: nullableString(row.overturnReason),
+    replacement: nullableString(row.replacement),
+    filedAs: nullableString(row.filedAs),
+    filedRef: nullableString(row.filedRef),
+    filedAt: nullableDate(row.filedAt),
+    closedAt: nullableDate(row.closedAt),
+    closeReason: nullableString(row.closeReason),
+    withheldFields: jsonString(row.withheldFields),
+    createdAt: date(row.createdAt),
+    updatedAt: date(row.updatedAt),
+  }
+}
+
+type QuestionAuditPayload = {
+  action: unknown
+  actorSession: unknown
+  at: unknown
+  reason: unknown
+}
+
+function questionAudits(row: Payload): QuestionAuditPayload[] {
+  if (!Array.isArray(row.audits)) throw new Error('question outbox audits must be an array')
+  return row.audits as QuestionAuditPayload[]
+}
+
 const commonReviewValues = (row: Payload) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
@@ -655,6 +715,37 @@ const recordKinds = {
           .onConflictDoUpdate({ target: runScoreRecord.runId, set: updates })
       }),
   },
+  question: {
+    columns: QUESTION_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      postgres.begin(async (tx) => {
+        await bindPrincipal(tx, principal)
+        const values = questionValues(row, await projectRecordId(tx, row, principal))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        const incomingQuestionWins = hostedQuestionWins(
+          drizzleSql`excluded.revision`,
+          questionRecord.revision,
+        )
+        await drizzle({ client: tx }).insert(questionRecord).values(values).onConflictDoUpdate({
+          target: questionRecord.id,
+          set: updates,
+          setWhere: incomingQuestionWins,
+        })
+        for (const audit of questionAudits(row)) {
+          await drizzle({ client: tx })
+            .insert(questionMutationAuditRecord)
+            .values({
+              questionId: values.id,
+              spaceId: values.spaceId,
+              action: String(audit.action),
+              actorSession: nullableString(audit.actorSession),
+              at: date(audit.at),
+              reason: nullableString(audit.reason),
+            })
+            .onConflictDoNothing()
+        }
+      }),
+  },
   review: {
     columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
@@ -784,12 +875,20 @@ type OutboxAttempt = {
  */
 async function pushOutboxRow(
   attempt: OutboxAttempt,
-): Promise<'pushed' | 'skipped' | 'failed' | 'stop'> {
+): Promise<'pushed' | 'skipped' | 'deferred' | 'failed' | 'stop'> {
   const { row, local, identity } = attempt
   try {
     if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
+    if (kind === 'question' && parsed.runId) {
+      const runOutbox = local
+        .query<{ synced_at: string | null }, [string]>(
+          "SELECT synced_at FROM outbox WHERE kind='run' AND record_id=? ORDER BY id DESC LIMIT 1",
+        )
+        .get(String(parsed.runId))
+      if (!runOutbox?.synced_at) return 'deferred'
+    }
     const projectName = outboxProjectName(row.kind, parsed, local)
     if (projectName && attempt.blockedProjects.has(projectName)) return 'skipped'
     const rowPrincipal = cachedProjectPrincipal(attempt.principals, projectName, () =>
@@ -834,6 +933,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         scores: backfillScoreRecords(local!, identity.id),
         reviews: backfillReviewRecords(local!),
         landingEvidence: backfillLandingEvidenceRecords(local!),
+        questions: backfillQuestionRecords(local!),
       }
     : undefined
   if (!recordUrl) {

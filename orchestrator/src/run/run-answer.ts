@@ -20,6 +20,7 @@ import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
+import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
   answererKindFromAnsweredBy,
@@ -690,7 +691,7 @@ export async function answerRun(
   const now = new Date(Date.now()).toISOString()
   const upd = db().query(
     `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?,
+      SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?, revision=revision+1,
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE id=?`,
   )
@@ -712,6 +713,7 @@ export async function answerRun(
         ownersLive ? null : now,
         q.id,
       )
+      enqueueQuestionRecord(db(), q.id)
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
     if (skipResume) {
@@ -815,10 +817,12 @@ export async function answerRun(
           .query(
             `UPDATE question
             SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
+                revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE id=?`,
           )
           .run(q.awaiting_operator_at, q.id)
+        enqueueQuestionRecord(db(), q.id)
       }
     })
     throw new Error(

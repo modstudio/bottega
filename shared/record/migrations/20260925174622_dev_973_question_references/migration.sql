@@ -1,0 +1,2 @@
+ALTER TABLE "question" ADD CONSTRAINT "question_run_id_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "run"("id");--> statement-breakpoint
+ALTER TABLE "question_mutation_audit" ADD CONSTRAINT "question_mutation_audit_question_id_question_id_fkey" FOREIGN KEY ("question_id") REFERENCES "question"("id");

@@ -1,13 +1,16 @@
 // concern: record-doctor
 /** Diagnoses record connectivity, identity, migrations, ownership, and grants. */
 
+import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
+import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { machineId } from './machine-identity.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
@@ -54,6 +57,43 @@ function attributionResolutionCheck(failure: string | null): RecordDoctorCheck {
         status: 'skipped',
         detail: 'no resolution failure recorded',
       }
+}
+
+function questionCountCheck(local: number, hosted: number): RecordDoctorCheck {
+  if (local === hosted) {
+    return { name: 'local versus hosted questions', status: 'pass', detail: `${local} each` }
+  }
+  return {
+    name: 'local versus hosted questions',
+    status: 'fail',
+    detail: `${local} local; ${hosted} hosted`,
+  }
+}
+
+export function localQuestionCountForSpace(
+  database: Database,
+  projects: Array<{ name: string; space: string | null }>,
+  activeSpace: { id: string; slug: string },
+): number {
+  const projectSpaces = new Map(projects.map((project) => [project.name, project.space]))
+  const rows = database
+    .query<{ project: string | null }, []>(
+      `SELECT COALESCE(run_project.name,cursor.project) AS project
+         FROM question q
+         LEFT JOIN run r ON r.id=q.run_id
+         LEFT JOIN project run_project ON run_project.id=r.project_id
+         LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
+        WHERE q.run_id IS NULL OR EXISTS (
+          SELECT 1 FROM outbox o
+           WHERE o.kind='run' AND o.record_id=r.record_id AND o.synced_at IS NOT NULL
+        )`,
+    )
+    .all()
+  return rows.filter((row) => {
+    if (!row.project) return false
+    const space = projectSpaces.get(row.project)
+    return space === activeSpace.id || space === activeSpace.slug
+  }).length
 }
 
 async function declaredProjectSpaceChecks(
@@ -130,6 +170,7 @@ export async function diagnoseRecord(
       'active space membership exists',
       'runs with no started_by',
       'session intervals with no session identity',
+      'local versus hosted questions',
     ])
       skip(name, 'ORCH_RECORD_URL not set')
   } else {
@@ -160,6 +201,7 @@ export async function diagnoseRecord(
         skip('active space membership exists', 'active space unavailable')
         skip('runs with no started_by', 'active space unavailable')
         skip('session intervals with no session identity', 'active space unavailable')
+        skip('local versus hosted questions', 'active space unavailable')
       } else {
         await run('active space membership exists', async () => {
           const memberships = await actor.begin(async (tx) => {
@@ -186,7 +228,17 @@ export async function diagnoseRecord(
                    count(*) FILTER (WHERE session_id IS NULL)::int AS missing
             FROM hub_interval WHERE space_id=${activeSpaceId}::uuid AND source='claude'
           `
-          return { runs: runs[0]!, intervals: intervals[0]! }
+          const questions = await tx`
+            SELECT count(*)::int AS total FROM question
+            WHERE space_id=${activeSpaceId}::uuid AND machine_id=${machineId()}::uuid
+          `
+          const spaces = await tx`SELECT slug FROM space WHERE id=${activeSpaceId}::uuid`
+          return {
+            runs: runs[0]!,
+            intervals: intervals[0]!,
+            questions: questions[0]!,
+            activeSpaceSlug: String(spaces[0]?.slug ?? ''),
+          }
         })
         checks.push({
           name: 'runs with no started_by',
@@ -196,6 +248,12 @@ export async function diagnoseRecord(
             Number(attribution.runs.total),
           ),
         })
+        const localQuestions = localQuestionCountForSpace(db(), input.projects ?? [], {
+          id: activeSpaceId,
+          slug: attribution.activeSpaceSlug,
+        })
+        const hostedQuestions = Number(attribution.questions.total)
+        checks.push(questionCountCheck(localQuestions, hostedQuestions))
         checks.push({
           name: 'session intervals with no session identity',
           status: 'pass',

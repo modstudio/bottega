@@ -72,7 +72,7 @@ export const RUN_RECORD_PAYLOAD_COLUMNS = [
 
 type LocalRun = Record<string, unknown> & {
   id: number
-  record_id: string
+  record_id: string | null
   project_name: string | null
   started_at: string
   retry_record_id: string | null
@@ -187,13 +187,22 @@ export function enqueueRunRecord(
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} does not exist and cannot be enqueued`)
+  if (row.record_id === null) {
+    row.record_id = newRecordId()
+    database.query('UPDATE run SET record_id=? WHERE id=?').run(row.record_id, row.id)
+  }
   if (row.retry_of !== null && row.retry_record_id === null) {
     throw new Error(`run ${runId} has retry_of ${row.retry_of} without a record id`)
   }
   if (row.parent_run_id !== null && row.parent_record_id === null) {
     throw new Error(`run ${runId} has parent_run_id ${row.parent_run_id} without a record id`)
   }
-  const payload = buildRunRecordPayload(row, machineId, finishedAt, evidenceUnvoid)
+  const payload = buildRunRecordPayload(
+    { ...row, record_id: row.record_id },
+    machineId,
+    finishedAt,
+    evidenceUnvoid,
+  )
   database
     .query(
       `INSERT INTO outbox (kind, record_id, payload, created_at)

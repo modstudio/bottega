@@ -6,7 +6,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
-import type { AskLoopback } from '../ask/ask.ts'
+import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
   type ConfinementEvent,
@@ -39,7 +39,6 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
-import { ASKED_VIA_REPLY } from './question-vocabulary.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -494,23 +493,12 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     ).map((row) => row.question)
     const askedAt = nowIso()
     const awaitingOperatorAt = await initialQuestionWaitingAt(claim.id, askedAt)
-    const q = db().query(
-      `INSERT INTO question
-        (run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
-       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
-    )
-    for (const item of questionsToInsert(existingQuestionTexts, acceptedQuestions)) {
-      q.get(
-        claim.id,
-        askedAt,
-        item.question,
-        item.options?.length ? JSON.stringify(item.options) : null,
-        item.recommendation ?? null,
-        item.why ?? null,
-        ASKED_VIA_REPLY,
-        awaitingOperatorAt,
-      )
-    }
+    recordReplyQuestions({
+      runId: claim.id,
+      questions: questionsToInsert(existingQuestionTexts, acceptedQuestions),
+      askedAt,
+      awaitingOperatorAt,
+    })
   }
 
   if (mcpSetupHeader) {

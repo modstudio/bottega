@@ -3,6 +3,7 @@
 
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
+import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { overturnRulingDecision } from './ruling-overturn-authority.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-authority.ts'
@@ -77,7 +78,7 @@ export function overturnRuling(input: {
     const changed = db()
       .query(
         `UPDATE question
-            SET overturned_at=?,overturned_by=?,overturn_reason=?,replacement=?
+            SET overturned_at=?,overturned_by=?,overturn_reason=?,replacement=?,revision=revision+1
           WHERE id=? AND answered_at IS NOT NULL AND overturned_at IS NULL`,
       )
       .run(at, overturnedBy, input.reason, input.replacement, row.id)
@@ -92,6 +93,7 @@ export function overturnRuling(input: {
         at,
         reason: input.reason,
       })
+    enqueueQuestionRecord(db(), row.id)
   })
   return {
     question_id: row.id,

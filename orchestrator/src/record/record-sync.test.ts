@@ -4,7 +4,8 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { outboxOrder, syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
@@ -15,6 +16,7 @@ const STAMP = '2026-09-15T01:01:00.000Z'
 
 test('outbox ordering sends run rows before run-dependent rows', () => {
   const rows = [
+    { kind: 'question', id: 21647 },
     { kind: 'score', id: 21649 },
     { kind: 'run', id: 21650 },
     { kind: 'landing', id: 21648 },
@@ -37,6 +39,7 @@ test('outbox ordering sends run rows before run-dependent rows', () => {
     { kind: 'run', id: 21652 },
     { kind: 'landing', id: 21648 },
     { kind: 'test_flake', id: 21656 },
+    { kind: 'question', id: 21647 },
     { kind: 'score', id: 21649 },
     { kind: 'review', id: 21651 },
     { kind: 'review_lens', id: 21653 },
@@ -251,6 +254,48 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
+  local.close()
+})
+
+test('ordinary sync pushes an asking run before its live question', async () => {
+  const local = new Database(':memory:')
+  applyMigrations(local)
+  local
+    .query(
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+    )
+    .run(RECORD_ID)
+  local
+    .query(
+      `INSERT INTO question (run_id,asked_at,question,asked_via)
+       VALUES (42,?,'Which?','live')`,
+    )
+    .run(STAMP)
+  local
+    .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
+    .run(MACHINE_ID)
+  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
+  enqueueQuestionRecord(local, 1)
+
+  const remote = fakePostgres()
+  const result = await syncRecord(options(local, remote))
+  if (result.failed) {
+    const failed = local
+      .query<{ last_error: string }, []>(
+        'SELECT last_error FROM outbox WHERE last_error IS NOT NULL',
+      )
+      .get()
+    throw new Error(failed?.last_error ?? 'question sync failed without an outbox error')
+  }
+  expect(result).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+  const writes = remote.statements.filter((statement) =>
+    statement.toLowerCase().includes('insert into'),
+  )
+  expect(writes.findIndex((statement) => statement.includes('"run"'))).toBeLessThan(
+    writes.findIndex((statement) => statement.includes('"question"')),
+  )
   local.close()
 })
 

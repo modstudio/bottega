@@ -112,11 +112,28 @@ test('workflow question migration preserves run questions and backfills an await
       join(folder, '0056_workflow_questions.sql'),
       source.split('--> statement-breakpoint').slice(2).join('--> statement-breakpoint'),
     )
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, '0057_review_finding_amendment.sql'),
+      join(folder, '0057_review_finding_amendment.sql'),
+    )
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, '0058_question_record_id.sql'),
+      join(folder, '0058_question_record_id.sql'),
+    )
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, '0059_question_revision.sql'),
+      join(folder, '0059_question_revision.sql'),
+    )
     writeFileSync(
       join(folder, 'meta', '_journal.json'),
-      JSON.stringify({ version: '7', dialect: 'sqlite', entries: journal.slice(0, migration + 1) }),
+      JSON.stringify({ version: '7', dialect: 'sqlite', entries: journal }),
     )
-    expect(applyMigrations(database, folder)).toEqual(['0056_workflow_questions'])
+    expect(applyMigrations(database, folder)).toEqual([
+      '0056_workflow_questions',
+      '0057_review_finding_amendment',
+      '0058_question_record_id',
+      '0059_question_revision',
+    ])
     expect(
       database
         .query(
@@ -214,6 +231,8 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0055_settings_doc_scope',
       '0056_workflow_questions',
       '0057_review_finding_amendment',
+      '0058_question_record_id',
+      '0059_question_revision',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -302,6 +321,8 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0055_settings_doc_scope',
       '0056_workflow_questions',
       '0057_review_finding_amendment',
+      '0058_question_record_id',
+      '0059_question_revision',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -377,6 +398,8 @@ test('project task identity migration backfills ledger project relationships', (
       '0055_settings_doc_scope',
       '0056_workflow_questions',
       '0057_review_finding_amendment',
+      '0058_question_record_id',
+      '0059_question_revision',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -433,6 +456,8 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0055_settings_doc_scope',
       '0056_workflow_questions',
       '0057_review_finding_amendment',
+      '0058_question_record_id',
+      '0059_question_revision',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',
