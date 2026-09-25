@@ -698,6 +698,20 @@ describe('operational monitor conditions', () => {
     ).toEqual(['ghost-open-interval', 'observation-error', 'stale-run'])
   })
 
+  test('claims an addressed worker gate tooling change as an append-only notice', () => {
+    const owner = 'worker-gate-tooling-owner'
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
+    persistAddressedCondition('worker-gate-tooling-change', `run:${runId}`, owner)
+
+    expect(claimMonitorNotices(owner)).toEqual([
+      expect.objectContaining({
+        kind: 'worker-gate-tooling-change',
+        subject: `run:${runId}`,
+        ownerSession: owner,
+      }),
+    ])
+  })
+
   test('a missing hub rulings document is an observation error, not emptiness', () => {
     const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
       exitCode: 1,

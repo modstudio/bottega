@@ -5,10 +5,10 @@ import { type CanonTreeAtRef, collectCanonTreeAtRef } from '../canon/canon-files
 import { type HydrationDrift, hydrationDrift, planHydration } from '../canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../canon/canon-stored-rows.ts'
 import type { Project } from '../project/projects.ts'
-import type { MonitorCondition } from './monitor-types.ts'
+import type { MonitorCondition, UnaddressedMonitorCondition } from './monitor-types.ts'
 
 const DISPLAYED_DRIFT_PATHS = 5
-type CanonDriftCondition = Omit<MonitorCondition, 'ageMs'>
+type CanonDriftCondition = Omit<UnaddressedMonitorCondition, 'ageMs'>
 
 /** Decide whether one readable landed tree needs its stored canon hydrated. */
 export function canonDriftCondition(

@@ -52,10 +52,12 @@ import {
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import type {
+  AddressedMonitorCondition,
   HumanMonitorCondition,
   MonitorCondition,
   MonitorHistoryRow,
   MonitorResult,
+  UnaddressedMonitorCondition,
 } from './monitor-types.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -365,8 +367,14 @@ export async function monitor(
     docs: canonRows.filter((row) => row.findings.some((finding) => finding.kind !== 'unchecked'))
       .length,
   }
-  const add = (condition: Omit<MonitorCondition, 'ageMs'> & { ageMs?: number | null }) =>
-    conditions.push({ ...condition, ageMs: condition.ageMs ?? age(condition.since, clock) })
+  type ConditionInput =
+    | (Omit<AddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
+    | (Omit<UnaddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
+  const add = (condition: ConditionInput) =>
+    conditions.push({
+      ...condition,
+      ageMs: condition.ageMs ?? age(condition.since, clock),
+    } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
 
   const asking = askingRuns(database)
@@ -392,7 +400,8 @@ export async function monitor(
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
     add({
-      kind: `terminal-close-out-${run.close_out_outcome}`,
+      kind:
+        run.close_out_outcome === 'held' ? 'terminal-close-out-held' : 'terminal-close-out-failed',
       subject: `run:${run.id}`,
       since: run.close_out_attempted_at,
       detail: run.close_out_detail ?? `terminal run ${run.id} close-out ${run.close_out_outcome}`,

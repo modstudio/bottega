@@ -7,7 +7,9 @@ import { upsertProject } from '../project/projects.ts'
 import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 
-const condition = (overrides: Partial<import('./monitor-types.ts').MonitorCondition> = {}) => ({
+const condition = (
+  overrides: Partial<import('./monitor-types.ts').UnaddressedMonitorCondition> = {},
+): import('./monitor-types.ts').UnaddressedMonitorCondition => ({
   kind: 'sample',
   subject: 'subject',
   since: '2026-09-16T00:00:00.000Z',
