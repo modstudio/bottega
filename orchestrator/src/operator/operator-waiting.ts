@@ -31,7 +31,7 @@ export async function initialQuestionWaitingAt(
 
 const firstLine = (value: string) => value.split(/\r?\n/, 1)[0]!
 
-export type OperatorNotificationDetails = {
+type OperatorNotificationDetails = {
   title: string
   body: string
   link: string
