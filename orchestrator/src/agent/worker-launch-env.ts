@@ -2,5 +2,7 @@
 /** Knows the user-context controls applied to worker harnesses. */
 
 export function workerLaunchEnv(agentName: string): Record<string, string> {
-  return agentName === 'grok' ? { GROK_CLAUDE_AGENTS_ENABLED: '0' } : {}
+  return agentName === 'grok'
+    ? { GROK_CLAUDE_AGENTS_ENABLED: '0', GROK_CLAUDE_HOOKS_ENABLED: '0' }
+    : {}
 }

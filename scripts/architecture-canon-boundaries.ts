@@ -3,6 +3,34 @@ import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
 
 const source = 'orchestrator/src/canon/'
 
+const canonCommandBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-commands-boundary',
+    file: `${source}canon-commands.ts`,
+    allowed: [
+      'node:fs',
+      'node:path',
+      'zod',
+      `${source}canon.ts`,
+      `${source}canon-files.ts`,
+      `${source}canon-hydrate.ts`,
+      `${source}canon-lint.ts`,
+      `${source}canon-write-gate.ts`,
+      `${source}canon-load-files.ts`,
+      `${source}canon-load.ts`,
+      `${source}user-canon-commands.ts`,
+      'orchestrator/src/agent/worker-launch-env.ts',
+      'orchestrator/src/doc/docs.ts',
+      `${source}evals.ts`,
+      'orchestrator/src/project/projects.ts',
+      'shared/ratchet.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep canon command adapters independent of runs, routing, transports, the CLI, and worktrees.',
+  },
+]
+
 const userCanonBoundarySpecs: ImportBoundary[] = [
   {
     name: 'user-canon-import-boundary',
@@ -53,4 +81,8 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
   },
 ]
 
-export const canonBoundarySpecs = [...userCanonBoundarySpecs, ...canonLoadBoundarySpecs]
+export const canonBoundarySpecs = [
+  ...canonCommandBoundarySpecs,
+  ...userCanonBoundarySpecs,
+  ...canonLoadBoundarySpecs,
+]

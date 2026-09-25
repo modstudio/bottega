@@ -5,18 +5,24 @@ import { db } from '../database/db.ts'
 import { acceptableRunProcessIds, childEnv, commandNamesRun } from './run-process.ts'
 
 test('worker context controls override inherited values only for grok', () => {
-  const parent = process.env.GROK_CLAUDE_AGENTS_ENABLED
+  const parentAgents = process.env.GROK_CLAUDE_AGENTS_ENABLED
+  const parentHooks = process.env.GROK_CLAUDE_HOOKS_ENABLED
   process.env.GROK_CLAUDE_AGENTS_ENABLED = '1'
+  process.env.GROK_CLAUDE_HOOKS_ENABLED = '1'
   try {
     expect(childEnv(AGENTS.grok!, undefined, undefined, {}, false)).toMatchObject({
       GROK_CLAUDE_AGENTS_ENABLED: '0',
+      GROK_CLAUDE_HOOKS_ENABLED: '0',
     })
     expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).toMatchObject({
       GROK_CLAUDE_AGENTS_ENABLED: '1',
+      GROK_CLAUDE_HOOKS_ENABLED: '1',
     })
   } finally {
-    if (parent === undefined) delete process.env.GROK_CLAUDE_AGENTS_ENABLED
-    else process.env.GROK_CLAUDE_AGENTS_ENABLED = parent
+    if (parentAgents === undefined) delete process.env.GROK_CLAUDE_AGENTS_ENABLED
+    else process.env.GROK_CLAUDE_AGENTS_ENABLED = parentAgents
+    if (parentHooks === undefined) delete process.env.GROK_CLAUDE_HOOKS_ENABLED
+    else process.env.GROK_CLAUDE_HOOKS_ENABLED = parentHooks
   }
 })
 
