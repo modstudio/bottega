@@ -2,7 +2,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import type { ReviewReply } from '../contract/contract.ts'
-import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { parseReviewOutput, recordReviews } from './review.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewLens } from './review-outbox.ts'
 import {
@@ -23,6 +23,28 @@ export const MIN_REVIEW_TRIAGED = 10
 
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = (typeof DISPOSITIONS)[number]
+
+function triageValues(
+  disposition: Disposition,
+  rejectionCategory?: string,
+  triagedSeverity?: string,
+): { rejectionCategory: string | null; triagedSeverity: string | null } {
+  if (!DISPOSITIONS.includes(disposition)) throw new Error(`invalid disposition: ${disposition}`)
+  if (disposition === 'rejected' && !rejectionCategory?.trim()) {
+    throw new Error('a rejected finding requires --category')
+  }
+  if (rejectionCategory && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(rejectionCategory)) {
+    throw new Error('rejection category must be a lowercase stable id of at most 64 characters')
+  }
+  const severity = triagedSeverity?.trim()
+  if (severity && !REVIEW_SEVERITY.includes(severity as ReviewSeverity)) {
+    throw new Error(`severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
+  }
+  return {
+    rejectionCategory: disposition === 'rejected' ? rejectionCategory!.trim() : null,
+    triagedSeverity: severity ?? null,
+  }
+}
 
 export type ReviewTriageBag = {
   total: number
@@ -150,26 +172,20 @@ export function triageFinding(
   triagedSeverity?: string,
   database: Database = writableDb(),
 ): void {
-  if (!DISPOSITIONS.includes(disposition)) throw new Error(`invalid disposition: ${disposition}`)
-  if (disposition === 'rejected' && !rejectionCategory?.trim()) {
-    throw new Error('a rejected finding requires --category')
-  }
-  if (rejectionCategory && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(rejectionCategory)) {
-    throw new Error('rejection category must be a lowercase stable id of at most 64 characters')
-  }
+  const values = triageValues(disposition, rejectionCategory, triagedSeverity)
   const review = database.query('SELECT completed_at FROM review WHERE id=?').get(reviewId) as {
     completed_at: string | null
   } | null
   if (!review) throw new Error(`no review ${reviewId}`)
-  if (review.completed_at) throw new Error(`review ${reviewId} is already complete`)
+  if (review.completed_at) {
+    throw new Error(
+      `review ${reviewId} is already complete; use orch review amend ${reviewId} ${ordinal} ... --reason "<text>"`,
+    )
+  }
   const finding = database
     .query('SELECT severity FROM review_finding WHERE review_id=? AND ordinal=?')
     .get(reviewId, ordinal) as { severity: string } | null
   if (!finding) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
-  const severity = triagedSeverity?.trim()
-  if (severity && !REVIEW_SEVERITY.includes(severity as ReviewSeverity)) {
-    throw new Error(`severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
-  }
   atomic(database, () => {
     const result = database
       .query(
@@ -178,8 +194,8 @@ export function triageFinding(
       )
       .run(
         disposition,
-        disposition === 'rejected' ? rejectionCategory!.trim() : null,
-        severity ?? null,
+        values.rejectionCategory,
+        values.triagedSeverity,
         nowIso(),
         reviewId,
         ordinal,
@@ -191,6 +207,76 @@ export function triageFinding(
       )
       .get(reviewId, ordinal)!
     enqueueReviewFinding(database, updated.id)
+  })
+}
+
+export function amendFinding(
+  reviewId: number,
+  ordinal: number,
+  disposition: Disposition,
+  reason: string,
+  rejectionCategory?: string,
+  triagedSeverity?: string,
+  database: Database = writableDb(),
+): void {
+  const values = triageValues(disposition, rejectionCategory, triagedSeverity)
+  const amendmentReason = reason.trim()
+  if (!amendmentReason) throw new Error('--reason is required and must be non-empty')
+  atomic(database, () => {
+    const review = database.query('SELECT completed_at FROM review WHERE id=?').get(reviewId) as {
+      completed_at: string | null
+    } | null
+    if (!review) throw new Error(`no review ${reviewId}`)
+    if (!review.completed_at) {
+      throw new Error(
+        `review ${reviewId} is incomplete; use orch review triage ${reviewId} ${ordinal} ...`,
+      )
+    }
+    const finding = database
+      .query<
+        {
+          id: number
+          disposition: string | null
+          rejection_category: string | null
+          triaged_severity: string | null
+        },
+        [number, number]
+      >(
+        `SELECT id, disposition, rejection_category, triaged_severity
+         FROM review_finding WHERE review_id=? AND ordinal=?`,
+      )
+      .get(reviewId, ordinal)
+    if (!finding) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
+    const at = nowIso()
+    database
+      .query(
+        `INSERT INTO review_finding_amendment
+         (review_id,finding_ordinal,old_disposition,new_disposition,
+          old_rejection_category,new_rejection_category,old_triaged_severity,new_triaged_severity,
+          reason,actor_session,at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        reviewId,
+        ordinal,
+        finding.disposition,
+        disposition,
+        finding.rejection_category,
+        values.rejectionCategory,
+        finding.triaged_severity,
+        values.triagedSeverity,
+        amendmentReason,
+        sessionId(),
+        at,
+      )
+    database
+      .query(
+        `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
+         WHERE id=?`,
+      )
+      .run(disposition, values.rejectionCategory, values.triagedSeverity, at, finding.id)
+    enqueueReviewFinding(database, finding.id)
+    enqueueReview(database, reviewId)
   })
 }
 

@@ -16,6 +16,7 @@ export function register(program: Command): void {
     .option('--agent <value>')
     .option('--category <value>')
     .option('--severity <value>')
+    .option('--reason <value>')
     .option('--open')
     .option('--complete')
     .option('--json')
