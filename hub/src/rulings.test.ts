@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
-import { listOpenRulings, rulingsPayload, rulingsStaleAfter } from './rulings.ts'
+import { listOpenRulings, measureRulings, rulingsPayload, rulingsStaleAfter } from './rulings.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -157,5 +157,137 @@ describe('run ingest', () => {
         age: 3_600_000,
       },
     ])
+  })
+})
+
+describe('ruling-loop measures', () => {
+  test('measures provenance, waits, delivery fallback, open age, and operator answers', () => {
+    const now = Date.parse('2026-09-24T12:00:00.000Z')
+    const asked = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString()
+    const answered = (minutesAgo: number, waitMinutes: number) =>
+      new Date(now - minutesAgo * 60_000 + waitMinutes * 60_000).toISOString()
+    const questions = [
+      {
+        question_id: 1,
+        asked_at: asked(180),
+        answered_at: answered(180, 2),
+        asked_via: 'reply' as const,
+        answerer_kind: 'operator' as const,
+      },
+      {
+        question_id: 2,
+        asked_at: asked(160),
+        answered_at: answered(160, 10),
+        asked_via: 'live' as const,
+        answerer_kind: 'agent' as const,
+      },
+      {
+        question_id: 3,
+        asked_at: asked(150),
+        answered_at: answered(150, 120),
+        asked_via: 'reply' as const,
+        answerer_kind: 'eval' as const,
+      },
+      {
+        question_id: 4,
+        asked_at: asked(90),
+        answered_at: null,
+        asked_via: 'reply' as const,
+        answerer_kind: null,
+      },
+      {
+        question_id: 5,
+        asked_at: asked(60),
+        answered_at: answered(60, 30),
+        asked_via: null,
+        answerer_kind: null,
+      },
+      {
+        question_id: 6,
+        asked_at: '2026-09-01T00:00:00.000Z',
+        answered_at: null,
+        asked_via: 'live' as const,
+        answerer_kind: null,
+      },
+    ]
+    const deliveries = [
+      { question_id: 1, mode: 'resume' as const, outcome: 'failed' as const },
+      { question_id: 1, mode: 'retry' as const, outcome: 'delivered' as const },
+      { question_id: 2, mode: 'live' as const, outcome: 'delivered' as const },
+      { question_id: 3, mode: 'resume' as const, outcome: 'delivered' as const },
+      { question_id: 4, mode: 'record-only' as const, outcome: 'delivered' as const },
+      { question_id: 5, mode: 'retry' as const, outcome: 'failed' as const },
+      { question_id: 6, mode: 'live' as const, outcome: 'failed' as const },
+    ]
+
+    expect(measureRulings(questions, deliveries, { now, staleAfterMs: 60 * 60_000 })).toEqual({
+      window: {
+        days: 14,
+        starts_at: '2026-09-10T12:00:00.000Z',
+        ends_at: '2026-09-24T12:00:00.000Z',
+      },
+      questions_asked: { total: 5, by_asked_via: { live: 1, reply: 3, unknown: 1 } },
+      answer_wait: {
+        overall: {
+          count: 4,
+          median_ms: 1_200_000,
+          p90_ms: 7_200_000,
+          under_5_minutes: 1,
+          under_1_hour: 3,
+          over_1_hour: 1,
+        },
+        by_answerer_kind: {
+          agent: {
+            count: 1,
+            median_ms: 600_000,
+            p90_ms: 600_000,
+            under_5_minutes: 0,
+            under_1_hour: 1,
+            over_1_hour: 0,
+          },
+          operator: {
+            count: 1,
+            median_ms: 120_000,
+            p90_ms: 120_000,
+            under_5_minutes: 1,
+            under_1_hour: 1,
+            over_1_hour: 0,
+          },
+          eval: {
+            count: 1,
+            median_ms: 7_200_000,
+            p90_ms: 7_200_000,
+            under_5_minutes: 0,
+            under_1_hour: 0,
+            over_1_hour: 1,
+          },
+          unknown: {
+            count: 1,
+            median_ms: 1_800_000,
+            p90_ms: 1_800_000,
+            under_5_minutes: 0,
+            under_1_hour: 1,
+            over_1_hour: 0,
+          },
+        },
+      },
+      delivery: {
+        by_mode_and_outcome: {
+          live: { delivered: 1, failed: 0 },
+          resume: { delivered: 1, failed: 1 },
+          retry: { delivered: 1, failed: 1 },
+          'record-only': { delivered: 1, failed: 0 },
+        },
+        stopped_turn: {
+          delivered: 2,
+          resume: 1,
+          retry: 1,
+          resume_share: 0.5,
+          retry_share: 0.5,
+        },
+      },
+      open: { count: 1, older_than_stale: 1 },
+      operator_answers: { count: 1, median_wait_ms: 120_000 },
+    })
   })
 })

@@ -113,6 +113,22 @@ const OrchQuestionSchema = z
     run_id: z.number().int(),
     asked_at: z.iso.datetime(),
     answered_at: z.iso.datetime().nullable(),
+    asked_via: z.enum(['live', 'reply']).nullable(),
+    answerer_kind: z.enum(['agent', 'operator', 'eval']).nullable(),
+    answer_channel: z.enum(['cli', 'mcp', 'ui']).nullable(),
+    deliveries: z.array(
+      z
+        .object({
+          id: z.number().int(),
+          question_id: z.number().int(),
+          run_id: z.number().int().nullable(),
+          mode: z.enum(['live', 'resume', 'retry', 'record-only']),
+          outcome: z.enum(['delivered', 'failed']),
+          at: z.iso.datetime(),
+          error: z.string().nullable(),
+        })
+        .strict(),
+    ),
   })
   .passthrough()
 

@@ -5,6 +5,7 @@ import {
   collectRunsAt,
   ingestRunFixtures,
   ingestStdout,
+  questionFixture,
   resetFixtureStore,
   runFixture,
 } from '../../test/run-fixtures.ts'
@@ -248,6 +249,117 @@ describe('run ingest', () => {
         session_id: 'sess-a',
         asked_at: '2026-09-04T18:00:00.000Z',
         answered_at: '2026-09-04T18:10:00.000Z',
+      },
+    ])
+  })
+
+  test('maps question provenance and replaces deliveries on re-ingest', async () => {
+    const base = runFixture({
+      id: 9250,
+      turns: [
+        {
+          id: 9251,
+          started_at: '2026-09-04T19:01:00.000Z',
+          latency_ms: 1000,
+          vendor_tokens: null,
+          vendor_cost_usd: null,
+          status: 'delivered',
+          turn: 2,
+        },
+      ],
+      questions: [
+        questionFixture({
+          id: 50,
+          run_id: 9250,
+          asked_at: '2026-09-04T19:00:00.000Z',
+          answered_at: '2026-09-04T19:01:00.000Z',
+          asked_via: 'reply',
+          answerer_kind: 'operator',
+          answer_channel: 'cli',
+          deliveries: [
+            {
+              id: 1,
+              question_id: 50,
+              run_id: 9251,
+              mode: 'resume',
+              outcome: 'failed',
+              at: '2026-09-04T19:02:00.000Z',
+              error: 'resume failed',
+            },
+            {
+              id: 2,
+              question_id: 50,
+              run_id: 9260,
+              mode: 'retry',
+              outcome: 'delivered',
+              at: '2026-09-04T19:03:00.000Z',
+              error: null,
+            },
+          ],
+        }),
+      ],
+    })
+    await ingestRunFixtures(base)
+
+    expect(
+      db()
+        .query(
+          `SELECT asked_via, answerer_kind, answer_channel FROM question WHERE question_id = 50`,
+        )
+        .get(),
+    ).toEqual({ asked_via: 'reply', answerer_kind: 'operator', answer_channel: 'cli' })
+    expect(
+      db()
+        .query(
+          `SELECT run_ref, mode, outcome, at, error FROM question_delivery
+           WHERE question_id = 50 ORDER BY at`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        run_ref: 'orch:9250:turn:9251',
+        mode: 'resume',
+        outcome: 'failed',
+        at: '2026-09-04T19:02:00.000Z',
+        error: 'resume failed',
+      },
+      {
+        run_ref: 'orch:9260',
+        mode: 'retry',
+        outcome: 'delivered',
+        at: '2026-09-04T19:03:00.000Z',
+        error: null,
+      },
+    ])
+
+    const updatedQuestion = {
+      ...base.questions[0]!,
+      deliveries: [
+        {
+          id: 3,
+          question_id: 50,
+          run_id: null,
+          mode: 'record-only' as const,
+          outcome: 'delivered' as const,
+          at: '2026-09-04T19:04:00.000Z',
+          error: null,
+        },
+      ],
+    }
+    await ingestRunFixtures({ ...base, questions: [updatedQuestion] })
+    expect(
+      db()
+        .query(
+          `SELECT run_ref, mode, outcome, at, error FROM question_delivery WHERE question_id = 50`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        run_ref: null,
+        mode: 'record-only',
+        outcome: 'delivered',
+        at: '2026-09-04T19:04:00.000Z',
+        error: null,
       },
     ])
   })

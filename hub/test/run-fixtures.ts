@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { spyOn } from 'bun:test'
+import type { OrchRun } from '../../shared/orch-contract.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 import { refreshKeyPrefixes } from '../src/attribute.ts'
 import { db } from '../src/db.ts'
@@ -34,27 +35,51 @@ export function resetFixtureStore(assertSafe?: () => void) {
   clearOrchCache()
 }
 
-export const runFixture = (overrides: Record<string, unknown> = {}) => ({
-  id: 9001,
-  started_at: '2026-09-03T00:00:00.000Z',
-  agent: 'grok',
-  job: 'implement',
-  repo: 'alpha',
-  cwd: '/fixtures/repos/alpha/.claude/worktrees/ALP-118',
-  session_id: null,
-  latency_ms: null,
-  vendor_tokens: null,
-  vendor_cost_usd: null,
-  prompt_head: 'Implement ALP-118',
-  prompt_path: null,
-  branch: 'ALP-118',
-  probe: 0,
-  status: 'running',
-  delivery: null,
-  quality: null,
-  questions: [],
+export const questionFixture = (overrides: Record<string, unknown> = {}) => ({
+  id: 1,
+  run_id: 9001,
+  asked_at: '2026-09-03T00:00:00.000Z',
+  answered_at: null,
+  asked_via: 'reply',
+  answerer_kind: null,
+  answer_channel: null,
+  deliveries: [],
   ...overrides,
 })
+
+export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => {
+  const fixture = {
+    id: 9001,
+    started_at: '2026-09-03T00:00:00.000Z',
+    agent: 'grok',
+    job: 'implement',
+    repo: 'alpha',
+    cwd: '/fixtures/repos/alpha/.claude/worktrees/ALP-118',
+    session_id: null,
+    latency_ms: null,
+    vendor_tokens: null,
+    vendor_cost_usd: null,
+    prompt_head: 'Implement ALP-118',
+    prompt_path: null,
+    branch: 'ALP-118',
+    probe: 0,
+    status: 'running',
+    delivery: null,
+    quality: null,
+    questions: [] as Record<string, unknown>[],
+    ...overrides,
+  }
+  if (Array.isArray(fixture.questions)) {
+    fixture.questions = fixture.questions.map((question) => ({
+      asked_via: null,
+      answerer_kind: null,
+      answer_channel: null,
+      deliveries: [],
+      ...(question as Record<string, unknown>),
+    }))
+  }
+  return fixture as unknown as OrchRun
+}
 
 export async function ingestStdout(stdout: string) {
   const spawn = spyOn(Bun, 'spawn').mockImplementation((() => ({

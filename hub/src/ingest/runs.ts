@@ -21,6 +21,15 @@ function runRef(rootId: number, questionRunId: number, hasTurns: boolean) {
   return hasTurns ? `orch:${rootId}:turn:${questionRunId}` : `orch:${rootId}`
 }
 
+function deliveryRunRef(run: OrchRun, receivingRunId: number | null): string | null {
+  if (receivingRunId == null) return null
+  const belongsToChain =
+    receivingRunId === run.id || run.turns?.some((turn) => turn.id === receivingRunId)
+  return belongsToChain && run.turns
+    ? `orch:${run.id}:turn:${receivingRunId}`
+    : `orch:${receivingRunId}`
+}
+
 export function executionSpans(r: OrchRun, now = Date.now()) {
   return (r.turns ?? [r]).flatMap((turn) => {
     const start = new Date(turn.started_at).getTime()
@@ -67,15 +76,27 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        user_id         = excluded.user_id`,
     )
     const upsertQuestion = conn.query(
-      `INSERT INTO question (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at)
-     VALUES (?,?,?,?,?,?,?)
+      `INSERT INTO question
+        (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
+         asked_via, answerer_kind, answer_channel)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(question_id) DO UPDATE SET
        run_ref     = excluded.run_ref,
        root_ref    = excluded.root_ref,
        task_key    = excluded.task_key,
        session_id  = excluded.session_id,
-       asked_at    = excluded.asked_at,
-       answered_at = excluded.answered_at`,
+       asked_at       = excluded.asked_at,
+       answered_at    = excluded.answered_at,
+       asked_via      = excluded.asked_via,
+       answerer_kind  = excluded.answerer_kind,
+       answer_channel = excluded.answer_channel`,
+    )
+    const deleteQuestionDeliveries = conn.query(
+      `DELETE FROM question_delivery WHERE question_id = ?`,
+    )
+    const insertQuestionDelivery = conn.query(
+      `INSERT INTO question_delivery (question_id, run_ref, mode, outcome, at, error)
+       VALUES (?,?,?,?,?,?)`,
     )
     const deleteRootQuestions = conn.query(`DELETE FROM question WHERE root_ref = ?`)
     const close = conn.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
@@ -105,7 +126,21 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
           r.session_id,
           q.asked_at,
           q.answered_at,
+          q.asked_via,
+          q.answerer_kind,
+          q.answer_channel,
         )
+        deleteQuestionDeliveries.run(q.id)
+        for (const delivery of q.deliveries) {
+          insertQuestionDelivery.run(
+            q.id,
+            deliveryRunRef(r, delivery.run_id),
+            delivery.mode,
+            delivery.outcome,
+            delivery.at,
+            delivery.error,
+          )
+        }
       }
 
       // A probe is a smoke test — "reply with ok" — that did no work on
