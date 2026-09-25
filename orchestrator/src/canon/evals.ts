@@ -200,6 +200,19 @@ function checkCitesTrackedPaths(reply: WorkerReply | ReviewReply | string): {
   return { pass: true, why: 'every finding location is the tracked path' }
 }
 
+function stripTrailingExitAnnotation(command: string): string {
+  return command.replace(/ \(exit [^)]+\)$/, '')
+}
+
+function normalizedCommandsRun(entries: string[]): string[] {
+  return entries.flatMap((entry) =>
+    stripTrailingExitAnnotation(entry)
+      .split('\n')
+      .map(stripTrailingExitAnnotation)
+      .filter((command) => command.trim().length > 0),
+  )
+}
+
 function checkReportsEvidence(reply: WorkerReply | ReviewReply | string): {
   pass: boolean
   why: string
@@ -209,7 +222,7 @@ function checkReportsEvidence(reply: WorkerReply | ReviewReply | string): {
   if (!review.findings.length) {
     return { pass: false, why: 'no finding; evidence of a reproducing command is missing' }
   }
-  const commands = review.provenance.commands_run.filter((command) => command.trim().length > 0)
+  const commands = normalizedCommandsRun(review.provenance.commands_run)
   if (!commands.length) {
     return { pass: false, why: 'provenance.commands_run is empty; evidence is prose' }
   }

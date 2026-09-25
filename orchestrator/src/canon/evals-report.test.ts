@@ -135,6 +135,99 @@ describe('behavioral canon evals', () => {
       pass: false,
     })
   })
+
+  test('reports-evidence-not-claims accepts a quoted command whose commands_run carries a trailing exit annotation', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'reports-evidence-not-claims'
+    ]!.check
+    const annotated = {
+      ...evidencedReview,
+      provenance: {
+        ...evidencedReview.provenance,
+        commands_run: [`${reproduce} (exit 1)`],
+      },
+    }
+    expect(check(annotated as ReviewReply)).toMatchObject({ pass: true })
+
+    const noCommand = {
+      ...annotated,
+      findings: [
+        {
+          ...annotated.findings[0]!,
+          evidence: 'the add function is wrong',
+        },
+      ],
+    }
+    expect(check(noCommand as ReviewReply)).toMatchObject({ pass: false })
+
+    const emptyCommands = {
+      ...evidencedReview,
+      provenance: {
+        ...evidencedReview.provenance,
+        commands_run: [] as string[],
+      },
+    }
+    expect(check(emptyCommands as ReviewReply)).toMatchObject({ pass: false })
+
+    const middleAnnotation = {
+      ...evidencedReview,
+      findings: [
+        {
+          ...evidencedReview.findings[0]!,
+          evidence: `${reproduce} && echo done`,
+        },
+      ],
+      provenance: {
+        ...evidencedReview.provenance,
+        commands_run: [`${reproduce} (exit 1) && echo done`],
+      },
+    }
+    expect(check(middleAnnotation as ReviewReply)).toMatchObject({ pass: false })
+  })
+
+  test('reports-evidence-not-claims treats an annotation-only commands_run entry as empty', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'reports-evidence-not-claims'
+    ]!.check
+    const annotationOnly = {
+      ...evidencedReview,
+      findings: [
+        {
+          ...evidencedReview.findings[0]!,
+          evidence: 'the add function is wrong',
+        },
+      ],
+      provenance: {
+        ...evidencedReview.provenance,
+        commands_run: [' (exit 1)'],
+      },
+    }
+    expect(check(annotationOnly as ReviewReply)).toEqual({
+      pass: false,
+      why: 'provenance.commands_run is empty; evidence is prose',
+    })
+  })
+
+  test('reports-evidence-not-claims accepts a quoted command from a newline-joined commands_run entry', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'reports-evidence-not-claims'
+    ]!.check
+    const quoted = 'bun -e X'
+    const joined = {
+      ...evidencedReview,
+      findings: [
+        {
+          ...evidencedReview.findings[0]!,
+          evidence: quoted,
+        },
+      ],
+      provenance: {
+        ...evidencedReview.provenance,
+        commands_run: [`nl -ba scripts/add.ts\n${quoted}`],
+      },
+    }
+    expect(check(joined as ReviewReply)).toMatchObject({ pass: true })
+  })
 })
 
 describe('canon eval establishment', () => {
