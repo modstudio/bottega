@@ -76,26 +76,21 @@ const baselineFresh = () => {
   return d
 }
 
-type ApplicationObject = {
-  type: 'table' | 'index' | 'view' | 'trigger'
-  name: string
-  tbl_name: string
-}
+type ApplicationObject = { type: 'table' | 'index' | 'view' | 'trigger'; name: string }
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
   d
     .query<ApplicationObject, [string, string]>(
-      `SELECT type,name,tbl_name FROM sqlite_master
+      `SELECT type,name FROM sqlite_master
     WHERE type IN ('table','index','view','trigger')
       AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
     ORDER BY type,name`,
     )
     .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
-type SchemaRow = { type: string; name: string; sql: string }
 const applicationSchemaRows = (d: Database) =>
   d
-    .query<SchemaRow, [string, string]>(
+    .query<{ type: string; name: string; sql: string }, [string, string]>(
       `SELECT type,name,sql FROM sqlite_master
     WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
     ORDER BY type,name`,
@@ -103,7 +98,6 @@ const applicationSchemaRows = (d: Database) =>
     .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
-
 /** Reduce any later journal state to the baseline application-object inventory. */
 function stripPostBaselineApplicationObjects(d: Database): void {
   const foreignKeys =
@@ -539,6 +533,16 @@ describe('hub migration journal', () => {
     expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
     d.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('every migration backfill is idempotent when the current journal is applied again', () => {
+    const d = migratedThrough(13)
+    d.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
+    expect(applyMigrations(d)).toEqual(['0014_install_binding'])
+    const migrated = d.serialize()
+    expect(applyMigrations(d)).toEqual([])
+    expect(d.serialize()).toEqual(migrated)
+    d.close()
   })
 
   test('question migration rewinds collection and the ordinary next collect fills provenance', () => {
