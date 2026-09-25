@@ -19,6 +19,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       `${source}canon-load-files.ts`,
       `${source}canon-load.ts`,
       `${source}user-canon-commands.ts`,
+      'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/worker-launch-env.ts',
       'orchestrator/src/doc/docs.ts',
       `${source}evals.ts`,

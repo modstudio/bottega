@@ -103,16 +103,22 @@ describe('decideUserCanonImport', () => {
   })
 
   test('allows user always-on canon past the repository total under the harness limit', () => {
+    const rows = [
+      { slug: 'AGENTS.md', body: prose(15_000) },
+      { slug: '.agents/rules/alpha.md', body: rule(7_000) },
+      { slug: '.agents/rules/bravo.md', body: rule(7_000) },
+      { slug: '.agents/rules/charlie.md', body: rule(7_000) },
+    ]
     const decision = decideUserCanonImport({
       current: [],
-      next: [
-        { slug: 'AGENTS.md', body: prose(15_000) },
-        { slug: '.agents/rules/alpha.md', body: rule(7_000) },
-        { slug: '.agents/rules/bravo.md', body: rule(7_000) },
-        { slug: '.agents/rules/charlie.md', body: rule(7_000) },
-      ],
+      next: rows,
     })
     expect(decision.findings).toEqual([])
+    expect(
+      decideCanonWrite({ ...inputs, current: rows.slice(0, 3), next: rows }).map(
+        ({ rule }) => rule,
+      ),
+    ).toContain('canon/size-always-on')
   })
 
   test('reports a harness-load finding when user canon crosses the combined limit', () => {

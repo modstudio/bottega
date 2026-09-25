@@ -95,7 +95,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'canon-write-gate-boundary',
     'orchestrator/src/canon/canon-write-gate.ts',
-    ['./canon-lint.ts', './canon-load.ts', './user-canon-home.ts'],
+    [
+      'node:path',
+      './canon-hydrate.ts',
+      './canon-lint.ts',
+      './canon-load.ts',
+      './user-canon-home.ts',
+    ],
     'Keep canon write decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   ...canonBoundarySpecs,

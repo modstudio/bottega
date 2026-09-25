@@ -1,7 +1,7 @@
 // concern: doc-write-allowed
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
-import type { CanonSourceText } from '../canon/canon-lint.ts'
+import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
 import { decideCanonWrite } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
@@ -42,6 +42,16 @@ export function globalCanonWriteTargets(
 
 /** User canon is checked against every managed project, or by itself when none opt in. */
 export const userCanonWriteTargets = globalCanonWriteTargets
+
+export function canonFindingsRefusal(findings: CanonFinding[]): string | null {
+  if (!findings.length) return null
+  return (
+    `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
+    findings
+      .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
+      .join('\n')
+  )
+}
 
 export function importedDocDelivery(scope: string): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
@@ -178,13 +188,7 @@ export function refuseCanonWrite(input: {
     packageScripts: input.packageScripts,
     sourceTexts: input.sourceTexts,
   })
-  if (!findings.length) return null
-  return (
-    `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-    findings
-      .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-      .join('\n')
-  )
+  return canonFindingsRefusal(findings)
 }
 
 export function refuseDocWrite(input: {

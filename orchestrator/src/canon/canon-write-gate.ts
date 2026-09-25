@@ -1,5 +1,7 @@
 // concern: canon-write-gate
 /** Knows the pure canon write decision. Must not know filesystems, stores, commands, runs, routing, or transports. */
+import { posix } from 'node:path'
+import { generatedLinks } from './canon-hydrate.ts'
 import {
   type CanonFinding,
   type CanonSourceText,
@@ -27,24 +29,37 @@ function userCanonLint(rows: Row[]): CanonFinding[] {
   }).findings.filter(({ rule }) => rule !== 'canon/size-always-on')
 }
 
-function repoLoadPath(slug: string): string {
-  if (slug.startsWith('.agents/rules/')) {
-    return `${SYNTHETIC_REPO}/.claude/rules/${slug.slice('.agents/rules/'.length)}`
+function repoLoadCandidates(rows: Row[]): Array<{ path: string; text: string; realPath: string }> {
+  const candidates = rows.map(({ slug, body }) => ({
+    path: `${SYNTHETIC_REPO}/${slug}`,
+    text: body,
+    realPath: `${SYNTHETIC_REPO}/${slug}`,
+  }))
+  for (const link of generatedLinks(rows)) {
+    const target = posix.normalize(posix.join(posix.dirname(link.path), link.target))
+    for (const row of rows) {
+      if (row.slug !== target && !row.slug.startsWith(`${target}/`)) continue
+      const suffix = row.slug.slice(target.length).replace(/^\//, '')
+      candidates.push({
+        path: `${SYNTHETIC_REPO}/${posix.join(link.path, suffix)}`,
+        text: row.body,
+        realPath: `${SYNTHETIC_REPO}/${row.slug}`,
+      })
+    }
   }
-  return `${SYNTHETIC_REPO}/${slug}`
+  return candidates
 }
 
 function combinedClaudePlan(user: Row[], around: { global: Row[]; project: Row[] }) {
   const candidates = [
-    ...[...around.global, ...around.project].map(({ slug, body }) => ({
-      path: repoLoadPath(slug),
-      text: body,
-    })),
+    ...repoLoadCandidates([...around.global, ...around.project]),
     ...user.flatMap(({ slug, body }) => {
       const mapped = mapUserCanonPath({ kind: 'canon', path: slug })
-      return mapped ? [{ path: `${SYNTHETIC_CLAUDE_HOME}/${mapped}`, text: body }] : []
+      if (!mapped) return []
+      const path = `${SYNTHETIC_CLAUDE_HOME}/${mapped}`
+      return [{ path, text: body, realPath: path }]
     }),
-  ].map(({ path, text }) => ({ path, text, symlink: false, realPath: path }))
+  ].map(({ path, text, realPath }) => ({ path, text, symlink: path !== realPath, realPath }))
   const facts: HarnessLoadFacts = {
     files: candidates,
     directoryChain: [SYNTHETIC_REPO],

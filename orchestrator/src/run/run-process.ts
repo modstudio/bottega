@@ -66,7 +66,12 @@ export function childEnv(
    * register.
    */
   if (includeStore) env.ORCH_DB = DB_PATH
-  const child = { ...env, ...(a.env?.() ?? {}), ...extra, ...workerLaunchEnv(a.name) }
+  const child = {
+    ...env,
+    ...(a.env?.() ?? {}),
+    ...extra,
+    ...workerLaunchEnv(a.harness ?? a.name),
+  }
   if (!includeStore) delete child.ORCH_DB
   return child
 }

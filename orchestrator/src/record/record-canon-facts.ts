@@ -2,7 +2,7 @@
 import type { SQL } from 'bun'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
-import { composeCanonRows } from '../doc/doc-write-allowed.ts'
+import { canonFindingsRefusal, composeCanonRows } from '../doc/doc-write-allowed.ts'
 
 type Row = { slug: string; body: string }
 const asRows = (rows: Record<string, unknown>[]): Row[] =>
@@ -65,14 +65,8 @@ async function userWriteRefusal(
       next: changed,
       surroundings: [{ global, project }],
     }).findings
-    if (findings.length) {
-      return (
-        `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-        findings
-          .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-          .join('\n')
-      )
-    }
+    const refusal = canonFindingsRefusal(findings)
+    if (refusal) return refusal
   }
   return null
 }

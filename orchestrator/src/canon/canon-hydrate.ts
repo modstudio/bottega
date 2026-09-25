@@ -44,7 +44,7 @@ export function composeCanonRows<
   return [...globalRows, ...userRows, ...projectRows]
 }
 
-function generatedLinks(rows: CanonRow[]): { path: string; target: string }[] {
+export function generatedLinks(rows: CanonRow[]): { path: string; target: string }[] {
   const links = rows
     .filter(({ slug }) => posix.basename(slug) === 'AGENTS.md')
     .map(({ slug }) => ({

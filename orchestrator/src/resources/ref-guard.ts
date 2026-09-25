@@ -35,7 +35,13 @@ export type SharedRefGuardEnvironment = {
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 const REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'
-const READONLY_PRE_PUSH = '#!/bin/sh\necho "read-only runs never push" >&2\nexit 1\n'
+const WORKER_PRE_PUSH =
+  '#!/bin/sh\necho "workers never push; the architect pushes after review" >&2\nexit 1\n'
+
+function workerCommitMsg(): string {
+  const checker = realpathSync(join(ROOT, 'src', 'check', 'check-attribution.ts'))
+  return `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(checker)} "$1"\n`
+}
 
 function sharedRefGuardWrapper(hookDir: string, guard: string, original: string): string {
   const guardMarker = Buffer.from(guard).toString('base64')
@@ -223,44 +229,44 @@ function verifiedSharedRefGuardEnvironment(
   hookDir: string,
   guard: string,
   allowedRef?: string,
-  readonly = false,
 ): SharedRefGuardEnvironment {
   const installed = join(hookDir, 'reference-transaction')
   const verified = installedRefGuard(installed, guard)
   if (!verified?.executable) {
     throw new Error(`refusing to expose unverified shared ref guard hooks path: ${hookDir}`)
   }
-  if (readonly) installReadOnlyPrePush(hookDir)
+  installWorkerHook(hookDir, 'pre-push', WORKER_PRE_PUSH)
+  installWorkerHook(hookDir, 'commit-msg', workerCommitMsg())
   return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
 }
 
-function verifiedReadOnlyPrePush(installed: string): boolean {
+function verifiedWorkerHook(installed: string, content: string): boolean {
   if (!pathEntryExists(installed)) return false
   try {
     accessSync(installed, constants.X_OK)
-    return readFileSync(installed, 'utf8') === READONLY_PRE_PUSH
+    return readFileSync(installed, 'utf8') === content
   } catch {
     return false
   }
 }
 
-function installReadOnlyPrePush(hookDir: string): void {
-  const installed = join(hookDir, 'pre-push')
+function installWorkerHook(hookDir: string, name: string, content: string): void {
+  const installed = join(hookDir, name)
   if (pathEntryExists(installed)) {
-    if (verifiedReadOnlyPrePush(installed)) return
-    throw new Error(`refusing to replace unrecognized read-only pre-push hook ${installed}`)
+    if (verifiedWorkerHook(installed, content)) return
+    throw new Error(`refusing to replace unrecognized worker ${name} hook ${installed}`)
   }
   let fd: number | null = null
   try {
     fd = openSync(installed, 'wx', 0o600)
-    writeFileSync(fd, READONLY_PRE_PUSH)
+    writeFileSync(fd, content)
     fchmodSync(fd, 0o755)
     fsyncSync(fd)
     closeSync(fd)
     fd = null
   } catch (error) {
     if (fd !== null) closeSync(fd)
-    if (verifiedReadOnlyPrePush(installed)) return
+    if (verifiedWorkerHook(installed, content)) return
     throw error
   }
 }
@@ -284,7 +290,6 @@ export function prepareSharedRefGuard(
   readonlyRepoRoot?: string,
 ): SharedRefGuardEnvironment {
   const paths = refGuardPaths(cwd, readonlyRepoRoot)
-  const readonly = readonlyRepoRoot !== undefined
   const hookDir = join(paths.commonDir, 'orch-guards', refGuardOwner(cwd))
   if (pathEntryExists(hookDir) && realpathSync(hookDir) !== resolve(hookDir)) {
     throw new Error(`refusing shared ref guard hook directory symlink: ${hookDir}`)
@@ -334,7 +339,7 @@ export function prepareSharedRefGuard(
     wrapper = sharedRefGuardWrapper(hookDir, guard, original)
     if (installedGuard?.kind === 'wrapper' && installedGuard.original === original) {
       if (installedGuard.executable) {
-        return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef, readonly)
+        return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
       }
     }
     if (pathEntryExists(installed)) {
@@ -352,7 +357,7 @@ export function prepareSharedRefGuard(
     }
   } else if (installedGuard !== null) {
     if (installedGuard.executable) {
-      return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef, readonly)
+      return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
     }
     throw new Error(`shared ref guard is not executable: ${realpathSync(installed)}`)
   } else if (pathEntryExists(installed)) {
@@ -366,9 +371,8 @@ export function prepareSharedRefGuard(
   }
   // core.hooksPath is injected into the worker's process environment, not
   // configured for this repository. It therefore reaches every scratch
-  // repository the worker touches. Project hooks such as commit-msg have no
-  // business running there, so this directory carries only the ref-update
-  // guard. Worker commits do not accidentally inherit checkout-local hooks.
+  // repository the worker touches. Checkout-local hooks are not inherited, so
+  // this directory carries the worker-wide push and attribution boundaries too.
   // The complete directory is assembled and synced under a private sibling
   // name. Only one rename publishes it at the path a worker may receive.
   try {
@@ -386,7 +390,7 @@ export function prepareSharedRefGuard(
     }
   }
 
-  return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef, readonly)
+  return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
 }
 
 /** Remove the guard owned by one run. A missing repository or directory is already clean. */

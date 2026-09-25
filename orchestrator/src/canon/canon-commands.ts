@@ -12,6 +12,7 @@ import {
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
+import { requireAgent } from '../agent/agent-registry.ts'
 import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { listDocs, removeDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -98,7 +99,7 @@ function canonRows(project: string) {
   )
 }
 
-export function canonSlugsToRemove(currentSlugs: string[], treeSlugs: string[]): string[] {
+function canonSlugsToRemove(currentSlugs: string[], treeSlugs: string[]): string[] {
   if (treeSlugs.length === 0) return []
   const tree = new Set(treeSlugs)
   return currentSlugs.filter((slug) => !tree.has(slug))
@@ -480,9 +481,10 @@ function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): v
   }
   const agent = flags.flag('agent')
   if (role === 'worker' && !agent) throw new Error('--agent is required with --role worker')
+  const harnessName = agent ? (requireAgent(agent).harness ?? agent) : null
   const loadFacts = gatherHarnessLoadFacts(cwd, {
     ...process.env,
-    ...(role === 'worker' ? workerLaunchEnv(agent!) : {}),
+    ...(role === 'worker' ? workerLaunchEnv(harnessName!) : {}),
   })
   const names = harness ? [harness] : [...HARNESS_NAMES]
   const plans = names.map((name) => planHarnessLoad(loadFacts, name))

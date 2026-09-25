@@ -26,6 +26,14 @@ test('worker context controls override inherited values only for grok', () => {
   }
 })
 
+test('worker context controls follow a registered agent harness rather than its name', () => {
+  const variant = { ...AGENTS.grok!, name: 'grok-variant', harness: 'grok' }
+  expect(childEnv(variant, undefined, undefined, {}, false)).toMatchObject({
+    GROK_CLAUDE_AGENTS_ENABLED: '0',
+    GROK_CLAUDE_HOOKS_ENABLED: '0',
+  })
+})
+
 test('a coordinator command may name any run in the acceptable chain', () => {
   expect(commandNamesRun('bun orchestrator/src/exec.ts 41', [41, 42])).toBe(true)
   expect(commandNamesRun('bun orchestrator/src/exec.ts 41', [42, 41])).toBe(true)

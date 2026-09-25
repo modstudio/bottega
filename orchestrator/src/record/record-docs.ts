@@ -6,6 +6,7 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import { isUserCanonSlug, userCanonHomeImportDeletionSlugs } from '../canon/user-canon-home.ts'
 import {
+  canonFindingsRefusal,
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
@@ -435,15 +436,6 @@ async function insertRevision(
   return storedId
 }
 
-function canonFindingsRefusal(findings: CanonFinding[]): string {
-  return (
-    `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-    findings
-      .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-      .join('\n')
-  )
-}
-
 type UserCanonRow = RecordUserCanonImportInput['rows'][number]
 type StoredUserCanonRow = Record<string, unknown>
 
@@ -596,7 +588,7 @@ export async function importRecordUserCanon(
       current,
       next,
     })
-    if (!bootstrap && findings.length) throw new RecordDocError(canonFindingsRefusal(findings))
+    if (!bootstrap && findings.length) throw new RecordDocError(canonFindingsRefusal(findings)!)
 
     const { desired, existing } = indexUserCanonBatch(input, currentRows)
     const at = new Date().toISOString()

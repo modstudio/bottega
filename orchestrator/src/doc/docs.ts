@@ -20,6 +20,7 @@ import {
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
+import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -50,6 +51,7 @@ import {
   insertLocalRevision,
 } from './doc-revision-store.ts'
 import {
+  canonFindingsRefusal,
   consumeDocBody,
   globalCanonWriteTargets,
   importedDocDelivery,
@@ -270,6 +272,16 @@ type DocWriteInput = {
   delivery?: 'inject' | 'demand'
 } & DocWriteContext
 
+function ownedCanonWriteRefusal(current: CanonRow[], next: CanonRow[]) {
+  const surroundings = userCanonWriteTargets(projects()).map((target) => ({
+    global: listDocs({ scope: 'canon', subject: null }),
+    project: target ? listDocs({ scope: 'canon', subject: target.name }) : [],
+  }))
+  return canonFindingsRefusal(
+    decideUserCanonImport({ current, next, surroundings }).findings,
+  )
+}
+
 function assertCanonWriteAllowed(input: DocWriteInput): void {
   if (input.scope !== 'canon') return
   const project = input.subject ? projectByName(input.subject)! : null
@@ -282,6 +294,11 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
     ),
     { slug: input.slug, body: input.body },
   ]
+  if (input.owner) {
+    const refusal = ownedCanonWriteRefusal(user, changedRows)
+    if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
+    return
+  }
   const next = composeCanonRows(
     (input.owner || project ? global : changedRows).map((row) => ({ ...row, subject: null })),
     (input.owner ? changedRows : user).map((row) => ({
