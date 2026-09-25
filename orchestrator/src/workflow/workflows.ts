@@ -405,30 +405,13 @@ const selectedWorkflow = (slug: string, version: number | undefined, d: Database
 const selectedCatalogue = (version: number | undefined, d: Database) =>
   version === undefined ? productionStepCatalogue(d) : showStepCatalogue(version, d)
 
-function resolveWorkflowMode(
+export function resolveWorkflowMode(
   definition: WorkflowDefinition,
   modeSlug?: string,
 ): WorkflowMode | undefined {
   return modeSlug
     ? definition.modes.find((mode) => mode.slug === modeSlug)
     : definition.modes.find((mode) => mode.default)
-}
-
-export function resolveWorkflowCursorMode(
-  slug: string,
-  requested: string | undefined,
-  caller: string,
-  remedy: string,
-  d: Database = db(),
-): string {
-  if (requested) return requested
-  const definition = showWorkflow(slug, undefined, d).definition
-  const mode = resolveWorkflowMode(definition)
-  if (mode) return mode.slug
-  throw new Error(
-    `${caller} cannot resolve a default mode for workflow "${slug}"; ` +
-      `modes: ${definition.modes.map(({ slug: modeSlug }) => modeSlug).join(', ')}; ${remedy}`,
-  )
 }
 
 export function workflowModeStepLists(

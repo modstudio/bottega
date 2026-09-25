@@ -141,3 +141,72 @@ test('next preserves an explicit mode', async () => {
 
   expect(lines.join('\n')).toContain(`Workflow ${slug} for DEV-937-explicit is finished`)
 })
+
+test('mode-less cursor verbs keep using the cursor mode after the workflow default changes', async () => {
+  const slug = 'cursor-pinned-default'
+  const project = 'cursor-pinned-default-project'
+  const key = 'DEV-937-pinned'
+  const catalogue = productionStepCatalogue().definition.steps
+  const steps = [
+    catalogue.find(({ slug }) => slug === 'complete')!.slug,
+    catalogue.find(({ slug }) => slug === 'score')!.slug,
+  ]
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [
+    { slug: 'report', title: 'Report', default: true, steps },
+    { slug: 'repair', title: 'Repair', steps },
+  ])
+  composeWorkflowWithCursor(slug, project, undefined, { key }, {})
+  const changed = setWorkflow(
+    slug,
+    {
+      title: `Cursor command ${slug}`,
+      description: 'Exercises pinned cursor mode resolution.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes: [
+        { slug: 'report', title: 'Report', steps },
+        { slug: 'repair', title: 'Repair', default: true, steps },
+      ],
+    },
+    'change the default mode',
+    'test',
+  )
+  promoteWorkflow(slug, changed.n, 'publish changed default', 'test')
+  const lines: string[] = []
+  const command = (verb: string, ...tail: string[]) =>
+    workflowCommand(
+      ['workflow', verb, slug, '--project', project, '--arg', `key=${key}`, ...tail],
+      presentation(lines),
+    )
+
+  await command('next', '--note', 'completed the report')
+  await command('await', '--question', 'which ruling applies?')
+  await command('abandon', '--reason', 'operator stopped')
+
+  expect(lines.join('\n')).toContain(`workflow ${slug} is awaiting a ruling at step 2 score`)
+  expect(lines.join('\n')).toContain(`Workflow ${slug} for ${key} was abandoned at step 2 score`)
+})
+
+test('mode-less cursor command refuses active cursors in multiple modes', async () => {
+  const slug = 'cursor-ambiguous-mode'
+  const project = 'cursor-ambiguous-mode-project'
+  const key = 'DEV-937-ambiguous'
+  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'complete')!
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [
+    { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
+    { slug: 'repair', title: 'Repair', steps: [step.slug] },
+  ])
+  composeWorkflowWithCursor(slug, project, 'report', { key }, {})
+  composeWorkflowWithCursor(slug, project, 'repair', { key }, {})
+
+  expect(
+    workflowCommand(
+      ['workflow', 'next', slug, '--project', project, '--arg', `key=${key}`],
+      presentation([]),
+    ),
+  ).rejects.toThrow(
+    `orch workflow next cannot resolve a mode for workflow "${slug}"; ` +
+      'active cursor modes: repair, report; pass --mode <slug>',
+  )
+})

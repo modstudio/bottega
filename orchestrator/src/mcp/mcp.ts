@@ -41,6 +41,7 @@ import {
   getWorkflowStepWithCursor,
   mcpWorkflowCursorContext,
   nextWorkflowStep,
+  resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
@@ -48,7 +49,6 @@ import {
   composeWorkflow,
   getWorkflowStep,
   listWorkflows,
-  resolveWorkflowCursorMode,
   workflowModeStepLists,
 } from '../workflow/workflows.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
@@ -502,17 +502,28 @@ export function createDocsMcpServer(): McpServer {
         note: z.string().trim().min(1),
       },
     },
-    async ({ slug, project, mode, args, note }) =>
-      text(
+    async ({ slug, project, mode, args, note }) => {
+      const workflowArgs = args ?? {}
+      const context = mcpWorkflowCursorContext()
+      return text(
         nextWorkflowStep(
           slug,
           project,
-          resolveWorkflowCursorMode(slug, mode, 'next_workflow_step', 'pass the mode argument'),
-          args ?? {},
+          resolveWorkflowCursorMode(
+            slug,
+            project,
+            mode,
+            workflowArgs,
+            context,
+            'next_workflow_step',
+            'pass the mode argument',
+          ),
+          workflowArgs,
           note,
-          mcpWorkflowCursorContext(),
+          context,
         ),
-      ),
+      )
+    },
   )
 
   server.registerTool(
@@ -527,17 +538,28 @@ export function createDocsMcpServer(): McpServer {
         question: z.string().trim().min(1),
       },
     },
-    async ({ slug, project, mode, args, question }) =>
-      text(
+    async ({ slug, project, mode, args, question }) => {
+      const workflowArgs = args ?? {}
+      const context = mcpWorkflowCursorContext()
+      return text(
         awaitWorkflowRuling(
           slug,
           project,
-          resolveWorkflowCursorMode(slug, mode, 'await_workflow_ruling', 'pass the mode argument'),
-          args ?? {},
+          resolveWorkflowCursorMode(
+            slug,
+            project,
+            mode,
+            workflowArgs,
+            context,
+            'await_workflow_ruling',
+            'pass the mode argument',
+          ),
+          workflowArgs,
           question,
-          mcpWorkflowCursorContext(),
+          context,
         ),
-      ),
+      )
+    },
   )
 
   server.registerTool(
