@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { spawnFixtureSync } from '../../test/fixtures/spawn.ts'
 import { dir } from '../../test/preload.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { ProjectSettings } from '../project/projects.ts'
@@ -21,7 +22,7 @@ const britishSample = readFileSync(
 ).trim()
 
 function run(database: string, ...argv: string[]) {
-  return Bun.spawnSync(['bun', '--no-env-file', cli, 'check', '--enabled', ...argv], {
+  return spawnFixtureSync(['bun', '--no-env-file', cli, 'check', '--enabled', ...argv], {
     env: { ...process.env, ORCH_DB: database },
     stdin: 'ignore',
     stdout: 'pipe',
@@ -41,7 +42,11 @@ function registerProject(name: string, path: string, settings: ProjectSettings):
 }
 
 function git(root: string, ...argv: string[]) {
-  const result = Bun.spawnSync(['git', ...argv], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+  const result = spawnFixtureSync(['git', ...argv], {
+    cwd: root,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
@@ -113,7 +118,7 @@ describe('orch check --enabled', () => {
       checks: { spelling: true },
     })
 
-    const result = Bun.spawnSync(
+    const result = spawnFixtureSync(
       ['bun', '--no-env-file', cli, 'check', '--enabled', '--project', 'checks-spelling'],
       {
         env: {
@@ -150,7 +155,7 @@ describe('orch check --enabled', () => {
       checks: { spelling: true },
     })
 
-    const result = Bun.spawnSync(
+    const result = spawnFixtureSync(
       ['bun', '--no-env-file', cli, 'check', '--enabled', '--project', 'checks-american-english'],
       {
         env: { ...process.env, ORCH_DB: database, PATH: `${bin}:${process.env.PATH}` },
@@ -170,7 +175,7 @@ describe('orch check --enabled', () => {
     const gh = installGh()
     const database = registerProject('checks-pr-out', root, { trunk: 'main' })
 
-    const result = Bun.spawnSync(
+    const result = spawnFixtureSync(
       [
         'bun',
         '--no-env-file',
@@ -202,7 +207,7 @@ describe('orch check --enabled', () => {
       checks: { attribution: true },
     })
 
-    const result = Bun.spawnSync(
+    const result = spawnFixtureSync(
       [
         'bun',
         '--no-env-file',
@@ -247,7 +252,7 @@ describe('orch check --enabled', () => {
       checks: { spelling: true, attribution: true },
     })
 
-    const result = Bun.spawnSync(
+    const result = spawnFixtureSync(
       ['bun', '--no-env-file', cli, 'check', '--enabled', '--project', 'checks-both'],
       {
         env: {

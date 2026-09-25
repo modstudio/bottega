@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, afterEach, beforeEach } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach } from 'bun:test'
 import {
   chmodSync,
   copyFileSync,
@@ -55,6 +55,8 @@ const originalPath = process.env.PATH
 const originalSandbox = process.env.ORCH_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
+const inheritedGitConfig: Record<string, string> = {}
+const gitConfigEnvironmentName = /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/
 const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
@@ -178,6 +180,14 @@ const { db } = await import('../src/database/db.ts')
 let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
 
+beforeAll(() => {
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!gitConfigEnvironmentName.test(key) || value === undefined) continue
+    inheritedGitConfig[key] = value
+    delete process.env[key]
+  }
+})
+
 beforeEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
   registerStandardTransports()
@@ -243,6 +253,10 @@ afterAll(() => {
   else process.env[CONFIG_HOME_ENV] = originalConfigHome
   if (originalRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
   else process.env.ORCH_RECORD_API_URL = originalRecordApiUrl
+  for (const key of Object.keys(process.env)) {
+    if (gitConfigEnvironmentName.test(key)) delete process.env[key]
+  }
+  Object.assign(process.env, inheritedGitConfig)
   rmSync(configDir, { recursive: true, force: true })
   rmSync(dir, { recursive: true, force: true })
 })
