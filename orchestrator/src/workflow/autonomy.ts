@@ -7,6 +7,7 @@ export const autonomyPresets = ['manual', 'guided', 'autonomous'] as const
 export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 export type AutonomyStage = (typeof autonomyStages)[number]
 export type AutonomyValue = (typeof autonomyValues)[number]
+export type StageAutonomyValue = AutonomyValue | 'per step'
 export type AutonomyPreset = (typeof autonomyPresets)[number]
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {
@@ -20,6 +21,7 @@ export type AutonomySettings = WorkflowAutonomySettings & {
 }
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
+  stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>
   rulings: RulingsResolution
   hosted?: { status: 'available' | 'not-configured' | 'unavailable'; reason?: string }
   note?: string
@@ -130,23 +132,49 @@ export function validateAutonomySettings(value: unknown, scope: string): Autonom
   return object(value) ? { ...settings, ...validateWorkflows(value.workflows, scope) } : settings
 }
 
-function resolvedStepValue(
-  step: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>,
+function resolvedAutonomyValue(
+  subject: Pick<CatalogueStep, 'stage'> & { slug?: string; autonomy?: AutonomyValue },
   settings: WorkflowAutonomySettings,
-): AutonomyValue | undefined {
+): StageAutonomyValue | undefined {
   const explicit =
-    settings.steps?.[step.slug] ?? (step.stage ? settings.stages?.[step.stage] : undefined)
+    (subject.slug ? settings.steps?.[subject.slug] : undefined) ??
+    (subject.stage ? settings.stages?.[subject.stage] : undefined)
   if (explicit) return explicit
   if (settings.preset === 'manual') return 'ask'
   if (settings.preset === 'autonomous') return 'auto'
-  if (settings.preset === 'guided') return step.autonomy
+  if (settings.preset === 'guided') return subject.autonomy ?? 'per step'
   return undefined
+}
+
+function resolveSubject(
+  subject: Pick<CatalogueStep, 'stage' | 'autonomy'> & { slug?: string },
+  scopes: { name: string; settings: AutonomySettings }[],
+  workflow?: string,
+): { value: AutonomyValue; scope: string }
+function resolveSubject(
+  subject: Pick<CatalogueStep, 'stage'> & { autonomy?: undefined; slug?: string },
+  scopes: { name: string; settings: AutonomySettings }[],
+  workflow?: string,
+): { value: StageAutonomyValue; scope: string }
+function resolveSubject(
+  subject: Pick<CatalogueStep, 'stage'> & { slug?: string; autonomy?: AutonomyValue },
+  scopes: { name: string; settings: AutonomySettings }[],
+  workflow?: string,
+): { value: StageAutonomyValue; scope: string } {
+  for (const scope of scopes) {
+    const value =
+      (workflow && resolvedAutonomyValue(subject, scope.settings.workflows?.[workflow] ?? {})) ||
+      resolvedAutonomyValue(subject, scope.settings)
+    if (value) return { value, scope: scope.name }
+  }
+  return { value: subject.autonomy ?? 'per step', scope: 'built-in' }
 }
 
 export function resolveAutonomy(
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
   scopes: { name: string; settings: unknown }[],
   workflow?: string,
+  stages: readonly AutonomyStage[] = [],
 ): AutonomyResolution {
   const checked = scopes.map((scope) => ({
     name: scope.name,
@@ -154,17 +182,11 @@ export function resolveAutonomy(
   }))
   const resolved: AutonomyResolution['steps'] = {}
   for (const step of steps) {
-    for (const scope of checked) {
-      const value =
-        (workflow && resolvedStepValue(step, scope.settings.workflows?.[workflow] ?? {})) ||
-        resolvedStepValue(step, scope.settings)
-      if (value) {
-        resolved[step.slug] = { value, scope: scope.name }
-        break
-      }
-    }
-    resolved[step.slug] ??= { value: step.autonomy, scope: 'built-in' }
+    resolved[step.slug] = resolveSubject(step, checked, workflow)
   }
+  const resolvedStages = Object.fromEntries(
+    stages.map((stage) => [stage, resolveSubject({ stage }, checked, workflow)]),
+  ) as AutonomyResolution['stages']
   const presetRuling = (preset: AutonomySettings['preset']): 'agent' | 'user' =>
     preset === 'manual' ? 'user' : 'agent'
   const resolvedRuling = (settings: WorkflowAutonomySettings): 'agent' | 'user' | undefined =>
@@ -179,6 +201,7 @@ export function resolveAutonomy(
     .find(({ value }) => value !== undefined)
   return {
     steps: resolved,
+    ...(stages.length ? { stages: resolvedStages } : {}),
     rulings: ruling
       ? {
           value: ruling.value!,

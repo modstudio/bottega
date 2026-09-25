@@ -15,6 +15,7 @@ import {
   type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
+  type AutonomyStage,
   builtInAutonomyPreset,
   builtInAutonomyScope,
   combineRulingsSnapshots,
@@ -74,6 +75,7 @@ export async function resolveProjectAutonomy(
   d: Database = db(),
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
+  stages: readonly AutonomyStage[] = [],
 ): Promise<AutonomyResolution> {
   const registered = projectByName(project, d)
   if (!registered) throw new Error(`unknown project "${project}"`)
@@ -91,6 +93,7 @@ export async function resolveProjectAutonomy(
       builtInAutonomyScope(defaultPreset ?? builtInAutonomyPreset),
     ],
     workflow,
+    stages,
   )
   if (hosted.status === 'available')
     return { ...resolution, hosted: { status: hosted.status }, session }
@@ -115,6 +118,24 @@ export async function resolveProjectAutonomy(
     session,
   }
 }
+
+export const resolveProjectStageAutonomy = (
+  project: string,
+  steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
+  stages: readonly AutonomyStage[],
+) =>
+  resolveProjectAutonomy(
+    project,
+    undefined,
+    undefined,
+    steps,
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    stages,
+  )
 
 function workflowRulingsSnapshot(
   project: string,

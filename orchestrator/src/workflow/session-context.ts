@@ -8,8 +8,9 @@ import {
   type AutonomyValue,
   autonomyStages,
   catalogueStepsForAutonomy,
+  type StageAutonomyValue,
 } from './autonomy.ts'
-import { resolveProjectAutonomy } from './autonomy-scopes.ts'
+import { resolveProjectStageAutonomy } from './autonomy-scopes.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = 'orch config set'
@@ -26,7 +27,7 @@ type ArchitectSessionContext =
 
 type DistinctAutonomy = { value: AutonomyValue; scope: string; steps: number }
 type StageSlice =
-  | { stage: AutonomyStage; agreed: true; value: AutonomyValue; scope: string; steps: number }
+  | { stage: AutonomyStage; agreed: true; value: StageAutonomyValue; scope: string; steps: number }
   | { stage: AutonomyStage; agreed: false; values: DistinctAutonomy[] }
 
 type Presentation = { log(value: string): void }
@@ -83,7 +84,7 @@ async function architectSessionContext(cwd: string): Promise<ArchitectSessionCon
   const project = projectAt(cwd)
   if (!project) return { registered: false }
   const steps = catalogueStepsForAutonomy(productionStepCatalogue().definition.steps)
-  const resolution = await resolveProjectAutonomy(project.name, undefined, undefined, steps)
+  const resolution = await resolveProjectStageAutonomy(project.name, steps, autonomyStages)
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {
     if (!step.stage) continue
@@ -95,7 +96,9 @@ async function architectSessionContext(cwd: string): Promise<ArchitectSessionCon
   }
   const stages = autonomyStages.flatMap((stage) => {
     const items = byStage.get(stage)
-    return items?.length ? [groupStage(stage, items)] : []
+    if (items?.length) return [groupStage(stage, items)]
+    const resolved = resolution.stages?.[stage]
+    return resolved ? [{ stage, agreed: true as const, ...resolved, steps: 0 }] : []
   })
   const rulings = { value: resolution.rulings.value, scope: resolution.rulings.scope }
   return {

@@ -92,3 +92,44 @@ test('a mixed stage lists each distinct value with its step count and scope', as
     `implement: ask (${remaining} ${remainingNoun}, project); auto (1 step, project)`,
   )
 })
+
+test('a workflow catalogue with no canon steps still reports resolved canon autonomy', async () => {
+  expect(productionStepCatalogue().definition.steps.some((step) => step.stage === 'canon')).toBe(
+    false,
+  )
+  upsertProject({
+    name: 'session-context-empty-stage',
+    path: '/session-context-empty-stage',
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+    },
+  })
+
+  const slice = await contextJson('/session-context-empty-stage')
+  const stages = slice.stages as {
+    stage: string
+    agreed: boolean
+    value?: string
+    scope?: string
+    steps?: number
+  }[]
+  expect(stages.map(({ stage }) => stage)).toEqual([
+    'plan',
+    'implement',
+    'review',
+    'docs',
+    'canon',
+    'ship',
+  ])
+  expect(stages.find(({ stage }) => stage === 'canon')).toEqual({
+    stage: 'canon',
+    agreed: true,
+    value: 'per step',
+    scope: 'built-in',
+    steps: 0,
+  })
+  expect(slice.text as string).toContain('\ncanon: per step (built-in)\n')
+})
