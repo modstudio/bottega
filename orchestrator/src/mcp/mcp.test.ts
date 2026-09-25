@@ -7,9 +7,54 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
+import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
+import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('orch MCP', () => {
+  test('next_workflow_step names the MCP mode remedy when no default exists', async () => {
+    const slug = 'mcp-no-default-mode'
+    const step = productionStepCatalogue().definition.steps[0]!
+    const draft = setWorkflow(
+      slug,
+      {
+        title: 'MCP mode refusal',
+        description: 'Exercises MCP cursor mode resolution.',
+        arguments: [],
+        modes: [
+          { slug: 'report', title: 'Report', entry: 'Prepare a report?', steps: [step.slug] },
+          { slug: 'repair', title: 'Repair', entry: 'Make a repair?', steps: [step.slug] },
+        ],
+      },
+      'test MCP cursor mode resolution',
+      'test',
+    )
+    promoteWorkflow(slug, draft.n, 'publish', 'test')
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const result = await client.callTool({
+        name: 'next_workflow_step',
+        arguments: {
+          slug,
+          project: 'irrelevant-before-mode-refusal',
+          note: 'completed the report',
+        },
+      })
+      expect(result.isError).toBe(true)
+      expect((result.content as { text: string }[])[0]!.text).toContain(
+        `next_workflow_step cannot resolve a default mode for workflow "${slug}"; ` +
+          'modes: report, repair; pass the mode argument',
+      )
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('file_issue advertises every accepted input field', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
