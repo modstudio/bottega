@@ -2,7 +2,7 @@
 /** Owns fix-defect, note, state, and search command behavior. Must not know CLI grammar. */
 import { db } from '../database/db.ts'
 import { dispatchFiledIssues, filedIssueQueueState } from '../issue/issue-dispatch.ts'
-import { fileNote } from '../mcp/mcp.ts'
+import { fileNote } from '../mcp/hub-notes.ts'
 import { projectAt } from '../project/projects.ts'
 import { searchRecords } from '../search.ts'
 import { state } from '../state/serve.ts'

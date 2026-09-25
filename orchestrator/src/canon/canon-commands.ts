@@ -26,6 +26,7 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
+import { auditRepositoryCanon, type CanonAuditResult } from './canon-audit.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
 import {
   composeCanonRows,
@@ -46,6 +47,13 @@ type CanonPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
   cwd(): string
+}
+
+function printCanonAudit(result: CanonAuditResult, log: (...values: unknown[]) => void): void {
+  for (const project of result.projects) {
+    log(`${project.project}: ${project.findings} findings, ${project.notes.length} new notes`)
+    for (const text of project.notes) log(`  ${result.dryRun ? 'would file' : 'filed'} ${text}`)
+  }
 }
 
 const findingSchema = z.object({
@@ -449,7 +457,7 @@ async function canonCommand(
     return
   }
   throw new Error(
-    'unknown: orch canon. Try import | hydrate | list | check | diff | eval | evals | lint | load',
+    'unknown: orch canon. Try audit | import | hydrate | list | check | diff | eval | evals | lint | load',
   )
 }
 
@@ -527,6 +535,12 @@ export async function dispatchCanonCommand(
   flags: CanonFlags,
   presentation: CanonPresentation,
 ): Promise<void> {
+  if (argv[1] === 'audit') {
+    const result = await auditRepositoryCanon({ dryRun: flags.has('dry-run') })
+    if (flags.has('json')) presentation.log(JSON.stringify(result))
+    else printCanonAudit(result, presentation.log)
+    return
+  }
   if (argv[1] === 'load') {
     canonLoadCommand(flags, presentation)
     return

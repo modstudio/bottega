@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
@@ -51,6 +50,7 @@ import {
   listWorkflows,
   workflowModeStepLists,
 } from '../workflow/workflows.ts'
+import { fileNote, hubOutput } from './hub-notes.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
 import { registerOperatorTools } from './mcp-operator-tools.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
@@ -61,8 +61,6 @@ const text = (value: unknown) => ({
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
-
-const HUB = assetPath('bin', 'hub')
 
 const requiredReportField = (field: string, belongs: string) =>
   z
@@ -127,46 +125,6 @@ function filedIssueTitle(input: FileIssueInput) {
     title: shortened ? `${prefixed.slice(0, FILED_ISSUE_TITLE_MAX - 1).trimEnd()}…` : prefixed,
     shortened,
   }
-}
-
-async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
-  const child = Bun.spawn([HUB, ...args], {
-    cwd,
-    env: { ...process.env },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (exitCode !== 0) {
-    throw new Error(stderr.trim() || stdout.trim() || `hub exited ${exitCode}`)
-  }
-  return stdout
-}
-
-export async function fileNote(input: { text: string; same_as?: number; new?: boolean }) {
-  if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
-  let cwd = process.cwd()
-  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
-  const token = process.env.ORCH_RUN_TOKEN ?? ''
-  if (runId > 0 && strictlyAuthenticatedWorkerRun(runId, token)) {
-    const worker = db()
-      .query<{ launch_cwd: string | null }, [number]>('SELECT launch_cwd FROM run WHERE id=?')
-      .get(runId)
-    if (worker?.launch_cwd) cwd = worker.launch_cwd
-  }
-  if (!projectAt(cwd)) throw new Error(`cannot file note: no registered project contains ${cwd}`)
-  const args = [
-    'note',
-    'new',
-    input.text,
-    ...(input.same_as ? ['--same-as', String(input.same_as)] : input.new ? ['--new'] : []),
-  ]
-  return { output: (await hubOutput(args, cwd)).trim() }
 }
 
 async function searchDuplicateIssues(
