@@ -172,6 +172,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   const opened = openedUserVersion
   if (opened === null || actual === opened) return d
   if (schemaReload) {
+    if (d.inTransaction) return d
     const from = opened
     handle?.close()
     handle = null

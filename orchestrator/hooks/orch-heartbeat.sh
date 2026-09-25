@@ -75,6 +75,43 @@ prev_key=""
 since_emit=0
 reported_ids=""
 
+report_store_write_lock() {
+  lock_out=$(mktemp)
+  lock_timed_out=$(mktemp)
+  CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --lock-holder --json >"$lock_out" 2>/dev/null &
+  lock_pid=$!
+  (
+    sleep "$NOTICE_TIMEOUT_SECONDS"
+    if kill -0 "$lock_pid" 2>/dev/null; then
+      printf 'timed-out\n' >"$lock_timed_out"
+      kill "$lock_pid" 2>/dev/null || true
+    fi
+  ) &
+  lock_watchdog=$!
+  wait "$lock_pid"; lock_rc=$?
+  kill "$lock_watchdog" 2>/dev/null || true
+  wait "$lock_watchdog" 2>/dev/null || true
+  if [ -s "$lock_timed_out" ]; then lock_rc=124; fi
+  if [ "$lock_rc" -eq 0 ]; then
+    python3 -c '
+import json, sys
+try:
+    report = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+if report.get("classification") not in ("held", "contended") or not isinstance(report.get("pid"), int):
+    raise SystemExit(0)
+command = report.get("command") if isinstance(report.get("command"), str) else "unavailable"
+command = command.replace("\t", " ").replace("\r", " ").replace("\n", " ")
+run_id = report.get("runId")
+run = str(run_id) if isinstance(run_id, int) else "none"
+print("[%s] STORE WRITE LOCK - %s; pid %s; command %s; run %s" %
+      (__import__("datetime").datetime.now().strftime("%H:%M:%S"), report["classification"], report["pid"], command, run))
+' <"$lock_out"
+  fi
+  rm -f "$lock_out" "$lock_timed_out"
+}
+
 for ((i = 1; i <= MAX; i++)); do
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
@@ -263,6 +300,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
       echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect orch diagnostics directly."
+      report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
   fi
@@ -378,6 +416,7 @@ for row in rows:
 
   if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then
     echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc). Health state still follows inbox and runs; inspect monitor diagnostics directly."
+    report_store_write_lock
   elif [ -n "$monitor_observed" ]; then
     monitor_ids=$(printf '%s\n' "$monitor_observed" | cut -f1 | paste -sd, -)
     CAP_DIR=""

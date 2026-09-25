@@ -638,6 +638,39 @@ describe('schema coexistence', () => {
       name: 'held-reload',
     })
   })
+
+  test('schema reload waits until an open write transaction completes', () => {
+    const seen: Array<[number | null, number]> = []
+    const held = db()
+    enableSchemaReload((from, to) => seen.push([from, to]))
+    const other = new Database(process.env.ORCH_DB!)
+    const next = journalLength() + 1
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+
+    held
+      .transaction(() => {
+        held
+          .query(
+            "INSERT INTO project (name, path, canon, settings) VALUES ('before-reload', '/before', 1, '{}')",
+          )
+          .run()
+        db()
+          .query(
+            "INSERT INTO project (name, path, canon, settings) VALUES ('after-reload', '/after', 1, '{}')",
+          )
+          .run()
+      })
+      .immediate()
+
+    expect(seen).toEqual([])
+    expect(
+      held.query("SELECT name FROM project WHERE name LIKE '%-reload' ORDER BY name").all(),
+    ).toEqual([{ name: 'after-reload' }, { name: 'before-reload' }])
+    expect(db()).not.toBe(held)
+    expect(seen).toEqual([[journalLength(), next]])
+    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+  })
 })
 
 describe('stripSqlComments feeds exec text that keeps quoted comment markers', () => {

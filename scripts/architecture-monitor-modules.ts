@@ -52,4 +52,8 @@ export const monitorModules: MonitorModule[] = [
     '../project/projects.ts',
     './monitor-types.ts',
   ]),
+  module('orchestrator/src/monitor/monitor-store-write-lock.ts', [
+    '../database/db.ts',
+    '../database/store-write-lock.ts',
+  ]),
 ]

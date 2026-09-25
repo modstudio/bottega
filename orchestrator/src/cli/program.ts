@@ -55,6 +55,9 @@ registerSync(program)
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
   if (argv[0] === 'migrate') return true
+  // Monitor owns its writable open so it can diagnose that open when the store is locked.
+  // The lock-holder-only path never opens SQLite writable at all.
+  if (argv[0] === 'monitor') return true
   if (argv[0] === 'waiting') return true
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
   if (argv[0] === 'canon') return argv[1] === 'audit' && argv.includes('--dry-run')

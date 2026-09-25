@@ -12,6 +12,7 @@ export const DECLARED_PAYLOAD_PATHS = [
   'orchestrator/src/cli/orch.ts',
   'hub/src/cli.ts',
   'orchestrator/src/run/exec.ts',
+  'orchestrator/src/database/store-write-lock.c',
   'retrieval/src/search-cli.ts',
   'orchestrator/migrations',
   'hub/migrations',
@@ -114,6 +115,10 @@ export async function buildRelease(tag: string): Promise<string> {
   await bundle('retrieval/src/search-cli.ts', join(payloadRoot, 'retrieval/src/search-cli.ts'))
 
   copyDirectory('orchestrator/migrations', join(payloadRoot, 'orchestrator/migrations'))
+  copyFile(
+    'orchestrator/src/database/store-write-lock.c',
+    join(payloadRoot, 'orchestrator/src/database/store-write-lock.c'),
+  )
   copyDirectory('hub/migrations', join(payloadRoot, 'hub/migrations'))
   copyDirectory('orchestrator/hooks', join(payloadRoot, 'orchestrator/hooks'))
   copyDirectory('hub/web/dist', join(payloadRoot, 'hub/web/dist'))
