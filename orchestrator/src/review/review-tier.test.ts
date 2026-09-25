@@ -156,10 +156,21 @@ describe('review tier classification', () => {
 
   test('agent skill instructions require review', () => {
     const actual = classifyReviewTier({
-      files: [{ path: '.claude/skills/review/SKILL.md', insertions: 1, deletions: 0 }],
+      files: [{ path: '.agents/skills/review/SKILL.md', insertions: 1, deletions: 0 }],
     })
     expect(actual).toMatchObject({ risk: 1, tier: 1 })
     expect(actual.reasons.join('\n')).toContain('agent skill')
+  })
+
+  test('a move into workflow instructions is classified from no-renames numstat rows', () => {
+    const actual = classifyReviewTier({
+      files: [
+        { path: '.agents/rules/moved.md', insertions: 0, deletions: 12 },
+        { path: '.agents/workflow-steps/moved.md', insertions: 12, deletions: 0 },
+      ],
+    })
+    expect(actual).toMatchObject({ risk: 1, tier: 1 })
+    expect(actual.reasons.join('\n')).toContain('workflow instructions')
   })
 
   test.each(['docs/guide.md', '.agents/rules/example.md'])(

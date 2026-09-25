@@ -65,11 +65,23 @@ export function resolveTierRange(
   return { from: facts.mergeBase, to: facts.to.commit! }
 }
 
-const REVIEW_HOT_PATHS: readonly {
+type ReviewHotPath = {
   tier: 1 | 2 | 3
   pattern: RegExp
   reason: string
-}[] = [
+}
+
+const AGENT_INSTRUCTION_PATHS: readonly ReviewHotPath[] = [
+  { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },
+  { tier: 1, pattern: /^\.agents\/skills\//, reason: 'agent skill' },
+  {
+    tier: 1,
+    pattern: /^\.agents\/(?:workflow-steps|workflows)\//,
+    reason: 'workflow instructions',
+  },
+]
+
+const REVIEW_HOT_PATHS: readonly ReviewHotPath[] = [
   { tier: 3, pattern: /^orchestrator\/src\/database\/db\.ts$/, reason: 'schema and DDL' },
   { tier: 3, pattern: /^orchestrator\/src\/landing\.ts$/, reason: 'landing safety' },
   { tier: 3, pattern: /^orchestrator\/src\/worktree\.ts$/, reason: 'worktree lifecycle' },
@@ -81,12 +93,7 @@ const REVIEW_HOT_PATHS: readonly {
   { tier: 2, pattern: /^orchestrator\/src\//, reason: 'orchestrator source' },
   { tier: 2, pattern: /^hub\/src\//, reason: 'hub backend source' },
   { tier: 1, pattern: /^hub\/web\//, reason: 'hub web surface' },
-  { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },
-  {
-    tier: 1,
-    pattern: /^\.agents\/(?:workflow-steps|workflows)\//,
-    reason: 'workflow instructions',
-  },
+  ...AGENT_INSTRUCTION_PATHS,
 ]
 
 const isOrdinaryConfig = (path: string) => {
@@ -97,8 +104,7 @@ const isOrdinaryConfig = (path: string) => {
 const isReviewExcluded = (path: string) => {
   if (
     path === '.claude/settings.json' ||
-    /^\.claude\/skills\//.test(path) ||
-    /^\.agents\/(?:workflow-steps|workflows)\//.test(path)
+    AGENT_INSTRUCTION_PATHS.some(({ pattern }) => pattern.test(path))
   )
     return false
   const kind = categorizeFile(path)
@@ -146,7 +152,7 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
-  const result = Bun.spawnSync(['git', 'diff', '--numstat', `${from}..${to}`], {
+  const result = Bun.spawnSync(['git', 'diff', '--no-renames', '--numstat', `${from}..${to}`], {
     cwd: repo,
     env: targetGitEnvironment(repo),
     stdout: 'pipe',
