@@ -18,6 +18,7 @@ import { summary as metricSummary } from '../metric/metric.ts'
 import { projectAt } from '../project/projects.ts'
 import { reviewCalibration } from '../review/review-calibration.ts'
 import { candidates, scoreboard } from '../route/route.ts'
+import { rulingStatus } from '../run/question-vocabulary.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -130,11 +131,7 @@ export function runDetail(id: number, receipt = false) {
     audit,
     questions: questions.map((question) => ({
       ...question,
-      ruling_status: question.overturned_at
-        ? 'overturned'
-        : question.answered_at
-          ? 'answered'
-          : 'open',
+      ruling_status: rulingStatus(question.overturned_at, question.answered_at),
     })),
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,

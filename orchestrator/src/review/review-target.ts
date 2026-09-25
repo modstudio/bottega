@@ -143,8 +143,16 @@ function keyIn(name: string, cwd: string): string | null {
 }
 
 /** Attribution for a read-only root: worktree name first, then branch. */
-export function inferredReadOnlyKey(cwd: string): string | null {
+function inferredReadOnlyKey(cwd: string): string | null {
   const top = gitContext(cwd, 'rev-parse', '--show-toplevel')
   const fromWorktree = top ? keyIn(basename(top), cwd) : null
   return fromWorktree ?? keyIn(branchOf(cwd) ?? '', cwd)
+}
+
+export function attributedLaunchKey(input: {
+  writesJob: boolean
+  key: string | undefined
+  cwd: string
+}): string | null {
+  return input.writesJob ? (input.key ?? null) : (input.key ?? inferredReadOnlyKey(input.cwd))
 }

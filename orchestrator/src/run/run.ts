@@ -68,8 +68,8 @@ import {
   reviewCalibration,
 } from '../review/review-calibration.ts'
 import {
+  attributedLaunchKey,
   implicitReviewCoverageBase,
-  inferredReadOnlyKey,
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import { chainTransport, type ResolvedTaskBranch } from '../route/failover.ts'
@@ -496,7 +496,7 @@ export async function run(opts: {
     }
   }
   const docsSection = operatorKnowledgeSection(pack ?? null)
-  const dispatchKey = writesJob ? (opts.key ?? null) : (opts.key ?? inferredReadOnlyKey(callerCwd))
+  const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const carriedRulings = taskRulingsForDispatch({
     resume: Boolean(opts.resume),
     project: runProjectName,

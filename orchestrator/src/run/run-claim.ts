@@ -41,7 +41,7 @@ import {
   recordTrustEntryClaims,
 } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
-import { inferredReadOnlyKey } from '../review/review-target.ts'
+import { attributedLaunchKey } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import {
   addedGrokTrustHeadings,
@@ -332,9 +332,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   // A read-only run's key is an address on its record, not an input to the
   // worktree lifecycle. Writing runs retain the explicit-key-only behavior
   // enforced by preflight and consumed below by createWithTool.
-  const attributedKey = writesJob
-    ? (opts.key ?? null)
-    : (opts.key ?? inferredReadOnlyKey(callerCwd))
+  const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const taskRecordId = await resolveRunTaskRecordId({
     inherited: inheritedLaunch?.task_record_id,

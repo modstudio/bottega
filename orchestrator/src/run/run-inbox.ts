@@ -4,6 +4,7 @@ import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 
 type RunInboxFlags = { has(name: string): boolean }
@@ -184,7 +185,7 @@ export async function runInboxCommand(
       recommendation: q.recommendation,
       why: q.why,
       status: q.root_voided ? 'voided' : q.root_status,
-      ruling_status: q.overturned_at ? 'overturned' : q.answered_at ? 'answered' : 'open',
+      ruling_status: rulingStatus(q.overturned_at, q.answered_at),
       overturned_at: q.overturned_at,
       overturned_by: q.overturned_by,
       overturn_reason: q.overturn_reason,
