@@ -57,6 +57,7 @@ import {
   renderWritingRetryPrompt,
 } from './run-retry.ts'
 import { resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
+import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 
 type RunAnswerHelpers = {
   argvResumeLimit(agentName: string): number | undefined
@@ -255,6 +256,7 @@ export async function retryRun(
     branch_kept_tip: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
+  assertAgentWorkRun(id, row.job, 'retried')
   // A writing job already has a worktree and a vendor session. Retry would
   // wrap the prompt again and cut a fresh tree beside the one holding the
   // partial edit. Continue the same conversation in the same tree instead.

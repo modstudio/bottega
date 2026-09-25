@@ -36,6 +36,7 @@ import {
   runMutationActor,
 } from './run/run-authority.ts'
 import { enqueueRunRecord } from './run/run-outbox.ts'
+import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
 import {
   DELIVERY,
@@ -374,6 +375,7 @@ export async function judgeRun(
     .get(requestedId) as JudgeableRun | null
   const row = requireJudgeableRun(requestedId, loaded, flags, options)
   const id = row.id
+  assertAgentWorkRun(id, row.job, 'judged')
   const words = options.words
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
@@ -667,12 +669,14 @@ function scoringHelp(
 
 function recordRequestedUnvoid(
   id: number,
+  jobName: string,
   evidenceExcluded: string | null,
   flags: JudgmentFlags,
   options: ScoreOptions,
   presentation: JudgmentPresentation,
 ): boolean {
   if (!flags.has('unvoid')) return false
+  assertAgentWorkRun(id, jobName, 'unvoided')
   recordEvidenceUnvoid(id, evidenceExcluded, flags, options, presentation)
   return true
 }
@@ -722,7 +726,8 @@ export async function scoreRun(
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
   assertVoidTargetsRoot(requestedId, id, flags.has('void'))
-  if (recordRequestedUnvoid(id, row.evidence_excluded, flags, options, presentation)) return
+  if (recordRequestedUnvoid(id, row.job, row.evidence_excluded, flags, options, presentation))
+    return
   // A pick-time harness refusal never selected an agent, but it is still a
   // real failed row the owning session must be able to clear from its ledger.
   // Voiding that one shape records the note without manufacturing evidence.
@@ -733,6 +738,7 @@ export async function scoreRun(
     recordEvidenceExclusion(id, row, exclusion, flags, options, presentation)
     return
   }
+  assertAgentWorkRun(id, row.job, 'scored')
   const scorer = flags.flag('scorer')
   const dashboardAuthorized = options.dashboardAuthorized
   const note = options.note

@@ -14,6 +14,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
+import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
 type RunListingFlags = {
   has(name: string): boolean
@@ -400,14 +401,16 @@ export async function runListingCommand(
     // The reason is where a fan-out says its exclusions ran out. Hiding it
     // here would leave the database honest and the human-facing command not.
     if (r.route_reason) log(`      route: ${String(r.route_reason)}`)
-    const warning = thinOutputWarning({
-      job: String(r.job),
-      status: String(r.status),
-      latency_ms: r.latency_ms as number | null,
-      probe: Number(r.probe),
-      output_path: r.output_path as string | null,
-      writesRepo: false,
-    })
+    const warning = agentWorkValue(String(r.job), () =>
+      thinOutputWarning({
+        job: String(r.job),
+        status: String(r.status),
+        latency_ms: r.latency_ms as number | null,
+        probe: Number(r.probe),
+        output_path: r.output_path as string | null,
+        writesRepo: false,
+      }),
+    )
     if (warning) log(`      ${warning}`)
   }
   for (const id of unknownIds) log(`${String(id).padStart(4)}  unknown run id`)

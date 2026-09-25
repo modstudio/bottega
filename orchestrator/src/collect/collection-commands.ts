@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { formatPeek, peekRun } from '../events.ts'
 import { job } from '../jobs/jobs.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
 
 type Presentation = {
@@ -40,6 +41,7 @@ export function resultCommand(
     probe: number
     output_path: string | null
   }
+  if (isSyntheticLifecycleJob(row.job)) return
   const warning = thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) })
   if (warning) presentation.error(warning)
 }

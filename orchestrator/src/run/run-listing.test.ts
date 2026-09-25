@@ -2,10 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { job } from '../jobs/jobs.ts'
 import { runDetail } from '../state/serve.ts'
 import { runListingCommand } from './run-listing.ts'
 
-function command(args: Record<string, string[] | boolean> = {}) {
+function command(
+  args: Record<string, string[] | boolean> = {},
+  thinOutputWarning: Parameters<typeof runListingCommand>[2]['thinOutputWarning'] = () => null,
+) {
   const lines: string[] = []
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
   const flag = (name: string) => values(name)[0]
@@ -29,7 +33,7 @@ function command(args: Record<string, string[] | boolean> = {}) {
             .get(root, root),
         ),
       strandedRecovery: (root) => `orch retry ${root} --agent`,
-      thinOutputWarning: () => null,
+      thinOutputWarning,
     },
   ).then(() => lines)
 }
@@ -39,6 +43,29 @@ function insert(status: string, job = 'implement') {
 }
 
 describe('run listing', () => {
+  test('human runs renders lifecycle rows without resolving a dispatch job or warning', async () => {
+    const id = insert('ok', 'landing-tree')
+    let warningCalls = 0
+    const lines = await command({ job: ['landing-tree'] }, () => {
+      warningCalls++
+      return 'unexpected warning'
+    })
+
+    expect(lines.join('\n')).toMatch(new RegExp(`\\b${id}\\s+codex\\s+landing-tree\\b`))
+    expect(lines.join('\n')).not.toContain('unexpected warning')
+    expect(warningCalls).toBe(0)
+  })
+
+  test('human runs keeps strict dispatch resolution for an unknown non-lifecycle job', async () => {
+    insert('ok', 'not-a-job')
+    await expect(
+      command({ job: ['not-a-job'] }, (row) => {
+        job(row.job)
+        return null
+      }),
+    ).rejects.toThrow('unknown job "not-a-job"')
+  })
+
   test('runs shows asking in the status column', async () => {
     const id = insert('asking')
     db()
