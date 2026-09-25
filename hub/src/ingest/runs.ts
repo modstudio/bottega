@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import type { OrchRun } from '../../../shared/orch-contract.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
@@ -28,6 +29,62 @@ function deliveryRunRef(run: OrchRun, receivingRunId: number | null): string | n
   return belongsToChain && run.turns
     ? `orch:${run.id}:turn:${receivingRunId}`
     : `orch:${receivingRunId}`
+}
+
+function questionReplacer(conn: Database) {
+  const upsertQuestion = conn.query(
+    `INSERT INTO question
+      (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
+       asked_via, answerer_kind, answer_channel)
+   VALUES (?,?,?,?,?,?,?,?,?,?)
+   ON CONFLICT(question_id) DO UPDATE SET
+     run_ref        = excluded.run_ref,
+     root_ref       = excluded.root_ref,
+     task_key       = excluded.task_key,
+     session_id     = excluded.session_id,
+     asked_at       = excluded.asked_at,
+     answered_at    = excluded.answered_at,
+     asked_via      = excluded.asked_via,
+     answerer_kind  = excluded.answerer_kind,
+     answer_channel = excluded.answer_channel`,
+  )
+  const deleteQuestionDeliveries = conn.query(`DELETE FROM question_delivery WHERE question_id = ?`)
+  const insertQuestionDelivery = conn.query(
+    `INSERT INTO question_delivery (question_id, run_ref, mode, outcome, at, error)
+     VALUES (?,?,?,?,?,?)`,
+  )
+  const deleteRootQuestions = conn.query(`DELETE FROM question WHERE root_ref = ?`)
+
+  return (run: OrchRun, taskKey: string | null) => {
+    const root = rootRef(run.id)
+    const hasTurns = Boolean(run.turns)
+    deleteRootQuestions.run(root)
+    for (const question of run.questions) {
+      upsertQuestion.run(
+        question.id,
+        runRef(run.id, question.run_id, hasTurns),
+        root,
+        taskKey,
+        run.session_id,
+        question.asked_at,
+        question.answered_at,
+        question.asked_via,
+        question.answerer_kind,
+        question.answer_channel,
+      )
+      deleteQuestionDeliveries.run(question.id)
+      for (const delivery of question.deliveries) {
+        insertQuestionDelivery.run(
+          question.id,
+          deliveryRunRef(run, delivery.run_id),
+          delivery.mode,
+          delivery.outcome,
+          delivery.at,
+          delivery.error,
+        )
+      }
+    }
+  }
 }
 
 export function executionSpans(r: OrchRun, now = Date.now()) {
@@ -75,30 +132,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        session_id      = excluded.session_id,
        user_id         = excluded.user_id`,
     )
-    const upsertQuestion = conn.query(
-      `INSERT INTO question
-        (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
-         asked_via, answerer_kind, answer_channel)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(question_id) DO UPDATE SET
-       run_ref     = excluded.run_ref,
-       root_ref    = excluded.root_ref,
-       task_key    = excluded.task_key,
-       session_id  = excluded.session_id,
-       asked_at       = excluded.asked_at,
-       answered_at    = excluded.answered_at,
-       asked_via      = excluded.asked_via,
-       answerer_kind  = excluded.answerer_kind,
-       answer_channel = excluded.answer_channel`,
-    )
-    const deleteQuestionDeliveries = conn.query(
-      `DELETE FROM question_delivery WHERE question_id = ?`,
-    )
-    const insertQuestionDelivery = conn.query(
-      `INSERT INTO question_delivery (question_id, run_ref, mode, outcome, at, error)
-       VALUES (?,?,?,?,?,?)`,
-    )
-    const deleteRootQuestions = conn.query(`DELETE FROM question WHERE root_ref = ?`)
+    const replaceQuestions = questionReplacer(conn)
     const close = conn.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
     const removeOtherStarts = conn.query(
       `DELETE FROM interval WHERE source = 'orch' AND ref = ? AND start_at <> ?`,
@@ -114,34 +148,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
     for (const r of runs) {
       const a = attributeRun(r)
 
-      const root = rootRef(r.id)
-      const hasTurns = Boolean(r.turns)
-      deleteRootQuestions.run(root)
-      for (const q of r.questions) {
-        upsertQuestion.run(
-          q.id,
-          runRef(r.id, q.run_id, hasTurns),
-          root,
-          a.key,
-          r.session_id,
-          q.asked_at,
-          q.answered_at,
-          q.asked_via,
-          q.answerer_kind,
-          q.answer_channel,
-        )
-        deleteQuestionDeliveries.run(q.id)
-        for (const delivery of q.deliveries) {
-          insertQuestionDelivery.run(
-            q.id,
-            deliveryRunRef(r, delivery.run_id),
-            delivery.mode,
-            delivery.outcome,
-            delivery.at,
-            delivery.error,
-          )
-        }
-      }
+      replaceQuestions(r, a.key)
 
       // A probe is a smoke test — "reply with ok" — that did no work on
       // anything, so it is not engaged time on any task. A question on it is
