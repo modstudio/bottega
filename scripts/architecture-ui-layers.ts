@@ -14,6 +14,7 @@ export const uiLayers: { name: string; folders: string[] }[] = [
       'identifier',
       'button',
       'field',
+      'radio-rows',
       'checkbox',
       'switch',
       'spinner',

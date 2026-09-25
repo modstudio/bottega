@@ -103,7 +103,11 @@ describe('run answers', () => {
         'INSERT INTO question (run_id,asked_at,question,awaiting_operator_at) VALUES (?,?,?,?)',
       )
       .run(id, new Date().toISOString(), 'which shape?', new Date().toISOString())
-    await answerRun(id, { argv: ['use the existing shape'], recordOnly: true, flags }, helpers)
+    await answerRun(
+      id,
+      { argv: ['use the existing shape', '--channel', 'mcp'], recordOnly: true, flags },
+      helpers,
+    )
     expect(
       db()
         .query(
@@ -114,7 +118,7 @@ describe('run answers', () => {
     ).toEqual({
       answer: 'use the existing shape',
       answerer_kind: 'agent',
-      answer_channel: 'cli',
+      answer_channel: 'mcp',
       delivery_pending_at: expect.any(String),
       awaiting_operator_at: null,
     })
@@ -651,6 +655,81 @@ test('answer rejects a fixture ruling from a non-owning session without writing 
     answerRun(id, { argv: ['foreign ruling'], recordOnly: false, flags }, helpers),
   ).rejects.toThrow('owned by session owning-session')
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+})
+
+test('UI operator answers require the hub dashboard capability', async () => {
+  const id = insert('asking', 'implement')
+  const question = db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+    .get(id, new Date().toISOString(), 'which?') as { id: number }
+  delete process.env.CLAUDE_CODE_SESSION_ID
+  delete process.env.ORCH_DEPTH
+  await expect(
+    answerRun(
+      id,
+      {
+        argv: [`--q${question.id}`, 'use it', '--from-operator', '--channel', 'ui'],
+        recordOnly: false,
+        flags,
+      },
+      { ...helpers, dashboardAuthorized: () => false },
+    ),
+  ).rejects.toThrow('--channel ui requires the hub dashboard capability')
+  expect(db().query('SELECT answer FROM question WHERE id=?').get(question.id)).toEqual({
+    answer: null,
+  })
+})
+
+test('UI operator answers a foreign-owned chain without adopting it and resumes under its owner', async () => {
+  const id = insert('asking', 'implement')
+  db()
+    .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
+    .run('dispatching-session', 'vendor', id)
+  const question = db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+    .get(id, new Date().toISOString(), 'which?') as { id: number }
+  delete process.env.CLAUDE_CODE_SESSION_ID
+  delete process.env.ORCH_DEPTH
+  let resumedSession: string | null | undefined
+  const dispatch: typeof detach = async (_job, _prompt, spec) => {
+    resumedSession = spec.resume!.sessionId
+    return addRun({
+      agent: spec.resume!.agent,
+      job: 'implement',
+      status: 'running',
+      parent: spec.resume!.parent,
+      turn: spec.resume!.turn,
+      session: spec.resume!.sessionId,
+    })
+  }
+  const result = await answerRun(
+    id,
+    {
+      argv: [`--q${question.id}`, 'use the existing shape', '--from-operator', '--channel', 'ui'],
+      recordOnly: false,
+      json: true,
+      flags,
+    },
+    { ...helpers, dispatch, dashboardAuthorized: () => true },
+  )
+  expect(result).toEqual({ outcome: 'resumed', run_id: id, resumed_as: expect.any(Number) })
+  expect(resumedSession).toBe('dispatching-session')
+  expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+    session_id: 'dispatching-session',
+  })
+  expect(
+    db()
+      .query('SELECT answered_by,answerer_kind,answer_channel FROM question WHERE id=?')
+      .get(question.id),
+  ).toEqual({ answered_by: 'operator via hub', answerer_kind: 'operator', answer_channel: 'ui' })
+  expect(
+    db()
+      .query("SELECT actor_session FROM run_mutation_audit WHERE root_id=? AND action='answer'")
+      .get(id),
+  ).toEqual({ actor_session: 'operator:ui' })
+  expect(db().query('SELECT session_id FROM run WHERE id=?').get(result.resumed_as!)).toEqual({
+    session_id: 'dispatching-session',
+  })
 })
 
 test('answer permits an unowned question, warns, and records the answering session', async () => {

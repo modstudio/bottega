@@ -172,7 +172,7 @@ export function state(sinceDays: number | null = null) {
    */
   const live = d
     .query(
-      `SELECT id, agent, job, repo, cwd, started_at, COALESCE(label, prompt_head) AS prompt_head, status,
+      `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, repo, cwd, started_at, COALESCE(label, prompt_head) AS prompt_head, status,
             (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND q.answered_at IS NULL) AS open_questions,
             (status = 'asking' AND (SELECT COUNT(*) FROM question q

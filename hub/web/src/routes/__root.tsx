@@ -10,6 +10,7 @@ import {
 import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
+import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
 import { queryClient, trpc } from '@/trpc/client'
 import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
@@ -112,6 +113,10 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     enabled: hosted,
     retry: false,
   })
+  const waiting = useQuery({
+    ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
+    enabled: !hosted,
+  })
   const switchSpace = useMutation({
     ...trpc.record.setActiveSpace.mutationOptions(),
     onSuccess: async () => {
@@ -123,12 +128,15 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     to: string
     label: string
     icon: NavItem['icon']
-    count?: 'flight' | 'done' | 'runs'
+    count?: 'flight' | 'done' | 'runs' | 'inbox'
   }): NavItem => ({
     to: item.to,
     label: item.label,
     icon: item.icon,
-    count: (item.count && counts?.[item.count]) || undefined,
+    count:
+      item.count === 'inbox'
+        ? waitingInboxEntries(waiting.data ?? []).length || undefined
+        : (item.count && counts?.[item.count]) || undefined,
     live: item.to === '/flight' && Boolean(counts?.flight),
   })
   const nav: NavSection[] = navForMode(hosted ? 'hosted' : 'local').map((section) => ({

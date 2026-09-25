@@ -18,11 +18,17 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import type { DocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
+  type AnswerWaitingResult,
+  AnswerWaitingResultSchema,
+  ClaimedOperatorNotificationSchema,
   type HarnessHealth,
   HarnessHealthSchema,
+  type OperatorWaitingItem,
+  OperatorWaitingItemSchema,
   type OrchBlockers,
   OrchBlockersSchema,
   type OrchProject,
@@ -38,7 +44,12 @@ import {
   OrchUnknownRunSchema,
 } from '../../shared/orch-contract.ts'
 
-export type { OrchProject, OrchRun, OrchRunDetail } from '../../shared/orch-contract.ts'
+export type {
+  OperatorWaitingItem,
+  OrchProject,
+  OrchRun,
+  OrchRunDetail,
+} from '../../shared/orch-contract.ts'
 
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
@@ -100,6 +111,15 @@ export function stopDashboardCapability(): void {
   dashboardCapability = null
 }
 
+function dashboardCapabilityEnvironment(): Record<string, string> {
+  return dashboardCapability
+    ? {
+        [DASHBOARD_CAPABILITY_PATH_ENV]: dashboardCapability.path,
+        [DASHBOARD_CAPABILITY_TOKEN_ENV]: dashboardCapability.token,
+      }
+    : {}
+}
+
 async function orchProcess(
   args: string[],
   timeoutMs = 20_000,
@@ -140,7 +160,7 @@ async function orchProcess(
 async function json<T>(
   args: string[],
   schema: { parse(value: unknown): T },
-  opts: { stdin?: string } = {},
+  opts: { stdin?: string; env?: Record<string, string> } = {},
 ): Promise<T> {
   const out = await orchProcess(args, 20_000, opts)
   let value: unknown
@@ -221,6 +241,33 @@ export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
       RUNS_DEADLINE_MS,
     ),
   )
+}
+
+export const waiting = (): Promise<OperatorWaitingItem[]> =>
+  json(['waiting', '--json'], z.array(OperatorWaitingItemSchema))
+
+export const claimWaitingNotifications = () =>
+  json(['waiting', '--claim-notifications', '--json'], z.array(ClaimedOperatorNotificationSchema))
+
+export type WaitingRuling = { questionId: number; ruling: string }
+
+export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling[]): string[] => [
+  'answer',
+  String(runId),
+  ...rulings.flatMap(({ questionId, ruling }) => [`--q${questionId}`, ruling]),
+  '--from-operator',
+  '--channel',
+  'ui',
+  '--json',
+]
+
+export async function answerWaiting(
+  runId: number,
+  rulings: readonly WaitingRuling[],
+): Promise<AnswerWaitingResult> {
+  return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
+    env: dashboardCapabilityEnvironment(),
+  })
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>
@@ -381,13 +428,7 @@ export async function score(
     'hub-dashboard',
     ...(note ? ['--note', note] : []),
   ]
-  const capabilityEnv: Record<string, string> = dashboardCapability
-    ? {
-        [DASHBOARD_CAPABILITY_PATH_ENV]: dashboardCapability.path,
-        [DASHBOARD_CAPABILITY_TOKEN_ENV]: dashboardCapability.token,
-      }
-    : {}
-  return orchProcess(args, 20_000, { env: capabilityEnv })
+  return orchProcess(args, 20_000, { env: dashboardCapabilityEnvironment() })
 }
 
 export type { DocScope }

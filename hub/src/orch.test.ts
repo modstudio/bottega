@@ -15,12 +15,33 @@ import { fileURLToPath } from 'node:url'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
+  answerWaitingArgv,
   decodeRunsJson,
   docArgv,
   projectArgv,
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('operator answer argv preserves the ruling and records the UI operator channel', () => {
+  expect(
+    answerWaitingArgv(42, [
+      { questionId: 7, ruling: 'Use the existing shape' },
+      { questionId: 8, ruling: 'Keep both' },
+    ]),
+  ).toEqual([
+    'answer',
+    '42',
+    '--q7',
+    'Use the existing shape',
+    '--q8',
+    'Keep both',
+    '--from-operator',
+    '--channel',
+    'ui',
+    '--json',
+  ])
+})
 
 const runFixture = {
   id: 42,

@@ -3,9 +3,11 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { type ReviewLens, ReviewLensList } from '@/components/review-lenses'
+import { WaitingBadge } from '@/components/waiting-badge'
 import { duration, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
-import { queryClient, trpc } from '@/trpc/client'
+import { waitingByRun } from '@/lib/operator-waiting'
+import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button, IconButton } from '@/ui/button/button'
 import { Companion } from '@/ui/companion/companion'
@@ -21,6 +23,7 @@ type Quality = (typeof QUALITIES)[number]
 type Fidelity = (typeof FIDELITIES)[number]
 type RunDetail = {
   id: number | string
+  root_id: number | string
   agent: string
   job: string
   project: string | null
@@ -68,6 +71,14 @@ function useRunDetail(id: string, numericId: number, hosted: boolean) {
   return hosted ? hostedDetail : localDetail
 }
 
+function useWaitingItem(id: string, rootId: number | string, hosted: boolean) {
+  const waiting = useQuery({
+    ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
+    enabled: !hosted,
+  })
+  return waitingByRun([{ id, root_id: rootId }], waiting.data ?? []).get(id)
+}
+
 function useRunScore(id: string, numericId: number, hosted: boolean, onSigned: () => void) {
   const onSuccess = async () => {
     const detailKey = hosted
@@ -106,12 +117,26 @@ function RunTranscript({ run, hosted }: { run: RunDetail; hosted: boolean }) {
   )
 }
 
+function RunStatusActions({ run, waiting }: { run: RunDetail; waiting?: OperatorWaitingItem }) {
+  const running = run.status === 'running'
+  const tone = running ? 'progress' : run.status !== 'ok' ? 'error' : 'neutral'
+  return (
+    <span className="flex items-center gap-2">
+      {waiting ? <WaitingBadge item={waiting} /> : null}
+      <Badge tone={tone} dot={running}>
+        {run.status}
+      </Badge>
+    </span>
+  )
+}
+
 function RunDetailPage({ id }: { id: string }) {
   const navigate = useNavigate()
   const hosted = isHostedMode()
   const numericId = Number(id)
   const detail = useRunDetail(id, numericId, hosted)
   const run = detail.data as unknown as RunDetail | undefined
+  const waitingItem = useWaitingItem(id, run?.root_id ?? id, hosted)
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
   const [fidelity, setFidelity] = useState<Fidelity | null>(null)
@@ -159,7 +184,6 @@ function RunDetailPage({ id }: { id: string }) {
     )
   if (!run) return null
 
-  const running = run.status === 'running'
   const subtitle = [
     run.agent,
     run.job,
@@ -233,14 +257,7 @@ function RunDetailPage({ id }: { id: string }) {
       onClose={close}
       title={`Run ${id}`}
       subtitle={subtitle}
-      actions={
-        <Badge
-          tone={running ? 'progress' : run.status !== 'ok' ? 'error' : 'neutral'}
-          dot={running}
-        >
-          {run.status}
-        </Badge>
-      }
+      actions={<RunStatusActions run={run} waiting={waitingItem} />}
       footer={signing}
     >
       <DisplayRow label="Agent" value={run.agent} />

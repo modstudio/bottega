@@ -4,6 +4,7 @@ import { catalogRouter } from './routers/catalog.ts'
 import { docRouter } from './routers/doc.ts'
 import { insightRouter } from './routers/insight.ts'
 import { noteRouter } from './routers/note.ts'
+import { operatorRouter } from './routers/operator.ts'
 import { projectRouter } from './routers/project.ts'
 import { recordRouter } from './routers/record.ts'
 import { runRouter } from './routers/run.ts'
@@ -19,6 +20,7 @@ export const appRouter = t.router({
   insight: insightRouter,
   catalog: catalogRouter,
   note: noteRouter,
+  operator: operatorRouter,
   record: recordRouter,
 })
 

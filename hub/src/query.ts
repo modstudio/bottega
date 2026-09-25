@@ -24,7 +24,7 @@ export function intervalsInWindow(from: string, to: string): WindowIntervalRow[]
   const conn = db()
   const rows = conn
     .query<WindowIntervalRow, [string, string]>(
-      `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open,
+      `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open, i.ref,
             i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd,
             NULL AS task_record_id, NULL AS task_project, NULL AS task_title, NULL AS task_status,
             NULL AS task_status_category, NULL AS task_source,

@@ -13,20 +13,23 @@ const module = (file: string, allowed: string[]): OperatorWaitingModule => ({
 
 export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
-  module('orchestrator/src/operator/operator-notification.ts', []),
   module('orchestrator/src/operator/operator-waiting.ts', [
     'bun:sqlite',
     '../../../shared/machine-config.ts',
+    '../../../shared/orch-contract.ts',
     '../../../shared/operator-inbox.ts',
+    '../../../shared/operator-notification.ts',
     '../database/db.ts',
     '../run/run-authority.ts',
     '../workflow/autonomy-scopes.ts',
-    './operator-notification.ts',
   ]),
   module('orchestrator/src/operator/operator-commands.ts', [
+    '../../../shared/orch-contract.ts',
     '../cli/args.ts',
     './operator-waiting.ts',
   ]),
   module('shared/question-vocabulary.ts', []),
   module('shared/operator-inbox.ts', []),
+  module('shared/operator-notification-contract.ts', []),
+  module('shared/operator-notification.ts', ['./operator-notification-contract.ts']),
 ]

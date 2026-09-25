@@ -66,10 +66,12 @@ export async function answerCommand(
   id: number,
   argv: string[],
   recordOnly: boolean,
+  json: boolean,
   flags: Flags,
   presentation: Presentation,
 ): Promise<void> {
-  await answerRun(id, { argv, recordOnly, flags }, helpers(presentation))
+  const result = await answerRun(id, { argv, recordOnly, json, flags }, helpers(presentation))
+  if (json) console.log(JSON.stringify(result))
 }
 
 export async function continueCommand(

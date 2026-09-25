@@ -20,10 +20,12 @@ import {
   useWindowFilters,
   WindowControl,
 } from '@/components/design-system'
+import { WaitingBadge } from '@/components/waiting-badge'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
+import { waitingByRun } from '@/lib/operator-waiting'
 import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
@@ -151,11 +153,17 @@ const columns = [
 
 type Sort = { col: (typeof columns)[number]['id']; dir: 1 | -1 }
 
-function runCells(run: Run, now: number): CollectionChildRow['cells'] {
+function runCells(
+  run: Run,
+  now: number,
+  waiting: ReturnType<typeof waitingByRun>,
+): CollectionChildRow['cells'] {
   return {
     task: <span className="pl-4">{run.agent ?? '-'}</span>,
     title: <span className="block truncate">{run.job || ''}</span>,
-    status: run.running ? (
+    status: waiting.get(String(run.id)) ? (
+      <WaitingBadge item={waiting.get(String(run.id))!} />
+    ) : run.running ? (
       <Badge tone="progress" dot>
         Running
       </Badge>
@@ -246,6 +254,14 @@ function TaskTable({
   const now = useNow()
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
+  const waiting = useQuery({
+    ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
+    enabled: !isHostedMode() && from === 'flight',
+  })
+  const waitingRuns = waitingByRun(
+    rows.flatMap((row) => row.runs ?? []),
+    waiting.data ?? [],
+  )
   const sorted = useMemo(() => {
     const column = columns.find((candidate) => candidate.id === sort.col) ?? columns[5]
     return [...rows].sort((a, b) => {
@@ -330,7 +346,7 @@ function TaskTable({
         const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
         return visible.map((run) => ({
           key: `${run.start}:${run.agent}:${run.job}`,
-          cells: runCells(run, now),
+          cells: runCells(run, now, waitingRuns),
         }))
       }}
       empty={{ title: 'No tasks.' }}

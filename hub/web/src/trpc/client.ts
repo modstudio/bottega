@@ -62,4 +62,5 @@ export type RecordSettingsResponse = inferRouterOutputs<AppRouter>['record']['se
 export type TaskRecordResponse = inferRouterOutputs<AppRouter>['work']['task']
 export type JobRow = inferRouterOutputs<AppRouter>['catalog']['jobs'][number]
 export type AgentRow = inferRouterOutputs<AppRouter>['catalog']['agents'][number]
+export type OperatorWaitingItem = inferRouterOutputs<AppRouter>['operator']['waiting'][number]
 export type MeasuresResponse = inferRouterOutputs<AppRouter>['record']['measures']

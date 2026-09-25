@@ -1,4 +1,9 @@
 import { readFileSync } from 'node:fs'
+import {
+  ANSWER_CHANNEL_CLI,
+  ANSWER_CHANNEL_VALUES,
+  type AnswerChannel,
+} from '../../../shared/question-vocabulary.ts'
 
 export function flagValue(argv: string[], name: string): string | undefined {
   const values = flagValues(argv, name)
@@ -199,7 +204,31 @@ const ANSWER_BOOLEANS = new Set([
   '--quiet',
   '--record-only',
   '--from-operator',
+  '--json',
 ])
+
+export function parseAnswerChannelArgs(args: string[]): {
+  argv: string[]
+  channel: AnswerChannel
+} {
+  const argv: string[] = []
+  let channel: string = ANSWER_CHANNEL_CLI
+  let seen = false
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!
+    if (arg !== '--channel' && !arg.startsWith('--channel=')) {
+      argv.push(arg)
+      continue
+    }
+    if (seen) throw new Error('--channel may be supplied only once')
+    seen = true
+    channel = arg === '--channel' ? (args[++index] ?? '') : arg.slice('--channel='.length)
+    if (!ANSWER_CHANNEL_VALUES.includes(channel as AnswerChannel)) {
+      throw new Error(`--channel must be one of: ${ANSWER_CHANNEL_VALUES.join(', ')}`)
+    }
+  }
+  return { argv, channel: channel as AnswerChannel }
+}
 
 export function parseWorkerMessageArgs(
   args: string[],

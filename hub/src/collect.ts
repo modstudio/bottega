@@ -1,3 +1,4 @@
+import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
@@ -9,6 +10,7 @@ import {
 } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { pullHostedNotes } from './note-cache.ts'
+import { claimWaitingNotifications } from './orch.ts'
 import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
 import { syncEvidence } from './sync.ts'
@@ -269,6 +271,33 @@ export async function collectFast(
   return results
 }
 
+/** Claim and deliver each waiting episode without allowing notification failure to stop collection. */
+export async function deliverOperatorNotifications(
+  dependencies: {
+    claim?: typeof claimWaitingNotifications
+    notify?: typeof sendOperatorNotification
+    error?: (message: string) => void
+  } = {},
+): Promise<void> {
+  const claim = dependencies.claim ?? claimWaitingNotifications
+  const notify = dependencies.notify ?? sendOperatorNotification
+  const error = dependencies.error ?? console.error
+  let items: Awaited<ReturnType<typeof claimWaitingNotifications>>
+  try {
+    items = await claim()
+  } catch (cause) {
+    error(`hub: operator notification claim failed: ${String(cause)}`)
+    return
+  }
+  for (const item of items) {
+    try {
+      notify(item.notification)
+    } catch (cause) {
+      error(`hub: operator notification delivery failed: ${String(cause)}`)
+    }
+  }
+}
+
 /** The remote and commit-shaped legs. */
 async function collectSlow(scheduled = false) {
   const results = [] as CollectLegResult[]
@@ -344,12 +373,16 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
     }
   }
 
-  const fast = guard(collectFast)
+  const fast = guard(async () => {
+    await deliverOperatorNotifications()
+    await collectFast()
+  })
   const slow = guard(() => collectSlow(true))
   // The old pair of fire-and-forget calls made `slow` observe `busy` from
   // `fast` and skip the initial tracker pass. Keep both initial legs under the
   // same guard so scheduling starts with a real observation.
   void guard(async () => {
+    await deliverOperatorNotifications()
     await collectFast()
     await collectSlow(true)
   })()

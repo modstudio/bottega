@@ -4,10 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { type OperatorInboxKind, operatorInboxPath } from '../../../shared/operator-inbox.ts'
+import {
+  type OperatorNotification,
+  sendOperatorNotification,
+} from '../../../shared/operator-notification.ts'
+import type {
+  ClaimedOperatorNotification,
+  OperatorWaitingItem,
+} from '../../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
-import { sendOperatorNotification } from './operator-notification.ts'
 
 type WaitingCause = { rulings: 'agent' | 'user'; relayed: boolean; answered: boolean }
 export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
@@ -31,23 +38,13 @@ export async function initialQuestionWaitingAt(
 
 const firstLine = (value: string) => value.split(/\r?\n/, 1)[0]!
 
-type OperatorNotificationDetails = {
-  title: string
-  body: string
-  link: string
-}
-
-function notificationDetails(item: OperatorWaitingItem): OperatorNotificationDetails {
+function notificationDetails(item: OperatorWaitingItem): OperatorNotification {
   const port = readMachineValue('hub.port')
   return {
     title: `Ruling needed: ${item.project}${item.task_key ? ` ${item.task_key}` : ''}`,
     body: firstLine(item.question),
     link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
   }
-}
-
-export type ClaimedOperatorNotification = OperatorWaitingItem & {
-  notification: OperatorNotificationDetails
 }
 
 /** Atomically claim each currently waiting episode once, optionally narrowed for direct delivery. */
@@ -135,20 +132,6 @@ export function relayQuestion(
   return id
 }
 
-/** Stable JSON contract consumed by hub: field names and nullability are part of the interface. */
-export type OperatorWaitingItem = {
-  kind: 'question' | 'workflow'
-  id: number
-  project: string
-  task_key: string | null
-  question: string
-  options: string[]
-  recommendation: string | null
-  why: string | null
-  waiting_since: string
-  answer_command: string
-}
-
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
@@ -176,7 +159,7 @@ function operatorWaitingWithEpisodes(
   const workflows = d
     .query(
       `SELECT id,project,NULLIF(workflow_key,'') task_key,question,updated_at,workflow_slug,
-              mode_slug,args FROM workflow_cursor WHERE state='awaiting-ruling'`,
+              mode_slug,args,session_id FROM workflow_cursor WHERE state='awaiting-ruling'`,
     )
     .all() as Array<{
     id: number
@@ -187,6 +170,7 @@ function operatorWaitingWithEpisodes(
     workflow_slug: string
     mode_slug: string
     args: string
+    session_id: string | null
   }>
   return [
     ...questions.map((row) => ({
@@ -194,8 +178,10 @@ function operatorWaitingWithEpisodes(
       item: {
         kind: 'question' as const,
         id: row.id,
+        run_id: row.root_id,
         project: row.project,
         task_key: row.task_key,
+        session_id: null,
         question: row.question,
         options: row.options ? JSON.parse(row.options) : [],
         recommendation: row.recommendation,
@@ -214,8 +200,10 @@ function operatorWaitingWithEpisodes(
         item: {
           kind: 'workflow' as const,
           id: row.id,
+          run_id: null,
           project: row.project,
           task_key: row.task_key,
+          session_id: row.session_id,
           question: row.question,
           options: [],
           recommendation: null,
