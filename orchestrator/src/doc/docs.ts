@@ -20,6 +20,7 @@ import {
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
+import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -50,6 +51,7 @@ import {
   insertLocalRevision,
 } from './doc-revision-store.ts'
 import {
+  canonFindingsRefusal,
   consumeDocBody,
   globalCanonWriteTargets,
   importedDocDelivery,
@@ -270,58 +272,64 @@ type DocWriteInput = {
   delivery?: 'inject' | 'demand'
 } & DocWriteContext
 
+function ownedCanonWriteRefusal(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
+  const surroundings = userCanonWriteTargets(projects()).map((target) => ({
+    global,
+    project: target ? listDocs({ scope: 'canon', subject: target.name }) : [],
+  }))
+  return canonFindingsRefusal(decideUserCanonImport({ current, next, surroundings }).findings)
+}
+
+function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }): void {
+  const global = listDocs({ scope: 'canon', subject: null })
+  const user = listDocs({ scope: 'canon', subject: null, owner: input.owner })
+  const changedRows = input.canonSet ?? [
+    ...user.filter(({ slug }) => slug !== input.slug),
+    { slug: input.slug, body: input.body },
+  ]
+  const refusal = ownedCanonWriteRefusal(global, user, changedRows)
+  if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
+}
+
 function assertCanonWriteAllowed(input: DocWriteInput): void {
   if (input.scope !== 'canon') return
+  if (input.owner) {
+    assertOwnedCanonWriteAllowed({ ...input, owner: input.owner })
+    return
+  }
   const project = input.subject ? projectByName(input.subject)! : null
   const global = listDocs({ scope: 'canon', subject: null })
-  const user = input.owner ? listDocs({ scope: 'canon', subject: null, owner: input.owner }) : []
   const projectRows = input.subject ? listDocs({ scope: 'canon', subject: input.subject }) : []
   const changedRows = input.canonSet ?? [
-    ...(input.owner ? user : project ? projectRows : global).filter(
-      ({ slug }) => slug !== input.slug,
-    ),
+    ...(project ? projectRows : global).filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
   ]
   const next = composeCanonRows(
-    (input.owner || project ? global : changedRows).map((row) => ({ ...row, subject: null })),
-    (input.owner ? changedRows : user).map((row) => ({
-      ...row,
-      subject: null,
-      owner: input.owner ?? null,
-    })),
+    (project ? global : changedRows).map((row) => ({ ...row, subject: null })),
+    [],
     (project ? changedRows : projectRows).map((row) => ({
       ...row,
       subject: project?.name ?? '',
     })),
   ).map(({ slug, body }) => ({ slug, body }))
-  const projectsToCheck = project
-    ? [project]
-    : input.owner
-      ? userCanonWriteTargets(projects())
-      : globalCanonWriteTargets(projects())
+  const projectsToCheck = project ? [project] : globalCanonWriteTargets(projects())
   const refusals = projectsToCheck.map((target) => {
     if (!target) {
       return refuseCanonWrite({
-        current: composeCanonRows(global, user, []).map(({ slug, body }) => ({ slug, body })),
+        current: global.map(({ slug, body }) => ({ slug, body })),
         next,
       })
     }
     const targetProjectRows = listDocs({ scope: 'canon', subject: target.name })
-    const targetCurrent = composeCanonRows(global, user, targetProjectRows).map(
-      ({ slug, body }) => ({
-        slug,
-        body,
-      }),
-    )
+    const targetCurrent = composeCanonRows(global, [], targetProjectRows).map(({ slug, body }) => ({
+      slug,
+      body,
+    }))
     const targetNext = project
       ? next
       : composeCanonRows(
-          (input.owner ? global : changedRows).map((row) => ({ ...row, subject: null })),
-          (input.owner ? changedRows : user).map((row) => ({
-            ...row,
-            subject: null,
-            owner: input.owner ?? null,
-          })),
+          changedRows.map((row) => ({ ...row, subject: null })),
+          [],
           targetProjectRows,
         ).map(({ slug, body }) => ({ slug, body }))
     const collected = collectCanonLintInput(target.path)

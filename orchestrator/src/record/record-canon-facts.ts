@@ -2,7 +2,7 @@
 import type { SQL } from 'bun'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
-import { composeCanonRows, refuseCanonWrite } from '../doc/doc-write-allowed.ts'
+import { canonFindingsRefusal, composeCanonRows } from '../doc/doc-write-allowed.ts'
 
 type Row = { slug: string; body: string }
 const asRows = (rows: Record<string, unknown>[]): Row[] =>
@@ -60,7 +60,12 @@ async function userWriteRefusal(
     if (current.refusal) return current.refusal
     const next = composeRefusal(() => compose(global, changed, project, owner, name))
     if (next.refusal) return next.refusal
-    const refusal = refuseCanonWrite({ current: current.rows, next: next.rows })
+    const findings = decideUserCanonImport({
+      current: user,
+      next: changed,
+      surroundings: [{ global, project }],
+    }).findings
+    const refusal = canonFindingsRefusal(findings)
     if (refusal) return refusal
   }
   return null
@@ -170,7 +175,7 @@ export async function canonFacts(
     globalCanonSlugs: globalRows.map((row) => row.slug),
     projectCanonSlugs: projectRows.map((row) => row.slug),
     currentCanon: current.rows,
-    nextCanon: next.rows,
+    nextCanon: owner ? current.rows : next.rows,
     canonRefusal,
   }
 }

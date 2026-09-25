@@ -52,6 +52,13 @@ describe('decideCanonWrite', () => {
 })
 
 describe('decideUserCanonImport', () => {
+  const prose = (minimum: number) => {
+    const sentence = 'Keep this rule current.\n'
+    return sentence.repeat(Math.ceil(minimum / sentence.length))
+  }
+  const rule = (minimum: number) =>
+    `---\ndescription: A personal rule\nalways: true\n---\n${prose(minimum)}`
+
   test('allows an empty owner to bootstrap and returns all findings', () => {
     const decision = decideUserCanonImport({
       current: [],
@@ -93,5 +100,42 @@ describe('decideUserCanonImport', () => {
     })
     expect(decision.bootstrap).toBe(false)
     expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
+  })
+
+  test('allows user always-on canon past the repository total under the harness limit', () => {
+    const rows = [
+      { slug: 'AGENTS.md', body: prose(15_000) },
+      { slug: '.agents/rules/alpha.md', body: rule(7_000) },
+      { slug: '.agents/rules/bravo.md', body: rule(7_000) },
+      { slug: '.agents/rules/charlie.md', body: rule(7_000) },
+    ]
+    const decision = decideUserCanonImport({
+      current: [],
+      next: rows,
+    })
+    expect(decision.findings).toEqual([])
+    expect(
+      decideCanonWrite({ ...inputs, current: rows.slice(0, 3), next: rows }).map(
+        ({ rule }) => rule,
+      ),
+    ).toContain('canon/size-always-on')
+  })
+
+  test('reports a harness-load finding when user canon crosses the combined limit', () => {
+    const rules = Array.from({ length: 20 }, (_, index) => ({
+      slug: `.agents/rules/rule-${String.fromCharCode(97 + index)}.md`,
+      body: rule(7_500),
+    }))
+    const decision = decideUserCanonImport({
+      current: [],
+      next: [{ slug: 'AGENTS.md', body: prose(15_000) }, ...rules],
+    })
+    expect(decision.findings.map(({ rule }) => rule)).not.toContain('canon/size-always-on')
+    expect(decision.findings).toContainEqual(
+      expect.objectContaining({
+        rule: 'canon/size-harness-load',
+        message: expect.stringContaining('Claude Code combined always-on load'),
+      }),
+    )
   })
 })

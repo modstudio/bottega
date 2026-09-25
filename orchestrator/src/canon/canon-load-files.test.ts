@@ -8,10 +8,12 @@ import {
   mkdtempSync,
   openSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectionGitEnv } from '../../../shared/git.ts'
+import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { CLAUDE_FILE_MAX_BYTES, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts } from './canon-load-files.ts'
 
@@ -61,4 +63,24 @@ test('an oversized file is skipped without being read', () => {
       reason: 'exceeds CLAUDE_FILE_MAX_BYTES',
     },
   ])
+})
+
+test('grok worker facts exclude the home Claude file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-load-worker-'))
+  roots.push(root)
+  gitInit(root)
+  const home = join(root, 'home')
+  mkdirSync(join(home, '.claude'), { recursive: true })
+  writeFileSync(join(home, '.claude', 'CLAUDE.md'), 'Architect instructions.')
+  writeFileSync(join(root, 'CLAUDE.md'), 'Project instructions.')
+
+  const facts = gatherHarnessLoadFacts(root, {
+    HOME: home,
+    GROK_CLAUDE_AGENTS_ENABLED: '1',
+    ...workerLaunchEnv('grok'),
+  })
+  const plan = planHarnessLoad(facts, 'grok')
+
+  expect(plan.files.map(({ path }) => path)).toContain(`${facts.directoryChain[0]}/CLAUDE.md`)
+  expect(plan.files.map(({ path }) => path)).not.toContain(`${facts.home.claude}/CLAUDE.md`)
 })

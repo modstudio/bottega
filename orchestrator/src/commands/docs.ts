@@ -58,6 +58,7 @@ export function register(program: Command): void {
     .option('--write-baseline')
     .option('--check')
     .option('--harness <value>')
+    .option('--role <value>')
     .option('--dry-run')
     .action(async (args, options) => {
       const argv = ['canon', ...args]
