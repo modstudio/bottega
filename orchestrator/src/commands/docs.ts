@@ -57,6 +57,7 @@ export function register(program: Command): void {
     .option('--strict')
     .option('--write-baseline')
     .option('--check')
+    .option('--harness <value>')
     .action(async (args, options) => {
       const argv = ['canon', ...args]
       const flags = optionFlags(options)

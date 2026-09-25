@@ -1,4 +1,5 @@
 import { dirname, normalize } from 'node:path'
+import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
   recordReadBoundariesAfterPublish,
@@ -73,6 +74,8 @@ export const importBoundaries: ImportBoundary[] = [
       './canon-hydrate.ts',
       './canon-lint.ts',
       './canon-write-gate.ts',
+      './canon-load-files.ts',
+      './canon-load.ts',
       '../doc/docs.ts',
       './evals.ts',
       '../project/projects.ts',
@@ -490,6 +493,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Enforce the machine-identity concern boundary.',
   ),
   ...mcpBoundarySpecs,
+  ...canonLoadBoundarySpecs,
   boundary(
     'metric-commands-boundary',
     'orchestrator/src/metric/metric-commands.ts',
