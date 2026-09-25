@@ -186,6 +186,29 @@ function requireAnswerRun<Row>(row: Row | null, requestedId: number): Row {
   return row
 }
 
+function latestRetryTurn(
+  id: number,
+  rootId: number,
+  hasRecordedRulings: boolean,
+): { id: number; status: string } {
+  const latest = db()
+    .query(
+      `SELECT id,status FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+    )
+    .get(rootId, rootId) as { id: number; status: string }
+  if (latest.status !== 'asking' || hasRecordedRulings) return latest
+  const questions = db()
+    .query(
+      `SELECT q.id,q.question FROM question q JOIN run r ON r.id=q.run_id
+       WHERE (r.id=? OR r.parent_run_id=?) AND q.answered_at IS NULL ORDER BY q.id`,
+    )
+    .all(rootId, rootId) as { id: number; question: string }[]
+  throw new Error(
+    `run ${id} is asking with open questions: ${questions.map((q) => `q${q.id}: ${q.question}`).join('; ')}. ` +
+      `Answer them, or orch abandon ${id}`,
+  )
+}
+
 export async function retryRun(
   id: number,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -262,23 +285,7 @@ export async function retryRun(
         `after ${KEEP_RUN_FILES_DAYS} days. Nothing to re-send.`,
     )
   }
-  const latestTurn = db()
-    .query(
-      `SELECT id,status FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
-    )
-    .get(row.root_id, row.root_id) as { id: number; status: string }
-  if (writesRepo && latestTurn.status === 'asking' && recordedRulings.length === 0) {
-    const questions = db()
-      .query(
-        `SELECT q.id,q.question FROM question q JOIN run r ON r.id=q.run_id
-         WHERE (r.id=? OR r.parent_run_id=?) AND q.answered_at IS NULL ORDER BY q.id`,
-      )
-      .all(row.root_id, row.root_id) as { id: number; question: string }[]
-    throw new Error(
-      `run ${id} is asking with open questions: ${questions.map((q) => `q${q.id}: ${q.question}`).join('; ')}. ` +
-        `Answer them, or orch abandon ${id}`,
-    )
-  }
+  const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
   const workspace = writesRepo

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { checkpointRoot, claimIdentity, type ResumeKind, resumeFacts } from './run-resume-kind.ts'
+import {
+  checkpointRoot,
+  claimIdentity,
+  continuationResumeKind,
+  type ResumeKind,
+  resumeFacts,
+} from './run-resume-kind.ts'
 
 describe('resume kind', () => {
   test.each([
@@ -34,4 +40,9 @@ describe('resume kind', () => {
   ] as const)('claim identity %#', (resume, expected) => {
     expect(claimIdentity(resume)).toEqual(expected)
   })
+})
+
+test('continuation kind preserves vendor sessions only without checkpoint restart', () => {
+  expect(continuationResumeKind(false)).toBe('continue')
+  expect(continuationResumeKind(true)).toBe('fresh-session')
 })

@@ -19,7 +19,7 @@ import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
-import { branchOf, git, gitContext, repoRootOf } from '../git/git-environment.ts'
+import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
 import {
   assertGrokTrustEligible,
   type McpConnection,
@@ -63,7 +63,7 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import { type ResumeTreePlan, resumeCreationOptions } from './resume-tree.ts'
+import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
   type runFilePaths,
@@ -78,14 +78,11 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { errorTail, sha } from './run-process.ts'
+import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
-import { atomicRetryReuseDecision } from './run-retry.ts'
+import type { RunResumeOptions } from './run-resume-options.ts'
+import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-
-type RecreateResumeTreePlan = Extract<
-  ResumeTreePlan,
-  { action: 'recreate-on-branch' | 'recreate-then-restore' }
->
 
 function taskBranchResolution(
   supplied: TaskBranchCandidate | null | undefined,
@@ -93,52 +90,6 @@ function taskBranchResolution(
   key: string,
 ): TaskBranchCandidate | null {
   return supplied !== undefined ? supplied : resolveTaskBranch(callerCwd, key)
-}
-
-export function prepareResumeBranchIfNeeded(
-  repoRoot: string,
-  plan: RecreateResumeTreePlan | undefined,
-): void {
-  if (plan?.action !== 'recreate-on-branch') return
-  const current = gitContext(
-    repoRoot,
-    'rev-parse',
-    '--verify',
-    `refs/heads/${plan.branch}^{commit}`,
-  )
-  if (!current) git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
-}
-
-function restoreResumeIfNeeded(
-  created: Worktree,
-  plan: RecreateResumeTreePlan | undefined,
-  runId: number,
-): Worktree {
-  return plan ? restoreResumedTree(created, plan, runId) : created
-}
-
-function restoreResumedTree(
-  created: Worktree,
-  plan: RecreateResumeTreePlan,
-  runId: number,
-): Worktree {
-  if (plan.action === 'recreate-then-restore') {
-    try {
-      git(['reset', '--hard', plan.tip], created.path)
-    } catch {
-      // The postcondition below gives the one harness failure shape for both a
-      // refused reset and a reset that landed anywhere except the retained tip.
-    }
-  }
-  const actual = gitContext(created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-  if (actual !== plan.tip) {
-    const cleanup = removeFor(created, created.repoRoot, false, true, runId)
-    throw new Error(
-      `resumed tree postcondition failed: expected ${plan.tip}, got ${actual ?? '(unresolved)'}; ` +
-        `cleanup: ${cleanup.removed ? 'removed tree and kept every branch' : cleanup.detail}`,
-    )
-  }
-  return { ...created, base: plan.tip }
 }
 
 type ClaimOptions = {
@@ -161,15 +112,7 @@ type ClaimOptions = {
   base?: string
   resolvedTaskBranch?: TaskBranchCandidate | null
   carry?: boolean
-  resume?: {
-    kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
-    turn: number
-    retireAsking?: boolean
-    sessionId: string | null
-    worktree: Worktree | null
-    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
-  }
+  resume?: RunResumeOptions
 }
 
 export type ClaimInput = {
@@ -656,24 +599,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
           if (opts.resume?.kind === 'retry-root') {
-            assertBranchHasNoAliveOwner({
-              branch: created.branch,
+            assertRetryRootWorkspace({
+              worktree: created,
+              expectedBranch: resumePlan!.branch,
+              validatedTip: resumePlan!.tip,
               conversationRootId: claim.id,
               projectId: runProjectId,
               projectName: runProjectName,
+              operation: 'creation',
             })
-            const decision = atomicRetryReuseDecision({
-              pathExists: worktreeExists(created.path),
-              actualBranch: worktreeExists(created.path) ? branchOf(created.path) : null,
-              expectedBranch: resumePlan!.branch,
-              actualHead: worktreeExists(created.path)
-                ? gitContext(created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-                : null,
-              validatedTip: resumePlan!.tip,
-            })
-            if (decision.action === 'refuse') {
-              throw new Error(`refusing retry workspace creation: ${decision.reason}`)
-            }
           }
           writeTransaction(() => {
             const result = db()
@@ -861,26 +795,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           }
         }
         if (opts.resume?.kind === 'retry-root') {
-          assertBranchHasNoAliveOwner({
-            branch: inheritedWorktree.branch,
+          assertRetryRootWorkspace({
+            worktree: inheritedWorktree,
+            expectedBranch: inheritedWorktree.branch,
+            validatedTip: inheritedWorktree.base,
             conversationRootId: claim.id,
             projectId: runProjectId,
             projectName: runProjectName,
+            operation: 'reuse',
           })
-          const decision = atomicRetryReuseDecision({
-            pathExists: worktreeExists(inheritedWorktree.path),
-            actualBranch: worktreeExists(inheritedWorktree.path)
-              ? branchOf(inheritedWorktree.path)
-              : null,
-            expectedBranch: inheritedWorktree.branch,
-            actualHead: worktreeExists(inheritedWorktree.path)
-              ? gitContext(inheritedWorktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-              : null,
-            validatedTip: inheritedWorktree.base,
-          })
-          if (decision.action === 'refuse') {
-            throw new Error(`refusing retry workspace reuse: ${decision.reason}`)
-          }
         }
         db()
           .query(

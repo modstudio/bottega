@@ -42,3 +42,7 @@ export function claimIdentity(resume: ResumeIdentityInput | undefined): ClaimIde
     resolveSupersededTurn: true,
   }
 }
+
+export function continuationResumeKind(hasCheckpoint: boolean): ResumeKind {
+  return hasCheckpoint ? 'fresh-session' : 'continue'
+}

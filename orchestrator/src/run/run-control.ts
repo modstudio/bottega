@@ -26,6 +26,7 @@ import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { continuationResumeKind } from './run-resume-kind.ts'
 
 export type RunControlPresentation = {
   dur(ms: number | null | undefined): string
@@ -569,7 +570,7 @@ export async function continueRun(
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
     resume: {
-      kind: checkpointContext ? 'fresh-session' : 'continue',
+      kind: continuationResumeKind(Boolean(checkpointContext)),
       parent: id,
       agent: checkpointContext ? latest.agent : sessionFrom!.agent,
       session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),

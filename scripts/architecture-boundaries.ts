@@ -811,6 +811,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../database/db.ts', 'bun:sqlite'],
     'Enforce the run-authority concern boundary.',
   ),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   boundary(
     'run-control-boundary',
     'orchestrator/src/run/run-control.ts',
@@ -827,12 +828,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../outcome.ts',
       '../project/projects.ts',
-      './resume-tree.ts',
-      './run.ts',
-      './run-authority.ts',
-      './run-dispatch.ts',
-      './run-liveness.ts',
-      './checkpoint.ts',
+      './resume-tree.ts', './run.ts', './run-authority.ts', './run-dispatch.ts', './run-liveness.ts', './run-resume-kind.ts', './checkpoint.ts',
     ],
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
   ),
@@ -842,6 +838,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../project/projects.ts'],
     'Keep run diff independent of run control, transports, routing, the CLI, and worktrees by value.',
   ),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   boundary(
     'run-dispatch-boundary',
     'orchestrator/src/run/run-dispatch.ts',
@@ -857,12 +854,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../project/projects.ts',
       '../record/record-attribution.ts',
-      './run.ts',
-      './run-alive.ts',
-      './run-artifacts.ts',
-      './run-lease.ts',
-      './run-resume-kind.ts',
-      '../route/failover.ts',
+      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
     ],
     'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
   ),

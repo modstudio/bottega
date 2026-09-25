@@ -93,7 +93,6 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveBase, resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import type { ResumeTreePlan } from './resume-tree.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -121,6 +120,7 @@ import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
+import type { RunResumeOptions } from './run-resume-options.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -304,19 +304,7 @@ export async function run(opts: {
    * belongs to the agent that started it), no new worktree (the worker is
    * mid-edit in one), and `resumeArgv` in place of `argv`.
    */
-  resume?: {
-    kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
-    agent: string
-    session?: string
-    /** Continue the chain and retained tree in a new vendor conversation. */
-    retireAsking?: boolean
-    turn: number
-    /** Inherited so the chain stays owned by the session that started it. */
-    sessionId: string | null
-    worktree: Worktree | null
-    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
-  }
+  resume?: RunResumeOptions
   /** Declared reader deliverable names, from repeated `--deliverable`. */
   deliverables?: string[]
   /** `orch do --timeout` in minutes. */
