@@ -41,7 +41,7 @@ export function stoppedRunLine(
   return `stopped run ${id}`
 }
 
-export function stoppedWorktreeLine(
+function stoppedWorktreeLine(
   worktree: string,
   branch: string | null,
   branchOwnedByConversation: boolean,
