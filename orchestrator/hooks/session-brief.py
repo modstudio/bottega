@@ -66,6 +66,16 @@ def _resume_sentence(source, open_briefs):
 
 
 HOOK_CONTEXT_MAX_CHARS = 9000
+HOOK_CONTEXT_TRUNCATION_MARKER = "…"
+
+# Least important first. Display order of the rest is resume table, inbox, issues, extra.
+_HOOK_CONTEXT_DROPPABLE = (
+    ("issues", "filed issues", "orch fix-defect --waiting"),
+    ("inbox", "inbox detail", "orch inbox"),
+    ("extra", "heartbeat and monitor extra", "orch monitor"),
+    ("resume_table", "resume table", "orch doc resumes"),
+)
+_HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra")
 
 
 def _join_sections(*sections):
@@ -78,43 +88,55 @@ def _drop_note(dropped):
     parts = [f"{name} ({command})" for name, command in dropped]
     if len(parts) == 1:
         return f"Dropped {parts[0]}."
-    return f"Dropped {parts[0]} and {parts[1]}."
+    return f"Dropped {', '.join(parts[:-1])} and {parts[-1]}."
+
+
+def _fit_to_budget(text, budget):
+    if len(text) <= budget:
+        return text
+    marker = HOOK_CONTEXT_TRUNCATION_MARKER
+    if budget < len(marker):
+        return ""
+    return text[: budget - len(marker)] + marker
 
 
 def assemble_additional_context(
-    resume="",
+    autonomy="",
+    resume_offer="",
+    resume_table="",
     inbox="",
     issues="",
-    autonomy="",
     extra="",
     budget=HOOK_CONTEXT_MAX_CHARS,
 ):
-    resume = resume.strip()
-    inbox = inbox.strip()
-    issues = issues.strip()
-    autonomy = autonomy.strip()
-    extra = extra.strip()
+    sections = {
+        "autonomy": autonomy.strip(),
+        "resume_offer": resume_offer.strip(),
+        "resume_table": resume_table.strip(),
+        "inbox": inbox.strip(),
+        "issues": issues.strip(),
+        "extra": extra.strip(),
+    }
+    included = {key: sections[key] for key, _, _ in _HOOK_CONTEXT_DROPPABLE}
     dropped = []
 
-    def compose(include_inbox, include_issues):
-        body = _join_sections(
-            resume,
-            inbox if include_inbox else "",
-            issues if include_issues else "",
-            autonomy,
-            extra,
-        )
+    def compose():
+        rest = [included[key] for key in _HOOK_CONTEXT_REST]
+        body = _join_sections(sections["autonomy"], sections["resume_offer"], *rest)
         return _join_sections(body, _drop_note(dropped))
 
-    text = compose(True, True)
+    text = compose()
     if len(text) <= budget:
         return text
-    dropped.append(("filed issues", "orch fix-defect --waiting"))
-    text = compose(True, False)
-    if len(text) <= budget:
-        return text
-    dropped.append(("inbox detail", "orch inbox"))
-    return compose(False, False)
+    for key, name, command in _HOOK_CONTEXT_DROPPABLE:
+        if not included[key]:
+            continue
+        included[key] = ""
+        dropped.append((name, command))
+        text = compose()
+        if len(text) <= budget:
+            return text
+    return _fit_to_budget(text, budget)
 
 
 def _autonomy_slice(completed):
@@ -195,7 +217,8 @@ def main() -> int:
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
 
-        resume_section = ""
+        resume_table = ""
+        resume_offer = ""
         extra_section = ""
         open_briefs = []
         lines = []
@@ -244,14 +267,14 @@ def main() -> int:
             except Exception:
                 resume_failure = "Resume response was invalid; brief state is unknown."
             if lines:
-                resume_section = "\n".join(lines) + "\n"
-                resume_section += _resume_sentence(payload.get("source"), open_briefs)
+                resume_table = "\n".join(lines)
+                resume_offer = _resume_sentence(payload.get("source"), open_briefs)
             if unreadable:
                 unread = "\n".join(
                     f'UNREADABLE RESUME BRIEF `{item["slug"]}`: {item["reason"]}.'
                     for item in unreadable
                 )
-                resume_section = _join_sections(resume_section, unread)
+                resume_table = _join_sections(resume_table, unread)
         elif resumes.returncode == -1:
             resume_failure = "Resume observation timed out; brief state is unknown."
         else:
@@ -478,10 +501,11 @@ def main() -> int:
         # supplemental: no failure in minting, fetching, parsing, or acknowledging may
         # cost the SessionStart object that carries brief and question state.
         health_sections = {
-            "resume": resume_section,
+            "autonomy": autonomy_section,
+            "resume_offer": resume_offer,
+            "resume_table": resume_table,
             "inbox": "\n".join(inbox_lines),
             "issues": "\n".join(issues_lines),
-            "autonomy": autonomy_section,
             "extra": extra_section,
         }
         health_context = assemble_additional_context(**health_sections)
