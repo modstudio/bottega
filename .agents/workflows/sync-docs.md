@@ -20,4 +20,4 @@ modes:
       - docs-apply
       - run-gate
 ---
-Make the task documentation, canon, and knowledge base describe the change that was actually built. Find every deviation, require a human disposition for each one, apply the rulings through the project's registered adapters, and verify the result with the project gate.
+Make the task documentation, canon, and knowledge base describe the change that was actually built. Find every deviation, record a disposition for each one, apply the rulings through the project's registered adapters, and verify the result with the project gate.
