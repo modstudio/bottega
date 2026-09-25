@@ -1,7 +1,23 @@
 // concern: worker gate decisions
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
+import { isAbsolute, resolve } from 'node:path'
+
 export const GATE_OUTPUT_TAIL_BYTES = 16 * 1024
+export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000
+
+function quoteShellWord(word: string): string {
+  return `'${word.replaceAll("'", `'\\''`)}'`
+}
+
+/** Resolve a registered relative executable from the immutable main checkout. */
+export function resolveGateCommand(command: string, mainCheckout: string): string {
+  const match = /^(\s*)(\S+)([\s\S]*)$/.exec(command)
+  if (!match) return command
+  const [, leading, first, rest] = match
+  if (!first!.includes('/') || isAbsolute(first!)) return command
+  return `${leading}${quoteShellWord(resolve(mainCheckout, first!))}${rest}`
+}
 
 export type GateEligibility =
   | { eligible: true; gate: string }
@@ -49,6 +65,7 @@ export type GateResult = {
   timedOut: boolean
   elapsedMs: number
   outputTail: string
+  outputPath: string
   artifactPath: string
 }
 
@@ -57,6 +74,7 @@ export function shapeGateResult(input: {
   timedOut: boolean
   elapsedMs: number
   output: string
+  outputPath: string
   artifactPath: string
 }): GateResult {
   return {
@@ -64,6 +82,7 @@ export function shapeGateResult(input: {
     timedOut: input.timedOut,
     elapsedMs: input.elapsedMs,
     outputTail: boundedGateOutputTail(input.output),
+    outputPath: input.outputPath,
     artifactPath: input.artifactPath,
   }
 }
@@ -73,7 +92,8 @@ export function formatGateResult(result: GateResult): string {
     `Gate exit code: ${result.exitCode}`,
     `Timed out: ${result.timedOut}`,
     `Elapsed: ${result.elapsedMs}ms`,
-    `Full output artifact: ${result.artifactPath}`,
+    `Full output now: ${result.outputPath}`,
+    `This log moves to the run artifacts at close: ${result.artifactPath}`,
     'Combined output tail:',
     result.outputTail || '(no output)',
   ].join('\n')

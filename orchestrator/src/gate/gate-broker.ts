@@ -6,9 +6,13 @@ import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
-import { FILED_ISSUE_COMMAND_TIMEOUT_MS } from '../issue/issue-shell.ts'
+import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
-import { boundedGateOutputTail } from './gate-decision.ts'
+import {
+  boundedGateOutputTail,
+  GATE_COMMAND_TIMEOUT_MS,
+  resolveGateCommand,
+} from './gate-decision.ts'
 
 const GATE_REQUEST_POLL_MS = 100
 
@@ -67,9 +71,12 @@ async function executeGate(
   let exitCode = -1
   try {
     const plan = gatePlan(request.run_id)
-    const child = spawn('sh', ['-lc', plan.command], {
+    const mainCheckout = environment.ORCH_MAIN_CHECKOUT
+    if (!mainCheckout) throw new Error(`run ${request.run_id} has no recorded main checkout`)
+    const command = resolveGateCommand(plan.command, mainCheckout)
+    const child = spawn('sh', ['-lc', command], {
       cwd: plan.worktree,
-      env: { ...process.env, ...environment },
+      env: { ...workerGateEnvironment(process.env), ...environment },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -84,11 +91,11 @@ async function executeGate(
     const timeout = setTimeout(() => {
       timedOut = true
       void terminateProcessGroup(child.pid ?? 0, { direct: child })
-    }, FILED_ISSUE_COMMAND_TIMEOUT_MS)
+    }, GATE_COMMAND_TIMEOUT_MS)
     await waitForExit(child)
     clearTimeout(timeout)
     exitCode = child.exitCode ?? -1
-    if (timedOut) record(`\ngate timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms\n`)
+    if (timedOut) record(`\ngate timed out after ${GATE_COMMAND_TIMEOUT_MS}ms\n`)
   } catch (error) {
     const line = `gate broker failed: ${String(error)}\n`
     writeSync(fd, line)

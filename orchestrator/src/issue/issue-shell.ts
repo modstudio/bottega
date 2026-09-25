@@ -3,6 +3,7 @@
 
 import { type ChildProcess, spawn } from 'node:child_process'
 import { resolve } from 'node:path'
+import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import { isGroupKillablePgid, sampleProcesses, terminateProcessGroup } from '../idle-kill.ts'
 import {
   expandHome,
@@ -11,7 +12,6 @@ import {
   type SandboxRuntimeConfig,
 } from '../sandbox/sandbox.ts'
 
-export const FILED_ISSUE_COMMAND_TIMEOUT_MS = 20 * 60_000
 const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'
 
 const WORKER_GATE_ENV_EXACT = new Set([
@@ -84,7 +84,7 @@ export function filedIssueCommandResult(spawn: {
   groupRemains?: boolean
 }): { ok: boolean; text: string; exitCode: number } {
   if (spawn.exitedDueToTimeout) {
-    const limit = `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`
+    const limit = `timed out after ${GATE_COMMAND_TIMEOUT_MS}ms`
     return {
       ok: false,
       text: spawn.groupRemains ? `${limit}; process group still has members` : limit,
@@ -155,7 +155,7 @@ export async function runFiledIssueCommand(
     stderr += String(chunk)
   })
   const pid = child.pid ?? 0
-  const outcome = await waitForFiledIssueCommand(child, FILED_ISSUE_COMMAND_TIMEOUT_MS)
+  const outcome = await waitForFiledIssueCommand(child, GATE_COMMAND_TIMEOUT_MS)
   if (outcome !== 'timeout') {
     return filedIssueCommandResult({ exitCode: child.exitCode, stdout, stderr })
   }

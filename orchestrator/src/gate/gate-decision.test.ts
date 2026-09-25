@@ -4,8 +4,17 @@ import {
   decideGateConcurrency,
   decideGateEligibility,
   GATE_OUTPUT_TAIL_BYTES,
+  resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
+
+test('relative gate scripts resolve from main while PATH programs stay registered', () => {
+  expect(resolveGateCommand('scripts/gate --plain', '/projects/app')).toBe(
+    "'/projects/app/scripts/gate' --plain",
+  )
+  expect(resolveGateCommand('./scripts/gate', '/projects/app')).toBe("'/projects/app/scripts/gate'")
+  expect(resolveGateCommand('bun run check', '/projects/app')).toBe('bun run check')
+})
 
 describe('worker gate eligibility', () => {
   test('requires an authenticated writer with a registered gate', () => {
@@ -37,6 +46,7 @@ test('gate result bounds the combined output tail and preserves timeout evidence
     timedOut: true,
     elapsedMs: 1_200_000,
     output,
+    outputPath: '/runs/42/scratch/gate-7.log',
     artifactPath: '/runs/42/artifacts/gate-7.log',
   })
   expect(Buffer.byteLength(result.outputTail)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)

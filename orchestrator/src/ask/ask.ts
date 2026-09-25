@@ -45,6 +45,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { ASKED_VIA_LIVE } from '../run/question-vocabulary.ts'
+import { runScratchDir } from '../run/run-artifacts.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -145,6 +146,7 @@ async function requestGate(runId: number): Promise<string> {
           timedOut: row.timed_out === 1,
           elapsedMs: row.elapsed_ms,
           output: row.output_tail,
+          outputPath: `${runScratchDir(runId)}/gate-${id}.log`,
           artifactPath: row.output_artifact,
         }),
       )

@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
   expandHome,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
 } from '../sandbox/sandbox.ts'
 import {
-  FILED_ISSUE_COMMAND_TIMEOUT_MS,
   filedIssueCommandPlan,
   filedIssueCommandResult,
   issueRunAsked,
@@ -95,7 +95,7 @@ describe('filed issue command confinement', () => {
       }),
     ).toEqual({
       ok: false,
-      text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms`,
+      text: `timed out after ${GATE_COMMAND_TIMEOUT_MS}ms`,
       exitCode: -1,
     })
   })
@@ -111,7 +111,7 @@ describe('filed issue command confinement', () => {
       }),
     ).toEqual({
       ok: false,
-      text: `timed out after ${FILED_ISSUE_COMMAND_TIMEOUT_MS}ms; process group still has members`,
+      text: `timed out after ${GATE_COMMAND_TIMEOUT_MS}ms; process group still has members`,
       exitCode: -1,
     })
   })
