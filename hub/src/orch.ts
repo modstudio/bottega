@@ -18,6 +18,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import type { DocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
@@ -39,6 +40,28 @@ import {
 } from '../../shared/orch-contract.ts'
 
 export type { OrchProject, OrchRun, OrchRunDetail } from '../../shared/orch-contract.ts'
+
+export const OperatorWaitingItemSchema = z
+  .object({
+    kind: z.enum(['question', 'workflow']),
+    id: z.number().int().positive(),
+    project: z.string(),
+    task_key: z.string().nullable(),
+    session_id: z.string().nullable(),
+    question: z.string(),
+    options: z.array(z.string()),
+    recommendation: z.string().nullable(),
+    why: z.string().nullable(),
+    waiting_since: z.string(),
+    answer_command: z.string(),
+  })
+  .strict()
+
+export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
+
+const ClaimedOperatorNotificationSchema = OperatorWaitingItemSchema.extend({
+  notification: z.object({ title: z.string(), body: z.string(), link: z.string() }).strict(),
+}).strict()
 
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
@@ -221,6 +244,30 @@ export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
       RUNS_DEADLINE_MS,
     ),
   )
+}
+
+export const waiting = (): Promise<OperatorWaitingItem[]> =>
+  json(['waiting', '--json'], z.array(OperatorWaitingItemSchema))
+
+export const claimWaitingNotifications = () =>
+  json(['waiting', '--claim-notifications', '--json'], z.array(ClaimedOperatorNotificationSchema))
+
+export const answerWaitingArgv = (runId: number, questionId: number, ruling: string): string[] => [
+  'answer',
+  String(runId),
+  `--q${questionId}`,
+  ruling,
+  '--from-operator',
+  '--channel',
+  'ui',
+]
+
+export async function answerWaiting(runId: number, questionId: number, ruling: string) {
+  const message = await orchProcess(answerWaitingArgv(runId, questionId, ruling))
+  return {
+    outcome: (message.includes('still working') ? 'recorded' : 'resumed') as 'recorded' | 'resumed',
+    message,
+  }
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>

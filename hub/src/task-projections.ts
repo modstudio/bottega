@@ -177,6 +177,7 @@ export function projectSpendGrid(
 }
 
 export type IntervalRow = {
+  ref?: string
   space_id?: string
   space_name?: string
   task_key: string | null
@@ -330,6 +331,7 @@ export type CompletedRow = {
 }
 
 export type TaskRun = {
+  id: number | string
   agent: string | null
   job: string | null
   start: string
@@ -343,6 +345,7 @@ function projectRuns(rows: IntervalRow[], now: number): TaskRun[] {
   return rows
     .filter((row) => row.source === 'orch')
     .map((row) => ({
+      id: Number(row.ref?.match(/^orch:(\d+)/)?.[1] ?? 0),
       agent: row.agent,
       job: row.job,
       start: row.start_at,

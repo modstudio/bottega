@@ -18,6 +18,7 @@ import { Route as DoneRouteImport } from './routes/done'
 import { Route as FlightRouteImport } from './routes/flight'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HealthRouteImport } from './routes/health'
+import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as NotesRouteImport } from './routes/notes'
@@ -38,6 +39,7 @@ import { Route as RunsIdRouteImport } from './routes/runs.$id'
 import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
 import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
 import { Route as FlightTasksKeyRouteImport } from './routes/flight.tasks.$key'
+import { Route as InboxKindIdRouteImport } from './routes/inbox.$kind.$id'
 import { Route as UnsubscribeSpaceIdTokenRouteImport } from './routes/unsubscribe.$spaceId.$token'
 import { Route as DocsScopeSubjectSlugRouteImport } from './routes/docs.$scope.$subject.$slug'
 
@@ -84,6 +86,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JobsRoute = JobsRouteImport.update({
@@ -186,6 +193,11 @@ const FlightTasksKeyRoute = FlightTasksKeyRouteImport.update({
   path: '/tasks/$key',
   getParentRoute: () => FlightRoute,
 } as any)
+const InboxKindIdRoute = InboxKindIdRouteImport.update({
+  id: '/$kind/$id',
+  path: '/$kind/$id',
+  getParentRoute: () => InboxRoute,
+} as any)
 const UnsubscribeSpaceIdTokenRoute = UnsubscribeSpaceIdTokenRouteImport.update({
   id: '/unsubscribe/$spaceId/$token',
   path: '/unsubscribe/$spaceId/$token',
@@ -207,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/flight': typeof FlightRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
+  '/inbox': typeof InboxRouteWithChildren
   '/jobs': typeof JobsRoute
   '/members': typeof MembersRoute
   '/notes': typeof NotesRoute
@@ -227,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/inbox/$kind/$id': typeof InboxKindIdRoute
   '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
@@ -240,6 +254,7 @@ export interface FileRoutesByTo {
   '/flight': typeof FlightRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
+  '/inbox': typeof InboxRouteWithChildren
   '/jobs': typeof JobsRoute
   '/members': typeof MembersRoute
   '/notes': typeof NotesRoute
@@ -260,6 +275,7 @@ export interface FileRoutesByTo {
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/inbox/$kind/$id': typeof InboxKindIdRoute
   '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
@@ -274,6 +290,7 @@ export interface FileRoutesById {
   '/flight': typeof FlightRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/health': typeof HealthRoute
+  '/inbox': typeof InboxRouteWithChildren
   '/jobs': typeof JobsRoute
   '/members': typeof MembersRoute
   '/notes': typeof NotesRoute
@@ -294,6 +311,7 @@ export interface FileRoutesById {
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
+  '/inbox/$kind/$id': typeof InboxKindIdRoute
   '/unsubscribe/$spaceId/$token': typeof UnsubscribeSpaceIdTokenRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
@@ -309,6 +327,7 @@ export interface FileRouteTypes {
     | '/flight'
     | '/forgot-password'
     | '/health'
+    | '/inbox'
     | '/jobs'
     | '/members'
     | '/notes'
@@ -329,6 +348,7 @@ export interface FileRouteTypes {
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/inbox/$kind/$id'
     | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   fileRoutesByTo: FileRoutesByTo
@@ -342,6 +362,7 @@ export interface FileRouteTypes {
     | '/flight'
     | '/forgot-password'
     | '/health'
+    | '/inbox'
     | '/jobs'
     | '/members'
     | '/notes'
@@ -362,6 +383,7 @@ export interface FileRouteTypes {
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/inbox/$kind/$id'
     | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   id:
@@ -375,6 +397,7 @@ export interface FileRouteTypes {
     | '/flight'
     | '/forgot-password'
     | '/health'
+    | '/inbox'
     | '/jobs'
     | '/members'
     | '/notes'
@@ -395,6 +418,7 @@ export interface FileRouteTypes {
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
+    | '/inbox/$kind/$id'
     | '/unsubscribe/$spaceId/$token'
     | '/docs/$scope/$subject/$slug'
   fileRoutesById: FileRoutesById
@@ -409,6 +433,7 @@ export interface RootRouteChildren {
   FlightRoute: typeof FlightRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   HealthRoute: typeof HealthRoute
+  InboxRoute: typeof InboxRouteWithChildren
   JobsRoute: typeof JobsRoute
   MembersRoute: typeof MembersRoute
   NotesRoute: typeof NotesRoute
@@ -489,6 +514,13 @@ declare module '@tanstack/react-router' {
       path: '/health'
       fullPath: '/health'
       preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/jobs': {
@@ -631,6 +663,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FlightTasksKeyRouteImport
       parentRoute: typeof FlightRoute
     }
+    '/inbox/$kind/$id': {
+      id: '/inbox/$kind/$id'
+      path: '/$kind/$id'
+      fullPath: '/inbox/$kind/$id'
+      preLoaderRoute: typeof InboxKindIdRouteImport
+      parentRoute: typeof InboxRoute
+    }
     '/unsubscribe/$spaceId/$token': {
       id: '/unsubscribe/$spaceId/$token'
       path: '/unsubscribe/$spaceId/$token'
@@ -689,6 +728,16 @@ const FlightRouteChildren: FlightRouteChildren = {
 const FlightRouteWithChildren =
   FlightRoute._addFileChildren(FlightRouteChildren)
 
+interface InboxRouteChildren {
+  InboxKindIdRoute: typeof InboxKindIdRoute
+}
+
+const InboxRouteChildren: InboxRouteChildren = {
+  InboxKindIdRoute: InboxKindIdRoute,
+}
+
+const InboxRouteWithChildren = InboxRoute._addFileChildren(InboxRouteChildren)
+
 interface ProjectsRouteChildren {
   ProjectsNameRoute: typeof ProjectsNameRoute
 }
@@ -732,6 +781,7 @@ const rootRouteChildren: RootRouteChildren = {
   FlightRoute: FlightRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   HealthRoute: HealthRoute,
+  InboxRoute: InboxRouteWithChildren,
   JobsRoute: JobsRoute,
   MembersRoute: MembersRoute,
   NotesRoute: NotesRoute,

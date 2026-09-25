@@ -103,7 +103,11 @@ describe('run answers', () => {
         'INSERT INTO question (run_id,asked_at,question,awaiting_operator_at) VALUES (?,?,?,?)',
       )
       .run(id, new Date().toISOString(), 'which shape?', new Date().toISOString())
-    await answerRun(id, { argv: ['use the existing shape'], recordOnly: true, flags }, helpers)
+    await answerRun(
+      id,
+      { argv: ['use the existing shape', '--channel', 'ui'], recordOnly: true, flags },
+      helpers,
+    )
     expect(
       db()
         .query(
@@ -114,7 +118,7 @@ describe('run answers', () => {
     ).toEqual({
       answer: 'use the existing shape',
       answerer_kind: 'agent',
-      answer_channel: 'cli',
+      answer_channel: 'ui',
       delivery_pending_at: expect.any(String),
       awaiting_operator_at: null,
     })

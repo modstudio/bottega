@@ -16,6 +16,7 @@ export const ANSWERER_KIND_AGENT = 'agent' satisfies AnswererKind
 export const ANSWERER_KIND_OPERATOR = 'operator' satisfies AnswererKind
 export const ANSWERER_KIND_EVAL = 'eval' satisfies AnswererKind
 export const ANSWER_CHANNEL_CLI = 'cli' satisfies AnswerChannel
+export const ANSWER_CHANNEL_UI = 'ui' satisfies AnswerChannel
 export const QUESTION_DELIVERY_MODE_LIVE = 'live' satisfies QuestionDeliveryMode
 export const QUESTION_DELIVERY_MODE_RESUME = 'resume' satisfies QuestionDeliveryMode
 export const QUESTION_DELIVERY_MODE_RETRY = 'retry' satisfies QuestionDeliveryMode

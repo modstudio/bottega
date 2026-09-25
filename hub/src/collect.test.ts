@@ -5,15 +5,36 @@ import {
   resetFixtureStore,
   runFixture,
 } from '../test/run-fixtures.ts'
-import { collectFast, runsSince } from './collect.ts'
+import { collectFast, deliverOperatorNotifications, runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
 import { db, writeTransaction } from './db.ts'
 import { ingestRuns } from './ingest/runs.ts'
+import type { claimWaitingNotifications } from './orch.ts'
 import { listOpenRulings } from './rulings.ts'
 import { clearOrchCache } from './serve.ts'
 
 beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)
+
+test('notification delivery logs one failure and continues through the claimed batch', async () => {
+  const delivered: string[] = []
+  const errors: string[] = []
+  const notification = (title: string) => ({ title, body: 'Body', link: 'http://example.test' })
+  await deliverOperatorNotifications({
+    claim: async () =>
+      [
+        { notification: notification('First') },
+        { notification: notification('Second') },
+      ] as Awaited<ReturnType<typeof claimWaitingNotifications>>,
+    notify: (item) => {
+      delivered.push(item.title)
+      if (item.title === 'First') throw new Error('desktop unavailable')
+    },
+    error: (message) => errors.push(message),
+  })
+  expect(delivered).toEqual(['First', 'Second'])
+  expect(errors).toEqual(['hub: operator notification delivery failed: Error: desktop unavailable'])
+})
 
 describe('run ingest', () => {
   test('a failing transcripts leg does not stop the runs watermark advancing', async () => {

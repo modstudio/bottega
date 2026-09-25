@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { notificationCommand } from '../../../shared/operator-notification.ts'
 import { db } from '../database/db.ts'
-import { notificationCommand } from './operator-notification.ts'
 import {
   claimOperatorNotifications,
   initialQuestionWaitingAt,
@@ -114,9 +114,9 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     .query(
       `INSERT INTO workflow_cursor
         (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
-         args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
+         args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,session_id)
        VALUES ('fixture','ship','default','DEV-943','',1,1,'{"key":"DEV-943"}',0,'rebase',
-               'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25') RETURNING id`,
+               'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25','session-1') RETURNING id`,
     )
     .get() as { id: number }
 
@@ -126,6 +126,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       id: question.id,
       project: 'fixture',
       task_key: 'DEV-943',
+      session_id: null,
       question: 'Run question?',
       options: ['a', 'b'],
       recommendation: 'a',
@@ -138,6 +139,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       id: cursor.id,
       project: 'fixture',
       task_key: 'DEV-943',
+      session_id: 'session-1',
       question: 'Workflow question?',
       options: [],
       recommendation: null,

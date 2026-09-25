@@ -4,10 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { type OperatorInboxKind, operatorInboxPath } from '../../../shared/operator-inbox.ts'
+import { sendOperatorNotification } from '../../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
-import { sendOperatorNotification } from './operator-notification.ts'
 
 type WaitingCause = { rulings: 'agent' | 'user'; relayed: boolean; answered: boolean }
 export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
@@ -141,6 +141,7 @@ export type OperatorWaitingItem = {
   id: number
   project: string
   task_key: string | null
+  session_id: string | null
   question: string
   options: string[]
   recommendation: string | null
@@ -176,7 +177,7 @@ function operatorWaitingWithEpisodes(
   const workflows = d
     .query(
       `SELECT id,project,NULLIF(workflow_key,'') task_key,question,updated_at,workflow_slug,
-              mode_slug,args FROM workflow_cursor WHERE state='awaiting-ruling'`,
+              mode_slug,args,session_id FROM workflow_cursor WHERE state='awaiting-ruling'`,
     )
     .all() as Array<{
     id: number
@@ -187,6 +188,7 @@ function operatorWaitingWithEpisodes(
     workflow_slug: string
     mode_slug: string
     args: string
+    session_id: string | null
   }>
   return [
     ...questions.map((row) => ({
@@ -196,6 +198,7 @@ function operatorWaitingWithEpisodes(
         id: row.id,
         project: row.project,
         task_key: row.task_key,
+        session_id: null,
         question: row.question,
         options: row.options ? JSON.parse(row.options) : [],
         recommendation: row.recommendation,
@@ -216,6 +219,7 @@ function operatorWaitingWithEpisodes(
           id: row.id,
           project: row.project,
           task_key: row.task_key,
+          session_id: row.session_id,
           question: row.question,
           options: [],
           recommendation: null,

@@ -1,6 +1,6 @@
-// concern: operator-waiting
-/** Chooses and invokes the best available desktop notification without owning waiting policy. */
+/** Chooses and invokes the best available desktop notification. */
 
+export type OperatorNotification = { title: string; body: string; link: string }
 export type NotificationCommand = { argv: string[] } | null
 
 const appleScriptString = (value: string) =>
@@ -33,7 +33,7 @@ export function notificationCommand(
 }
 
 type Spawned = { exited: Promise<number>; unref(): void }
-type NotificationRuntime = {
+export type NotificationRuntime = {
   platform: NodeJS.Platform
   which(name: string): string | null
   spawn(argv: string[]): Spawned
@@ -47,9 +47,9 @@ const runtime: NotificationRuntime = {
   error: (message) => console.error(message),
 }
 
-/** Detached by construction: notification delivery never delays the question path. */
+/** Detached by construction: notification delivery never delays its caller. */
 export function sendOperatorNotification(
-  input: { title: string; body: string; link: string },
+  input: OperatorNotification,
   r: NotificationRuntime = runtime,
 ): void {
   try {

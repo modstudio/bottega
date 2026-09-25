@@ -6,7 +6,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from '../cli/args.ts'
+import {
+  ANSWER_WORKING_FORMS,
+  parseAnswerChannelArgs,
+  parseAnswerTextSources,
+} from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
@@ -18,7 +22,6 @@ import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import {
-  ANSWER_CHANNEL_CLI,
   answererKindFromAnsweredBy,
   QUESTION_DELIVERY_MODE_LIVE,
   QUESTION_DELIVERY_MODE_RECORD_ONLY,
@@ -251,6 +254,7 @@ export async function answerRun(
   options: { argv: string[]; recordOnly: boolean; flags: RunFlags },
   helpers: RunAnswerHelpers,
 ): Promise<void> {
+  const answerArgs = parseAnswerChannelArgs(options.argv)
   const found = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
@@ -280,7 +284,7 @@ export async function answerRun(
     launch_key: string | null
   } | null
   const row = requireAnswerRun(found, requestedId)
-  await refuseUserRuling(row.repo, row.launch_key, options.argv)
+  await refuseUserRuling(row.repo, row.launch_key, answerArgs.argv)
   const id = row.id
   refuseEscapedChain(id)
   let answerAuthority = authorizeRunMutation(requestedId, 'answer')
@@ -427,7 +431,7 @@ export async function answerRun(
   // by question id when there are several. `--q<id> --file PATH` binds that
   // file to that question; a command-level `--file` is the single-ruling form.
   const answers: { id: number; question: string; answer: string }[] = []
-  const parsed = parseAnswerTextSources(options.argv)
+  const parsed = parseAnswerTextSources(answerArgs.argv)
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
   const rulingFrom = (text: string): string => {
     helpers.assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS, argvLimit)
@@ -563,7 +567,7 @@ export async function answerRun(
         now,
         answeredBy,
         answererKindFromAnsweredBy(answeredBy),
-        ANSWER_CHANNEL_CLI,
+        answerArgs.channel,
         ownersLive ? null : now,
         q.id,
       )

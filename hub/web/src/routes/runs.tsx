@@ -4,10 +4,12 @@ import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { ProjectMark, useWindowFilters, WindowControl } from '@/components/design-system'
+import { WaitingBadge } from '@/components/waiting-badge'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
+import { waitingByRun } from '@/lib/operator-waiting'
 import { useDebounced } from '@/lib/use-debounced'
 import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState, type WindowHours } from '@/lib/window'
@@ -187,6 +189,10 @@ function RunsList() {
     search: searchQuery,
   }
   const query = useRunsQuery(input, openMenus > 0)
+  const waiting = useQuery({
+    ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
+    enabled: !isHostedMode(),
+  })
   const payload = query.data as unknown as RunsPayload | undefined
   const data = payload?.data
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
@@ -201,6 +207,7 @@ function RunsList() {
   // The server applies search and paging; these are the rows to draw.
   const liveRows = data?.live ?? []
   const runRows = data?.rows ?? []
+  const waitingRuns = waitingByRun([...liveRows, ...runRows], waiting.data ?? [])
   const showSpace = spansSpaces([...liveRows, ...runRows])
   const liveColumns: CollectionColumn<LiveRow>[] = [
     {
@@ -210,6 +217,9 @@ function RunsList() {
         <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
           <LiveDot />
           {row.agent}
+          {waitingRuns.get(String(row.id)) ? (
+            <WaitingBadge item={waitingRuns.get(String(row.id))!} />
+          ) : null}
         </span>
       ),
     },
@@ -260,7 +270,16 @@ function RunsList() {
       numeric: true,
       render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.display.took),
     },
-    { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
+    {
+      id: 'verdict',
+      label: 'Verdict',
+      render: (row) =>
+        waitingRuns.get(String(row.id)) ? (
+          <WaitingBadge item={waitingRuns.get(String(row.id))!} />
+        ) : (
+          <Verdict row={row} />
+        ),
+    },
     {
       id: 'tokens',
       label: 'Tokens',

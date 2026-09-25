@@ -3,8 +3,10 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { type ReviewLens, ReviewLensList } from '@/components/review-lenses'
+import { WaitingBadge } from '@/components/waiting-badge'
 import { duration, relativeTime } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
+import { waitingByRun } from '@/lib/operator-waiting'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button, IconButton } from '@/ui/button/button'
@@ -111,7 +113,12 @@ function RunDetailPage({ id }: { id: string }) {
   const hosted = isHostedMode()
   const numericId = Number(id)
   const detail = useRunDetail(id, numericId, hosted)
+  const waiting = useQuery({
+    ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
+    enabled: !hosted,
+  })
   const run = detail.data as unknown as RunDetail | undefined
+  const waitingItem = waitingByRun([{ id }], waiting.data ?? []).get(id)
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
   const [fidelity, setFidelity] = useState<Fidelity | null>(null)
@@ -234,12 +241,15 @@ function RunDetailPage({ id }: { id: string }) {
       title={`Run ${id}`}
       subtitle={subtitle}
       actions={
-        <Badge
-          tone={running ? 'progress' : run.status !== 'ok' ? 'error' : 'neutral'}
-          dot={running}
-        >
-          {run.status}
-        </Badge>
+        <span className="flex items-center gap-2">
+          {waitingItem ? <WaitingBadge item={waitingItem} /> : null}
+          <Badge
+            tone={running ? 'progress' : run.status !== 'ok' ? 'error' : 'neutral'}
+            dot={running}
+          >
+            {run.status}
+          </Badge>
+        </span>
       }
       footer={signing}
     >

@@ -310,6 +310,7 @@ export function register(program: Command): void {
     .option('--quiet')
     .option('--record-only')
     .option('--from-operator')
+    .option('--channel <value>')
     .action((id, _message, options, command) =>
       answerCommand(
         Number(id),

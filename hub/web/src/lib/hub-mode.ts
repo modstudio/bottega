@@ -8,6 +8,7 @@ import {
   CircleDollarSign,
   FolderGit2,
   GitCompareArrows,
+  Inbox,
   Kanban,
   type LucideIcon,
   NotebookPen,
@@ -24,7 +25,7 @@ export function isHostedMode() {
   return import.meta.env.VITE_HUB_MODE === 'hosted'
 }
 
-type Counted = 'flight' | 'done' | 'runs'
+type Counted = 'flight' | 'done' | 'runs' | 'inbox'
 type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted }
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
 export type NavSection = { id: string; entries: (NavLink | NavGroup)[] }
@@ -36,6 +37,7 @@ const LOCAL_NAV: NavSection[] = [
     id: 'work',
     entries: [
       { to: '/flight', label: 'Flight', icon: Plane, count: 'flight' },
+      { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox' },
       { to: '/board', label: 'Board', icon: Kanban },
       { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
       { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
