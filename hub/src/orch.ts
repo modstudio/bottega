@@ -22,8 +22,8 @@ import { z } from 'zod'
 import type { DocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
-  AnswerWaitingResultSchema,
   type AnswerWaitingResult,
+  AnswerWaitingResultSchema,
   ClaimedOperatorNotificationSchema,
   type HarnessHealth,
   HarnessHealthSchema,
