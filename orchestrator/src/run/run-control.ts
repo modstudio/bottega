@@ -26,6 +26,7 @@ import { packedResumePrompt } from './run.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { continuationResumeKind } from './run-resume-kind.ts'
 
 export type RunControlPresentation = {
   dur(ms: number | null | undefined): string
@@ -363,7 +364,7 @@ function inheritedResumeWorktree(
   }
 }
 
-function refuseHeldContinuationBranch(
+export function refuseHeldContinuationBranch(
   id: number,
   projectPath: string | null,
   recordedTreePath: string | null,
@@ -569,10 +570,10 @@ export async function continueRun(
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
     resume: {
+      kind: continuationResumeKind(Boolean(checkpointContext)),
       parent: id,
       agent: checkpointContext ? latest.agent : sessionFrom!.agent,
       session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),
-      fresh: Boolean(checkpointContext),
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treePlan, latest, project?.path ?? null),

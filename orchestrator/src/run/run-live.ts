@@ -53,6 +53,7 @@ import {
 } from './checkpoint.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
+import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
@@ -118,7 +119,12 @@ export function replyFileFallbackError(
 }
 
 type LiveOptions = {
-  resume?: { parent: number; fresh?: boolean; session?: string }
+  resume?: {
+    kind: 'continue' | 'fresh-session' | 'retry-root'
+    parent: number
+    turn: number
+    session?: string
+  }
   model?: string
   schemaPath?: string
   job: string
@@ -313,7 +319,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       // for its CLI launch, but treating that fresh id as resumable makes ACP
       // issue session/load against a session that cannot exist yet.
       session:
-        transportName === 'acp' && !opts.resume?.fresh
+        transportName === 'acp' && opts.resume?.kind === 'continue'
           ? opts.resume?.session
           : (vendorSession ?? undefined),
       schemaPath: schemaPath ?? undefined,
@@ -334,7 +340,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       srt: sandboxSelection.profile
         ? { profile: sandboxSelection.profile, runtimeDir: sandboxRunDir }
         : undefined,
-      resume: Boolean(opts.resume && !opts.resume.fresh),
+      resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
+        .carriesVendorSession,
       env: childEnv(
         a,
         claim.id,
@@ -351,7 +358,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       ),
     }
     const handle =
-      opts.resume?.session && !opts.resume.fresh
+      opts.resume?.session && opts.resume.kind === 'continue'
         ? await t.resume({
             ...startOpts,
             session: opts.resume.session,
@@ -413,7 +420,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       if (worktree && launchKey) {
         liveCheckpoints.set(handle, {
           runId: claim.id,
-          rootId: opts.resume?.parent ?? claim.id,
+          rootId: checkpointRoot(opts.resume, claim.id),
           worktree: worktree.path,
           branch: worktree.branch,
           taskKey: launchKey,
@@ -490,7 +497,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
         return
       }
-      const prior = latestCheckpoint(db(), opts.resume?.parent ?? claim.id)
+      const prior = latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))
       if (!idleKillMayProceed(checkpoint, Boolean(prior))) {
         idleKilled = false
         idleKillError = null

@@ -19,7 +19,7 @@ import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
-import { branchOf, git, gitContext, repoRootOf } from '../git/git-environment.ts'
+import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
 import {
   assertGrokTrustEligible,
   type McpConnection,
@@ -63,7 +63,7 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import { type ResumeTreePlan, resumeCreationOptions } from './resume-tree.ts'
+import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
   type runFilePaths,
@@ -78,12 +78,11 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { errorTail, sha } from './run-process.ts'
+import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
+import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
+import type { RunResumeOptions } from './run-resume-options.ts'
+import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-
-type RecreateResumeTreePlan = Extract<
-  ResumeTreePlan,
-  { action: 'recreate-on-branch' | 'recreate-then-restore' }
->
 
 function taskBranchResolution(
   supplied: TaskBranchCandidate | null | undefined,
@@ -91,52 +90,6 @@ function taskBranchResolution(
   key: string,
 ): TaskBranchCandidate | null {
   return supplied !== undefined ? supplied : resolveTaskBranch(callerCwd, key)
-}
-
-export function prepareResumeBranchIfNeeded(
-  repoRoot: string,
-  plan: RecreateResumeTreePlan | undefined,
-): void {
-  if (plan?.action !== 'recreate-on-branch') return
-  const current = gitContext(
-    repoRoot,
-    'rev-parse',
-    '--verify',
-    `refs/heads/${plan.branch}^{commit}`,
-  )
-  if (!current) git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
-}
-
-function restoreResumeIfNeeded(
-  created: Worktree,
-  plan: RecreateResumeTreePlan | undefined,
-  runId: number,
-): Worktree {
-  return plan ? restoreResumedTree(created, plan, runId) : created
-}
-
-function restoreResumedTree(
-  created: Worktree,
-  plan: RecreateResumeTreePlan,
-  runId: number,
-): Worktree {
-  if (plan.action === 'recreate-then-restore') {
-    try {
-      git(['reset', '--hard', plan.tip], created.path)
-    } catch {
-      // The postcondition below gives the one harness failure shape for both a
-      // refused reset and a reset that landed anywhere except the retained tip.
-    }
-  }
-  const actual = gitContext(created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-  if (actual !== plan.tip) {
-    const cleanup = removeFor(created, created.repoRoot, false, true, runId)
-    throw new Error(
-      `resumed tree postcondition failed: expected ${plan.tip}, got ${actual ?? '(unresolved)'}; ` +
-        `cleanup: ${cleanup.removed ? 'removed tree and kept every branch' : cleanup.detail}`,
-    )
-  }
-  return { ...created, base: plan.tip }
 }
 
 type ClaimOptions = {
@@ -159,13 +112,7 @@ type ClaimOptions = {
   base?: string
   resolvedTaskBranch?: TaskBranchCandidate | null
   carry?: boolean
-  resume?: {
-    parent: number
-    turn: number
-    sessionId: string | null
-    worktree: Worktree | null
-    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
-  }
+  resume?: RunResumeOptions
 }
 
 export type ClaimInput = {
@@ -267,6 +214,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     replySchemaName,
     carriedQuestionIds,
   } = input
+  const resume = resumeFacts(
+    opts.resume?.kind ?? null,
+    opts.reserveId ?? 0,
+    opts.resume?.parent ?? null,
+  )
   const claimedPrompt = opts.reserveId
     ? (
         db().query('SELECT prompt_path FROM run WHERE id=?').get(opts.reserveId) as {
@@ -312,21 +264,22 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const started = Date.now()
   const recordId = newRecordId()
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
-  const inheritedLaunch = opts.resume
-    ? (db()
-        .query(
-          `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, task_record_id
+  const inheritedLaunch =
+    resume.workspaceSource === 'retained'
+      ? (db()
+          .query(
+            `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, task_record_id
              FROM run WHERE id=?`,
-        )
-        .get(opts.resume.parent) as {
-        launch_cwd: string | null
-        launch_seed: string | null
-        launch_key: string | null
-        launch_base: string | null
-        no_failover: number
-        task_record_id: string | null
-      })
-    : null
+          )
+          .get(opts.resume!.parent) as {
+          launch_cwd: string | null
+          launch_seed: string | null
+          launch_key: string | null
+          launch_base: string | null
+          no_failover: number
+          task_record_id: string | null
+        })
+      : null
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   // A read-only run's key is an address on its record, not an input to the
@@ -351,7 +304,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       writesJob,
       hasWorktree: Boolean(opts.resume?.worktree),
       taskKey: attachableTaskKey,
-      isResume: Boolean(opts.resume),
+      isResume: resume.workspaceSource === 'retained',
       hasExplicitBase: opts.base !== undefined,
     })
   ) {
@@ -376,6 +329,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   // A repository row has no artifact address until creation returns one.
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
+  const identity = claimIdentity(opts.resume)
   // A reserved row is FILLED IN, not inserted: the id is already in the
   // caller's hands and printed, so allocating a second one here would hand back
   // an id that never finishes.
@@ -406,8 +360,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.retryOf ?? null,
         reason,
         claimedBranch,
-        opts.resume?.parent ?? null,
-        opts.resume ? opts.resume.turn : 1,
+        identity.parent_run_id,
+        identity.turn,
         vendorSession,
         pack?.docs.length ?? 0,
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
@@ -447,13 +401,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         head,
         opts.label ?? null,
         // A resumed turn inherits the owning session rather than taking the one that answered.
-        opts.resume ? opts.resume.sessionId : (opts.ownerSession ?? sessionId()),
+        resume.workspaceSource === 'retained'
+          ? opts.resume!.sessionId
+          : (opts.ownerSession ?? sessionId()),
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
         claimedBranch,
-        opts.resume?.parent ?? null,
-        opts.resume ? opts.resume.turn : 1,
+        identity.parent_run_id,
+        identity.turn,
         vendorSession,
         pack?.docs.length ?? 0,
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
@@ -491,7 +447,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
      * makes this write incapable of retiring a genuinely waiting turn when
      * run() is called directly.
      */
-    if (opts.resume) resolveSupersededTurn(db(), opts.resume.parent, opts.resume.turn - 1)
+    if (identity.resolveSupersededTurn) {
+      resolveSupersededTurn(db(), opts.resume!.parent, opts.resume!.turn - 1)
+    }
     const recordCarry = db().query(
       'INSERT INTO run_carried_ruling (run_id,question_id) VALUES (?,?)',
     )
@@ -499,33 +457,36 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     return claimed
   })
   const runToken = randomUUID()
-  const inheritedKeepTree = opts.resume
-    ? (() => {
-        const parent = db()
-          .query('SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run WHERE id=?')
-          .get(opts.resume.parent) as {
-          keep_tree: number
-          keep_tree_until: string | null
-          keep_tree_reason: string | null
-          started_at: string
-        } | null
-        if (!parent?.keep_tree) return undefined
-        const decision = keepTreeHold({
-          keepTree: parent.keep_tree,
-          keepTreeUntil: parent.keep_tree_until,
-          startedAt: parent.started_at,
-          now: nowIso(),
-        })
-        return {
-          until: decision.held
-            ? decision.until
-            : 'expiredAt' in decision
-              ? decision.expiredAt
-              : parent.started_at,
-          reason: parent.keep_tree_reason ?? 'explicit --keep-tree',
-        }
-      })()
-    : undefined
+  const inheritedKeepTree =
+    resume.workspaceSource === 'retained'
+      ? (() => {
+          const parent = db()
+            .query(
+              'SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run WHERE id=?',
+            )
+            .get(opts.resume!.parent) as {
+            keep_tree: number
+            keep_tree_until: string | null
+            keep_tree_reason: string | null
+            started_at: string
+          } | null
+          if (!parent?.keep_tree) return undefined
+          const decision = keepTreeHold({
+            keepTree: parent.keep_tree,
+            keepTreeUntil: parent.keep_tree_until,
+            startedAt: parent.started_at,
+            now: nowIso(),
+          })
+          return {
+            until: decision.held
+              ? decision.until
+              : 'expiredAt' in decision
+                ? decision.expiredAt
+                : parent.started_at,
+            reason: parent.keep_tree_reason ?? 'explicit --keep-tree',
+          }
+        })()
+      : undefined
   const keepTree = opts.keepTree ?? inheritedKeepTree
   db()
     .query(
@@ -637,6 +598,17 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
+          if (opts.resume?.kind === 'retry-root') {
+            assertRetryRootWorkspace({
+              worktree: created,
+              expectedBranch: resumePlan!.branch,
+              validatedTip: resumePlan!.tip,
+              conversationRootId: claim.id,
+              projectId: runProjectId,
+              projectName: runProjectName,
+              operation: 'creation',
+            })
+          }
           writeTransaction(() => {
             const result = db()
               .query(
@@ -793,19 +765,19 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     if (worktree) {
       const inheritedWorktree = worktree
       const recordWorktree = () => {
-        if (opts.resume && !worktreeExists(inheritedWorktree.path)) {
+        if (resume.workspaceSource === 'retained' && !worktreeExists(inheritedWorktree.path)) {
           throw new Error(
             `resumed worktree ${inheritedWorktree.path} no longer exists after waiting for ` +
               `the project lifecycle lock`,
           )
         }
-        if (!carried && opts.resume) {
+        if (!carried && resume.workspaceSource === 'retained') {
           const inherited = db()
             .query(
               `SELECT carry_base_commit, carry_tracked_paths, carry_untracked_paths
                  FROM run WHERE id=?`,
             )
-            .get(opts.resume.parent) as {
+            .get(opts.resume!.parent) as {
             carry_base_commit: string | null
             carry_tracked_paths: string | null
             carry_untracked_paths: string | null
@@ -821,6 +793,17 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               untracked: JSON.parse(inherited.carry_untracked_paths),
             }
           }
+        }
+        if (opts.resume?.kind === 'retry-root') {
+          assertRetryRootWorkspace({
+            worktree: inheritedWorktree,
+            expectedBranch: inheritedWorktree.branch,
+            validatedTip: inheritedWorktree.base,
+            conversationRootId: claim.id,
+            projectId: runProjectId,
+            projectName: runProjectName,
+            operation: 'reuse',
+          })
         }
         db()
           .query(
@@ -841,7 +824,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             claim.id,
           )
       }
-      if (opts.resume) {
+      if (resume.workspaceSource === 'retained') {
         withWorktreeLease(
           inheritedWorktree.repoRoot,
           inheritedWorktree.path,
@@ -908,7 +891,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       }
       cwd = inheritedWorktree.path
       if (
-        !opts.resume &&
+        resume.isFirstTurn &&
         !(taskBranchAttachment && realpathOrSpelled(callerCwd) === realpathOrSpelled(worktree.path))
       ) {
         const caller = checkoutAliases(callerCwd)
@@ -948,7 +931,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       const project = projectAt(callerCwd)
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
-      const config = prepareWorkerMcpConfig(cwd, project.path, Boolean(opts.resume))
+      const config = prepareWorkerMcpConfig(
+        cwd,
+        project.path,
+        resume.workspaceSource === 'retained',
+      )
       mcpSetupHeader = config.header
       provisionedMcpConfig = config
       const server = project.settings.mcpServer ?? project.name

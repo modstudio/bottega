@@ -811,13 +811,18 @@ describe('retry command', () => {
     }
   })
 
-  test('a writing retry refuses to change agents and directs a fresh start', async () => {
+  test('retry refuses an asking chain and names its question and remedies', async () => {
     const id = failed('implement')
-    db().query("UPDATE run SET vendor_session='retry-session' WHERE id=?").run(id)
+    db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'Which retained shape?')
     await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
-      'a writing run continues on its own agent (grok); to start over on codex: orch do implement --agent codex ...',
+      `run ${id} is asking with open questions: q`,
     )
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(id)).toEqual({ n: 0 })
+    await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
+      `Answer them, or orch abandon ${id}`,
+    )
   })
 
   test('a rejected retry dispatch records failed ruling delivery', async () => {

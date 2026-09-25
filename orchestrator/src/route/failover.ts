@@ -61,11 +61,13 @@ export type DetachSpec = {
   keepTree?: KeepTreeExemption
   resolvedTaskBranch?: ResolvedTaskBranch | null
   resume?: {
+    kind: 'continue' | 'fresh-session' | 'retry-root'
     parent: number
     agent: string
     session?: string
     turn: number
-    fresh?: boolean
+    /** A record-only ruling recovery retires the old asking writer atomically with this claim. */
+    retireAsking?: boolean
     sessionId: string | null
     worktree: RetryWorktree | null
     treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>

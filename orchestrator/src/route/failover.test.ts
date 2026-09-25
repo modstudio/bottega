@@ -85,6 +85,7 @@ describe('decideFailover', () => {
 
 test('the detached spec mapping forwards every field to run', () => {
   const resume = {
+    kind: 'continue' as const,
     parent: 11,
     agent: 'codex',
     session: 'session',

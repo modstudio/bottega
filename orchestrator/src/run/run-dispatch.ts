@@ -7,6 +7,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { assetPath } from '../../../shared/install-root.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
@@ -15,7 +16,10 @@ import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { repoOf } from './run.ts'
+import { runAlive } from './run-alive.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
+import { runLeaseState } from './run-lease.ts'
+import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 
 /**
  * Claim a run id, hand the work to a process that outlives this one, and return.
@@ -58,7 +62,12 @@ export async function detach(
   // A RESUME skips preflight: its agent was chosen long ago, its worktree
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
-  const seed = spec.resume
+  const firstTurn = resumeFacts(
+    spec.resume?.kind ?? null,
+    0,
+    spec.resume?.parent ?? null,
+  ).isFirstTurn
+  const seed = !firstTurn
     ? spec.seed
     : preflight(
         jobName,
@@ -73,7 +82,7 @@ export async function detach(
         spec.carry,
         spec.repo,
       )
-  if (!spec.resume && mcpRequest) {
+  if (firstTurn && mcpRequest) {
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
@@ -97,8 +106,44 @@ export async function detach(
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
   const claimed = writeTransaction(() => {
+    const identity = claimIdentity(spec.resume)
+    const continuationParent = identity.parent_run_id
     const projectName = spec.repo ?? repoOf(cwd)
     const projectId = projectName ? (projectByName(projectName)?.id ?? null) : null
+    if (spec.resume?.kind === 'retry-root') {
+      const branch = spec.resume.worktree?.branch ?? spec.resume.treePlan?.branch ?? null
+      const tree = spec.resume.worktree?.path ?? null
+      const possibleOwners = db()
+        .query(
+          `SELECT id,parent_run_id,status,pid,branch,worktree FROM run
+           WHERE id=? OR parent_run_id=?
+              OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
+        )
+        .all(spec.resume.parent, spec.resume.parent, branch, branch, tree, tree) as {
+        id: number
+        parent_run_id: number | null
+        status: string
+        pid: number | null
+        branch: string | null
+        worktree: string | null
+      }[]
+      const liveOwner = possibleOwners.find((owner) => {
+        const inOriginal =
+          owner.id === spec.resume!.parent || owner.parent_run_id === spec.resume!.parent
+        if (inOriginal && spec.resume!.retireAsking && owner.status === 'asking') return false
+        return runAlive({
+          status: owner.status,
+          lease: runLeaseState(owner.id),
+          pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
+        })
+      })
+      if (liveOwner) {
+        throw new Error(
+          `run ${liveOwner.id} (${liveOwner.status}) is alive on the original chain or retained branch/tree; ` +
+            `wait for it or orch abandon ${spec.resume.parent}`,
+        )
+      }
+    }
     const inserted = db()
       .query(
         `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
@@ -127,15 +172,15 @@ export async function detach(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
-        spec.resume?.parent ?? null,
-        spec.resume?.turn ?? 1,
+        continuationParent,
+        identity.turn,
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
         startedByUserId,
-        spec.resume?.parent ?? null,
-        spec.resume?.parent ?? null,
-        spec.resume?.parent ?? null,
-        spec.resume?.parent ?? null,
+        continuationParent,
+        continuationParent,
+        continuationParent,
+        continuationParent,
       ) as { id: number } | null
     const deliveryRoot =
       spec.resume?.parent ??
@@ -154,6 +199,15 @@ export async function detach(
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
         )
         .run(deliveryRoot, deliveryRoot)
+    }
+    if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
+      db()
+        .query(
+          `UPDATE run SET status='failed',failure_kind='stopped',
+             error='record-only rulings recovered by retry root'
+           WHERE (id=? OR parent_run_id=?) AND status='asking'`,
+        )
+        .run(spec.resume.parent, spec.resume.parent)
     }
     return inserted
   })

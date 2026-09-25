@@ -8,6 +8,7 @@ import {
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
+import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
@@ -39,6 +40,8 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
+  // biome-ignore format: compact extracted boundary registration keeps this frozen manifest from growing.
+  ...runRetryBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
   ...branchStoreModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -772,6 +775,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../outcome.ts',
       '../workflow/autonomy.ts',
       '../workflow/autonomy-scopes.ts',
+      './checkpoint.ts',
       './run.ts',
       './run-answer-liveness.ts',
       './run-answer-authority.ts',
@@ -779,6 +783,8 @@ export const importBoundaries: ImportBoundary[] = [
       './run-authority.ts',
       './run-control.ts',
       './run-dispatch.ts',
+      './run-retry.ts',
+      './run-retry-workspace.ts',
       './question-delivery.ts',
       './question-vocabulary.ts',
       '../git/git-environment.ts',
@@ -805,6 +811,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../database/db.ts', 'bun:sqlite'],
     'Enforce the run-authority concern boundary.',
   ),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   boundary(
     'run-control-boundary',
     'orchestrator/src/run/run-control.ts',
@@ -821,12 +828,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../outcome.ts',
       '../project/projects.ts',
-      './resume-tree.ts',
-      './run.ts',
-      './run-authority.ts',
-      './run-dispatch.ts',
-      './run-liveness.ts',
-      './checkpoint.ts',
+      './resume-tree.ts', './run.ts', './run-authority.ts', './run-dispatch.ts', './run-liveness.ts', './run-resume-kind.ts', './checkpoint.ts',
     ],
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
   ),
@@ -836,6 +838,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../project/projects.ts'],
     'Keep run diff independent of run control, transports, routing, the CLI, and worktrees by value.',
   ),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   boundary(
     'run-dispatch-boundary',
     'orchestrator/src/run/run-dispatch.ts',
@@ -844,15 +847,14 @@ export const importBoundaries: ImportBoundary[] = [
       'node:crypto',
       'node:fs',
       '../../../shared/install-root.ts',
+      '../../../shared/process-identity.ts',
       '../database/db.ts',
       '../dispatch/dispatch-preflight.ts',
       '../jobs/jobs.ts',
       '../mcp/mcp-preflight.ts',
       '../project/projects.ts',
       '../record/record-attribution.ts',
-      './run.ts',
-      './run-artifacts.ts',
-      '../route/failover.ts',
+      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
     ],
     'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
   ),

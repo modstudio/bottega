@@ -15,7 +15,7 @@ import {
 } from '../resources/resource-claims.ts'
 import { assertBranchHasNoAliveOwner } from '../run/branch-owner-guard.ts'
 import { continuationBranchPlan, resumeTreePlan } from '../run/resume-tree.ts'
-import { prepareResumeBranchIfNeeded } from '../run/run-claim.ts'
+import { prepareResumeBranchIfNeeded } from '../run/run-resume-claim.ts'
 import { createWorkerWorktree } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import type { RecordRecipeResource } from '../worktree/worktree-create.ts'

@@ -93,7 +93,6 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveBase, resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import type { ResumeTreePlan } from './resume-tree.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -120,6 +119,8 @@ import {
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
+import { resumeFacts } from './run-resume-kind.ts'
+import type { RunResumeOptions } from './run-resume-options.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -163,9 +164,9 @@ function trackedWorkerEnvironment(
 
 function resolveRunTransport(opts: {
   transport?: TransportName
-  resume?: { parent: number }
+  resume?: { kind: 'continue' | 'fresh-session' | 'retry-root'; parent: number }
 }): TransportName {
-  if (opts.resume) {
+  if (opts.resume?.kind === 'continue' || opts.resume?.kind === 'fresh-session') {
     const inherited = chainTransport(opts.resume.parent)
     if (inherited) return inherited
   }
@@ -303,18 +304,7 @@ export async function run(opts: {
    * belongs to the agent that started it), no new worktree (the worker is
    * mid-edit in one), and `resumeArgv` in place of `argv`.
    */
-  resume?: {
-    parent: number
-    agent: string
-    session?: string
-    /** Continue the chain and retained tree in a new vendor conversation. */
-    fresh?: boolean
-    turn: number
-    /** Inherited so the chain stays owned by the session that started it. */
-    sessionId: string | null
-    worktree: Worktree | null
-    treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
-  }
+  resume?: RunResumeOptions
   /** Declared reader deliverable names, from repeated `--deliverable`. */
   deliverables?: string[]
   /** `orch do --timeout` in minutes. */
@@ -330,7 +320,13 @@ export async function run(opts: {
 
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
-  const inheritedDispatch = opts.resume ? readDispatchState(opts.resume.parent) : null
+  const resume = resumeFacts(
+    opts.resume?.kind ?? null,
+    opts.reserveId ?? 0,
+    opts.resume?.parent ?? null,
+  )
+  const inheritedDispatch =
+    resume.workspaceSource === 'retained' ? readDispatchState(opts.resume!.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
   const writesJob = Boolean(requestedJob.needs.writesRepo)
@@ -345,7 +341,7 @@ export async function run(opts: {
     opts.seed,
     opts.key,
     opts.base,
-    opts.resume != null,
+    !resume.isFirstTurn,
     opts.reserveId !== undefined,
     opts.lens,
     opts.resolvedReviewTarget ? undefined : opts.review,
@@ -455,7 +451,7 @@ export async function run(opts: {
   const runProjectName = opts.repo ?? repoOf(callerCwd)
   const runProjectId = runProjectName ? (projectByName(runProjectName)?.id ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
-  if (!opts.resume) {
+  if (resume.isFirstTurn) {
     try {
       pack = opts.canonPack ?? compilePack({ job: opts.job, cwd: callerCwd })
       recordPack(pack)
@@ -498,13 +494,13 @@ export async function run(opts: {
   const docsSection = operatorKnowledgeSection(pack ?? null)
   const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const carriedRulings = taskRulingsForDispatch({
-    resume: Boolean(opts.resume),
+    resume: !resume.isFirstTurn,
     project: runProjectName,
     launchKey: dispatchKey,
   })
   const rulingsSection = renderTaskRulings(carriedRulings)
   let prompt =
-    opts.resume && !opts.resume.fresh
+    opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
       : initialDispatchPrompt({
           writesJob,
@@ -522,7 +518,7 @@ export async function run(opts: {
   prompt = bindReviewInstructions({
     prompt,
     findings: Boolean(requestedJob.findings),
-    firstTurn: !opts.resume || Boolean(opts.resume.fresh),
+    firstTurn: resume.isFirstTurn,
     reviewTarget,
     readsRepo: repoJob,
     checkoutCommit: readOnlyBase,
@@ -536,7 +532,7 @@ export async function run(opts: {
     readerJob: isReaderJob(opts.job),
     declaredDeliverables,
   })
-  if (evidencePrompt.readerInstruction && (!opts.resume || opts.resume.fresh)) {
+  if (evidencePrompt.readerInstruction && resume.isFirstTurn) {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
@@ -560,9 +556,9 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
     )
-  const source = opts.resume
-    ? { source: 'resume' as const, ...opts.resume }
-    : { source: 'pick' as const, ...pickSource() }
+  const source = resume.isFirstTurn
+    ? { source: 'pick' as const, ...pickSource() }
+    : { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({
     ...source,
     explicitTransport: opts.transport !== undefined,
@@ -592,7 +588,7 @@ export async function run(opts: {
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
     throw e
   }
-  if (!opts.resume) {
+  if (resume.isFirstTurn) {
     const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
     const split = prompt.lastIndexOf('\n---\n')
     prompt =
@@ -623,7 +619,7 @@ export async function run(opts: {
   // Route first because the cell keys on the agent ACTUALLY selected. The
   // suffix reserve above keeps argv eligibility honest; append before any
   // prompt file, hash, or database prompt metadata is written.
-  if (requestedJob.findings && !opts.resume) {
+  if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
     if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
       throw new Error('review calibration line exceeded its reserved routing allowance')
@@ -663,7 +659,7 @@ export async function run(opts: {
   // exists even for a worker that dies mid-turn. codex and qwen name their own
   // and are read back afterwards instead.
   const vendorSession: string | null =
-    opts.resume && !opts.resume.fresh ? (opts.resume.session ?? null) : (a.mintSession?.() ?? null)
+    opts.resume?.kind === 'continue' ? (opts.resume.session ?? null) : (a.mintSession?.() ?? null)
 
   mkdirSync(RUNS_DIR, { recursive: true })
   pruneRuns(RUNS_DIR)
