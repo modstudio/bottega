@@ -1,4 +1,4 @@
-export const ASKED_VIA_VALUES = ['live', 'reply'] as const
+export const ASKED_VIA_VALUES = ['live', 'reply', 'workflow'] as const
 export const ANSWERER_KIND_VALUES = ['agent', 'operator', 'eval'] as const
 export const ANSWER_CHANNEL_VALUES = ['cli', 'mcp', 'ui'] as const
 export const QUESTION_DELIVERY_MODE_VALUES = ['live', 'resume', 'retry', 'record-only'] as const

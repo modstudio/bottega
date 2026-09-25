@@ -44,6 +44,8 @@ import {
   OrchRunSchema,
   OrchStateSchema,
   OrchUnknownRunSchema,
+  type RulingListRow,
+  RulingListSchema,
 } from '../../shared/orch-contract.ts'
 
 export type {
@@ -234,6 +236,9 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
   )
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
+
+export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
+  json(['ruling', 'list', '--json', '--kind', 'workflow', '--since', since], RulingListSchema)
 
 export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []

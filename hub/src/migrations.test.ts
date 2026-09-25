@@ -164,7 +164,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '862ff3e9d65467e20cd76ad8dc60b5a38f35edb345aa7407944d9b4578e26a0e',
+      'e0e8ab952f9ab4074d03a276930145ed6f138061bbdc2066d9ab50b951a830c7',
     )
     d.close()
   })
@@ -204,6 +204,7 @@ describe('hub migration journal', () => {
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
+      '0013_workflow_questions',
     ])
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
@@ -316,6 +317,7 @@ describe('hub migration journal', () => {
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
+      '0013_workflow_questions',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -531,6 +533,7 @@ describe('hub migration journal', () => {
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
+      '0013_workflow_questions',
     ])
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
@@ -593,6 +596,7 @@ describe('hub migration journal', () => {
       fakeOrch,
       `#!/usr/bin/env bun\n` +
         `if (process.argv.includes('project')) console.log('[]')\n` +
+        `else if (process.argv.includes('ruling')) console.log('[]')\n` +
         `else { const i=process.argv.indexOf('--since'); if (process.argv[i+1] <= ${JSON.stringify(askedAt)}) console.log(${JSON.stringify(JSON.stringify(run))}) }\n`,
     )
     chmodSync(fakeOrch, 0o755)
@@ -621,6 +625,47 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  test('workflow question rebuild preserves child rows, foreign keys, and issued identity', () => {
+    const d = migratedThrough(12)
+    d.query(
+      `INSERT INTO question
+        (question_id,run_ref,root_ref,asked_at,asked_via)
+       VALUES (40,'orch:40','orch:40','2026-09-20','reply')`,
+    ).run()
+    d.query(
+      `INSERT INTO question
+        (question_id,run_ref,root_ref,asked_at,asked_via)
+       VALUES (90,'orch:90','orch:90','2026-09-20','reply')`,
+    ).run()
+    d.query('DELETE FROM question WHERE question_id=90').run()
+    d.query("INSERT INTO sqlite_sequence(name,seq) VALUES ('question',90)").run()
+    d.query(
+      `INSERT INTO question_delivery (question_id,run_ref,mode,outcome,at,error)
+       VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
+    ).run()
+
+    expect(applyMigrations(d)).toEqual(['0013_workflow_questions'])
+    expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
+      {
+        question_id: 40,
+        run_ref: 'orch:40',
+        mode: 'resume',
+        outcome: 'delivered',
+        at: '2026-09-21',
+        error: null,
+      },
+    ])
+    expect(d.query('PRAGMA foreign_key_check').all()).toEqual([])
+    const next = d
+      .query(
+        `INSERT INTO question (run_ref,root_ref,asked_at,asked_via)
+         VALUES ('orch:next','orch:next','2026-09-22','reply') RETURNING question_id`,
+      )
+      .get() as { question_id: number }
+    expect(next.question_id).toBeGreaterThan(90)
+    d.close()
+  })
+
   test('task identity rebuild backfills relationships and cascades record-id updates', () => {
     const d = migratedThrough(8)
     d.exec(`
@@ -646,6 +691,7 @@ describe('hub migration journal', () => {
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
+      '0013_workflow_questions',
     ])
     expect(
       d
@@ -760,6 +806,7 @@ describe('hub migration journal', () => {
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
+      '0013_workflow_questions',
     ])
     const after = Date.now()
     const minted = d
@@ -829,6 +876,7 @@ describe('hub migration journal', () => {
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
+      '0013_workflow_questions',
     ])
     expect(
       d

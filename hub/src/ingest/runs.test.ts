@@ -15,6 +15,56 @@ import { chainVendorTokens, executionSpans } from './runs.ts'
 beforeAll(resetFixtureStore)
 
 describe('run ingest', () => {
+  test('workflow rulings ingest with nullable run provenance', async () => {
+    await ingestStdout(
+      '',
+      JSON.stringify([
+        {
+          id: 8001,
+          run_id: null,
+          workflow_cursor_id: 7001,
+          workflow_key: 'DEV-964',
+          project: 'alpha',
+          workflow_slug: 'ship',
+          mode_slug: 'default',
+          session_id: 'owner',
+          asked_at: '2026-09-24T12:00:00.000Z',
+          question: 'Proceed?',
+          answer: 'Yes',
+          answered_at: '2026-09-24T12:01:00.000Z',
+          answered_by: 'owner',
+          asked_via: 'workflow',
+          answerer_kind: 'agent',
+          answer_channel: 'cli',
+          closed_at: null,
+          close_reason: null,
+          overturned_at: null,
+          overturned_by: null,
+          overturn_reason: null,
+          replacement: null,
+          filed_as: null,
+          filed_ref: null,
+          filed_at: null,
+        },
+      ]),
+    )
+    expect(
+      db()
+        .query(
+          `SELECT run_ref,root_ref,workflow_cursor_id,workflow_key,project,asked_via
+           FROM question WHERE question_id=8001`,
+        )
+        .get(),
+    ).toEqual({
+      run_ref: null,
+      root_ref: null,
+      workflow_cursor_id: 7001,
+      workflow_key: 'DEV-964',
+      project: 'alpha',
+      asked_via: 'workflow',
+    })
+  })
+
   test('routing replaces a pending reservation with the real interval', async () => {
     await ingestRunFixtures(runFixture({ id: 9101, agent: '(pending)' }))
     await ingestRunFixtures(

@@ -4,7 +4,9 @@
 import { FILING_DOC_SCOPES, type FilingDocScope, resolveDocSubject } from '../../../shared/docs.ts'
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
+import { questionRulingRemedy } from './question-ruling-remedy.ts'
 import { answererKindFromAnsweredBy } from './question-vocabulary.ts'
 import {
   effectiveRuling,
@@ -59,8 +61,12 @@ export type FileRulingInput = {
 
 type QuestionRow = {
   id: number
-  run_id: number
-  root_id: number
+  run_id: number | null
+  root_id: number | null
+  workflow_cursor_id: number | null
+  workflow_slug: string | null
+  mode_slug: string | null
+  workflow_owner: string | null
   question: string
   answer: string | null
   answered_at: string | null
@@ -75,6 +81,8 @@ type QuestionRow = {
   repo: string | null
   cwd: string | null
   launch_key: string | null
+  project_path: string | null
+  args: string | null
 }
 
 function requestedKind(as: RulingFileAs): FiledRulingKind {
@@ -89,7 +97,7 @@ function filingScope(scope: string | undefined): FilingDocScope {
 
 function decideFiling(
   row: QuestionRow,
-  authority: RootAuthority,
+  authority: Pick<RootAuthority, 'owner' | 'actor'>,
   input: FileRulingInput,
   requested: FiledRulingKind,
 ) {
@@ -109,19 +117,21 @@ function decideFiling(
     dashboardAuthorized: input.dashboardAuthorized ?? dashboardCapabilityAuthorized(),
     runProject: row.repo,
     subject: input.subject,
+    workflowAuthority:
+      row.run_id === null ? { operator: input.fromOperator || input.channel === 'ui' } : undefined,
   })
 }
 
 function refusal(
   row: QuestionRow,
-  authority: RootAuthority,
+  authority: Pick<RootAuthority, 'owner' | 'actor'>,
   decision: ReturnType<typeof fileRulingDecision>,
 ): string | null {
   if (decision.kind === 'allow') return null
   if (decision.code === 'unanswered') {
     return (
       `question ${row.id} is unanswered and has no ruling to file; ` +
-      `answer its chain first with orch answer ${row.root_id} "<ruling>"`
+      `record its ruling first with ${questionRulingRemedy(row)}`
     )
   }
   if (decision.code === 'overturned-without-replacement') {
@@ -148,13 +158,13 @@ function refusal(
   }
   if (decision.code === 'foreign-project') {
     return (
-      `run ${row.root_id} belongs to project ${row.repo ?? 'none'}; ` +
+      `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} belongs to project ${row.repo ?? 'none'}; ` +
       `the owner path files within the run's own project. ` +
       `Pass --from-operator to file under another scope or subject`
     )
   }
   return (
-    `run ${row.root_id} is owned by session ${decision.owner ?? authority.owner}; ` +
+    `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
     `current session ${decision.actor ?? authority.actor ?? 'no session identity is present'} cannot file its ruling`
   )
 }
@@ -162,10 +172,17 @@ function refusal(
 function loadQuestion(questionId: number): QuestionRow {
   const row = db()
     .query(
-      `SELECT q.id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id, q.question, q.answer,
+      `SELECT q.id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id,
+              q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
+              q.question, q.answer,
               q.answered_at, q.answered_by, q.answerer_kind, q.overturned_at, q.overturned_by,
-              q.replacement, q.filed_as, q.filed_ref, q.filed_at, r.repo, r.cwd, r.launch_key
-         FROM question q JOIN run r ON r.id = q.run_id WHERE q.id=?`,
+              q.replacement, q.filed_as, q.filed_ref, q.filed_at,
+              COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
+              COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
+         FROM question q LEFT JOIN run r ON r.id = q.run_id
+         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
+         LEFT JOIN project p ON p.name=c.project AND p.retired_at IS NULL
+         WHERE q.id=?`,
     )
     .get(questionId) as QuestionRow | null
   if (!row) throw new Error(`no question ${questionId}; inspect question ids with orch inbox --all`)
@@ -212,6 +229,11 @@ async function writeCanonProposal(
   body: string,
   stores: RulingFileStores,
 ): Promise<string> {
+  if (row.run_id === null && !row.project_path) {
+    throw new Error(
+      `workflow project ${row.repo ?? 'unknown'} is not registered; register it with orch project add before filing a canon proposal`,
+    )
+  }
   const filed = await stores.fileNote(
     { text: renderCanonProposalNote(body), new: true },
     row.cwd ? { cwd: row.cwd } : undefined,
@@ -245,12 +267,22 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   const row = loadQuestion(input.questionId)
   const requested = requestedKind(input.as)
   if (requested === 'doc' && (input.scope ?? 'project') !== 'canon') filingScope(input.scope)
-  let authority = runMutationActor(row.run_id)
-  const decision = decideFiling(row, authority, input, requested)
-  const denied = refusal(row, authority, decision)
+  const actor = sessionId()
+  let authority: RootAuthority | null = row.run_id === null ? null : runMutationActor(row.run_id)
+  const questionAuthority = authority ?? { owner: row.workflow_owner, actor }
+  if (row.run_id === null)
+    authorizeWorkflowQuestionMutation({
+      owner: row.workflow_owner,
+      actor,
+      fromOperator: input.fromOperator,
+      subject: `workflow cursor ${row.workflow_cursor_id}`,
+      action: 'file',
+    })
+  const decision = decideFiling(row, questionAuthority, input, requested)
+  const denied = refusal(row, questionAuthority, decision)
   if (denied) throw new Error(denied)
   if (decision.kind === 'allow' && decision.operator && input.channel === 'ui') {
-    authority = { ...authority, actor: 'operator:ui' }
+    if (authority) authority = { ...authority, actor: 'operator:ui' }
   }
   const ruling = effectiveRuling({
     answer: row.answer,
@@ -260,7 +292,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   if (!ruling) {
     throw new Error(
       `question ${row.id} has no effective ruling to file; ` +
-        `answer its chain first with orch answer ${row.root_id} "<ruling>"`,
+        `record its ruling first with ${questionRulingRemedy(row)}`,
     )
   }
   const at = nowIso()
@@ -269,6 +301,14 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     ruling,
     answererKind: answererKind(row),
     runId: row.run_id,
+    workflow:
+      row.workflow_cursor_id === null
+        ? null
+        : {
+            slug: row.workflow_slug!,
+            mode: row.mode_slug!,
+            cursorId: row.workflow_cursor_id,
+          },
     taskKey: row.launch_key,
     date: at,
     questionId: row.id,
@@ -278,9 +318,17 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
       ? await writeCanonProposal(row, body, stores)
       : await writeDocFiling(input, row, body, stores)
   writeTransaction(() => {
-    authority = adoptRunMutation(authority, 'file')
+    if (row.run_id !== null) authority = adoptRunMutation(authority!, 'file')
     recordFiling(row, requested, filedRef, at)
-    auditRunMutation(authority, 'file', `as ${requested}`)
+    if (row.run_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
+    else
+      auditQuestionMutation({
+        questionId: row.id,
+        action: 'file',
+        actor,
+        at,
+        reason: `as ${requested}`,
+      })
   })
   return {
     question_id: row.id,

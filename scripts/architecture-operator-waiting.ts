@@ -13,17 +13,32 @@ const module = (file: string, allowed: string[]): OperatorWaitingModule => ({
 
 export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
+  module('orchestrator/src/run/question-mutation.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './run-mutation-owner.ts',
+  ]),
+  module('orchestrator/src/run/question-ruling-remedy.ts', []),
   module('orchestrator/src/run/run-mutation-owner.ts', []),
   module('orchestrator/src/run/ruling-file-authority.ts', [
     '../../../shared/question-vocabulary.ts',
     './run-answer-authority.ts',
   ]),
   module('orchestrator/src/run/ruling-file-text.ts', []),
+  module('orchestrator/src/run/ruling-list.ts', [
+    '../../../shared/orch-contract.ts',
+    '../database/db.ts',
+  ]),
+  module('orchestrator/src/run/ruling-overturn-authority.ts', []),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/run/ruling-overturn.ts', ['../database/db.ts', './question-vocabulary.ts', './question-mutation.ts', './ruling-overturn-authority.ts', './run-authority.ts']),
   module('orchestrator/src/run/ruling-file.ts', [
     '../../../shared/docs.ts',
     '../../../shared/question-vocabulary.ts',
     '../dashboard-capability.ts',
     '../database/db.ts',
+    './question-mutation.ts',
+    './question-ruling-remedy.ts',
     './question-vocabulary.ts',
     './ruling-file-authority.ts',
     './ruling-file-text.ts',

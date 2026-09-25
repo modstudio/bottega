@@ -3,6 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
+import {
+  auditQuestionMutation,
+  authorizeWorkflowQuestionMutation,
+} from '../run/question-mutation.ts'
+import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
   type CursorState,
@@ -84,6 +89,18 @@ const cursorValue = (row: CursorRow): CursorValue => ({
   stepSlug: row.step_slug,
   state: row.state,
 })
+
+function closeOpenWorkflowQuestion(
+  cursorId: number,
+  reason: 'advanced-without-ruling' | 'abandoned',
+  at: string,
+  d: Database,
+): void {
+  d.query(
+    `UPDATE question SET closed_at=?,close_reason=?
+     WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+  ).run(at, reason, cursorId)
+}
 
 function findCursor(
   project: string,
@@ -395,6 +412,28 @@ function cursorCompositionInput(row: CursorRow | null, args: Record<string, stri
   }
 }
 
+function refuseInvalidServe(
+  decision: ReturnType<typeof decideCursorTransition>,
+  row: CursorRow | null,
+  composition: ReturnType<typeof composeWorkflow>,
+  slug: string,
+  mode: string,
+  args: Record<string, string>,
+): void {
+  if (decision.action !== 'refuse') return
+  if (decision.reason === 'compose-first') {
+    throw new Error(
+      `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
+    )
+  }
+  if (decision.reason === 'state') {
+    throw new Error(
+      `${cursorName(slug, mode, row!.workflow_key)} is ${row!.state}; compose it again to start a new run`,
+    )
+  }
+  throw new Error(remedy(row!, composition))
+}
+
 function getWorkflowStepWithCursorImpl(
   slug: string,
   project: string,
@@ -432,20 +471,12 @@ function getWorkflowStepWithCursorImpl(
     ordinal: index,
     slug: requested.slug,
   })
-  if (decision.action === 'refuse') {
-    if (decision.reason === 'compose-first')
-      throw new Error(
-        `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-      )
-    if (decision.reason === 'state')
-      throw new Error(
-        `${cursorName(slug, mode, row!.workflow_key)} is ${row!.state}; compose it again to start a new run`,
-      )
-    throw new Error(remedy(row!, composition))
-  }
+  refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = insertCursor(composition, context, d, autonomy)
   if (decision.move || decision.resume) {
+    if (row.state === 'awaiting-ruling')
+      closeOpenWorkflowQuestion(row.id, 'advanced-without-ruling', nowIso(), d)
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
@@ -514,6 +545,8 @@ function nextWorkflowStepImpl(
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   }
   const at = nowIso()
+  if (row.state === 'awaiting-ruling')
+    closeOpenWorkflowQuestion(row.id, 'advanced-without-ruling', at, d)
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
   closed.push({
@@ -598,6 +631,7 @@ function abandonWorkflowCursorImpl(
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   const at = nowIso()
+  if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.id, 'abandoned', at, d)
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   closed.push({
     n: row.ordinal + 1,
@@ -650,10 +684,82 @@ function awaitWorkflowRulingImpl(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
   ).run(question.trim(), context.session ?? null, at, row.id)
+  const open = d
+    .query(
+      `SELECT id FROM question
+       WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+    )
+    .get(row.id) as { id: number } | null
+  if (open) {
+    d.query('UPDATE question SET question=?,workflow_key=? WHERE id=?').run(
+      question.trim(),
+      row.workflow_key || null,
+      open.id,
+    )
+  } else {
+    d.query(
+      `INSERT INTO question
+        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+       VALUES (?,?,?,?, 'workflow', ?)`,
+    ).run(row.id, row.workflow_key || null, at, question.trim(), at)
+  }
   return {
     summary: { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' },
     cursorId: row.id,
   }
+}
+
+export function ruleWorkflow(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+  ruling: string | undefined,
+  fromOperator: boolean,
+  channel: 'cli' | 'mcp',
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): string {
+  if (!ruling?.trim()) throw new Error('--ruling is required')
+  return writeTransaction(() => {
+    const row = findCursor(project, slug, mode, args, context, d)
+    if (!row)
+      throw new Error(
+        `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
+      )
+    if (row.state !== 'awaiting-ruling')
+      throw new Error(`${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling`)
+    const actor = sessionId()
+    authorizeWorkflowQuestionMutation({
+      owner: row.session_id,
+      actor,
+      fromOperator,
+      subject: cursorName(slug, mode, row.workflow_key),
+      action: 'rule',
+    })
+    const at = nowIso()
+    const answeredBy = rulingActor(fromOperator, actor)
+    const changed = d
+      .query(
+        `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
+         WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+      )
+      .run(ruling.trim(), at, answeredBy, fromOperator ? 'operator' : 'agent', channel, row.id)
+    if (changed.changes !== 1)
+      throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
+    const question = d
+      .query('SELECT id FROM question WHERE workflow_cursor_id=? AND answered_at=?')
+      .get(row.id, at) as { id: number }
+    auditQuestionMutation(
+      { questionId: question.id, action: 'rule', actor, at, reason: ruling.trim() },
+      d,
+    )
+    d.query(
+      `UPDATE workflow_cursor SET state='running',question=NULL,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+    ).run(context.session ?? null, at, row.id)
+    return `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`
+  }, d)
 }
 
 export function awaitWorkflowRuling(

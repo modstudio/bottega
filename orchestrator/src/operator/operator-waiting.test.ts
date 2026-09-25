@@ -119,6 +119,13 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
                'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25','session-1') RETURNING id`,
     )
     .get() as { id: number }
+  db()
+    .query(
+      `INSERT INTO question
+      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES (?,'DEV-943','2026-09-25','Workflow question?','workflow','2026-09-25')`,
+    )
+    .run(cursor.id)
 
   expect(operatorWaiting()).toEqual([
     {
@@ -150,7 +157,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
       answer_command:
-        'orch workflow next ship --project fixture --mode default --arg key=DEV-943 --note "<ruling>"',
+        'orch workflow rule ship --project fixture --mode default --arg key=DEV-943 --ruling "<ruling>" --from-operator',
     },
   ])
 })
@@ -172,6 +179,13 @@ test('notification claims return each waiting episode once', () => {
                '[]','Workflow?',1,'2026-09-25','2026-09-25') RETURNING id`,
     )
     .get() as { id: number }
+  db()
+    .query(
+      `INSERT INTO question
+      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES (?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
+    )
+    .run(cursor.id)
   const first = claimOperatorNotifications(db())
   expect(first.map(({ kind, id }) => ({ kind, id }))).toEqual([
     { kind: 'question', id: question.id },
@@ -187,9 +201,21 @@ test('notification claims return each waiting episode once', () => {
   db().query("UPDATE workflow_cursor SET state='running', updated_at='2026-09-26'").run()
   db()
     .query(
+      "UPDATE question SET closed_at='2026-09-26',close_reason='advanced-without-ruling' WHERE workflow_cursor_id=?",
+    )
+    .run(cursor.id)
+  db()
+    .query(
       "UPDATE workflow_cursor SET state='awaiting-ruling', question='Again?', updated_at='2026-09-27'",
     )
     .run()
+  db()
+    .query(
+      `INSERT INTO question
+      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES (?,'DEV-943','2026-09-27','Again?','workflow','2026-09-27')`,
+    )
+    .run(cursor.id)
   expect(
     claimOperatorNotifications(db()).map(({ kind, id, waiting_since }) => ({
       kind,

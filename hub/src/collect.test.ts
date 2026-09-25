@@ -126,10 +126,10 @@ describe('run ingest', () => {
       session_id: 'sess-snap',
       questions: [{ id: 1001, run_id: 10001, asked_at: snapshot, answered_at: null }],
     })
-    const spawn = spyOn(Bun, 'spawn').mockImplementation((() => {
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
       now = completion
       return {
-        stdout: new Blob([JSON.stringify(unanswered)]),
+        stdout: new Blob([args.includes('ruling') ? '[]' : JSON.stringify(unanswered)]),
         stderr: new Blob(['']),
         exited: Promise.resolve(0),
       }

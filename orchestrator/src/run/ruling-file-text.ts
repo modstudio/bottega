@@ -12,7 +12,8 @@ export function renderRulingFileText(input: {
   question: string
   ruling: string
   answererKind: string | null
-  runId: number
+  runId: number | null
+  workflow?: { slug: string; mode: string; cursorId: number } | null
   taskKey: string | null
   date: string
   questionId: number
@@ -20,7 +21,13 @@ export function renderRulingFileText(input: {
   return [
     '---',
     `question_id: ${input.questionId}`,
-    `run: ${input.runId}`,
+    ...(input.runId === null && input.workflow
+      ? [
+          `workflow: ${input.workflow.slug}`,
+          `workflow_mode: ${input.workflow.mode}`,
+          `workflow_cursor: ${input.workflow.cursorId}`,
+        ]
+      : [`run: ${input.runId}`]),
     `task: ${input.taskKey ?? 'none'}`,
     `date: ${input.date}`,
     `answerer: ${input.answererKind ?? 'unknown'}`,

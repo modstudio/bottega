@@ -48,6 +48,23 @@ describe('task ruling candidate query', () => {
     })
     answeredQuestion(otherKey, 'wrong key', '2026-10-03T12:00:00.000Z')
     answeredQuestion(otherProject, 'wrong project', '2026-10-04T12:00:00.000Z')
+    const cursor = db()
+      .query(
+        `INSERT INTO workflow_cursor
+          (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,
+           catalogue_version,args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
+         VALUES (?, 'ship','default','DEV-960','',1,1,'{}',0,'build','running','[]',NULL,1,
+                 '2026-09-01','2026-10-05') RETURNING id`,
+      )
+      .get(PLATFORM_SLUG) as { id: number }
+    db()
+      .query(
+        `INSERT INTO question
+        (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
+       VALUES (?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
+               '2026-10-05T12:00:00.000Z','agent','workflow')`,
+      )
+      .run(cursor.id)
 
     const selected = taskRulingsForDispatch({
       resume: false,
@@ -56,10 +73,14 @@ describe('task ruling candidate query', () => {
     })
 
     expect(selected.rulings).toHaveLength(TASK_RULINGS_MAX_COUNT)
-    expect(selected.rulings[0]).toMatchObject({ question: 'replaced', ruling: 'new answer' })
+    expect(selected.rulings[0]).toMatchObject({
+      question: 'workflow ruling',
+      ruling: 'workflow answer',
+      workflowCursorId: cursor.id,
+    })
     expect(selected.rulings.map((ruling) => ruling.question)).not.toContain('withdrawn')
     expect(selected.rulings.map((ruling) => ruling.question)).not.toContain('wrong key')
     expect(selected.rulings.map((ruling) => ruling.question)).not.toContain('wrong project')
-    expect(selected.omitted).toBe(4)
+    expect(selected.omitted).toBe(5)
   })
 })

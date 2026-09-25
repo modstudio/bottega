@@ -31,6 +31,7 @@ export type RulingMeasureQuestion = {
   asked_via: AskedVia | null
   answerer_kind: AnswererKind | null
   overturned_at?: string | null
+  closed_at?: string | null
 }
 
 export type RulingMeasureDelivery = {
@@ -118,7 +119,9 @@ export function measureRulings(
   const deliveredByRetry = stoppedDelivery.filter((delivery) => delivery === 'retry').length
   const undelivered = stoppedDelivery.filter((delivery) => delivery === 'undelivered').length
   const stoppedDelivered = deliveredByResume + deliveredByRetry
-  const open = questions.filter((question) => question.answered_at == null)
+  const open = questions.filter(
+    (question) => question.answered_at == null && question.closed_at == null,
+  )
   const waitsFor = (kind: AnswererKind | null) =>
     summarizeWaits(waits.filter((item) => item.kind === kind).map((item) => item.wait))
   const knownAnswererWaits = Object.fromEntries(
@@ -241,7 +244,7 @@ export function listOpenRulings(now = Date.now()): OpenRuling[] {
       []
     >(
       `SELECT question_id, task_key, session_id, asked_at FROM question
-      WHERE answered_at IS NULL
+      WHERE answered_at IS NULL AND closed_at IS NULL
       ORDER BY task_key IS NULL, task_key, question_id`,
     )
     .all()
@@ -264,7 +267,7 @@ export function rulingsPayload(now = Date.now()) {
 export function rulingsStatsPayload(days = DEFAULT_STATS_DAYS, now = Date.now()) {
   const questionRows = db()
     .query<RulingMeasureQuestion, []>(
-      `SELECT question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at FROM question`,
+      `SELECT question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
     )
     .all()
   const deliveryRows = db()
