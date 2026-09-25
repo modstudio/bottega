@@ -93,7 +93,7 @@ describe('importWorkflowTree', () => {
     promoteWorkflow('ship', ship.n, 'compose fixture', 'test', d)
 
     for (const [project, protocol] of [
-      ['bottega-fixture', 'orch-docs'],
+      ['orch-docs-fixture', 'orch-docs'],
       ['array-fixture', 'array-mcp'],
     ] as const) {
       d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
@@ -110,7 +110,16 @@ describe('importWorkflowTree', () => {
         d,
       )
       expect(step.needs).toEqual(['docs'])
-      expect(step.body).toContain(`docs adapter named by \`${protocol}\``)
+      expect(step.body).toContain(`adapter is named by \`${protocol}\``)
+      if (protocol === 'array-mcp') {
+        expect(step.body).toContain(
+          'call its read and write actions on the server named in `facts`',
+        )
+      } else {
+        expect(step.body).toContain(
+          '`orch doc set` with `--scope project --subject orch-docs-fixture`',
+        )
+      }
       expect(step.body).not.toContain('{{')
     }
   })
