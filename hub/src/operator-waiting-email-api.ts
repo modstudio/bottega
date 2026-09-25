@@ -52,9 +52,7 @@ export async function operatorWaitingEmailApi(
       { error: 'authorization and an active space are required' },
       { status: 401 },
     )
-  const parsed = operatorWaitingEmailRequestSchema.safeParse(
-    await request.json().catch(() => null),
-  )
+  const parsed = operatorWaitingEmailRequestSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success)
     return Response.json({ error: 'invalid operator waiting email body' }, { status: 400 })
   try {

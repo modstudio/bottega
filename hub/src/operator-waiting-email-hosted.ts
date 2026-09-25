@@ -3,11 +3,11 @@
 
 import type { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { withHostedTenant } from './hosted-tasks.ts'
 import type {
   OperatorWaitingEmailInput,
   OperatorWaitingEmailResult,
 } from './operator-waiting-email-contract.ts'
-import { withHostedTenant } from './hosted-tasks.ts'
 import type { ReportMailClient } from './report-delivery.ts'
 import { sesReportMailClient } from './report-delivery-hosted.ts'
 
@@ -100,12 +100,11 @@ async function assertSendBudget(tx: SQL, userId: string, now: Date) {
     await tx`SELECT count(*)::int AS count FROM operator_waiting_email
       WHERE user_id=${userId}::uuid AND updated_at >= ${cutoff}::timestamptz`,
   )[0]?.count
-  if (Number(count) >= OPERATOR_EMAIL_HOURLY_BUDGET)
-    throw new OperatorEmailBudgetExceededError()
+  if (Number(count) >= OPERATOR_EMAIL_HOURLY_BUDGET) throw new OperatorEmailBudgetExceededError()
 }
 
 /** Claims one send attempt inside an already tenant-bound transaction. */
-export async function claimOperatorWaitingEmail(
+async function claimOperatorWaitingEmail(
   tx: SQL,
   caller: { spaceId: string; userId: string },
   input: OperatorWaitingEmailInput,
@@ -168,7 +167,7 @@ export async function claimOperatorWaitingEmail(
 }
 
 /** Records one outcome inside an already tenant-bound transaction. */
-export async function recordOperatorWaitingEmailOutcome(
+async function recordOperatorWaitingEmailOutcome(
   tx: SQL,
   caller: { userId: string },
   id: string,

@@ -3,10 +3,10 @@
 
 import { z } from 'zod'
 
-export const OPERATOR_EMAIL_MAX_TEXT = 4_000
-export const OPERATOR_EMAIL_MAX_FIELD = 500
-export const OPERATOR_EMAIL_MAX_LINK = 2_000
-export const OPERATOR_EMAIL_MAX_OPTIONS = 20
+const OPERATOR_EMAIL_MAX_TEXT = 4_000
+const OPERATOR_EMAIL_MAX_FIELD = 500
+const OPERATOR_EMAIL_MAX_LINK = 2_000
+const OPERATOR_EMAIL_MAX_OPTIONS = 20
 
 const field = z.string().min(1).max(OPERATOR_EMAIL_MAX_FIELD)
 const nullableField = z.string().max(OPERATOR_EMAIL_MAX_FIELD).nullable()

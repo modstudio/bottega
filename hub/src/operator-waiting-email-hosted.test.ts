@@ -3,9 +3,9 @@ import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import {
   decideOperatorWaitingEmailReclaim,
-  type OperatorWaitingEmailInput,
   OPERATOR_EMAIL_INTENT_STALE_MS,
   OPERATOR_EMAIL_MAX_ATTEMPTS,
+  type OperatorWaitingEmailInput,
   renderOperatorWaitingEmail,
 } from './operator-waiting-email-hosted.ts'
 
@@ -45,7 +45,10 @@ test('reclaim decision bounds attempts and leaves a fresh intent in flight', () 
   expect(decideOperatorWaitingEmailReclaim(row, now)).toBe('return')
   expect(
     decideOperatorWaitingEmailReclaim(
-      { ...row, updated_at: new Date(now.getTime() - OPERATOR_EMAIL_INTENT_STALE_MS).toISOString() },
+      {
+        ...row,
+        updated_at: new Date(now.getTime() - OPERATOR_EMAIL_INTENT_STALE_MS).toISOString(),
+      },
       now,
     ),
   ).toBe('reclaim')
@@ -79,10 +82,10 @@ test('hosted endpoint binds space and user from the credential', async () => {
     send,
   }
   const request = new Request('https://hub.example.test/v1/operator-waiting-emails', {
-      method: 'POST',
-      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify(input),
-    })
+    method: 'POST',
+    headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
   const config = {
     recordApiUrl: 'https://record.example.test',
     recordDatabaseUrl: 'postgres://record',

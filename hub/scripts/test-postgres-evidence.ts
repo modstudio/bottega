@@ -49,9 +49,9 @@ import {
 import { computeMeasures } from '../src/measures.ts'
 import type { OperatorWaitingEmailInput } from '../src/operator-waiting-email-contract.ts'
 import {
-  OperatorEmailBudgetExceededError,
   OPERATOR_EMAIL_HOURLY_BUDGET,
   OPERATOR_EMAIL_MAX_ATTEMPTS,
+  OperatorEmailBudgetExceededError,
   sendOperatorWaitingEmail,
 } from '../src/operator-waiting-email-hosted.ts'
 import {
