@@ -513,7 +513,7 @@ function terminaliseJudgedProbe(runId: number): void {
     .query(
       `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
-            answerer_kind=?, answer_channel=?
+            answerer_kind=?, answer_channel=?, awaiting_operator_at=NULL
       WHERE run_id=? AND answered_at IS NULL`,
     )
     .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)

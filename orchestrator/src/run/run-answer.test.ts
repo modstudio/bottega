@@ -99,13 +99,15 @@ describe('run answers', () => {
       .query('UPDATE run SET session_id=?,vendor_session=?,prompt_path=?,cwd=? WHERE id=?')
       .run('orch-test-session', 'valid-session', prompt, dir, id)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
-      .run(id, new Date().toISOString(), 'which shape?')
+      .query(
+        'INSERT INTO question (run_id,asked_at,question,awaiting_operator_at) VALUES (?,?,?,?)',
+      )
+      .run(id, new Date().toISOString(), 'which shape?', new Date().toISOString())
     await answerRun(id, { argv: ['use the existing shape'], recordOnly: true, flags }, helpers)
     expect(
       db()
         .query(
-          `SELECT answer,answerer_kind,answer_channel,delivery_pending_at
+          `SELECT answer,answerer_kind,answer_channel,delivery_pending_at,awaiting_operator_at
              FROM question WHERE run_id=?`,
         )
         .get(id),
@@ -114,6 +116,7 @@ describe('run answers', () => {
       answerer_kind: 'agent',
       answer_channel: 'cli',
       delivery_pending_at: expect.any(String),
+      awaiting_operator_at: null,
     })
     expect(
       db()

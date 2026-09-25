@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { markWorkflowNotification, notifyWaitingWorkflow } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
@@ -564,7 +565,7 @@ function awaitWorkflowRulingImpl(
   question: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
-): CursorSummary {
+): { summary: CursorSummary; cursorId: number; notify: boolean } {
   if (!question?.trim()) throw new Error('--question is required')
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
@@ -577,7 +578,11 @@ function awaitWorkflowRulingImpl(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
   ).run(question.trim(), context.session ?? null, nowIso(), row.id)
-  return { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' }
+  return {
+    summary: { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' },
+    cursorId: row.id,
+    notify: markWorkflowNotification(row.id, d),
+  }
 }
 
 export function awaitWorkflowRuling(
@@ -589,10 +594,12 @@ export function awaitWorkflowRuling(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ): CursorSummary {
-  return writeTransaction(
+  const result = writeTransaction(
     () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d),
     d,
   )
+  if (result.notify && d === db()) notifyWaitingWorkflow(result.cursorId, d)
+  return result.summary
 }
 
 export type CursorListOptions = {

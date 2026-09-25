@@ -28,6 +28,7 @@ import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
+import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
@@ -240,6 +241,32 @@ export function register(program: Command): void {
     .action((id, _message, options, command) =>
       tellCommand(Number(id), rawArgv(command).slice(2), Boolean(options.ping), presentation),
     )
+  program
+    .command('relay <id>')
+    .requiredOption('--note <why>')
+    .allowUnknownOption(true)
+    .action((id, options, command) => {
+      const args = rawArgv(command).slice(2)
+      const questions = args.flatMap((arg) => {
+        const match = arg.match(/^--q(\d+)$/)
+        return match ? [Number(match[1])] : []
+      })
+      const accepted = new Set([
+        `--note=${options.note}`,
+        '--note',
+        String(options.note),
+        ...questions.map((question) => `--q${question}`),
+      ])
+      const unknown = args.filter((arg) => !accepted.has(arg))
+      if (unknown.length) throw new Error(`unrecognized relay argument ${unknown[0]}`)
+      if (questions.length > 1) throw new Error('pass at most one --q<id>')
+      relayCommand(Number(id), questions[0], options.note, presentation)
+    })
+  program
+    .command('waiting')
+    .option('--json')
+    .allowExcessArguments(false)
+    .action((options) => waitingCommand(Boolean(options.json), presentation))
   program
     .command('peek <id>')
     .option('--events <value>')

@@ -297,7 +297,8 @@ export async function answerRun(
    */
   const open = db()
     .query(
-      `SELECT q.id, q.question, r.id owner_id, r.status owner_status, r.pid owner_pid
+      `SELECT q.id, q.question, q.awaiting_operator_at,
+              r.id owner_id, r.status owner_status, r.pid owner_pid
      FROM question q JOIN run r ON r.id = q.run_id
     WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
     ORDER BY q.id`,
@@ -305,6 +306,7 @@ export async function answerRun(
     .all(id, id) as {
     id: number
     question: string
+    awaiting_operator_at: string | null
     owner_id: number
     owner_status: string
     owner_pid: number | null
@@ -547,7 +549,7 @@ export async function answerRun(
   const upd = db().query(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?,
-          delivery_pending_at=?
+          delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE id=?`,
   )
   const answeredBy = options.argv.includes('--from-operator')
@@ -665,10 +667,10 @@ export async function answerRun(
           .query(
             `UPDATE question
             SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
-                answer_channel=NULL, delivery_pending_at=NULL
+                answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE id=?`,
           )
-          .run(q.id)
+          .run(q.awaiting_operator_at, q.id)
       }
     })
     throw new Error(

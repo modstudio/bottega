@@ -52,6 +52,7 @@ import {
   workflowModeStepLists,
 } from '../workflow/workflows.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
+import { registerOperatorTools } from './mcp-operator-tools.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 
@@ -406,6 +407,7 @@ export function createDocsMcpServer(): McpServer {
 
   registerWorkflowPrompts(server)
   registerSearchTools(server)
+  registerOperatorTools(server)
 
   server.registerTool(
     'list_workflows',

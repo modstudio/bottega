@@ -73,6 +73,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0046_unvoid_audit',
       '0047_project_task_identity',
       '0048_user_canon_owner',
+      '0049_operator_waiting',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -139,6 +140,7 @@ test('project task identity migration backfills ledger project relationships', (
     expect(applyMigrations(database)).toEqual([
       '0047_project_task_identity',
       '0048_user_canon_owner',
+      '0049_operator_waiting',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -184,7 +186,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       )
       .run()
 
-    expect(applyMigrations(database)).toEqual(['0048_user_canon_owner'])
+    expect(applyMigrations(database)).toEqual(['0048_user_canon_owner', '0049_operator_waiting'])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',
       record_id: 'record-doc',

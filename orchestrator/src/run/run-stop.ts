@@ -243,7 +243,8 @@ export async function abandonRun(
     db()
       .query(
         `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)',
-            answerer_kind=?, answer_channel=?, delivery_pending_at=NULL
+            answerer_kind=?, answer_channel=?, delivery_pending_at=NULL,
+            awaiting_operator_at=NULL
           WHERE answered_at IS NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
       )
