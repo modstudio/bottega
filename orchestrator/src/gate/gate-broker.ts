@@ -122,7 +122,7 @@ function startGateExecution(
       db()
         .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE id=?')
         .run(JSON.stringify(toolingPaths), command, request.id)
-      child = spawn('sh', ['-lc', command], {
+      child = spawn('sh', ['-c', command], {
         cwd: plan.worktree,
         env: brokerGateEnvironment(workerGateEnvironment(process.env), process.env, environment),
         detached: true,
