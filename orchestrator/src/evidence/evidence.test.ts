@@ -39,7 +39,9 @@ const base: EvidenceFacts = {
 describe('reviewed commit comparison', () => {
   test.each([
     ['equal', 'abcdef1234567890', 'equal'],
-    ['prefix', 'abcdef1', 'prefix'],
+    ['seven-character prefix', 'abcdef1', 'prefix'],
+    ['short prefix', 'abcdef', 'different'],
+    ['non-hex value', 'abcdefg', 'different'],
     ['different', '1234567', 'different'],
     ['missing', undefined, 'missing'],
   ] as const)('%s', (_name, reviewed, expected) => {

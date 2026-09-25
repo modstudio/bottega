@@ -107,7 +107,11 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
-import { bindReviewInstructions, operatorKnowledgeSection } from './run-pack-prompt.ts'
+import {
+  bindReviewInstructions,
+  checksReviewedCommit,
+  operatorKnowledgeSection,
+} from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -512,6 +516,9 @@ export async function run(opts: {
     findings: Boolean(requestedJob.findings),
     firstTurn: !opts.resume || Boolean(opts.resume.fresh),
     reviewTarget,
+    readsRepo: repoJob,
+    checkoutCommit: readOnlyBase,
+    coverageBase: implicitCoverageBase,
     lens: opts.lens,
     repo: opts.repo ?? repoOf(callerCwd),
   })
@@ -1133,7 +1140,7 @@ export async function run(opts: {
         vendorTerminatedStream,
         acceptedQuestions,
         requestedJob,
-        checkReviewedCommit: reviewTarget !== null,
+        checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
         output,
         confinementEvent,
         resolvedDialect,

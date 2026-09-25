@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { operatorKnowledgeSection } from './run-pack-prompt.ts'
+import {
+  bindReviewInstructions,
+  checksReviewedCommit,
+  operatorKnowledgeSection,
+} from './run-pack-prompt.ts'
 
 describe('operator knowledge prompt section', () => {
   test('a canon-only pack yields a prompt containing the canon', () => {
@@ -10,5 +14,31 @@ describe('operator knowledge prompt section', () => {
 
   test('an empty pack yields no prompt section', () => {
     expect(operatorKnowledgeSection({ markdown: '' })).toBe('')
+  })
+})
+
+describe('review instructions', () => {
+  test('checks repository-backed findings but not inline findings', () => {
+    expect(checksReviewedCommit(true, true)).toBe(true)
+    expect(checksReviewedCommit(true, false)).toBe(false)
+  })
+
+  test('binds an implicit repository review artifact without a branch', () => {
+    const prompt = bindReviewInstructions({
+      prompt: 'Review this change.',
+      findings: true,
+      firstTurn: true,
+      reviewTarget: null,
+      readsRepo: true,
+      checkoutCommit: 'caf69b0d11111111111111111111111111111111',
+      coverageBase: 'b0583f6522222222222222222222222222222222',
+      lens: undefined,
+      repo: null,
+    })
+
+    expect(prompt).toContain('REVIEW ARTIFACT')
+    expect(prompt).toContain('HEAD: caf69b0d11111111111111111111111111111111')
+    expect(prompt).toContain('Base: b0583f6522222222222222222222222222222222')
+    expect(prompt).not.toContain('Branch:')
   })
 })

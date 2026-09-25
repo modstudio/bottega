@@ -55,6 +55,8 @@ export type EvidenceFacts = {
 
 export type ReviewedCommitComparison = 'equal' | 'prefix' | 'different' | 'missing'
 
+const GIT_DEFAULT_ABBREVIATION_LENGTH = 7
+
 /** Compare claimed review provenance with the full commit recorded at dispatch. */
 export function compareReviewedCommit(
   expected: string,
@@ -63,8 +65,11 @@ export function compareReviewedCommit(
   const claim = reviewed?.trim().toLowerCase()
   if (!claim) return 'missing'
   const recorded = expected.toLowerCase()
+  if (!/^[0-9a-f]+$/.test(claim)) return 'different'
   if (claim === recorded) return 'equal'
-  return recorded.startsWith(claim) ? 'prefix' : 'different'
+  return claim.length >= GIT_DEFAULT_ABBREVIATION_LENGTH && recorded.startsWith(claim)
+    ? 'prefix'
+    : 'different'
 }
 
 function applyReviewedCommitEvidence<FailureKind extends string>(
