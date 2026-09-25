@@ -377,7 +377,7 @@ function withLiveGrokAskServer(config: string, entrypoint: string, command: stri
   const kept: string[] = []
   let inAskTable = false
   for (const line of config.split('\n')) {
-    const header = /^\s*\[\s*([^\]]+?)\s*\]\s*$/.exec(line)
+    const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)
     if (header) inAskTable = /^mcp_servers\.orch-ask(\.|$)/.test(header[1]!)
     if (!inAskTable) kept.push(line)
   }

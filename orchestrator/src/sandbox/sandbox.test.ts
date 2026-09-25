@@ -79,6 +79,19 @@ describe('readonly-lens sandbox profile', () => {
     expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
   })
+  test('keeps every other table, array tables included, around the replaced orch-ask', () => {
+    const config =
+      '[cli]\na = 1\n[marketplace]\nb = 2\n[[marketplace.sources]]\nurl = "before"\n' +
+      '[mcp_servers.orch-ask]\ncommand = "x"\n[mcp_servers.orch-ask.env]\nK = "v"\n' +
+      '[[marketplace.sources]]\nurl = "after"\n[ui]\nc = 3\n'
+    const rewritten = grokSandboxConfig(config)
+    for (const kept of ['[cli]', '[marketplace]', 'url = "before"', 'url = "after"', '[ui]']) {
+      expect(rewritten).toContain(kept)
+    }
+    expect(rewritten.match(/\[\[marketplace\.sources\]\]/g)?.length).toBe(2)
+    expect(rewritten).not.toContain('command = "x"')
+    expect(rewritten).not.toContain('K = "v"')
+  })
   test('adds a live orch-ask table when the user config has none', () => {
     const rewritten = grokSandboxConfig('model = "grok"\n')
     expect(rewritten).toContain('model = "grok"')
