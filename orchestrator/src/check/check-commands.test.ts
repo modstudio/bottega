@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { spawnFixtureSync } from '../../test/fixtures/spawn.ts'
+import { spawnFixtureGitSync, spawnFixtureSync } from '../../test/fixtures/spawn.ts'
 import { dir } from '../../test/preload.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { ProjectSettings } from '../project/projects.ts'
@@ -42,7 +42,7 @@ function registerProject(name: string, path: string, settings: ProjectSettings):
 }
 
 function git(root: string, ...argv: string[]) {
-  const result = spawnFixtureSync(['git', ...argv], {
+  const result = spawnFixtureGitSync(argv, {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
