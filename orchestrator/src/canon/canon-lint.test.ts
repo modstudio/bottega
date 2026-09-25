@@ -266,10 +266,219 @@ describe('canon current reference rules', () => {
     expect(inputRules('`file.ts:realName`', 'canon/line-anchor', extra)).toEqual([])
   })
 
-  test('code references require a tracked-source occurrence', () => {
-    const sourceTexts = [{ path: 'src/real.ts', text: 'function liveName() {}' }]
+  test('heading references accept a matching Markdown heading', () => {
+    expect(
+      inputRules('[rule](docs/rules.md#current-rule)', 'canon/reference-heading', {
+        trackedPaths: ['docs/rules.md'],
+        sourceTexts: [{ path: 'docs/rules.md', text: '# Current rule\n' }],
+      }),
+    ).toEqual([])
+  })
+
+  test('heading references report a missing fragment', () => {
+    const extra = {
+      trackedPaths: ['docs/rules.md'],
+      sourceTexts: [{ path: 'docs/rules.md', text: '# Current rule\n' }],
+    }
+    for (const reference of ['[rule](docs/rules.md#former-rule)', '`docs/rules.md#former-rule`']) {
+      expect(inputRules(reference, 'canon/reference-heading', extra)).toEqual([
+        expect.objectContaining({
+          message: 'Markdown heading docs/rules.md#former-rule does not resolve',
+        }),
+      ])
+    }
+  })
+
+  test('inline-code heading references accept a matching fragment', () => {
+    expect(
+      inputRules('`See docs/rules.md#current-rule`', 'canon/reference-heading', {
+        trackedPaths: ['docs/rules.md'],
+        sourceTexts: [{ path: 'docs/rules.md', text: '# Current rule\n' }],
+      }),
+    ).toEqual([])
+  })
+
+  test('inline code with a bare hash is not a heading reference', () => {
+    expect(inputRules('`#N` and `#preparedHeaders`', 'canon/reference-heading', {})).toEqual([])
+  })
+
+  test('inline code with a Markdown path reports a missing fragment', () => {
+    expect(
+      inputRules('`docs/rules.md#stale`', 'canon/reference-heading', {
+        trackedPaths: ['docs/rules.md'],
+        sourceTexts: [{ path: 'docs/rules.md', text: '# Current rule\n' }],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        message: 'Markdown heading docs/rules.md#stale does not resolve',
+      }),
+    ])
+  })
+
+  test('Markdown links with a bare fragment report a missing heading', () => {
+    expect(inputRules('[x](#stale)', 'canon/reference-heading', {})).toEqual([
+      expect.objectContaining({ message: 'Markdown heading #stale does not resolve' }),
+    ])
+  })
+
+  test('bare heading fragments resolve against the citing file', () => {
+    expect(
+      inputRules('# Current rule\n\nSee [the rule](#current-rule).', 'canon/reference-heading', {}),
+    ).toEqual([])
+  })
+
+  test('duplicate heading fragments resolve with github-slugger suffixes', () => {
+    expect(
+      inputRules(
+        '# Current rule\n\n## Repeated\n\n## Repeated\n\nSee [the second](#repeated-1).',
+        'canon/reference-heading',
+        {},
+      ),
+    ).toEqual([])
+  })
+
+  test('code references require a tracked production occurrence', () => {
+    const sourceTexts = [{ path: 'src/real.ts', text: 'liveName()' }]
     expect(inputRules('`liveName()`', 'canon/reference-code', { sourceTexts })).toEqual([])
     expect(inputRules('`deadName()`', 'canon/reference-code', { sourceTexts })).toHaveLength(1)
+  })
+
+  test('code references reject an identifier found only in a comment', () => {
+    expect(
+      inputRules('`commentedName()`', 'canon/reference-code', {
+        sourceTexts: [{ path: 'src/real.ts', text: '// commentedName()' }],
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('code references reject an identifier found only in a multi-line block comment', () => {
+    expect(
+      inputRules('`commentedName()`', 'canon/reference-code', {
+        sourceTexts: [
+          { path: 'src/real.ts', text: '/* commentary\ncommentedName()\nstill commentary */' },
+        ],
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('code references retain generator methods and PHP attributes', () => {
+    expect(
+      inputRules('`items()` `Route()`', 'canon/reference-code', {
+        sourceTexts: [
+          { path: 'src/items.ts', text: 'class Items {\n  *items() { yield 1 }\n}' },
+          { path: 'src/Controller.php', text: "#[Route('/items')]\nfinal class Controller {}" },
+        ],
+      }),
+    ).toEqual([])
+  })
+
+  test('code references reject occurrences found only in test files', () => {
+    expect(
+      inputRules('`testOnlyName()`', 'canon/reference-code', {
+        sourceTexts: [{ path: 'src/real.test.ts', text: 'function testOnlyName() {}' }],
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('code references accept a declared constant', () => {
+    expect(
+      inputRules('`CURRENT_LIMIT`', 'canon/reference-code', {
+        sourceTexts: [{ path: 'src/limits.ts', text: 'export const CURRENT_LIMIT = 3' }],
+      }),
+    ).toEqual([])
+  })
+
+  test('code references accept occurrences in string literals and ordinary code', () => {
+    expect(
+      inputRules('`refund_due_at` `createServer()`', 'canon/reference-code', {
+        sourceTexts: [
+          { path: 'src/schema.ts', text: "column('refund_due_at')" },
+          { path: 'src/server.ts', text: 'const server = createServer(options)' },
+        ],
+      }),
+    ).toEqual([])
+  })
+
+  test('code references catch absent and shell-comment-only environment names', () => {
+    expect(
+      inputRules('`ORCH_LOCAL_BASE_URL` `LOCAL_CONTEXT_TOKENS`', 'canon/reference-code', {
+        sourceTexts: [
+          { path: 'src/env.ts', text: 'const current = ORCH_MODEL_HOST_URL' },
+          { path: 'bin/serve.sh', text: '# LOCAL_CONTEXT_TOKENS selects the window' },
+        ],
+      }),
+    ).toHaveLength(2)
+  })
+
+  test('symbol references accept uppercase environment variable reads', () => {
+    const sourceTexts = [
+      {
+        path: 'src/env.ts',
+        text: [
+          'process.env.PROCESS_DOT_NAME',
+          "process.env['PROCESS_SINGLE_NAME']",
+          'process.env["PROCESS_DOUBLE_NAME"]',
+          'Bun.env.BUN_DOT_NAME',
+        ].join('\n'),
+      },
+      {
+        path: 'src/env.py',
+        text: [
+          'os.environ.get("ENVIRON_GET_NAME")',
+          "os.environ['ENVIRON_SINGLE_NAME']",
+          'os.getenv("GETENV_NAME")',
+        ].join('\n'),
+      },
+    ]
+    for (const [path, name] of [
+      ['src/env.ts', 'PROCESS_DOT_NAME'],
+      ['src/env.ts', 'PROCESS_SINGLE_NAME'],
+      ['src/env.ts', 'PROCESS_DOUBLE_NAME'],
+      ['src/env.ts', 'BUN_DOT_NAME'],
+      ['src/env.py', 'ENVIRON_GET_NAME'],
+      ['src/env.py', 'ENVIRON_SINGLE_NAME'],
+      ['src/env.py', 'GETENV_NAME'],
+    ]) {
+      expect(
+        inputRules(`\`${path}:${name}\``, 'canon/reference-symbol', {
+          trackedPaths: ['src/env.ts', 'src/env.py'],
+          sourceTexts,
+        }),
+      ).toEqual([])
+    }
+  })
+
+  test('code and symbol references accept an optional property declaration', () => {
+    const extra = {
+      trackedPaths: ['src/settings.ts'],
+      sourceTexts: [
+        { path: 'src/settings.ts', text: 'type Settings = { readonly_create?: string }' },
+      ],
+    }
+    expect(inputRules('`settings.readonly_create`', 'canon/reference-code', extra)).toEqual([])
+    expect(
+      inputRules('`src/settings.ts:readonly_create`', 'canon/reference-symbol', extra),
+    ).toEqual([])
+  })
+
+  test('symbol references accept a quoted dotted property declaration', () => {
+    expect(
+      inputRules('`src/settings.ts:ssh_alias`', 'canon/reference-symbol', {
+        trackedPaths: ['src/settings.ts'],
+        sourceTexts: [
+          { path: 'src/settings.ts', text: "const fields = { 'model_host.ssh_alias': {} }" },
+        ],
+      }),
+    ).toEqual([])
+  })
+
+  test('symbol references accept export-list declarations', () => {
+    expect(
+      inputRules('`src/settings.ts:publicName`', 'canon/reference-symbol', {
+        trackedPaths: ['src/settings.ts'],
+        sourceTexts: [{ path: 'src/settings.ts', text: 'export { privateName as publicName }' }],
+      }),
+    ).toEqual([])
   })
 
   test('script references require a package script and include fenced commands', () => {

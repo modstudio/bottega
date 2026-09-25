@@ -44,8 +44,11 @@ function referenceRemedy(rule: string): string {
   if (rule === 'doc/reference-path')
     return 'cite a tracked repository path or remove the stale citation'
   if (rule === 'doc/reference-symbol') return 'cite an identifier declared by the referenced path'
+  if (rule === 'doc/reference-heading')
+    return 'cite a heading present in the referenced Markdown file'
   if (rule === 'doc/line-anchor') return 'replace the line anchor with a stable identifier'
-  if (rule === 'doc/reference-code') return 'cite an identifier that occurs in tracked source'
+  if (rule === 'doc/reference-code')
+    return 'cite an identifier that occurs in tracked production source'
   return 'name a package script defined on the repository tree'
 }
 
