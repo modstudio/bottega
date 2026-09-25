@@ -74,6 +74,16 @@ async function request<T>(
 
 export const hostedCreateTask = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<HostedTask>('/v1/tasks', 'POST', body, options)
+export const hostedCreateOperatorWaitingEmail = (
+  body: unknown,
+  options?: Parameters<typeof request>[3],
+) =>
+  request<{ id: string; status: 'intent' | 'sent' | 'failed'; reason: string | null }>(
+    '/v1/operator-waiting-emails',
+    'POST',
+    body,
+    options,
+  )
 export const hostedPatchTask = (
   key: string,
   body: unknown,

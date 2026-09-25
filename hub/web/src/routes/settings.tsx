@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { isHostedMode } from '@/lib/hub-mode'
 import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
 import { queryClient, type RecordSettingsResponse, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -32,6 +33,46 @@ type Draft = {
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
+
+function OperatorEmailSettings() {
+  const query = useQuery(
+    trpc.operator.emailSettings.queryOptions(undefined, { enabled: !isHostedMode() }),
+  )
+  const [value, setValue] = useState<number | null>(null)
+  const update = useMutation({
+    ...trpc.operator.setEmailSettings.mutationOptions(),
+    onSuccess: async () => {
+      setValue(null)
+      await queryClient.invalidateQueries({ queryKey: trpc.operator.emailSettings.queryKey() })
+    },
+  })
+  if (isHostedMode() || !query.data) return null
+  const delay = value ?? query.data.delayMinutes
+  return (
+    <div className="mb-8 max-w-[800px]">
+      <SectionTitle>Operator email</SectionTitle>
+      <div className="grid max-w-[320px] gap-2">
+        <label htmlFor="operator-email-delay" className="text-sm text-text-muted">
+          Delay in minutes (zero disables email)
+        </label>
+        <Input
+          id="operator-email-delay"
+          type="number"
+          min={0}
+          max={43_200}
+          value={delay}
+          onChange={(event) => setValue(Number(event.target.value))}
+        />
+        <Button
+          onClick={() => update.mutate({ delayMinutes: delay })}
+          disabled={update.isPending || value === null}
+        >
+          Save email delay
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 function initialDraft(row: Subscription | undefined, projects: string[]): Draft {
   return {
@@ -430,6 +471,7 @@ export function SettingsPage() {
   return (
     <section>
       <PageHeader title="Report subscriptions" subtitle="Schedules and delivery history" />
+      <OperatorEmailSettings />
       {query.error ? (
         <p className="text-status-text">could not load: {query.error.message}</p>
       ) : null}

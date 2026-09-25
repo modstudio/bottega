@@ -15,6 +15,7 @@ test('maps only the exact active run named by a waiting question', () => {
     recommendation: null,
     why: null,
     waiting_since: '2026-09-24T12:00:00.000Z',
+    episode: 'episode-1',
     answer_command: 'orch answer 42 --q7 --from-operator "<ruling>"',
   }
   const workflow = {

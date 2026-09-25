@@ -1,6 +1,10 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
+  operatorEmailDelayMinutes,
+  setOperatorEmailDelayMinutes,
+} from '../../operator-waiting-email.ts'
+import {
   answerWaiting as answerWaitingThroughOrch,
   waiting as waitingThroughOrch,
 } from '../../orch.ts'
@@ -9,12 +13,26 @@ import type { Context } from '../context.ts'
 const t = initTRPC.context<Context>().create()
 
 export function createOperatorRouter(
-  dependencies: { waiting: typeof waitingThroughOrch; answer: typeof answerWaitingThroughOrch } = {
+  dependencies: {
+    waiting: typeof waitingThroughOrch
+    answer: typeof answerWaitingThroughOrch
+    emailDelay?: typeof operatorEmailDelayMinutes
+    setEmailDelay?: typeof setOperatorEmailDelayMinutes
+  } = {
     waiting: waitingThroughOrch,
     answer: answerWaitingThroughOrch,
   },
 ) {
   return t.router({
+    emailSettings: t.procedure.query(() => ({
+      delayMinutes: (dependencies.emailDelay ?? operatorEmailDelayMinutes)(),
+    })),
+    setEmailSettings: t.procedure
+      .input(z.object({ delayMinutes: z.number().int().min(0).max(43_200) }).strict())
+      .mutation(({ input }) => {
+        ;(dependencies.setEmailDelay ?? setOperatorEmailDelayMinutes)(input.delayMinutes)
+        return input
+      }),
     waiting: t.procedure.query(() => dependencies.waiting()),
     answer: t.procedure
       .input(

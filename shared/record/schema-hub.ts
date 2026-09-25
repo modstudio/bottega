@@ -9,6 +9,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgPolicy,
   pgTable,
   text,
@@ -373,6 +374,47 @@ export const hubSendRecipient = pgTable.withRLS(
       for: 'insert',
       withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
     }),
+  ],
+)
+
+export const operatorWaitingEmail = pgTable.withRLS(
+  'operator_waiting_email',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    kind: text().notNull(),
+    itemId: bigint('item_id', { mode: 'number' }).notNull(),
+    episode: text().notNull(),
+    project: text().notNull(),
+    taskKey: text('task_key'),
+    question: text().notNull(),
+    options: jsonb().notNull(),
+    recommendation: text(),
+    why: text(),
+    waitingSince: timestamp('waiting_since', { withTimezone: true }).notNull(),
+    link: text().notNull(),
+    status: text().notNull(),
+    reason: text(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (table) => [
+    unique('operator_waiting_email_episode_unique').on(
+      table.spaceId,
+      table.userId,
+      table.kind,
+      table.itemId,
+      table.episode,
+    ),
+    check('operator_waiting_email_kind_check', sql`${table.kind} IN ('question','workflow')`),
+    check(
+      'operator_waiting_email_status_check',
+      sql`${table.status} IN ('intent','sent','failed')`,
+    ),
+    ...tenantPolicies('operator_waiting_email', table.spaceId),
   ],
 )
 

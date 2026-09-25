@@ -187,6 +187,7 @@ function operatorWaitingWithEpisodes(
         recommendation: row.recommendation,
         why: row.why,
         waiting_since: row.awaiting_operator_at,
+        episode: row.awaiting_operator_at,
         answer_command: `orch answer ${row.root_id} --q${row.id} --from-operator "<ruling>"`,
       },
     })),
@@ -209,6 +210,7 @@ function operatorWaitingWithEpisodes(
           recommendation: null,
           why: null,
           waiting_since: row.updated_at,
+          episode: row.updated_at,
           answer_command: `orch workflow next ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --note "<ruling>"`,
         },
       }

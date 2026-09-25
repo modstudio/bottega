@@ -133,6 +133,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       recommendation: 'a',
       why: 'because',
       waiting_since: '2026-09-25',
+      episode: '2026-09-25',
       answer_command: `orch answer ${owner.id} --q${question.id} --from-operator "<ruling>"`,
     },
     {
@@ -147,6 +148,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       recommendation: null,
       why: null,
       waiting_since: '2026-09-25',
+      episode: '2026-09-25',
       answer_command:
         'orch workflow next ship --project fixture --mode default --arg key=DEV-943 --note "<ruling>"',
     },
