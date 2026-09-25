@@ -95,6 +95,7 @@ export function planUserCanonHome(input: {
 }
 
 export function applyUserCanonHomePlan(plan: UserCanonHomePlan): void {
+  if (plan.writes.length === 0 && plan.deletes.length === 0) return
   ensureClaudeHome(plan.claudeHome)
   for (const row of [...plan.deletes, ...plan.writes]) preflightMutation(plan.claudeHome, row.path)
   for (const row of plan.deletes) rmSync(row.path)
