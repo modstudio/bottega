@@ -1,7 +1,22 @@
 import { describe, expect, test } from 'bun:test'
-import { emptyReviewRefusal, reviewTrunkRef } from './review-target.ts'
+import { emptyReviewRefusal, reviewArtifactBlock, reviewTrunkRef } from './review-target.ts'
 
 describe('review target', () => {
+  test('names the resolved artifact and makes checkout HEAD authoritative', () => {
+    const prompt = reviewArtifactBlock({
+      branch: 'DEV-911-fix',
+      commit: 'caf69b0d11111111111111111111111111111111',
+      base: 'b0583f6522222222222222222222222222222222',
+    })
+
+    expect(prompt).toContain('Branch: DEV-911-fix')
+    expect(prompt).toContain('HEAD: caf69b0d11111111111111111111111111111111')
+    expect(prompt).toContain('Base: b0583f6522222222222222222222222222222222')
+    expect(prompt).toContain("checkout's HEAD is the artifact under review")
+    expect(prompt).toContain('change is Base..HEAD')
+    expect(prompt).toContain('provenance.reviewed_commit')
+  })
+
   test('uses the remote-tracking trunk when it exists', () => {
     expect(reviewTrunkRef(true, 'main')).toBe('origin/main')
   })

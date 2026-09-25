@@ -16,7 +16,6 @@ import {
   NO_REPO_PREAMBLE,
   packResumePrompt,
   READONLY_PREAMBLE,
-  REVIEW_SEVERITY_INSTRUCTION,
   type realQuestions,
   replyFileBytes,
   resolveReplyDialect,
@@ -38,7 +37,6 @@ import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
 import { isReaderJob, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
-import { resolveLens } from '../lens/lenses.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -109,7 +107,7 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
-import { operatorKnowledgeSection } from './run-pack-prompt.ts'
+import { bindReviewInstructions, operatorKnowledgeSection } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -509,13 +507,14 @@ export async function run(opts: {
             .filter(Boolean)
             .join('\n\n')
 
-  if (requestedJob.findings && (!opts.resume || opts.resume.fresh)) {
-    prompt = `${REVIEW_SEVERITY_INSTRUCTION}\n\n${prompt}`
-    const resolvedLens = resolveLens(opts.lens!, opts.repo ?? repoOf(callerCwd))
-    if (resolvedLens) prompt += `\n\n${resolvedLens.body}`
-    else
-      console.error(`lens ${opts.lens}: no catalogue row; dispatching the free-form lens unchanged`)
-  }
+  prompt = bindReviewInstructions({
+    prompt,
+    findings: Boolean(requestedJob.findings),
+    firstTurn: !opts.resume || Boolean(opts.resume.fresh),
+    reviewTarget,
+    lens: opts.lens,
+    repo: opts.repo ?? repoOf(callerCwd),
+  })
   const evidencePrompt = assessEvidencePrompt({
     findingsJob: Boolean(requestedJob.findings),
     verifyClaimJob: opts.job === 'verify-claim',
@@ -1134,6 +1133,7 @@ export async function run(opts: {
         vendorTerminatedStream,
         acceptedQuestions,
         requestedJob,
+        checkReviewedCommit: reviewTarget !== null,
         output,
         confinementEvent,
         resolvedDialect,

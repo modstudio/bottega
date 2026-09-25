@@ -58,6 +58,7 @@ const issueWorkerReply = {
 const reviewReply = {
   findings: [],
   provenance: {
+    reviewed_commit: 'abcdef1234567890abcdef1234567890abcdef12',
     standards_read: [],
     model_used: 'test',
     files_covered: ['contract.ts'],
@@ -129,6 +130,14 @@ describe('reply dialect resolution', () => {
       expect(dialect.parse(JSON.stringify(valid)).reply).not.toBeNull()
       expect(dialect.parse(JSON.stringify(incompatible)).reply).toBeNull()
     }
+  })
+
+  test('inline reviews keep their repository-free provenance contract', () => {
+    const inline = resolveReplyDialect(JOBS['review-lens-inline']!)
+    const { reviewed_commit: _reviewedCommit, ...provenance } = reviewReply.provenance
+
+    expect(inline.parse(JSON.stringify({ ...reviewReply, provenance })).reply).not.toBeNull()
+    expect(inline.parse(JSON.stringify(reviewReply)).reply).toBeNull()
   })
 })
 

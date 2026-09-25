@@ -344,6 +344,7 @@ export const REVIEW_SCHEMA = {
       type: 'object',
       additionalProperties: false,
       required: [
+        'reviewed_commit',
         'standards_read',
         'model_used',
         'files_covered',
@@ -355,6 +356,10 @@ export const REVIEW_SCHEMA = {
         'canon_source',
       ],
       properties: {
+        reviewed_commit: {
+          type: 'string',
+          description: 'The full hash of the checkout HEAD the reviewer inspected.',
+        },
         tree_inspected: { type: 'string' },
         standards_read: { type: 'array', items: { type: 'string' } },
         model_used: { type: 'string' },
@@ -386,9 +391,28 @@ export const REVIEW_SCHEMA = {
   },
 } as const
 
+const INLINE_REVIEW_SCHEMA = {
+  ...REVIEW_SCHEMA,
+  properties: {
+    ...REVIEW_SCHEMA.properties,
+    provenance: {
+      ...REVIEW_SCHEMA.properties.provenance,
+      required: REVIEW_SCHEMA.properties.provenance.required.filter(
+        (key) => key !== 'reviewed_commit',
+      ),
+      properties: Object.fromEntries(
+        Object.entries(REVIEW_SCHEMA.properties.provenance.properties).filter(
+          ([key]) => key !== 'reviewed_commit',
+        ),
+      ),
+    },
+  },
+} as const
+
 export type ReviewReply = {
   findings: { severity: string; location: string; evidence: string; proposed_correction: string }[]
   provenance: {
+    reviewed_commit?: string
     tree_inspected?: string
     standards_read: string[]
     model_used: string
@@ -413,7 +437,7 @@ const exactKeys = (value: object, expected: string[]) => {
   )
 }
 
-export function parseReviewReply(value: unknown): ReviewReply | null {
+export function parseReviewReply(value: unknown, requireReviewedCommit = true): ReviewReply | null {
   const v = value as Partial<ReviewReply> | null
   if (
     !v ||
@@ -429,6 +453,7 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
   // prose contract only; an absent list reads as empty rather than as a
   // malformed reply, so a review is never lost to a missing empty array.
   const provenanceKeys = [
+    ...(requireReviewedCommit ? ['reviewed_commit'] : []),
     'standards_read',
     'model_used',
     'files_covered',
@@ -454,6 +479,7 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
     (p.tree_inspected !== undefined &&
       p.tree_inspected !== null &&
       typeof p.tree_inspected !== 'string') ||
+    (p.reviewed_commit !== undefined && typeof p.reviewed_commit !== 'string') ||
     typeof p.model_used !== 'string' ||
     !isStrings(p.standards_read) ||
     !isStrings(p.files_covered) ||
@@ -508,6 +534,27 @@ export function parseReviewOutput(text: string): ReviewReply | null {
       return parseReviewReply(JSON.parse(text.slice(start, end + 1)))
     } catch {
       /* invalid */
+    }
+  }
+  return null
+}
+
+function parseInlineReviewOutput(text: string): ReviewReply | null {
+  const candidates = [
+    text.trim(),
+    ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? []).map((x) =>
+      x
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/, '')
+        .trim(),
+    ),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const parsed = parseReviewReply(JSON.parse(candidate), false)
+      if (parsed) return parsed
+    } catch {
+      /* try the next shape */
     }
   }
   return null
@@ -1048,10 +1095,14 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
     }
   }
   if (j.findings) {
+    const inline = j.name === 'review-lens-inline'
     return {
-      schema: REVIEW_SCHEMA,
+      schema: inline ? INLINE_REVIEW_SCHEMA : REVIEW_SCHEMA,
       schemaName: 'REVIEW_SCHEMA',
-      parse: (text) => ({ reply: parseReviewOutput(text), contractObjects: 0 }),
+      parse: (text) => ({
+        reply: inline ? parseInlineReviewOutput(text) : parseReviewOutput(text),
+        contractObjects: 0,
+      }),
     }
   }
   if (j.name === 'verify-claim') {
@@ -1105,7 +1156,7 @@ export function readerDeliverablesInstruction(names: string[]): string {
 
 export const READONLY_PREAMBLE = `
 You are working in your own disposable worktree. It is a fresh checkout of this
-run's base commit. If the caller chose to carry their uncommitted work into it,
+run's commit to read. If the caller chose to carry their uncommitted work into it,
 that work is present and is not yours: do not report it as your change.
 
 A prompt with several questions is not atomic: answer every question you can.
