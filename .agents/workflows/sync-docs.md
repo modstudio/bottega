@@ -6,6 +6,7 @@ arguments:
     description: The task whose change the documentation must follow.
   - name: worktree
     required: true
+    rebind: true
     description: "The change's worktree path."
   - name: scope
     required: false

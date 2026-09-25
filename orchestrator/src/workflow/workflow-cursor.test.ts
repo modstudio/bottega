@@ -34,19 +34,109 @@ const context = { session: 'session-one' }
 
 describe('workflow cursor adapter', () => {
   test('late cursor arguments merge into empty slots and conflicting values refuse', () => {
-    expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' })).toEqual({
+    const none = new Set<string>()
+    expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' }, none)).toEqual({
       action: 'merge',
       args: { key: 'DEV-822', branch: 'DEV-822-work' },
+      rebindings: [],
     })
-    expect(decideCursorArguments({ key: 'DEV-822', branch: ' ' }, { branch: 'work' })).toEqual({
+    expect(
+      decideCursorArguments({ key: 'DEV-822', branch: ' ' }, { branch: 'work' }, none),
+    ).toEqual({
       action: 'merge',
       args: { key: 'DEV-822', branch: 'work' },
+      rebindings: [],
     })
-    expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' })).toEqual({
+    expect(
+      decideCursorArguments(
+        { key: 'DEV-822', worktree: '/tmp/old' },
+        { worktree: '/tmp/new' },
+        new Set(['worktree']),
+      ),
+    ).toEqual({
+      action: 'merge',
+      args: { key: 'DEV-822', worktree: '/tmp/new' },
+      rebindings: [{ name: 'worktree', oldValue: '/tmp/old', newValue: '/tmp/new' }],
+    })
+    expect(
+      decideCursorArguments(
+        { key: 'DEV-822', branch: 'DEV-822-work' },
+        { branch: 'DEV-999-work' },
+        none,
+      ),
+    ).toEqual({
       action: 'refuse',
       reason:
-        'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"; run orch workflow abandon for this cursor, then compose again',
     })
+    expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' }, new Set(['key']))).toEqual(
+      {
+        action: 'refuse',
+        reason:
+          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+      },
+    )
+  })
+
+  test('next advances with a rebound argument from the pinned workflow and records the event', () => {
+    const d = database()
+    const draft = setWorkflow(
+      'rebind-fixture',
+      {
+        title: 'Rebind fixture',
+        description: 'Exercises cursor argument rebinding.',
+        arguments: [
+          { name: 'key', required: true, description: 'Task key.' },
+          { name: 'worktree', required: true, rebind: true, description: 'Worktree path.' },
+        ],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['lens', 'score'],
+          },
+        ],
+      },
+      'test fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('rebind-fixture', draft.n, 'test fixture', 'test', d)
+    composeWorkflowWithCursor(
+      'rebind-fixture',
+      'fixture',
+      'default',
+      { key: 'DEV-822', worktree: '/tmp/old' },
+      context,
+      d,
+    )
+
+    expect(
+      nextWorkflowStep(
+        'rebind-fixture',
+        'fixture',
+        'default',
+        { key: 'DEV-822', worktree: '/tmp/new' },
+        'reviewed',
+        context,
+        d,
+      ),
+    ).toContain('this is the last step of rebind-fixture')
+    const row = d.query('SELECT args,closed FROM workflow_cursor').get() as {
+      args: string
+      closed: string
+    }
+    expect(JSON.parse(row.args).worktree).toBe('/tmp/new')
+    expect(JSON.parse(row.closed)).toEqual([
+      expect.objectContaining({
+        event: 'argument-rebound',
+        name: 'worktree',
+        oldValue: '/tmp/old',
+        newValue: '/tmp/new',
+      }),
+      expect.objectContaining({ n: 1, slug: 'lens', note: 'reviewed' }),
+    ])
   })
 
   test('listing scope honors explicit flags and refuses an unresolved cwd', () => {

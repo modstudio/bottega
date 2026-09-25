@@ -9,6 +9,7 @@ arguments:
     description: The branch to review.
   - name: worktree
     required: true
+    rebind: true
     description: "The branch's worktree path."
 modes:
   - slug: report

@@ -10,6 +10,7 @@ arguments:
     description: "The branch carrying the fix, known once implement-fix has created its worktree; needed from run-gate on."
   - name: worktree
     required: false
+    rebind: true
     description: "The fix branch's worktree path, known once implement-fix has created it; needed from run-gate on."
   - name: signal
     required: false

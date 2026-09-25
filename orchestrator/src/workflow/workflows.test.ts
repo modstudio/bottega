@@ -118,6 +118,42 @@ describe('workflow definition validation', () => {
       'exactly one default mode is allowed',
     )
   })
+  test('accepts boolean rebind and refuses malformed or key rebind declarations', () => {
+    const d = database()
+    expect(
+      validateWorkflowDefinition(
+        {
+          ...valid(),
+          arguments: [
+            { name: 'key', required: true, description: 'Task key' },
+            { name: 'worktree', required: true, description: 'Worktree path', rebind: true },
+          ],
+        },
+        d,
+      ),
+    ).toEqual([])
+    expect(
+      validateWorkflowDefinition(
+        {
+          ...valid(),
+          arguments: [
+            { name: 'key', required: true, description: 'Task key' },
+            { name: 'worktree', required: true, description: 'Worktree path', rebind: 'yes' },
+          ],
+        },
+        d,
+      ),
+    ).toContain('argument "worktree" rebind must be a boolean')
+    expect(
+      validateWorkflowDefinition(
+        {
+          ...valid(),
+          arguments: [{ name: 'key', required: true, description: 'Task key', rebind: true }],
+        },
+        d,
+      ),
+    ).toContain('argument "key" cannot declare rebind')
+  })
   test('validates the workflow default preset', () => {
     const d = database()
     expect(validateWorkflowDefinition({ ...valid(), defaultPreset: 'autonomous' }, d)).toEqual([])
