@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 import { CLAUDE_FILE_MAX_BYTES, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts } from './canon-load-files.ts'
 
@@ -25,15 +26,11 @@ afterEach(() => {
 })
 
 function gitInit(dir: string) {
-  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
-  delete env.GIT_DIR
-  delete env.GIT_WORK_TREE
-  delete env.GIT_COMMON_DIR
   const result = Bun.spawnSync(['git', 'init'], {
     cwd: dir,
     stdout: 'pipe',
     stderr: 'pipe',
-    env,
+    env: inspectionGitEnv({ ...process.env, HOME: dir }),
   })
   if (result.exitCode !== 0) {
     throw new Error(result.stderr.toString().trim() || 'git init failed')

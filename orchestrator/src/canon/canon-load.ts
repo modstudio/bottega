@@ -336,52 +336,72 @@ function takeCodexBytes(
   }
 }
 
-function planCodexLoad(facts: HarnessLoadFacts): LoadPlan {
-  const byPath = indexFiles(facts.files)
+function codexAgentsName(path: string): string {
+  return basename(path) === 'AGENTS.override.md' ? 'AGENTS.override.md' : 'AGENTS.md'
+}
+
+function addCodexUser(
+  user: CandidateFile,
+  files: LoadedFile[],
+  skipped: SkippedFile[],
+  facts: HarnessLoadFacts,
+): void {
+  const oversize = oversizeSkip(user)
+  if (oversize) {
+    skipped.push(oversize)
+    return
+  }
+  files.push({
+    path: user.path,
+    size: Buffer.byteLength(user.text, 'utf8'),
+    kind: 'always-on',
+    reason: `user ${codexAgentsName(user.path)}`,
+    external: isExternalFile(user, facts, 'codex'),
+  })
+}
+
+function takeCodexProject(
+  facts: HarnessLoadFacts,
+  byPath: Map<string, CandidateFile>,
+): { files: LoadedFile[]; cut: LoadCut[]; skipped: SkippedFile[]; loaded: number } {
   const files: LoadedFile[] = []
   const cut: LoadCut[] = []
   const skipped: SkippedFile[] = []
-  const user =
-    findAt(byPath, facts.home.codex, 'AGENTS.override.md') ??
-    findAt(byPath, facts.home.codex, 'AGENTS.md')
-  if (user) {
-    const oversize = oversizeSkip(user)
-    if (oversize) skipped.push(oversize)
-    else {
-      const name = basename(user.path) === 'AGENTS.override.md' ? 'AGENTS.override.md' : 'AGENTS.md'
-      files.push({
-        path: user.path,
-        size: Buffer.byteLength(user.text, 'utf8'),
-        kind: 'always-on',
-        reason: `user ${name}`,
-        external: isExternalFile(user, facts, 'codex'),
-      })
-    }
-  }
   let remaining = CODEX_PROJECT_DOC_MAX_BYTES
-  let projectLoaded = 0
+  let loaded = 0
   for (const file of planCodexProjectFiles(facts, byPath)) {
     const oversize = oversizeSkip(file)
     if (oversize) {
       skipped.push(oversize)
       continue
     }
-    const name = basename(file.path) === 'AGENTS.override.md' ? 'AGENTS.override.md' : 'AGENTS.md'
-    const taken = takeCodexBytes(file, remaining, `project ${name}`, facts)
+    const taken = takeCodexBytes(file, remaining, `project ${codexAgentsName(file.path)}`, facts)
     remaining -= taken.used
-    projectLoaded += taken.used
+    loaded += taken.used
     if (taken.used > 0) files.push(taken.loaded)
     if (taken.cut) cut.push(taken.cut)
   }
+  return { files, cut, skipped, loaded }
+}
+
+function planCodexLoad(facts: HarnessLoadFacts): LoadPlan {
+  const byPath = indexFiles(facts.files)
+  const files: LoadedFile[] = []
+  const skipped: SkippedFile[] = []
+  const user =
+    findAt(byPath, facts.home.codex, 'AGENTS.override.md') ??
+    findAt(byPath, facts.home.codex, 'AGENTS.md')
+  if (user) addCodexUser(user, files, skipped, facts)
+  const project = takeCodexProject(facts, byPath)
   return {
     harness: 'codex',
-    files,
-    total: projectLoaded,
+    files: [...files, ...project.files],
+    total: project.loaded,
     limit: CODEX_PROJECT_DOC_MAX_BYTES,
     unit: 'bytes',
-    status: cut.length ? 'truncated' : 'ok',
-    cut,
-    skipped,
+    status: project.cut.length ? 'truncated' : 'ok',
+    cut: project.cut,
+    skipped: [...skipped, ...project.skipped],
   }
 }
 
