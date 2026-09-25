@@ -78,6 +78,35 @@ describe('autonomy resolution', () => {
     })
   })
 
+  test('empty stages resolve only settings shared by every step in the stage', () => {
+    const canon = ['canon'] as const
+    expect(resolveAutonomy(steps, [], undefined, canon).stages?.canon).toEqual({
+      value: 'per step',
+      scope: 'built-in',
+    })
+    expect(
+      resolveAutonomy(steps, [{ name: 'guided', settings: { preset: 'guided' } }], undefined, canon)
+        .stages?.canon,
+    ).toEqual({ value: 'per step', scope: 'guided' })
+    expect(
+      resolveAutonomy(
+        steps,
+        [{ name: 'explicit', settings: { preset: 'guided', stages: { canon: 'review' } } }],
+        undefined,
+        canon,
+      ).stages?.canon,
+    ).toEqual({ value: 'review', scope: 'explicit' })
+    for (const [preset, value] of [
+      ['manual', 'ask'],
+      ['autonomous', 'auto'],
+    ] as const) {
+      expect(
+        resolveAutonomy(steps, [{ name: preset, settings: { preset } }], undefined, canon).stages
+          ?.canon,
+      ).toEqual({ value, scope: preset })
+    }
+  })
+
   test('rulings and invalid values identify the deciding scope and key', () => {
     expect(
       resolveAutonomy(steps, [
