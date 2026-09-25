@@ -388,6 +388,12 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/resources/resource-claims.ts', ['../run/synthetic-lifecycle-job.ts']),
   module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
+  module('orchestrator/src/run/checkpoint-resume-context.ts', []),
+  module('orchestrator/src/run/continuation-checkpoint-context.ts', [
+    'bun:sqlite',
+    './checkpoint.ts',
+    './resume-tree.ts',
+  ]),
   module('orchestrator/src/run/resume-tree.ts', []),
   module('orchestrator/src/run/run-resume-kind.ts', []),
   module('orchestrator/src/run/run-resume-options.ts', [

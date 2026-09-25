@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { renderCheckpointResumeContext } from './checkpoint-resume-context.ts'
 
 /**
  * A checkpoint is a delta folded into the next authored commit at landing.
@@ -19,8 +20,8 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
  * checkpoint or by the worker's own commit; checkpointing never locks the worker.
  */
 
-export const PROGRESS_FILE_NAME = 'progress.json'
-export const PRESERVATION_FAILED_FILE = 'preservation-failed.json'
+const PROGRESS_FILE_NAME = 'progress.json'
+const PRESERVATION_FAILED_FILE = 'preservation-failed.json'
 export const DEFAULT_CHECKPOINT_MINUTES = 10
 
 export function progressFileInstruction(scratchDir: string): string {
@@ -191,18 +192,16 @@ export function checkpointResumeContext(
   database: Database,
   rootId: number,
   worktree: string | null,
+  startCommit: string | null,
+  branch: string | null,
 ): string | null {
   const checkpoint = latestCheckpoint(database, rootId)
   if (!checkpoint) return null
-  const log = worktree
+  if (!startCommit || !branch) {
+    throw new Error(`run ${rootId} has a checkpoint but no resolved continuation tree tip`)
+  }
+  const recentLog = worktree
     ? git(worktree, ['log', '--oneline', '--decorate=no', '--max-count=8'], {}).out
     : ''
-  return [
-    'CHECKPOINT RESUME',
-    `Resume from checkpoint #${checkpoint.checkpoint_no} at ${checkpoint.commit_sha}.`,
-    checkpoint.task_pointer ? `Last completed item: ${checkpoint.task_pointer}` : null,
-    log ? `Recent branch history:\n${log}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n')
+  return renderCheckpointResumeContext({ startCommit, branch, checkpoint, recentLog })
 }

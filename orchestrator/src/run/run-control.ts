@@ -15,6 +15,7 @@ import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
+import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,
@@ -497,11 +498,12 @@ export async function continueRun(
     branchSource,
   } = continuationTree(id, row, latest, launch.launch_cwd)
   refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
-  const savedCheckpointContext = (await import('./checkpoint.ts')).checkpointResumeContext(
-    db(),
-    id,
-    latest.worktree,
-  )
+  const savedCheckpointContext = continuationCheckpointContext({
+    database: db(),
+    rootId: id,
+    worktree: latest.worktree,
+    treePlan,
+  })
   const checkpointContext = effectiveCheckpointContext(savedCheckpointContext, treePlan)
   const sessionFrom = checkpointContext
     ? null
