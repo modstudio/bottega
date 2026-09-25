@@ -296,6 +296,7 @@ export const CLI_COMMANDS = new Set([
   'config',
   'confinement',
   'continue',
+  'context',
   'contract',
   'diff',
   'discard',

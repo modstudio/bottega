@@ -159,6 +159,12 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     './step-catalogue.ts',
   ]),
+  module('orchestrator/src/workflow/session-context.ts', [
+    '../project/projects.ts',
+    './autonomy.ts',
+    './autonomy-scopes.ts',
+    './step-catalogue.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',

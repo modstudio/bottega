@@ -65,8 +65,82 @@ def _resume_sentence(source, open_briefs):
     )
 
 
+HOOK_CONTEXT_MAX_CHARS = 9000
+
+
+def _join_sections(*sections):
+    return "\n".join(section for section in sections if section)
+
+
+def _drop_note(dropped):
+    if not dropped:
+        return ""
+    parts = [f"{name} ({command})" for name, command in dropped]
+    if len(parts) == 1:
+        return f"Dropped {parts[0]}."
+    return f"Dropped {parts[0]} and {parts[1]}."
+
+
+def assemble_additional_context(
+    resume="",
+    inbox="",
+    issues="",
+    autonomy="",
+    extra="",
+    budget=HOOK_CONTEXT_MAX_CHARS,
+):
+    resume = resume.strip()
+    inbox = inbox.strip()
+    issues = issues.strip()
+    autonomy = autonomy.strip()
+    extra = extra.strip()
+    dropped = []
+
+    def compose(include_inbox, include_issues):
+        body = _join_sections(
+            resume,
+            inbox if include_inbox else "",
+            issues if include_issues else "",
+            autonomy,
+            extra,
+        )
+        return _join_sections(body, _drop_note(dropped))
+
+    text = compose(True, True)
+    if len(text) <= budget:
+        return text
+    dropped.append(("filed issues", "orch fix-defect --waiting"))
+    text = compose(True, False)
+    if len(text) <= budget:
+        return text
+    dropped.append(("inbox detail", "orch inbox"))
+    return compose(False, False)
+
+
+def _autonomy_slice(completed):
+    if completed.returncode == -1:
+        return "", "Autonomy observation timed out; autonomy state is unknown."
+    if completed.returncode != 0:
+        return (
+            "",
+            f"Autonomy command failed with exit {completed.returncode}; autonomy state is unknown.",
+        )
+    try:
+        result = json.loads(completed.stdout)
+        if not isinstance(result, dict) or not isinstance(result.get("registered"), bool):
+            raise ValueError("invalid context JSON")
+        if not result["registered"]:
+            return "", None
+        text = result.get("text")
+        if not isinstance(text, str):
+            raise ValueError("invalid context JSON")
+        return text, None
+    except Exception:
+        return "", "Autonomy response was invalid; autonomy state is unknown."
+
+
 def main() -> int:
-    resumes_p = inbox_p = waiting_p = monitor_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -99,6 +173,7 @@ def main() -> int:
             orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )
         waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
+        context_p = _start(orch, "context", "--cwd", cwd, "--json")
         monitor_failure = None
         if sid:
             try:
@@ -118,8 +193,10 @@ def main() -> int:
         resumes = _wait(resumes_p, deadline)
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
+        autonomy = _wait(context_p, deadline)
 
-        context = ""
+        resume_section = ""
+        extra_section = ""
         open_briefs = []
         lines = []
         unreadable = []
@@ -167,18 +244,14 @@ def main() -> int:
             except Exception:
                 resume_failure = "Resume response was invalid; brief state is unknown."
             if lines:
-                if context and not context.endswith("\n"):
-                    context += "\n"
-                context += "\n".join(lines) + "\n"
-                context += _resume_sentence(payload.get("source"), open_briefs) + "\n"
+                resume_section = "\n".join(lines) + "\n"
+                resume_section += _resume_sentence(payload.get("source"), open_briefs)
             if unreadable:
-                if context and not context.endswith("\n"):
-                    context += "\n"
-                for item in unreadable:
-                    context += (
-                        f'UNREADABLE RESUME BRIEF `{item["slug"]}`: '
-                        f'{item["reason"]}.\n'
-                    )
+                unread = "\n".join(
+                    f'UNREADABLE RESUME BRIEF `{item["slug"]}`: {item["reason"]}.'
+                    for item in unreadable
+                )
+                resume_section = _join_sections(resume_section, unread)
         elif resumes.returncode == -1:
             resume_failure = "Resume observation timed out; brief state is unknown."
         else:
