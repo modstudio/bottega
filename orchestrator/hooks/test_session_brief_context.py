@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Gate the SessionStart additionalContext budget without calling orch."""
 import importlib.util
+import io
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location(
     "session_brief", Path(__file__).with_name("session-brief.py")
@@ -144,6 +147,23 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertTrue(text.endswith(session_brief.HOOK_CONTEXT_TRUNCATION_MARKER))
         self.assertNotIn("x" * 80, text)
         self.assertNotIn("y" * 80, text)
+
+
+class WorkerSessionSkip(unittest.TestCase):
+    def test_orch_run_id_marks_a_worker_session(self):
+        self.assertTrue(session_brief.orch_worker_session({"ORCH_RUN_ID": "12"}))
+        self.assertFalse(session_brief.orch_worker_session({}))
+        self.assertFalse(session_brief.orch_worker_session({"ORCH_RUN_ID": ""}))
+
+    def test_main_emits_no_context_when_orch_run_id_is_set(self):
+        stdin = io.StringIO(json.dumps({"cwd": "/tmp", "session_id": "s"}))
+        stdout = io.StringIO()
+        with mock.patch.dict(session_brief.os.environ, {"ORCH_RUN_ID": "12"}):
+            with mock.patch.object(session_brief.sys, "stdin", stdin):
+                with mock.patch.object(session_brief.sys, "stdout", stdout):
+                    code = session_brief.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
 
 
 if __name__ == "__main__":

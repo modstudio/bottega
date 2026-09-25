@@ -161,7 +161,13 @@ def _autonomy_slice(completed):
         return "", "Autonomy response was invalid; autonomy state is unknown."
 
 
+def orch_worker_session(env=None):
+    return bool((env if env is not None else os.environ).get("ORCH_RUN_ID"))
+
+
 def main() -> int:
+    if orch_worker_session():
+        return 0
     resumes_p = inbox_p = waiting_p = monitor_p = context_p = None
     capability_dir = None
     output = None
