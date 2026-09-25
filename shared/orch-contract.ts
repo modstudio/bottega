@@ -133,6 +133,9 @@ const OpenQuestionSchema = z
     overturned_by: z.string().nullable(),
     overturn_reason: z.string().nullable(),
     replacement: z.string().nullable(),
+    filed_as: z.enum(['doc', 'canon-proposal']).nullable(),
+    filed_ref: z.string().nullable(),
+    filed_at: z.string().nullable(),
   })
   .strict()
 
@@ -154,10 +157,20 @@ export const OverturnRulingResultSchema = z
   })
   .strict()
 
+export const FileRulingResultSchema = z
+  .object({
+    question_id: z.number().int().positive(),
+    filed_as: z.enum(['doc', 'canon-proposal']),
+    filed_ref: z.string().min(1),
+    filed_at: z.string(),
+  })
+  .strict()
+
 export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
 export type ClaimedOperatorNotification = z.infer<typeof ClaimedOperatorNotificationSchema>
 export type AnswerWaitingResult = z.infer<typeof AnswerWaitingResultSchema>
 export type ListOpenQuestionsResult = z.infer<typeof ListOpenQuestionsResultSchema>
+export type FileRulingResult = z.infer<typeof FileRulingResultSchema>
 
 const OrchTrackerSettingsSchema = z
   .looseObject(trackerSettingsShape)

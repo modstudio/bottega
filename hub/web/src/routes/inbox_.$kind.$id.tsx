@@ -13,6 +13,7 @@ export const Route = createFileRoute('/inbox_/$kind/$id')({ component: InboxDeta
 
 function InboxDetailPage() {
   const { kind, id } = Route.useParams()
+  const [answeredQuestions, setAnsweredQuestions] = useState<OperatorWaitingItem[] | null>(null)
   const waiting = useQuery(
     trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
   )
@@ -24,7 +25,7 @@ function InboxDetailPage() {
         Could not load this item: {waiting.error.message}
       </p>
     )
-  if (!item)
+  if (!item && !answeredQuestions)
     return (
       <section>
         <PageHeader
@@ -35,17 +36,19 @@ function InboxDetailPage() {
       </section>
     )
   const questions =
-    item.kind === 'question'
+    answeredQuestions ??
+    (item?.kind === 'question'
       ? (waiting.data ?? []).filter(
           (candidate) => candidate.kind === 'question' && candidate.run_id === item.run_id,
         )
-      : []
-  return item.kind === 'workflow' ? (
+      : [])
+  return item?.kind === 'workflow' && !answeredQuestions ? (
     <WorkflowRuling item={item} />
   ) : (
     <QuestionRuling
       key={questions.map((question) => question.id).join(':')}
       questions={questions}
+      onAnswered={setAnsweredQuestions}
     />
   )
 }
@@ -65,7 +68,13 @@ function WorkflowRuling({ item }: { item: { question: string; session_id: string
 
 type Draft = { choice: string; freeText: string }
 
-function QuestionRuling({ questions }: { questions: OperatorWaitingItem[] }) {
+function QuestionRuling({
+  questions,
+  onAnswered,
+}: {
+  questions: OperatorWaitingItem[]
+  onAnswered: (questions: OperatorWaitingItem[]) => void
+}) {
   const first = questions[0]!
   const [drafts, setDrafts] = useState<Record<number, Draft>>(() =>
     Object.fromEntries(
@@ -81,6 +90,7 @@ function QuestionRuling({ questions }: { questions: OperatorWaitingItem[] }) {
   const answer = useMutation({
     ...trpc.operator.answer.mutationOptions(),
     onSuccess: async () => {
+      onAnswered(questions)
       await queryClient.invalidateQueries({ queryKey: trpc.operator.waiting.queryKey() })
     },
   })
@@ -153,13 +163,18 @@ function QuestionRuling({ questions }: { questions: OperatorWaitingItem[] }) {
           {answer.isPending ? 'Submitting...' : 'Submit ruling'}
         </Button>
         {answer.data ? (
-          <p data-tone="success" className="text-status-text">
-            {answer.data.outcome === 'resumed'
-              ? `resumed as run ${answer.data.resumed_as}`
-              : answer.data.outcome === 'delivered-live'
-                ? 'delivered to the live worker'
-                : 'recorded'}
-          </p>
+          <div className="space-y-4">
+            <p data-tone="success" className="text-status-text">
+              {answer.data.outcome === 'resumed'
+                ? `resumed as run ${answer.data.resumed_as}`
+                : answer.data.outcome === 'delivered-live'
+                  ? 'delivered to the live worker'
+                  : 'recorded'}
+            </p>
+            {questions.map((question) => (
+              <FileRulingControl key={question.id} question={question} />
+            ))}
+          </div>
         ) : null}
         {answer.error ? (
           <p data-tone="error" className="text-status-text">
@@ -168,5 +183,42 @@ function QuestionRuling({ questions }: { questions: OperatorWaitingItem[] }) {
         ) : null}
       </div>
     </section>
+  )
+}
+
+function FileRulingControl({ question }: { question: OperatorWaitingItem }) {
+  const [kind, setKind] = useState<'doc' | 'canon'>('doc')
+  const file = useMutation(trpc.operator.file.mutationOptions())
+  return (
+    <div className="space-y-3 border border-border-default bg-surface-sunken p-4">
+      <h3 className="font-medium text-sm">File this ruling</h3>
+      <p className="text-text-muted text-sm">{question.question}</p>
+      <RadioRows
+        label="File as"
+        value={kind}
+        options={[
+          { value: 'doc', label: 'Document' },
+          { value: 'canon', label: 'Canon proposal' },
+        ]}
+        onChange={(value) => setKind(value === 'canon' ? 'canon' : 'doc')}
+      />
+      <Button
+        variant="secondary"
+        disabled={file.isPending || file.isSuccess}
+        onClick={() => file.mutate({ questionId: question.id, as: kind })}
+      >
+        {file.isPending ? 'Filing...' : 'File this ruling'}
+      </Button>
+      {file.data ? (
+        <p data-tone="success" className="text-status-text">
+          filed as {file.data.filed_as} at {file.data.filed_ref}
+        </p>
+      ) : null}
+      {file.error ? (
+        <p data-tone="error" className="text-status-text">
+          refused: {file.error.message}
+        </p>
+      ) : null}
+    </div>
   )
 }

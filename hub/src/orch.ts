@@ -19,12 +19,14 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { DocScope } from '../../shared/docs.ts'
+import type { DocScope, FilingDocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
   type AnswerWaitingResult,
   AnswerWaitingResultSchema,
   ClaimedOperatorNotificationSchema,
+  type FileRulingResult,
+  FileRulingResultSchema,
   type HarnessHealth,
   HarnessHealthSchema,
   type OperatorWaitingItem,
@@ -266,6 +268,35 @@ export async function answerWaiting(
   rulings: readonly WaitingRuling[],
 ): Promise<AnswerWaitingResult> {
   return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
+    env: dashboardCapabilityEnvironment(),
+  })
+}
+
+export type FileWaitingRuling = {
+  questionId: number
+  as: 'doc' | 'canon'
+  scope?: FilingDocScope
+  subject?: string
+  title?: string
+}
+
+export const fileRulingArgv = (input: FileWaitingRuling): string[] => [
+  'ruling',
+  'file',
+  String(input.questionId),
+  '--as',
+  input.as,
+  ...(input.scope ? ['--scope', input.scope] : []),
+  ...(input.subject ? ['--subject', input.subject] : []),
+  ...(input.title ? ['--title', input.title] : []),
+  '--from-operator',
+  '--channel',
+  'ui',
+  '--json',
+]
+
+export async function fileWaitingRuling(input: FileWaitingRuling): Promise<FileRulingResult> {
+  return json(fileRulingArgv(input), FileRulingResultSchema, {
     env: dashboardCapabilityEnvironment(),
   })
 }

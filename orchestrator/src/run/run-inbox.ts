@@ -35,6 +35,9 @@ type InboxQuestion = {
   overturned_by: string | null
   overturn_reason: string | null
   replacement: string | null
+  filed_as: 'doc' | 'canon-proposal' | null
+  filed_ref: string | null
+  filed_at: string | null
 }
 
 export type InboxQuery = {
@@ -66,6 +69,7 @@ export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQ
     .query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
+            q.filed_as, q.filed_ref, q.filed_at,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status, ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
@@ -84,6 +88,9 @@ export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQ
     overturned_by: string | null
     overturn_reason: string | null
     replacement: string | null
+    filed_as: 'doc' | 'canon-proposal' | null
+    filed_ref: string | null
+    filed_at: string | null
     options: string | null
     recommendation: string | null
     why: string | null
@@ -137,6 +144,9 @@ export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQ
       overturned_by: q.overturned_by,
       overturn_reason: q.overturn_reason,
       replacement: q.replacement,
+      filed_as: q.filed_as,
+      filed_ref: q.filed_ref,
+      filed_at: q.filed_at,
     })),
   }
 }
@@ -205,6 +215,14 @@ function presentOverturn(
   if (question.replacement) log(`        replacement: ${question.replacement}`)
 }
 
+function presentFiled(
+  question: { filed_as: string | null; filed_ref: string | null },
+  log: (...values: unknown[]) => void,
+): void {
+  if (!question.filed_ref) return
+  log(`        filed: ${question.filed_as} ${question.filed_ref}`)
+}
+
 async function presentJsonInbox(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -254,6 +272,7 @@ export async function runInboxCommand(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
+            q.filed_as, q.filed_ref, q.filed_at,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status,
             ${voidedSql('root')} root_voided,
@@ -275,6 +294,9 @@ export async function runInboxCommand(
     overturned_by: string | null
     overturn_reason: string | null
     replacement: string | null
+    filed_as: string | null
+    filed_ref: string | null
+    filed_at: string | null
     options: string | null
     recommendation: string | null
     why: string | null
@@ -421,6 +443,7 @@ export async function runInboxCommand(
     )
     log(`  [q${q.id}] ${q.question}`)
     presentOverturn(q, log)
+    presentFiled(q, log)
   }
   return
 }

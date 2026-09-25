@@ -242,4 +242,45 @@ describe('operator MCP tools', () => {
       replacement: 'Use the replacement.',
     })
   })
+
+  test('file_ruling returns the recorded filing through the same service', async () => {
+    const { createMemoryRecordApiClient, installRecordApiClient } = await import(
+      '../../test/fixtures/record-api.ts'
+    )
+    const { upsertProject } = await import('../project/projects.ts')
+    installRecordApiClient(createMemoryRecordApiClient())
+    upsertProject({ name: 'file-ruling-project', path: process.cwd() })
+    const runId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'ok',
+      session: SESSION,
+      repo: 'file-ruling-project',
+    })
+    const questionId = addQuestion(runId, 'Which shape?')
+    db()
+      .query(
+        `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
+         WHERE id=?`,
+      )
+      .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', questionId)
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'file_ruling',
+        arguments: { question_id: questionId, as: 'doc' },
+      }),
+    )
+
+    expect(result.isError).not.toBe(true)
+    expect(result.structuredContent).toEqual({
+      question_id: questionId,
+      filed_as: 'doc',
+      filed_ref: expect.stringMatching(/@/),
+      filed_at: expect.any(String),
+    })
+    expect(db().query('SELECT filed_as FROM question WHERE id=?').get(questionId)).toEqual({
+      filed_as: 'doc',
+    })
+  })
 })

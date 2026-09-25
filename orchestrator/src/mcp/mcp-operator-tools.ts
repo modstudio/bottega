@@ -3,17 +3,22 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { FILING_DOC_SCOPES } from '../../../shared/docs.ts'
 import {
   AnswerWaitingResultSchema,
+  FileRulingResultSchema,
   type ListOpenQuestionsResult,
   ListOpenQuestionsResultSchema,
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
+import { setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
+import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { answerRun } from '../run/run-answer.ts'
 import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
+import { fileNote } from './hub-notes.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -35,6 +40,14 @@ async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
 
 const presentation = {
   printRunId: (_id: number) => {},
+}
+
+const rulingFileStores: RulingFileStores = {
+  writeDoc: async (input) => {
+    const doc = await setDoc(input)
+    return { id: doc.id, revision: doc.revision }
+  },
+  fileNote,
 }
 
 export function registerOperatorTools(server: McpServer): void {
@@ -110,6 +123,37 @@ export function registerOperatorTools(server: McpServer): void {
           replacement: replacement ?? null,
           fromOperator: from_operator ?? false,
         }),
+      ),
+  )
+
+  server.registerTool(
+    'file_ruling',
+    {
+      description: 'File an answered ruling as a doc or as a canon proposal note.',
+      inputSchema: {
+        question_id: z.number().int().positive(),
+        as: z.enum(['doc', 'canon']),
+        scope: z.enum(FILING_DOC_SCOPES).optional(),
+        subject: z.string().trim().min(1).optional(),
+        title: z.string().trim().min(1).optional(),
+        from_operator: z.boolean().optional(),
+      },
+      outputSchema: FileRulingResultSchema,
+    },
+    async ({ question_id, as, scope, subject, title, from_operator }) =>
+      structured(
+        await fileRuling(
+          {
+            questionId: question_id,
+            as,
+            scope,
+            subject,
+            title,
+            fromOperator: from_operator ?? false,
+            channel: 'mcp',
+          },
+          rulingFileStores,
+        ),
       ),
   )
 

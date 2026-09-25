@@ -1,4 +1,5 @@
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
+import { runMutationOwnerDecision } from './run-mutation-owner.ts'
 
 export type AnswerAuthorityDecision =
   | { kind: 'allow-as-owner' }
@@ -28,11 +29,12 @@ export function answerAuthorityDecision(input: {
     if (!input.dashboardAuthorized) return { kind: 'refuse', code: 'dashboard-capability' }
     return { kind: 'allow-as-operator', actor: 'operator:ui' }
   }
-  if (input.owner && input.actor !== input.owner) {
+  const owner = runMutationOwnerDecision({ owner: input.owner, actor: input.actor })
+  if (owner.kind === 'refuse') {
     return {
       kind: 'refuse',
       code: 'owner-mismatch',
-      owner: input.owner,
+      owner: input.owner ?? undefined,
       actor: input.actor ?? undefined,
     }
   }

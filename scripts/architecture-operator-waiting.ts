@@ -13,6 +13,22 @@ const module = (file: string, allowed: string[]): OperatorWaitingModule => ({
 
 export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
+  module('orchestrator/src/run/run-mutation-owner.ts', []),
+  module('orchestrator/src/run/ruling-file-authority.ts', [
+    '../../../shared/question-vocabulary.ts',
+    './run-answer-authority.ts',
+  ]),
+  module('orchestrator/src/run/ruling-file-text.ts', []),
+  module('orchestrator/src/run/ruling-file.ts', [
+    '../../../shared/docs.ts',
+    '../../../shared/question-vocabulary.ts',
+    '../dashboard-capability.ts',
+    '../database/db.ts',
+    './question-vocabulary.ts',
+    './ruling-file-authority.ts',
+    './ruling-file-text.ts',
+    './run-authority.ts',
+  ]),
   module('orchestrator/src/operator/operator-waiting.ts', [
     'bun:sqlite',
     '../../../shared/machine-config.ts',

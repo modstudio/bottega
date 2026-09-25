@@ -27,6 +27,15 @@ test('waiting query and answer mutation use the orch seam', async () => {
       calls.push(args)
       return { outcome: 'resumed' as const, run_id: 42, resumed_as: 43 }
     },
+    file: async (input) => {
+      calls.push(['file', input])
+      return {
+        question_id: input.questionId,
+        filed_as: input.as === 'canon' ? ('canon-proposal' as const) : ('doc' as const),
+        filed_ref: '12@rev-1',
+        filed_at: '2026-09-25T12:00:00.000Z',
+      }
+    },
     emailDelay: () => 30,
     setEmailDelay: (value) => calls.push(['delay', value]),
   })
@@ -37,7 +46,16 @@ test('waiting query and answer mutation use the orch seam', async () => {
     run_id: 42,
     resumed_as: 43,
   })
-  expect(calls).toEqual([[42, [{ questionId: 7, ruling: 'A' }]]])
+  expect(await caller.file({ questionId: 7, as: 'doc' })).toEqual({
+    question_id: 7,
+    filed_as: 'doc',
+    filed_ref: '12@rev-1',
+    filed_at: '2026-09-25T12:00:00.000Z',
+  })
+  expect(calls).toEqual([
+    [42, [{ questionId: 7, ruling: 'A' }]],
+    ['file', { questionId: 7, as: 'doc' }],
+  ])
   expect(await caller.emailSettings()).toEqual({ delayMinutes: 30 })
   expect(await caller.setEmailSettings({ delayMinutes: 0 })).toEqual({ delayMinutes: 0 })
   expect(calls.at(-1)).toEqual(['delay', 0])
@@ -48,6 +66,9 @@ test('answer mutation surfaces orch refusals and validates input at the edge', a
     waiting: async () => [],
     answer: async () => {
       throw new Error('run 42 is no longer asking')
+    },
+    file: async () => {
+      throw new Error('question 7 is unanswered')
     },
     emailDelay: () => 30,
     setEmailDelay: () => {},
@@ -61,6 +82,15 @@ test('answer mutation surfaces orch refusals and validates input at the edge', a
   })
   await expect(
     caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: '   ' }] }),
+  ).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+  })
+  await expect(caller.file({ questionId: 7, as: 'canon' })).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'question 7 is unanswered',
+  })
+  await expect(
+    caller.file({ questionId: 7, as: 'doc', scope: 'canon' as never }),
   ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
   })

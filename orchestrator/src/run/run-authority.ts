@@ -9,6 +9,7 @@ const RUN_MUTATION_ACTIONS = [
   'adopt',
   'answer',
   'overturn',
+  'file',
   'tell',
   'relay',
   'stop',
@@ -87,6 +88,7 @@ export function auditRunMutation(
 const ADOPTING_ACTIONS = [
   'answer',
   'overturn',
+  'file',
   'tell',
   'relay',
   'stop',
