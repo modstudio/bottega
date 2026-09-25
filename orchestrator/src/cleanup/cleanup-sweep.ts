@@ -7,7 +7,13 @@ import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
+import {
+  absentTreeTeardownPlan,
+  projectAt,
+  projectByName,
+  projects,
+  resolvedWorktreeTool,
+} from '../project/projects.ts'
 import {
   classifiedDockerResources,
   type DockerResource,
@@ -758,14 +764,35 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const inventoryResources = inventory.ascertainable ? inventory.resources : []
   const inventoryOwnerIds = new Set(inventoryResources.map(({ runId }) => runId))
   const owners = (
-    db().query('SELECT id, repo, worktree, status FROM run').all() as {
+    db()
+      .query(
+        `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+                COALESCE(root.worktree_source,r.worktree_source) worktree_source,
+                COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
+                COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
+         FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+      )
+      .all() as {
       id: number
       repo: string | null
       worktree: string | null
       status: string
+      worktree_source: Worktree['source'] | null
+      recipe_snapshot: string | null
+      resource_teardown: 'pending' | 'done' | null
     }[]
   ).map((owner) => ({
     ...owner,
+    absentTreeTeardown:
+      Boolean(owner.worktree && !existsSync(owner.worktree)) &&
+      absentTreeTeardownPlan({
+        recipeSnapshot: owner.recipe_snapshot,
+        worktreeSource: owner.worktree_source,
+        resourceTeardown: owner.resource_teardown,
+        registeredRemoveCommand: Boolean(
+          resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
+        ),
+      }),
     retentionReason: inventoryOwnerIds.has(owner.id)
       ? terminalDockerRetentionReasonForRun(db(), owner.id)
       : null,

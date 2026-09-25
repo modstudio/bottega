@@ -81,6 +81,7 @@ function retainedDockerResourceAction(
     worktree: string | null
     worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
     recipe_snapshot: string | null
+    resource_teardown: 'pending' | 'done' | null
   } | null,
 ): string {
   const terminal = owner && TERMINAL_STATUSES.has(owner.status)
@@ -89,6 +90,7 @@ function retainedDockerResourceAction(
     ? absentTreeTeardownPlan({
         recipeSnapshot: owner.recipe_snapshot,
         worktreeSource: owner.worktree_source,
+        resourceTeardown: owner.resource_teardown,
         registeredRemoveCommand: Boolean(resolvedWorktreeTool(project)?.remove),
       })
     : false
@@ -452,7 +454,8 @@ export async function monitor(
       .query(
         `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
                 COALESCE(root.worktree_source,r.worktree_source) worktree_source,
-                COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot
+                COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
+                COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
          FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
       )
       .all() as {
@@ -462,9 +465,20 @@ export async function monitor(
       status: string
       worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
       recipe_snapshot: string | null
+      resource_teardown: 'pending' | 'done' | null
     }[]
   ).map((owner) => ({
     ...owner,
+    absentTreeTeardown:
+      Boolean(owner.worktree && !existsSync(owner.worktree)) &&
+      absentTreeTeardownPlan({
+        recipeSnapshot: owner.recipe_snapshot,
+        worktreeSource: owner.worktree_source,
+        resourceTeardown: owner.resource_teardown,
+        registeredRemoveCommand: Boolean(
+          resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
+        ),
+      }),
     retentionReason: dockerOwnerIds.has(owner.id)
       ? terminalDockerRetentionReasonForRun(database, owner.id)
       : null,

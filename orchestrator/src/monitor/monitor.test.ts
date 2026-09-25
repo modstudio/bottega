@@ -141,9 +141,20 @@ describe('operational monitor conditions', () => {
 
   test('an absent terminal tree names close-out as the retained Docker resource remedy', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const project = `monitor-absent-${runId}`
+    upsertProject({ name: project, path: `/registered/${project}`, settings: { trunk: 'main' } })
     db()
-      .query('UPDATE run SET worktree=?,recipe_snapshot=? WHERE id=?')
-      .run(`/gone/orch-${runId}`, '{"recipe":{"destroy":[]}}', runId)
+      .query(
+        `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
+                        resource_teardown='pending' WHERE id=?`,
+      )
+      .run(
+        project,
+        `/registered/${project}`,
+        `/gone/orch-${runId}`,
+        '{"recipe":{"destroy":[]}}',
+        runId,
+      )
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const command = args.join(' ')
       const stdout = command.startsWith('docker ps -a --format')
@@ -165,6 +176,47 @@ describe('operational monitor conditions', () => {
             condition.subject === `app-orch-${runId}-web`,
         ),
       ).toMatchObject({ action: `run orch close-out ${runId}` })
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
+  test('a legacy absent recipe run does not offer close-out for Docker resources', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const project = `monitor-legacy-${runId}`
+    upsertProject({ name: project, path: `/registered/${project}`, settings: { trunk: 'main' } })
+    db()
+      .query(
+        `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
+                        resource_teardown=NULL WHERE id=?`,
+      )
+      .run(
+        project,
+        `/registered/${project}`,
+        `/gone/orch-${runId}`,
+        '{"recipe":{"destroy":[]}}',
+        runId,
+      )
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+      const stdout = args.join(' ').startsWith('docker ps -a --format')
+        ? `app-orch-${runId}-web\torch.run=${runId}`
+        : ''
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(''),
+        success: true,
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+    try {
+      const result = await monitor('invoked')
+      expect(
+        result.conditions.find(
+          (condition) =>
+            condition.kind === 'retained-worktree-docker-resource' &&
+            condition.subject === `app-orch-${runId}-web`,
+        ),
+      ).toBeUndefined()
     } finally {
       spawn.mockRestore()
     }

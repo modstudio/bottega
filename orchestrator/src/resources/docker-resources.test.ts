@@ -159,6 +159,25 @@ test('reporting distinguishes leaked resources from terminal resources in a reta
   }
 })
 
+test('an absent tree with pending recorded teardown is retained for close-out', () => {
+  const resources: DockerResource[] = [
+    { kind: 'container', name: 'app-orch-93-web', runId: 93 },
+    { kind: 'container', name: 'app-orch-94-web', runId: 94 },
+  ]
+  expect(
+    classifiedDockerResources(resources, [
+      {
+        id: 93,
+        repo: 'app',
+        worktree: '/gone/orch-93',
+        status: 'ok',
+        absentTreeTeardown: true,
+      },
+      { id: 94, repo: 'app', worktree: '/gone/orch-94', status: 'ok' },
+    ]).map(({ condition }) => condition),
+  ).toEqual(['retained-worktree-resources', 'leaked'])
+})
+
 test('an unavailable inventory prevents teardown of partially inventoried resources', () => {
   const errors: string[] = []
   spyOn(console, 'error').mockImplementation((value) => {

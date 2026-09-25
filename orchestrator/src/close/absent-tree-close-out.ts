@@ -82,14 +82,15 @@ export function successfulReleaseResult(
   runId: number,
   treePath: string,
   treeAbsent: boolean,
-  result: { detail: string; output?: string },
-): AbsentResult | ReleasedResult {
+  result: { detail: string; output?: string; resourceTeardownCompleted?: true },
+): (AbsentResult | ReleasedResult) & { resourceTeardownCompleted?: true } {
   if (!treeAbsent)
     return {
       runId,
       worktree: treePath,
       outcome: 'released',
       detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
+      ...(result.resourceTeardownCompleted ? { resourceTeardownCompleted: true as const } : {}),
     }
   return {
     runId,
@@ -98,5 +99,6 @@ export function successfulReleaseResult(
     detail: result.output
       ? `worktree was already absent; resources torn down\n${result.output}`
       : 'worktree was already absent; resources torn down',
+    ...(result.resourceTeardownCompleted ? { resourceTeardownCompleted: true as const } : {}),
   }
 }

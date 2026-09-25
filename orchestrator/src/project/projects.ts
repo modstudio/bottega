@@ -98,11 +98,13 @@ export function resolveBranchRef(value: string): { branch: string; runId: number
 export function absentTreeTeardownPlan(input: {
   recipeSnapshot: string | null
   worktreeSource: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null | undefined
+  resourceTeardown: 'pending' | 'done' | null | undefined
   registeredRemoveCommand: boolean
 }): boolean {
   return (
-    Boolean(input.recipeSnapshot) ||
-    (input.worktreeSource === 'recipe' && input.registeredRemoveCommand)
+    input.resourceTeardown === 'pending' &&
+    (Boolean(input.recipeSnapshot) ||
+      (input.worktreeSource === 'recipe' && input.registeredRemoveCommand))
   )
 }
 

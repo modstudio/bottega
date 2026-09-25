@@ -59,6 +59,11 @@ export type CloseOutResult = {
   detail: string
 }
 
+type CloseOutAttemptResult = CloseOutResult & {
+  resourceTeardownCompleted?: true
+  resourceTeardownFailed?: true
+}
+
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 type AliveTurn = { id: number; status: string; pid: number | null }
@@ -528,7 +533,7 @@ function attemptCloseOutRun(
     pgid?: number | null
     keepTreeDecision: ConversationKeepTreeHold
   },
-): CloseOutResult {
+): CloseOutAttemptResult {
   const row = db()
     .query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
@@ -890,6 +895,12 @@ function attemptCloseOutRun(
                 worktree: treePath,
                 outcome: 'failed' as const,
                 detail: result.detail,
+                ...(result.resourceTeardownCompleted
+                  ? { resourceTeardownCompleted: true as const }
+                  : {}),
+                ...(treeAbsent && result.resourceTeardownFailed
+                  ? { resourceTeardownFailed: true as const }
+                  : {}),
               }
             const acquired = liveRows()
             if (acquired.length) {
@@ -970,6 +981,8 @@ export function closeOutRun(
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
+  const resourceTeardownCompleted = result.resourceTeardownCompleted === true
+  const resourceTeardownFailed = result.resourceTeardownFailed === true
   result.detail = releaseAbsentCloseOutResidue({
     runId: result.runId,
     outcome: result.outcome,
@@ -990,7 +1003,19 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
-      if (result.worktree && pointerMustClear(result.outcome, result.worktree)) {
+      if (resourceTeardownCompleted) {
+        db()
+          .query(
+            `UPDATE run SET resource_teardown='done'
+             WHERE id=? AND resource_teardown='pending'`,
+          )
+          .run(result.runId)
+      }
+      if (
+        result.worktree &&
+        pointerMustClear(result.outcome, result.worktree) &&
+        !resourceTeardownFailed
+      ) {
         const spellings = spellingsBefore.get(result.worktree) ?? [result.worktree]
         db()
           .query(
@@ -1011,6 +1036,8 @@ export function closeOutRun(
       }
     })
   }
+  delete result.resourceTeardownCompleted
+  delete result.resourceTeardownFailed
   if (options.intent !== 'sweep' && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const sandbox = releaseSandboxDirectoryForConversation(result.runId, {
       dryRun: options.dryRun,

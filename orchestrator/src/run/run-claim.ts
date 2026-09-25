@@ -613,7 +613,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           writeTransaction(() => {
             const result = db()
               .query(
-                'UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=? WHERE id=?',
+                `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=?,
+                        resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
+                 WHERE id=?`,
               )
               .run(
                 created.path,
@@ -621,6 +623,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                 reviewTarget?.branch ?? (created.branch || null),
                 created.mintedBranch ?? null,
                 coverageBase ?? created.base,
+                created.source ?? null,
                 created.source ?? null,
                 claim.id,
               )

@@ -100,7 +100,8 @@ export function createHookTree(input: {
     writeTransaction(() => {
       const recorded = db()
         .query(
-          `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source=?
+          `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source=?,
+                  resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
            WHERE id=?`,
         )
         .run(
@@ -109,6 +110,7 @@ export function createHookTree(input: {
           created.branch || null,
           created.mintedBranch ?? null,
           created.base,
+          created.source ?? null,
           created.source ?? null,
           inserted.id,
         )

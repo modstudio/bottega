@@ -31,6 +31,14 @@ import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
 
+export type WorktreeRemovalResult = {
+  removed: boolean
+  detail: string
+  output?: string
+  resourceTeardownCompleted?: true
+  resourceTeardownFailed?: true
+}
+
 function portFor(runId: number): number {
   return 21000 + (runId % 4000)
 }
@@ -178,7 +186,7 @@ function removeWithTool(
   keepBranch = false,
   runId?: number,
   removeTree: () => { removed: boolean; detail: string } = () => removeWorktree(w, keepBranch),
-): { removed: boolean; detail: string; output?: string } {
+): WorktreeRemovalResult {
   const name = w.path.split('/').pop() ?? w.path
   const branchBefore = branchTip(w.repoRoot, w.branch)
   const uniqueBefore = unmergedBranch(w.repoRoot, w.branch, null)
@@ -213,7 +221,11 @@ function removeWithTool(
       }
     }
     const reconciled = removeTree()
-    return { ...reconciled, ...(r.out ? { output: r.out } : {}) }
+    return {
+      ...reconciled,
+      ...(r.out ? { output: r.out } : {}),
+      resourceTeardownCompleted: true,
+    }
   }
 
   // The marker is the proof that orch made and owns this disposable checkout.
@@ -247,6 +259,7 @@ function removeWithTool(
    */
   return {
     removed: false,
+    resourceTeardownFailed: true,
     detail:
       `${w.path} was NOT removed — the project's own tool refused, and orch will not ` +
       `force past that:\n${r.out.slice(-600) || `exit code from ${tool.remove}`}\n\n` +
@@ -262,26 +275,34 @@ function removeWithoutCommand(
   w: Worktree,
   keepBranch: boolean,
   runId?: number,
-): { removed: boolean; detail: string } {
+): WorktreeRemovalResult {
   const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: runId !== undefined,
     trackedRecipe: Boolean(tool.recipePath),
   })
   if (snapshotRefusal) return { removed: false, detail: snapshotRefusal }
   if (tool.recipePath) {
-    return teardownTrackedRecipe({
+    let teardownCompleted = false
+    const removed = teardownTrackedRecipe({
       runId: runId as number,
       worktree: w,
-      remove: () => removeWorktree(w, keepBranch),
+      remove: () => {
+        teardownCompleted = true
+        return removeWorktree(w, keepBranch)
+      },
     })
+    return teardownCompleted
+      ? { ...removed, resourceTeardownCompleted: true }
+      : { ...removed, resourceTeardownFailed: true }
   }
   if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch)
   const teardown = teardownBuiltInRecipe(tool.recipe, w, runId)
   return teardown.ok
-    ? removeWorktree(w, keepBranch)
+    ? { ...removeWorktree(w, keepBranch), resourceTeardownCompleted: true }
     : {
         removed: false,
         detail: `recipe teardown failed at "${teardown.step}": ${teardown.detail.slice(-200)}`,
+        resourceTeardownFailed: true,
       }
 }
 
@@ -392,20 +413,24 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
 function recordedAbsentTreeFacts(runId: number | undefined): {
   recipeSnapshot: string | null
   worktreeSource: Worktree['source'] | null
+  resourceTeardown: 'pending' | 'done' | null
 } {
-  if (runId === undefined) return { recipeSnapshot: null, worktreeSource: null }
+  if (runId === undefined)
+    return { recipeSnapshot: null, worktreeSource: null, resourceTeardown: null }
   const row = db()
     .query(
-      `SELECT recipe_snapshot,worktree_source FROM run
+      `SELECT recipe_snapshot,worktree_source,resource_teardown FROM run
        WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
     )
     .get(runId) as {
     recipe_snapshot: string | null
     worktree_source: Worktree['source'] | null
+    resource_teardown: 'pending' | 'done' | null
   } | null
   return {
     recipeSnapshot: row?.recipe_snapshot ?? null,
     worktreeSource: row?.worktree_source ?? null,
+    resourceTeardown: row?.resource_teardown ?? null,
   }
 }
 
@@ -426,15 +451,25 @@ function removeByLifecycle(input: {
   retainBranch: boolean
   runId?: number
   removeTree(): { removed: boolean; detail: string }
-}): { removed: boolean; detail: string; output?: string } {
+}): WorktreeRemovalResult {
   const { worktree, tool, runId, removeTree } = input
-  if (!existsSync(worktree.path) && recordedAbsentTreeFacts(runId).recipeSnapshot) {
-    return teardownTrackedRecipe({
+  const treeAbsent = !existsSync(worktree.path)
+  const absentFacts = treeAbsent ? recordedAbsentTreeFacts(runId) : null
+  if (treeAbsent && absentFacts?.resourceTeardown !== 'pending') return removeTree()
+  if (treeAbsent && absentFacts?.recipeSnapshot) {
+    let teardownCompleted = false
+    const removed = teardownTrackedRecipe({
       runId: runId as number,
       worktree,
-      remove: removeTree,
+      remove: () => {
+        teardownCompleted = true
+        return removeTree()
+      },
       treeExists: false,
     })
+    return teardownCompleted
+      ? { ...removed, resourceTeardownCompleted: true }
+      : { ...removed, resourceTeardownFailed: true }
   }
   if (worktree.source === 'readonly_recipe' || worktree.source === 'clone') {
     const removed: { removed: boolean; detail: string; output?: string } = removeReadOnlyTree(
@@ -448,7 +483,7 @@ function removeByLifecycle(input: {
   }
   const projectOwned =
     worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
-  const removed: { removed: boolean; detail: string; output?: string } =
+  const removed: WorktreeRemovalResult =
     tool && projectOwned
       ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
       : removeWorktree(worktree, input.retainBranch)
@@ -466,7 +501,7 @@ export function removeFor(
   runId?: number,
   forceUnmerged = false,
   skipGitRemoval = false,
-): { removed: boolean; detail: string; output?: string } {
+): WorktreeRemovalResult {
   // The marker identifies who created a tree; it does not transfer that run's
   // branch ownership to a later attacher. Cleanup names only the discarding
   // run's minted branch.
