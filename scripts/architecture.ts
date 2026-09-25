@@ -1,8 +1,10 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
+import { recordModules } from './architecture-record-modules.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
@@ -48,6 +50,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   ...retrievalModules,
   ...operatorWaitingModules,
+  ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/install-root.ts',
@@ -353,49 +356,7 @@ export const modules: ArchitectureModule[] = [
     '../config/config-service.ts',
     './support.ts',
   ]),
-  module('orchestrator/src/record/record-command.ts', [
-    '../../../shared/machine-config.ts',
-    '../postgres/postgres-migrate.ts',
-    '../project/projects.ts',
-    './record-doctor.ts',
-    './record-space-move.ts',
-    './record-space.ts',
-    './record-tunnel-error.ts',
-  ]),
-  module('orchestrator/src/record/record-tunnel-error.ts', []),
-  module('orchestrator/src/record/record-attribution.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
-    './record-api-client.ts',
-    './record-session.ts',
-  ]),
-  module('orchestrator/src/record/record-doctor.ts', [
-    '../postgres/postgres-migrate.ts',
-    '../../../shared/record/schema.ts',
-    './record-attribution.ts',
-    './record-auth.ts',
-    './record-session.ts',
-    './record-sync.ts',
-  ]),
-  module('orchestrator/src/record/record-session.ts', [
-    '../../../shared/record-session.ts',
-    '../../../shared/record-remedies.ts',
-    '../database/db.ts',
-    './record-auth.ts',
-  ]),
-  module('orchestrator/src/record/record-space.ts', [
-    '../../../shared/record/schema.ts',
-    './record-api-client.ts',
-    './record-auth.ts',
-    './record-session.ts',
-  ]),
-  module('orchestrator/src/record/record-invitation.ts', []),
-  module('orchestrator/src/record/record-space-move.ts', [
-    'bun',
-    '../postgres/postgres-migrate.ts',
-    './record-session.ts',
-    './record-space.ts',
-  ]),
+  ...recordModules,
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record/schema.ts',
     '../verdict/verdict-payload.ts',
