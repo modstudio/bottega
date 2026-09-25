@@ -113,20 +113,27 @@ export async function userCanonHydrateCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
 ): Promise<void> {
+  if (flags.has('force')) {
+    throw new Error('unknown flag for orch canon hydrate --user: --force')
+  }
   const owner = await signedInDocOwner()
   const claudeHome = claudeHomeFromEnvironment(process.env)
   const plan = planUserCanonHome({
     claudeHome,
     rows: listDocs({ scope: 'canon', subject: null, owner }),
     files: collectUserCanonHome(claudeHome),
+    adopt: flags.has('adopt'),
   })
   for (const row of plan.writes) presentation.log(`write ${row.path}`)
+  for (const row of plan.adopts) presentation.log(`adopt ${row.path}`)
   for (const row of plan.deletes) presentation.log(`delete ${row.path}`)
-  const count = plan.writes.length + plan.deletes.length
+  const count = plan.writes.length + plan.adopts.length + plan.deletes.length
   if (flags.has('check')) {
     if (count) presentation.exitCode(1)
     return
   }
-  applyUserCanonHomePlan(plan)
-  presentation.log(`hydrated ${count} paths`)
+  const dryRun = flags.has('dry-run')
+  const backups = applyUserCanonHomePlan(plan, process.env, dryRun)
+  for (const path of backups) presentation.log(`backup ${path}`)
+  presentation.log(`${dryRun ? 'would hydrate' : 'hydrated'} ${count} paths`)
 }

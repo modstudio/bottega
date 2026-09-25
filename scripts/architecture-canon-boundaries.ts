@@ -171,8 +171,13 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
   {
     name: 'user-canon-home-files-boundary',
     file: `${source}user-canon-home-files.ts`,
-    allowed: ['node:fs', 'node:path', `${source}user-canon-home.ts`],
-    typeOnlyAllowed: [],
+    allowed: [
+      'node:fs',
+      'node:path',
+      'orchestrator/src/settings/settings-write.ts',
+      `${source}user-canon-home.ts`,
+    ],
+    typeOnlyAllowed: ['shared/state-directory.ts'],
     reason:
       'Keep user canon home file access independent of stores, commands, runs, routing, and transports.',
   },
