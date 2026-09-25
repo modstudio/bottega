@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { decideCanonWrite } from './canon-write-gate.ts'
+import { composeCanonRows } from './canon-hydrate.ts'
+import { decideCanonWrite, decideUserCanonImport } from './canon-write-gate.ts'
 
 const inputs = { trackedPaths: [], packageScripts: [], sourceTexts: [] }
 
@@ -31,5 +32,66 @@ describe('decideCanonWrite', () => {
       next: [{ slug: 'AGENTS.md', body: `${current}more` }],
     })
     expect(findings.map(({ rule }) => rule)).toContain('canon/size-entry')
+  })
+
+  test('counts repository and user entry rows in the combined always-on budget', () => {
+    const body = 'x'.repeat(16_000)
+    const rule = { slug: '.agents/rules/example.md', body: 'x'.repeat(1_000) }
+    const composed = composeCanonRows(
+      [{ subject: null, slug: 'AGENTS.md', body }],
+      [{ subject: null, owner: 'user-1', slug: 'AGENTS.md', body }],
+      [],
+    ).map(({ slug, body: rowBody }) => ({ slug, body: rowBody }))
+    const findings = decideCanonWrite({
+      ...inputs,
+      current: [{ slug: 'AGENTS.md', body }, rule],
+      next: [...composed, rule],
+    })
+    expect(findings.map(({ rule }) => rule)).toContain('canon/size-always-on')
+  })
+})
+
+describe('decideUserCanonImport', () => {
+  test('allows an empty owner to bootstrap and returns all findings', () => {
+    const decision = decideUserCanonImport({
+      current: [],
+      next: [{ slug: 'AGENTS.md', body: 'Keep 123 things. It used to differ.' }],
+    })
+    expect(decision.bootstrap).toBe(true)
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/numeral')
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
+  })
+
+  test('does not bootstrap a non-empty owner and returns introduced findings', () => {
+    const decision = decideUserCanonImport({
+      current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
+      next: [{ slug: 'AGENTS.md', body: 'Current rule. It used to differ.' }],
+    })
+    expect(decision.bootstrap).toBe(false)
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
+  })
+
+  test('bootstrap reports imported findings but not pre-existing surrounding findings', () => {
+    const decision = decideUserCanonImport({
+      current: [],
+      next: [{ slug: 'AGENTS.md', body: 'A clean personal rule.' }],
+      surroundings: [
+        {
+          global: [{ slug: '.agents/rules/global.md', body: 'Keep 123 global things.' }],
+          project: [],
+        },
+      ],
+    })
+    expect(decision.bootstrap).toBe(true)
+    expect(decision.findings.map(({ rule }) => rule)).not.toContain('canon/numeral')
+  })
+
+  test('non-empty imports inspect each row before mapped deletions can hide a finding', () => {
+    const decision = decideUserCanonImport({
+      current: [{ slug: '.agents/rules/old.md', body: 'It used to differ.' }],
+      next: [{ slug: '.agents/rules/new.md', body: 'It used to differ.' }],
+    })
+    expect(decision.bootstrap).toBe(false)
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
   })
 })

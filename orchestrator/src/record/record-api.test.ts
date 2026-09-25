@@ -46,6 +46,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
     importDoc: async () => ({ id, revisionIds: [id] }),
+    importUserCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id, revisionId: id }),
     consumeDoc: async () => ({ id, revisionId: id, alreadyConsumed: false }),
     restoreDoc: async () => ({ id, revisionId: id }),
@@ -89,6 +90,34 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
+  test('binds user canon imports to the authenticated owner and ignores bootstrap authority', async () => {
+    const calls: Record<string, unknown>[] = []
+    const app = appWith(identity, {
+      importUserCanon: async (input: Record<string, unknown>) => {
+        calls.push(input)
+        return { rows: [], deletions: [], findings: [], bootstrap: false }
+      },
+    })
+    const response = await app.request('/v1/docs/user-canon/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Rule.' }],
+        expectedRevisions: {},
+        reason: 'test',
+        author: 'tester',
+        bootstrap: true,
+        owner: 'caller-controlled',
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(calls).toEqual([
+      expect.objectContaining({ userId: 'user-a', spaceId: 'space-a', reason: 'test' }),
+    ])
+    expect(calls[0]).not.toHaveProperty('bootstrap')
+    expect(calls[0]).not.toHaveProperty('owner')
+  })
+
   test('requires an unvoid note and passes the authenticated tenant to the service', async () => {
     const calls: Array<{ id: string; note: string; userId: string; spaceId: string }> = []
     const app = appWith(identity, {

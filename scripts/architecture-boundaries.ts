@@ -1,5 +1,5 @@
 import { dirname, normalize } from 'node:path'
-import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
+import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
   recordReadBoundariesAfterPublish,
@@ -76,6 +76,7 @@ export const importBoundaries: ImportBoundary[] = [
       './canon-write-gate.ts',
       './canon-load-files.ts',
       './canon-load.ts',
+      './user-canon-commands.ts',
       '../doc/docs.ts',
       './evals.ts',
       '../project/projects.ts',
@@ -92,7 +93,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'canon-hydrate-boundary',
     'orchestrator/src/canon/canon-hydrate.ts',
-    ['node:path', './canon-lint.ts'],
+    ['node:path', './canon-lint.ts', './user-canon-home.ts'],
     'Keep canon hydration planning pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
@@ -119,6 +120,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['./canon-lint.ts'],
     'Keep canon write decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
+  ...canonBoundarySpecs,
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',
@@ -493,7 +495,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Enforce the machine-identity concern boundary.',
   ),
   ...mcpBoundarySpecs,
-  ...canonLoadBoundarySpecs,
   boundary(
     'metric-commands-boundary',
     'orchestrator/src/metric/metric-commands.ts',
@@ -613,6 +614,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-runs.ts',
       './record-runs-window-query.ts',
       './record-api-projects.ts',
+      './record-api-doc-schemas.ts',
     ],
     'Enforce the record-api concern boundary.',
   ),
@@ -639,6 +641,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-snapshots.ts',
     ],
     'Enforce the record API client concern boundary.',
+    ['../canon/canon-lint.ts'],
   ),
   boundary(
     'record-api-server-boundary',

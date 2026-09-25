@@ -21,6 +21,12 @@ const boundary = (
 
 export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
+    'record-doc-api-schemas-boundary',
+    'orchestrator/src/record/record-api-doc-schemas.ts',
+    ['zod', '../canon/user-canon-home.ts'],
+    'Keep hosted document payload validation independent of SQL and local execution.',
+  ),
+  boundary(
     'record-auth-boundary',
     'orchestrator/src/record/record-auth.ts',
     [
@@ -57,9 +63,11 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../doc/doc-write-allowed.ts',
+      '../canon/user-canon-home.ts',
       './record-canon-facts.ts',
     ],
     'Enforce the record-docs concern boundary.',
+    ['../canon/canon-lint.ts'],
   ),
 ]
 

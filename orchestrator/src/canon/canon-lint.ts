@@ -401,7 +401,7 @@ function chainFiles(path: string, agentsByPath: Map<string, CanonFile>): CanonFi
 
 type Classified = { file: CanonFile; kind: CanonKind | null }
 type TierFiles = {
-  entry: CanonFile | null
+  entries: CanonFile[]
   rules: CanonFile[]
   contexts: CanonFile[]
   references: CanonFile[]
@@ -410,7 +410,7 @@ type TierFiles = {
 
 function tierFiles(classified: Classified[]): TierFiles {
   return {
-    entry: classified.find(({ kind }) => kind === 'entry')?.file ?? null,
+    entries: classified.filter(({ kind }) => kind === 'entry').map(({ file }) => file),
     rules: classified.filter(({ kind }) => kind === 'rule').map(({ file }) => file),
     contexts: classified.filter(({ kind }) => kind === 'context').map(({ file }) => file),
     references: classified.filter(({ kind }) => kind === 'reference').map(({ file }) => file),
@@ -420,10 +420,10 @@ function tierFiles(classified: Classified[]): TierFiles {
 
 function tierSummary(tiers: TierFiles): CanonLintSummary['tiers'] {
   return {
-    entry: tiers.entry ? measured(tiers.entry, ENTRY_BYTES) : null,
+    entry: tiers.entries[0] ? measured(tiers.entries[0], ENTRY_BYTES) : null,
     alwaysOn: {
       bytes:
-        (tiers.entry ? bytes(tiers.entry) : 0) +
+        tiers.entries.reduce((total, file) => total + bytes(file), 0) +
         tiers.rules.reduce((total, file) => total + bytes(file), 0),
       limit: ALWAYS_ON_TOTAL_BYTES,
     },
@@ -436,12 +436,14 @@ function tierSummary(tiers: TierFiles): CanonLintSummary['tiers'] {
 
 function sizeFindings(tiers: TierFiles, summary: CanonLintSummary['tiers']): CanonFinding[] {
   const findings: CanonFinding[] = []
-  if (tiers.entry && bytes(tiers.entry) > ENTRY_BYTES) {
-    findings.push(sizeFinding(tiers.entry, 'canon/size-entry', bytes(tiers.entry), ENTRY_BYTES))
+  for (const entry of tiers.entries) {
+    if (bytes(entry) > ENTRY_BYTES) {
+      findings.push(sizeFinding(entry, 'canon/size-entry', bytes(entry), ENTRY_BYTES))
+    }
   }
   if (summary.alwaysOn.bytes > ALWAYS_ON_TOTAL_BYTES) {
     findings.push({
-      file: tiers.entry?.path ?? tiers.rules[0]?.path ?? 'AGENTS.md',
+      file: tiers.entries[0]?.path ?? tiers.rules[0]?.path ?? 'AGENTS.md',
       line: 1,
       rule: 'canon/size-always-on',
       message: `measured ${summary.alwaysOn.bytes} bytes; limit ${ALWAYS_ON_TOTAL_BYTES} bytes`,

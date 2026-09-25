@@ -1,5 +1,7 @@
 /** Builds hosted canon write-gate facts. Must not know local stores, CLI, or HTTP. */
 import type { SQL } from 'bun'
+import type { CanonFinding } from '../canon/canon-lint.ts'
+import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { composeCanonRows, refuseCanonWrite } from '../doc/doc-write-allowed.ts'
 
 type Row = { slug: string; body: string }
@@ -73,6 +75,39 @@ export async function managedCanonProjectNames(tx: SQL, spaceId: string): Promis
     ORDER BY name
   `
   return targets.map((row: Record<string, unknown>) => String(row.name))
+}
+
+export async function userCanonImportFindings(
+  tx: SQL,
+  input: { spaceId: string; owner: string; current: Row[]; next: Row[] },
+): Promise<CanonFinding[]> {
+  const global = asRows(
+    await tx`
+      SELECT slug, body FROM doc
+      WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject IS NULL
+        AND owner_user_id IS NULL AND deleted_at IS NULL
+    `,
+  )
+  const names = await managedCanonProjectNames(tx, input.spaceId)
+  const targets = names.length ? names : [null]
+  const surroundings: Array<{ global: Row[]; project: Row[] }> = []
+  for (const name of targets) {
+    const project = name
+      ? asRows(
+          await tx`
+            SELECT slug, body FROM doc
+            WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject=${name}
+              AND owner_user_id IS NULL AND deleted_at IS NULL
+          `,
+        )
+      : []
+    surroundings.push({ global, project })
+  }
+  return decideUserCanonImport({
+    current: input.current,
+    next: input.next,
+    surroundings,
+  }).findings
 }
 
 export async function canonFacts(

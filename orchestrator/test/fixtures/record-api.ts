@@ -1,4 +1,9 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { decideUserCanonImport } from '../../src/canon/canon-write-gate.ts'
+import {
+  isUserCanonSlug,
+  userCanonHomeImportDeletionSlugs,
+} from '../../src/canon/user-canon-home.ts'
 import {
   consumeDocBody,
   decideDocRevisionWrite,
@@ -8,12 +13,14 @@ import type {
   RecordApiClient,
   RecordDocImportInput,
   RecordDocUpsertInput,
+  RecordUserCanonImportInput,
 } from '../../src/record/record-api-client.ts'
 
 type StoredDoc = {
   id: string
   scope: string
   subject: string | null
+  owner: string | null
   slug: string
   title: string
   body: string
@@ -150,6 +157,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         id,
         scope: input.scope,
         subject: input.subject,
+        owner: input.owner ?? null,
         slug: input.slug,
         title: input.title,
         body: input.body,
@@ -206,6 +214,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         id,
         scope: input.doc.scope,
         subject: input.doc.subject,
+        owner: input.doc.owner ?? null,
         slug: input.doc.slug,
         title: input.doc.title,
         body: input.doc.body,
@@ -248,6 +257,78 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       }
       revisions.set(id, list)
       return { id, revisionIds }
+    },
+    async importUserCanon(input: RecordUserCanonImportInput) {
+      const owner = '01990000-0000-7000-8000-000000000001'
+      const current = [...docs.values()].filter(
+        (doc) =>
+          doc.scope === 'canon' &&
+          doc.subject === null &&
+          doc.owner === owner &&
+          doc.deletedAt === null,
+      )
+      for (const doc of current) {
+        const actual = revisions.get(doc.id)?.at(-1)?.id
+        if (input.expectedRevisions[doc.slug] !== actual) {
+          throw new Error(`refusing stale document update at ${doc.slug}`)
+        }
+      }
+      const currentCanon = current.map(({ slug, body }) => ({ slug, body }))
+      const nextCanon = [
+        ...currentCanon.filter(({ slug }) => !isUserCanonSlug(slug)),
+        ...input.rows.map(({ slug, body }) => ({ slug, body })),
+      ]
+      const { bootstrap, findings } = decideUserCanonImport({
+        current: currentCanon,
+        next: nextCanon,
+      })
+      if (!bootstrap && findings.length) throw new Error('refusing canon write')
+      const now = new Date().toISOString()
+      const rows = input.rows.map((row) => {
+        const prior = current.find((doc) => doc.slug === row.slug)
+        const id = prior?.id ?? newRecordId()
+        const revisionId = newRecordId()
+        docs.set(id, {
+          id,
+          scope: 'canon',
+          subject: null,
+          owner,
+          slug: row.slug,
+          title: row.title,
+          body: row.body,
+          delivery: 'demand',
+          projectName: null,
+          createdAt: prior?.createdAt ?? now,
+          updatedAt: now,
+          deletedAt: null,
+        })
+        const list = revisions.get(id) ?? []
+        list.push({
+          id: revisionId,
+          docId: id,
+          scope: 'canon',
+          subject: null,
+          slug: row.slug,
+          op: 'import',
+          title: row.title,
+          body: row.body,
+          delivery: 'demand',
+          author: input.author,
+          reason: input.reason,
+          at: now,
+        })
+        revisions.set(id, list)
+        return { slug: row.slug, id, revisionId }
+      })
+      const desired = new Set(input.rows.map(({ slug }) => slug))
+      const deletions = current
+        .filter(({ slug }) => userCanonHomeImportDeletionSlugs([slug], desired).includes(slug))
+        .map((doc) => {
+          const revisionId = newRecordId()
+          docs.set(doc.id, { ...doc, deletedAt: now, updatedAt: now })
+          return { slug: doc.slug, id: doc.id, revisionId }
+        })
+      return { rows, deletions, findings, bootstrap }
     },
     async deleteDoc(id, input) {
       const doc = docs.get(id)
@@ -339,6 +420,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         id,
         scope: source.scope,
         subject: source.subject,
+        owner: doc?.owner ?? null,
         slug: source.slug,
         title: source.title,
         body: source.body,

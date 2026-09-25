@@ -2,6 +2,7 @@
 /** Knows the pure mirror plan for stored canon. Must not know filesystems, stores, commands, runs, routing, or transports. */
 import { posix } from 'node:path'
 import { type CanonFile, classifyCanonFile } from './canon-lint.ts'
+import { mapUserCanonPath } from './user-canon-home.ts'
 
 export type CanonRow = { slug: string; body: string }
 export type AddressedCanonRow = CanonRow & { subject: string | null; owner?: string | null }
@@ -11,7 +12,7 @@ export type HydrationPlan = {
   deletes: string[]
 }
 
-/** Global, user, then project canon; duplicate mirror paths have no precedence rule. */
+/** Repository rows share a tree namespace; user rows occupy their separate Claude-home namespace. */
 export function composeCanonRows<
   G extends AddressedCanonRow,
   U extends AddressedCanonRow,
@@ -20,16 +21,24 @@ export function composeCanonRows<
   const levels = [globalRows, userRows, projectRows] as AddressedCanonRow[][]
   const address = (row: AddressedCanonRow) =>
     row.owner ? `canon/@${row.owner}/${row.slug}` : `canon/${row.subject ?? '_'}/${row.slug}`
+  const renderKey = (row: AddressedCanonRow) => {
+    if (!row.owner) return `repo:${row.slug}`
+    const homePath = mapUserCanonPath({ kind: 'canon', path: row.slug })
+    if (!homePath)
+      throw new Error(`refusing user canon slug with no Claude home mapping: ${row.slug}`)
+    return `home:${homePath}`
+  }
   const seen = new Map<string, AddressedCanonRow>()
   for (const rows of levels) {
     for (const row of rows) {
-      const prior = seen.get(row.slug)
+      const key = renderKey(row)
+      const prior = seen.get(key)
       if (prior) {
         throw new Error(
           `refusing canon path collision: ${address(prior)} and ${address(row)} render to the same path`,
         )
       }
-      seen.set(row.slug, row)
+      seen.set(key, row)
     }
   }
   return [...globalRows, ...userRows, ...projectRows]
