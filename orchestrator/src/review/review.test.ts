@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
+import { getReview } from './review.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { amendFinding, completeReview, recordReview, triageFinding } from './review-triage.ts'
 
@@ -69,6 +70,20 @@ describe('review triage', () => {
       'medium',
       db(),
     )
+
+    expect(getReview(reviewId, db()).findings[0]?.amendments).toEqual([
+      {
+        at: expect.any(String),
+        actor_session: sessionId(),
+        old_disposition: 'rejected',
+        new_disposition: 'accepted',
+        old_rejection_category: 'bogus',
+        new_rejection_category: null,
+        old_triaged_severity: null,
+        new_triaged_severity: 'medium',
+        reason: 'Architect corrected the disposition',
+      },
+    ])
 
     expect(
       db()

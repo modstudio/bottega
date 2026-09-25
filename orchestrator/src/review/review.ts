@@ -322,6 +322,28 @@ export function getReview(reviewId: number, database: Database = db()) {
       ).map((row) => row.repo),
     ),
   ]
+  const amendments = database
+    .query(
+      `SELECT finding_ordinal, at, actor_session,
+              old_disposition, new_disposition,
+              old_rejection_category, new_rejection_category,
+              old_triaged_severity, new_triaged_severity, reason
+         FROM review_finding_amendment
+        WHERE review_id=?
+        ORDER BY at, rowid`,
+    )
+    .all(reviewId) as {
+    finding_ordinal: number
+    at: string
+    actor_session: string | null
+    old_disposition: string | null
+    new_disposition: string
+    old_rejection_category: string | null
+    new_rejection_category: string | null
+    old_triaged_severity: string | null
+    new_triaged_severity: string | null
+    reason: string
+  }[]
   return {
     id: review.id,
     recorded_at: review.recorded_at,
@@ -375,20 +397,27 @@ export function getReview(reviewId: number, database: Database = db()) {
         pin: { resolves: pin.ok, commit: pin.ok ? pin.out : null },
       }
     }),
-    findings: database
-      .query(
-        `SELECT ordinal, severity, location, disposition, rejection_category, evidence, proposed_correction
-         FROM review_finding WHERE review_id=? ORDER BY ordinal`,
-      )
-      .all(reviewId) as {
-      ordinal: number
-      severity: string
-      location: string
-      disposition: string | null
-      rejection_category: string | null
-      evidence: string
-      proposed_correction: string
-    }[],
+    findings: (
+      database
+        .query(
+          `SELECT ordinal, severity, location, disposition, rejection_category, evidence, proposed_correction
+           FROM review_finding WHERE review_id=? ORDER BY ordinal`,
+        )
+        .all(reviewId) as {
+        ordinal: number
+        severity: string
+        location: string
+        disposition: string | null
+        rejection_category: string | null
+        evidence: string
+        proposed_correction: string
+      }[]
+    ).map((finding) => ({
+      ...finding,
+      amendments: amendments
+        .filter((amendment) => amendment.finding_ordinal === finding.ordinal)
+        .map(({ finding_ordinal: _findingOrdinal, ...amendment }) => amendment),
+    })),
   }
 }
 
