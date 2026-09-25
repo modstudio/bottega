@@ -1,5 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
+import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/trackers.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   compatibleCatalogueStep,
@@ -19,6 +22,31 @@ const step = {
   autonomy: 'ask',
   needs: [],
 }
+
+test('workflow step tracker actions exist in every tracker protocol', () => {
+  const stepsFolder = resolve(import.meta.dir, '../../../.agents/workflow-steps')
+  const missing: string[] = []
+
+  for (const file of readdirSync(stepsFolder)
+    .filter((name) => name.endsWith('.md'))
+    .sort()) {
+    const body = readFileSync(join(stepsFolder, file), 'utf8')
+    const actions = new Set(
+      [...body.matchAll(/\{\{tracker\.actions\.([a-z]+)\}\}/g)].map((match) => match[1]!),
+    )
+    for (const action of actions) {
+      for (const protocol of TRACKER_PROTOCOLS) {
+        if (!Object.hasOwn(resolveTrackerAgentActions(protocol), action)) {
+          missing.push(
+            `step "${basename(file, '.md')}" names tracker action "${action}" missing from protocol "${protocol}"`,
+          )
+        }
+      }
+    }
+  }
+
+  expect(missing).toEqual([])
+})
 
 test('new catalogue versions require a stage and reject legacy proof names', () => {
   expect(validateStepCatalogue({ steps: [step] })).toContain(
