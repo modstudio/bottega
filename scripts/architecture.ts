@@ -84,6 +84,8 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/evidence/unjudged-expiry.ts', ['../../../shared/record/schema.ts', '../database/db.ts', '../record/machine-identity.ts', '../run/run-outbox.ts', './evidence-query.ts']),
   module('orchestrator/src/branch/branch-landing-record.ts', ['./branch-state.ts']),
   module('orchestrator/src/branch/branch-state.ts', ['./merged-pull-request.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/branch/task-branch-reuse.ts', ['../git/git-environment.ts', './task-branch.ts']),
   module('orchestrator/src/branch/merged-pull-request.ts', [
     '../git/git-environment.ts',
     '../project/projects.ts',
@@ -491,6 +493,7 @@ export const modules: ArchitectureModule[] = [
     './resume-tree.ts',
     '../sandbox/sandbox.ts',
     '../branch/task-branch.ts',
+    '../branch/task-branch-reuse.ts',
     '../worktree/worktree.ts',
     '../worktree/worktree-caller.ts',
     '../worktree/worktree-mcp.ts',
