@@ -3,13 +3,20 @@
 Run these commands from the repository root. Create the app directly; do not use `fly launch --no-deploy`.
 
 The image is built from the repository root. `VITE_HUB_MODE` and `VITE_RECORD_API_URL` are
-build arguments baked into the web bundle. `HUB_RECORD_API_URL` is a runtime secret the
-server uses to call the record API.
+build arguments baked into the web bundle. `HUB_RECORD_API_URL` and
+`HUB_RECORD_DATABASE_URL` are runtime secrets the server uses for the record API and its
+hosted report procedures. The SES secrets are present because Send test
+(`sendReportSubscriptionTest`) mails from the web app.
 
 ```sh
 fly apps create bottega-hub --org bottega
 fly secrets set -a bottega-hub \
-  HUB_RECORD_API_URL='https://api.bottega.run'
+  HUB_RECORD_API_URL='https://api.bottega.run' \
+  HUB_RECORD_DATABASE_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
+  SES_REGION='us-east-2' \
+  SES_FROM_ADDRESS='<display name and verified sender address>' \
+  SES_ACCESS_KEY_ID='<access-key-id>' \
+  SES_SECRET_ACCESS_KEY='<secret-access-key>'
 fly deploy --config hub/deploy/fly.toml \
   --build-arg VITE_HUB_MODE=hosted \
   --build-arg VITE_RECORD_API_URL='https://api.bottega.run'

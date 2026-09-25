@@ -480,7 +480,7 @@ export async function updateHostedReportSubscription(
       await tx`DELETE FROM hub_report_subscription_recipient
         WHERE space_id=${identity.spaceId}::uuid AND subscription_id=${id}::uuid
           AND email IS NOT NULL
-          AND NOT (email = ANY(${planned.recipient_emails}::text[]))`
+          AND NOT (email = ANY(${tx.array(planned.recipient_emails, 'text')}))`
     for (const email of planned.recipient_emails)
       await tx`INSERT INTO hub_report_subscription_recipient
         (id,space_id,subscription_id,email,unsubscribe_token,created_at)
