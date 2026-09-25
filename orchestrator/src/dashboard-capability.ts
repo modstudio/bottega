@@ -8,6 +8,18 @@ import {
 } from '../../shared/dashboard-capability.ts'
 import { pidAlive } from '../../shared/process-identity.ts'
 
+export function dashboardServeCommand(command: string): boolean {
+  const words = command.trim().split(/\s+/)
+  return words.some(
+    (word, index) =>
+      (word === 'hub' ||
+        word.endsWith('/bin/hub') ||
+        word === 'hub/src/cli.ts' ||
+        word.endsWith('/hub/src/cli.ts')) &&
+      words[index + 1] === 'serve',
+  )
+}
+
 /** Verify that this process was launched by the live, same-user hub dashboard. */
 export function dashboardCapabilityAuthorized(): boolean {
   const path = process.env[DASHBOARD_CAPABILITY_PATH_ENV]
@@ -46,12 +58,7 @@ export function dashboardCapabilityAuthorized(): boolean {
       stderr: 'pipe',
     })
     if (observed.exitCode !== 0) return false
-    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
-    return words.some(
-      (word, index) =>
-        (word === 'hub' || word.endsWith('/bin/hub') || word.endsWith('/hub/src/cli.ts')) &&
-        words[index + 1] === 'serve',
-    )
+    return dashboardServeCommand(new TextDecoder().decode(observed.stdout))
   } catch {
     return false
   }
