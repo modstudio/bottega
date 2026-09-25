@@ -59,6 +59,26 @@ bootstrap_with_retry() {
   done
 }
 
+remove_skipped_agent() {
+  local label="$1"
+  local reason="$2"
+  local target="$AGENTS_DIR/$label.plist"
+  local was_present=false
+
+  if launchctl print "gui/$UID_NUM/$label" >/dev/null 2>&1 || [[ -e "$target" || -L "$target" ]]; then
+    was_present=true
+  fi
+  launchctl bootout "gui/$UID_NUM/$label" 2>/dev/null || true
+  wait_unloaded "$label"
+  rm -f "$target"
+
+  if [[ "$was_present" == true ]]; then
+    echo "removed existing agent; skipped: $label ($reason)"
+  else
+    echo "skipped: $label ($reason)"
+  fi
+}
+
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval"
@@ -67,18 +87,18 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
   if [[ "$label" == "com.user.local-model-tunnel" && -z "$MODEL_HOST" ]]; then
-    echo "skipped: $label (model_host.ssh_alias is unset)"
+    remove_skipped_agent "$label" "model_host.ssh_alias is unset"
     continue
   fi
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
   if [[ "$label" == "com.user.record-tunnel" && -z "$RECORD_TUNNEL_APP" ]]; then
-    echo "skipped: $label (record.tunnel_app is unset)"
+    remove_skipped_agent "$label" "record.tunnel_app is unset"
     continue
   fi
   if [[ "$label" == "com.user.record-tunnel" && -z "$FLYCTL" ]]; then
-    echo "skipped: $label (flyctl is not on PATH)"
+    remove_skipped_agent "$label" "flyctl is not on PATH"
     continue
   fi
   if [[ "$label" == "com.user.record-tunnel" ]]; then
@@ -90,7 +110,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       [[ -f "$env_file" ]] && has_env_file=true
     done
     if [[ "$has_env_file" == false ]]; then
-      echo "skipped: $label (env files are absent: ${ENV_FILES[*]-})"
+      remove_skipped_agent "$label" "env files are absent: ${ENV_FILES[*]-}"
       continue
     fi
   fi
