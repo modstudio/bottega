@@ -20,6 +20,7 @@ import {
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
+import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import { contentTree, gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import {
   formatIdleKillError,
@@ -210,6 +211,21 @@ export type LiveResult = {
   workerEvents: StreamEvent[]
 }
 
+function startWorkerGateBroker(input: {
+  writesJob: boolean
+  worktree: Worktree | null
+  runId: number
+  scratchDir: string
+  environment: Record<string, string>
+}): GateBroker | null {
+  if (!input.writesJob || !input.worktree) return null
+  return startGateBroker({
+    runId: input.runId,
+    scratchDir: input.scratchDir,
+    environment: input.environment,
+  })
+}
+
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -282,6 +298,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   const confinementEvent: ConfinementEvent | null = null
   const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
+  let gateBroker: GateBroker | null = null
   let workerEvents: StreamEvent[] = []
 
   try {
@@ -302,6 +319,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     if (sandboxSelection.sandbox === 'srt') {
       askLoopback = await startAskLoopback(claim.id, runToken)
     }
+    gateBroker = startWorkerGateBroker({
+      writesJob,
+      worktree,
+      runId: claim.id,
+      scratchDir,
+      environment: recipeEnvironment,
+    })
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
     if (checkpointMessages.length) {
@@ -767,6 +791,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
     failureKind = proc ? 'other' : 'harness'
   }
+  if (gateBroker) await gateBroker.close()
 
   return {
     proc,

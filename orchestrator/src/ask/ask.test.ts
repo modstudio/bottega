@@ -25,6 +25,35 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
 }
 
 describe('the live ask channel always answers', () => {
+  test('run_gate is writer-only and a project without a gate runs nothing', async () => {
+    const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    const writerConnection = await askClient(writer)
+    const readerConnection = await askClient(reader)
+    try {
+      const writerTools = await writerConnection.client.listTools()
+      const readerTools = await readerConnection.client.listTools()
+      expect(writerTools.tools.find((tool) => tool.name === 'run_gate')).toBeDefined()
+      expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
+
+      const result = await writerConnection.client.callTool({ name: 'run_gate', arguments: {} })
+      expect(result.isError).toBeUndefined()
+      expect(resultText(result)).toBe(
+        "This run's project has no registered gate, so nothing was run.",
+      )
+      expect(
+        (
+          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_id=?').get(writer) as {
+            n: number
+          }
+        ).n,
+      ).toBe(0)
+    } finally {
+      await writerConnection.close()
+      await readerConnection.close()
+    }
+  })
+
   test('a live question is answerable through the command, not only in SQL', () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()

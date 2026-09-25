@@ -87,6 +87,12 @@ describe('job contracts are visible before submission', () => {
       expect(preamble).toContain('a mailbox note')
     }
   })
+  test('only writing contracts require the registered gate broker', () => {
+    expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
+    expect(WORKER_PREAMBLE).toContain("reply's tests section")
+    expect(READONLY_PREAMBLE).not.toContain('run_gate')
+    expect(NO_REPO_PREAMBLE).not.toContain('run_gate')
+  })
   test('contract prints the same preamble selected when a job is bound', () => {
     for (const [name, definition] of Object.entries(JOBS)) {
       const r = contract(name)
