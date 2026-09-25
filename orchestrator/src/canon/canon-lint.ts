@@ -91,12 +91,20 @@ function measured(file: CanonFile, limit: number): CanonMeasurement {
   return { path: file.path, bytes: bytes(file), limit }
 }
 
+function frontmatterBoolean(value: string | undefined): boolean | null {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return null
+}
+
 export function canonFrontmatter(text: string): {
   description: string | null
   paths: string[]
   declaresPaths: boolean
   always: boolean | null
   declaresAlways: boolean
+  enforce: boolean | null
+  declaresEnforce: boolean
 } | null {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
@@ -109,7 +117,10 @@ export function canonFrontmatter(text: string): {
       : null
   const alwaysValue = yaml.match(/^always:\s*(.*?)\s*$/m)?.[1]
   const declaresAlways = alwaysValue !== undefined
-  const always = alwaysValue === 'true' ? true : alwaysValue === 'false' ? false : null
+  const always = frontmatterBoolean(alwaysValue)
+  const enforceValue = yaml.match(/^enforce:\s*(.*?)\s*$/m)?.[1]
+  const declaresEnforce = enforceValue !== undefined
+  const enforce = frontmatterBoolean(enforceValue)
   const inlinePaths = yaml.match(/^paths:\s*\[(.*?)\]\s*$/m)?.[1]
   if (inlinePaths !== undefined) {
     return {
@@ -117,6 +128,8 @@ export function canonFrontmatter(text: string): {
       declaresPaths: true,
       always,
       declaresAlways,
+      enforce,
+      declaresEnforce,
       paths: inlinePaths
         .split(',')
         .map((value) => value.trim().replace(/^['"]|['"]$/g, ''))
@@ -139,6 +152,8 @@ export function canonFrontmatter(text: string): {
     declaresPaths: pathsAt >= 0,
     always,
     declaresAlways,
+    enforce,
+    declaresEnforce,
   }
 }
 
@@ -673,6 +688,32 @@ function tierDeclarationFinding(file: CanonFile, kind: 'rule' | 'context'): Find
   ]
 }
 
+function enforceFinding(file: CanonFile, kind: CanonKind): Finding[] {
+  const metadata = canonFrontmatter(file.text)
+  if (!metadata?.declaresEnforce) return []
+  if (kind !== 'context') {
+    return [
+      {
+        file: file.path,
+        line: 1,
+        rule: 'canon/enforce',
+        message: 'enforce may be declared only by a context',
+      },
+    ]
+  }
+  if (metadata.enforce === true && metadata.paths.length === 0) {
+    return [
+      {
+        file: file.path,
+        line: 1,
+        rule: 'canon/enforce',
+        message: 'enforce: true requires non-empty paths',
+      },
+    ]
+  }
+  return []
+}
+
 function contextPathFindings(file: CanonFile, trackedPaths: string[]): Finding[] {
   const metadata = canonFrontmatter(file.text)
   if (!metadata) return []
@@ -714,6 +755,7 @@ function contentFindings(
   const { file, kind } = classified
   if (!kind || kind === 'alias' || kind === 'publication') return []
   const findings: CanonFinding[] = []
+  findings.push(...enforceFinding(file, kind))
   proseFindings(file, findings)
   findings.push(...lintCanonReferencesWithFacts(file, input, facts))
   if (kind === 'rule' || kind === 'context' || kind === 'reference') {

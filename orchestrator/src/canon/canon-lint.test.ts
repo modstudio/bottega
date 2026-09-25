@@ -12,6 +12,7 @@ import {
   type CanonFile,
   type CanonFinding,
   type CanonLintInput,
+  canonFrontmatter,
   introducedCanonFindings,
   lintCanon,
 } from './canon-lint.ts'
@@ -537,6 +538,37 @@ describe('canon strict comparison', () => {
 })
 
 describe('canon structure rules', () => {
+  test('enforce is a context-only boolean that requires paths when enabled', () => {
+    expect(
+      canonFrontmatter('---\ndescription: Guarded\npaths: [src/**]\nenforce: true\n---\n'),
+    ).toEqual(expect.objectContaining({ enforce: true, declaresEnforce: true }))
+    expect(canonFrontmatter('---\ndescription: Guarded\npaths: []\nenforce: false\n---\n')).toEqual(
+      expect.objectContaining({ enforce: false, declaresEnforce: true }),
+    )
+    expect(
+      rules(
+        [
+          {
+            path: '.agents/contexts/a.md',
+            text: '---\ndescription: Guarded\npaths: []\nenforce: true\n---\n',
+          },
+        ],
+        'canon/enforce',
+      ),
+    ).toEqual([expect.objectContaining({ message: 'enforce: true requires non-empty paths' })])
+    expect(
+      rules(
+        [
+          {
+            path: '.agents/rules/a.md',
+            text: '---\ndescription: A rule\nalways: true\nenforce: false\n---\n',
+          },
+        ],
+        'canon/enforce',
+      ),
+    ).toEqual([expect.objectContaining({ message: 'enforce may be declared only by a context' })])
+  })
+
   test('context path globs require a matching tracked file', () => {
     const files = [
       {
