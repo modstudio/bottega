@@ -10,6 +10,7 @@ export { parseReviewOutput, parseReviewReply } from '../contract/contract.ts'
 import { job } from '../jobs/jobs.ts'
 import { currentCoverage, projectRecord } from './review-coverage.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
+import { measureReviewChange, serializePathSet } from './review-group.ts'
 import {
   git,
   measureChangeIdentity,
@@ -19,13 +20,7 @@ import {
   reviewChangeRange,
   storedChangePathSet,
 } from './review-pins.ts'
-import type { ReviewTier } from './review-tier.ts'
 import type { ReviewListFilter, ReviewListRow, ReviewReadLens, RunRow } from './review-types.ts'
-
-const classifyReviewTier: typeof import('./review-tier.ts').classifyReviewTier = (...args) =>
-  (require('./review-tier.ts') as typeof import('./review-tier.ts')).classifyReviewTier(...args)
-const diffNumstat: typeof import('./review-tier.ts').diffNumstat = (...args) =>
-  (require('./review-tier.ts') as typeof import('./review-tier.ts')).diffNumstat(...args)
 
 export const UNEVIDENCED_REVIEW_ERROR =
   'clean review with no evidence: files_covered and commands_run are empty'
@@ -102,46 +97,6 @@ export function cleanReviewEvidence(
     }
   }
   return { failure: null, note: null }
-}
-
-function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
-  const bases = new Map(runs.map((run) => [run.id, run.base_commit]))
-  const trees = new Map(runs.map((run) => [run.id, run.input_tree]))
-  const distinctBases = new Set(bases.values())
-  const distinctTrees = new Set(trees.values())
-  const differ = (values: Map<number, string | null>) =>
-    [...values].map(([id, value]) => `run ${id}=${value ?? 'NULL'}`).join(', ')
-  if (distinctBases.size !== 1 || distinctTrees.size !== 1) {
-    console.error(
-      `warning: review tier not recorded: lens runs differ (${differ(bases)}; ${differ(trees)})`,
-    )
-    return null
-  }
-  try {
-    for (const run of runs) {
-      if (!run.base_commit || !run.input_tree || !run.repo) {
-        throw new Error(`run ${run.id} lacks base_commit, input_tree, or repo`)
-      }
-      const repo = projectPath(database, run.repo)
-      if (!repo) throw new Error(`run ${run.id} project ${run.repo} is not registered`)
-      const base = git(repo, ['cat-file', '-e', `${run.base_commit}^{commit}`], true)
-      if (!base.ok) throw new Error(`run ${run.id} base ${run.base_commit} cannot be resolved`)
-      const actualTree = git(repo, ['cat-file', '-t', run.input_tree], true)
-      if (!actualTree.ok || actualTree.out !== 'tree') {
-        throw new Error(
-          `run ${run.id} reviewed tree ${run.input_tree} cannot be resolved as a tree`,
-        )
-      }
-    }
-    const run = runs[0]!
-    const repo = projectPath(database, run.repo!)
-    return classifyReviewTier({ files: diffNumstat(repo!, run.base_commit!, run.input_tree!) })
-  } catch (cause) {
-    console.error(
-      `warning: review tier not recorded: ${String((cause as Error)?.message ?? cause)}`,
-    )
-    return null
-  }
 }
 
 function reviewReadLenses(reviewId: number, database: Database): ReviewReadLens[] {
@@ -430,7 +385,7 @@ export function recordReviews(
     const run = database
       .query(
         `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_id,
-              base_commit, review_ref, changed_paths
+              base_commit, review_ref, changed_paths, branch
          FROM run WHERE id=?`,
       )
       .get(runId) as RunRow | null
@@ -463,17 +418,25 @@ export function recordReviews(
         .join('\n')}`,
     )
   }
-  const identity = (() => {
+  const measured = (() => {
     const run = runs[0]!
-    const range = reviewChangeRange(run)
-    if (!run.repo || !range) return null
+    if (!run.repo || !run.head_commit) return null
     const repo = projectPath(database, run.repo)
     if (!repo) return null
-    const measured = measureChangeIdentity(repo, range.from, range.to)
-    return measured && range.paths !== null ? { ...measured, paths: range.paths } : measured
+    const project = database
+      .query<{ name: string; settings: string }, [string]>(
+        'SELECT name,settings FROM project WHERE name=?',
+      )
+      .get(run.repo)
+    if (!project) return null
+    return measureReviewChange(
+      repo,
+      { name: project.name, settings: JSON.parse(project.settings) },
+      run.head_commit,
+    )
   })()
   const reviewId = writeTransaction(() => {
-    const tier = tierForRuns(runs, database)
+    const tier = measured?.tier ?? null
     const review = database
       .query(
         `INSERT INTO review (record_id, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id,
@@ -489,9 +452,9 @@ export function recordReviews(
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
         runs.every((run) => run.project_id === runs[0]!.project_id) ? runs[0]!.project_id : null,
-        identity?.patchId ?? null,
-        identity ? JSON.stringify(identity.paths) : null,
-        identity?.message ?? null,
+        measured?.patchId ?? null,
+        measured ? serializePathSet(measured.pathSet) : null,
+        measured?.message ?? null,
       ) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens

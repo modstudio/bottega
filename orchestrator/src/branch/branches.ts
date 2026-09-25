@@ -6,6 +6,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName, projects } from '../project/projects.ts'
+import { finalizeTriageIntent } from '../pull-request/pr-admission.ts'
 import { type PullRequestLandingEvidence, verifyBranchLanding } from './branch-landing-record.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
@@ -596,6 +597,7 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
   if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
   const tip = git(project.path, 'rev-parse', '--verify', '--end-of-options', `${branch}^{commit}`)
   const recordedAt = nowIso()
+  finalizeTriageIntent(project.name, branch, verification.landing.number)
   writeTransaction(() => {
     db()
       .query(

@@ -1,6 +1,6 @@
 // concern: postgres-schema-landing
 /** Knows the hosted landing and operational-evidence record shape. Must not know local execution or synchronization. */
-import { bigint, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { bigint, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -90,6 +90,35 @@ export const landingReviewCarry = pgTable.withRLS(
   (table) => [
     unique('landing_review_carry_machine_local_unique').on(table.machineId, table.localId),
     ...tenantPolicies('landing_review_carry', table.spaceId),
+  ],
+)
+
+export const landingTriageSnapshot = pgTable.withRLS(
+  'landing_triage_snapshot',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    projectId: uuid('project_id').references(() => project.id),
+    machineId: machineIdentity(),
+    localId: localIdentity(),
+    branch: text().notNull(),
+    tip: text().notNull(),
+    tree: text().notNull(),
+    prNumber: integer('pr_number').notNull(),
+    reviewIds: jsonb('review_ids').notNull(),
+    patchId: text('patch_id').notNull(),
+    tier: integer().notNull(),
+    lensRounds: integer('lens_rounds').notNull(),
+    findingCount: integer('finding_count').notNull(),
+    overrideId: uuid('override_id'),
+    sessionId: text('session_id'),
+    at: recordedAt('at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique('landing_triage_snapshot_machine_local_unique').on(table.machineId, table.localId),
+    ...tenantPolicies('landing_triage_snapshot', table.spaceId),
   ],
 )
 

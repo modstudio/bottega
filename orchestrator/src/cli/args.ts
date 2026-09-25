@@ -350,6 +350,7 @@ export const CLI_COMMANDS = new Set([
   'pending',
   'pick',
   'port',
+  'pr',
   'probe',
   'project',
   'record',

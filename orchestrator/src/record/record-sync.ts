@@ -10,6 +10,7 @@ import {
   landingOverride as landingOverrideRecord,
   landing as landingRecord,
   landingReviewCarry as landingReviewCarryRecord,
+  landingTriageSnapshot as landingTriageSnapshotRecord,
   testFlake as testFlakeRecord,
 } from '../../../shared/record/schema-landing.ts'
 import {
@@ -55,6 +56,7 @@ import {
   LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
   LANDING_RECORD_PAYLOAD_COLUMNS,
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
   type LandingEvidenceBackfillResult,
   TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
@@ -663,6 +665,25 @@ function landingReviewCarryValues(row: Payload, projectId: string | null) {
   }
 }
 
+function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
+  return {
+    ...landingCommonValues(row),
+    projectId,
+    branch: String(row.branch),
+    tip: String(row.tip),
+    tree: String(row.tree),
+    prNumber: Number(row.prNumber),
+    reviewIds: row.reviewIds,
+    patchId: String(row.patchId),
+    tier: Number(row.tier),
+    lensRounds: Number(row.lensRounds),
+    findingCount: Number(row.findingCount),
+    overrideId: nullableString(row.overrideId),
+    sessionId: nullableString(row.sessionId),
+    at: date(row.at),
+  }
+}
+
 function contentionValues(row: Payload) {
   return {
     ...landingCommonValues(row),
@@ -827,6 +848,19 @@ const recordKinds = {
           .insert(landingReviewCarryRecord)
           .values(values)
           .onConflictDoUpdate({ target: landingReviewCarryRecord.id, set: updates })
+      }),
+  },
+  landing_triage_snapshot: {
+    columns: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      postgres.begin(async (tx) => {
+        await bindPrincipal(tx, principal)
+        const values = landingTriageSnapshotValues(row, await projectRecordId(tx, row, principal))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(landingTriageSnapshotRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: landingTriageSnapshotRecord.id, set: updates })
       }),
   },
   contention: {
