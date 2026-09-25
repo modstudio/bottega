@@ -171,7 +171,7 @@ export async function syncEvidence(
   }
   if (options.dryRun) return result
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
-  if (!baseUrl) throw new Error('HUB_HOSTED_URL is not set')
+  if (!baseUrl) return result
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const token = options.token ?? readRecordSessionToken()
   if (!token) throw new Error('record session is absent; run `orch record sign-in`')

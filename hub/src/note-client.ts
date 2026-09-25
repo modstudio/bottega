@@ -2,9 +2,11 @@ import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedTask } from './hosted-tasks.ts'
+import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 
 const TEST_REFUSAL = 'hub note client refuses a real hosted URL unless a stub is injected in tests'
-const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
+const REMEDY = MISSING_HOSTED_URL_REMEDY
+const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch }
 async function request<T>(
@@ -32,7 +34,7 @@ async function request<T>(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${REMEDY}`)
+    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)

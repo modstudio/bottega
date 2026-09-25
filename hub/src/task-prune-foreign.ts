@@ -1,5 +1,6 @@
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import { confirmCount, type HostedTask } from './hosted-tasks.ts'
+import { installBindingFromIdentity, rememberHostedInstall } from './install-binding.ts'
 import { projects } from './projects.ts'
 import {
   hostedDeleteTasks,
@@ -25,7 +26,12 @@ export function selectForeignHostedTasks(
   const existing = new Set(present.map((pair) => `${pair.space_id}\0${pair.key}`))
   return tasks.flatMap((task) => {
     if (task.deleted_at || (filters.project && task.project !== filters.project)) return []
-    const disposition = taskProjectSpaceDisposition(task.project, registered, identity)
+    const disposition = taskProjectSpaceDisposition(
+      task.project,
+      registered,
+      identity,
+      installBindingFromIdentity(identity),
+    )
     if (disposition.belongsToActiveSpace) return []
     const presentElsewhere = disposition.targetSpaceId
       ? existing.has(`${disposition.targetSpaceId}\0${task.key}`)
@@ -57,6 +63,7 @@ type Options = {
 export async function pruneForeignHostedTasks(options: Options = {}) {
   const request = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(request)
+  rememberHostedInstall(identity.activeSpaceId)
   const active = await hostedListTasks(request)
   const preliminary = selectForeignHostedTasks(active.tasks, projects(), identity, [])
   const pairs = preliminary.flatMap((task) =>

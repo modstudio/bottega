@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
+import { persistInstallBinding } from './install-binding.ts'
 import { hostedTaskChanges, type TaskFetch } from './task-client.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 
@@ -41,6 +42,7 @@ function localId(conn: Database, table: string, recordId: string, legacy: number
 }
 
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
+  persistInstallBinding(conn)
   if (row.deleted_at) {
     conn.query(`DELETE FROM task WHERE record_id=?`).run(row.id)
     return

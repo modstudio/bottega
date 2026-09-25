@@ -5,6 +5,7 @@ import {
   isTaskMirrorAdoption,
   type MirrorAdoption,
 } from '../hosted-tasks.ts'
+import { installBindingFromIdentity, rememberHostedInstall } from '../install-binding.ts'
 import { projects } from '../projects.ts'
 import { persistTaskAdoptions } from '../task-adoption.ts'
 import { type HostedTaskIdentity, hostedMirrorTasks, hostedTaskIdentity } from '../task-client.ts'
@@ -77,6 +78,7 @@ export async function createCollectorMirrorPass(
   let identityError: Error | null = null
   try {
     identity = await hostedTaskIdentity()
+    rememberHostedInstall(identity.activeSpaceId)
   } catch (cause) {
     identityError = cause instanceof Error ? cause : new Error(String(cause))
   }
@@ -97,7 +99,12 @@ export async function createCollectorMirrorPass(
         skip(row.project_name, 'identity-unreadable', kind)
         return false
       }
-      const disposition = taskProjectSpaceDisposition(row.project_name, registered, identity)
+      const disposition = taskProjectSpaceDisposition(
+        row.project_name,
+        registered,
+        identity,
+        installBindingFromIdentity(identity),
+      )
       if (disposition.belongsToActiveSpace) return true
       skip(row.project_name, disposition.reason, kind)
       return false

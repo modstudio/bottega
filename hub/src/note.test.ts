@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { persistInstallBinding } from './install-binding.ts'
 import {
   acknowledgeNote,
   createNote,
@@ -14,6 +15,7 @@ import {
   listNotes,
   mergeNote,
   type NoteAnchor,
+  promoteNote,
   staleNotes,
 } from './note.ts'
 
@@ -127,6 +129,157 @@ const drop = (id: number, reason: string) => dropNote(id, reason, { hosted })
 const acknowledge = (id: number, session: string) => acknowledgeNote(id, session, { hosted })
 
 describe('suggestion notes', () => {
+  describe('local-authoritative note writes', () => {
+    const previousHostedUrl = process.env.HUB_HOSTED_URL
+    beforeAll(() => {
+      delete process.env.HUB_HOSTED_URL
+    })
+    beforeEach(resetFixtureStore)
+    afterAll(() => {
+      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = previousHostedUrl
+    })
+
+    test('local note ids are public numbers minted past max(existing)', async () => {
+      const sql = db()
+        .query<{ sql: string | null }, []>(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='note'",
+        )
+        .get()?.sql
+      expect(sql).toBeTruthy()
+      expect(sql).not.toMatch(/AUTOINCREMENT/i)
+      writeTransaction((conn) =>
+        conn
+          .query(
+            `INSERT INTO note (id,record_id,project,text,anchors,sightings,created_at,last_seen_at)
+             VALUES (40,?,?,?,'[]',1,?,?)`,
+          )
+          .run(
+            crypto.randomUUID(),
+            'workshop',
+            'gap',
+            new Date().toISOString(),
+            new Date().toISOString(),
+          ),
+      )
+      const created = (
+        await createNote({
+          text: `Numbered note ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      expect(created.id).toBe(41)
+    })
+
+    test('orch note succeeding with no hosted record files locally', async () => {
+      const text = `Local orch note ${crypto.randomUUID()}`
+      const prior = process.env.CLAUDE_CODE_SESSION_ID
+      try {
+        process.env.CLAUDE_CODE_SESSION_ID = 'note-local-session'
+        const note = (await createNote({ text, cwd: '/fixtures/repos/workshop', forceNew: true }))
+          .note
+        expect(note).toMatchObject({ project: 'workshop', text })
+        expect(note.anchors[0]).toMatchObject({
+          cwd: '/fixtures/repos/workshop',
+          session_id: 'note-local-session',
+        })
+      } finally {
+        if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+        else process.env.CLAUDE_CODE_SESSION_ID = prior
+      }
+    })
+
+    test('notes new, keep, same and promote write hub.db locally', async () => {
+      const unique = crypto.randomUUID()
+      const created = (
+        await createNote({
+          text: `Local note ${unique}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      expect(created.project).toBe('workshop')
+      expect(created.sightings).toBe(1)
+
+      const same = await createNote({
+        text: `Local note ${unique} again`,
+        cwd: '/fixtures/repos/workshop',
+        sameAs: created.id,
+      })
+      expect(same.note.id).toBe(created.id)
+      expect(same.note.sightings).toBe(2)
+
+      const session = `keep-local-${unique}`
+      writeTransaction((conn) =>
+        conn
+          .query('UPDATE note SET anchors=? WHERE id=?')
+          .run(JSON.stringify([{ ...same.note.anchors[0], session_id: session }]), same.note.id),
+      )
+      const kept = await acknowledgeNote(same.note.id, session)
+      expect(kept.alreadyAcknowledged).toBe(false)
+      expect((await acknowledgeNote(same.note.id, session)).alreadyAcknowledged).toBe(true)
+
+      const promoted = await promoteNote(same.note.id)
+      expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
+    })
+
+    test('drop merge and reap write locally and keep hosted invariants', async () => {
+      const one = (
+        await createNote({
+          text: `Local merge one ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const two = (
+        await createNote({
+          text: `Local merge two ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      await expect(mergeNote(one.id, one.id)).rejects.toThrow('a note cannot be merged with itself')
+      const merged = await mergeNote(one.id, two.id)
+      expect(merged.sightings).toBe(2)
+      expect(merged.anchors).toHaveLength(2)
+      expect(() => getNote(two.id)).toThrow(`no note ${two.id}`)
+
+      const dropped = await dropNote(one.id, 'superseded')
+      expect(dropped.stale_reason).toBe('dropped: superseded')
+
+      const old = '2026-07-01T00:00:00.000Z'
+      const doomed = Number(
+        writeTransaction(
+          (conn) =>
+            conn
+              .query(
+                `INSERT INTO note(id,project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason)
+                 VALUES (9001,'workshop','reap me','[]',1,?,?,?,?)`,
+              )
+              .run(old, old, '2026-07-02T00:00:00.000Z', 'gone').lastInsertRowid,
+        ),
+      )
+      const result = await staleNotes({
+        runExists: async () => new Set(),
+        now: () => new Date('2026-09-07T12:00:00.000Z'),
+      })
+      expect(result.deleted).toBeGreaterThanOrEqual(1)
+      expect(() => getNote(doomed)).toThrow(`no note ${doomed}`)
+    })
+
+    test('a hosted-bound install with HUB_HOSTED_URL unset refuses note writes', async () => {
+      writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
+      await expect(
+        createNote({
+          text: 'Must not mint locally on a bound install',
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        }),
+      ).rejects.toThrow("project 'workshop' belongs to a hosted space")
+    })
+  })
+
   test('orch note files through hub with cwd and session anchors', async () => {
     const text = `CLI suggestion ${crypto.randomUUID()}`
     const prior = process.env.CLAUDE_CODE_SESSION_ID

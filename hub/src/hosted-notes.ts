@@ -6,8 +6,10 @@ import {
   confirmCount,
   createHostedTaskInTransaction,
   type HostedTask,
+  mirrorCollisionDecision,
   type TaskIdentity,
 } from './hosted-tasks.ts'
+import { nextNoteNumber } from './note-number.ts'
 
 export type HostedNote = {
   id: string
@@ -107,8 +109,32 @@ async function lockNoteNumbers(tx: SQL, identity: TaskIdentity) {
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${identity.spaceId}:note`}, 0))`
 }
 
-export function nextNoteNumber(highest: bigint, sequenceNext: bigint) {
-  return highest + 1n > sequenceNext ? highest + 1n : sequenceNext
+export function noteMirrorCollision(
+  incoming: { id: string; number: number; spaceId: string },
+  existingById: { id: string; number: number; spaceId: string } | null,
+  existingByNumber: { id: string; spaceId: string } | null,
+) {
+  return mirrorCollisionDecision(
+    { id: incoming.id, spaceId: incoming.spaceId, naturalKey: `note ${incoming.number}` },
+    existingById
+      ? {
+          id: existingById.id,
+          spaceId: existingById.spaceId,
+          naturalKey: `note ${existingById.number}`,
+        }
+      : null,
+    'update',
+    'natural-key',
+    null,
+    false,
+    existingByNumber
+      ? {
+          id: existingByNumber.id,
+          spaceId: existingByNumber.spaceId,
+          naturalKey: `note ${incoming.number}`,
+        }
+      : null,
+  )
 }
 
 export async function createHostedNote(
@@ -349,6 +375,56 @@ export async function reapHostedNotes(
   })
 }
 
+async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedNote) {
+  const promotedReference = hostedTaskReference('hub_note', row)
+  const promotedTaskId = promotedReference.key
+    ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
+    : null
+  const existingByNumber = rows<{ id: string; space_id: string }>(
+    await tx`SELECT id, space_id FROM hub_note
+      WHERE space_id=${identity.spaceId}::uuid AND number=${row.number} FOR UPDATE`,
+  )[0]
+  const existingById = rows<{ id: string; number: number; space_id: string }>(
+    await tx`SELECT id, number::int number, space_id FROM hub_note WHERE id=${row.id}::uuid FOR UPDATE`,
+  )[0]
+  const collision = noteMirrorCollision(
+    { id: row.id, number: row.number, spaceId: identity.spaceId },
+    existingById
+      ? {
+          id: existingById.id,
+          number: Number(existingById.number),
+          spaceId: existingById.space_id,
+        }
+      : null,
+    existingByNumber ? { id: existingByNumber.id, spaceId: existingByNumber.space_id } : null,
+  )
+  if (collision.action === 'refuse') throw new Error(collision.reason)
+  const written =
+    collision.action === 'insert'
+      ? rows<{ number: number; id: string }>(
+          await tx`INSERT INTO hub_note
+      (id,space_id,project_name,number,project,text,area,anchors,sightings,created_at,last_seen_at,
+       stale_at,stale_reason,promoted_task,promoted_task_id,updated_at,deleted_at)
+      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.number},${row.project},
+       ${row.text},${row.area},${row.anchors},${row.sightings},${row.created_at}::timestamptz,
+       ${row.last_seen_at}::timestamptz,${row.stale_at}::timestamptz,${row.stale_reason},${row.promoted_task},${promotedTaskId}::uuid,
+       ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
+      RETURNING number::int number,id`,
+        )[0]
+      : rows<{ number: number; id: string }>(
+          await tx`UPDATE hub_note SET project_name=${row.project_name},project=${row.project},
+       text=${row.text},area=${row.area},anchors=${row.anchors},sightings=${row.sightings},
+       created_at=${row.created_at}::timestamptz,last_seen_at=${row.last_seen_at}::timestamptz,
+       stale_at=${row.stale_at}::timestamptz,stale_reason=${row.stale_reason},promoted_task=${row.promoted_task},
+       promoted_task_id=${promotedTaskId}::uuid,updated_at=${row.updated_at}::timestamptz,
+       deleted_at=${row.deleted_at}::timestamptz
+       WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
+       RETURNING number::int number,id`,
+        )[0]
+  if (!written) throw new Error(`hosted note ${row.number} mirror wrote nothing`)
+  return written
+}
+
 export async function mirrorHostedNotes(
   url: string,
   identity: TaskIdentity,
@@ -363,28 +439,7 @@ export async function mirrorHostedNotes(
   return tenant(url, identity, async (tx) => {
     await lockNoteNumbers(tx, identity)
     const noteIds: Array<{ number: number; id: string }> = []
-    for (const row of body.notes) {
-      const promotedReference = hostedTaskReference('hub_note', row)
-      const promotedTaskId = promotedReference.key
-        ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
-        : null
-      const inserted = rows<{ number: number; id: string }>(
-        await tx`INSERT INTO hub_note
-      (id,space_id,project_name,number,project,text,area,anchors,sightings,created_at,last_seen_at,
-       stale_at,stale_reason,promoted_task,promoted_task_id,updated_at,deleted_at)
-      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.number},${row.project},
-       ${row.text},${row.area},${row.anchors},${row.sightings},${row.created_at}::timestamptz,
-       ${row.last_seen_at}::timestamptz,${row.stale_at}::timestamptz,${row.stale_reason},${row.promoted_task},${promotedTaskId}::uuid,
-       ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT(space_id,number) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,
-       text=excluded.text,area=excluded.area,anchors=excluded.anchors,sightings=excluded.sightings,
-       created_at=excluded.created_at,last_seen_at=excluded.last_seen_at,stale_at=excluded.stale_at,
-       stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task,
-       promoted_task_id=excluded.promoted_task_id,updated_at=excluded.updated_at,
-       deleted_at=excluded.deleted_at RETURNING number::int number,id`,
-      )[0]!
-      noteIds.push(inserted)
-    }
+    for (const row of body.notes) noteIds.push(await mirrorOneHostedNote(tx, identity, row))
     for (const row of body.acknowledgements ?? [])
       await tx`INSERT INTO hub_note_acknowledgement
       (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)

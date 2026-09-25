@@ -12,17 +12,15 @@ import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/tracke
 import { projectOf } from './attribute.ts'
 import { collectOnce, releaseLease, watch, withLease } from './collect.ts'
 import {
-  DB_PATH,
-  db,
   formatMigrationRepairSummary,
   migrateDatabase,
   nowIso,
   requireDatabase,
   writeTransaction,
 } from './db.ts'
+import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { credentials, Mcp } from './mcp.ts'
-import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
 import {
   acknowledgeNote,
   createNote,
@@ -56,7 +54,7 @@ import {
   reportServeDown,
   stopRecordedServe,
 } from './serve-lifecycle.ts'
-import { formatServiceRevisionDoctor, startRevisionMonitor } from './service-revision.ts'
+import { startRevisionMonitor } from './service-revision.ts'
 import { printSyncResult, syncEvidence } from './sync.ts'
 import {
   commentTask,
@@ -74,7 +72,6 @@ import {
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
-import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTask } from './tracker-new.ts'
 
@@ -843,15 +840,7 @@ try {
       break
     }
     case 'doctor':
-      console.log(`database       ${DB_PATH}`)
-      console.log(
-        `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
-      )
-      console.log(`schema version ${schemaVersionLabel(db())}`)
-      {
-        for (const line of formatTaskIdentityDoctor(taskIdentityDoctor())) console.log(line)
-        for (const line of formatServiceRevisionDoctor()) console.log(line)
-      }
+      for (const line of hubDoctorLines()) console.log(line)
       break
     case 'collect':
       if (has('watch')) {

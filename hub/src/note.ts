@@ -1,7 +1,16 @@
+import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { projectOf } from './attribute.ts'
-import { db, writeTransaction } from './db.ts'
+import { db, nowIso, writeTransaction } from './db.ts'
+import { confirmCount } from './hosted-tasks.ts'
+import {
+  hostedUnavailableRemedy,
+  hostedWriteMode,
+  projectWriteDecisionFor,
+} from './hosted-write-mode.ts'
+import { readInstallBinding } from './install-binding.ts'
 import { applyHostedAcknowledgement, applyHostedNote } from './note-cache.ts'
 import {
   hostedAcknowledgeNote,
@@ -12,9 +21,10 @@ import {
   hostedReapNotes,
   type NoteClientOptions,
 } from './note-client.ts'
+import { nextNoteNumber } from './note-number.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
-import { duplicateCandidates, type TaskRow } from './task.ts'
+import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
 import { applyHostedTask } from './task-cache.ts'
 
 export type NoteAnchor = {
@@ -62,6 +72,48 @@ function decode(row: Omit<NoteRow, 'anchors'> & { anchors: string }): NoteRow {
 function registeredProject(name: string): void {
   if (!projects().some((candidate) => candidate.name === name))
     throw new Error(`unknown project '${name}'`)
+}
+
+function writeMode(
+  projectName: string,
+  hosted?: NoteClientOptions,
+): 'hosted-configured' | 'local-authoritative' {
+  const project = projects().find((candidate) => candidate.name === projectName)
+  if (!project) throw new Error(`unknown project '${projectName}'`)
+  const decision = projectWriteDecisionFor(
+    project,
+    readInstallBinding(),
+    hosted?.baseUrl ?? process.env.HUB_HOSTED_URL,
+  )
+  if (decision.mode === 'refused') throw new Error(decision.reason)
+  return decision.mode
+}
+
+function noteRow(conn: Database, id: number): Omit<NoteRow, 'anchors'> & { anchors: string } {
+  const row = conn
+    .query<Omit<NoteRow, 'anchors'> & { anchors: string }, [number]>(
+      'SELECT * FROM note WHERE id = ?',
+    )
+    .get(id)
+  if (!row) throw new Error(`no note ${id}`)
+  return row
+}
+
+function mintLocalNoteNumber(conn: Database): number {
+  const highest = BigInt(
+    conn.query<{ max: number | null }, []>('SELECT max(id) max FROM note').get()?.max ?? 0,
+  )
+  const sequence = conn
+    .query<{ next: number }, [string]>('SELECT next FROM seq WHERE name = ?')
+    .get('note')
+  const number = Number(nextNoteNumber(highest, BigInt(sequence?.next ?? 1)))
+  conn
+    .query(
+      `INSERT INTO seq (name, next) VALUES (?, ?)
+       ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
+    )
+    .run('note', number + 1)
+  return number
 }
 
 export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = process.env): NoteAnchor {
@@ -173,6 +225,21 @@ export async function acknowledgeNote(
     )
     .get(note.id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
+  const mode = writeMode(note.project, options.hosted)
+  if (mode === 'local-authoritative') {
+    writeTransaction((conn) => {
+      const row = decode(noteRow(conn, note.id))
+      conn
+        .query(
+          `INSERT INTO note_acknowledgement (record_id,note_id,session_id,acknowledged_at,sightings)
+           VALUES (?,?,?,?,?)
+           ON CONFLICT(note_id,session_id) DO UPDATE SET
+             acknowledged_at=excluded.acknowledged_at, sightings=excluded.sightings`,
+        )
+        .run(newRecordId(), row.id, sessionId, nowIso(), row.sightings)
+    })
+    return { note: getNote(note.id), alreadyAcknowledged: false }
+  }
   const hosted = await hostedAcknowledgeNote(note.id, sessionId, options.hosted)
   writeTransaction((conn) => {
     applyHostedNote(conn, hosted.note)
@@ -221,6 +288,28 @@ export async function mergeNote(
   const targetId = noteId(targetValue)
   const sourceId = noteId(sourceValue)
   if (targetId === sourceId) throw new Error('a note cannot be merged with itself')
+  const target = getNote(targetId)
+  const mode = writeMode(target.project, options.hosted)
+  if (mode === 'local-authoritative') {
+    writeTransaction((conn) => {
+      const current = decode(noteRow(conn, targetId))
+      const source = decode(noteRow(conn, sourceId))
+      if (current.project !== source.project)
+        throw new Error('notes from different projects cannot be merged')
+      const lastSeen =
+        current.last_seen_at > source.last_seen_at ? current.last_seen_at : source.last_seen_at
+      conn
+        .query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE id=?`)
+        .run(
+          JSON.stringify([...current.anchors, ...source.anchors]),
+          current.sightings + source.sightings,
+          lastSeen,
+          current.id,
+        )
+      conn.query('DELETE FROM note WHERE id=?').run(source.id)
+    })
+    return getNote(targetId)
+  }
   const result = await hostedMergeNotes(targetId, sourceId, options.hosted)
   writeTransaction((conn) => {
     applyHostedNote(conn, result.note)
@@ -244,10 +333,25 @@ export async function createNote(
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
   const anchor = deriveNoteAnchor(text, input.cwd)
   const candidates = noteCandidates(text, anchor.project)
+  const mode = writeMode(anchor.project, options.hosted)
   if (input.sameAs) {
     const existing = getNote(input.sameAs)
     if (existing.project !== anchor.project)
       throw new Error('the matching note belongs to another project')
+    if (mode === 'local-authoritative') {
+      const at = nowIso()
+      writeTransaction((conn) => {
+        const row = decode(noteRow(conn, existing.id))
+        if (row.project !== anchor.project)
+          throw new Error('the matching note belongs to another project')
+        conn
+          .query(
+            `UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=?, stale_at=NULL, stale_reason=NULL WHERE id=?`,
+          )
+          .run(JSON.stringify([...row.anchors, anchor]), at, row.id)
+      })
+      return { note: getNote(existing.id), candidates }
+    }
     const hosted = await hostedCreateNote(
       {
         project: anchor.project,
@@ -262,6 +366,29 @@ export async function createNote(
     return { note: getNote(existing.id), candidates }
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
+  if (mode === 'local-authoritative') {
+    const at = nowIso()
+    const id = writeTransaction((conn) => {
+      const number = mintLocalNoteNumber(conn)
+      conn
+        .query(
+          `INSERT INTO note (id,record_id,project,text,area,anchors,sightings,created_at,last_seen_at)
+       VALUES (?,?,?,?,?,?,1,?,?)`,
+        )
+        .run(
+          number,
+          newRecordId(),
+          anchor.project,
+          text,
+          input.area?.trim() || null,
+          JSON.stringify([anchor]),
+          at,
+          at,
+        )
+      return number
+    })
+    return { note: getNote(id), candidates }
+  }
   const hosted = await hostedCreateNote(
     {
       project: anchor.project,
@@ -282,6 +409,35 @@ export async function promoteNote(
   const note = getNote(value)
   if (note.promoted_task)
     throw new Error(`note ${note.id} is already promoted to ${note.promoted_task}`)
+  const mode = writeMode(note.project, options.hosted)
+  if (mode === 'local-authoritative') {
+    writeTransaction((conn) => {
+      const row = decode(noteRow(conn, note.id))
+      if (row.promoted_task)
+        throw new Error(`note ${row.id} is already promoted to ${row.promoted_task}`)
+      const evidence = row.anchors
+        .map(
+          (anchor, index) =>
+            `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
+        )
+        .join('\n')
+      const task = createLocalTaskInTransaction(
+        conn,
+        {
+          project: row.project,
+          title: row.text,
+          body: `${row.text}\n\nSIGHTINGS (${row.sightings})\n${evidence}`,
+        },
+        { skipDuplicateCheck: true },
+      )
+      conn
+        .query(
+          'UPDATE note SET promoted_task=?, promoted_task_record_id=?, last_seen_at=? WHERE id=?',
+        )
+        .run(task.key, task.record_id, nowIso(), row.id)
+    })
+    return getNote(note.id)
+  }
   const hosted = await hostedPromoteNote(note.id, options.hosted)
   writeTransaction((conn) => {
     applyHostedTask(conn, hosted.task)
@@ -297,6 +453,18 @@ export async function dropNote(
 ): Promise<NoteRow> {
   if (!reason.trim()) throw new Error('--reason is required')
   const id = noteId(value)
+  const current = getNote(id)
+  const mode = writeMode(current.project, options.hosted)
+  if (mode === 'local-authoritative') {
+    const at = nowIso()
+    writeTransaction((conn) => {
+      noteRow(conn, id)
+      conn
+        .query(`UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE id=?`)
+        .run(at, `dropped: ${reason.trim()}`, at, id)
+    })
+    return getNote(id)
+  }
   const hosted = await hostedDropNote(id, reason.trim(), options.hosted)
   writeTransaction((conn) => applyHostedNote(conn, hosted))
   return getNote(id)
@@ -395,6 +563,37 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     .all(cutoff)
     .filter((row) => row.stale_at !== null || markedIds.has(row.id))
     .map((row) => row.id)
+  const url = deps.hosted?.baseUrl ?? process.env.HUB_HOSTED_URL
+  if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
+    throw new Error(
+      `this install belongs to a hosted space; local writes are refused while hosting is unavailable. ${hostedUnavailableRemedy(url)}`,
+    )
+  }
+  if (hostedWriteMode(url) !== 'hosted-configured') {
+    return writeTransaction((conn) => {
+      for (const item of reasons) {
+        conn
+          .query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL')
+          .run(at, item.reason, item.id)
+      }
+      const found = deletedIds.flatMap((id) => {
+        const row = conn
+          .query<{ id: number }, [number, string]>(
+            `SELECT id FROM note WHERE id=? AND stale_at IS NOT NULL AND sightings=1
+             AND promoted_task IS NULL AND last_seen_at <= ?`,
+          )
+          .get(id, cutoff)
+        return row ? [row.id] : []
+      })
+      if (found.length < deletedIds.length)
+        throw new Error(
+          'local cache is behind the record; the next maintenance pass will recompute',
+        )
+      confirmCount(found.length, deletedIds.length, 'bulk-only')
+      for (const id of found) conn.query('DELETE FROM note WHERE id=?').run(id)
+      return { marked: reasons.length, deleted: found.length, reasons }
+    })
+  }
   const result = await hostedReapNotes(
     {
       stale: reasons.map((row) => ({ number: row.id, reason: row.reason, at })),

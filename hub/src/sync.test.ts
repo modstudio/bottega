@@ -76,6 +76,19 @@ describe('evidence sync planning', () => {
     expect(plan.deleteSkipped).toBe(true)
   })
 
+  test('an absent hosted record skips the push', async () => {
+    const hostedUrl = process.env.HUB_HOSTED_URL
+    try {
+      delete process.env.HUB_HOSTED_URL
+      const result = await syncEvidence()
+      expect(result.interval.changed).toBe(0)
+      expect(result.day.changed).toBe(0)
+    } finally {
+      if (hostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = hostedUrl
+    }
+  })
+
   test('splits writes at the hosted batch limit', () => {
     expect(
       batches(Array.from({ length: 1_001 }, (_, index) => index)).map((x) => x.length),
