@@ -164,7 +164,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '6db84a2973bd8ae806028724dabfbda37402aae6dbd27bb849214b3cec4489a9',
+      '90dedd44afbb6b3613c75611ab7e05df45476af102d38515955a4f9897f0e886',
     )
     d.close()
   })
@@ -202,6 +202,7 @@ describe('hub migration journal', () => {
       '0008_task_identity',
       '0009_task_record_identity',
       '0010_question_delivery',
+      '0011_operator_waiting_email',
     ])
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
@@ -312,6 +313,7 @@ describe('hub migration journal', () => {
       '0008_task_identity',
       '0009_task_record_identity',
       '0010_question_delivery',
+      '0011_operator_waiting_email',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -523,7 +525,7 @@ describe('hub migration journal', () => {
     d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
       JSON.stringify(currentWatermark),
     )
-    expect(applyMigrations(d)).toEqual(['0010_question_delivery'])
+    expect(applyMigrations(d)).toEqual(['0010_question_delivery', '0011_operator_waiting_email'])
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
         .value,
@@ -632,7 +634,11 @@ describe('hub migration journal', () => {
       VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
       UPDATE note SET project='workshop',promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
-    expect(applyMigrations(d)).toEqual(['0009_task_record_identity', '0010_question_delivery'])
+    expect(applyMigrations(d)).toEqual([
+      '0009_task_record_identity',
+      '0010_question_delivery',
+      '0011_operator_waiting_email',
+    ])
     expect(
       d
         .query(
@@ -741,7 +747,11 @@ describe('hub migration journal', () => {
       VALUES ('MINT-1','workshop','local','2026-01-01','2026-01-01')
     `)
     const before = Date.now()
-    expect(applyMigrations(d)).toEqual(['0009_task_record_identity', '0010_question_delivery'])
+    expect(applyMigrations(d)).toEqual([
+      '0009_task_record_identity',
+      '0010_question_delivery',
+      '0011_operator_waiting_email',
+    ])
     const after = Date.now()
     const minted = d
       .query<{ record_id: string }, []>("SELECT record_id FROM task WHERE key='MINT-1'")
@@ -805,7 +815,11 @@ describe('hub migration journal', () => {
       VALUES ('OPS-21','2026-01-01','active');
     `)
 
-    expect(applyMigrations(d)).toEqual(['0009_task_record_identity', '0010_question_delivery'])
+    expect(applyMigrations(d)).toEqual([
+      '0009_task_record_identity',
+      '0010_question_delivery',
+      '0011_operator_waiting_email',
+    ])
     expect(
       d
         .query(
