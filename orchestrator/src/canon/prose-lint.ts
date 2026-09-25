@@ -9,7 +9,20 @@ export type ProseFinding = {
 }
 
 const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
-const TASK_KEY_EXEMPTIONS = ['UTF', 'SHA', 'ISO', 'RFC', 'ES', 'TLS', 'HTTP', 'IPV']
+const TASK_KEY_EXEMPTIONS = [
+  'UTF',
+  'SHA',
+  'ISO',
+  'RFC',
+  'ES',
+  'TLS',
+  'HTTP',
+  'IPV',
+  'PSR',
+  'PEP',
+  'ECMA',
+  'CVE',
+]
 
 /** Phrase-level history patterns available to comment checks; single-word prose rules stay local. */
 export const DEFAULT_COMMENT_HISTORY_PHRASES = [

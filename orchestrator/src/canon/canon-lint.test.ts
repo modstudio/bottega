@@ -132,7 +132,7 @@ describe('canon prose rules', () => {
       [
         {
           path: 'AGENTS.md',
-          text: 'Known issue here.\n`workaround`\n`DEV-572`\nAB-2418\nSTAR-4622\nUTF-8 SHA-256 ISO-8601 RFC-3339\n```\nDEV-573 known issue\n```\n',
+          text: 'Known issue here.\n`workaround`\n`DEV-572`\nAB-2418\nSTAR-4622\nUTF-8 SHA-256 ISO-8601 RFC-3339\nPSR-12\nPEP-8\nECMA-262\nCVE-2024-3094\n```\nDEV-573 known issue\n```\n',
         },
       ],
       'canon/issue',
