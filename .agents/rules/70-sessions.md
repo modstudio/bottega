@@ -19,7 +19,7 @@ Never continue or land a chain while its worker has an unanswered question, beca
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, then use `gh pr create` and merge on GitHub. The local gate proves the commit; the pull request admits it to trunk.
+Run `bun run check` on the reviewed branch, then open the pull request with `orch pr create` and merge on GitHub. `orch pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. The local gate proves the commit; the pull request admits it to trunk.
 
 ## Close out the session
 
