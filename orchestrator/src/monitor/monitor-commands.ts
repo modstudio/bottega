@@ -179,24 +179,31 @@ async function showHistory(
       )
 }
 
-async function runMonitor(options: Options, presentation: Presentation): Promise<void> {
-  let result: Awaited<ReturnType<typeof monitor>>
+async function monitorResultOrReport(
+  options: Options,
+  presentation: Presentation,
+): Promise<Awaited<ReturnType<typeof monitor>> | null> {
   try {
-    result = await monitor(options.backstop ? 'backstop' : 'invoked')
+    return await monitor(options.backstop ? 'backstop' : 'invoked')
   } catch (error) {
     if (!(error instanceof MonitorStoreBusyError)) throw error
     const report = await storeWriteLockReport()
     if (!report.supported) {
       presentation.error(`${error.message}; ${formatStoreWriteLockReport(report)}`)
       presentation.setExitCode(1)
-      return
+      return null
     }
     const condition = lockCondition(report)
     if (options.json) await presentation.write(`${JSON.stringify({ conditions: [condition] })}\n`)
     else await presentation.write(`${formatStoreWriteLockReport(report)}\n`)
     presentation.setExitCode(2)
-    return
+    return null
   }
+}
+
+async function runMonitor(options: Options, presentation: Presentation): Promise<void> {
+  const result = await monitorResultOrReport(options, presentation)
+  if (!result) return
   if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
   else {
     const failing = failingCanonEvalSlugs(),

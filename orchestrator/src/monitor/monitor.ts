@@ -72,6 +72,19 @@ function databaseBusy(error: unknown): boolean {
   return candidate?.code === 'SQLITE_BUSY' || /database is locked/i.test(String(candidate?.message))
 }
 
+function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: string) {
+  try {
+    const database = writableDb()
+    const row = database
+      .query('INSERT INTO monitor_invocation (started_at, trigger) VALUES (?,?) RETURNING id')
+      .get(startedAt, trigger) as { id: number }
+    return { database, invocation: row.id }
+  } catch (error) {
+    if (databaseBusy(error)) throw new MonitorStoreBusyError(error)
+    throw error
+  }
+}
+
 function directorySize(path: string): number {
   const entry = lstatSync(path)
   if (!entry.isDirectory()) return entry.size
@@ -340,18 +353,7 @@ export async function monitor(
   clock = Date.now(),
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
-  let database: ReturnType<typeof writableDb>
-  let invocationRow: { id: number }
-  try {
-    database = writableDb()
-    invocationRow = database
-      .query('INSERT INTO monitor_invocation (started_at, trigger) VALUES (?,?) RETURNING id')
-      .get(startedAt, trigger) as { id: number }
-  } catch (error) {
-    if (databaseBusy(error)) throw new MonitorStoreBusyError(error)
-    throw error
-  }
-  const invocation = invocationRow.id
+  const { database, invocation } = startMonitorInvocation(trigger, startedAt)
   const conditions: MonitorCondition[] = []
   const errors: string[] = []
   const canonRows = allInjectChecks()

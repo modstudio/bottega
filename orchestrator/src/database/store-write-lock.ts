@@ -4,11 +4,14 @@
 import { cc, FFIType, ptr } from 'bun:ffi'
 import { closeSync, constants, openSync } from 'node:fs'
 import { platform } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const F_WRLCK = 3
 const F_UNLCK = 2
 const SEEK_SET = 0
 const WAL_WRITE_LOCK = 120
+const ORCHESTRATOR_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 export type WalWriteLockProbe = number | null | { unsupported: true; reason: string }
 
@@ -17,7 +20,7 @@ export type WalWriteLockClassification = {
   holderPid: number | null
 }
 
-export type WalWriteLockSamples = WalWriteLockClassification & {
+type WalWriteLockSamples = WalWriteLockClassification & {
   supported: true
   sampleCount: number
   samples: Array<number | null>
@@ -30,7 +33,7 @@ export type WalWriteLockSampleResult =
 const darwinFcntl =
   platform() === 'darwin'
     ? cc({
-        source: new URL('./store-write-lock.c', import.meta.url),
+        source: join(ORCHESTRATOR_ROOT, 'src/database/store-write-lock.c'),
         symbols: {
           orch_fcntl_getlk: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
         },

@@ -516,6 +516,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../canon/evals.ts',
       './monitor.ts',
       './monitor-notices.ts',
+      './monitor-store-write-lock.ts',
       './monitor-types.ts',
     ],
     'Keep monitor command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',

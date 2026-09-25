@@ -16,6 +16,7 @@ test('the payload has only the declared runtime paths', () => {
     'orchestrator/src/cli/orch.ts',
     'hub/src/cli.ts',
     'orchestrator/src/run/exec.ts',
+    'orchestrator/src/database/store-write-lock.c',
     'retrieval/src/search-cli.ts',
     'orchestrator/migrations',
     'hub/migrations',
