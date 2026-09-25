@@ -898,42 +898,72 @@ describe('retry command', () => {
     )
   })
 
-  test('fresh retry carries continue instructions once and accepts a retry-created turn', () => {
+  test('fresh retry assigns real pre-start audits to the children they created', () => {
     const id = failed('implement')
-    const continued = addRun({
+    const turn6445 = addRun({
       agent: 'grok',
       job: 'implement',
       status: 'failed',
       parent: id,
       turn: 2,
+      startedAt: '2026-09-25T09:10:55.576Z',
     })
-    const retried = addRun({
+    const turn6500 = addRun({
       agent: 'grok',
       job: 'implement',
       status: 'failed',
       parent: id,
       turn: 3,
+      startedAt: '2026-09-25T14:48:05.591Z',
     })
-    db().query('UPDATE run SET started_at=? WHERE id=?').run('2026-09-25T12:00:00.000Z', continued)
-    db().query('UPDATE run SET started_at=? WHERE id=?').run('2026-09-25T13:00:00.000Z', retried)
+    const turn6513 = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 4,
+      startedAt: '2026-09-25T15:21:16.986Z',
+    })
     db()
       .query(
         `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
          VALUES (?,?,?,?,?)`,
       )
-      .run(id, id, 'continue', '2026-09-25T12:00:01.000Z', 'Review 1621.')
+      .run(id, id, 'continue', '2026-09-25T09:10:54.846Z', 'instructions for 6445')
     db()
       .query(
         `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
          VALUES (?,?,?,?,?)`,
       )
-      .run(id, id, 'retry', '2026-09-25T13:00:01.000Z', `retried as run ${retried}`)
+      .run(id, id, 'continue', '2026-09-25T14:48:04.417Z', 'instructions for 6500')
+    db()
+      .query(
+        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(id, id, 'retry', '2026-09-25T14:49:29.674Z', 'retried as run 6503')
+    db()
+      .query(
+        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(id, id, 'continue', '2026-09-25T15:21:16.144Z', 'instructions for 6513')
 
     expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
       {
-        turnId: continued,
-        at: '2026-09-25T12:00:01.000Z',
-        instructions: 'Review 1621.',
+        turnId: turn6445,
+        at: '2026-09-25T09:10:54.846Z',
+        instructions: 'instructions for 6445',
+      },
+      {
+        turnId: turn6500,
+        at: '2026-09-25T14:48:04.417Z',
+        instructions: 'instructions for 6500',
+      },
+      {
+        turnId: turn6513,
+        at: '2026-09-25T15:21:16.144Z',
+        instructions: 'instructions for 6513',
       },
     ])
   })

@@ -220,41 +220,36 @@ export function continuationInstructionsForFreshRetry(
   if (!writesRepo || requestedId !== rootId) return []
   const turns = db()
     .query(
-      `SELECT turn.id
-       FROM run turn
-      WHERE turn.parent_run_id = ?
-        AND NOT EXISTS (
-          SELECT 1 FROM run_carried_ruling carried WHERE carried.run_id = turn.id
-        )
-      ORDER BY turn.turn, turn.id`,
+      `WITH turns AS (
+         SELECT turn.id, turn.turn, turn.started_at,
+                LAG(turn.started_at) OVER (ORDER BY turn.turn, turn.id) previous_started_at
+           FROM run turn
+          WHERE turn.parent_run_id = ?
+       )
+       SELECT turns.id, audit.action, audit.at, audit.reason
+         FROM turns
+         LEFT JOIN run_mutation_audit audit
+           ON audit.rowid = (
+             SELECT candidate.rowid
+               FROM run_mutation_audit candidate
+              WHERE candidate.root_id = ?
+                AND candidate.action IN ('continue', 'retry')
+                AND candidate.at <= turns.started_at
+                AND (turns.previous_started_at IS NULL OR candidate.at > turns.previous_started_at)
+              ORDER BY candidate.at DESC, candidate.rowid DESC
+              LIMIT 1
+           )
+        ORDER BY turns.turn, turns.id`,
     )
-    .all(rootId) as { id: number }[]
-  const audits = db()
-    .query(
-      `SELECT audit.action, audit.at, audit.reason,
-              (SELECT turn.id
-                 FROM run turn
-                WHERE turn.parent_run_id = audit.root_id
-                  AND turn.started_at <= audit.at
-                  AND NOT EXISTS (
-                    SELECT 1 FROM run_carried_ruling carried WHERE carried.run_id = turn.id
-                  )
-                ORDER BY turn.started_at DESC, turn.id DESC
-                LIMIT 1) turn_id
-         FROM run_mutation_audit audit
-        WHERE audit.root_id = ? AND audit.action IN ('continue', 'retry')
-        ORDER BY audit.at, audit.rowid`,
-    )
-    .all(rootId) as {
-    action: 'continue' | 'retry'
-    at: string
+    .all(rootId, rootId) as {
+    id: number
+    action: 'continue' | 'retry' | null
+    at: string | null
     reason: string | null
-    turn_id: number | null
   }[]
-  const auditByTurn = new Map(
-    audits.filter((audit) => audit.turn_id !== null).map((audit) => [audit.turn_id, audit]),
+  const missing = turns.find(
+    (turn) => turn.action === null || (turn.action === 'continue' && !turn.reason),
   )
-  const missing = turns.find((turn) => !auditByTurn.has(turn.id))
   if (missing) {
     throw new Error(
       `run ${rootId} continuation turn ${missing.id} has no recoverable continue instructions. ` +
@@ -263,9 +258,8 @@ export function continuationInstructionsForFreshRetry(
     )
   }
   return turns.flatMap((turn) => {
-    const audit = auditByTurn.get(turn.id)!
-    return audit.action === 'continue' && audit.reason
-      ? [{ turnId: turn.id, at: audit.at, instructions: audit.reason }]
+    return turn.action === 'continue' && turn.reason && turn.at
+      ? [{ turnId: turn.id, at: turn.at, instructions: turn.reason }]
       : []
   })
 }
