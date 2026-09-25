@@ -13,25 +13,11 @@ import {
   terminalCloseOutRuns,
   unscoredRuns,
 } from './monitor-conditions.ts'
-import type { MonitorNotice } from './monitor-types.ts'
-
-const APPEND_ONLY_DELIVERY_KINDS = new Set([
-  'ghost-open-interval',
-  'observation-error',
-  'stale-run',
-])
-
-const REVALIDATED_DELIVERY_KINDS = new Set([
-  'abandoned-bootstrap',
-  'asking-run',
-  'dead-running-process',
-  'idle',
-  'stalled-run',
-  'task-waiting-on-ruling',
-  'terminal-close-out-held',
-  'terminal-close-out-failed',
-  'unscored-run',
-])
+import {
+  MONITOR_NOTICE_DELIVERY_POLICY,
+  type MonitorNotice,
+  type MonitorNoticeKind,
+} from './monitor-types.ts'
 
 function deliveredDetail(row: {
   kind: string
@@ -99,7 +85,7 @@ function recordAbandonedBootstrapSubjects(
 
 function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
   for (const kind of kinds) {
-    if (!APPEND_ONLY_DELIVERY_KINDS.has(kind) && !REVALIDATED_DELIVERY_KINDS.has(kind)) {
+    if (!(kind in MONITOR_NOTICE_DELIVERY_POLICY)) {
       throw new Error(`monitor notice kind ${kind} has no delivery-currentness policy`)
     }
   }
@@ -190,7 +176,9 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   const current = currentAddressedSubjects(kinds)
   const conditions = rows
     .filter(
-      (row) => APPEND_ONLY_DELIVERY_KINDS.has(row.kind) || current.get(row.kind)?.has(row.subject),
+      (row) =>
+        MONITOR_NOTICE_DELIVERY_POLICY[row.kind as MonitorNoticeKind] === 'append-only' ||
+        current.get(row.kind)?.has(row.subject),
     )
     .map((row) => ({
       noticeId: `condition:${row.id}` as const,

@@ -3,7 +3,25 @@
 
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 
-export type MonitorCondition = {
+export const MONITOR_NOTICE_DELIVERY_POLICY = {
+  'abandoned-bootstrap': 'revalidated',
+  'asking-run': 'revalidated',
+  'dead-running-process': 'revalidated',
+  'ghost-open-interval': 'append-only',
+  idle: 'revalidated',
+  'observation-error': 'append-only',
+  'stale-run': 'append-only',
+  'stalled-run': 'revalidated',
+  'task-waiting-on-ruling': 'revalidated',
+  'terminal-close-out-failed': 'revalidated',
+  'terminal-close-out-held': 'revalidated',
+  'unscored-run': 'revalidated',
+  'worker-gate-tooling-change': 'append-only',
+} as const satisfies Record<string, 'append-only' | 'revalidated'>
+
+export type MonitorNoticeKind = keyof typeof MONITOR_NOTICE_DELIVERY_POLICY
+
+type MonitorConditionFields = {
   kind: string
   subject: string
   since: string | null
@@ -13,8 +31,19 @@ export type MonitorCondition = {
   issueKey?: string | null
   affectedProject?: string
   severity?: MonitorSeverity | null
-  ownerSession?: string | null
 }
+
+export type AddressedMonitorCondition = MonitorConditionFields & {
+  kind: MonitorNoticeKind
+  ownerSession: string | null
+}
+
+export type UnaddressedMonitorCondition = MonitorConditionFields & {
+  kind: string
+  ownerSession?: never
+}
+
+export type MonitorCondition = AddressedMonitorCondition | UnaddressedMonitorCondition
 
 export type MonitorResult = {
   id: number

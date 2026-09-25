@@ -4,9 +4,9 @@
 import { HARNESS_NAMES, type LoadPlan, planHarnessLoad } from '../canon/canon-load.ts'
 import { gatherHarnessLoadFacts } from '../canon/canon-load-files.ts'
 import type { Project } from '../project/projects.ts'
-import type { MonitorCondition } from './monitor-types.ts'
+import type { MonitorCondition, UnaddressedMonitorCondition } from './monitor-types.ts'
 
-type HarnessLoadCondition = Omit<MonitorCondition, 'ageMs'>
+type HarnessLoadCondition = Omit<UnaddressedMonitorCondition, 'ageMs'>
 
 function largestAlwaysOnFiles(plan: LoadPlan): string {
   const files = plan.files
