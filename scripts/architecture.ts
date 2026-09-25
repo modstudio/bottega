@@ -8,6 +8,7 @@ import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
+import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
@@ -54,6 +55,7 @@ export const modules: ArchitectureModule[] = [
   ...operatorWaitingModules,
   ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...gateModules,
+  ...runResumeModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/install-root.ts',
@@ -388,14 +390,6 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/resources/resource-claims.ts', ['../run/synthetic-lifecycle-job.ts']),
   module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
-  module('orchestrator/src/run/checkpoint-resume-context.ts', []),
-  module('orchestrator/src/run/continuation-checkpoint-context.ts', [
-    'bun:sqlite',
-    './checkpoint.ts',
-    './resume-tree.ts',
-  ]),
-  module('orchestrator/src/run/resume-tree.ts', []),
-  module('orchestrator/src/run/run-resume-kind.ts', []),
   module('orchestrator/src/run/run-resume-options.ts', [
     '../worktree/worktree-types.ts',
     './resume-tree.ts',
