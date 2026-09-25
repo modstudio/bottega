@@ -1,5 +1,5 @@
-import { attributionFindings } from '../../../shared/attribution-markers.ts'
 import { readFileSync } from 'node:fs'
+import { attributionFindings } from '../../../shared/attribution-markers.ts'
 
 export type SourcedAttributionFinding = {
   source: string
