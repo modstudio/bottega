@@ -55,7 +55,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/run/question-vocabulary.ts', []),
+  module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
   module('orchestrator/src/run/question-delivery.ts', [
     '../database/db.ts',
     './question-vocabulary.ts',
@@ -261,6 +261,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
+  module('shared/question-vocabulary.ts', []),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
     'node:fs',

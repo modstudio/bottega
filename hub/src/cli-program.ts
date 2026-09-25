@@ -3,6 +3,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
+import {
+  ANSWERER_KIND_VALUES,
+  ASKED_VIA_VALUES,
+  QUESTION_DELIVERY_MODE_VALUES,
+} from '../../shared/question-vocabulary.ts'
 import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { collectOnce, releaseLease, watch, withLease } from './collect.ts'
@@ -38,7 +43,12 @@ import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { runReportCommand } from './report-cli.ts'
-import { listOpenRulings, rulingsPayload, rulingsStatsPayload } from './rulings.ts'
+import {
+  DEFAULT_STATS_DAYS,
+  listOpenRulings,
+  rulingsPayload,
+  rulingsStatsPayload,
+} from './rulings.ts'
 import { serve } from './serve.ts'
 import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
 import { formatServiceRevisionDoctor, startRevisionMonitor } from './service-revision.ts'
@@ -246,7 +256,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub rulings [--json]        open questions ingested from orch, with age
       --json                  one JSON document: {stale_after, questions}
   hub rulings --stats [--days N] [--json]
-                              ruling-loop measures for the last N days (default 14)
+                              ruling-loop measures for the last N days (default ${DEFAULT_STATS_DAYS})
   hub reclaim-fixture-questions [--dry-run] [--json]
                               remove question, interval and task rows left by the documented gate fixtures
 
@@ -928,10 +938,10 @@ try {
     case 'rulings': {
       if (has('stats')) {
         const rawDays = flag('days')
-        const days = rawDays == null ? 14 : Number(rawDays)
-        if (!Number.isInteger(days) || days <= 0)
+        const days = rawDays == null ? undefined : Number(rawDays)
+        if (days !== undefined && (!Number.isInteger(days) || days <= 0))
           throw new Error('--days must be a positive integer')
-        const payload = rulingsStatsPayload(days)
+        const payload = days === undefined ? rulingsStatsPayload() : rulingsStatsPayload(days)
         if (has('json')) {
           console.log(JSON.stringify(payload))
           break
@@ -941,8 +951,10 @@ try {
         console.log(`ruling loop, last ${stats.window.days} days`)
         console.log(
           `questions asked: ${stats.questions_asked.total}  ` +
-            `live ${stats.questions_asked.by_asked_via.live}  ` +
-            `reply ${stats.questions_asked.by_asked_via.reply}  ` +
+            ASKED_VIA_VALUES.map((via) => `${via} ${stats.questions_asked.by_asked_via[via]}`).join(
+              '  ',
+            ) +
+            `  ` +
             `unknown ${stats.questions_asked.by_asked_via.unknown}`,
         )
         console.log(
@@ -952,13 +964,13 @@ try {
             `under 1h ${stats.answer_wait.overall.under_1_hour}  ` +
             `over 1h ${stats.answer_wait.overall.over_1_hour}`,
         )
-        for (const kind of ['agent', 'operator', 'eval', 'unknown'] as const) {
+        for (const kind of [...ANSWERER_KIND_VALUES, 'unknown'] as const) {
           const row = stats.answer_wait.by_answerer_kind[kind]
           console.log(
             `  ${kind}: ${row.count}  median ${wait(row.median_ms)}  p90 ${wait(row.p90_ms)}`,
           )
         }
-        for (const mode of ['live', 'resume', 'retry', 'record-only'] as const) {
+        for (const mode of QUESTION_DELIVERY_MODE_VALUES) {
           const row = stats.delivery.by_mode_and_outcome[mode]
           console.log(`delivery ${mode}: delivered ${row.delivered}  failed ${row.failed}`)
         }

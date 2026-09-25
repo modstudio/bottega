@@ -12,3 +12,14 @@ CREATE TABLE question_delivery (
   at TEXT NOT NULL,
   error TEXT
 );
+-- BACKFILL
+-- DEFAULT_STATS_DAYS in hub/src/rulings.ts is 14. SQL cannot import that constant.
+UPDATE setting
+SET value = CASE
+  WHEN julianday(CASE WHEN json_valid(value) THEN json_extract(value, '$') ELSE value END)
+       <= julianday('now', '-14 days')
+    THEN value
+  ELSE json_quote(strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-14 days'))
+END
+WHERE key = 'collect.runs.at';
+-- /BACKFILL

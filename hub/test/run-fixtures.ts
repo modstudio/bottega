@@ -98,6 +98,13 @@ export async function ingestRunFixtures(...runs: ReturnType<typeof runFixture>[]
   return await ingestStdout(runs.map((run) => JSON.stringify(run)).join('\n'))
 }
 
+export function runHubFixtureProcess(
+  args: string[],
+  options: { env: Record<string, string | undefined>; cwd: string },
+) {
+  return Bun.spawnSync(args, options)
+}
+
 export function collectRunsAt() {
   return (
     db()

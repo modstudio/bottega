@@ -1,3 +1,13 @@
+import {
+  ANSWERER_KIND_VALUES,
+  type AnswererKind,
+  ASKED_VIA_VALUES,
+  type AskedVia,
+  QUESTION_DELIVERY_MODE_VALUES,
+  QUESTION_DELIVERY_OUTCOME_VALUES,
+  type QuestionDeliveryMode,
+  type QuestionDeliveryOutcome,
+} from '../../shared/question-vocabulary.ts'
 import { db } from './db.ts'
 
 const RULINGS_STALE_AFTER_KEY = 'rulings.stale_after'
@@ -10,7 +20,7 @@ function durationMs(value: string): number | null {
   return match ? Math.round(Number(match[1]) * UNITS[match[2]!]!) : null
 }
 
-const DEFAULT_STATS_DAYS = 14
+export const DEFAULT_STATS_DAYS = 14
 const FIVE_MINUTES_MS = 5 * 60_000
 const ONE_HOUR_MS = 60 * 60_000
 
@@ -18,14 +28,14 @@ export type RulingMeasureQuestion = {
   question_id: number
   asked_at: string
   answered_at: string | null
-  asked_via: 'live' | 'reply' | null
-  answerer_kind: 'agent' | 'operator' | 'eval' | null
+  asked_via: AskedVia | null
+  answerer_kind: AnswererKind | null
 }
 
 export type RulingMeasureDelivery = {
   question_id: number
-  mode: 'live' | 'resume' | 'retry' | 'record-only'
-  outcome: 'delivered' | 'failed'
+  mode: QuestionDeliveryMode
+  outcome: QuestionDeliveryOutcome
 }
 
 type WaitSummary = {
@@ -78,49 +88,52 @@ export function measureRulings(
     const wait = Date.parse(question.answered_at) - Date.parse(question.asked_at)
     return Number.isFinite(wait) && wait >= 0 ? [{ kind: question.answerer_kind, wait }] : []
   })
-  const kinds = ['agent', 'operator', 'eval'] as const
-  const modes = ['live', 'resume', 'retry', 'record-only'] as const
   const outcomes = Object.fromEntries(
-    modes.map((mode) => [
+    QUESTION_DELIVERY_MODE_VALUES.map((mode) => [
       mode,
-      {
-        delivered: deliveries.filter(
-          (delivery) => delivery.mode === mode && delivery.outcome === 'delivered',
-        ).length,
-        failed: deliveries.filter(
-          (delivery) => delivery.mode === mode && delivery.outcome === 'failed',
-        ).length,
-      },
+      Object.fromEntries(
+        QUESTION_DELIVERY_OUTCOME_VALUES.map((outcome) => [
+          outcome,
+          deliveries.filter((delivery) => delivery.mode === mode && delivery.outcome === outcome)
+            .length,
+        ]),
+      ),
     ]),
-  ) as Record<(typeof modes)[number], { delivered: number; failed: number }>
+  ) as Record<QuestionDeliveryMode, Record<QuestionDeliveryOutcome, number>>
   const stoppedQuestions = questions.filter((question) => question.asked_via === 'reply')
-  const deliveredByResume = stoppedQuestions.filter((question) =>
-    deliveries.some(
-      (delivery) =>
-        delivery.question_id === question.question_id &&
-        delivery.mode === 'resume' &&
-        delivery.outcome === 'delivered',
-    ),
-  ).length
-  const deliveredByRetry = stoppedQuestions.filter((question) =>
-    deliveries.some(
-      (delivery) =>
-        delivery.question_id === question.question_id &&
-        delivery.mode === 'retry' &&
-        delivery.outcome === 'delivered',
-    ),
-  ).length
+  const stoppedDelivery = stoppedQuestions.map((question) => {
+    const delivered = (mode: QuestionDeliveryMode) =>
+      deliveries.some(
+        (delivery) =>
+          delivery.question_id === question.question_id &&
+          delivery.mode === mode &&
+          delivery.outcome === 'delivered',
+      )
+    if (delivered('resume')) return 'resume'
+    if (delivered('retry')) return 'retry'
+    return 'undelivered'
+  })
+  const deliveredByResume = stoppedDelivery.filter((delivery) => delivery === 'resume').length
+  const deliveredByRetry = stoppedDelivery.filter((delivery) => delivery === 'retry').length
+  const undelivered = stoppedDelivery.filter((delivery) => delivery === 'undelivered').length
   const stoppedDelivered = deliveredByResume + deliveredByRetry
   const open = questions.filter((question) => question.answered_at == null)
-  const operatorWaits = waits.filter((item) => item.kind === 'operator').map((item) => item.wait)
-  const waitsFor = (kind: (typeof kinds)[number] | null) =>
+  const waitsFor = (kind: AnswererKind | null) =>
     summarizeWaits(waits.filter((item) => item.kind === kind).map((item) => item.wait))
+  const knownAnswererWaits = Object.fromEntries(
+    ANSWERER_KIND_VALUES.map((kind) => [kind, waitsFor(kind)]),
+  ) as Record<AnswererKind, WaitSummary>
+  const operatorSummary = knownAnswererWaits.operator
   const byAnswererKind = {
-    agent: waitsFor('agent'),
-    operator: waitsFor('operator'),
-    eval: waitsFor('eval'),
+    ...knownAnswererWaits,
     unknown: waitsFor(null),
   }
+  const byAskedVia = Object.fromEntries(
+    ASKED_VIA_VALUES.map((via) => [
+      via,
+      questions.filter((question) => question.asked_via === via).length,
+    ]),
+  ) as Record<AskedVia, number>
 
   return {
     window: {
@@ -131,8 +144,7 @@ export function measureRulings(
     questions_asked: {
       total: questions.length,
       by_asked_via: {
-        live: questions.filter((question) => question.asked_via === 'live').length,
-        reply: stoppedQuestions.length,
+        ...byAskedVia,
         unknown: questions.filter((question) => question.asked_via == null).length,
       },
     },
@@ -146,8 +158,9 @@ export function measureRulings(
         delivered: stoppedDelivered,
         resume: deliveredByResume,
         retry: deliveredByRetry,
-        resume_share: stoppedDelivered ? deliveredByResume / stoppedDelivered : null,
-        retry_share: stoppedDelivered ? deliveredByRetry / stoppedDelivered : null,
+        undelivered,
+        resume_share: stoppedDelivery.length ? deliveredByResume / stoppedDelivery.length : null,
+        retry_share: stoppedDelivery.length ? deliveredByRetry / stoppedDelivery.length : null,
       },
     },
     open: {
@@ -157,11 +170,8 @@ export function measureRulings(
       ).length,
     },
     operator_answers: {
-      count: operatorWaits.length,
-      median_wait_ms: percentile(
-        operatorWaits.toSorted((left, right) => left - right),
-        0.5,
-      ),
+      count: operatorSummary.count,
+      median_wait_ms: operatorSummary.median_ms,
     },
   }
 }

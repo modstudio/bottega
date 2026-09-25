@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import {
+  ANSWER_CHANNEL_VALUES,
+  ANSWERER_KIND_VALUES,
+  ASKED_VIA_VALUES,
+  QUESTION_DELIVERY_MODE_VALUES,
+  QUESTION_DELIVERY_OUTCOME_VALUES,
+} from './question-vocabulary.ts'
 import { refuseHubActionOverrides, trackerSettingsShape } from './trackers.ts'
 
 export const DocSearchOutputSchema = z
@@ -113,17 +120,17 @@ const OrchQuestionSchema = z
     run_id: z.number().int(),
     asked_at: z.iso.datetime(),
     answered_at: z.iso.datetime().nullable(),
-    asked_via: z.enum(['live', 'reply']).nullable(),
-    answerer_kind: z.enum(['agent', 'operator', 'eval']).nullable(),
-    answer_channel: z.enum(['cli', 'mcp', 'ui']).nullable(),
+    asked_via: z.enum(ASKED_VIA_VALUES).nullable(),
+    answerer_kind: z.enum(ANSWERER_KIND_VALUES).nullable(),
+    answer_channel: z.enum(ANSWER_CHANNEL_VALUES).nullable(),
     deliveries: z.array(
       z
         .object({
           id: z.number().int(),
           question_id: z.number().int(),
           run_id: z.number().int().nullable(),
-          mode: z.enum(['live', 'resume', 'retry', 'record-only']),
-          outcome: z.enum(['delivered', 'failed']),
+          mode: z.enum(QUESTION_DELIVERY_MODE_VALUES),
+          outcome: z.enum(QUESTION_DELIVERY_OUTCOME_VALUES),
           at: z.iso.datetime(),
           error: z.string().nullable(),
         })
