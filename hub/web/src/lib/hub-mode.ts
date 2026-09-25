@@ -18,6 +18,7 @@ import {
   Route as RouteIcon,
   ScanSearch,
   Settings,
+  SlidersHorizontal,
   Users,
 } from 'lucide-react'
 
@@ -76,6 +77,7 @@ const LOCAL_NAV: NavSection[] = [
         label: 'Settings',
         icon: Settings,
         items: [
+          { to: '/context', label: 'Managed context', icon: SlidersHorizontal },
           { to: '/settings', label: 'Hub settings', icon: Settings },
           { to: '/design', label: 'Design system', icon: Palette },
         ],

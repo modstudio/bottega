@@ -19,7 +19,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { DocScope, FilingDocScope } from '../../shared/docs.ts'
+import { DOC_SCOPES, type DocScope, type FilingDocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
   type AnswerWaitingResult,
@@ -115,6 +115,10 @@ export function stopDashboardCapability(): void {
   dashboardCapability = null
 }
 
+export function dashboardMutationAvailable(): boolean {
+  return dashboardCapability !== null
+}
+
 function dashboardCapabilityEnvironment(): Record<string, string> {
   return dashboardCapability
     ? {
@@ -124,10 +128,22 @@ function dashboardCapabilityEnvironment(): Record<string, string> {
     : {}
 }
 
+function requiredDashboardCapabilityEnvironment(): Record<string, string> {
+  if (!dashboardCapability) {
+    throw new Error('dashboard mutation capability is unavailable')
+  }
+  return dashboardCapabilityEnvironment()
+}
+
 async function orchProcess(
   args: string[],
   timeoutMs = 20_000,
-  opts: { stdin?: string; env?: Record<string, string> } = {},
+  opts: {
+    stdin?: string
+    env?: Record<string, string>
+    acceptedExitCodes?: number[]
+    acceptedOutput?: (output: string) => boolean
+  } = {},
 ): Promise<string> {
   const path = resolveOrchExecutable()
   const proc = Bun.spawn([path, ...args], {
@@ -154,7 +170,12 @@ async function orchProcess(
       throw new Error(
         `hub killed orch ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
       )
-    if (code !== 0) throw new Error(err.trim() || out.trim() || `orch ${args[0]} exited ${code}`)
+    if (code !== 0) {
+      const accepted =
+        opts.acceptedExitCodes?.includes(code) &&
+        (opts.acceptedOutput === undefined || opts.acceptedOutput(out.trim()))
+      if (!accepted) throw new Error(err.trim() || out.trim() || `orch ${args[0]} exited ${code}`)
+    }
     return out.trim()
   } finally {
     if (timer) clearTimeout(timer)
@@ -164,7 +185,12 @@ async function orchProcess(
 async function json<T>(
   args: string[],
   schema: { parse(value: unknown): T },
-  opts: { stdin?: string; env?: Record<string, string> } = {},
+  opts: {
+    stdin?: string
+    env?: Record<string, string>
+    acceptedExitCodes?: number[]
+    acceptedOutput?: (output: string) => boolean
+  } = {},
 ): Promise<T> {
   const out = await orchProcess(args, 20_000, opts)
   let value: unknown
@@ -176,7 +202,10 @@ async function json<T>(
   return schema.parse(value)
 }
 
-async function jsonDocument<T>(args: string[], opts: { stdin?: string } = {}): Promise<T> {
+async function jsonDocument<T>(
+  args: string[],
+  opts: { stdin?: string; env?: Record<string, string> } = {},
+): Promise<T> {
   const out = await orchProcess(args, 20_000, opts)
   try {
     return JSON.parse(out) as T
@@ -464,7 +493,7 @@ export async function score(
     'hub-dashboard',
     ...(note ? ['--note', note] : []),
   ]
-  return orchProcess(args, 20_000, { env: dashboardCapabilityEnvironment() })
+  return orchProcess(args, 20_000, { env: requiredDashboardCapabilityEnvironment() })
 }
 
 export type { DocScope }
@@ -481,6 +510,180 @@ export type DocRow = {
   created_at: string
   updated_at: string
 }
+
+const DocRowSchema = z.object({
+  id: z.number(),
+  scope: z.enum(DOC_SCOPES),
+  subject: z.string().nullable(),
+  slug: z.string(),
+  title: z.string(),
+  body: z.string(),
+  delivery: z.enum(['inject', 'demand']),
+  revision: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+const ConfigEntrySchema = z.object({
+  key: z.string(),
+  environment: z.string(),
+  scope: z.enum(['user', 'space']),
+  value: z.string(),
+  rowVersion: z.number(),
+  updatedAt: z.string(),
+})
+
+const ContextSchema = z.discriminatedUnion('registered', [
+  z.object({ registered: z.literal(false) }),
+  z.object({
+    registered: z.literal(true),
+    project: z.string(),
+    rulings: z.object({ value: z.enum(['agent', 'user']), scope: z.string() }),
+    stages: z.array(
+      z.union([
+        z.object({
+          stage: z.enum(['plan', 'implement', 'review', 'docs', 'canon', 'ship']),
+          agreed: z.literal(true),
+          value: z.enum(['ask', 'review', 'auto']),
+          scope: z.string(),
+          steps: z.number(),
+        }),
+        z.object({
+          stage: z.enum(['plan', 'implement', 'review', 'docs', 'canon', 'ship']),
+          agreed: z.literal(false),
+          values: z.array(
+            z.object({
+              value: z.enum(['ask', 'review', 'auto']),
+              scope: z.string(),
+              steps: z.number(),
+            }),
+          ),
+        }),
+      ]),
+    ),
+    text: z.string(),
+  }),
+])
+
+const HookSummarySchema = z.object({
+  event: z.string(),
+  matcher: z.string(),
+  fingerprint: z.string(),
+})
+const SettingsCheckSchema = z.object({
+  target: z.union([
+    z.object({ kind: z.literal('user') }),
+    z.object({ kind: z.literal('project'), name: z.string() }),
+  ]),
+  file: z.object({ path: z.string(), exists: z.boolean() }),
+  revision: z.string().nullable(),
+  settings: z.object({
+    permissions: z.object({
+      allow: z.array(z.string()),
+      ask: z.array(z.string()),
+      deny: z.array(z.string()),
+    }),
+    hooks: z.array(HookSummarySchema),
+    envKeys: z.array(z.string()),
+  }),
+  drift: z.object({
+    rules: z.object({
+      allow: z.object({ added: z.array(z.string()), removed: z.array(z.string()) }),
+      ask: z.object({ added: z.array(z.string()), removed: z.array(z.string()) }),
+      deny: z.object({ added: z.array(z.string()), removed: z.array(z.string()) }),
+    }),
+    hooks: z.object({ added: z.array(HookSummarySchema), removed: z.array(HookSummarySchema) }),
+    envKeys: z.object({ added: z.array(z.string()), removed: z.array(z.string()) }),
+  }),
+  findings: z.array(
+    z.object({ file: z.string(), line: z.number(), rule: z.string(), message: z.string() }),
+  ),
+})
+
+export const contextArgv = (cwd: string) => ['context', '--cwd', cwd, '--json']
+export const configArgv = (op: 'get' | 'list' | 'set', key?: string, value?: string) => [
+  'config',
+  op,
+  ...(key ? [key] : []),
+  ...(value ? [value] : []),
+  '--json',
+]
+export const settingsCheckArgv = (target: { user: true } | { project: string }) => [
+  'settings',
+  'render',
+  '--check',
+  ...('user' in target ? ['--user'] : ['--project', target.project]),
+  '--json',
+]
+
+export const settingsPermissionArgv = (input: SettingsPermissionInput) => [
+  'settings',
+  'permission',
+  input.operation,
+  ...('user' in input.target ? ['--user'] : ['--project', input.target.project]),
+  '--list',
+  input.list,
+  '--rule',
+  input.rule,
+  '--expect',
+  input.expectedRevision,
+  ...(input.reason ? ['--reason', input.reason] : []),
+  '--json',
+]
+
+export const userDocList = () =>
+  json(docArgv('list', { scope: 'canon', user: true }), z.array(DocRowSchema)) as Promise<DocRow[]>
+export const userDocGet = (slug: string, scope = 'canon') =>
+  json(docArgv('get', { slug, scope, user: true }), DocRowSchema) as Promise<DocRow>
+export const userDocSet = (input: Omit<DocSetInput, 'scope' | 'subject'>, scope = 'canon') =>
+  json(docArgv('set', { ...input, scope, user: true }), DocRowSchema, {
+    stdin: input.body,
+    env: requiredDashboardCapabilityEnvironment(),
+  }) as Promise<DocRow>
+export const userDocRemove = (slug: string, reason: string, expectedRevision?: string) =>
+  json(
+    docArgv('remove', { slug, scope: 'canon', user: true, reason, expectedRevision }),
+    z.object({ removed: z.boolean() }),
+    { env: requiredDashboardCapabilityEnvironment() },
+  )
+
+export const contextGet = (cwd: string) => json(contextArgv(cwd), ContextSchema)
+export const configSet = (key: string, value: string) =>
+  json(configArgv('set', key, value), ConfigEntrySchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+export const settingsCheck = (target: { user: true } | { project: string }) =>
+  json(settingsCheckArgv(target), SettingsCheckSchema, {
+    acceptedExitCodes: [1],
+    acceptedOutput: (output) => {
+      try {
+        return SettingsCheckSchema.safeParse(JSON.parse(output)).success
+      } catch {
+        return false
+      }
+    },
+  })
+
+const SettingsPermissionResultSchema = z.object({
+  revision: z.string(),
+  counts: z.object({ allow: z.number(), ask: z.number(), deny: z.number() }),
+  changed: z.boolean(),
+  message: z.string().optional(),
+})
+
+export type SettingsPermissionInput = {
+  target: { user: true } | { project: string }
+  operation: 'add' | 'remove'
+  list: 'allow' | 'ask' | 'deny'
+  rule: string
+  expectedRevision: string
+  reason?: string
+}
+
+export const settingsPermission = (input: SettingsPermissionInput) =>
+  json(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
 
 export type DocSubjects = {
   project: string[]
@@ -523,6 +726,7 @@ export type DocArgvInput = {
   reason?: string
   delivery?: 'inject' | 'demand'
   expectedRevision?: string
+  user?: boolean
 }
 
 export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
@@ -531,34 +735,25 @@ function subjectFlags(subject: string | null | undefined): string[] {
   return subject ? ['--subject', subject] : []
 }
 
+function docAddressFlags(input: DocArgvInput): string[] {
+  return [
+    ...(input.scope ? ['--scope', input.scope] : []),
+    ...(input.user ? ['--user'] : subjectFlags(input.subject)),
+  ]
+}
+
 export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
   switch (op) {
     case 'list':
-      return [
-        'doc',
-        'list',
-        ...(input.scope ? ['--scope', input.scope] : []),
-        ...subjectFlags(input.subject),
-        '--json',
-      ]
+      return ['doc', 'list', ...docAddressFlags(input), '--json']
     case 'get':
-      return [
-        'doc',
-        'show',
-        input.slug!,
-        '--scope',
-        input.scope!,
-        ...subjectFlags(input.subject),
-        '--json',
-      ]
+      return ['doc', 'show', input.slug!, ...docAddressFlags(input), '--json']
     case 'set':
       return [
         'doc',
         'set',
         input.slug!,
-        '--scope',
-        input.scope!,
-        ...subjectFlags(input.subject),
+        ...docAddressFlags(input),
         '--title',
         input.title!,
         '--reason',
@@ -574,9 +769,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         'doc',
         'rm',
         input.slug!,
-        '--scope',
-        input.scope!,
-        ...subjectFlags(input.subject),
+        ...docAddressFlags(input),
         '--reason',
         input.reason!,
         '--author',

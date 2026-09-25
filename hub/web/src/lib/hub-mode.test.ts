@@ -32,6 +32,8 @@ test('hosted mode exposes its hosted routes', () => {
   for (const item of hosted) expect(isHostedPath(item.to)).toBe(true)
   expect(hosted.map((item) => item.label)).toContain('Flight')
   expect(destinations('local').map((item) => item.to)).toContain('/flight')
+  expect(destinations('local').map((item) => item.to)).toContain('/context')
+  expect(hosted.map((item) => item.to)).not.toContain('/context')
   expect(isHostedPath('/runs')).toBe(true)
   expect(isHostedPath('/runs/01990000-0000-7000-8000-000000000001')).toBe(true)
   expect(isHostedPath('/reviews')).toBe(true)

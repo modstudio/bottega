@@ -56,6 +56,48 @@ const health = mock(async () => ({
   mcpUnprobed: 0,
   contention: { resources: [], sessions: [] },
 }))
+const userDocList = mock(async () => [] as unknown[])
+const userDocGet = mock(async (_slug: string, _scope?: string) => row)
+const userDocSet = mock(async (_input: unknown, _scope?: string) => row)
+const userDocRemove = mock(async () => ({ removed: true }))
+const contextGet = mock(async (_cwd: string) => ({
+  registered: true as const,
+  project: 'alpha',
+  rulings: { value: 'user' as const, scope: 'built-in' },
+  stages: [
+    {
+      stage: 'review' as const,
+      agreed: true as const,
+      value: 'review' as 'ask' | 'review' | 'auto',
+      scope: 'built-in',
+      steps: 1,
+    },
+  ],
+  text: 'Autonomy for alpha',
+}))
+const configSet = mock(async (key: string, value: string) => ({ key, value }))
+const settingsCheck = mock(async (_target: unknown) => ({
+  target: { kind: 'user' as const },
+  file: { path: '/tmp/settings.json', exists: true },
+  revision: 'revision-1',
+  settings: { permissions: { allow: [], ask: [], deny: [] }, hooks: [], envKeys: [] },
+  drift: {
+    rules: {
+      allow: { added: [], removed: [] },
+      ask: { added: [], removed: [] },
+      deny: { added: [], removed: [] },
+    },
+    hooks: { added: [], removed: [] },
+    envKeys: { added: [], removed: [] },
+  },
+  findings: [],
+}))
+const settingsPermission = mock(async (_input: unknown) => ({
+  revision: 'revision-2',
+  counts: { allow: 1, ask: 0, deny: 0 },
+  changed: true,
+}))
+const dashboardMutationAvailable = mock(() => true)
 
 mock.module('../orch.ts', () => ({
   docList,
@@ -67,6 +109,15 @@ mock.module('../orch.ts', () => ({
   jobs,
   agents,
   health,
+  userDocList,
+  userDocGet,
+  userDocSet,
+  userDocRemove,
+  contextGet,
+  configSet,
+  settingsCheck,
+  settingsPermission,
+  dashboardMutationAvailable,
 }))
 
 const { appRouter } = await import('./router.ts')
@@ -518,5 +569,93 @@ describe('project writes', () => {
       message: 'no project "missing"',
     })
     expect(received).toBe('missing')
+  })
+})
+
+describe('managed context', () => {
+  test('sets the exact hosted user autonomy key and returns a fresh resolution', async () => {
+    contextGet.mockResolvedValueOnce({
+      registered: true,
+      project: 'alpha',
+      rulings: { value: 'user', scope: 'built-in' },
+      stages: [{ stage: 'review', agreed: true, value: 'review', scope: 'built-in', steps: 1 }],
+      text: 'before',
+    })
+    contextGet.mockResolvedValueOnce({
+      registered: true,
+      project: 'alpha',
+      rulings: { value: 'user', scope: 'hosted user' },
+      stages: [{ stage: 'review', agreed: true, value: 'auto', scope: 'hosted user', steps: 1 }],
+      text: 'after',
+    })
+    const result = await caller.context.autonomy.set({
+      project: 'alpha',
+      stage: 'review',
+      value: 'auto',
+    })
+    expect(configSet).toHaveBeenLastCalledWith('autonomy.stage.review', 'auto')
+    expect(contextGet).toHaveBeenLastCalledWith('/fixtures/repos/alpha')
+    expect(result.registered && result.stages[0]?.agreed && result.stages[0].scope).toBe(
+      'hosted user',
+    )
+  })
+
+  test('validates permission edits before calling orch', async () => {
+    await expect(
+      caller.context.settings.permission({
+        target: { user: true },
+        list: 'allow',
+        rule: ' ',
+        operation: 'add',
+        reason: 'because',
+        expectedRevision: 'revision-1',
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(
+      caller.context.settings.permission({
+        target: { user: true },
+        list: 'allow',
+        rule: 'Bash(orch *)',
+        operation: 'add',
+        reason: 'because',
+      } as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(settingsPermission).not.toHaveBeenCalled()
+  })
+
+  test('passes one validated permission edit to orch without an owner id', async () => {
+    const input = {
+      target: { user: true as const },
+      list: 'allow' as const,
+      rule: 'Bash(orch *)',
+      operation: 'add' as const,
+      reason: 'because',
+      expectedRevision: 'revision-1',
+    }
+    await caller.context.settings.permission({
+      ...input,
+      target: { user: true, owner: 'someone-else' },
+    } as never)
+    expect(settingsPermission).toHaveBeenLastCalledWith(input)
+  })
+
+  test('maps a missing signed-in record session to a refusal instead of rows', async () => {
+    userDocList.mockImplementationOnce(async () => {
+      throw new Error('no signed-in record session; cleared by: run `orch record login`')
+    })
+    await expect(caller.context.userCanon.list()).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'no signed-in record session; cleared by: run `orch record login`',
+    })
+  })
+
+  test('preserves a settings-check refusal verbatim', async () => {
+    settingsCheck.mockImplementationOnce(async () => {
+      throw new Error('no signed-in record session; run orch record login')
+    })
+    await expect(caller.context.settings.get({ user: true })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'no signed-in record session; run orch record login',
+    })
   })
 })

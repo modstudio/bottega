@@ -117,6 +117,23 @@ export function trpcMutationRequestAllowed(request: Request): boolean {
   return origin === new URL(request.url).origin || fetchSite === 'same-origin'
 }
 
+export function handleTrpcRequest(request: Request): Promise<Response> {
+  if (!trpcMutationRequestAllowed(request)) {
+    return Promise.resolve(new Response('cross-origin tRPC mutation refused', { status: 403 }))
+  }
+  return fetchRequestHandler({
+    endpoint: '/trpc',
+    req: request,
+    router: appRouter,
+    createContext,
+    // A write can change anything an orch read returned, so the next read starts fresh.
+    responseMeta({ type }) {
+      if (type === 'mutation') orchCache.clear()
+      return {}
+    },
+  })
+}
+
 /** The shared hub.db strip on an orch procedure follows the orch clock too. */
 export function cachedStrip(hours: number) {
   return orchCache.get(`strip:${hours}`, () => strip(hours))
@@ -558,19 +575,7 @@ export function serve(port: number) {
       const url = new URL(req.url)
 
       if (url.pathname.startsWith('/trpc')) {
-        if (!trpcMutationRequestAllowed(req))
-          return new Response('cross-origin tRPC mutation refused', { status: 403 })
-        return fetchRequestHandler({
-          endpoint: '/trpc',
-          req,
-          router: appRouter,
-          createContext,
-          // A write can change anything an orch read returned, so the next read starts fresh.
-          responseMeta({ type }) {
-            if (type === 'mutation') orchCache.clear()
-            return {}
-          },
-        })
+        return handleTrpcRequest(req)
       }
 
       if (url.pathname === '/app' || url.pathname.startsWith('/app/')) {

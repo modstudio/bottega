@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
-import { clearOrchCache, trpcMutationRequestAllowed, view } from './serve.ts'
+import { stopDashboardCapability } from './orch.ts'
+import { clearOrchCache, handleTrpcRequest, trpcMutationRequestAllowed, view } from './serve.ts'
 
 test('tRPC mutation requests require browser same-origin proof', () => {
   const request = (headers?: HeadersInit, method = 'POST') =>
@@ -11,6 +12,29 @@ test('tRPC mutation requests require browser same-origin proof', () => {
   expect(trpcMutationRequestAllowed(request({ Origin: 'https://attacker.example' }))).toBe(false)
   expect(trpcMutationRequestAllowed(request({ 'Content-Type': 'text/plain' }))).toBe(false)
   expect(trpcMutationRequestAllowed(request(undefined, 'GET'))).toBe(true)
+})
+
+test('a forged same-origin context mutation without the process capability never reaches orch', async () => {
+  stopDashboardCapability()
+  const spawn = spyOn(Bun, 'spawn')
+  try {
+    const origin = 'http://127.0.0.1:4567'
+    const response = await handleTrpcRequest(
+      new Request(`${origin}/trpc/context.autonomy.set`, {
+        method: 'POST',
+        headers: {
+          Origin: origin,
+          'Sec-Fetch-Site': 'same-origin',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ json: { project: 'alpha', stage: 'review', value: 'auto' } }),
+      }),
+    )
+    expect(await response.text()).toContain('Dashboard mutation capability is unavailable')
+    expect(spawn).not.toHaveBeenCalled()
+  } finally {
+    spawn.mockRestore()
+  }
 })
 
 beforeAll(resetFixtureStore)

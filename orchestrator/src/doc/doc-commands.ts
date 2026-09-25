@@ -40,6 +40,10 @@ export function validateUserAddress(user: boolean, hasSubject: boolean): void {
   if (user && hasSubject) throw new Error('--user cannot be used with --subject')
 }
 
+export function userAddressScope(user: boolean, explicitScope: string | undefined) {
+  return user ? (explicitScope ?? 'canon') : explicitScope
+}
+
 function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   const scope = flags.flag('scope')
   const subject = flags.flag('subject') ?? null
@@ -163,7 +167,7 @@ export async function docCommand(
 ): Promise<void> {
   const { has, flag } = flags
   validateUserAddress(has('user'), has('subject'))
-  const scope = has('user') ? 'canon' : flag('scope')
+  const scope = userAddressScope(has('user'), flag('scope'))
   const subject = has('user') ? null : (flag('subject') ?? null)
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
