@@ -56,11 +56,16 @@ import type {
   HumanMonitorCondition,
   MonitorCondition,
   MonitorHistoryRow,
+  MonitorNoticeKind,
   MonitorResult,
   UnaddressedMonitorCondition,
 } from './monitor-types.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
+const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
+  held: 'terminal-close-out-held',
+  failed: 'terminal-close-out-failed',
+} as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
 
 export class MonitorStoreBusyError extends Error {
   constructor(cause: unknown) {
@@ -400,8 +405,7 @@ export async function monitor(
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
     add({
-      kind:
-        run.close_out_outcome === 'held' ? 'terminal-close-out-held' : 'terminal-close-out-failed',
+      kind: TERMINAL_CLOSE_OUT_NOTICE_KINDS[run.close_out_outcome],
       subject: `run:${run.id}`,
       since: run.close_out_attempted_at,
       detail: run.close_out_detail ?? `terminal run ${run.id} close-out ${run.close_out_outcome}`,
