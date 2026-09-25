@@ -4,6 +4,7 @@
 import type { Command, OptionValues } from 'commander'
 import { assetPath } from '../../../shared/install-root.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
+import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { checkCommand } from '../check/check-commands.ts'
@@ -345,6 +346,11 @@ export function register(program: Command): void {
       cwd: process.cwd,
     }),
   )
+  program
+    .command('probe <agent>')
+    .description('clear a vendor-quota exclusion once the agent answers')
+    .allowExcessArguments(false)
+    .action((agent) => vendorProbeCommand(agent, presentation))
   program
     .command('pick <job>')
     .option('--agent <value>')
