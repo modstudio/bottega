@@ -46,6 +46,7 @@ import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
+import { retainedBranchForCloseOut } from './retained-branch.ts'
 
 export type CloseOutResult = {
   runId: number
@@ -581,7 +582,7 @@ function attemptCloseOutRun(
     options.keepTreeDecision,
   )
   if (terminalHold) return terminalHold
-  const retainedBranch = effective.minted_branch ?? effective.branch
+  const retainedBranch = retainedBranchForCloseOut(effective.minted_branch)
   const turnHead = turnHeadForCloseOut(row, treePath)
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
     if (!retainedBranch || !tip) return

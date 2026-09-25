@@ -1,6 +1,7 @@
 /** Run stop knows run terminal writes, worktree ownership, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 
 import {
+  branchDeletionProvenanceRefusal,
   type CleanupOptions,
   type CleanupRow,
   cleanupRepoRoot,
@@ -38,6 +39,16 @@ export function stoppedRunLine(
     return `stopped run ${id}; no process could be signaled because ${termination.reason}; after checking ps -p ${pid} -o command, run kill -TERM ${pid} only if the command shows one of these ids: ${commands}`
   }
   return `stopped run ${id}`
+}
+
+function stoppedWorktreeLine(
+  worktree: string,
+  branch: string | null,
+  branchOwnedByConversation: boolean,
+  dockerMessage: string,
+): string {
+  const keptBranch = branchOwnedByConversation ? ` and branch ${branch}` : ''
+  return `kept worktree ${worktree}${keptBranch} for continuation; ${dockerMessage}`
 }
 
 export type RunStopOptions = CleanupOptions & { note?: string }
@@ -156,8 +167,12 @@ export async function stopRun(
             ? `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`
             : 'found no Docker containers to reclaim'
     options.presentation.log(
-      `kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} for continuation; ` +
+      stoppedWorktreeLine(
+        cleanupRow.worktree,
+        cleanupRow.branch,
+        branchDeletionProvenanceRefusal(cleanupRow.id, cleanupRow.branch) === null,
         dockerMessage,
+      ),
     )
   } else if (dockerTeardown.outcome === 'unascertainable') {
     options.presentation.log(
@@ -289,6 +304,11 @@ export async function abandonRun(
     return
   }
   withCleanupLock(repoRoot, `abandon run ${id}`, cleanupRow.worktree, () => {
+    const provenanceRefusal = branchDeletionProvenanceRefusal(cleanupRow.id, cleanupRow.branch)
+    if (provenanceRefusal) {
+      options.presentation.log(provenanceRefusal)
+      return
+    }
     const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
     if (ownersBefore.length) {
       options.presentation.log(

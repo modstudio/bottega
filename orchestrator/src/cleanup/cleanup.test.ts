@@ -1,14 +1,27 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { terminalCloseOutRuns } from '../monitor/monitor-conditions.ts'
 import { upsertProject } from '../project/projects.ts'
-import { type CleanupPresentation, type CleanupRow, discardWorktree } from './cleanup.ts'
+import {
+  type CleanupPresentation,
+  type CleanupRow,
+  discardRun,
+  discardWorktree,
+} from './cleanup.ts'
+
+const originalSession = process.env.CLAUDE_CODE_SESSION_ID
+
+beforeEach(() => {
+  process.env.CLAUDE_CODE_SESSION_ID = 'cleanup-test-session'
+})
 
 afterEach(() => {
   mock.restore()
+  if (originalSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = originalSession
 })
 
 function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
@@ -269,5 +282,62 @@ test('a root held at close-out with the tree only on a child is no longer return
     })
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('force discard refuses a kept review subject and releases only the reader pointer', async () => {
+  const owner = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'cleanup-test-session',
+  })
+  const reader = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    status: 'ok',
+    session: 'cleanup-test-session',
+  })
+  const project = `cleanup-review-${reader}`
+  const repo = join(dir, project)
+  const branch = `DEV-930-orch-${owner}`
+  const commands: string[][] = []
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  db()
+    .query('UPDATE run SET repo=?, branch=?, minted_branch=? WHERE id=?')
+    .run(project, branch, branch, owner)
+  db()
+    .query('UPDATE run SET repo=?, cwd=?, branch=?, branch_kept=? WHERE id=?')
+    .run(project, repo, branch, branch, reader)
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    commands.push(command)
+    const args = command[0] === 'git' ? command.slice(1) : command
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  const shown = presentation()
+  const lines: string[] = []
+  shown.log = (...values: unknown[]) => lines.push(values.join(' '))
+
+  try {
+    await discardRun(reader, {
+      force: true,
+      auditReason: null,
+      presentation: shown,
+    })
+
+    expect(lines.join('\n')).toContain(
+      `branch ${branch} cannot be deleted: it was minted by run ${owner}, not run ${reader}'s conversation; it was left in place`,
+    )
+    expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(reader)).toEqual({
+      branch_kept: null,
+    })
+    expect(db().query('SELECT minted_branch FROM run WHERE id=?').get(owner)).toEqual({
+      minted_branch: branch,
+    })
+    expect(commands.some((command) => command.includes('-D'))).toBe(false)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
   }
 })

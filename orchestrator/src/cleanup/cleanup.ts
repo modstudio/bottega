@@ -27,6 +27,7 @@ import {
   unmergedBranch,
 } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { branchDeletableBy } from './branch-deletion-provenance.ts'
 
 export type CleanupPresentation = {
   log: (...values: unknown[]) => void
@@ -162,6 +163,37 @@ export function evidenceOwningBranchOwners(
     roots.add(candidate.root_id)
     return [{ ...candidate, id: candidate.root_id }]
   })
+}
+
+export function branchDeletionProvenanceRefusal(
+  runId: number,
+  target: string | null,
+): string | null {
+  const minted = db()
+    .query(
+      `SELECT id, minted_branch FROM run
+       WHERE COALESCE(parent_run_id,id) =
+             (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         AND minted_branch IS NOT NULL
+       ORDER BY id`,
+    )
+    .all(runId) as { id: number; minted_branch: string }[]
+  if (
+    branchDeletableBy(
+      target,
+      minted.map((row) => row.minted_branch),
+    )
+  )
+    return null
+  const recordedMinter = target
+    ? (db().query('SELECT id FROM run WHERE minted_branch=? ORDER BY id LIMIT 1').get(target) as {
+        id: number
+      } | null)
+    : null
+  const ownership = recordedMinter
+    ? `it was minted by run ${recordedMinter.id}, not run ${runId}'s conversation`
+    : `no recorded run minted it for run ${runId}'s conversation`
+  return `branch ${target ?? '(none)'} cannot be deleted: ${ownership}; it was left in place`
 }
 
 export function withCleanupLock<T>(
@@ -647,6 +679,26 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
     const repoRoot = cleanupRepoRoot(row)
     if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
     withCleanupLock(repoRoot, `discard kept branch for run ${id}`, null, () => {
+      const provenanceRefusal = branchDeletionProvenanceRefusal(row.id, row.branch_kept)
+      if (provenanceRefusal) {
+        authority = adoptRunMutation(authority, 'discard')
+        writeTransaction(() => {
+          db()
+            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
+            .run(authority.rootId)
+          settleClaims(db(), {
+            rootRunId: authority.rootId,
+            kind: 'branch',
+            state: 'released',
+            settledAt: new Date().toISOString(),
+            detail: `left refs/heads/${row.branch_kept}; branch was not minted by this conversation`,
+            allocationKey: `refs/heads/${row.branch_kept}`,
+          })
+          auditRunMutation(authority, 'discard', options.auditReason)
+        })
+        options.presentation.log(provenanceRefusal)
+        return
+      }
       const ownerRow = { id: row.id, repo: row.repo, branch: row.branch_kept }
       const ownersBefore = evidenceOwningBranchOwners(ownerRow, repoRoot)
       if (ownersBefore.length) {
