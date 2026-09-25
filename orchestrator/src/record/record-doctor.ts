@@ -14,7 +14,7 @@ import { machineId } from './machine-identity.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
-import { refuseOwnerConnection } from './record-sync.ts'
+import { effectiveProjectSpace, refuseOwnerConnection } from './record-sync.ts'
 
 type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
 export type RecordDoctorCheck = {
@@ -91,8 +91,10 @@ export function localQuestionCountForSpace(
     .all()
   return rows.filter((row) => {
     if (!row.project) return false
+    if (!projectSpaces.has(row.project)) return false
     const space = projectSpaces.get(row.project)
-    return space === activeSpace.id || space === activeSpace.slug
+    const effectiveSpace = effectiveProjectSpace(space ?? null, activeSpace.id)
+    return effectiveSpace === activeSpace.id || effectiveSpace === activeSpace.slug
   }).length
 }
 
