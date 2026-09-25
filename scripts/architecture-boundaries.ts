@@ -1,6 +1,5 @@
 import { dirname, normalize } from 'node:path'
-import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
-import { userCanonBoundarySpecs } from './architecture-canon-boundaries.ts'
+import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
   recordReadBoundariesAfterPublish,
@@ -121,8 +120,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['./canon-lint.ts'],
     'Keep canon write decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
-  ...userCanonBoundarySpecs,
-  ...canonLoadBoundarySpecs,
+  ...canonBoundarySpecs,
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',
@@ -497,7 +495,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Enforce the machine-identity concern boundary.',
   ),
   ...mcpBoundarySpecs,
-  ...canonLoadBoundarySpecs,
   boundary(
     'metric-commands-boundary',
     'orchestrator/src/metric/metric-commands.ts',

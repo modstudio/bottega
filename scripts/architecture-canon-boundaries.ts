@@ -1,8 +1,9 @@
 import type { ImportBoundary } from './architecture-boundaries.ts'
+import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
 
 const source = 'orchestrator/src/canon/'
 
-export const userCanonBoundarySpecs: ImportBoundary[] = [
+const userCanonBoundarySpecs: ImportBoundary[] = [
   {
     name: 'user-canon-import-boundary',
     file: 'orchestrator/src/doc/user-canon-import.ts',
@@ -51,3 +52,5 @@ export const userCanonBoundarySpecs: ImportBoundary[] = [
       'Keep user canon home file access independent of stores, commands, runs, routing, and transports.',
   },
 ]
+
+export const canonBoundarySpecs = [...userCanonBoundarySpecs, ...canonLoadBoundarySpecs]
