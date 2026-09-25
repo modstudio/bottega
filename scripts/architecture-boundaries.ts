@@ -838,6 +838,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../outcome.ts',
       '../project/projects.ts',
+      './continuation-checkpoint-context.ts',
       './resume-tree.ts', './run.ts', './run-authority.ts', './run-dispatch.ts', './run-liveness.ts', './run-resume-kind.ts', './checkpoint.ts',
     ],
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
