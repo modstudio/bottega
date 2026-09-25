@@ -8,7 +8,11 @@ import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.t
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { packedResumePrompt } from './run.ts'
-import { answerRun as answerRunService, retryRun } from './run-answer.ts'
+import {
+  answerRun as answerRunService,
+  continuationInstructionsForFreshRetry,
+  retryRun,
+} from './run-answer.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { continueRun } from './run-control.ts'
 import type { detach } from './run-dispatch.ts'
@@ -892,6 +896,46 @@ describe('retry command', () => {
         `Re-send the instructions with orch continue ${id} --file <spec>, ` +
         `or pass orch retry ${child} for that turn directly.`,
     )
+  })
+
+  test('fresh retry carries continue instructions once and accepts a retry-created turn', () => {
+    const id = failed('implement')
+    const continued = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 2,
+    })
+    const retried = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 3,
+    })
+    db().query('UPDATE run SET started_at=? WHERE id=?').run('2026-09-25T12:00:00.000Z', continued)
+    db().query('UPDATE run SET started_at=? WHERE id=?').run('2026-09-25T13:00:00.000Z', retried)
+    db()
+      .query(
+        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(id, id, 'continue', '2026-09-25T12:00:01.000Z', 'Review 1621.')
+    db()
+      .query(
+        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(id, id, 'retry', '2026-09-25T13:00:01.000Z', `retried as run ${retried}`)
+
+    expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
+      {
+        turnId: continued,
+        at: '2026-09-25T12:00:01.000Z',
+        instructions: 'Review 1621.',
+      },
+    ])
   })
 
   test('a rejected retry dispatch records failed ruling delivery', async () => {

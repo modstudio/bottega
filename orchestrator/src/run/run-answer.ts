@@ -212,7 +212,7 @@ function latestRetryTurn(
   )
 }
 
-function continuationInstructionsForFreshRetry(
+export function continuationInstructionsForFreshRetry(
   writesRepo: boolean,
   requestedId: number,
   rootId: number,
@@ -231,7 +231,7 @@ function continuationInstructionsForFreshRetry(
     .all(rootId) as { id: number }[]
   const audits = db()
     .query(
-      `SELECT audit.at, audit.reason,
+      `SELECT audit.action, audit.at, audit.reason,
               (SELECT turn.id
                  FROM run turn
                 WHERE turn.parent_run_id = audit.root_id
@@ -242,14 +242,19 @@ function continuationInstructionsForFreshRetry(
                 ORDER BY turn.started_at DESC, turn.id DESC
                 LIMIT 1) turn_id
          FROM run_mutation_audit audit
-        WHERE audit.root_id = ? AND audit.action = 'continue'
+        WHERE audit.root_id = ? AND audit.action IN ('continue', 'retry')
         ORDER BY audit.at, audit.rowid`,
     )
-    .all(rootId) as { at: string; reason: string | null; turn_id: number | null }[]
+    .all(rootId) as {
+    action: 'continue' | 'retry'
+    at: string
+    reason: string | null
+    turn_id: number | null
+  }[]
   const auditByTurn = new Map(
     audits.filter((audit) => audit.turn_id !== null).map((audit) => [audit.turn_id, audit]),
   )
-  const missing = turns.find((turn) => !auditByTurn.get(turn.id)?.reason)
+  const missing = turns.find((turn) => !auditByTurn.has(turn.id))
   if (missing) {
     throw new Error(
       `run ${rootId} continuation turn ${missing.id} has no recoverable continue instructions. ` +
@@ -257,9 +262,11 @@ function continuationInstructionsForFreshRetry(
         `or pass orch retry ${missing.id} for that turn directly.`,
     )
   }
-  return turns.map((turn) => {
+  return turns.flatMap((turn) => {
     const audit = auditByTurn.get(turn.id)!
-    return { turnId: turn.id, at: audit.at, instructions: audit.reason! }
+    return audit.action === 'continue' && audit.reason
+      ? [{ turnId: turn.id, at: audit.at, instructions: audit.reason }]
+      : []
   })
 }
 
