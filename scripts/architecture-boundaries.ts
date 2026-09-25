@@ -417,6 +417,7 @@ export const importBoundaries: ImportBoundary[] = [
       './evidence-api.ts',
       './hosted-health.ts',
       './note-api.ts',
+      './operator-waiting-email-api.ts',
       './report-api.ts',
       './task-api.ts',
       './trpc/context.ts',

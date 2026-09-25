@@ -10,6 +10,7 @@ import {
 } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { pullHostedNotes } from './note-cache.ts'
+import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
 import { claimWaitingNotifications } from './orch.ts'
 import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
@@ -375,6 +376,7 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
 
   const fast = guard(async () => {
     await deliverOperatorNotifications()
+    await deliverOperatorWaitingEmails()
     await collectFast()
   })
   const slow = guard(() => collectSlow(true))
@@ -383,6 +385,7 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
   // same guard so scheduling starts with a real observation.
   void guard(async () => {
     await deliverOperatorNotifications()
+    await deliverOperatorWaitingEmails()
     await collectFast()
     await collectSlow(true)
   })()

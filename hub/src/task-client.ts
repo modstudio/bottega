@@ -3,6 +3,10 @@ import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
+import {
+  type OperatorWaitingEmailResult,
+  operatorWaitingEmailResponseSchema,
+} from './operator-waiting-email-contract.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
@@ -74,6 +78,29 @@ async function request<T>(
 
 export const hostedCreateTask = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<HostedTask>('/v1/tasks', 'POST', body, options)
+export const hostedCreateOperatorWaitingEmail = (
+  body: unknown,
+  options?: Parameters<typeof request>[3],
+) => operatorWaitingEmailRequest(body, options)
+
+async function operatorWaitingEmailRequest(
+  body: unknown,
+  options?: Parameters<typeof request>[3],
+): Promise<OperatorWaitingEmailResult> {
+  const { response, value } = await responseObject(
+    '/v1/operator-waiting-emails',
+    'POST',
+    body,
+    options,
+  )
+  if (!response.ok)
+    throw new Error(
+      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}`,
+    )
+  const parsed = operatorWaitingEmailResponseSchema.safeParse(value)
+  if (!parsed.success) throw new Error('hosted hub returned an invalid operator waiting email')
+  return parsed.data
+}
 export const hostedPatchTask = (
   key: string,
   body: unknown,

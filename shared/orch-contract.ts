@@ -90,6 +90,7 @@ export const OperatorWaitingItemSchema = z
     recommendation: z.string().nullable(),
     why: z.string().nullable(),
     waiting_since: z.string(),
+    episode: z.string(),
     answer_command: z.string(),
   })
   .strict()

@@ -15,6 +15,7 @@ const item: OperatorWaitingItem = {
   recommendation: 'A',
   why: 'Because',
   waiting_since: '2026-09-24T12:00:00.000Z',
+  episode: '2026-09-24T12:00:00.000Z',
   answer_command: 'orch answer 42 --q7 --from-operator "<ruling>"',
 }
 
@@ -26,6 +27,8 @@ test('waiting query and answer mutation use the orch seam', async () => {
       calls.push(args)
       return { outcome: 'resumed' as const, run_id: 42, resumed_as: 43 }
     },
+    emailDelay: () => 30,
+    setEmailDelay: (value) => calls.push(['delay', value]),
   })
   const caller = router.createCaller({})
   expect(await caller.waiting()).toEqual([item])
@@ -35,6 +38,9 @@ test('waiting query and answer mutation use the orch seam', async () => {
     resumed_as: 43,
   })
   expect(calls).toEqual([[42, [{ questionId: 7, ruling: 'A' }]]])
+  expect(await caller.emailSettings()).toEqual({ delayMinutes: 30 })
+  expect(await caller.setEmailSettings({ delayMinutes: 0 })).toEqual({ delayMinutes: 0 })
+  expect(calls.at(-1)).toEqual(['delay', 0])
 })
 
 test('answer mutation surfaces orch refusals and validates input at the edge', async () => {
@@ -43,6 +49,8 @@ test('answer mutation surfaces orch refusals and validates input at the edge', a
     answer: async () => {
       throw new Error('run 42 is no longer asking')
     },
+    emailDelay: () => 30,
+    setEmailDelay: () => {},
   })
   const caller = router.createCaller({})
   await expect(
