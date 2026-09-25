@@ -1,8 +1,14 @@
 // concern: settings-cli
 /** Owns only the `orch settings` grammar and presentation. */
 import type { Command } from 'commander'
+import {
+  settingsAdoptCommand,
+  settingsEnvImportCommand,
+  settingsRenderWriteCommand,
+  settingsRestoreCommand,
+} from '../settings/settings-apply-commands.ts'
 import { settingsImportCommand, settingsRenderCheckCommand } from '../settings/settings-commands.ts'
-import { log, optionFlags } from './support.ts'
+import { collect, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
   const settings = program.command('settings')
@@ -15,7 +21,52 @@ export function register(program: Command): void {
       await settingsImportCommand(optionFlags(options), {
         log,
         cwd: process.cwd,
-        exitCode: (code) => {
+        exitCode: (code: number) => {
+          process.exitCode = code
+        },
+      })
+    })
+  settings
+    .command('adopt')
+    .option('--user')
+    .option('--project <name>')
+    .option('--all')
+    .argument('[rules...]')
+    .action(async (rules: string[], options) => {
+      await settingsAdoptCommand(optionFlags(options), rules, {
+        log,
+        cwd: process.cwd,
+        exitCode: (code: number) => {
+          process.exitCode = code
+        },
+      })
+    })
+  settings
+    .command('restore')
+    .option('--user')
+    .option('--project <name>')
+    .option('--force')
+    .argument('<backup>')
+    .action((backup: string, options) => {
+      settingsRestoreCommand(optionFlags(options), backup, {
+        log,
+        cwd: process.cwd,
+        exitCode: (code: number) => {
+          process.exitCode = code
+        },
+      })
+    })
+  const env = settings.command('env')
+  env
+    .command('import')
+    .option('--user')
+    .option('--project <name>')
+    .option('--dry-run')
+    .action(async (options) => {
+      await settingsEnvImportCommand(optionFlags(options), {
+        log,
+        cwd: process.cwd,
+        exitCode: (code: number) => {
           process.exitCode = code
         },
       })
@@ -23,21 +74,26 @@ export function register(program: Command): void {
   settings
     .command('render')
     .option('--check')
+    .option('--write')
+    .option('--yes')
     .option('--user')
     .option('--project <name>')
+    .option('--drop-env <key>', '', collect, [])
     .action(async (options) => {
       const flags = optionFlags(options)
-      if (!flags.has('check')) {
+      if (flags.has('check') === flags.has('write')) {
         throw new Error(
-          'refusing settings render: pass --check\ncleared by: orch settings render --check',
+          'refusing settings render: pass --check or --write\ncleared by: choose one render operation',
         )
       }
-      await settingsRenderCheckCommand(flags, {
+      const presentation = {
         log,
         cwd: process.cwd,
-        exitCode: (code) => {
+        exitCode: (code: number) => {
           process.exitCode = code
         },
-      })
+      }
+      if (flags.has('write')) await settingsRenderWriteCommand(flags, presentation)
+      else await settingsRenderCheckCommand(flags, presentation)
     })
 }

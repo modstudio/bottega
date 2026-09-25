@@ -9,11 +9,13 @@ import {
   type OwnedSettings,
   ownedSettingsEqual,
   PERMISSION_LISTS,
+  parseStoredOwnedSettings,
   permissionLists,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
+import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
 import {
   claudeHomeFromEnvironment,
   projectLocalSettingsPath,
@@ -126,10 +128,24 @@ export async function settingsRenderCheckCommand(
   const parsed = readSettingsFile(path)
   const existing = settingsRow(target, owner)
   const storeOwned = existing ? parseStoreOwned(existing.body) : emptyOwned()
-  renderOwnedSettingsFile(parsed.text, storeOwned)
-  const drifted = !ownedSettingsEqual(parsed.owned, storeOwned)
+  const fileOwned =
+    target.kind === 'user' ? { ...parsed.owned, envKeys: parsed.envKeys } : parsed.owned
+  if (target.kind === 'project' && (storeOwned.envKeys?.length ?? 0) > 0) {
+    throw new Error(
+      'refusing settings render: env is user-only; remove project envKeys from the row',
+    )
+  }
+  const environment =
+    target.kind === 'user'
+      ? selectedSettingsEnvironment(
+          userSettingsEnvPath(claudeHomeFromEnvironment(process.env)),
+          storeOwned.envKeys ?? [],
+        )
+      : undefined
+  renderOwnedSettingsFile(parsed.text, storeOwned, environment)
+  const drifted = !ownedSettingsEqual(fileOwned, storeOwned)
   const findings = lintSettings(lintTargets(target, parsed.owned, cwd))
-  logDrift(parsed.owned, storeOwned, presentation.log)
+  logDrift(fileOwned, storeOwned, presentation.log)
   printFindings(findings, presentation.log)
   if (!existing) {
     presentation.log(`no settings row for ${targetLabel(target)}`)
@@ -147,11 +163,7 @@ function settingsRow(target: SettingsTargetKind, owner: string | null) {
 }
 
 function parseStoreOwned(body: string): OwnedSettings {
-  try {
-    return JSON.parse(body) as OwnedSettings
-  } catch {
-    return emptyOwned()
-  }
+  return parseStoredOwnedSettings(body)
 }
 
 function emptyOwned(): OwnedSettings {
@@ -246,16 +258,34 @@ function logDrift(
   }
   const drift: SettingsDrift = diffOwnedSettings(file, store)
   log('drift')
+  let listed = 0
   for (const name of PERMISSION_LISTS) {
     for (const rule of drift.rules[name].added) {
       log(`  added ${name} ${displayRule(name, rule, file)}`)
+      listed++
     }
     for (const rule of drift.rules[name].removed) {
       log(`  removed ${name} ${displayRule(name, rule, store)}`)
+      listed++
     }
   }
-  for (const hook of drift.hooks.added) log(`  added hook ${displayHookDrift(hook, file)}`)
-  for (const hook of drift.hooks.removed) log(`  removed hook ${displayHookDrift(hook, store)}`)
+  for (const hook of drift.hooks.added) {
+    log(`  added hook ${displayHookDrift(hook, file)}`)
+    listed++
+  }
+  for (const hook of drift.hooks.removed) {
+    log(`  removed hook ${displayHookDrift(hook, store)}`)
+    listed++
+  }
+  for (const name of drift.env.added) {
+    log(`  added env key ${name}`)
+    listed++
+  }
+  for (const name of drift.env.removed) {
+    log(`  removed env key ${name}`)
+    listed++
+  }
+  if (listed === 0) log('  owned settings structure differs')
 }
 
 function displayRule(list: (typeof PERMISSION_LISTS)[number], rule: string, owned: OwnedSettings) {

@@ -40,6 +40,7 @@ describe('settings files', () => {
     expect(readSettingsFile(userSettingsPath(claudeHome)).owned).toEqual({
       permissions: { allow: ['a'], ask: ['b'] },
       hooks: {},
+      envKeys: [],
     })
   })
 

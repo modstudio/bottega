@@ -32,7 +32,7 @@ describe('scoped operator docs', () => {
       owner,
       slug: 'settings',
       title: 'settings',
-      body: '{"permissions":{},"hooks":{}}\n',
+      body: '{"permissions":{},"hooks":{},"envKeys":[]}\n',
       reason: 'prove settings owner visibility',
     })
     expect(

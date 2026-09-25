@@ -244,7 +244,7 @@ describe('settings render --check', () => {
       shown.port(root),
     )
     expect(shown.logs.join('\n')).not.toContain('drift: none')
-    expect(shown.logs.join('\n')).toContain('drift')
+    expect(shown.logs.join('\n')).toContain('owned settings structure differs')
     expect(shown.code()).toBe(1)
   })
 
@@ -281,6 +281,7 @@ describe('settings render --check', () => {
       shown.port(root),
     )
     expect(shown.logs.join('\n')).not.toContain('drift: none')
+    expect(shown.logs.join('\n')).toContain('owned settings structure differs')
     expect(shown.code()).toBe(1)
   })
 
