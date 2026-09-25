@@ -81,6 +81,18 @@ beforeEach(() => {
 })
 
 describe('score ruling', () => {
+  test('score refuses lifecycle rows after preserving score --void', async () => {
+    const id = insert('ok', 'landing-tree')
+
+    await expect(score(id, ['full', 'right'])).rejects.toThrow(
+      `run ${id} is a lifecycle row, not agent work; it cannot be scored. No action is needed because lifecycle rows are evidence-excluded`,
+    )
+    await score(id, [], { void: true })
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+      evidence_excluded: 'voided with orch score --void',
+    })
+  })
+
   test('an owner score revives evidence expired while no judgment was available', async () => {
     const id = insert()
     db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE id=?").run(id)
@@ -377,6 +389,14 @@ describe('score ruling', () => {
 })
 
 describe('judge ruling', () => {
+  test('judge refuses lifecycle rows as non-agent work', async () => {
+    const id = insert('ok', 'hook-tree')
+
+    await expect(judge(id, ['full', 'right'])).rejects.toThrow(
+      `run ${id} is a lifecycle row, not agent work; it cannot be judged. No action is needed because lifecycle rows are evidence-excluded`,
+    )
+  })
+
   test('score drops a habitual fidelity word for a review lens and records two axes', async () => {
     const id = insert('ok', 'review-lens')
     const output = trackResidue(join(dir, `graded-${id}.json`))

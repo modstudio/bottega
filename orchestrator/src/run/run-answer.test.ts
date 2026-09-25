@@ -832,6 +832,14 @@ describe('retry command', () => {
     return id
   }
 
+  test('retry refuses lifecycle rows as non-agent work', async () => {
+    const id = failed('landing-tree')
+
+    await expect(retry(id)).rejects.toThrow(
+      `run ${id} is a lifecycle row, not agent work; it cannot be retried. No action is needed because lifecycle rows are evidence-excluded`,
+    )
+  })
+
   test('bridge-only identity cannot retry an unowned read-only run', async () => {
     const id = failed()
     db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)

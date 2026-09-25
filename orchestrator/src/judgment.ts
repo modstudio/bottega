@@ -36,6 +36,7 @@ import {
   runMutationActor,
 } from './run/run-authority.ts'
 import { enqueueRunRecord } from './run/run-outbox.ts'
+import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
 import {
   DELIVERY,
@@ -374,6 +375,7 @@ export async function judgeRun(
     .get(requestedId) as JudgeableRun | null
   const row = requireJudgeableRun(requestedId, loaded, flags, options)
   const id = row.id
+  assertAgentWorkRun(id, row.job, 'judged')
   const words = options.words
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
@@ -733,6 +735,7 @@ export async function scoreRun(
     recordEvidenceExclusion(id, row, exclusion, flags, options, presentation)
     return
   }
+  assertAgentWorkRun(id, row.job, 'scored')
   const scorer = flags.flag('scorer')
   const dashboardAuthorized = options.dashboardAuthorized
   const note = options.note
