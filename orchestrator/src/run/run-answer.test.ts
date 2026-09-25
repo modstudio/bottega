@@ -785,9 +785,11 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
   ).toEqual({ answered_by: 'operator via hub', answerer_kind: 'operator', answer_channel: 'ui' })
   expect(
     db()
-      .query("SELECT actor_session FROM run_mutation_audit WHERE root_id=? AND action='answer'")
+      .query(
+        "SELECT actor_session,turn_id FROM run_mutation_audit WHERE root_id=? AND action='answer'",
+      )
       .get(id),
-  ).toEqual({ actor_session: 'operator:ui' })
+  ).toEqual({ actor_session: 'operator:ui', turn_id: result.resumed_as })
   expect(db().query('SELECT session_id FROM run WHERE id=?').get(result.resumed_as!)).toEqual({
     session_id: 'dispatching-session',
   })

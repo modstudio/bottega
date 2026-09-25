@@ -230,13 +230,13 @@ export function continuationInstructionsForFreshRetry(
     .query(
       `SELECT rowid, turn_id, action, at, reason
          FROM run_mutation_audit
-        WHERE root_id = ? AND action IN ('continue', 'retry')
+        WHERE root_id = ? AND action IN ('answer', 'continue', 'retry')
         ORDER BY at, rowid`,
     )
     .all(rootId) as {
     rowid: number
     turn_id: number | null
-    action: 'continue' | 'retry'
+    action: 'answer' | 'continue' | 'retry'
     at: string
     reason: string | null
   }[]
@@ -244,7 +244,7 @@ export function continuationInstructionsForFreshRetry(
   const attributed: {
     id: number
     rowid: number
-    action: 'continue' | 'retry'
+    action: 'answer' | 'continue' | 'retry'
     at: string
     reason: string | null
   }[] = []
@@ -258,14 +258,16 @@ export function continuationInstructionsForFreshRetry(
   for (const turn of turns) {
     const identified = audits.filter((audit) => audit.turn_id === turn.id)
     const identifiedRetries = identified.filter((audit) => audit.action === 'retry')
+    const identifiedAnswers = identified.filter((audit) => audit.action === 'answer')
     const identifiedContinues = identified.filter((audit) => audit.action === 'continue')
     if (
       identifiedRetries.length > 1 ||
-      (!identifiedRetries.length && identifiedContinues.length > 1)
+      (!identifiedRetries.length && identifiedAnswers.length > 1) ||
+      (!identifiedRetries.length && !identifiedAnswers.length && identifiedContinues.length > 1)
     ) {
       refuse(turn.id)
     }
-    let audit = identifiedRetries[0] ?? identifiedContinues[0]
+    let audit = identifiedRetries[0] ?? identifiedAnswers[0] ?? identifiedContinues[0]
     if (!audit) {
       const startedAt = Date.parse(turn.started_at)
       const candidates = audits.filter(
@@ -828,7 +830,7 @@ export async function answerRun(
         })
       }
     }
-    auditRunMutation(answerAuthority, 'answer')
+    if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })
 
   if (skipResume) {
@@ -930,6 +932,7 @@ export async function answerRun(
       at: new Date(Date.now()).toISOString(),
     },
   )
+  auditRunMutation(answerAuthority, 'answer', null, db(), childId)
   if (!input.json)
     console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
   if (input.flags.detach || !input.flags.follow) {

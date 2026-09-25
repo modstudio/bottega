@@ -60,6 +60,77 @@ describe('fresh retry continuation recovery', () => {
     ])
   })
 
+  test('recovers the real 6207 chain with answer-created turns and repeated instructions', () => {
+    const id = failedRoot()
+    addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 2,
+      startedAt: '2026-09-24T23:20:30.178Z',
+    })
+    const continued = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 3,
+      startedAt: '2026-09-25T00:00:00.500Z',
+    })
+    addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 4,
+      startedAt: '2026-09-25T01:00:01.000Z',
+    })
+    const stopped = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'stopped',
+      parent: id,
+      turn: 5,
+      startedAt: '2026-09-25T02:00:00.500Z',
+    })
+    const final = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 6,
+      startedAt: '2026-09-25T03:00:00.500Z',
+    })
+    const insertAudit = db().query(
+      `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
+       VALUES (?,?,?,?,?)`,
+    )
+    insertAudit.run(id, id, 'answer', '2026-09-24T23:20:29.266Z', null)
+    insertAudit.run(id, id, 'continue', '2026-09-25T00:00:00.000Z', 'first instructions')
+    insertAudit.run(id, id, 'answer', '2026-09-25T01:00:00.000Z', null)
+    insertAudit.run(id, id, 'continue', '2026-09-25T02:00:00.000Z', 'repeated instructions')
+    insertAudit.run(id, id, 'continue', '2026-09-25T03:00:00.000Z', 'repeated instructions')
+
+    expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
+      {
+        turnId: continued,
+        at: '2026-09-25T00:00:00.000Z',
+        instructions: 'first instructions',
+      },
+      {
+        turnId: stopped,
+        at: '2026-09-25T02:00:00.000Z',
+        instructions: 'repeated instructions',
+      },
+      {
+        turnId: final,
+        at: '2026-09-25T03:00:00.000Z',
+        instructions: 'repeated instructions',
+      },
+    ])
+  })
+
   test('uses audit turn identity without timestamp inference', () => {
     const id = failedRoot()
     const child = addRun({
