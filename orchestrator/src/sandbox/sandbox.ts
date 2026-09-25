@@ -368,19 +368,34 @@ export async function resetSandbox(): Promise<void> {
   sandboxInitialized = false
 }
 
-/** Keep Grok's registered stdio shape while making a linked-worktree build test its own proxy. */
+/**
+ * Replace any user-registered orch-ask table (and its subtables) with one built
+ * from the running binary. Grok reads orch-ask only from its config file, and a
+ * one-time registration goes stale when the entrypoint moves or bun is upgraded.
+ */
+function withLiveGrokAskServer(config: string, entrypoint: string, command: string): string {
+  const kept: string[] = []
+  let inAskTable = false
+  for (const line of config.split('\n')) {
+    const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)
+    if (header) inAskTable = /^mcp_servers\.orch-ask(\.|$)/.test(header[1]!)
+    if (!inAskTable) kept.push(line)
+  }
+  const section = [
+    '[mcp_servers.orch-ask]',
+    `command = ${JSON.stringify(command)}`,
+    `args = ${JSON.stringify(['--no-env-file', entrypoint, 'ask-server'])}`,
+    'enabled = true',
+  ].join('\n')
+  return `${kept.join('\n').trimEnd()}\n\n${section}\n`
+}
+
+/** Point a sandboxed Grok run's orch-ask at this checkout's proxy. */
 export function grokSandboxConfig(config: string): string {
-  const section = /(\[mcp_servers\.orch-ask\]\s*\n[\s\S]*?)(?=\n\[|$)/
-  return config.replace(section, (body) =>
-    body
-      .replace(
-        /(\bcommand\s*=\s*)"[^"]+"/,
-        `$1${JSON.stringify(Bun.which('bun') ?? process.execPath)}`,
-      )
-      .replace(
-        /(\bargs\s*=\s*\[\s*)"[^"]+"/,
-        `$1"--no-env-file", ${JSON.stringify(join(ROOT, 'src', 'ask', 'ask-proxy.ts'))}`,
-      ),
+  return withLiveGrokAskServer(
+    config,
+    join(ROOT, 'src', 'ask', 'ask-proxy.ts'),
+    Bun.which('bun') ?? process.execPath,
   )
 }
 
@@ -422,7 +437,26 @@ export function prepareGrokMcpHome(
     if (/^\s*disabled_mcp_servers\s*=/m.test(topLevel)) {
       throw new Error(`disabled_mcp_servers is already declared in ${configSource}`)
     }
-    writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${config}`)
+    const live = withLiveGrokAskServer(
+      config,
+      join(ROOT, 'src', 'cli', 'orch.ts'),
+      process.execPath,
+    )
+    writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${live}`)
+  }
+  return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
+}
+
+function prepareGrokSandboxHome(runDir: string): Record<string, string> {
+  const authSource = join(homedir(), '.grok', 'auth.json')
+  const authTarget = join(runDir, 'auth.json')
+  if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
+
+  const configSource = join(homedir(), '.grok', 'config.toml')
+  const configTarget = join(runDir, 'config.toml')
+  if (!existsSync(configTarget)) {
+    const config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
+    writeFileSync(configTarget, grokSandboxConfig(config))
   }
   return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
 }
@@ -435,18 +469,7 @@ export function prepareGrokMcpHome(
  */
 export function prepareSandboxHome(agent: string, runDir: string): Record<string, string> {
   mkdirSync(runDir, { recursive: true })
-  if (agent === 'grok') {
-    const authSource = join(homedir(), '.grok', 'auth.json')
-    const authTarget = join(runDir, 'auth.json')
-    if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
-
-    const configSource = join(homedir(), '.grok', 'config.toml')
-    const configTarget = join(runDir, 'config.toml')
-    if (existsSync(configSource) && !existsSync(configTarget)) {
-      writeFileSync(configTarget, grokSandboxConfig(readFileSync(configSource, 'utf8')))
-    }
-    return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
-  }
+  if (agent === 'grok') return prepareGrokSandboxHome(runDir)
   if (agent === 'qwen36-qwencli') {
     const qwenDir = join(runDir, '.qwen')
     mkdirSync(qwenDir, { recursive: true })
