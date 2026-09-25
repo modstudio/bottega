@@ -83,6 +83,19 @@ test('inbox names the canonical root in its answer footer', async () => {
   question(child, 'which?')
   expect(await inbox()).toContain(`orch answer ${root}`)
 })
+
+test('inbox shows an overturned ruling and its reason', async () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  db()
+    .query(
+      `INSERT INTO question
+        (run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
+       VALUES (?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
+    )
+    .run(run)
+  const output = await inbox({ all: true })
+  expect(output).toContain('overturned: Wrong evidence')
+})
 test.each(['ok', 'failed'])(
   'inbox treats an asking child under a %s root as live',
   async (status) => {

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
+  initialDispatchPrompt,
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 
@@ -14,6 +15,19 @@ describe('operator knowledge prompt section', () => {
 
   test('an empty pack yields no prompt section', () => {
     expect(operatorKnowledgeSection({ markdown: '' })).toBe('')
+  })
+
+  test('places task rulings after operator knowledge and before the spec', () => {
+    const prompt = initialDispatchPrompt({
+      writesJob: true,
+      preamble: 'PREAMBLE',
+      infrastructure: '',
+      operatorKnowledge: 'WHAT THE OPERATOR WANTS YOU TO KNOW\n\nCANON',
+      taskRulings: 'RULINGS ALREADY MADE ON THIS TASK\n\nRULING',
+      spec: 'WORK',
+    })
+    expect(prompt.indexOf('CANON')).toBeLessThan(prompt.indexOf('RULINGS ALREADY'))
+    expect(prompt.indexOf('RULINGS ALREADY')).toBeLessThan(prompt.indexOf('THE SPEC'))
   })
 })
 

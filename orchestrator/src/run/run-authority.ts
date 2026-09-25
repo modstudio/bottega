@@ -8,6 +8,7 @@ import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
 const RUN_MUTATION_ACTIONS = [
   'adopt',
   'answer',
+  'overturn',
   'tell',
   'relay',
   'stop',
@@ -85,6 +86,7 @@ export function auditRunMutation(
 
 const ADOPTING_ACTIONS = [
   'answer',
+  'overturn',
   'tell',
   'relay',
   'stop',

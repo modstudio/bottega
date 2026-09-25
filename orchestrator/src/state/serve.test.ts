@@ -42,6 +42,25 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
+  test('publishes overturned questions with their reason', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db()
+      .query(
+        `INSERT INTO question
+          (run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
+         VALUES (?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
+      )
+      .run(id)
+    expect(runDetail(id)!.questions).toEqual([
+      expect.objectContaining({
+        question: 'Which?',
+        overturned_at: '2026-09-22',
+        overturn_reason: 'Wrong evidence',
+        ruling_status: 'overturned',
+      }),
+    ])
+  })
+
   test('publishes local review lenses and findings in hosted detail shape', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     db().query("UPDATE run SET lens='correctness', model='gpt' WHERE id=?").run(id)

@@ -362,6 +362,7 @@ export const CLI_COMMANDS = new Set([
   'review',
   'routing-backtest',
   'run',
+  'ruling',
   'runs',
   'score',
   'search',

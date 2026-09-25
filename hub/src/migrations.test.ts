@@ -164,7 +164,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '90dedd44afbb6b3613c75611ab7e05df45476af102d38515955a4f9897f0e886',
+      '862ff3e9d65467e20cd76ad8dc60b5a38f35edb345aa7407944d9b4578e26a0e',
     )
     d.close()
   })
@@ -203,6 +203,7 @@ describe('hub migration journal', () => {
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
+      '0012_question_overturn',
     ])
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
@@ -314,6 +315,7 @@ describe('hub migration journal', () => {
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
+      '0012_question_overturn',
     ])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
@@ -525,7 +527,11 @@ describe('hub migration journal', () => {
     d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
       JSON.stringify(currentWatermark),
     )
-    expect(applyMigrations(d)).toEqual(['0010_question_delivery', '0011_operator_waiting_email'])
+    expect(applyMigrations(d)).toEqual([
+      '0010_question_delivery',
+      '0011_operator_waiting_email',
+      '0012_question_overturn',
+    ])
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
         .value,
@@ -568,6 +574,7 @@ describe('hub migration journal', () => {
           asked_via: 'reply',
           answerer_kind: 'operator',
           answer_channel: 'cli',
+          overturned_at: null,
           deliveries: [
             {
               id: 1,
@@ -638,6 +645,7 @@ describe('hub migration journal', () => {
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
+      '0012_question_overturn',
     ])
     expect(
       d
@@ -751,6 +759,7 @@ describe('hub migration journal', () => {
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
+      '0012_question_overturn',
     ])
     const after = Date.now()
     const minted = d
@@ -819,6 +828,7 @@ describe('hub migration journal', () => {
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
+      '0012_question_overturn',
     ])
     expect(
       d

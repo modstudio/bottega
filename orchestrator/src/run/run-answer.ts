@@ -31,6 +31,7 @@ import {
   QUESTION_DELIVERY_MODE_RETRY,
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
   QUESTION_DELIVERY_OUTCOME_FAILED,
+  rulingActor,
 } from './question-vocabulary.ts'
 import { packedResumePrompt } from './run.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
@@ -81,8 +82,7 @@ function answeredBy(
   callerSession: string | null,
 ): string {
   if (operatorAuthorized) return 'operator via hub'
-  if (fromOperator) return `operator via ${callerSession ?? 'anonymous (no session id)'}`
-  return callerSession ?? 'anonymous (no session id)'
+  return rulingActor(fromOperator, callerSession)
 }
 
 function requireAnswerAuthority(

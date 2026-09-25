@@ -36,6 +36,64 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
   }
 })
 
+test('task rulings migration applies cleanly and preserves mutation audit rows', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-task-rulings-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const taskRulingsMigration = journal.findIndex((entry) => entry.tag === '0050_task_rulings')
+  const prior = journal.slice(0, taskRulingsMigration)
+  for (const entry of prior) {
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  }
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    const run = database
+      .query(
+        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-09-20','codex','implement','sha',1,'prompt','ok') RETURNING id`,
+      )
+      .get() as { id: number }
+    database
+      .query(
+        `INSERT INTO run_mutation_audit (run_id,root_id,action,actor_session,at,reason)
+         VALUES (?,?,'answer','owner','2026-09-21','because')`,
+      )
+      .run(run.id, run.id)
+
+    expect(applyMigrations(database)).toEqual(['0050_task_rulings'])
+    expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
+      action: 'answer',
+      reason: 'because',
+    })
+    expect(() =>
+      database
+        .query(
+          `INSERT INTO run_mutation_audit (run_id,root_id,action,at)
+           VALUES (?,?,'overturn','2026-09-22')`,
+        )
+        .run(run.id, run.id),
+    ).not.toThrow()
+    expect(
+      database
+        .query(`SELECT name FROM pragma_table_info('question') WHERE name LIKE 'overturn%'`)
+        .all(),
+    ).toHaveLength(3)
+    expect(
+      database
+        .query("SELECT name FROM sqlite_master WHERE type='table' AND name='run_carried_ruling'")
+        .get(),
+    ).toEqual({ name: 'run_carried_ruling' })
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('agent operator migration preserves cost facts and the routing free set', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-agent-operator-'))
   mkdirSync(join(folder, 'meta'))
@@ -74,6 +132,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0047_project_task_identity',
       '0048_user_canon_owner',
       '0049_operator_waiting',
+      '0050_task_rulings',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -141,6 +200,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0047_project_task_identity',
       '0048_user_canon_owner',
       '0049_operator_waiting',
+      '0050_task_rulings',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -186,7 +246,11 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       )
       .run()
 
-    expect(applyMigrations(database)).toEqual(['0048_user_canon_owner', '0049_operator_waiting'])
+    expect(applyMigrations(database)).toEqual([
+      '0048_user_canon_owner',
+      '0049_operator_waiting',
+      '0050_task_rulings',
+    ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',
       record_id: 'record-doc',

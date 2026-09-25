@@ -4,6 +4,7 @@ import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 
 type RunInboxFlags = { has(name: string): boolean }
@@ -65,6 +66,19 @@ function presentHeader(header: string | null): string[] {
   return header ? [header] : []
 }
 
+function presentOverturn(
+  question: {
+    overturned_at: string | null
+    overturn_reason: string | null
+    replacement: string | null
+  },
+  log: (...values: unknown[]) => void,
+): void {
+  if (!question.overturned_at) return
+  log(`        overturned: ${question.overturn_reason}`)
+  if (question.replacement) log(`        replacement: ${question.replacement}`)
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -94,6 +108,7 @@ export async function runInboxCommand(
     .query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at,
+            q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status,
             ${voidedSql('root')} root_voided,
@@ -110,6 +125,11 @@ export async function runInboxCommand(
     asked_at: string
     question: string
     answered_at: string | null
+    answer: string | null
+    overturned_at: string | null
+    overturned_by: string | null
+    overturn_reason: string | null
+    replacement: string | null
     options: string | null
     recommendation: string | null
     why: string | null
@@ -165,6 +185,11 @@ export async function runInboxCommand(
       recommendation: q.recommendation,
       why: q.why,
       status: q.root_voided ? 'voided' : q.root_status,
+      ruling_status: rulingStatus(q.overturned_at, q.answered_at),
+      overturned_at: q.overturned_at,
+      overturned_by: q.overturned_by,
+      overturn_reason: q.overturn_reason,
+      replacement: q.replacement,
     }))
     log(inboxJson(presentedRows, scopedProjectName))
     return
@@ -279,6 +304,7 @@ export async function runInboxCommand(
         `${status} (terminal)`,
     )
     log(`  [q${q.id}] ${q.question}`)
+    presentOverturn(q, log)
   }
   return
 }

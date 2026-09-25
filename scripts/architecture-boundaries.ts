@@ -864,6 +864,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
       '../workflow/autonomy-scopes.ts',
+      './question-vocabulary.ts',
       './run-answer-liveness.ts',
     ],
     'Keep run inbox independent of run control, transports, routing, the CLI, and worktrees.',
