@@ -1,25 +1,23 @@
 // concern: canon-load-files
 /** Knows how to gather harness load facts from disk. Must not know stores, commands, runs, routing, or worktrees. */
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { canonGitRoot } from './canon-files.ts'
 import {
   type CandidateFile,
+  CLAUDE_FILE_MAX_BYTES,
   CLAUDE_IMPORT_MAX_HOPS,
+  CLAUDE_PROJECT_BASENAMES,
+  CLAUDE_USER_BASENAMES,
+  CODEX_PROJECT_BASENAMES,
+  CODEX_USER_BASENAMES,
   claudeImportSpecs,
+  GROK_PROJECT_BASENAMES,
+  GROK_USER_BASENAMES,
   type HarnessLoadFacts,
+  isClaudeInstructionName,
   resolveClaudeImport,
 } from './canon-load.ts'
-
-const INSTRUCTION_NAMES = [
-  'AGENTS.md',
-  'AGENTS.override.md',
-  'AGENT.md',
-  'Agents.md',
-  'CLAUDE.md',
-  'CLAUDE.local.md',
-  'Claude.md',
-]
 
 type Seen = Set<string>
 
@@ -35,12 +33,47 @@ function realPathOf(path: string): string | null {
   }
 }
 
+function uniqueBasenames(lists: readonly (readonly string[])[]): string[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const list of lists) {
+    for (const name of list) {
+      if (seen.has(name)) continue
+      seen.add(name)
+      names.push(name)
+    }
+  }
+  return names
+}
+
+function resolvedHome(path: string): string {
+  return realPathOf(path) ?? resolve(path)
+}
+
+function claimPath(path: string, seen: Seen, uniqueReal: boolean): string | null {
+  const realPath = realPathOf(path) ?? resolve(path)
+  if (uniqueReal && seen.has(realPath)) return null
+  seen.add(realPath)
+  return realPath
+}
+
 function readCandidate(path: string, seen: Seen, uniqueReal = true): CandidateFile | null {
   try {
     const stat = lstatSync(path)
     const symlink = stat.isSymbolicLink()
     const followed = statSync(path)
     if (!followed.isFile()) return null
+    if (followed.size > CLAUDE_FILE_MAX_BYTES) {
+      const realPath = claimPath(path, seen, uniqueReal)
+      if (!realPath) return null
+      return {
+        path: resolve(path),
+        text: '',
+        symlink,
+        realPath,
+        skipped: { byteSize: followed.size },
+      }
+    }
     const realPath = realPathOf(path)
     if (!realPath) return null
     if (uniqueReal && seen.has(realPath)) return null
@@ -140,10 +173,7 @@ function collectImportTargets(files: CandidateFile[], seen: Seen): void {
     queue.push({ file, depth })
   }
   for (const file of files) {
-    const name = basename(file.path)
-    if (name === 'CLAUDE.md' || name === 'CLAUDE.local.md' || name === 'Claude.md') {
-      enqueue(file, 0)
-    }
+    if (isClaudeInstructionName(file.path)) enqueue(file, 0)
   }
   for (const item of queue) {
     if (item.depth >= CLAUDE_IMPORT_MAX_HOPS) continue
@@ -189,10 +219,18 @@ export function gatherHarnessLoadFacts(
     env.CODEX_HOME && env.CODEX_HOME.length > 0 ? resolve(env.CODEX_HOME) : resolve(home, '.codex')
   const files: CandidateFile[] = []
   const seen: Seen = new Set()
-  collectNamedFiles([claudeHome], ['CLAUDE.md', 'Claude.md'], seen, files)
-  collectNamedFiles([grokHome], ['AGENTS.md'], seen, files)
-  collectNamedFiles([codexHome], ['AGENTS.override.md', 'AGENTS.md'], seen, files)
-  collectNamedFiles(chain, INSTRUCTION_NAMES, seen, files)
+  collectNamedFiles(
+    [claudeHome, grokHome, codexHome],
+    uniqueBasenames([CLAUDE_USER_BASENAMES, CODEX_USER_BASENAMES, GROK_USER_BASENAMES]),
+    seen,
+    files,
+  )
+  collectNamedFiles(
+    chain,
+    uniqueBasenames([CLAUDE_PROJECT_BASENAMES, CODEX_PROJECT_BASENAMES, GROK_PROJECT_BASENAMES]),
+    seen,
+    files,
+  )
   walkMarkdown(join(claudeHome, 'rules'), true, seen, files)
   walkMarkdown(join(root, '.claude', 'rules'), true, seen, files)
   walkMarkdown(join(root, '.grok', 'rules'), true, seen, files)
@@ -201,7 +239,11 @@ export function gatherHarnessLoadFacts(
   return {
     files,
     directoryChain: chain,
-    home: { claude: resolve(claudeHome), grok: resolve(grokHome), codex: resolve(codexHome) },
+    home: {
+      claude: resolvedHome(claudeHome),
+      grok: resolvedHome(grokHome),
+      codex: resolvedHome(codexHome),
+    },
     env: {
       grokClaudeAgentsEnabled: envEnabled(env, 'GROK_CLAUDE_AGENTS_ENABLED'),
       grokClaudeRulesEnabled: envEnabled(env, 'GROK_CLAUDE_RULES_ENABLED'),

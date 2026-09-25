@@ -442,8 +442,14 @@ function printLoadPlans(plans: LoadPlan[], log: (...values: unknown[]) => void):
       return size !== 0 ? size : left.path.localeCompare(right.path)
     })
     for (const file of files) {
-      log(`  ${file.size}  ${file.kind}  ${file.path}  ${file.reason}`)
+      const mark = file.external ? '  [external]' : ''
+      log(`  ${file.size}  ${file.kind}  ${file.path}${mark}  ${file.reason}`)
     }
+    const skipped = [...plan.skipped].sort((left, right) => {
+      const size = right.size - left.size
+      return size !== 0 ? size : left.path.localeCompare(right.path)
+    })
+    for (const row of skipped) log(`  skipped  ${row.size}  ${row.path}  ${row.reason}`)
     if (plan.limit === null) log(`  ${plan.total} ${plan.unit}  ${plan.status}`)
     else log(`  ${plan.total}/${plan.limit} ${plan.unit}  ${plan.status}`)
     for (const row of plan.cut) log(`  cut ${row.path}  ${row.omitted} ${plan.unit} omitted`)
