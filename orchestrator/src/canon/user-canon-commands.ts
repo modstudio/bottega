@@ -1,7 +1,8 @@
 // concern: user-canon-commands
 /** Knows user canon import and hydration command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
-import { listDocs, removeDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { listDocs, signedInDocOwner } from '../doc/docs.ts'
+import { importUserCanon } from '../doc/user-canon-import.ts'
 import { lintCanon } from './canon-lint.ts'
 import { mapUserCanonPath, stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
@@ -49,12 +50,8 @@ export async function userCanonImportCommand(
   const mappedCurrent = currentRows.filter(({ slug }) =>
     mapUserCanonPath({ kind: 'canon', path: slug }),
   )
-  const retained = currentRows.filter(
-    ({ slug }) => !mapUserCanonPath({ kind: 'canon', path: slug }),
-  )
   const removals = mappedCurrent.filter(({ slug }) => !importedSlugs.has(slug))
-  const nextRows = [...retained, ...rows]
-  const findings = lintCanon({
+  const previewFindings = lintCanon({
     files: rows.map(({ slug, body }) => ({ path: slug, text: body })),
     trackedPaths: [],
     packageScripts: [],
@@ -63,48 +60,23 @@ export async function userCanonImportCommand(
 
   for (const row of rows) presentation.log(`write ${row.slug}`)
   for (const row of removals) presentation.log(`delete ${row.slug}`)
-  printFindings(findings, presentation.log)
+  if (flags.has('dry-run')) printFindings(previewFindings, presentation.log)
   if (flags.has('dry-run')) {
     presentation.log(`would import ${rows.length} canon rows, remove ${removals.length}`)
     return
   }
 
-  const bootstrap = currentRows.length === 0
   const reason = 'imported from Claude home'
-  const currentBySlug = new Map(currentRows.map((row) => [row.slug, row]))
-  for (const row of rows) {
-    await setDoc({
-      scope: 'canon',
-      subject: null,
-      owner,
-      slug: row.slug,
-      title: row.slug,
-      body: row.body,
-      delivery: 'demand',
-      reason,
-      canonSet: nextRows,
-      allowCanonBootstrap: bootstrap,
-      expectedRevision: currentBySlug.get(row.slug)?.revision ?? undefined,
-    })
-  }
-  let removed = 0
-  for (const row of removals) {
-    if (
-      await removeDoc(
-        'canon',
-        null,
-        row.slug,
-        { reason, expectedRevision: row.revision ?? undefined },
-        owner,
-      )
-    ) {
-      removed++
-    }
-  }
-  presentation.log(`imported ${rows.length} canon rows, removed ${removed}`)
-  if (bootstrap) {
+  const result = await importUserCanon({
+    owner,
+    rows: rows.map((row) => ({ ...row, title: row.slug })),
+    reason,
+  })
+  printFindings(result.findings, presentation.log)
+  presentation.log(`imported ${result.rows.length} canon rows, removed ${result.deletions.length}`)
+  if (result.bootstrap) {
     presentation.log(
-      `empty user canon store: bypassed introduced-findings comparison (${findings.length} findings)`,
+      `empty user canon store: bypassed introduced-findings comparison (${result.findings.length} findings)`,
     )
   }
 }

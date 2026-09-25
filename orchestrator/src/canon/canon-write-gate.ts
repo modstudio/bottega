@@ -48,3 +48,21 @@ export function decideCanonWrite(input: {
   const skipped = new Set<string>(TREE_DEPENDENT_CANON_RULES)
   return findings.filter((finding) => !skipped.has(finding.rule))
 }
+
+export function decideUserCanonImport(input: { current: Row[]; next: Row[] }): {
+  bootstrap: boolean
+  findings: CanonFinding[]
+} {
+  const bootstrap = input.current.length === 0
+  return {
+    bootstrap,
+    findings: bootstrap
+      ? lintCanon({
+          files: input.next.map(({ slug, body }) => ({ path: slug, text: body })),
+          trackedPaths: [],
+          packageScripts: [],
+          sourceTexts: [],
+        }).findings
+      : decideCanonWrite(input),
+  }
+}

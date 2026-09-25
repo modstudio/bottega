@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
+import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
@@ -60,6 +61,20 @@ export type RecordDocImportInput = {
   }>
 }
 
+export type RecordUserCanonImportInput = {
+  rows: Array<{ slug: string; title: string; body: string }>
+  expectedRevisions: Record<string, string>
+  reason: string
+  author: string
+}
+
+export type RecordUserCanonImportResult = {
+  rows: Array<{ slug: string; id: string; revisionId: string }>
+  deletions: Array<{ slug: string; id: string; revisionId: string }>
+  findings: CanonFinding[]
+  bootstrap: boolean
+}
+
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
   inviteMember(input: {
@@ -93,6 +108,7 @@ export type RecordApiClient = {
   listRevisions(id: string): Promise<Record<string, unknown>[]>
   upsertDoc(input: RecordDocUpsertInput): Promise<{ id: string; revisionId: string }>
   importDoc(input: RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
+  importUserCanon(input: RecordUserCanonImportInput): Promise<RecordUserCanonImportResult>
   deleteDoc(
     id: string,
     input: { reason: string; author: string; expectedRevision?: string },
@@ -249,6 +265,8 @@ export function recordApiClient(): RecordApiClient {
       request('/v1/docs', { method: 'PUT', body: JSON.stringify(input) }).then(ids),
     importDoc: (input) =>
       request('/v1/docs/import', { method: 'POST', body: JSON.stringify(input) }).then(importIds),
+    importUserCanon: (input) =>
+      request('/v1/docs/user-canon/import', { method: 'POST', body: JSON.stringify(input) }),
     deleteDoc: (id, input) =>
       request(`/v1/docs/${id}`, { method: 'DELETE', body: JSON.stringify(input) }).then(ids),
     consumeDoc: async (id, input) => {

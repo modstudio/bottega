@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { composeCanonRows } from './canon-hydrate.ts'
-import { decideCanonWrite } from './canon-write-gate.ts'
+import { decideCanonWrite, decideUserCanonImport } from './canon-write-gate.ts'
 
 const inputs = { trackedPaths: [], packageScripts: [], sourceTexts: [] }
 
@@ -48,5 +48,26 @@ describe('decideCanonWrite', () => {
       next: [...composed, rule],
     })
     expect(findings.map(({ rule }) => rule)).toContain('canon/size-always-on')
+  })
+})
+
+describe('decideUserCanonImport', () => {
+  test('allows an empty owner to bootstrap and returns all findings', () => {
+    const decision = decideUserCanonImport({
+      current: [],
+      next: [{ slug: 'AGENTS.md', body: 'Keep 123 things. It used to differ.' }],
+    })
+    expect(decision.bootstrap).toBe(true)
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/numeral')
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
+  })
+
+  test('does not bootstrap a non-empty owner and returns introduced findings', () => {
+    const decision = decideUserCanonImport({
+      current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
+      next: [{ slug: 'AGENTS.md', body: 'Current rule. It used to differ.' }],
+    })
+    expect(decision.bootstrap).toBe(false)
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
   })
 })

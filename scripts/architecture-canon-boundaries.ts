@@ -4,11 +4,25 @@ const source = 'orchestrator/src/canon/'
 
 export const userCanonBoundarySpecs: ImportBoundary[] = [
   {
+    name: 'user-canon-import-boundary',
+    file: 'orchestrator/src/doc/user-canon-import.ts',
+    allowed: [
+      'orchestrator/src/database/db.ts',
+      'orchestrator/src/record/record-api-client.ts',
+      'orchestrator/src/doc/doc-read-store.ts',
+      'orchestrator/src/doc/doc-revision-store.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep user canon batch mirroring independent of commands, filesystems, and unrelated stores.',
+  },
+  {
     name: 'user-canon-commands-boundary',
     file: `${source}user-canon-commands.ts`,
     allowed: [
       'shared/ratchet.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/user-canon-import.ts',
       `${source}canon-lint.ts`,
       `${source}user-canon-home.ts`,
       `${source}user-canon-home-files.ts`,

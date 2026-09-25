@@ -7,6 +7,7 @@ import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { recordDocImportSchema, recordUserCanonImportSchema } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
@@ -25,6 +26,8 @@ import {
   type RecordDocImportInput,
   type RecordDocListInput,
   type RecordDocRevision,
+  type RecordUserCanonImportInput,
+  type RecordUserCanonImportResult,
 } from './record-docs.ts'
 import {
   type RecordProject,
@@ -99,6 +102,7 @@ type Deps = {
     },
   ): Promise<{ id: string; revisionId: string }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
+  importUserCanon(input: Tenant & RecordUserCanonImportInput): Promise<RecordUserCanonImportResult>
   deleteDoc(
     input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string }>
@@ -232,38 +236,6 @@ const docWriteContextSchema = z.object({
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
   expectedRevision: z.string().uuid().optional(),
-})
-const docImportSchema = z.object({
-  expectedRevision: z.string().uuid().optional(),
-  doc: z.object({
-    scope: z.string().min(1),
-    subject: z.string().nullable(),
-    owner: z.string().uuid().nullable().optional(),
-    slug: z.string().min(1),
-    title: z.string(),
-    body: z.string(),
-    delivery: deliverySchema,
-    projectName: z.string().nullable().optional(),
-    createdAt: isoSchema,
-    updatedAt: isoSchema,
-    deletedAt: isoSchema.nullable(),
-  }),
-  revisions: z.array(
-    z.object({
-      scope: z.string().min(1),
-      subject: z.string().nullable(),
-      owner: z.string().uuid().nullable().optional(),
-      slug: z.string().min(1),
-      op: revisionOpSchema,
-      title: z.string(),
-      body: z.string(),
-      delivery: deliverySchema,
-      author: z.string().trim().min(1),
-      reason: z.string().trim().min(1),
-      sessionId: z.string().nullable().optional(),
-      at: isoSchema,
-    }),
-  ),
 })
 const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an active space'
 
@@ -840,10 +812,21 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.post('/v1/docs/import', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
-    const body = docImportSchema.safeParse(await context.req.json().catch(() => null))
+    const body = recordDocImportSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc import' }, 400)
     try {
       return context.json(await deps.importDoc({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/docs/user-canon/import', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const body = recordUserCanonImportSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid user canon import' }, 400)
+    try {
+      return context.json(await deps.importUserCanon({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }

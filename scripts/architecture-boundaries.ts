@@ -617,6 +617,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-runs.ts',
       './record-runs-window-query.ts',
       './record-api-projects.ts',
+      './record-api-doc-schemas.ts',
     ],
     'Enforce the record-api concern boundary.',
   ),
@@ -643,6 +644,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-snapshots.ts',
     ],
     'Enforce the record API client concern boundary.',
+    ['../canon/canon-lint.ts'],
   ),
   boundary(
     'record-api-server-boundary',
