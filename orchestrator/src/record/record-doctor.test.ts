@@ -93,7 +93,34 @@ describe('record doctor decisions', () => {
         ],
         { id: 'space-id', slug: 'active-space' },
       ),
-    ).toBe(2)
+    ).toBe(3)
+    database.close()
+  })
+
+  test('counts a synced question whose run has no project in the active space', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO run
+         (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES (1,'01990000-0000-7000-8000-000000000001','2026-09-25','codex','implement',
+                 'sha',3,'ask','asking')`,
+      )
+      .run()
+    database
+      .query("INSERT INTO question (run_id,asked_at,question) VALUES (1,'2026-09-25','no project')")
+      .run()
+    database
+      .query(
+        `INSERT INTO outbox (kind,record_id,payload,created_at,synced_at)
+         VALUES ('run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25')`,
+      )
+      .run()
+
+    expect(localQuestionCountForSpace(database, [], { id: 'space-id', slug: 'active-space' })).toBe(
+      1,
+    )
     database.close()
   })
 })

@@ -90,9 +90,7 @@ export function localQuestionCountForSpace(
     )
     .all()
   return rows.filter((row) => {
-    if (!row.project) return false
-    if (!projectSpaces.has(row.project)) return false
-    const space = projectSpaces.get(row.project)
+    const space = row.project ? projectSpaces.get(row.project) : null
     const effectiveSpace = effectiveProjectSpace(space ?? null, activeSpace.id)
     return effectiveSpace === activeSpace.id || effectiveSpace === activeSpace.slug
   }).length
