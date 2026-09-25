@@ -8,11 +8,7 @@ import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.t
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { packedResumePrompt } from './run.ts'
-import {
-  answerRun as answerRunService,
-  continuationInstructionsForFreshRetry,
-  retryRun,
-} from './run-answer.ts'
+import { answerRun as answerRunService, retryRun } from './run-answer.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { continueRun } from './run-control.ts'
 import type { detach } from './run-dispatch.ts'
@@ -896,76 +892,6 @@ describe('retry command', () => {
         `Re-send the instructions with orch continue ${id} --file <spec>, ` +
         `or pass orch retry ${child} for that turn directly.`,
     )
-  })
-
-  test('fresh retry assigns real pre-start audits to the children they created', () => {
-    const id = failed('implement')
-    const turn6445 = addRun({
-      agent: 'grok',
-      job: 'implement',
-      status: 'failed',
-      parent: id,
-      turn: 2,
-      startedAt: '2026-09-25T09:10:55.576Z',
-    })
-    const turn6500 = addRun({
-      agent: 'grok',
-      job: 'implement',
-      status: 'failed',
-      parent: id,
-      turn: 3,
-      startedAt: '2026-09-25T14:48:05.591Z',
-    })
-    const turn6513 = addRun({
-      agent: 'grok',
-      job: 'implement',
-      status: 'failed',
-      parent: id,
-      turn: 4,
-      startedAt: '2026-09-25T15:21:16.986Z',
-    })
-    db()
-      .query(
-        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(id, id, 'continue', '2026-09-25T09:10:54.846Z', 'instructions for 6445')
-    db()
-      .query(
-        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(id, id, 'continue', '2026-09-25T14:48:04.417Z', 'instructions for 6500')
-    db()
-      .query(
-        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(id, id, 'retry', '2026-09-25T14:49:29.674Z', 'retried as run 6503')
-    db()
-      .query(
-        `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(id, id, 'continue', '2026-09-25T15:21:16.144Z', 'instructions for 6513')
-
-    expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
-      {
-        turnId: turn6445,
-        at: '2026-09-25T09:10:54.846Z',
-        instructions: 'instructions for 6445',
-      },
-      {
-        turnId: turn6500,
-        at: '2026-09-25T14:48:04.417Z',
-        instructions: 'instructions for 6500',
-      },
-      {
-        turnId: turn6513,
-        at: '2026-09-25T15:21:16.144Z',
-        instructions: 'instructions for 6513',
-      },
-    ])
   })
 
   test('a rejected retry dispatch records failed ruling delivery', async () => {

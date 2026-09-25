@@ -76,13 +76,14 @@ export function auditRunMutation(
   action: RunMutationAction,
   reason: string | null = null,
   database: Database = db(),
+  turnId: number | null = null,
 ): void {
   database
     .query(
-      `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason, turn_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason)
+    .run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason, turnId)
 }
 
 const ADOPTING_ACTIONS = [

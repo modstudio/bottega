@@ -220,48 +220,73 @@ export function continuationInstructionsForFreshRetry(
   if (!writesRepo || requestedId !== rootId) return []
   const turns = db()
     .query(
-      `WITH turns AS (
-         SELECT turn.id, turn.turn, turn.started_at,
-                LAG(turn.started_at) OVER (ORDER BY turn.turn, turn.id) previous_started_at
-           FROM run turn
-          WHERE turn.parent_run_id = ?
-       )
-       SELECT turns.id, audit.action, audit.at, audit.reason
-         FROM turns
-         LEFT JOIN run_mutation_audit audit
-           ON audit.rowid = (
-             SELECT candidate.rowid
-               FROM run_mutation_audit candidate
-              WHERE candidate.root_id = ?
-                AND candidate.action IN ('continue', 'retry')
-                AND candidate.at <= turns.started_at
-                AND (turns.previous_started_at IS NULL OR candidate.at > turns.previous_started_at)
-              ORDER BY candidate.at DESC, candidate.rowid DESC
-              LIMIT 1
-           )
-        ORDER BY turns.turn, turns.id`,
+      `SELECT id, started_at
+         FROM run
+        WHERE parent_run_id = ?
+        ORDER BY turn, id`,
     )
-    .all(rootId, rootId) as {
-    id: number
-    action: 'continue' | 'retry' | null
-    at: string | null
+    .all(rootId) as { id: number; started_at: string }[]
+  const audits = db()
+    .query(
+      `SELECT rowid, turn_id, action, at, reason
+         FROM run_mutation_audit
+        WHERE root_id = ? AND action IN ('continue', 'retry')
+        ORDER BY at, rowid`,
+    )
+    .all(rootId) as {
+    rowid: number
+    turn_id: number | null
+    action: 'continue' | 'retry'
+    at: string
     reason: string | null
   }[]
-  const missing = turns.find(
-    (turn) => turn.action === null || (turn.action === 'continue' && !turn.reason),
-  )
-  if (missing) {
+  const claimed = new Set<number>()
+  const attributed: {
+    id: number
+    rowid: number
+    action: 'continue' | 'retry'
+    at: string
+    reason: string | null
+  }[] = []
+  const refuse = (turnId: number): never => {
     throw new Error(
-      `run ${rootId} continuation turn ${missing.id} has no recoverable continue instructions. ` +
+      `run ${rootId} continuation turn ${turnId} has no recoverable continue instructions. ` +
         `Re-send the instructions with orch continue ${rootId} --file <spec>, ` +
-        `or pass orch retry ${missing.id} for that turn directly.`,
+        `or pass orch retry ${turnId} for that turn directly.`,
     )
   }
-  return turns.flatMap((turn) => {
-    return turn.action === 'continue' && turn.reason && turn.at
-      ? [{ turnId: turn.id, at: turn.at, instructions: turn.reason }]
-      : []
-  })
+  for (const turn of turns) {
+    const identified = audits.filter((audit) => audit.turn_id === turn.id)
+    const identifiedRetries = identified.filter((audit) => audit.action === 'retry')
+    const identifiedContinues = identified.filter((audit) => audit.action === 'continue')
+    if (
+      identifiedRetries.length > 1 ||
+      (!identifiedRetries.length && identifiedContinues.length > 1)
+    ) {
+      refuse(turn.id)
+    }
+    let audit = identifiedRetries[0] ?? identifiedContinues[0]
+    if (!audit) {
+      const startedAt = Date.parse(turn.started_at)
+      const candidates = audits.filter(
+        (candidate) =>
+          candidate.turn_id === null &&
+          !claimed.has(candidate.rowid) &&
+          Math.abs(Date.parse(candidate.at) - startedAt) <= 10_000,
+      )
+      if (candidates.length !== 1) refuse(turn.id)
+      audit = candidates[0]!
+    }
+    claimed.add(audit.rowid)
+    attributed.push({ id: turn.id, ...audit })
+  }
+  return attributed
+    .sort((left, right) => left.at.localeCompare(right.at) || left.rowid - right.rowid)
+    .flatMap((turn) => {
+      return turn.action === 'continue' && turn.reason
+        ? [{ turnId: turn.id, at: turn.at, instructions: turn.reason }]
+        : []
+    })
 }
 
 export async function retryRun(
@@ -331,7 +356,13 @@ export async function retryRun(
   })
   if (preliminaryPath?.action === 'continue') {
     const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
-    auditRunMutation(retryAuthority, 'retry', `continued as run ${resumed.childId}`)
+    auditRunMutation(
+      retryAuthority,
+      'retry',
+      `continued as run ${resumed.childId}`,
+      db(),
+      resumed.childId,
+    )
     await reportContinuedRun(resumed.childId, resumed.job, options.flags, helpers.presentation)
     return
   }
@@ -468,7 +499,7 @@ export async function retryRun(
       },
     )
   }
-  auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
+  auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`, db(), newId)
   console.error(`— run ${newId} is retry of ${id}`)
   await follow(newId, options.flags.quiet, true, helpers.presentation)
 }

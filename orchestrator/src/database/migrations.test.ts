@@ -124,6 +124,10 @@ test('workflow question migration preserves run questions and backfills an await
       join(MIGRATIONS_FOLDER, '0059_question_revision.sql'),
       join(folder, '0059_question_revision.sql'),
     )
+    copyFileSync(
+      join(MIGRATIONS_FOLDER, '0060_mutation_audit_turn.sql'),
+      join(folder, '0060_mutation_audit_turn.sql'),
+    )
     writeFileSync(
       join(folder, 'meta', '_journal.json'),
       JSON.stringify({ version: '7', dialect: 'sqlite', entries: journal }),
@@ -133,6 +137,7 @@ test('workflow question migration preserves run questions and backfills an await
       '0057_review_finding_amendment',
       '0058_question_record_id',
       '0059_question_revision',
+      '0060_mutation_audit_turn',
     ])
     expect(
       database
@@ -233,6 +238,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0057_review_finding_amendment',
       '0058_question_record_id',
       '0059_question_revision',
+      '0060_mutation_audit_turn',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -269,6 +275,11 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
         .query("SELECT name FROM sqlite_master WHERE type='table' AND name='run_carried_ruling'")
         .get(),
     ).toEqual({ name: 'run_carried_ruling' })
+    expect(
+      database
+        .query("SELECT name FROM pragma_table_info('run_mutation_audit') WHERE name='turn_id'")
+        .get(),
+    ).toEqual({ name: 'turn_id' })
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })
@@ -323,6 +334,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0057_review_finding_amendment',
       '0058_question_record_id',
       '0059_question_revision',
+      '0060_mutation_audit_turn',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -400,6 +412,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0057_review_finding_amendment',
       '0058_question_record_id',
       '0059_question_revision',
+      '0060_mutation_audit_turn',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -458,6 +471,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0057_review_finding_amendment',
       '0058_question_record_id',
       '0059_question_revision',
+      '0060_mutation_audit_turn',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',

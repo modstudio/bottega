@@ -581,7 +581,7 @@ export async function continueRun(
     },
   })
   recordContinuationTreeSource(childId, branchSource, treePlan)
-  auditRunMutation(authority, 'continue', message ?? null)
+  auditRunMutation(authority, 'continue', message ?? null, db(), childId)
   return { childId, job: row.job }
 }
 
