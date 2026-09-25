@@ -226,6 +226,10 @@ function startWorkerGateBroker(input: {
   })
 }
 
+async function closeWorkerGateBroker(broker: GateBroker | null): Promise<void> {
+  if (broker) await broker.close()
+}
+
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -324,7 +328,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       worktree,
       runId: claim.id,
       scratchDir,
-      environment: recipeEnvironment,
+      environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
     })
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
@@ -791,7 +795,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
     failureKind = proc ? 'other' : 'harness'
   }
-  if (gateBroker) await gateBroker.close()
+  await closeWorkerGateBroker(gateBroker)
 
   return {
     proc,
