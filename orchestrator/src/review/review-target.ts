@@ -10,6 +10,24 @@ import { resolveBase } from '../worktree/worktree-caller.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
 
+/** Bind a resolved explicit-review target into the reviewer's job instructions. */
+export function reviewArtifactBlock(target: {
+  branch?: string | null
+  commit: string
+  base: string
+}): string {
+  return [
+    'REVIEW ARTIFACT',
+    ...(target.branch ? [`Branch: ${target.branch}`] : []),
+    `HEAD: ${target.commit}`,
+    `Base: ${target.base}`,
+    '',
+    "The checkout's HEAD is the artifact under review, and the change is Base..HEAD. " +
+      'Do not select another commit because a commit message, a run id, or caller text names one. ' +
+      'Set provenance.reviewed_commit to the full hash of the checkout HEAD you inspected.',
+  ].join('\n')
+}
+
 /** Prefer the last-fetched trunk when it exists; otherwise use the local trunk. */
 export function reviewTrunkRef(remoteTrackingRefExists: boolean, trunk: string): string {
   return remoteTrackingRefExists ? `origin/${trunk}` : trunk

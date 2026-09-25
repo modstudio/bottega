@@ -3,6 +3,15 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { parseReviewReply } from '../review/review.ts'
 
 describe('review discipline', () => {
+  test('review parsing accepts the inspected checkout HEAD when present or omitted', () => {
+    const valid = reviewReply(0)
+    expect(parseReviewReply(valid)?.provenance.reviewed_commit).toBe(
+      'abcdef1234567890abcdef1234567890abcdef12',
+    )
+    delete (valid.provenance as Partial<typeof valid.provenance>).reviewed_commit
+    expect(parseReviewReply(valid)?.provenance.reviewed_commit).toBeUndefined()
+  })
+
   test('review parsing requires one of the three canon provenance values', () => {
     expect(parseReviewReply(reviewReply(0))?.provenance.canon_source).toBe('live database')
     const missing = reviewReply(0) as Omit<ReturnType<typeof reviewReply>, 'provenance'> & {

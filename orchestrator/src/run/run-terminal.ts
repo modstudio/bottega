@@ -93,6 +93,7 @@ export type TerminalInput = {
   vendorTerminatedStream: string | null
   acceptedQuestions: ReturnType<typeof realQuestions>
   requestedJob: Job
+  checkReviewedCommit: boolean
   output: string
   confinementEvent: ConfinementEvent | null
   resolvedDialect: ReplyDialect
@@ -238,6 +239,17 @@ function recordTerminalMcpEvidence(
     .run(ruling.connected, ruling.error, runId)
 }
 
+function recordedReviewedHead(runId: number, required: boolean): string | null {
+  if (!required) return null
+  return (
+    (
+      db().query('SELECT head_commit FROM run WHERE id=?').get(runId) as {
+        head_commit: string | null
+      } | null
+    )?.head_commit ?? null
+  )
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -268,6 +280,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     vendorTerminatedStream,
     acceptedQuestions,
     requestedJob,
+    checkReviewedCommit,
     output,
     confinementEvent,
     resolvedDialect,
@@ -417,12 +430,14 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     parsedReview && status === 'ok' && confinementEvent?.classification !== 'overlapping'
       ? cleanReviewEvidence(claim.id, parsedReview)
       : null
+  const recordedHeadCommit = recordedReviewedHead(claim.id, checkReviewedCommit)
   const evidenceAssessment = assessEvidence(
     { status, error, failureKind },
     {
       findingsJob: Boolean(requestedJob.findings),
       outputPresent: Boolean(output),
       reviewReply: parsedReview,
+      expectedReviewedCommit: recordedHeadCommit,
       confinementClassification: confinementEvent?.classification ?? null,
       cleanReview,
       otherProjectMcpServers,

@@ -24,7 +24,8 @@ describe('job contracts are visible before submission', () => {
   }
   test('the read-only contract names inherited work without claiming it is always present', () => {
     expect(READONLY_PREAMBLE).toContain('fresh checkout of this')
-    expect(READONLY_PREAMBLE).toContain("run's base commit")
+    expect(READONLY_PREAMBLE).toContain("run's commit to read")
+    expect(READONLY_PREAMBLE).not.toContain("run's base commit")
     expect(READONLY_PREAMBLE).toContain(
       'If the caller chose to carry their uncommitted work into it',
     )

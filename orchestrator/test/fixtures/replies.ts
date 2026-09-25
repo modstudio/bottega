@@ -20,6 +20,7 @@ export const reviewReply = (findings = 1, severity = 'major') => ({
     proposed_correction: `fix ${i + 1}`,
   })),
   provenance: {
+    reviewed_commit: 'abcdef1234567890abcdef1234567890abcdef12',
     tree_inspected: 'abc123',
     standards_read: ['AGENTS.md'],
     model_used: 'reported-by-reviewer',

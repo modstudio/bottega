@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { assessEvidence, assessEvidencePrompt, type EvidenceFacts } from './evidence.ts'
+import {
+  assessEvidence,
+  assessEvidencePrompt,
+  compareReviewedCommit,
+  type EvidenceFacts,
+} from './evidence.ts'
 
 const reviewReply = {
   findings: [],
   provenance: {
+    reviewed_commit: 'abcdef1234567890',
     standards_read: [],
     model_used: 'fixture',
     files_covered: ['src/a.ts'],
@@ -20,6 +26,7 @@ const base: EvidenceFacts = {
   findingsJob: false,
   outputPresent: true,
   reviewReply: null,
+  expectedReviewedCommit: null,
   confinementClassification: null,
   cleanReview: null,
   otherProjectMcpServers: new Set(),
@@ -28,6 +35,19 @@ const base: EvidenceFacts = {
   declaredDeliverables: [],
   readerReply: null,
 }
+
+describe('reviewed commit comparison', () => {
+  test.each([
+    ['equal', 'abcdef1234567890', 'equal'],
+    ['seven-character prefix', 'abcdef1', 'prefix'],
+    ['short prefix', 'abcdef', 'different'],
+    ['non-hex value', 'abcdefg', 'different'],
+    ['different', '1234567', 'different'],
+    ['missing', undefined, 'missing'],
+  ] as const)('%s', (_name, reviewed, expected) => {
+    expect(compareReviewedCommit('abcdef1234567890', reviewed)).toBe(expected)
+  })
+})
 
 describe('evidence prompt assessment', () => {
   test.each([
@@ -76,6 +96,15 @@ describe('terminal evidence assessment', () => {
   })
 
   test.each([
+    [
+      'reviewed commit mismatch',
+      {
+        findingsJob: true,
+        reviewReply,
+        expectedReviewedCommit: '1234567890abcdef',
+      },
+      { failureKind: 'contract', error: 'does not match recorded HEAD' },
+    ],
     [
       'findings admissibility',
       {

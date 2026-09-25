@@ -30,6 +30,7 @@ describe('review discipline', () => {
       else process.env.ORCH_DEPTH = priorDepth
     }
     expect(REVIEW_SCHEMA.properties.provenance.required).toEqual([
+      'reviewed_commit',
       'standards_read',
       'model_used',
       'files_covered',

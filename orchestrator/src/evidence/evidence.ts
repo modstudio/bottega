@@ -43,6 +43,7 @@ export type EvidenceFacts = {
   findingsJob: boolean
   outputPresent: boolean
   reviewReply: ReviewReply | null
+  expectedReviewedCommit: string | null
   confinementClassification: string | null
   cleanReview: CleanReviewEvidence | null
   otherProjectMcpServers: ReadonlySet<string>
@@ -50,6 +51,43 @@ export type EvidenceFacts = {
   readerJob: boolean
   declaredDeliverables: readonly string[]
   readerReply: ReaderReply | null
+}
+
+export type ReviewedCommitComparison = 'equal' | 'prefix' | 'different' | 'missing'
+
+const GIT_DEFAULT_ABBREVIATION_LENGTH = 7
+
+/** Compare claimed review provenance with the full commit recorded at dispatch. */
+export function compareReviewedCommit(
+  expected: string,
+  reviewed: string | null | undefined,
+): ReviewedCommitComparison {
+  const claim = reviewed?.trim().toLowerCase()
+  if (!claim) return 'missing'
+  const recorded = expected.toLowerCase()
+  if (!/^[0-9a-f]+$/.test(claim)) return 'different'
+  if (claim === recorded) return 'equal'
+  return claim.length >= GIT_DEFAULT_ABBREVIATION_LENGTH && recorded.startsWith(claim)
+    ? 'prefix'
+    : 'different'
+}
+
+function applyReviewedCommitEvidence<FailureKind extends string>(
+  outcome: ProvisionalEvidenceOutcome<FailureKind | 'contract'>,
+  expected: string | null,
+  reviewed: string | null | undefined,
+): ProvisionalEvidenceOutcome<FailureKind | 'contract'> {
+  if (!expected || outcome.status !== 'ok') return outcome
+  const comparison = compareReviewedCommit(expected, reviewed)
+  if (comparison === 'equal' || comparison === 'prefix') return outcome
+  return {
+    status: 'failed',
+    error:
+      comparison === 'missing'
+        ? `review provenance is missing reviewed_commit for recorded HEAD ${expected}`
+        : `reviewed_commit ${reviewed} does not match recorded HEAD ${expected}`,
+    failureKind: 'contract',
+  }
 }
 
 export type EvidenceAssessment<FailureKind extends string = string> = ProvisionalEvidenceOutcome<
@@ -102,6 +140,12 @@ export function assessEvidence<FailureKind extends string>(
       }
     }
   }
+
+  outcome = applyReviewedCommitEvidence(
+    outcome,
+    facts.expectedReviewedCommit,
+    facts.reviewReply?.provenance.reviewed_commit,
+  )
 
   const provenanceWrongProjectTool =
     facts.reviewReply?.provenance.mcp_tools.find((tool) => {
