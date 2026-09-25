@@ -2,6 +2,9 @@ import { human } from '../../shared/interval.ts'
 import type { OrchRun, OrchTurn, OrchUnknownRun } from '../../shared/orch-contract.ts'
 import { db, writeTransaction } from './db.ts'
 import { readRunsById } from './orch.ts'
+import { runRef } from './run-ref.ts'
+
+export { runRef } from './run-ref.ts'
 
 type RunAnswer = OrchRun | OrchUnknownRun
 
@@ -26,12 +29,6 @@ export type ReconcileResult = {
   dryRun: boolean
   closed: ReconcileItem[]
   leftOpen: ReconcileItem[]
-}
-
-export function runRef(ref: string): { root: number; turn: number | null } | null {
-  const match = ref.match(/^orch:(\d+)(?::turn:(\d+))?$/)
-  if (!match) return null
-  return { root: Number(match[1]), turn: match[2] ? Number(match[2]) : null }
 }
 
 function requestedIdOf(answer: RunAnswer): number | null {

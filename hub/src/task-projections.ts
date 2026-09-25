@@ -5,7 +5,7 @@ import {
   type TrackerRowSource,
   trackerCapabilities,
 } from '../../shared/trackers.ts'
-import { runRef } from './reconcile.ts'
+import { runRef } from './run-ref.ts'
 
 export type ProjectionProject = TrackerProject & { spaceId?: string; spaceName?: string }
 

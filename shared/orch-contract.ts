@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { OperatorInboxKind } from './operator-inbox.ts'
-import type { OperatorNotification } from './operator-notification.ts'
+import type { OperatorNotification } from './operator-notification-contract.ts'
 import {
   ANSWER_CHANNEL_VALUES,
   ANSWERER_KIND_VALUES,

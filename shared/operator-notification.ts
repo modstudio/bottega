@@ -1,6 +1,8 @@
 /** Chooses and invokes the best available desktop notification. */
 
-export type OperatorNotification = { title: string; body: string; link: string }
+import type { OperatorNotification } from './operator-notification-contract.ts'
+
+export type { OperatorNotification } from './operator-notification-contract.ts'
 export type NotificationCommand = { argv: string[] } | null
 
 const appleScriptString = (value: string) =>

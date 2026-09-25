@@ -23,6 +23,7 @@ import type { DocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
   AnswerWaitingResultSchema,
+  type AnswerWaitingResult,
   ClaimedOperatorNotificationSchema,
   type HarnessHealth,
   HarnessHealthSchema,
@@ -260,7 +261,10 @@ export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling
   '--json',
 ]
 
-export async function answerWaiting(runId: number, rulings: readonly WaitingRuling[]) {
+export async function answerWaiting(
+  runId: number,
+  rulings: readonly WaitingRuling[],
+): Promise<AnswerWaitingResult> {
   return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
     env: dashboardCapabilityEnvironment(),
   })

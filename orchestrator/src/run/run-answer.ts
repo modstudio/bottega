@@ -4,6 +4,7 @@
  * turns. Must not know transports, worktrees, routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import {
@@ -65,6 +66,104 @@ type RunAnswerHelpers = {
   dashboardAuthorized?: () => boolean
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
+type OpenQuestion = {
+  id: number
+  question: string
+  awaiting_operator_at: string | null
+  owner_id: number
+  owner_status: string
+  owner_pid: number | null
+}
+
+function answeredBy(
+  operatorAuthorized: boolean,
+  fromOperator: boolean,
+  callerSession: string | null,
+): string {
+  if (operatorAuthorized) return 'operator via hub'
+  if (fromOperator) return `operator via ${callerSession ?? 'anonymous (no session id)'}`
+  return callerSession ?? 'anonymous (no session id)'
+}
+
+function requireAnswerAuthority(
+  requestedId: number,
+  channel: ReturnType<typeof parseAnswerChannelArgs>['channel'],
+  fromOperator: boolean,
+  dashboardAuthorized: boolean,
+  authority: { owner: string | null; actor: string | null },
+) {
+  const decision = answerAuthorityDecision({
+    channel,
+    fromOperator,
+    sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
+    depthPresent: process.env.ORCH_DEPTH !== undefined,
+    dashboardAuthorized,
+    owner: authority.owner,
+    actor: authority.actor,
+  })
+  if (decision.kind !== 'refuse') return decision
+  const refusal = {
+    'operator-attribution': '--channel ui requires --from-operator',
+    'dashboard-capability': '--channel ui requires the hub dashboard capability',
+    'session-marker': `--channel ui is refused when ${decision.actor} is set`,
+    'owner-mismatch': `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor ?? 'no session identity is present'} cannot answer it`,
+  }[decision.code]
+  throw new Error(refusal)
+}
+
+function readOpenQuestions(id: number, status: string): OpenQuestion[] {
+  const open = db()
+    .query(
+      `SELECT q.id, q.question, q.awaiting_operator_at,
+              r.id owner_id, r.status owner_status, r.pid owner_pid
+     FROM question q JOIN run r ON r.id = q.run_id
+    WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
+    ORDER BY q.id`,
+    )
+    .all(id, id) as OpenQuestion[]
+  if (open.length) return open
+  const asked = db()
+    .query(
+      `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
+      WHERE r.id = ? OR r.parent_run_id = ?`,
+    )
+    .get(id, id) as { n: number }
+  throw new Error(
+    asked.n
+      ? `run ${id} has already been ruled on; its current status is ${status}`
+      : `run ${id} has no questions to answer; its current status is ${status}`,
+  )
+}
+
+function requireAnswerableLiveness(
+  id: number,
+  row: { status: string; evidence_excluded: string | null },
+  open: OpenQuestion[],
+): void {
+  const refusal = answerRunLivenessRefusal(
+    { status: row.status, voided: row.evidence_excluded !== null },
+    open,
+  )
+  if (refusal === null) return
+  throw new Error(
+    `run ${id} is ${refusal}. ` +
+      'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
+      `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
+  )
+}
+
+function reportUnownedAdoption(
+  id: number,
+  owner: string | null,
+  callerSession: string | null,
+  ownerAuthorized: boolean,
+): void {
+  if (owner || !callerSession || !ownerAuthorized) return
+  console.error(
+    `run ${id} is unowned; session ${callerSession} may rule and will adopt the chain, ` +
+      'and that answering identity will be recorded',
+  )
+}
 
 async function refuseUserRuling(
   project: string | null,
@@ -261,11 +360,7 @@ export async function answerRun(
   requestedId: number,
   options: { argv: string[]; recordOnly: boolean; json?: boolean; flags: RunFlags },
   helpers: RunAnswerHelpers,
-): Promise<{
-  outcome: 'resumed' | 'delivered-live' | 'recorded'
-  run_id: number
-  resumed_as: number | null
-}> {
+): Promise<AnswerWaitingResult> {
   const answerArgs = parseAnswerChannelArgs(options.argv)
   const found = db()
     .query(
@@ -301,24 +396,13 @@ export async function answerRun(
   refuseEscapedChain(id)
   writableDb()
   let answerAuthority = runMutationActor(requestedId)
-  const authorityDecision = answerAuthorityDecision({
-    channel: answerArgs.channel,
-    fromOperator: options.argv.includes('--from-operator'),
-    sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
-    depthPresent: process.env.ORCH_DEPTH !== undefined,
-    dashboardAuthorized: (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
-    owner: answerAuthority.owner,
-    actor: answerAuthority.actor,
-  })
-  if (authorityDecision.kind === 'refuse') {
-    const refusal = {
-      'operator-attribution': '--channel ui requires --from-operator',
-      'dashboard-capability': '--channel ui requires the hub dashboard capability',
-      'session-marker': `--channel ui is refused when ${authorityDecision.actor} is set`,
-      'owner-mismatch': `run ${requestedId} is owned by session ${authorityDecision.owner}; current session ${authorityDecision.actor ?? 'no session identity is present'} cannot answer it`,
-    }[authorityDecision.code]
-    throw new Error(refusal)
-  }
+  const authorityDecision = requireAnswerAuthority(
+    requestedId,
+    answerArgs.channel,
+    options.argv.includes('--from-operator'),
+    (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
+    answerAuthority,
+  )
   if (authorityDecision.kind === 'allow-as-operator') {
     answerAuthority = { ...answerAuthority, actor: authorityDecision.actor }
   }
@@ -333,60 +417,22 @@ export async function answerRun(
    * all. Found in review, and it is the shape every multi-turn escalation
    * takes after the first.
    */
-  const open = db()
-    .query(
-      `SELECT q.id, q.question, q.awaiting_operator_at,
-              r.id owner_id, r.status owner_status, r.pid owner_pid
-     FROM question q JOIN run r ON r.id = q.run_id
-    WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
-    ORDER BY q.id`,
-    )
-    .all(id, id) as {
-    id: number
-    question: string
-    awaiting_operator_at: string | null
-    owner_id: number
-    owner_status: string
-    owner_pid: number | null
-  }[]
-  if (!open.length) {
-    const asked = db()
-      .query(
-        `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE r.id = ? OR r.parent_run_id = ?`,
-      )
-      .get(id, id) as { n: number }
-    throw new Error(
-      asked.n
-        ? `run ${id} has already been ruled on; its current status is ${row.status}`
-        : `run ${id} has no questions to answer; its current status is ${row.status}`,
-    )
-  }
+  const open = readOpenQuestions(id, row.status)
 
   // A ruling resumes a live chain. Stopped, failed, stale and voided roots
   // used to record the answer and spawn a new turn, which is retry's job.
-  const livenessRefusal = answerRunLivenessRefusal(
-    { status: row.status, voided: row.evidence_excluded !== null },
-    open,
-  )
-  if (livenessRefusal !== null) {
-    throw new Error(
-      `run ${id} is ${livenessRefusal}. ` +
-        'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
-        `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
-    )
-  }
+  requireAnswerableLiveness(id, row, open)
 
   // A last-seen timeout used to make a question appear adoptable, and this
   // command then accepted the adoption. Only the architect session that
   // dispatched the conversation has standing to change its specification.
   const callerSession = answerAuthority.actor
-  if (!row.session_id && callerSession && authorityDecision.kind === 'allow-as-owner') {
-    console.error(
-      `run ${id} is unowned; session ${callerSession} may rule and will adopt the chain, ` +
-        'and that answering identity will be recorded',
-    )
-  }
+  reportUnownedAdoption(
+    id,
+    row.session_id,
+    callerSession,
+    authorityDecision.kind === 'allow-as-owner',
+  )
 
   /**
    * TWO WAYS A QUESTION ARRIVES, and they are answered differently.
@@ -590,12 +636,11 @@ export async function answerRun(
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE id=?`,
   )
-  const answeredBy =
-    authorityDecision.kind === 'allow-as-operator'
-      ? 'operator via hub'
-      : options.argv.includes('--from-operator')
-        ? `operator via ${callerSession ?? 'anonymous (no session id)'}`
-        : (callerSession ?? 'anonymous (no session id)')
+  const answeringIdentity = answeredBy(
+    authorityDecision.kind === 'allow-as-operator',
+    options.argv.includes('--from-operator'),
+    callerSession,
+  )
   writeTransaction(() => {
     if (authorityDecision.kind === 'allow-as-owner')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
@@ -603,8 +648,8 @@ export async function answerRun(
       upd.run(
         answers[i]!.answer,
         now,
-        answeredBy,
-        answererKindFromAnsweredBy(answeredBy),
+        answeringIdentity,
+        answererKindFromAnsweredBy(answeringIdentity),
         answerArgs.channel,
         ownersLive ? null : now,
         q.id,
