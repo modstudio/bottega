@@ -3,6 +3,73 @@ import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
 
 const source = 'orchestrator/src/canon/'
 
+const canonEditGuardBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-edit-bash-boundary',
+    file: `${source}canon-edit-bash.ts`,
+    allowed: ['node:path'],
+    typeOnlyAllowed: [],
+    reason: 'Keep Bash tokenisation and write-target extraction pure.',
+  },
+  {
+    name: 'canon-edit-transcript-boundary',
+    file: `${source}canon-edit-transcript.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep transcript role, pairing, and watermark-window parsing pure.',
+  },
+  {
+    name: 'canon-edit-guard-boundary',
+    file: `${source}canon-edit-guard.ts`,
+    allowed: ['node:path', `${source}canon-edit-bash.ts`],
+    typeOnlyAllowed: [`${source}canon-edit-transcript.ts`],
+    reason:
+      'Keep the pre-edit canon decision pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'canon-edit-hook-handler-boundary',
+    file: `${source}canon-edit-hook-handler.ts`,
+    allowed: [
+      'node:path',
+      `${source}canon-edit-bash.ts`,
+      `${source}canon-edit-guard.ts`,
+      `${source}canon-edit-transcript.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep hook sequencing in-process and independent of concrete I/O adapters.',
+  },
+  {
+    name: 'canon-edit-hook-ports-boundary',
+    file: `${source}canon-edit-hook-ports.ts`,
+    allowed: [
+      'node:fs',
+      'node:path',
+      'shared/state-directory.ts',
+      `${source}canon-lint.ts`,
+      'orchestrator/src/database/db.ts',
+      'orchestrator/src/project/projects.ts',
+    ],
+    typeOnlyAllowed: [
+      `${source}canon-edit-hook-handler.ts`,
+      `${source}canon-edit-guard.ts`,
+      `${source}canon-edit-transcript.ts`,
+    ],
+    reason: 'Keep concrete hook facts limited to canon files, state, and the project register.',
+  },
+  {
+    name: 'canon-edit-guard-hook-boundary',
+    file: 'orchestrator/hooks/canon-edit-guard.ts',
+    allowed: [
+      `${source}canon-edit-hook-handler.ts`,
+      `${source}canon-edit-hook-ports.ts`,
+      `${source}canon-edit-guard.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep the hook as the thin adapter from harness, tree, register, and state facts to the pure canon decision.',
+  },
+]
+
 const canonCommandBoundarySpecs: ImportBoundary[] = [
   {
     name: 'canon-commands-boundary',
@@ -131,6 +198,7 @@ const canonRemovalBoundarySpecs: ImportBoundary[] = [
 ]
 
 export const canonBoundarySpecs = [
+  ...canonEditGuardBoundarySpecs,
   ...canonAuditBoundarySpecs,
   ...canonCommandBoundarySpecs,
   ...canonRemovalBoundarySpecs,

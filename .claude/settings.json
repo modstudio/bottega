@@ -101,5 +101,31 @@
       "Bash(hub task set *)",
       "Bash(git push origin main)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun --no-env-file \"$CLAUDE_PROJECT_DIR/orchestrator/hooks/canon-edit-guard.ts\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun --no-env-file \"$CLAUDE_PROJECT_DIR/orchestrator/hooks/canon-edit-guard.ts\" compact",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
   }
 }
