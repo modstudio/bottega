@@ -1,4 +1,5 @@
 /** Owns local document list queries. Must not know hosted transport, canon files, or CLI. */
+import type { Database } from 'bun:sqlite'
 import { DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
 import type { DocRevisionOp } from './doc-write-allowed.ts'
@@ -89,9 +90,10 @@ function addressFilters(filters: {
 
 export function listDocsStore(
   filters: { scope?: string; subject?: string | null; owner?: string | null } = {},
+  database: Database = db(),
 ): Doc[] {
   const { where, values } = addressFilters(filters)
-  return db()
+  return database
     .query(
       `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
         "ORDER BY scope, COALESCE(subject, ''), slug",

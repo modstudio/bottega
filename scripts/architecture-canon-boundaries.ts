@@ -18,6 +18,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       `${source}canon-write-gate.ts`,
       `${source}canon-load-files.ts`,
       `${source}canon-load.ts`,
+      `${source}canon-stored-rows.ts`,
       `${source}user-canon-commands.ts`,
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/worker-launch-env.ts',

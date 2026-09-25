@@ -1,5 +1,42 @@
 import { describe, expect, test } from 'bun:test'
-import { composeCanonRows, planHydration } from './canon-hydrate.ts'
+import {
+  composeCanonRows,
+  hydrationDrift,
+  mainCheckoutHydrationRefusal,
+  planHydration,
+} from './canon-hydrate.ts'
+
+describe('hydration drift decisions', () => {
+  const plan = {
+    writes: [{ path: '.agents/rules/changed.md', body: 'stored' }],
+    links: [],
+    deletes: ['.agents/rules/removed.md', '.agents/rules/unchanged.md'],
+  }
+
+  test('a changed canon file matching the store passes', () => {
+    expect(
+      hydrationDrift({ writes: [], links: [], deletes: [] }, ['.agents/rules/changed.md']),
+    ).toEqual([])
+  })
+
+  test('a changed canon file differing from the store is named', () => {
+    expect(hydrationDrift(plan, ['.agents/rules/changed.md'])).toEqual([
+      { path: '.agents/rules/changed.md', operation: 'write' },
+    ])
+  })
+
+  test('an unchanged drifted file is ignored by a branch check', () => {
+    expect(hydrationDrift(plan, ['.agents/rules/removed.md'])).toEqual([
+      { path: '.agents/rules/removed.md', operation: 'delete' },
+    ])
+  })
+
+  test('read-only checks allow main while hydration writes refuse it', () => {
+    expect(mainCheckoutHydrationRefusal({ mainCheckout: true, check: true })).toBeFalse()
+    expect(mainCheckoutHydrationRefusal({ mainCheckout: true, check: false })).toBeTrue()
+    expect(mainCheckoutHydrationRefusal({ mainCheckout: false, check: false })).toBeFalse()
+  })
+})
 
 describe('planHydration', () => {
   test('three levels compose in order and user paths do not collide with repository paths', () => {

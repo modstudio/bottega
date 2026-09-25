@@ -29,4 +29,10 @@ export const canonLoadBoundarySpecs: ImportBoundary[] = [
     ['node:fs', 'node:path', './canon-files.ts', './canon-load.ts'],
     'Keep harness load file collection independent of stores, commands, runs, routing, and worktrees.',
   ),
+  boundary(
+    'canon-stored-rows-boundary',
+    'orchestrator/src/canon/canon-stored-rows.ts',
+    ['bun:sqlite', '../database/db.ts', '../doc/doc-read-store.ts', './canon-hydrate.ts'],
+    'Keep stored canon gathering as the single adapter between hydration decisions and document storage.',
+  ),
 ]

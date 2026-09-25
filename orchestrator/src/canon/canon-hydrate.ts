@@ -11,6 +11,30 @@ export type HydrationPlan = {
   links: { path: string; target: string }[]
   deletes: string[]
 }
+export type HydrationDrift = {
+  path: string
+  operation: 'write' | 'link' | 'delete'
+}
+
+/** Select the store/tree mismatches relevant to a caller's path set, or all mismatches. */
+export function hydrationDrift(plan: HydrationPlan, paths?: Iterable<string>): HydrationDrift[] {
+  const selected = paths ? new Set(paths) : null
+  return [
+    ...plan.writes.map(({ path }) => ({ path, operation: 'write' as const })),
+    ...plan.links.map(({ path }) => ({ path, operation: 'link' as const })),
+    ...plan.deletes.map((path) => ({ path, operation: 'delete' as const })),
+  ]
+    .filter(({ path }) => selected === null || selected.has(path))
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
+/** A read-only hydration check may inspect main; every writing hydration remains worktree-only. */
+export function mainCheckoutHydrationRefusal(input: {
+  mainCheckout: boolean
+  check: boolean
+}): boolean {
+  return input.mainCheckout && !input.check
+}
 
 /** Repository rows share a tree namespace; user rows occupy their separate Claude-home namespace. */
 export function composeCanonRows<

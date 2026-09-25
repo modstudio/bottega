@@ -23,6 +23,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import {
   age,
   askingRuns,
@@ -437,6 +438,7 @@ export async function monitor(
     })
 
   for (const project of projects()) {
+    conditions.push(...observeProjectCanonDrift(project))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
     for (const lockName of ['create', 'cleanup']) {
       try {

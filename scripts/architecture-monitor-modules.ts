@@ -25,6 +25,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-conditions.ts',
     './monitor-record-tunnel.ts',
     './monitor-harness-load.ts',
+    './monitor-canon-drift.ts',
     './monitor-notices.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
@@ -41,6 +42,13 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-harness-load.ts', [
     '../canon/canon-load.ts',
     '../canon/canon-load-files.ts',
+    '../project/projects.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-canon-drift.ts', [
+    '../canon/canon-files.ts',
+    '../canon/canon-hydrate.ts',
+    '../canon/canon-stored-rows.ts',
     '../project/projects.ts',
     './monitor-types.ts',
   ]),

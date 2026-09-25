@@ -31,7 +31,7 @@ export function isCanonPath(path: string): boolean {
   )
 }
 
-function isHydrationPath(path: string): boolean {
+export function isHydrationPath(path: string): boolean {
   return isCanonPath(path) || path === '.claude/rules' || path === '.agents/rules/contexts'
 }
 
@@ -48,6 +48,21 @@ function trackedEntries(root: string): { mode: string; path: string }[] {
       if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(entry)}`)
       return { mode: match[1]!, path: match[2]! }
     })
+}
+
+function refEntries(root: string, ref: string): { mode: string; object: string; path: string }[] {
+  return git(root, ['ls-tree', '-r', '-z', ref])
+    .split('\0')
+    .filter(Boolean)
+    .map((entry) => {
+      const match = entry.match(/^(\d+) blob ([0-9a-f]+)\t([\s\S]+)$/)
+      if (!match) throw new Error(`could not parse git ls-tree entry ${JSON.stringify(entry)}`)
+      return { mode: match[1]!, object: match[2]!, path: match[3]! }
+    })
+}
+
+function readRefBlob(root: string, object: string): string {
+  return git(root, ['cat-file', 'blob', object])
 }
 
 function readCanonFiles(
@@ -115,4 +130,20 @@ export function collectCanonLintInput(root: string): CanonLintInput {
 export function collectCanonTree(root: string): CanonFile[] {
   const entries = trackedEntries(root)
   return readCanonFiles(root, entries, isHydrationPath)
+}
+
+export type CanonTreeAtRef = { ref: string; commit: string; tree: CanonFile[] }
+
+/** Read managed canon from a committed tree, independent of the checkout's working files. */
+export function collectCanonTreeAtRef(root: string, ref: string): CanonTreeAtRef {
+  const commit = git(root, ['rev-parse', '--verify', `${ref}^{commit}`]).trim()
+  const entries = refEntries(root, ref).filter(({ path }) => isHydrationPath(path))
+  return {
+    ref,
+    commit,
+    tree: entries.map(({ mode, object, path }) => {
+      const body = readRefBlob(root, object)
+      return mode === '120000' ? { path, text: '', symlinkTarget: body } : { path, text: body }
+    }),
+  }
 }
