@@ -53,6 +53,7 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   if (argv[0] === 'migrate') return true
   if (argv[0] === 'waiting') return true
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
+  if (argv[0] === 'canon') return argv[1] === 'audit' && argv.includes('--dry-run')
   if (argv[0] === 'review') return ['coverage-audit', 'yield'].includes(argv[1] ?? '')
   return false
 }

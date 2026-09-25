@@ -81,7 +81,7 @@ remove_skipped_agent() {
 
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
-  "$HOME/Library/Logs/orch-canon-eval"
+  "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-canon-audit"
 
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
@@ -157,7 +157,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-record-sync|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-record-sync|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

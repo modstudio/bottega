@@ -12,6 +12,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       'node:path',
       'zod',
       `${source}canon.ts`,
+      `${source}canon-audit.ts`,
       `${source}canon-files.ts`,
       `${source}canon-hydrate.ts`,
       `${source}canon-lint.ts`,
@@ -32,6 +33,31 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep canon command adapters independent of runs, routing, transports, the CLI, and worktrees.',
+  },
+]
+
+const canonAuditBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-audit-decision-boundary',
+    file: `${source}canon-audit-decision.ts`,
+    allowed: [],
+    typeOnlyAllowed: ['shared/ratchet.ts'],
+    reason:
+      'Keep canon audit note identity and filing decisions pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'canon-audit-boundary',
+    file: `${source}canon-audit.ts`,
+    allowed: [
+      `${source}canon-audit-decision.ts`,
+      `${source}canon-files.ts`,
+      `${source}canon-lint.ts`,
+      'orchestrator/src/mcp/hub-notes.ts',
+      'orchestrator/src/project/projects.ts',
+    ],
+    typeOnlyAllowed: ['shared/ratchet.ts'],
+    reason:
+      'Keep the repository canon audit dependent only on canon facts, the project register, and the published note boundary.',
   },
 ]
 
@@ -105,6 +131,7 @@ const canonRemovalBoundarySpecs: ImportBoundary[] = [
 ]
 
 export const canonBoundarySpecs = [
+  ...canonAuditBoundarySpecs,
   ...canonCommandBoundarySpecs,
   ...canonRemovalBoundarySpecs,
   ...userCanonBoundarySpecs,
