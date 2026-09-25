@@ -24,6 +24,25 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('owned settings are visible only through their owner address locally', async () => {
+    const owner = '01990000-0000-7000-8000-000000000092'
+    const created = await writeDoc({
+      scope: 'settings',
+      subject: null,
+      owner,
+      slug: 'settings',
+      title: 'settings',
+      body: '{"permissions":{},"hooks":{}}\n',
+      reason: 'prove settings owner visibility',
+    })
+    expect(
+      listDocs({ scope: 'settings', subject: null }).some((row) => row.id === created.id),
+    ).toBe(false)
+    expect(listDocs({ scope: 'settings', subject: null, owner })).toContainEqual(created)
+    expect(getDoc('settings', null, 'settings')).toBeNull()
+    expect(getDoc('settings', null, 'settings', owner)?.id).toBe(created.id)
+  })
+
   test('owned canon is visible only through its owner address locally', async () => {
     const owner = '01990000-0000-7000-8000-000000000091'
     const created = await writeDoc({

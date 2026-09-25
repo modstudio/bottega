@@ -1,0 +1,453 @@
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { getDoc, setDoc } from '../doc/docs.ts'
+import { upsertProject } from '../project/projects.ts'
+import { serializeOwnedSettings } from './settings.ts'
+import { settingsImportCommand, settingsRenderCheckCommand } from './settings-commands.ts'
+
+const roots: string[] = []
+const priorHome = process.env.HOME
+afterEach(() => {
+  if (priorHome === undefined) delete process.env.HOME
+  else process.env.HOME = priorHome
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function fixtureProject(name: string) {
+  const root = mkdtempSync(join(tmpdir(), `settings-${name}-`))
+  roots.push(root)
+  process.env.HOME = root
+  mkdirSync(join(root, '.claude'), { recursive: true })
+  writeFileSync(
+    join(root, '.claude', 'settings.json'),
+    `${JSON.stringify(
+      {
+        env: { SECRET: 'no' },
+        permissions: { allow: ['Bash(orch result *)'] },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  writeFileSync(
+    join(root, '.claude', 'settings.local.json'),
+    `${JSON.stringify({ permissions: { allow: ['Bash(orch inbox*)'], ask: ['Bash(git *)'] } }, null, 2)}\n`,
+  )
+  upsertProject({
+    name,
+    path: root,
+    stack: null,
+    canon: true,
+    settings: { managedContext: true },
+  })
+  return root
+}
+
+function presentation() {
+  const logs: string[] = []
+  let code = 0
+  return {
+    logs,
+    cwd: () => '',
+    flags: (extra: Record<string, string | boolean> = {}) => {
+      const values = new Map<string, string | boolean>(Object.entries(extra))
+      return {
+        has: (name: string) => values.get(name) === true || typeof values.get(name) === 'string',
+        flag: (name: string) => {
+          const value = values.get(name)
+          return typeof value === 'string' ? value : undefined
+        },
+      }
+    },
+    port: (cwd: string) => ({
+      log: (...parts: unknown[]) => logs.push(parts.join(' ')),
+      cwd: () => cwd,
+      exitCode: (next: number) => {
+        code = next
+      },
+    }),
+    code: () => code,
+  }
+}
+
+describe('settings import', () => {
+  test('extracts only owned keys into the store', async () => {
+    const root = fixtureProject('alpha')
+    const shown = presentation()
+    await settingsImportCommand(shown.flags({ project: 'alpha', 'dry-run': true }), {
+      ...shown.port(root),
+    })
+    expect(shown.logs.join('\n')).toContain('permissions.allow: 1')
+    expect(shown.logs.join('\n')).toContain('adoption')
+    expect(shown.logs.join('\n')).toContain('Bash(orch inbox*)')
+    expect(shown.logs.join('\n')).not.toContain('SECRET')
+    expect(getDoc('settings', 'alpha', 'settings')).toBeNull()
+
+    await settingsImportCommand(shown.flags({ project: 'alpha' }), shown.port(root))
+    const stored = getDoc('settings', 'alpha', 'settings')
+    expect(stored?.body).toBe(
+      serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)'] },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+      }),
+    )
+    expect(stored?.body).not.toContain('SECRET')
+    expect(stored?.delivery).toBe('demand')
+    await expect(
+      setDoc({
+        scope: 'settings',
+        subject: 'alpha',
+        slug: 'settings',
+        title: 'settings',
+        body: JSON.stringify({ permissions: {}, hooks: {}, env: { X: '1' } }),
+        reason: 'reject extra keys',
+      }),
+    ).rejects.toThrow(/unknown or missing/)
+  })
+
+  test('bootstraps only when the store has no row', async () => {
+    const root = fixtureProject('beta')
+    await settingsImportCommand(
+      {
+        has: (name) => name === 'project',
+        flag: (name) => (name === 'project' ? 'beta' : undefined),
+      },
+      presentation().port(root),
+    )
+    const shown = presentation()
+    await settingsImportCommand(
+      {
+        has: (name) => name === 'project' || name === 'dry-run',
+        flag: (name) => (name === 'project' ? 'beta' : undefined),
+      },
+      shown.port(root),
+    )
+    expect(shown.logs.join('\n')).toContain('already exists')
+    expect(shown.code()).toBe(1)
+  })
+
+  test('refuses an unparseable file', async () => {
+    const root = fixtureProject('gamma')
+    writeFileSync(join(root, '.claude', 'settings.json'), '{')
+    await expect(
+      settingsImportCommand(
+        {
+          has: (name) => name === 'project',
+          flag: (name) => (name === 'project' ? 'gamma' : undefined),
+        },
+        presentation().port(root),
+      ),
+    ).rejects.toThrow(/cannot parse JSON/)
+  })
+
+  test('refuses a sentinel credential in a hook command and never prints it', async () => {
+    const root = fixtureProject('secret-hook')
+    const credential = ['Bearer ', 'z'.repeat(24)].join('')
+    const command = `curl -H "Authorization: ${credential}" https://example.invalid`
+    writeFileSync(
+      join(root, '.claude', 'settings.json'),
+      `${JSON.stringify(
+        {
+          permissions: { allow: ['Bash(orch result *)'] },
+          hooks: {
+            PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    const shown = presentation()
+    await expect(
+      settingsImportCommand(shown.flags({ project: 'secret-hook' }), shown.port(root)),
+    ).rejects.toThrow(/secret-shaped material at hooks\.PreToolUse\[0\]\.hooks\[0\]\.command/)
+    const output = shown.logs.join('\n')
+    expect(output).not.toContain(credential)
+    expect(output).not.toContain(command)
+    expect(getDoc('settings', 'secret-hook', 'settings')).toBeNull()
+  })
+
+  test('imports a clean hook command', async () => {
+    const root = fixtureProject('clean-hook')
+    writeFileSync(
+      join(root, '.claude', 'settings.json'),
+      `${JSON.stringify(
+        {
+          permissions: { allow: ['Bash(orch result *)'] },
+          hooks: {
+            PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'orch note' }] }],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    await settingsImportCommand(shownFlags('clean-hook'), presentation().port(root))
+    const stored = getDoc('settings', 'clean-hook', 'settings')
+    expect(stored?.body).toContain('orch note')
+    expect(stored?.body).not.toContain('SECRET')
+  })
+})
+
+describe('settings render --check', () => {
+  test('reports drift both ways', async () => {
+    const root = fixtureProject('delta')
+    await setDoc({
+      scope: 'settings',
+      subject: 'delta',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)', 'Bash(orch diff *)'] },
+        hooks: {},
+      }),
+      reason: 'seed store',
+    })
+    const shown = presentation()
+    await settingsRenderCheckCommand(
+      {
+        has: (name) => name === 'project' || name === 'check',
+        flag: (name) => (name === 'project' ? 'delta' : undefined),
+      },
+      shown.port(root),
+    )
+    const text = shown.logs.join('\n')
+    expect(text).toContain('removed allow Bash(orch diff *)')
+    expect(text).toContain('added hook PreToolUse')
+    expect(text).not.toContain('"matcher"')
+    expect(shown.code()).toBe(1)
+  })
+
+  test('a defaultMode-only difference is drift', async () => {
+    const root = fixtureProject('default-mode')
+    await setDoc({
+      scope: 'settings',
+      subject: 'default-mode',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)'], defaultMode: 'acceptEdits' },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+      }),
+      reason: 'seed store',
+    })
+    const shown = presentation()
+    await settingsRenderCheckCommand(
+      shown.flags({ project: 'default-mode', check: true }),
+      shown.port(root),
+    )
+    expect(shown.logs.join('\n')).not.toContain('drift: none')
+    expect(shown.logs.join('\n')).toContain('drift')
+    expect(shown.code()).toBe(1)
+  })
+
+  test('a file-only additionalDirectories is drift', async () => {
+    const root = fixtureProject('extra-dirs')
+    writeFileSync(
+      join(root, '.claude', 'settings.json'),
+      `${JSON.stringify(
+        {
+          permissions: {
+            allow: ['Bash(orch result *)'],
+            additionalDirectories: ['src'],
+          },
+          hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    await setDoc({
+      scope: 'settings',
+      subject: 'extra-dirs',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)'] },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+      }),
+      reason: 'seed store',
+    })
+    const shown = presentation()
+    await settingsRenderCheckCommand(
+      shown.flags({ project: 'extra-dirs', check: true }),
+      shown.port(root),
+    )
+    expect(shown.logs.join('\n')).not.toContain('drift: none')
+    expect(shown.code()).toBe(1)
+  })
+
+  test('hooks that differ only in key order are not drift', async () => {
+    const root = fixtureProject('hook-order')
+    const hook = { matcher: 'Bash', type: 'command', command: 'orch note' }
+    writeFileSync(
+      join(root, '.claude', 'settings.json'),
+      `${JSON.stringify(
+        {
+          permissions: { allow: ['Bash(orch result *)'] },
+          hooks: { PreToolUse: [hook] },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    await setDoc({
+      scope: 'settings',
+      subject: 'hook-order',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)'] },
+        hooks: { PreToolUse: [{ type: 'command', command: 'orch note', matcher: 'Bash' }] },
+      }),
+      reason: 'seed store',
+    })
+    const shown = presentation()
+    await settingsRenderCheckCommand(
+      shown.flags({ project: 'hook-order', check: true }),
+      shown.port(root),
+    )
+    expect(shown.logs.join('\n')).toContain('drift: none')
+    expect(shown.logs.join('\n')).not.toContain('orch note')
+    expect(shown.code()).toBe(0)
+  })
+
+  test('drift output fingerprints hooks and never prints commands', async () => {
+    const root = fixtureProject('hook-print')
+    const command = 'orch note'
+    writeFileSync(
+      join(root, '.claude', 'settings.json'),
+      `${JSON.stringify(
+        {
+          permissions: { allow: ['Bash(orch result *)'] },
+          hooks: {
+            PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    await setDoc({
+      scope: 'settings',
+      subject: 'hook-print',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)'] },
+        hooks: {
+          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'hub task' }] }],
+        },
+      }),
+      reason: 'seed store',
+    })
+    const shown = presentation()
+    await settingsRenderCheckCommand(
+      shown.flags({ project: 'hook-print', check: true }),
+      shown.port(root),
+    )
+    const text = shown.logs.join('\n')
+    expect(text).toMatch(/added hook PreToolUse Bash [0-9a-f]{12}/)
+    expect(text).toMatch(/removed hook SessionStart \* [0-9a-f]{12}/)
+    expect(text).not.toContain(command)
+    expect(text).not.toContain('hub task')
+    expect(shown.code()).toBe(1)
+  })
+})
+
+function shownFlags(project: string) {
+  return {
+    has: (name: string) => name === 'project',
+    flag: (name: string) => (name === 'project' ? project : undefined),
+  }
+}
+
+function urlUserinfoSentinel() {
+  return ['https://user', ':pass@', 'host.example'].join('')
+}
+
+test('setDoc refuses a sentinel before any hosted call or local row', async () => {
+  fixtureProject('setdoc-secret')
+  const captured: unknown[] = []
+  const inner = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...inner,
+    upsertDoc: async (input) => {
+      captured.push(input)
+      return inner.upsertDoc(input)
+    },
+  })
+  const sentinel = urlUserinfoSentinel()
+  await expect(
+    setDoc({
+      scope: 'settings',
+      subject: 'setdoc-secret',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({ permissions: { allow: [sentinel] }, hooks: {} }),
+      reason: 'inject sentinel',
+    }),
+  ).rejects.toThrow(/secret-shaped material at permissions\.allow\[0\]/)
+  expect(captured).toEqual([])
+  expect(getDoc('settings', 'setdoc-secret', 'settings')).toBeNull()
+})
+
+test('render drift containing a sentinel rule prints no sentinel', async () => {
+  const root = fixtureProject('drift-secret')
+  const sentinel = urlUserinfoSentinel()
+  writeFileSync(
+    join(root, '.claude', 'settings.json'),
+    `${JSON.stringify(
+      {
+        permissions: { allow: [sentinel] },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  await setDoc({
+    scope: 'settings',
+    subject: 'drift-secret',
+    slug: 'settings',
+    title: 'settings',
+    body: serializeOwnedSettings({
+      permissions: { allow: ['Bash(orch result *)'] },
+      hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+    }),
+    reason: 'seed store',
+  })
+  const shown = presentation()
+  await settingsRenderCheckCommand(
+    shown.flags({ project: 'drift-secret', check: true }),
+    shown.port(root),
+  )
+  const text = shown.logs.join('\n')
+  expect(text).toMatch(/permissions\.allow\[0\] [0-9a-f]{12} secret-shaped/)
+  expect(text).not.toContain(sentinel)
+  expect(shown.code()).toBe(1)
+})
+
+test('adoption output containing a sentinel prints no sentinel', async () => {
+  const root = fixtureProject('adopt-secret')
+  const sentinel = urlUserinfoSentinel()
+  writeFileSync(
+    join(root, '.claude', 'settings.local.json'),
+    `${JSON.stringify({ permissions: { allow: [sentinel] } }, null, 2)}\n`,
+  )
+  const shown = presentation()
+  await settingsImportCommand(shown.flags({ project: 'adopt-secret', 'dry-run': true }), {
+    ...shown.port(root),
+  })
+  const text = shown.logs.join('\n')
+  expect(text).toMatch(/permissions\.allow\[0\] [0-9a-f]{12} secret-shaped/)
+  expect(text).not.toContain(sentinel)
+  expect(getDoc('settings', 'adopt-secret', 'settings')).toBeNull()
+})

@@ -155,7 +155,7 @@ function designHeadingFindings(body: string): DocLintFinding[] {
 }
 
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
-  if (doc.scope === 'resume' || doc.scope === 'canon') return []
+  if (doc.scope === 'resume' || doc.scope === 'canon' || doc.scope === 'settings') return []
   const findings = lintProse(doc.body).map((finding) => ({
     ...finding,
     rule: `doc/${finding.rule}`,

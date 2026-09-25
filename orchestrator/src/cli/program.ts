@@ -16,6 +16,7 @@ import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
 import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
+import { register as registerSettings } from '../commands/settings.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { recordSessionSeen } from '../database/db.ts'
@@ -48,6 +49,7 @@ registerJudgment(program)
 registerRouting(program)
 registerRulings(program)
 registerLogic(program)
+registerSettings(program)
 registerSync(program)
 
 /** Verbs that only read the store must not stamp the session as seen. */
@@ -57,6 +59,10 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
   if (argv[0] === 'canon') return argv[1] === 'audit' && argv.includes('--dry-run')
   if (argv[0] === 'review') return ['coverage-audit', 'yield'].includes(argv[1] ?? '')
+  if (argv[0] === 'settings') {
+    if (argv[1] === 'render' && argv.includes('--check')) return true
+    if (argv[1] === 'import' && argv.includes('--dry-run')) return true
+  }
   return false
 }
 

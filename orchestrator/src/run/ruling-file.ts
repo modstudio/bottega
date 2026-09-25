@@ -244,6 +244,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   writableDb()
   const row = loadQuestion(input.questionId)
   const requested = requestedKind(input.as)
+  if (requested === 'doc' && (input.scope ?? 'project') !== 'canon') filingScope(input.scope)
   let authority = runMutationActor(row.run_id)
   const decision = decideFiling(row, authority, input, requested)
   const denied = refusal(row, authority, decision)
