@@ -48,6 +48,8 @@ import {
   composeWorkflow,
   getWorkflowStep,
   listWorkflows,
+  resolveWorkflowMode,
+  showWorkflow,
   workflowModeStepLists,
 } from '../workflow/workflows.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
@@ -59,6 +61,18 @@ const text = (value: unknown) => ({
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
+
+function workflowCursorMode(slug: string, requested: string | undefined, tool: string): string {
+  if (requested) return requested
+  const definition = showWorkflow(slug).definition
+  const mode = resolveWorkflowMode(definition)
+  if (mode) return mode.slug
+  throw new Error(
+    `${tool} cannot resolve a default mode for workflow "${slug}"; ` +
+      `modes: ${definition.modes.map(({ slug: modeSlug }) => modeSlug).join(', ')}; ` +
+      'pass --mode <slug>',
+  )
+}
 
 const HUB = assetPath('bin', 'hub')
 
@@ -496,13 +510,22 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
-        mode: z.string().trim().min(1),
+        mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         note: z.string().trim().min(1),
       },
     },
     async ({ slug, project, mode, args, note }) =>
-      text(nextWorkflowStep(slug, project, mode, args ?? {}, note, mcpWorkflowCursorContext())),
+      text(
+        nextWorkflowStep(
+          slug,
+          project,
+          workflowCursorMode(slug, mode, 'next_workflow_step'),
+          args ?? {},
+          note,
+          mcpWorkflowCursorContext(),
+        ),
+      ),
   )
 
   server.registerTool(
@@ -512,14 +535,21 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
-        mode: z.string().trim().min(1),
+        mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         question: z.string().trim().min(1),
       },
     },
     async ({ slug, project, mode, args, question }) =>
       text(
-        awaitWorkflowRuling(slug, project, mode, args ?? {}, question, mcpWorkflowCursorContext()),
+        awaitWorkflowRuling(
+          slug,
+          project,
+          workflowCursorMode(slug, mode, 'await_workflow_ruling'),
+          args ?? {},
+          question,
+          mcpWorkflowCursorContext(),
+        ),
       ),
   )
 

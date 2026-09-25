@@ -36,6 +36,7 @@ import {
   getWorkflowStep,
   listWorkflows,
   promoteWorkflow,
+  resolveWorkflowMode,
   retireWorkflow,
   setWorkflow,
   showWorkflow,
@@ -104,9 +105,8 @@ function cursorCommand(
 
 function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
-  const mode = flagValue(argv, 'mode')
   if (!project) throw new Error('--project is required')
-  if (!mode) throw new Error('--mode is required')
+  const mode = cursorMode(argv[2]!, flagValue(argv, 'mode'), 'abandon')
   const result = abandonWorkflowCursor(
     argv[2]!,
     project,
@@ -174,9 +174,8 @@ async function stepCommand(
 
 function nextCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
-  const mode = flagValue(argv, 'mode')
   if (!project) throw new Error('--project is required')
-  if (!mode) throw new Error('--mode is required')
+  const mode = cursorMode(argv[2]!, flagValue(argv, 'mode'), 'next')
   const result = nextWorkflowStep(
     argv[2]!,
     project,
@@ -190,9 +189,8 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
 
 function awaitCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
-  const mode = flagValue(argv, 'mode')
   if (!project) throw new Error('--project is required')
-  if (!mode) throw new Error('--mode is required')
+  const mode = cursorMode(argv[2]!, flagValue(argv, 'mode'), 'await')
   const result = awaitWorkflowRuling(
     argv[2]!,
     project,
@@ -202,6 +200,18 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     cliWorkflowCursorContext(),
   )
   print(result, `workflow ${argv[2]} is awaiting a ruling at step ${result.n} ${result.slug}`)
+}
+
+function cursorMode(slug: string, requested: string | undefined, verb: string): string {
+  if (requested) return requested
+  const definition = showWorkflow(slug).definition
+  const mode = resolveWorkflowMode(definition)
+  if (mode) return mode.slug
+  throw new Error(
+    `orch workflow ${verb} cannot resolve a default mode for workflow "${slug}"; ` +
+      `modes: ${definition.modes.map(({ slug: modeSlug }) => modeSlug).join(', ')}; ` +
+      'pass --mode <slug>',
+  )
 }
 
 function cursorsCommand(argv: string[], print: (value: unknown, line?: string) => void): void {

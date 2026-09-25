@@ -405,6 +405,15 @@ const selectedWorkflow = (slug: string, version: number | undefined, d: Database
 const selectedCatalogue = (version: number | undefined, d: Database) =>
   version === undefined ? productionStepCatalogue(d) : showStepCatalogue(version, d)
 
+export function resolveWorkflowMode(
+  definition: WorkflowDefinition,
+  modeSlug?: string,
+): WorkflowMode | undefined {
+  return modeSlug
+    ? definition.modes.find((mode) => mode.slug === modeSlug)
+    : definition.modes.find((mode) => mode.default)
+}
+
 export function workflowModeStepLists(
   slug: string,
   d: Database = db(),
@@ -444,9 +453,7 @@ export function composeWorkflow(
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d)
-  const mode = modeSlug
-    ? definition.modes.find((m) => m.slug === modeSlug)
-    : definition.modes.find((m) => m.default)
+  const mode = resolveWorkflowMode(definition, modeSlug)
   const needs: WorkflowNeeds = {}
   if (modeSlug && !mode) throw new Error(`workflow "${slug}" has no mode "${modeSlug}"`)
   if (!mode)
