@@ -5,6 +5,8 @@ import type { Measures } from './measures.ts'
 
 export type Item = {
   key: string | null
+  projectId?: string | null
+  spaceId?: string
   project: string
   title: string | null
   status: string | null
@@ -99,6 +101,7 @@ export function renderHtml(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
+  options: { details?: boolean } = {},
 ) {
   const day = new Date(g.to).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -271,7 +274,10 @@ export function renderHtml(
 
     ${measureLines.length ? `<tr><td style="padding:18px 0 0"><div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;color:${FAINT};padding-bottom:4px">measures</div>${measureLines.map((line) => `<div style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.6;color:${MUTED}">${esc(line)}</div>`).join('')}</td></tr>` : ''}
 
-    <tr><td style="padding:18px 0 0">
+    ${
+      options.details === false
+        ? ''
+        : `<tr><td style="padding:18px 0 0">
       <div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;
                   color:${FAINT};padding-bottom:2px">by project</div>
       <div class="lead" style="font-family:${SANS};font-weight:400;font-size:11px;line-height:1.5;color:${FAINT};padding-bottom:4px">
@@ -280,9 +286,10 @@ export function renderHtml(
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         ${headRow}${totalRow}${perProject}
       </table>
-    </td></tr>
+    </td></tr>`
+    }
 
-    ${g.projects.map(group).join('')}
+    ${options.details === false ? '' : g.projects.map(group).join('')}
 
     <tr><td style="padding:26px 0 0;border-top:1px solid ${RULE}">
       <div style="font-family:${SANS};font-weight:400;font-size:11px;line-height:1.6;color:${FAINT}">
@@ -346,6 +353,7 @@ export function renderText(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
+  options: { details?: boolean } = {},
 ) {
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.
@@ -362,23 +370,29 @@ export function renderText(
       `${shipped} done · ${tasks.length - shipped} in progress`,
     `the last ${g.hours} hours across ${g.projects.length} projects`,
     ...(presentation ? [presentation.windowLine, '', ...reportMeasureLines(presentation)] : []),
-    '',
-    'BY PROJECT   (task hours add up; engaged includes work carrying no ticket)',
-    `  ${'PROJECT'.padEnd(11)} ${'TASK'.padStart(6)} ${'ENGAGED'.padStart(8)}`,
-    `  ${'TOTAL'.padEnd(11)} ${(hours1(g.taskMs) + 'h').padStart(6)}` +
-      ` ${(hours1(g.engagedMs) + 'h').padStart(8)}` +
-      `  ${String(shipped).padStart(2)} done  ${String(tasks.length - shipped).padStart(2)} open`,
-    ...g.projects.map(
-      (p) =>
-        `  ${p.project.padEnd(11)} ${(hours1(p.taskMs) + 'h').padStart(6)}` +
-        ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
-        `  ${String(p.shipped).padStart(2)} done  ${String(p.moving).padStart(2)} open`,
-    ),
-    ...g.projects.flatMap((p) => [
-      '',
-      p.project.toUpperCase(),
-      ...[...p.items.filter((i) => i.closed), ...p.items.filter((i) => !i.closed)].map(line),
-      ...(p.untasked ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`] : []),
-    ]),
+    ...(options.details === false
+      ? []
+      : [
+          '',
+          'BY PROJECT   (task hours add up; engaged includes work carrying no ticket)',
+          `  ${'PROJECT'.padEnd(11)} ${'TASK'.padStart(6)} ${'ENGAGED'.padStart(8)}`,
+          `  ${'TOTAL'.padEnd(11)} ${(hours1(g.taskMs) + 'h').padStart(6)}` +
+            ` ${(hours1(g.engagedMs) + 'h').padStart(8)}` +
+            `  ${String(shipped).padStart(2)} done  ${String(tasks.length - shipped).padStart(2)} open`,
+          ...g.projects.map(
+            (p) =>
+              `  ${p.project.padEnd(11)} ${(hours1(p.taskMs) + 'h').padStart(6)}` +
+              ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
+              `  ${String(p.shipped).padStart(2)} done  ${String(p.moving).padStart(2)} open`,
+          ),
+          ...g.projects.flatMap((p) => [
+            '',
+            p.project.toUpperCase(),
+            ...[...p.items.filter((i) => i.closed), ...p.items.filter((i) => !i.closed)].map(line),
+            ...(p.untasked
+              ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`]
+              : []),
+          ]),
+        ]),
   ].join('\n')
 }

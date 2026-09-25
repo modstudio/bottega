@@ -17,7 +17,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { spaceIdentity, tenantPolicies, user } from './schema.ts'
+import { project, spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
@@ -209,13 +209,13 @@ export const hubReportSubscription = pgTable.withRLS(
   (table) => [
     check(
       'hub_report_subscription_scope_kind_check',
-      sql`${table.scopeKind} IN ('space','project','members')`,
+      sql`${table.scopeKind} IN ('space','project','members','projects')`,
     ),
     check(
       'hub_report_subscription_scope_check',
       sql`(${table.scopeKind} = 'space' AND ${table.projectName} IS NULL)
         OR (${table.scopeKind} = 'project' AND ${table.projectName} IS NOT NULL)
-        OR (${table.scopeKind} = 'members' AND ${table.projectName} IS NULL)`,
+        OR (${table.scopeKind} IN ('members','projects') AND ${table.projectName} IS NULL)`,
     ),
     check('hub_report_subscription_cadence_check', sql`${table.cadence} IN ('daily','weekly')`),
     check('hub_report_subscription_hour_check', sql`${table.hour} >= 0 AND ${table.hour} <= 23`),
@@ -246,6 +246,27 @@ export const hubReportSubscriptionMember = pgTable.withRLS(
   (table) => [
     unique('hub_report_subscription_member_unique').on(table.subscriptionId, table.userId),
     ...tenantPolicies('hub_report_subscription_member', table.spaceId),
+  ],
+)
+
+export const hubReportSubscriptionProject = pgTable.withRLS(
+  'hub_report_subscription_project',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => hubReportSubscription.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => project.id),
+    projectSpaceId: uuid('project_space_id').notNull(),
+    projectName: text('project_name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique('hub_report_subscription_project_unique').on(table.subscriptionId, table.projectId),
+    ...tenantPolicies('hub_report_subscription_project', table.spaceId),
   ],
 )
 

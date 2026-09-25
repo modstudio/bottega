@@ -20,6 +20,7 @@ const row = (patch: Partial<HostedReportRow> = {}): HostedReportRow => ({
   task_title: 'Restore the formatted report',
   task_status: 'done',
   project_color: '#654321',
+  project_id: 'project-a',
   ...patch,
 })
 
@@ -82,4 +83,18 @@ test('hosted reports group and close equal labels by task id', () => {
     { project: 'workshop', closed: false },
     { project: 'other-workshop', closed: true },
   ])
+})
+
+test('hosted reports keep same-named projects in different spaces distinct', () => {
+  const gathered = gatherHostedReport(
+    [
+      row({ task_id: 'task-a', space_id: 'space-a', project_id: 'project-a' }),
+      row({ task_id: 'task-b', space_id: 'space-b', project_id: 'project-b' }),
+    ],
+    new Set(),
+    period,
+  )
+
+  expect(gathered.projects).toHaveLength(2)
+  expect(gathered.projects.map((project) => project.project)).toEqual(['workshop', 'workshop'])
 })

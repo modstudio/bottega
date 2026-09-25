@@ -124,6 +124,25 @@ describe('hours running and agent-hours', () => {
     expect(measures.agentHours.sumMs).toBe(HOUR * 4)
     expect('shipped' in measures).toBe(false)
   })
+
+  test('projects scope selects by id, unions elapsed time, and adds agent-hours', () => {
+    const rows = {
+      intervals: [
+        interval({ source: 'orch', startAt: FROM, endAt: TO, project: 'same', projectId: 'a' }),
+        interval({ source: 'orch', startAt: FROM, endAt: TO, project: 'same', projectId: 'b' }),
+        interval({ source: 'orch', startAt: FROM, endAt: TO, project: 'same', projectId: 'c' }),
+      ],
+      events: [
+        event({ taskId: 'a-task', project: 'same', projectId: 'a' }),
+        event({ taskId: 'b-task', project: 'same', projectId: 'b' }),
+        event({ taskId: 'c-task', project: 'same', projectId: 'c' }),
+      ],
+    }
+    const measured = computeMeasures(rows, WINDOW, { kind: 'projects', projectIds: ['a', 'b'] })
+    expect(measured.hoursRunning.unionMs).toBe(HOUR * 2)
+    expect(measured.agentHours.sumMs).toBe(HOUR * 4)
+    expect('shipped' in measured && measured.shipped.count).toBe(2)
+  })
 })
 
 describe('session time', () => {

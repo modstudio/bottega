@@ -31,10 +31,15 @@ export type DeliverySubscription = {
   scopeName: string
   measures: Measures
   report: GatheredReport
+  sections?: { name: string; measures: Measures; report: GatheredReport }[]
+  exclusions?: string[]
+  unavailableReason?: string
 }
 
 export type RenderedReport = { subject: string; text: string; html: string }
 export type DeliveryStatus = 'skipped' | 'failed'
+const escapeHtml = (value: string) =>
+  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 
 export type DeliveryRepository = {
   discover(): Promise<DeliveryCandidate[]>
@@ -208,10 +213,42 @@ export function renderReport(
     windowLine: `Window: ${localWindow(period, candidate.zone)}`,
     measures: subscription.measures,
   }
-  return {
+  const base = {
     subject: `Report: ${subscription.scopeName}`,
-    text: renderText(subscription.report, new Map(), presentation),
-    html: renderHtml(subscription.report, new Map(), presentation),
+    text: renderText(subscription.report, new Map(), presentation, {
+      details: !subscription.sections?.length,
+    }),
+    html: renderHtml(subscription.report, new Map(), presentation, {
+      details: !subscription.sections?.length,
+    }),
+  }
+  if (!subscription.sections?.length) return base
+  const sectionText = subscription.sections.map(
+    (section) =>
+      `${section.name}\n${renderText(section.report, new Map(), {
+        ...presentation,
+        scopeName: section.name,
+        measures: section.measures,
+      })}`,
+  )
+  const sectionHtml = subscription.sections.map(
+    (section) =>
+      `<h2 style="font-family:sans-serif;font-size:18px">${escapeHtml(section.name)}</h2>${renderHtml(
+        section.report,
+        new Map(),
+        {
+          ...presentation,
+          scopeName: section.name,
+          measures: section.measures,
+        },
+      )
+        .replace(/^.*?<body[^>]*>/s, '')
+        .replace(/<\/body>.*$/s, '')}`,
+  )
+  return {
+    ...base,
+    text: `${base.text}\n\n${sectionText.join('\n\n')}`,
+    html: base.html.replace('</body>', `${sectionHtml.join('')} </body>`),
   }
 }
 
@@ -243,6 +280,7 @@ async function loadSubscription(
 }
 
 function skipReason(subscription: DeliverySubscription) {
+  if (subscription.unavailableReason) return subscription.unavailableReason
   if (!subscription.recipients.length) return 'subscription has no recipients'
   if (subscription.recipients.some((recipient) => recipient.userId && !recipient.isMember))
     return 'a recipient is no longer a member of this space'
@@ -259,9 +297,10 @@ async function recordSkip(
   dryRun: boolean,
 ) {
   if (dryRun) return
+  const exclusions = subscription.exclusions?.join('\n')
   await repository.recordFinal(candidate, period, {
     status: 'skipped',
-    reason,
+    reason: exclusions && !reason.includes(exclusions) ? `${reason}\n${exclusions}` : reason,
     recipients: subscription.recipients.map((recipient) => recipient.email).join(', '),
     items: subscription.report.items.length,
   })
@@ -343,34 +382,49 @@ async function dispatchReport(
   if (!intentId) return 'duplicate'
   try {
     for (const recipient of subscription.recipients) {
-      const unsubscribeUrl = recipient.unsubscribeToken
-        ? `${prepared.hostedOrigin}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
-        : null
-      await input.mail.send({
-        ...rendered,
-        text: unsubscribeUrl ? `${rendered.text}\n\nUnsubscribe: ${unsubscribeUrl}` : rendered.text,
-        html: unsubscribeUrl
-          ? rendered.html.replace(
-              '</body>',
-              `<p><a href="${unsubscribeUrl}">Unsubscribe</a></p></body>`,
-            )
-          : rendered.html,
-        to: [recipient.email],
-        headers: unsubscribeUrl
-          ? [
-              { name: 'List-Unsubscribe', value: `<${unsubscribeUrl}>` },
-              { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
-            ]
-          : undefined,
-      })
+      await sendRecipient(input.mail, candidate, recipient, rendered, prepared.hostedOrigin)
     }
-    await input.repository.recordOutcome(candidate, intentId, 'sent')
+    await input.repository.recordOutcome(
+      candidate,
+      intentId,
+      'sent',
+      subscription.exclusions?.length ? subscription.exclusions.join('\n') : undefined,
+    )
     return 'sent'
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause)
     await input.repository.recordOutcome(candidate, intentId, 'failed', reason)
     return 'failed'
   }
+}
+
+async function sendRecipient(
+  mail: ReportMailClient,
+  candidate: DeliveryCandidate,
+  recipient: DeliveryRecipient,
+  rendered: RenderedReport,
+  hostedOrigin: string | null,
+) {
+  const unsubscribeUrl = recipient.unsubscribeToken
+    ? `${hostedOrigin}/unsubscribe/${candidate.spaceId}/${recipient.unsubscribeToken}`
+    : null
+  await mail.send({
+    ...rendered,
+    text: unsubscribeUrl ? `${rendered.text}\n\nUnsubscribe: ${unsubscribeUrl}` : rendered.text,
+    html: unsubscribeUrl
+      ? rendered.html.replace(
+          '</body>',
+          `<p><a href="${unsubscribeUrl}">Unsubscribe</a></p></body>`,
+        )
+      : rendered.html,
+    to: [recipient.email],
+    headers: unsubscribeUrl
+      ? [
+          { name: 'List-Unsubscribe', value: `<${unsubscribeUrl}>` },
+          { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
+        ]
+      : undefined,
+  })
 }
 
 function requiredHostedOrigin(origin?: string) {

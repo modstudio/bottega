@@ -526,10 +526,27 @@ export async function hostedSettings(
       await tx`SELECT m.user_id,u.name,u.email,m.role FROM membership m JOIN "user" u ON u.id=m.user_id
       WHERE m.space_id=${identity.spaceId}::uuid ORDER BY lower(u.name),lower(u.email),u.id`,
     )
+    const manageableProjects = rows<{
+      id: string
+      name: string
+      space_id: string
+      space_name: string
+    }>(
+      await tx`SELECT p.id,p.name,p.space_id,s.name AS space_name
+      FROM project p JOIN space s ON s.id=p.space_id
+      JOIN membership m ON m.space_id=p.space_id AND m.user_id=${identity.userId}::uuid
+      WHERE m.role IN ('owner','admin') AND p.retired_at IS NULL
+      ORDER BY lower(s.name),lower(p.name),p.id`,
+    )
+    const personal = rows<{ personal_space_id: string | null }>(
+      await tx`SELECT personal_space_id FROM "user" WHERE id=${identity.userId}::uuid`,
+    )[0]
     return {
       allProjects: projects,
       members: members.map(({ role: _, ...member }) => member),
       callerRole: members.find((member) => member.user_id === identity.userId)?.role ?? 'member',
+      isPersonalSpace: personal?.personal_space_id === identity.spaceId,
+      manageableProjects,
       sends: sends.map((row) => ({
         ...row,
         at: iso(row.at)!,

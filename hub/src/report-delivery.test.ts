@@ -246,6 +246,41 @@ describe('hosted report delivery', () => {
     })
   })
 
+  test('a skipped report retains excluded project names and reasons', async () => {
+    const fake = fakeRepository([candidate('skip-excluded')], async () =>
+      subscription({
+        measures: measures(false),
+        exclusions: ['Other/same: subscription owner is no longer an owner or admin'],
+      }),
+    )
+    await runReportDeliveryPass({ repository: fake.repository, mail: { async send() {} }, now })
+    expect(fake.rows[0]).toMatchObject({
+      status: 'skipped',
+      reason:
+        'scope had no recorded work in this period\nOther/same: subscription owner is no longer an owner or admin',
+    })
+  })
+
+  test('a sent report records excluded project names and reasons', async () => {
+    const fake = fakeRepository([candidate('excluded')], async () =>
+      subscription({
+        exclusions: ['Other/same: subscription owner is no longer an owner or admin'],
+      }),
+    )
+    await runReportDeliveryPass({
+      repository: fake.repository,
+      mail: { async send() {} },
+      now,
+    })
+    expect(fake.rows).toEqual([
+      {
+        subscription: 'excluded',
+        status: 'sent',
+        reason: 'Other/same: subscription owner is no longer an owner or admin',
+      },
+    ])
+  })
+
   test('email recipients get an unsubscribe link and one-click headers; members do not', async () => {
     const fake = fakeRepository([candidate('11')], async () =>
       subscription({
@@ -395,6 +430,27 @@ describe('hosted report delivery', () => {
     expect(rendered.html).toContain('Silences longer than ten minutes are not counted.')
     expect(rendered.html).not.toMatch(/landed|shipped/i)
     expect(rendered.text.toLowerCase()).not.toMatch(/ranking|composite|lines per|spent|worked/)
+  })
+
+  test('projects report renders combined totals before its space sections', () => {
+    const value = candidate('projects')
+    const projectPeriod = duePeriod(value, now)!
+    const rendered = renderReport(
+      value,
+      projectPeriod,
+      subscription({
+        scope: { kind: 'projects', projectIds: ['a', 'b'] },
+        scopeName: 'Selected projects',
+        sections: [
+          { name: 'Alpha space', measures: measures(), report: gatheredReport() },
+          { name: 'Beta space', measures: measures(), report: gatheredReport() },
+        ],
+      }),
+    )
+    expect(rendered.text.indexOf('4.0h of task work')).toBeLessThan(
+      rendered.text.indexOf('Alpha space'),
+    )
+    expect(rendered.text.indexOf('Alpha space')).toBeLessThan(rendered.text.indexOf('Beta space'))
   })
 
   test('a failure after dispatch leaves the intent as failed, not clean', async () => {

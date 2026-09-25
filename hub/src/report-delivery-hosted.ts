@@ -5,8 +5,8 @@ import { hostname } from 'node:os'
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { hostedMeasures } from './hosted-measures.ts'
-import { hostedGatherReport } from './hosted-report-gather.ts'
+import { emptyHostedMeasures, hostedMeasures } from './hosted-measures.ts'
+import { gatherHostedReport, hostedGatherReport } from './hosted-report-gather.ts'
 import { withHostedTenant } from './hosted-tasks.ts'
 import type {
   DeliveryCandidate,
@@ -50,6 +50,75 @@ function identity(value: DeliveryCandidate, userId = '00000000-0000-0000-0000-00
   return { spaceId: value.spaceId, userId }
 }
 
+type SelectedProject = {
+  project_id: string
+  project_name: string | null
+  snapshot_name: string
+  space_id: string | null
+  snapshot_space_id: string
+  space_name: string | null
+  role: string | null
+  retired_at: string | Date | null
+}
+
+const projectIsAvailable = (project: SelectedProject) =>
+  Boolean(
+    project.project_name &&
+      project.space_id &&
+      project.space_name &&
+      !project.retired_at &&
+      (project.role === 'owner' || project.role === 'admin'),
+  )
+
+function projectExclusions(projects: SelectedProject[]) {
+  return projects.flatMap((project) => {
+    const name = `${project.space_name ?? project.snapshot_space_id}/${project.snapshot_name}`
+    if (!project.project_name || project.retired_at) return [`${name}: project was deleted`]
+    if (project.role !== 'owner' && project.role !== 'admin')
+      return [`${name}: subscription owner is no longer an owner or admin`]
+    return []
+  })
+}
+
+function loadedScope(
+  loaded: {
+    scope_kind: 'space' | 'project' | 'members' | 'projects'
+    project_name: string | null
+    member_ids: string[]
+  },
+  projects: SelectedProject[],
+) {
+  if (loaded.scope_kind === 'project')
+    return { kind: 'project' as const, project: loaded.project_name! }
+  if (loaded.scope_kind === 'members')
+    return { kind: 'members' as const, userIds: loaded.member_ids }
+  if (loaded.scope_kind === 'projects')
+    return { kind: 'projects' as const, projectIds: projects.map((row) => row.project_id) }
+  return { kind: 'space' as const }
+}
+
+function loadedScopeName(loaded: {
+  scope_kind: 'space' | 'project' | 'members' | 'projects'
+  project_name: string | null
+  member_names: string[]
+  space_name: string
+}) {
+  if (loaded.scope_kind === 'project') return loaded.project_name!
+  if (loaded.scope_kind === 'members') return loaded.member_names.join(', ')
+  if (loaded.scope_kind === 'projects') return 'Selected projects'
+  return loaded.space_name
+}
+
+function projectsBySpace(projects: SelectedProject[]) {
+  const groups = new Map<string, SelectedProject[]>()
+  for (const project of projects) {
+    const current = groups.get(project.space_id!) ?? []
+    current.push(project)
+    groups.set(project.space_id!, current)
+  }
+  return groups
+}
+
 export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepository {
   async function insertFinal(
     value: DeliveryCandidate,
@@ -82,28 +151,46 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
     async load(value, period, options) {
       const loaded = await withHostedTenant(databaseUrl, identity(value), async (tx) => {
         return rows<{
-          scope_kind: 'space' | 'project' | 'members'
+          scope_kind: 'space' | 'project' | 'members' | 'projects'
           project_name: string | null
           member_ids: string[]
           member_names: string[]
           space_name: string
+          owner_user_id: string | null
         }>(
-          await tx`SELECT s.scope_kind,s.project_name,sp.name AS space_name,
+          await tx`SELECT s.scope_kind,s.project_name,sp.name AS space_name,owner.id AS owner_user_id,
             COALESCE(array_agg(m.user_id ORDER BY m.created_at,m.id)
               FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_ids,
             COALESCE(array_agg(COALESCE(NULLIF(u.name,''),u.email) ORDER BY m.created_at,m.id)
               FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_names
           FROM hub_report_subscription s
           JOIN space sp ON sp.id=s.space_id
+          LEFT JOIN "user" owner ON owner.personal_space_id=s.space_id
           LEFT JOIN hub_report_subscription_member m ON m.subscription_id=s.id AND m.space_id=s.space_id
           LEFT JOIN "user" u ON u.id=m.user_id
           WHERE s.id=${value.subscriptionId}::uuid AND s.space_id=${value.spaceId}::uuid
             AND (${options?.includeDisabled ?? false} OR s.enabled=1) AND s.deleted_at IS NULL
-          GROUP BY s.id,sp.name`,
+          GROUP BY s.id,sp.name,owner.id`,
         )[0]
       })
       if (!loaded) throw new Error('report subscription is no longer enabled')
-      const recipients = await withHostedTenant(databaseUrl, identity(value), async (tx) =>
+      const ownerUserId = loaded.owner_user_id ?? identity(value).userId
+      const ownerSpaces = await withHostedTenant(
+        databaseUrl,
+        identity(value, ownerUserId),
+        async (tx) =>
+          rows<{ space_id: string }>(
+            await tx`SELECT DISTINCT project_space_id AS space_id
+              FROM hub_report_subscription_project
+              WHERE subscription_id=${value.subscriptionId}::uuid AND space_id=${value.spaceId}::uuid`,
+          ).map((row) => row.space_id),
+      )
+      const deliveryIdentity = {
+        spaceId: value.spaceId,
+        userId: ownerUserId,
+        spaceIds: ownerSpaces,
+      }
+      const recipients = await withHostedTenant(databaseUrl, deliveryIdentity, async (tx) =>
         rows<{
           user_id: string | null
           name: string
@@ -127,32 +214,77 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
           unsubscribeToken: row.unsubscribe_token,
         })),
       )
-      const scope =
-        loaded.scope_kind === 'project'
-          ? ({ kind: 'project', project: loaded.project_name! } as const)
-          : loaded.scope_kind === 'members'
-            ? ({ kind: 'members', userIds: loaded.member_ids } as const)
-            : ({ kind: 'space' } as const)
-      const scopeName =
-        loaded.scope_kind === 'project'
-          ? loaded.project_name!
-          : loaded.scope_kind === 'members'
-            ? loaded.member_names.join(', ')
-            : loaded.space_name
-      const recipientIdentity = identity(
-        value,
-        recipients.find((recipient) => recipient.userId)?.userId ?? undefined,
-      )
+      const selectedProjects =
+        loaded.scope_kind === 'projects'
+          ? await withHostedTenant(databaseUrl, deliveryIdentity, async (tx) =>
+              rows<SelectedProject>(
+                await tx`SELECT x.project_id,p.name AS project_name,x.project_name AS snapshot_name,
+                  p.space_id,x.project_space_id AS snapshot_space_id,sp.name AS space_name,
+                  m.role,p.retired_at
+                FROM hub_report_subscription_project x
+                LEFT JOIN project p ON p.id=x.project_id
+                LEFT JOIN space sp ON sp.id=x.project_space_id
+                LEFT JOIN membership m ON m.space_id=x.project_space_id AND m.user_id=${ownerUserId}::uuid
+                WHERE x.subscription_id=${value.subscriptionId}::uuid AND x.space_id=${value.spaceId}::uuid
+                ORDER BY sp.name,p.name,p.id`,
+              ),
+            )
+          : []
+      const validProjects = selectedProjects.filter(projectIsAvailable)
+      const exclusions = projectExclusions(selectedProjects)
+      const scope = loadedScope(loaded, validProjects)
+      const scopeName = loadedScopeName(loaded)
+      const recipientIdentity =
+        loaded.scope_kind === 'projects'
+          ? {
+              ...deliveryIdentity,
+              spaceIds: [...new Set(validProjects.map((project) => project.space_id!))],
+            }
+          : identity(value, recipients.find((recipient) => recipient.userId)?.userId ?? undefined)
+      if (loaded.scope_kind === 'projects' && validProjects.length === 0) {
+        return {
+          recipients,
+          scope,
+          scopeName,
+          measures: emptyHostedMeasures(period),
+          report: gatherHostedReport([], new Set(), period),
+          exclusions,
+          unavailableReason: exclusions.join('\n') || 'subscription has no chosen projects',
+        }
+      }
       const [measures, report] = await Promise.all([
         hostedMeasures(databaseUrl, recipientIdentity, period, scope),
         hostedGatherReport(databaseUrl, recipientIdentity, period, scope),
       ])
+      const sectionGroups = projectsBySpace(validProjects)
+      const sections =
+        loaded.scope_kind === 'projects'
+          ? await Promise.all(
+              [...sectionGroups.values()].map(async (projects) => {
+                const sectionScope = {
+                  kind: 'projects' as const,
+                  projectIds: projects.map((row) => row.project_id),
+                }
+                const [sectionMeasures, sectionReport] = await Promise.all([
+                  hostedMeasures(databaseUrl, recipientIdentity, period, sectionScope),
+                  hostedGatherReport(databaseUrl, recipientIdentity, period, sectionScope),
+                ])
+                return {
+                  name: projects[0]!.space_name!,
+                  measures: sectionMeasures,
+                  report: sectionReport,
+                }
+              }),
+            )
+          : undefined
       return {
         recipients,
         scope,
         scopeName,
         measures,
         report,
+        sections,
+        exclusions,
       }
     },
     async recipientsAreMembers(value, recipientUserIds) {
@@ -317,6 +449,18 @@ export async function sendHostedReportSubscriptionTest(
     const subscription = await hostedDeliveryRepository(databaseUrl).load(candidate, period, {
       includeDisabled: true,
     })
+    if (subscription.unavailableReason) {
+      await withHostedTenant(databaseUrl, caller, async (tx) => {
+        await tx`UPDATE hub_send SET status='skipped',error=${subscription.unavailableReason},
+          items=${subscription.report.items.length},at=now() WHERE id=${sendId}::uuid`
+      })
+      return {
+        id: sendId,
+        status: 'skipped' as const,
+        email: loaded.email,
+        message: subscription.unavailableReason,
+      }
+    }
     const rendered = renderReport(candidate, period, {
       ...subscription,
       recipients: [
@@ -329,11 +473,13 @@ export async function sendHostedReportSubscriptionTest(
       ],
     })
     await (options.mail ?? sesReportMailClient()).send({ ...rendered, to: [loaded.email] })
+    const exclusions = subscription.exclusions?.join('\n') || null
     await withHostedTenant(databaseUrl, caller, async (tx) => {
-      await tx`UPDATE hub_send SET status='sent',items=${subscription.report.items.length},at=now()
+      await tx`UPDATE hub_send SET status='sent',error=${exclusions},
+        items=${subscription.report.items.length},at=now()
         WHERE id=${sendId}::uuid`
     })
-    return { id: sendId, status: 'sent' as const, email: loaded.email }
+    return { id: sendId, status: 'sent' as const, email: loaded.email, message: null }
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause)
     await withHostedTenant(databaseUrl, caller, async (tx) => {

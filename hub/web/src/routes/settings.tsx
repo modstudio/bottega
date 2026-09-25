@@ -17,9 +17,10 @@ type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]
 type Member = Settings['members'][number]
 type Draft = {
-  scope: 'space' | 'project' | 'members'
+  scope: 'space' | 'project' | 'members' | 'projects'
   project: string
   memberUserIds: string[]
+  projectIds: string[]
   cadence: 'daily' | 'weekly'
   hour: number
   weekday: Weekday
@@ -32,23 +33,12 @@ type Draft = {
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
 
-function SubscriptionDialog({
-  row,
-  projects,
-  members,
-  canManageEmails,
-  onClose,
-}: {
-  row?: Subscription
-  projects: string[]
-  members: Member[]
-  canManageEmails: boolean
-  onClose: () => void
-}) {
-  const [draft, setDraft] = useState<Draft>({
+function initialDraft(row: Subscription | undefined, projects: string[]): Draft {
+  return {
     scope: row?.scope_kind ?? 'space',
     project: row?.project_name ?? projects[0] ?? '',
     memberUserIds: row?.members.map((member) => member.user_id) ?? [],
+    projectIds: row?.projects.map((project) => project.project_id) ?? [],
     cadence: row?.cadence ?? 'daily',
     hour: row?.hour ?? 9,
     weekday: row?.weekday ?? 'monday',
@@ -60,7 +50,100 @@ function SubscriptionDialog({
       row?.recipients
         .filter((recipient) => !recipient.user_id)
         .map((recipient) => recipient.email) ?? [],
-  })
+  }
+}
+
+function draftScope(draft: Draft) {
+  if (draft.scope === 'project') return { kind: 'project' as const, project: draft.project }
+  if (draft.scope === 'members') return { kind: 'members' as const, userIds: draft.memberUserIds }
+  if (draft.scope === 'projects') return { kind: 'projects' as const, projectIds: draft.projectIds }
+  return { kind: 'space' as const }
+}
+
+function ProjectsAcrossSpaces({
+  projects,
+  storedProjects,
+  selected,
+  onChange,
+}: {
+  projects: Settings['manageableProjects']
+  storedProjects: Subscription['projects']
+  selected: string[]
+  onChange: (projectIds: string[]) => void
+}) {
+  const options = [
+    ...projects.map((project) => ({ ...project, note: null as string | null })),
+    ...storedProjects
+      .filter((stored) => !projects.some((project) => project.id === stored.project_id))
+      .map((stored) => ({
+        id: stored.project_id,
+        name: stored.project_name,
+        space_id: stored.space_id,
+        space_name: stored.space_name,
+        note: stored.current_project_name
+          ? 'you are no longer an owner or admin of this space'
+          : 'project was deleted',
+      })),
+  ]
+  return (
+    <div className="grid gap-2">
+      <span className="text-sm text-text-muted">Projects across spaces</span>
+      {[...new Set(options.map((project) => project.space_name))].map((spaceName) => (
+        <div key={spaceName} className="grid gap-1">
+          <span className="text-sm">{spaceName}</span>
+          {options
+            .filter((project) => project.space_name === spaceName)
+            .map((project) => (
+              <label
+                key={project.id}
+                htmlFor={`scope-project-${project.id}`}
+                className="flex items-center gap-2 text-sm"
+              >
+                <Checkbox
+                  id={`scope-project-${project.id}`}
+                  checked={selected.includes(project.id)}
+                  onChange={(event) =>
+                    onChange(
+                      event.target.checked
+                        ? [...selected, project.id]
+                        : selected.filter((id) => id !== project.id),
+                    )
+                  }
+                />
+                {project.name}
+                {project.note ? ` (${project.note})` : ''}
+              </label>
+            ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const subscriptionCannotSave = (draft: Draft, pending: boolean) =>
+  pending ||
+  (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
+  (draft.scope === 'members' && !draft.memberUserIds.length) ||
+  (draft.scope === 'projects' && !draft.projectIds.length)
+
+function SubscriptionDialog({
+  row,
+  projects,
+  members,
+  manageableProjects,
+  isPersonalSpace,
+  canManageEmails,
+  onClose,
+}: {
+  row?: Subscription
+  projects: string[]
+  members: Member[]
+  manageableProjects: Settings['manageableProjects']
+  isPersonalSpace: boolean
+  canManageEmails: boolean
+  onClose: () => void
+}) {
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, projects))
   const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
@@ -88,7 +171,7 @@ function SubscriptionDialog({
   const sendTest = useMutation({
     ...trpc.record.sendReportSubscriptionTest.mutationOptions(),
     onSuccess: (result) => {
-      setTestMessage(`Test sent to ${result.email}`)
+      setTestMessage(result.message ?? `Test sent to ${result.email}`)
       void refresh()
     },
     onError: (error) => setTestMessage(error.message),
@@ -102,15 +185,9 @@ function SubscriptionDialog({
       zone: draft.zone,
       enabled: draft.enabled,
     }
-    const scope =
-      draft.scope === 'project'
-        ? ({ kind: 'project', project: draft.project } as const)
-        : draft.scope === 'members'
-          ? ({ kind: 'members', userIds: draft.memberUserIds } as const)
-          : ({ kind: 'space' } as const)
     const input = {
       ...cadence,
-      scope,
+      scope: draftScope(draft),
       recipientUserIds: draft.recipientUserIds,
       recipientEmails: draft.recipientEmails,
     }
@@ -161,11 +238,7 @@ function SubscriptionDialog({
             </Button>
             <Button
               variant="primary"
-              disabled={
-                pending ||
-                (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
-                (draft.scope === 'members' && !draft.memberUserIds.length)
-              }
+              disabled={subscriptionCannotSave(draft, pending)}
               onClick={save}
             >
               {row ? 'Save changes' : 'Create subscription'}
@@ -183,6 +256,7 @@ function SubscriptionDialog({
             { value: 'space', label: 'Space' },
             { value: 'project', label: 'Project' },
             { value: 'members', label: 'Members' },
+            ...(isPersonalSpace ? [{ value: 'projects', label: 'Projects across spaces' }] : []),
           ]}
           onChange={(scope) => change({ scope: scope as Draft['scope'] })}
         />
@@ -201,6 +275,14 @@ function SubscriptionDialog({
             members={members}
             selected={draft.memberUserIds}
             onChange={(memberUserIds) => change({ memberUserIds })}
+          />
+        ) : null}
+        {draft.scope === 'projects' ? (
+          <ProjectsAcrossSpaces
+            projects={manageableProjects}
+            storedProjects={row?.projects ?? []}
+            selected={draft.projectIds}
+            onChange={(projectIds) => change({ projectIds })}
           />
         ) : null}
         <MemberChecks
@@ -377,7 +459,9 @@ export function SettingsPage() {
                         ? `Project: ${row.project_name}`
                         : row.scope_kind === 'members'
                           ? `Members: ${row.members.map((member) => member.name).join(', ')}`
-                          : 'Space'}
+                          : row.scope_kind === 'projects'
+                            ? `Projects: ${row.projects.map((project) => `${project.space_name}/${project.project_name}`).join(', ')}`
+                            : 'Space'}
                     </TableCell>
                     <TableCell muted>
                       {row.cadence === 'weekly'
@@ -410,6 +494,8 @@ export function SettingsPage() {
               row={editing}
               projects={data.allProjects}
               members={data.members}
+              manageableProjects={data.manageableProjects}
+              isPersonalSpace={data.isPersonalSpace}
               canManageEmails={data.callerRole === 'owner' || data.callerRole === 'admin'}
               onClose={() => {
                 setCreating(false)
