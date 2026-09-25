@@ -751,8 +751,8 @@
   {
     "file": "orchestrator/src/workflow/workflows.ts",
     "function": "validateWorkflowDefinition",
-    "line": 45,
-    "score": 62,
+    "line": 113,
+    "score": 54,
     "key": "orchestrator/src/workflow/workflows.ts\u0000validateWorkflowDefinition"
   },
   {
