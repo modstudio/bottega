@@ -1,6 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
@@ -48,6 +49,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   ...retrievalModules,
   ...operatorWaitingModules,
+  ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/install-root.ts',

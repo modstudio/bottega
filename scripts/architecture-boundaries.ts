@@ -1,4 +1,5 @@
 import { dirname, normalize } from 'node:path'
+import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
@@ -38,6 +39,9 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
+  ...branchStoreModuleSpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
+  ),
   boundary(
     'code-commands-boundary',
     'orchestrator/src/code/code-commands.ts',

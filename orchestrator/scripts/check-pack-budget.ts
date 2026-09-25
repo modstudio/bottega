@@ -1,16 +1,18 @@
-import { Database } from 'bun:sqlite'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CanonBudgetError, compilePack } from '../src/canon/canon.ts'
 import { DEFAULT_PACK_BYTES } from '../src/canon/pack-budget.ts'
-import { DATABASE_RESOLUTION } from '../src/database/database-location.ts'
-import { applyMigrations, migrationRefusal } from '../src/database/migrations.ts'
+import { migrationRefusal } from '../src/database/migrations.ts'
 import { JOBS } from '../src/jobs/jobs.ts'
 import { projects } from '../src/project/projects.ts'
 import { registerStandardHooks } from '../src/runtime/store-hooks.ts'
+import {
+  classifyStore,
+  liveStorePath,
+  migrateStore,
+  mintFixtureStore,
+  snapshotStore,
+  withBranchStoreScratch,
+} from './branch-store.ts'
 
 registerStandardHooks()
 
@@ -43,65 +45,6 @@ function report(failures: string[]): never {
   process.exit(0)
 }
 
-function liveStorePath(): string | null {
-  if (process.env.ORCH_DB) return existsSync(process.env.ORCH_DB) ? process.env.ORCH_DB : null
-  for (const path of [DATABASE_RESOLUTION.mainStorePath, DATABASE_RESOLUTION.path]) {
-    if (path && existsSync(path)) return path
-  }
-  return null
-}
-
-function storeKind(path: string): 'ok' | 'behind' | 'ahead' {
-  const d = new Database(path, { readonly: true })
-  try {
-    d.exec('PRAGMA busy_timeout = 15000')
-    const refused = migrationRefusal(d)
-    if (!refused) return 'ok'
-    return refused.includes('ahead of this binary') ? 'ahead' : 'behind'
-  } finally {
-    d.close()
-  }
-}
-
-function scratchDir(): string {
-  const base = process.env.ORCH_SCRATCH
-    ? join(process.env.ORCH_SCRATCH, 'pack-budget')
-    : join(tmpdir(), 'orch-pack-budget')
-  mkdirSync(base, { recursive: true })
-  return mkdtempSync(join(base, 'copy-'))
-}
-
-function copyStore(src: string, destDir: string): string {
-  const dest = join(destDir, FROZEN_STATE_NAMES.orchestratorDatabase)
-  copyFileSync(src, dest)
-  for (const side of ['-wal', '-shm'] as const) {
-    if (existsSync(`${src}${side}`)) copyFileSync(`${src}${side}`, `${dest}${side}`)
-  }
-  return dest
-}
-
-function migrateCopy(path: string): void {
-  const d = new Database(path)
-  try {
-    d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-    applyMigrations(d)
-  } finally {
-    d.close()
-  }
-}
-
-function mintFixtureStore(destDir: string): string {
-  const path = join(destDir, FROZEN_STATE_NAMES.orchestratorDatabase)
-  const d = new Database(path, { create: true })
-  try {
-    d.exec('PRAGMA foreign_keys = ON;')
-    applyMigrations(d)
-  } finally {
-    d.close()
-  }
-  return path
-}
-
 function runReady(store: string): number {
   const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url)], {
     env: { ...process.env, ORCH_DB: store, [READY]: '1' },
@@ -111,21 +54,12 @@ function runReady(store: string): number {
   return child.exitCode ?? 1
 }
 
-function withScratch<T>(fn: (dir: string) => T): T {
-  const dir = scratchDir()
-  try {
-    return fn(dir)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
-
 if (import.meta.main) {
   if (process.env[READY] === '1') report(checkPackBudget())
 
   const live = liveStorePath()
   if (!live) {
-    const code = withScratch((dir) => {
+    const code = withBranchStoreScratch('pack-budget', (dir) => {
       const minted = mintFixtureStore(dir)
       console.log('canon pack budget: no live store; checking fixture-minted store')
       return runReady(minted)
@@ -133,8 +67,9 @@ if (import.meta.main) {
     process.exit(code)
   }
 
-  const kind = storeKind(live)
+  const kind = classifyStore(live)
   if (kind === 'ahead') {
+    const { Database } = await import('bun:sqlite')
     const d = new Database(live, { readonly: true })
     try {
       console.error(migrationRefusal(d))
@@ -143,16 +78,18 @@ if (import.meta.main) {
     }
     process.exit(1)
   }
-  if (kind === 'ok') {
+  if (kind === 'current') {
     console.log('canon pack budget: reading live store in place (read-only)')
     report(checkPackBudget())
   }
 
-  const code = withScratch((dir) => {
-    const copy = copyStore(live, dir)
-    migrateCopy(copy)
-    console.log('canon pack budget: copied live store, migrated the copy, checking packs there')
-    return runReady(copy)
+  const code = withBranchStoreScratch('pack-budget', (dir) => {
+    const snapshot = snapshotStore(live, dir)
+    migrateStore(snapshot)
+    console.log(
+      'canon pack budget: snapshotted live store, migrated the snapshot, checking packs there',
+    )
+    return runReady(snapshot)
   })
   process.exit(code)
 }

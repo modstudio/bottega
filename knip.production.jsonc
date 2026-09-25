@@ -68,6 +68,7 @@
         "scripts/acp-parity.ts!",
         "scripts/check-canon-lint.ts!",
         "scripts/check-pack-budget.ts!",
+        "scripts/check-projects.ts!",
         "scripts/import-postgres-projects.ts!",
         "scripts/test-postgres-rls.ts!"
       ],
