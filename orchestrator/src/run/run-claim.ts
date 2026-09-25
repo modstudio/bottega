@@ -381,113 +381,100 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   // A reserved row is FILLED IN, not inserted: the id is already in the
   // caller's hands and printed, so allocating a second one here would hand back
   // an id that never finishes.
+  const updateReservedRun = () =>
+    db()
+      .query(
+        `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
+                        prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
+                        route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
+                        launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
+                        automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
+          WHERE id=? RETURNING id`,
+      )
+      .get(
+        recordId,
+        nowIso(),
+        name,
+        opts.job,
+        runProjectName,
+        runProjectId,
+        claimedCwd,
+        sha(prompt),
+        sha(originalPrompt),
+        Buffer.byteLength(prompt),
+        head,
+        opts.label ?? null,
+        opts.probe ? 1 : 0,
+        opts.retryOf ?? null,
+        reason,
+        claimedBranch,
+        opts.resume?.parent ?? null,
+        opts.resume ? opts.resume.turn : 1,
+        vendorSession,
+        pack?.docs.length ?? 0,
+        pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
+        pack?.sha256 ?? null,
+        launchCwd,
+        launchSeed,
+        launchKey,
+        taskRecordId,
+        launchBase,
+        noFailover ? 1 : 0,
+        opts.automaticFailover ? 1 : 0,
+        opts.review ?? null,
+        process.pid,
+        storedMcpRequest(mcpRequest),
+        transportName,
+        opts.reserveId!,
+      ) as { id: number }
+  const insertClaimedRun = () =>
+    db()
+      .query(
+        `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+                          launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
+                          automatic_failover, review_ref, pid, mcp, transport, started_by_user_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      )
+      .get(
+        recordId,
+        nowIso(),
+        name,
+        opts.job,
+        runProjectName,
+        runProjectId,
+        claimedCwd,
+        sha(prompt),
+        sha(originalPrompt),
+        Buffer.byteLength(prompt),
+        head,
+        opts.label ?? null,
+        // A resumed turn inherits the owning session rather than taking the one that answered.
+        opts.resume ? opts.resume.sessionId : (opts.ownerSession ?? sessionId()),
+        opts.probe ? 1 : 0,
+        opts.retryOf ?? null,
+        reason,
+        claimedBranch,
+        opts.resume?.parent ?? null,
+        opts.resume ? opts.resume.turn : 1,
+        vendorSession,
+        pack?.docs.length ?? 0,
+        pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
+        pack?.sha256 ?? null,
+        launchCwd,
+        launchSeed,
+        launchKey,
+        taskRecordId,
+        launchBase,
+        noFailover ? 1 : 0,
+        opts.automaticFailover ? 1 : 0,
+        opts.review ?? null,
+        process.pid,
+        storedMcpRequest(mcpRequest),
+        transportName,
+        startedByUserId,
+      ) as { id: number }
   const claim = writeTransaction(() => {
-    const claimed = opts.reserveId
-      ? (db()
-          .query(
-            // parent_run_id and turn are set HERE TOO, not only on the INSERT.
-            //
-            // A DETACHED resume claims its row through this path, and without these
-            // two columns it came back as a fresh root: the chain silently forked,
-            // `orch answer` on the original found the wrong latest turn, and the
-            // roll-up wrote its outcome nowhere. The two claim paths must agree on
-            // every column that means something, and these mean the most.
-            `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
-                          prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
-                          route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
-                          launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
-                          automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
-            WHERE id=? RETURNING id`,
-          )
-          .get(
-            recordId,
-            nowIso(),
-            name,
-            opts.job,
-            runProjectName,
-            runProjectId,
-            claimedCwd,
-            sha(prompt),
-            sha(originalPrompt),
-            Buffer.byteLength(prompt),
-            head,
-            opts.label ?? null,
-            opts.probe ? 1 : 0,
-            opts.retryOf ?? null,
-            reason,
-            claimedBranch,
-            opts.resume?.parent ?? null,
-            opts.resume ? opts.resume.turn : 1,
-            // Known before spawn: minted (grok) or inherited on resume. A SIGKILL
-            // or an exec.ts bootstrap failure never reaches the finally that used
-            // to be the only write, and continue then refused a chain whose parent
-            // already knew the id.
-            vendorSession,
-            pack?.docs.length ?? 0,
-            pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
-            pack?.sha256 ?? null,
-            launchCwd,
-            launchSeed,
-            launchKey,
-            taskRecordId,
-            launchBase,
-            noFailover ? 1 : 0,
-            opts.automaticFailover ? 1 : 0,
-            opts.review ?? null,
-            process.pid,
-            storedMcpRequest(mcpRequest),
-            transportName,
-            opts.reserveId,
-          ) as { id: number })
-      : (db()
-          .query(
-            `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
-                            launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
-                            automatic_failover, review_ref, pid, mcp, transport, started_by_user_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-          )
-          .get(
-            recordId,
-            nowIso(),
-            name,
-            opts.job,
-            runProjectName,
-            runProjectId,
-            claimedCwd,
-            sha(prompt),
-            sha(originalPrompt),
-            Buffer.byteLength(prompt),
-            head,
-            opts.label ?? null,
-            // A resumed turn INHERITS the owning session rather than taking the
-            // one that answered. The chain is one unit of work and one thing to
-            // judge, and letting a second session adopt it by answering a question
-            // would be the ownership rule leaking through a new door — the same
-            // door `--detach` had to be stopped from opening.
-            opts.resume ? opts.resume.sessionId : (opts.ownerSession ?? sessionId()),
-            opts.probe ? 1 : 0,
-            opts.retryOf ?? null,
-            reason,
-            claimedBranch,
-            opts.resume?.parent ?? null,
-            opts.resume ? opts.resume.turn : 1,
-            vendorSession,
-            pack?.docs.length ?? 0,
-            pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
-            pack?.sha256 ?? null,
-            launchCwd,
-            launchSeed,
-            launchKey,
-            taskRecordId,
-            launchBase,
-            noFailover ? 1 : 0,
-            opts.automaticFailover ? 1 : 0,
-            opts.review ?? null,
-            process.pid,
-            storedMcpRequest(mcpRequest),
-            transportName,
-            startedByUserId,
-          ) as { id: number })
+    const claimed = opts.reserveId ? updateReservedRun() : insertClaimedRun()
 
     /**
      * A child that asked has finished that turn once its successor exists.

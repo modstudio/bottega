@@ -65,6 +65,19 @@ function presentHeader(header: string | null): string[] {
   return header ? [header] : []
 }
 
+function presentOverturn(
+  question: {
+    overturned_at: string | null
+    overturn_reason: string | null
+    replacement: string | null
+  },
+  log: (...values: unknown[]) => void,
+): void {
+  if (!question.overturned_at) return
+  log(`        overturned: ${question.overturn_reason}`)
+  if (question.replacement) log(`        replacement: ${question.replacement}`)
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -290,10 +303,7 @@ export async function runInboxCommand(
         `${status} (terminal)`,
     )
     log(`  [q${q.id}] ${q.question}`)
-    if (q.overturned_at) {
-      log(`        overturned: ${q.overturn_reason}`)
-      if (q.replacement) log(`        replacement: ${q.replacement}`)
-    }
+    presentOverturn(q, log)
   }
   return
 }

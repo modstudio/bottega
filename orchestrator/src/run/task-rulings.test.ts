@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { renderTaskRulings, selectTaskRulings, type TaskRulingRow } from './task-rulings.ts'
 
 const row = (overrides: Partial<TaskRulingRow> = {}): TaskRulingRow => ({
   question_id: 1,
   run_id: 10,
-  project: 'bottega',
+  project: PLATFORM_SLUG,
   launch_key: 'DEV-960',
   question: 'Which way?',
   answer: 'Use the settled way.',
@@ -24,7 +25,7 @@ describe('task ruling carry', () => {
         row({ question_id: 3, launch_key: 'DEV-OTHER' }),
         row({ question_id: 4, project: 'other' }),
       ],
-      'bottega',
+      PLATFORM_SLUG,
       'DEV-960',
     )
     expect(selected.rulings.map((ruling) => ruling.questionId)).toEqual([2, 1])
@@ -41,7 +42,7 @@ describe('task ruling carry', () => {
           replacement: 'Use the replacement.',
         }),
       ],
-      'bottega',
+      PLATFORM_SLUG,
       'DEV-960',
     )
     expect(selected.rulings).toHaveLength(1)
@@ -58,7 +59,7 @@ describe('task ruling carry', () => {
         row({ question_id: 2, answered_at: '2026-09-21T12:00:00.000Z' }),
         row({ question_id: 3, answered_at: '2026-09-22T12:00:00.000Z' }),
       ],
-      'bottega',
+      PLATFORM_SLUG,
       'DEV-960',
       { count: 2 },
     )
@@ -71,15 +72,15 @@ describe('task ruling carry', () => {
       row({ question_id: 1, answered_at: '2026-09-20T12:00:00.000Z' }),
       row({ question_id: 2, answered_at: '2026-09-21T12:00:00.000Z' }),
     ]
-    const one = selectTaskRulings(rows.slice(1), 'bottega', 'DEV-960')
+    const one = selectTaskRulings(rows.slice(1), PLATFORM_SLUG, 'DEV-960')
     const bytes = Buffer.byteLength(renderTaskRulings(one), 'utf8') + 30
-    const selected = selectTaskRulings(rows, 'bottega', 'DEV-960', { bytes })
+    const selected = selectTaskRulings(rows, PLATFORM_SLUG, 'DEV-960', { bytes })
     expect(selected.rulings.map((ruling) => ruling.questionId)).toEqual([2])
     expect(Buffer.byteLength(renderTaskRulings(selected), 'utf8')).toBeLessThanOrEqual(bytes)
     expect(selected.omitted).toBe(1)
   })
 
   test('renders no section when there are no rulings', () => {
-    expect(renderTaskRulings(selectTaskRulings([], 'bottega', 'DEV-960'))).toBe('')
+    expect(renderTaskRulings(selectTaskRulings([], PLATFORM_SLUG, 'DEV-960'))).toBe('')
   })
 })

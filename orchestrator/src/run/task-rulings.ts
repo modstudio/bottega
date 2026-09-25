@@ -3,8 +3,8 @@
 
 import type { AnswererKind } from './question-vocabulary.ts'
 
-export const TASK_RULINGS_MAX_COUNT = 20
-export const TASK_RULINGS_MAX_BYTES = 8192
+const TASK_RULINGS_MAX_COUNT = 20
+const TASK_RULINGS_MAX_BYTES = 8192
 
 export type TaskRulingRow = {
   question_id: number
@@ -19,7 +19,7 @@ export type TaskRulingRow = {
   replacement: string | null
 }
 
-export type CarriedTaskRuling = {
+type CarriedTaskRuling = {
   questionId: number
   runId: number
   question: string

@@ -114,6 +114,7 @@ import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
+  initialDispatchPrompt,
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
@@ -121,7 +122,8 @@ import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
-import { renderTaskRulings, selectTaskRulings, type TaskRulingRow } from './task-rulings.ts'
+import { renderTaskRulings } from './task-rulings.ts'
+import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
   if (reserveId !== undefined) return null
@@ -495,48 +497,27 @@ export async function run(opts: {
   }
   const docsSection = operatorKnowledgeSection(pack ?? null)
   const dispatchKey = writesJob ? (opts.key ?? null) : (opts.key ?? inferredReadOnlyKey(callerCwd))
-  const carriedRulings =
-    !opts.resume && dispatchKey && runProjectName
-      ? selectTaskRulings(
-          db()
-            .query(
-              `SELECT q.id question_id, root.id run_id, root.repo project,
-                      root.launch_key, q.question, q.answer, q.answered_at,
-                      q.answerer_kind, q.overturned_at, q.replacement
-                 FROM question q
-                 JOIN run owner ON owner.id=q.run_id
-                 JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-                WHERE q.answered_at IS NOT NULL`,
-            )
-            .all() as TaskRulingRow[],
-          runProjectName,
-          dispatchKey,
-        )
-      : { rulings: [], omitted: 0 }
+  const carriedRulings = taskRulingsForDispatch({
+    resume: Boolean(opts.resume),
+    project: runProjectName,
+    launchKey: dispatchKey,
+  })
   const rulingsSection = renderTaskRulings(carriedRulings)
   let prompt =
-    writesJob && (!opts.resume || opts.resume.fresh)
-      ? [
-          workerPreamble(opts.job),
-          infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
-          docsSection ? `\n${docsSection}` : '',
-          rulingsSection ? `\n${rulingsSection}` : '',
-          `\n---\n\nTHE SPEC\n\n${originalPrompt}`,
-        ]
-          .filter(Boolean)
-          .join('\n')
-      : // A read-only worker gets a much shorter brief, and only on a first turn.
-        opts.resume && !opts.resume.fresh
-        ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
-        : [
-            repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
-            infra ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
-            docsSection,
-            rulingsSection,
-            `---\n\nTHE SPEC\n\n${originalPrompt}`,
-          ]
-            .filter(Boolean)
-            .join('\n\n')
+    opts.resume && !opts.resume.fresh
+      ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
+      : initialDispatchPrompt({
+          writesJob,
+          preamble: writesJob
+            ? workerPreamble(opts.job)
+            : repoJob
+              ? READONLY_PREAMBLE
+              : NO_REPO_PREAMBLE,
+          infrastructure: infra,
+          operatorKnowledge: docsSection,
+          taskRulings: rulingsSection,
+          spec: originalPrompt,
+        })
 
   prompt = bindReviewInstructions({
     prompt,

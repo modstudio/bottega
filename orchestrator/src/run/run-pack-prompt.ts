@@ -6,6 +6,36 @@ export function operatorKnowledgeSection(pack: { markdown: string } | null): str
   return pack?.markdown ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}` : ''
 }
 
+export function initialDispatchPrompt(input: {
+  writesJob: boolean
+  preamble: string
+  infrastructure: string
+  operatorKnowledge: string
+  taskRulings: string
+  spec: string
+}): string {
+  if (input.writesJob) {
+    return [
+      input.preamble,
+      input.infrastructure ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${input.infrastructure}` : '',
+      input.operatorKnowledge ? `\n${input.operatorKnowledge}` : '',
+      input.taskRulings ? `\n${input.taskRulings}` : '',
+      `\n---\n\nTHE SPEC\n\n${input.spec}`,
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+  return [
+    input.preamble,
+    input.infrastructure ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${input.infrastructure}` : '',
+    input.operatorKnowledge,
+    input.taskRulings,
+    `---\n\nTHE SPEC\n\n${input.spec}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 export function checksReviewedCommit(findings: boolean, readsRepo: boolean): boolean {
   return findings && readsRepo
 }
