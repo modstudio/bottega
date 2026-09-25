@@ -9,7 +9,11 @@ import {
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { serializeOwnedSettings } from './settings.ts'
-import { settingsImportCommand, settingsRenderCheckCommand } from './settings-commands.ts'
+import {
+  settingsImportCommand,
+  settingsPermissionCommand,
+  settingsRenderCheckCommand,
+} from './settings-commands.ts'
 
 const roots: string[] = []
 const priorHome = process.env.HOME
@@ -197,6 +201,36 @@ describe('settings import', () => {
 })
 
 describe('settings render --check', () => {
+  test('json output redacts hook command text behind its fingerprint', async () => {
+    const root = fixtureProject('json-redaction')
+    const sentinel = 'DO_NOT_PRINT_THIS_HOOK_COMMAND'
+    await setDoc({
+      scope: 'settings',
+      subject: 'json-redaction',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch result *)'] },
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: sentinel }] }],
+        },
+      }),
+      reason: 'seed json redaction',
+    })
+    const shown = presentation()
+    await settingsRenderCheckCommand(
+      shown.flags({ project: 'json-redaction', check: true, json: true }),
+      shown.port(root),
+    )
+    const output = shown.logs.join('\n')
+    const parsed = JSON.parse(output)
+    expect(output).not.toContain(sentinel)
+    expect(parsed.settings.hooks[0]).toEqual(
+      expect.objectContaining({ event: 'PreToolUse', matcher: 'Bash' }),
+    )
+    expect(parsed.settings.hooks[0].fingerprint).toMatch(/^[0-9a-f]{12}$/)
+  })
+
   test('reports drift both ways', async () => {
     const root = fixtureProject('delta')
     await setDoc({
@@ -451,4 +485,105 @@ test('adoption output containing a sentinel prints no sentinel', async () => {
   expect(text).toMatch(/permissions\.allow\[0\] [0-9a-f]{12} secret-shaped/)
   expect(text).not.toContain(sentinel)
   expect(getDoc('settings', 'adopt-secret', 'settings')).toBeNull()
+})
+
+describe('settings permission', () => {
+  test('refuses unknown and unmanaged projects', async () => {
+    const shown = presentation()
+    await expect(
+      settingsPermissionCommand(
+        shown.flags({
+          project: 'missing',
+          list: 'allow',
+          rule: 'Bash(orch *)',
+          expect: 'revision-1',
+        }),
+        'add',
+      ),
+    ).rejects.toThrow('unknown project "missing"')
+
+    const root = fixtureProject('unmanaged-permissions')
+    upsertProject({
+      name: 'unmanaged-permissions',
+      path: root,
+      stack: null,
+      canon: true,
+      settings: { managedContext: false },
+    })
+    await expect(
+      settingsPermissionCommand(
+        shown.flags({
+          project: 'unmanaged-permissions',
+          list: 'allow',
+          rule: 'Bash(orch *)',
+          expect: 'revision-1',
+        }),
+        'add',
+      ),
+    ).rejects.toThrow('does not have managedContext on')
+  })
+
+  test('requires a revision and refuses remove when the row is missing', async () => {
+    const root = fixtureProject('permission-missing')
+    const shown = presentation()
+    await expect(
+      settingsPermissionCommand(
+        shown.flags({ project: 'permission-missing', list: 'allow', rule: 'Bash(orch *)' }),
+        'add',
+      ),
+    ).rejects.toThrow('--expect is required')
+    await expect(
+      settingsPermissionCommand(
+        shown.flags({
+          project: 'permission-missing',
+          list: 'allow',
+          rule: 'Bash(orch *)',
+          expect: 'revision-1',
+        }),
+        'remove',
+      ),
+    ).rejects.toThrow('no settings row for permission-missing')
+    expect(getDoc('settings', 'permission-missing', 'settings')).toBeNull()
+    expect(root).toBeTruthy()
+  })
+
+  test('add is idempotent and an absent remove writes no revision', async () => {
+    fixtureProject('permission-idempotent')
+    const seeded = await setDoc({
+      scope: 'settings',
+      subject: 'permission-idempotent',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(orch *)'] },
+        hooks: {},
+      }),
+      delivery: 'demand',
+      reason: 'seed settings',
+    })
+    const shown = presentation()
+    const input = {
+      project: 'permission-idempotent',
+      list: 'allow',
+      rule: 'Bash(orch *)',
+      expect: seeded.revision!,
+    }
+    const duplicate = await settingsPermissionCommand(shown.flags(input), 'add')
+    expect(duplicate).toMatchObject({ changed: false, message: 'already present' })
+    expect(getDoc('settings', 'permission-idempotent', 'settings')?.revision).toBe(seeded.revision)
+
+    const absent = await settingsPermissionCommand(
+      shown.flags({ ...input, rule: 'Bash(git *)' }),
+      'remove',
+    )
+    expect(absent).toMatchObject({ changed: false, message: 'rule is absent' })
+    expect(getDoc('settings', 'permission-idempotent', 'settings')?.revision).toBe(seeded.revision)
+
+    const added = await settingsPermissionCommand(
+      shown.flags({ ...input, rule: 'Bash(git *)', reason: 'allow git' }),
+      'add',
+    )
+    expect(added).toMatchObject({ changed: true, counts: { allow: 2, ask: 0, deny: 0 } })
+    expect(added.revision).not.toBe(seeded.revision)
+  })
 })

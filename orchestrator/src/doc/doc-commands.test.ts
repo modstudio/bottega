@@ -17,7 +17,12 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from '../review/review-commands.ts'
-import { docCommand, formatDocSearchRefresh, validateUserAddress } from './doc-commands.ts'
+import {
+  docCommand,
+  formatDocSearchRefresh,
+  userAddressScope,
+  validateUserAddress,
+} from './doc-commands.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,
@@ -34,6 +39,12 @@ const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() 
 test('user document addressing refuses a subject', () => {
   expect(() => validateUserAddress(true, true)).toThrow('--user cannot be used with --subject')
   expect(() => validateUserAddress(true, false)).not.toThrow()
+})
+
+test('explicit settings user addressing preserves settings while bare user means canon', () => {
+  expect(userAddressScope(true, undefined)).toBe('canon')
+  expect(userAddressScope(true, 'settings')).toBe('settings')
+  expect(userAddressScope(false, 'project')).toBe('project')
 })
 
 test('orch doc search human output reports stale refresh work', () => {

@@ -7,7 +7,11 @@ import {
   settingsRenderWriteCommand,
   settingsRestoreCommand,
 } from '../settings/settings-apply-commands.ts'
-import { settingsImportCommand, settingsRenderCheckCommand } from '../settings/settings-commands.ts'
+import {
+  settingsImportCommand,
+  settingsPermissionCommand,
+  settingsRenderCheckCommand,
+} from '../settings/settings-commands.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -41,6 +45,23 @@ export function register(program: Command): void {
         },
       })
     })
+  const permission = settings.command('permission')
+  for (const operation of ['add', 'remove'] as const) {
+    permission
+      .command(operation)
+      .option('--user')
+      .option('--project <name>')
+      .requiredOption('--list <name>')
+      .requiredOption('--rule <rule>')
+      .requiredOption('--expect <revision>')
+      .option('--reason <text>')
+      .option('--json')
+      .action(async (options) => {
+        const result = await settingsPermissionCommand(optionFlags(options), operation)
+        if (options.json) log(JSON.stringify(result))
+        else log(result.message ?? `updated permissions.${options.list} at ${result.revision}`)
+      })
+  }
   settings
     .command('restore')
     .option('--user')
@@ -78,6 +99,7 @@ export function register(program: Command): void {
     .option('--yes')
     .option('--user')
     .option('--project <name>')
+    .option('--json')
     .option('--drop-env <key>', '', collect, [])
     .action(async (options) => {
       const flags = optionFlags(options)

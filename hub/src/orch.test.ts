@@ -12,18 +12,139 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   answerWaitingArgv,
+  configArgv,
+  contextArgv,
   decodeRunsJson,
   docArgv,
   fileRulingArgv,
   projectArgv,
+  settingsCheck,
+  settingsCheckArgv,
+  settingsPermissionArgv,
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('managed context wrappers build exact argv', () => {
+  expect(contextArgv('/work/project')).toEqual(['context', '--cwd', '/work/project', '--json'])
+  expect(configArgv('get', 'autonomy.stage.review')).toEqual([
+    'config',
+    'get',
+    'autonomy.stage.review',
+    '--json',
+  ])
+  expect(configArgv('list')).toEqual(['config', 'list', '--json'])
+  expect(configArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'config',
+    'set',
+    'autonomy.stage.review',
+    'auto',
+    '--json',
+  ])
+  expect(settingsCheckArgv({ user: true })).toEqual([
+    'settings',
+    'render',
+    '--check',
+    '--user',
+    '--json',
+  ])
+  expect(settingsCheckArgv({ project: PLATFORM_NAME })).toEqual([
+    'settings',
+    'render',
+    '--check',
+    '--project',
+    PLATFORM_NAME,
+    '--json',
+  ])
+  expect(
+    settingsPermissionArgv({
+      target: { project: PLATFORM_NAME },
+      operation: 'add',
+      list: 'allow',
+      rule: 'Bash(orch *)',
+      expectedRevision: 'revision-1',
+      reason: 'needed',
+    }),
+  ).toEqual([
+    'settings',
+    'permission',
+    'add',
+    '--project',
+    PLATFORM_NAME,
+    '--list',
+    'allow',
+    '--rule',
+    'Bash(orch *)',
+    '--expect',
+    'revision-1',
+    '--reason',
+    'needed',
+    '--json',
+  ])
+})
+
+test('settings check preserves an exit-one refusal with empty stdout', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'hub-settings-refusal-'))
+  const executable = join(root, 'orch-refusal')
+  writeFileSync(
+    executable,
+    "#!/bin/sh\nprintf '%s\\n' 'no signed-in record session; run orch record login' >&2\nexit 1\n",
+  )
+  chmodSync(executable, 0o755)
+  const prior = process.env.HUB_ORCH
+  try {
+    process.env.HUB_ORCH = executable
+    await expect(settingsCheck({ user: true })).rejects.toThrow(
+      'no signed-in record session; run orch record login',
+    )
+  } finally {
+    if (prior === undefined) delete process.env.HUB_ORCH
+    else process.env.HUB_ORCH = prior
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('owner-scoped doc wrappers never send an owner id', () => {
+  expect(docArgv('list', { scope: 'canon', user: true })).toEqual([
+    'doc',
+    'list',
+    '--scope',
+    'canon',
+    '--user',
+    '--json',
+  ])
+  expect(
+    docArgv('set', {
+      scope: 'settings',
+      user: true,
+      slug: 'settings',
+      title: 'settings',
+      reason: 'change rule',
+      expectedRevision: 'revision-1',
+    }),
+  ).toEqual([
+    'doc',
+    'set',
+    'settings',
+    '--scope',
+    'settings',
+    '--user',
+    '--title',
+    'settings',
+    '--reason',
+    'change rule',
+    '--author',
+    'hub-dashboard',
+    '--expect',
+    'revision-1',
+    '--json',
+  ])
+})
 
 test('operator file-ruling argv runs the verb through the orch seam with json', () => {
   expect(fileRulingArgv({ questionId: 7, as: 'doc' })).toEqual([

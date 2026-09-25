@@ -1,6 +1,7 @@
 import { initTRPC } from '@trpc/server'
 import type { Context } from './context.ts'
 import { catalogRouter } from './routers/catalog.ts'
+import { contextRouter } from './routers/context.ts'
 import { docRouter } from './routers/doc.ts'
 import { insightRouter } from './routers/insight.ts'
 import { noteRouter } from './routers/note.ts'
@@ -19,6 +20,7 @@ export const appRouter = t.router({
   work: workRouter,
   insight: insightRouter,
   catalog: catalogRouter,
+  context: contextRouter,
   note: noteRouter,
   operator: operatorRouter,
   record: recordRouter,

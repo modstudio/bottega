@@ -38,7 +38,7 @@ export type SettingsDrift = {
   env: { added: string[]; removed: string[] }
 }
 
-type HookDrift = {
+export type HookDrift = {
   event: string
   matcher: string
   fingerprint: string
@@ -158,7 +158,7 @@ function renderEnvironment(text: string, environment: Record<string, string>): s
   return `${text.slice(0, last.valueEnd)}${comma}\n${inserted}${text.slice(span.close)}`
 }
 
-function hookDriftEntries(hooks: unknown): HookDrift[] {
+export function hookDriftEntries(hooks: unknown): HookDrift[] {
   if (!isPlainObject(hooks)) return []
   const entries: HookDrift[] = []
   for (const [event, value] of Object.entries(hooks)) {

@@ -9,8 +9,10 @@ import {
   type OwnedSettings,
   ownedSettingsEqual,
   PERMISSION_LISTS,
+  type PermissionList,
   parseStoredOwnedSettings,
   permissionLists,
+  refuseSettingsBody,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
@@ -31,6 +33,7 @@ import {
   diffOwnedSettings,
   displayHookDrift,
   displaySettingsValue,
+  hookDriftEntries,
   renderOwnedSettingsFile,
   type SettingsDrift,
 } from './settings-render.ts'
@@ -46,6 +49,92 @@ type SettingsPresentation = {
 }
 
 type SettingsTargetKind = { kind: 'user' } | { kind: 'project'; name: string }
+
+export type SettingsPermissionOperation = 'add' | 'remove'
+
+export async function settingsPermissionCommand(
+  flags: SettingsFlags,
+  operation: SettingsPermissionOperation,
+): Promise<{
+  revision: string
+  counts: Record<PermissionList, number>
+  changed: boolean
+  message?: string
+}> {
+  const target = resolveSettingsTarget(flags)
+  if (target.kind === 'project') projectRoot(target.name, process.cwd())
+  const owner = target.kind === 'user' ? await signedInDocOwner() : null
+  const { expectedRevision, list, rule } = settingsPermissionInput(flags)
+  const row = settingsRow(target, owner)
+  if (!row) {
+    if (operation === 'remove') {
+      throw new Error(
+        `refusing settings permission remove: no settings row for ${targetLabel(target)}`,
+      )
+    }
+    throw new Error(`refusing settings permission add: no settings row for ${targetLabel(target)}`)
+  }
+  const owned = parseStoredOwnedSettings(row.body)
+  const permissionList = list as PermissionList
+  const current = permissionLists(owned.permissions)[permissionList]
+  const present = current.includes(rule)
+  if ((operation === 'add' && present) || (operation === 'remove' && !present)) {
+    return {
+      revision: row.revision!,
+      counts: permissionCounts(owned),
+      changed: false,
+      message: operation === 'add' ? 'already present' : 'rule is absent',
+    }
+  }
+  const next = operation === 'add' ? [...current, rule] : current.filter((item) => item !== rule)
+  const body = serializeOwnedSettings({
+    ...owned,
+    permissions: {
+      ...(isPlainObject(owned.permissions) ? owned.permissions : {}),
+      [permissionList]: next,
+    },
+  })
+  const refusal = refuseSettingsBody(SETTINGS_SCOPE, body)
+  if (refusal) throw new Error(refusal)
+  const written = await setDoc({
+    scope: SETTINGS_SCOPE,
+    subject: target.kind === 'project' ? target.name : null,
+    owner,
+    slug: SETTINGS_SLUG,
+    title: SETTINGS_SLUG,
+    body,
+    delivery: 'demand',
+    reason: flags.flag('reason')?.trim() || 'updated permission rule',
+    expectedRevision,
+    author: 'hub-dashboard',
+  })
+  return {
+    revision: written.revision!,
+    counts: permissionCounts(parseStoredOwnedSettings(written.body)),
+    changed: true,
+  }
+}
+
+function settingsPermissionInput(flags: SettingsFlags): {
+  expectedRevision: string
+  list: PermissionList
+  rule: string
+} {
+  const expectedRevision = flags.flag('expect')
+  if (!expectedRevision) throw new Error('refusing settings permission: --expect is required')
+  const list = flags.flag('list')
+  if (!PERMISSION_LISTS.includes(list as PermissionList)) {
+    throw new Error(`refusing settings permission: --list must be ${PERMISSION_LISTS.join(', ')}`)
+  }
+  const rule = flags.flag('rule')?.trim()
+  if (!rule) throw new Error('refusing settings permission: --rule is required')
+  return { expectedRevision, list: list as PermissionList, rule }
+}
+
+function permissionCounts(owned: OwnedSettings): Record<PermissionList, number> {
+  const lists = permissionLists(owned.permissions)
+  return { allow: lists.allow.length, ask: lists.ask.length, deny: lists.deny.length }
+}
 
 function resolveSettingsTarget(flags: SettingsFlags): SettingsTargetKind {
   const user = flags.has('user')
@@ -125,11 +214,14 @@ export async function settingsRenderCheckCommand(
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const cwd = presentation.cwd()
   const path = settingsFilePath(target, process.env, cwd)
-  const parsed = readSettingsFile(path)
+  const parsed = flags.has('json') ? tryReadSettingsFile(path) : readSettingsFile(path)
   const existing = settingsRow(target, owner)
   const storeOwned = existing ? parseStoreOwned(existing.body) : emptyOwned()
-  const fileOwned =
-    target.kind === 'user' ? { ...parsed.owned, envKeys: parsed.envKeys } : parsed.owned
+  const fileOwned = parsed
+    ? target.kind === 'user'
+      ? { ...parsed.owned, envKeys: parsed.envKeys }
+      : parsed.owned
+    : emptyOwned()
   if (target.kind === 'project' && (storeOwned.envKeys?.length ?? 0) > 0) {
     throw new Error(
       'refusing settings render: env is user-only; remove project envKeys from the row',
@@ -142,15 +234,99 @@ export async function settingsRenderCheckCommand(
           storeOwned.envKeys ?? [],
         )
       : undefined
-  renderOwnedSettingsFile(parsed.text, storeOwned, environment)
+  if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, environment)
   const drifted = !ownedSettingsEqual(fileOwned, storeOwned)
-  const findings = lintSettings(lintTargets(target, parsed.owned, cwd))
+  const findings = lintSettings(lintTargets(target, parsed?.owned ?? emptyOwned(), cwd))
+  if (flags.has('json')) {
+    const drift = diffOwnedSettings(fileOwned, storeOwned)
+    presentation.log(
+      JSON.stringify({
+        target,
+        file: { path, exists: parsed !== null },
+        revision: existing?.revision ?? null,
+        settings: settingsSummary(storeOwned),
+        drift: redactedDrift(drift, fileOwned, storeOwned),
+        findings: findings.map((finding) => ({
+          ...finding,
+          message: containsSecretShaped(finding.message)
+            ? displaySettingsValue(finding.file, finding.message)
+            : finding.message,
+        })),
+      }),
+    )
+    if (drifted || !existing) presentation.exitCode(1)
+    return
+  }
   logDrift(fileOwned, storeOwned, presentation.log)
   printFindings(findings, presentation.log)
   if (!existing) {
     presentation.log(`no settings row for ${targetLabel(target)}`)
   }
   if (drifted || !existing) presentation.exitCode(1)
+}
+
+function settingsSummary(owned: OwnedSettings) {
+  const lists = permissionLists(owned.permissions)
+  return {
+    permissions: Object.fromEntries(
+      PERMISSION_LISTS.map((name) => [
+        name,
+        lists[name].map((rule, index) =>
+          displaySettingsValue(`permissions.${name}[${index}]`, rule),
+        ),
+      ]),
+    ),
+    hooks: hookDriftEntries(owned.hooks).map(({ event, matcher, fingerprint, path }) => {
+      const shown = displayHookDrift({ event, matcher, fingerprint, path }, owned)
+      return shown.includes(' secret-shaped')
+        ? { event: path, matcher: 'secret-shaped', fingerprint }
+        : { event, matcher, fingerprint }
+    }),
+    envKeys: [...(owned.envKeys ?? [])],
+  }
+}
+
+function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSettings) {
+  return {
+    rules: Object.fromEntries(
+      PERMISSION_LISTS.map((name) => [
+        name,
+        {
+          added: drift.rules[name].added.map((rule) => displayRule(name, rule, file)),
+          removed: drift.rules[name].removed.map((rule) => displayRule(name, rule, store)),
+        },
+      ]),
+    ),
+    hooks: {
+      added: drift.hooks.added.map(({ event, matcher, fingerprint, path }) => ({
+        event: displayHookDrift({ event, matcher, fingerprint, path }, file).includes(
+          ' secret-shaped',
+        )
+          ? path
+          : event,
+        matcher: displayHookDrift({ event, matcher, fingerprint, path }, file).includes(
+          ' secret-shaped',
+        )
+          ? 'secret-shaped'
+          : matcher,
+        fingerprint,
+      })),
+      removed: drift.hooks.removed.map(({ event, matcher, fingerprint, path }) => ({
+        event: displayHookDrift({ event, matcher, fingerprint, path }, store).includes(
+          ' secret-shaped',
+        )
+          ? path
+          : event,
+        matcher: displayHookDrift({ event, matcher, fingerprint, path }, store).includes(
+          ' secret-shaped',
+        )
+          ? 'secret-shaped'
+          : matcher,
+        fingerprint,
+      })),
+    },
+    envKeys: drift.env,
+  }
 }
 
 function settingsRow(target: SettingsTargetKind, owner: string | null) {

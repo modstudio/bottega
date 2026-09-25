@@ -20,6 +20,13 @@ import { log } from './support.ts'
 
 const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
 
+type ConfigRow = Awaited<ReturnType<typeof getEntry>>
+
+export const configGetPresentation = (row: ConfigRow, json: boolean) =>
+  json ? JSON.stringify(row) : row.value
+export const configListPresentation = (rows: ConfigRow[], json: boolean) =>
+  json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`)
+
 export function register(program: Command): void {
   const config = program.command('config')
   const machine = config.command('machine')
@@ -60,19 +67,26 @@ export function register(program: Command): void {
   config
     .command('get <key>')
     .option('--space')
+    .option('--json')
     .action(async (key, options) => {
       const row = await getEntry(key, scope(options))
-      log(row.value)
+      log(configGetPresentation(row, Boolean(options.json)))
     })
   config
     .command('set <key> <value>')
     .option('--space')
+    .option('--json')
     .action(async (key, value, options) => {
-      await setEntry(key, value, scope(options))
+      const row = await setEntry(key, value, scope(options))
+      if (options.json) log(configGetPresentation(row, true))
     })
-  config.command('list').action(async () => {
-    for (const row of await listEntries()) log(`${row.scope}\t${row.key}\t${row.value}`)
-  })
+  config
+    .command('list')
+    .option('--json')
+    .action(async (options) => {
+      const rows = await listEntries()
+      for (const line of configListPresentation(rows, Boolean(options.json))) log(line)
+    })
   config
     .command('delete <key>')
     .option('--space')
