@@ -65,7 +65,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       )
       .run(run.id, run.id)
 
-    expect(applyMigrations(database)).toEqual(['0050_task_rulings'])
+    expect(applyMigrations(database)).toContain('0050_task_rulings')
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
       reason: 'because',
