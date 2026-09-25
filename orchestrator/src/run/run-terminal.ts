@@ -29,6 +29,7 @@ import type { classify } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
+import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply } from '../outcome.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -471,19 +472,23 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         question: string
       }[]
     ).map((row) => row.question)
+    const askedAt = nowIso()
+    const awaitingOperatorAt = await initialQuestionWaitingAt(claim.id, askedAt)
     const q = db().query(
-      `INSERT INTO question (run_id, asked_at, question, options, recommendation, why, asked_via)
-         VALUES (?,?,?,?,?,?,?)`,
+      `INSERT INTO question
+        (run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
+       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
     )
     for (const item of questionsToInsert(existingQuestionTexts, acceptedQuestions)) {
-      q.run(
+      q.get(
         claim.id,
-        nowIso(),
+        askedAt,
         item.question,
         item.options?.length ? JSON.stringify(item.options) : null,
         item.recommendation ?? null,
         item.why ?? null,
         ASKED_VIA_REPLY,
+        awaitingOperatorAt,
       )
     }
   }

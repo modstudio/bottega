@@ -261,6 +261,12 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
   return parseWorkerMessageArgs(args, { booleans: ANSWER_BOOLEANS, questions: true })
 }
 
+/** Match the bare question selector shared by thin command surfaces. */
+export function bareQuestionSelector(arg: string): number | null {
+  const match = arg.match(/^--q(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
 /** Every documented seed spelling is accepted by the CLI argument parser. */
 export function seedGuidance(seeds: string[]): string {
   const forms = seeds.flatMap((seed) => {
@@ -320,6 +326,7 @@ export const CLI_COMMANDS = new Set([
   'reclaim',
   'reclassify-failures',
   'reconcile',
+  'relay',
   'result',
   'retry',
   'review',
@@ -339,6 +346,7 @@ export const CLI_COMMANDS = new Set([
   'tell',
   'tree',
   'wait',
+  'waiting',
   'workflow',
 ])
 

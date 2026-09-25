@@ -28,6 +28,7 @@ import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
+import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
@@ -239,6 +240,24 @@ export function register(program: Command): void {
     .option('--ping')
     .action((id, _message, options, command) =>
       tellCommand(Number(id), rawArgv(command).slice(2), Boolean(options.ping), presentation),
+    )
+  program
+    .command('relay <id>')
+    .requiredOption('--note <why>')
+    .allowUnknownOption(true)
+    .action((id, options, command) =>
+      relayCommand(Number(id), rawArgv(command).slice(2), options.note, presentation),
+    )
+  program
+    .command('waiting')
+    .option('--json')
+    .option('--claim-notifications')
+    .allowExcessArguments(false)
+    .action((options) =>
+      waitingCommand(
+        { json: Boolean(options.json), claimNotifications: Boolean(options.claimNotifications) },
+        presentation,
+      ),
     )
   program
     .command('peek <id>')

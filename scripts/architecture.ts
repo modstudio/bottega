@@ -2,6 +2,7 @@ import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
+import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
@@ -45,6 +46,7 @@ const concerns: ConcernManifest = {
 
 export const modules: ArchitectureModule[] = [
   ...retrievalModules,
+  ...operatorWaitingModules,
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/install-root.ts',
@@ -55,7 +57,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
   module('orchestrator/src/run/question-delivery.ts', [
     '../database/db.ts',
     './question-vocabulary.ts',
@@ -164,6 +165,7 @@ export const modules: ArchitectureModule[] = [
     'node:crypto',
     '../database/db.ts',
     '../project/projects.ts',
+    '../operator/operator-waiting.ts',
     './autonomy.ts',
     './workflow-render.ts',
     './workflows.ts',
@@ -269,7 +271,6 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
-  module('shared/question-vocabulary.ts', []),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
     'node:fs',
@@ -581,6 +582,7 @@ export const modules: ArchitectureModule[] = [
     '../record/machine-identity.ts',
     '../mcp/mcp-preflight.ts',
     '../outcome.ts',
+    '../operator/operator-waiting.ts',
     '../project/projects.ts',
     '../resources/resource-ownership.ts',
     '../review/review.ts',

@@ -344,6 +344,13 @@
       "when": 1788900000042,
       "tag": "0048_user_canon_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1788900000043,
+      "tag": "0049_operator_waiting",
+      "breakpoints": true
     }
   ]
 }

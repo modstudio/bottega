@@ -9,6 +9,7 @@ const RUN_MUTATION_ACTIONS = [
   'adopt',
   'answer',
   'tell',
+  'relay',
   'stop',
   'abandon',
   'discard',
@@ -85,6 +86,7 @@ export function auditRunMutation(
 const ADOPTING_ACTIONS = [
   'answer',
   'tell',
+  'relay',
   'stop',
   'abandon',
   'discard',

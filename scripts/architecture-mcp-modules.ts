@@ -12,6 +12,11 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-operator-tools.ts', [
+    '@modelcontextprotocol/sdk/server/mcp.js',
+    'zod',
+    '../operator/operator-waiting.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-tool-list.ts', [
     '@modelcontextprotocol/sdk/client/index.js',
     '@modelcontextprotocol/sdk/client/stdio.js',

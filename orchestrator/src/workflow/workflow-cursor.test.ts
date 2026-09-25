@@ -262,7 +262,7 @@ describe('workflow cursor adapter', () => {
   test('await records a question and fetching the current step resumes', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
-    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Which ruling?', context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Which ruling?', context, d, () => {})
     expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
       state: 'awaiting-ruling',
       question: 'Which ruling?',
@@ -297,7 +297,7 @@ describe('workflow cursor adapter', () => {
       nextWorkflowStep('ship', 'fixture', 'default', args, 'continue', context, d),
     ).toThrow('workflow ship for DEV-822 is abandoned')
     expect(() =>
-      awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Question?', context, d),
+      awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Question?', context, d, () => {}),
     ).toThrow('workflow ship for DEV-822 is abandoned')
     expect(() =>
       abandonWorkflowCursor('ship', 'fixture', 'default', args, 'again', context, d),
@@ -307,7 +307,7 @@ describe('workflow cursor adapter', () => {
   test('abandon clears an awaiting cursor question and records the current session', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
-    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Which ruling?', context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Which ruling?', context, d, () => {})
 
     abandonWorkflowCursor(
       'ship',
