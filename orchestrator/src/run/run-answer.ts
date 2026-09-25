@@ -52,6 +52,7 @@ import {
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
 import {
+  type ContinuationInstruction,
   decideRetryConversation,
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
@@ -211,6 +212,85 @@ function latestRetryTurn(
   )
 }
 
+export function continuationInstructionsForFreshRetry(
+  writesRepo: boolean,
+  requestedId: number,
+  rootId: number,
+): ContinuationInstruction[] {
+  if (!writesRepo || requestedId !== rootId) return []
+  const turns = db()
+    .query(
+      `SELECT id, started_at
+         FROM run
+        WHERE parent_run_id = ?
+        ORDER BY turn, id`,
+    )
+    .all(rootId) as { id: number; started_at: string }[]
+  const audits = db()
+    .query(
+      `SELECT rowid, turn_id, action, at, reason
+         FROM run_mutation_audit
+        WHERE root_id = ? AND action IN ('answer', 'continue', 'retry')
+        ORDER BY at, rowid`,
+    )
+    .all(rootId) as {
+    rowid: number
+    turn_id: number | null
+    action: 'answer' | 'continue' | 'retry'
+    at: string
+    reason: string | null
+  }[]
+  const claimed = new Set<number>()
+  const attributed: {
+    id: number
+    rowid: number
+    action: 'answer' | 'continue' | 'retry'
+    at: string
+    reason: string | null
+  }[] = []
+  const refuse = (turnId: number): never => {
+    throw new Error(
+      `run ${rootId} continuation turn ${turnId} has no recoverable continue instructions. ` +
+        `Re-send the instructions with orch continue ${rootId} --file <spec>, ` +
+        `or pass orch retry ${turnId} for that turn directly.`,
+    )
+  }
+  for (const turn of turns) {
+    const identified = audits.filter((audit) => audit.turn_id === turn.id)
+    const identifiedRetries = identified.filter((audit) => audit.action === 'retry')
+    const identifiedAnswers = identified.filter((audit) => audit.action === 'answer')
+    const identifiedContinues = identified.filter((audit) => audit.action === 'continue')
+    if (
+      identifiedRetries.length > 1 ||
+      (!identifiedRetries.length && identifiedAnswers.length > 1) ||
+      (!identifiedRetries.length && !identifiedAnswers.length && identifiedContinues.length > 1)
+    ) {
+      refuse(turn.id)
+    }
+    let audit = identifiedRetries[0] ?? identifiedAnswers[0] ?? identifiedContinues[0]
+    if (!audit) {
+      const startedAt = Date.parse(turn.started_at)
+      const candidates = audits.filter(
+        (candidate) =>
+          candidate.turn_id === null &&
+          !claimed.has(candidate.rowid) &&
+          Math.abs(Date.parse(candidate.at) - startedAt) <= 10_000,
+      )
+      if (candidates.length !== 1) refuse(turn.id)
+      audit = candidates[0]!
+    }
+    claimed.add(audit.rowid)
+    attributed.push({ id: turn.id, ...audit })
+  }
+  return attributed
+    .sort((left, right) => left.at.localeCompare(right.at) || left.rowid - right.rowid)
+    .flatMap((turn) => {
+      return turn.action === 'continue' && turn.reason
+        ? [{ turnId: turn.id, at: turn.at, instructions: turn.reason }]
+        : []
+    })
+}
+
 export async function retryRun(
   id: number,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -278,7 +358,13 @@ export async function retryRun(
   })
   if (preliminaryPath?.action === 'continue') {
     const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
-    auditRunMutation(retryAuthority, 'retry', `continued as run ${resumed.childId}`)
+    auditRunMutation(
+      retryAuthority,
+      'retry',
+      `continued as run ${resumed.childId}`,
+      db(),
+      resumed.childId,
+    )
     await reportContinuedRun(resumed.childId, resumed.job, options.flags, helpers.presentation)
     return
   }
@@ -289,6 +375,11 @@ export async function retryRun(
     )
   }
   const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
+  const continuationInstructions = continuationInstructionsForFreshRetry(
+    writesRepo,
+    id,
+    row.root_id,
+  )
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
   const workspace = writesRepo
@@ -319,6 +410,7 @@ export async function retryRun(
   const retryPrompt = workspace
     ? renderWritingRetryPrompt({
         originalSpec: originalPrompt,
+        continuationInstructions,
         rulings: renderedRulings,
         commit: workspace.commit,
         taskPointer: previousAttemptTaskPointer({
@@ -409,7 +501,7 @@ export async function retryRun(
       },
     )
   }
-  auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
+  auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`, db(), newId)
   console.error(`— run ${newId} is retry of ${id}`)
   await follow(newId, options.flags.quiet, true, helpers.presentation)
 }
@@ -738,7 +830,7 @@ export async function answerRun(
         })
       }
     }
-    auditRunMutation(answerAuthority, 'answer')
+    if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })
 
   if (skipResume) {
@@ -840,6 +932,7 @@ export async function answerRun(
       at: new Date(Date.now()).toISOString(),
     },
   )
+  auditRunMutation(answerAuthority, 'answer', null, db(), childId)
   if (!input.json)
     console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
   if (input.flags.detach || !input.flags.follow) {

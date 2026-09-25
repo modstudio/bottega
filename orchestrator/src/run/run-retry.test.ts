@@ -79,6 +79,7 @@ test('the retry prompt puts the previous-attempt handoff after the spec and ruli
   expect(
     renderWritingRetryPrompt({
       originalSpec: 'Build the requested change.',
+      continuationInstructions: [],
       rulings: 'RULINGS\nUse the existing shape.',
       commit: 'abc123',
       taskPointer: 'tests completed',
@@ -95,9 +96,36 @@ test('the retry prompt omits an absent progress pointer', () => {
   expect(
     renderWritingRetryPrompt({
       originalSpec: 'Build it.',
+      continuationInstructions: [],
       rulings: null,
       commit: 'def456',
       taskPointer: null,
     }),
   ).not.toContain('Last completed item:')
+})
+
+test('the retry prompt carries continuation instructions in order after the spec', () => {
+  expect(
+    renderWritingRetryPrompt({
+      originalSpec: 'Build it.',
+      continuationInstructions: [
+        { turnId: 12, at: '2026-09-25T12:00:00.000Z', instructions: 'Review 1621.' },
+        {
+          turnId: 14,
+          at: '2026-09-25T13:00:00.000Z',
+          instructions: 'worker-gate-tooling-change',
+        },
+      ],
+      rulings: null,
+      commit: 'def456',
+      taskPointer: null,
+    }),
+  ).toBe(
+    'Build it.\n\n---\n\n' +
+      'INSTRUCTIONS GIVEN SINCE THE ORIGINAL SPEC\n\n' +
+      'Turn 12 at 2026-09-25T12:00:00.000Z:\nReview 1621.\n\n' +
+      'Turn 14 at 2026-09-25T13:00:00.000Z:\nworker-gate-tooling-change\n\n---\n\n' +
+      "PREVIOUS ATTEMPT\n\nThis worktree already holds a previous attempt's work at def456.\n" +
+      'Continue from there rather than restart.',
+  )
 })

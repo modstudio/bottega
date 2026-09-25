@@ -785,9 +785,11 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
   ).toEqual({ answered_by: 'operator via hub', answerer_kind: 'operator', answer_channel: 'ui' })
   expect(
     db()
-      .query("SELECT actor_session FROM run_mutation_audit WHERE root_id=? AND action='answer'")
+      .query(
+        "SELECT actor_session,turn_id FROM run_mutation_audit WHERE root_id=? AND action='answer'",
+      )
       .get(id),
-  ).toEqual({ actor_session: 'operator:ui' })
+  ).toEqual({ actor_session: 'operator:ui', turn_id: result.resumed_as })
   expect(db().query('SELECT session_id FROM run WHERE id=?').get(result.resumed_as!)).toEqual({
     session_id: 'dispatching-session',
   })
@@ -874,6 +876,23 @@ describe('retry command', () => {
     )
     await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
       `Answer them, or orch abandon ${id}`,
+    )
+  })
+
+  test('fresh retry refuses a continuation turn whose instructions are unrecoverable', async () => {
+    const id = failed('implement')
+    const child = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 2,
+    })
+
+    await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
+      `run ${id} continuation turn ${child} has no recoverable continue instructions. ` +
+        `Re-send the instructions with orch continue ${id} --file <spec>, ` +
+        `or pass orch retry ${child} for that turn directly.`,
     )
   })
 
