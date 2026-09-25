@@ -9,7 +9,13 @@ import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
-import { projectAt, projects } from '../project/projects.ts'
+import {
+  absentTreeTeardownPlan,
+  projectAt,
+  projectByName,
+  projects,
+  resolvedWorktreeTool,
+} from '../project/projects.ts'
 import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import {
   classifiedDockerResources,
@@ -70,12 +76,23 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
 function retainedDockerResourceAction(
   owner: {
     id: number
+    repo: string | null
     status: string
     worktree: string | null
+    worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+    recipe_snapshot: string | null
   } | null,
 ): string {
   const terminal = owner && TERMINAL_STATUSES.has(owner.status)
-  return terminal && owner.worktree && !existsSync(owner.worktree)
+  const project = owner?.repo ? projectByName(owner.repo) : null
+  const teardownPlan = owner
+    ? absentTreeTeardownPlan({
+        recipeSnapshot: owner.recipe_snapshot,
+        worktreeSource: owner.worktree_source,
+        registeredRemoveCommand: Boolean(resolvedWorktreeTool(project)?.remove),
+      })
+    : false
+  return terminal && owner.worktree && !existsSync(owner.worktree) && teardownPlan
     ? `run orch close-out ${owner.id}`
     : 'informational; retained resources require review before any removal'
 }
@@ -431,11 +448,20 @@ export async function monitor(
   const runDockerResources = runDocker.ascertainable ? runDocker.resources : []
   const dockerOwnerIds = new Set(runDockerResources.map(({ runId }) => runId))
   const dockerOwners = (
-    database.query('SELECT id, repo, worktree, status FROM run').all() as {
+    database
+      .query(
+        `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+                COALESCE(root.worktree_source,r.worktree_source) worktree_source,
+                COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot
+         FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+      )
+      .all() as {
       id: number
       repo: string | null
       worktree: string | null
       status: string
+      worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+      recipe_snapshot: string | null
     }[]
   ).map((owner) => ({
     ...owner,

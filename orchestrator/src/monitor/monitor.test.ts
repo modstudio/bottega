@@ -141,7 +141,9 @@ describe('operational monitor conditions', () => {
 
   test('an absent terminal tree names close-out as the retained Docker resource remedy', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-    db().query('UPDATE run SET worktree=? WHERE id=?').run(`/gone/orch-${runId}`, runId)
+    db()
+      .query('UPDATE run SET worktree=?,recipe_snapshot=? WHERE id=?')
+      .run(`/gone/orch-${runId}`, '{"recipe":{"destroy":[]}}', runId)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const command = args.join(' ')
       const stdout = command.startsWith('docker ps -a --format')
@@ -163,6 +165,38 @@ describe('operational monitor conditions', () => {
             condition.subject === `app-orch-${runId}-web`,
         ),
       ).toMatchObject({ action: `run orch close-out ${runId}` })
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
+  test('an absent attached tree keeps manual review as the retained Docker resource remedy', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    db()
+      .query('UPDATE run SET worktree=?,worktree_source=? WHERE id=?')
+      .run(`/gone/orch-${runId}`, 'git', runId)
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+      const stdout = args.join(' ').startsWith('docker ps -a --format')
+        ? `app-orch-${runId}-web\torch.run=${runId}`
+        : ''
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(''),
+        success: true,
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+    try {
+      const result = await monitor('invoked')
+      expect(
+        result.conditions.find(
+          (condition) =>
+            condition.kind === 'retained-worktree-docker-resource' &&
+            condition.subject === `app-orch-${runId}-web`,
+        ),
+      ).toMatchObject({
+        action: 'informational; retained resources require review before any removal',
+      })
     } finally {
       spawn.mockRestore()
     }

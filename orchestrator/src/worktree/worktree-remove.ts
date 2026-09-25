@@ -10,7 +10,12 @@ import {
   gitRaw,
   targetGitEnvironment,
 } from '../git/git-environment.ts'
-import { projectAt, resolvedWorktreeTool, type WorktreeTool } from '../project/projects.ts'
+import {
+  absentTreeTeardownPlan,
+  projectAt,
+  resolvedWorktreeTool,
+  type WorktreeTool,
+} from '../project/projects.ts'
 import {
   databaseDroppedByTeardown,
   dbNameFor,
@@ -384,23 +389,33 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
-function recordedTrackedRecipePlan(runId: number | undefined): boolean {
-  if (runId === undefined) return false
+function recordedAbsentTreeFacts(runId: number | undefined): {
+  recipeSnapshot: string | null
+  worktreeSource: Worktree['source'] | null
+} {
+  if (runId === undefined) return { recipeSnapshot: null, worktreeSource: null }
   const row = db()
     .query(
-      `SELECT recipe_snapshot FROM run
+      `SELECT recipe_snapshot,worktree_source FROM run
        WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
     )
     .get(runId) as {
     recipe_snapshot: string | null
+    worktree_source: Worktree['source'] | null
   } | null
-  return Boolean(row?.recipe_snapshot)
+  return {
+    recipeSnapshot: row?.recipe_snapshot ?? null,
+    worktreeSource: row?.worktree_source ?? null,
+  }
 }
 
 /** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
 export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): boolean {
-  if (recordedTrackedRecipePlan(runId)) return true
-  return Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove)
+  const facts = recordedAbsentTreeFacts(runId)
+  return absentTreeTeardownPlan({
+    ...facts,
+    registeredRemoveCommand: Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove),
+  })
 }
 
 function removeByLifecycle(input: {
@@ -409,12 +424,11 @@ function removeByLifecycle(input: {
   projectName: string | null
   forceOrchTree: boolean
   retainBranch: boolean
-  teardownAbsent: boolean
   runId?: number
   removeTree(): { removed: boolean; detail: string }
 }): { removed: boolean; detail: string; output?: string } {
   const { worktree, tool, runId, removeTree } = input
-  if (!existsSync(worktree.path) && recordedTrackedRecipePlan(runId)) {
+  if (!existsSync(worktree.path) && recordedAbsentTreeFacts(runId).recipeSnapshot) {
     return teardownTrackedRecipe({
       runId: runId as number,
       worktree,
@@ -433,9 +447,7 @@ function removeByLifecycle(input: {
       : removed
   }
   const projectOwned =
-    input.teardownAbsent ||
-    worktree.source === 'recipe' ||
-    (worktree.source === undefined && Boolean(tool))
+    worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
   const removed: { removed: boolean; detail: string; output?: string } =
     tool && projectOwned
       ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
@@ -481,7 +493,6 @@ export function removeFor(
     projectName: project?.name ?? null,
     forceOrchTree,
     retainBranch,
-    teardownAbsent: skipGitRemoval && !existsSync(w.path),
     runId,
     removeTree,
   })

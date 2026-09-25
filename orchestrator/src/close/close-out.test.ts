@@ -270,7 +270,7 @@ test('an absent tracked-recipe tree tears resources down without Git worktree re
   }
 })
 
-test('an absent tree runs its registered remove command without Git worktree removal', () => {
+test('an absent attached tree does not run its registered remove command', () => {
   const fixture = absentRecipeFixture()
   db()
     .query('UPDATE run SET recipe_snapshot=NULL,worktree_source=? WHERE id=?')
@@ -287,7 +287,7 @@ test('an absent tree runs its registered remove command without Git worktree rem
   }) as typeof Bun.spawnSync)
   try {
     expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
-    expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(true)
+    expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(false)
     expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
