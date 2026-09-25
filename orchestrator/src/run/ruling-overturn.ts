@@ -54,7 +54,7 @@ export function overturnRuling(input: {
   reason: string
   replacement: string | null
   fromOperator: boolean
-}): void {
+}) {
   writableDb()
   const row = db()
     .query(
@@ -69,23 +69,27 @@ export function overturnRuling(input: {
   const denied = refusal(row, authority)
   if (denied) throw new Error(denied)
   const at = nowIso()
+  let overturnedBy = ''
   writeTransaction(() => {
     authority = adoptRunMutation(authority, 'overturn')
+    overturnedBy = rulingActor(input.fromOperator, authority.actor)
     const changed = db()
       .query(
         `UPDATE question
             SET overturned_at=?,overturned_by=?,overturn_reason=?,replacement=?
           WHERE id=? AND answered_at IS NOT NULL AND overturned_at IS NULL`,
       )
-      .run(
-        at,
-        rulingActor(input.fromOperator, authority.actor),
-        input.reason,
-        input.replacement,
-        row.id,
-      )
+      .run(at, overturnedBy, input.reason, input.replacement, row.id)
     if (changed.changes !== 1)
       throw new Error(`question ${row.id} changed before it was overturned`)
     auditRunMutation(authority, 'overturn', input.reason)
   })
+  return {
+    question_id: row.id,
+    ruling_status: 'overturned',
+    overturned_at: at,
+    overturned_by: overturnedBy,
+    overturn_reason: input.reason,
+    replacement: input.replacement,
+  }
 }

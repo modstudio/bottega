@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
-import { OrchBlockersSchema } from '../../shared/orch-contract.ts'
+import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   answerWaitingArgv,
   decodeRunsJson,
@@ -41,6 +41,26 @@ test('operator answer argv preserves the ruling and records the UI operator chan
     'ui',
     '--json',
   ])
+})
+
+test('the orch waiting client contract accepts a no-project item', () => {
+  expect(
+    OperatorWaitingItemSchema.parse({
+      kind: 'question',
+      id: 7,
+      run_id: 42,
+      project: null,
+      task_key: null,
+      session_id: null,
+      question: 'Which?',
+      options: [],
+      recommendation: null,
+      why: null,
+      waiting_since: '2026-09-25',
+      episode: '2026-09-25',
+      answer_command: 'orch answer 42 --q7 "<ruling>"',
+    }),
+  ).toMatchObject({ project: null })
 })
 
 const runFixture = {

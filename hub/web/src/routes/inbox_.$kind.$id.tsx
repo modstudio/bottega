@@ -93,7 +93,7 @@ function QuestionRuling({ questions }: { questions: OperatorWaitingItem[] }) {
     <section className="max-w-3xl">
       <PageHeader
         title="Operator question"
-        subtitle={`${first.project}${first.task_key ? ` · ${first.task_key}` : ''}`}
+        subtitle={`${first.project ?? 'no project'}${first.task_key ? ` · ${first.task_key}` : ''}`}
       />
       <div className="space-y-6 border border-border-default bg-surface-raised p-6">
         <Badge tone="warning">waiting on you</Badge>

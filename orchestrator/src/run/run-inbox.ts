@@ -14,6 +14,132 @@ type RunInboxPresentation = {
   chainHasPendingDelivery(rootId: number): boolean
   strandedRecovery(rootId: number): string
 }
+type InboxQuestion = {
+  question_id: number
+  run_id: number
+  answer_id: number
+  job: string
+  agent: string
+  repo: string | null
+  asked_at: string
+  session_live: true | null
+  session_liveness: 'live' | 'unknown'
+  can_answer: boolean
+  question: string
+  options: string[]
+  recommendation: string | null
+  why: string | null
+  status: string
+  ruling_status: 'open' | 'answered' | 'overturned'
+  overturned_at: string | null
+  overturned_by: string | null
+  overturn_reason: string | null
+  replacement: string | null
+}
+
+export type InboxQuery = {
+  scope: 'session' | 'cli-default'
+  all?: boolean
+  activeOnly?: boolean
+  requestedCwd?: string
+}
+
+export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQuestion[] }> {
+  const sid = sessionId()
+  const mine = input.scope === 'session' || !input.all
+  const scoped = input.scope === 'cli-default' && input.requestedCwd !== undefined
+  const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
+  const defaultProject =
+    input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
+  const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
+  const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
+  const hasSessionSeen = Boolean(
+    db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
+  )
+  const seenJoin = hasSessionSeen
+    ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+    : ''
+  const sessionRecent = hasSessionSeen
+    ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
+    : '0'
+  const queriedRows = db()
+    .query(
+      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
+            q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
+            r.agent, r.job, r.repo, r.status, r.session_id,
+            root.status root_status, ${voidedSql('root')} root_voided,
+            COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
+       FROM question q JOIN run r ON r.id = q.run_id
+       JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
+       ${seenJoin}
+      ORDER BY q.run_id, q.id`,
+    )
+    .all(...(hasSessionSeen ? [cutoff] : [])) as Array<{
+    id: number
+    run_id: number
+    asked_at: string
+    question: string
+    answered_at: string | null
+    overturned_at: string | null
+    overturned_by: string | null
+    overturn_reason: string | null
+    replacement: string | null
+    options: string | null
+    recommendation: string | null
+    why: string | null
+    agent: string
+    job: string
+    repo: string | null
+    status: string
+    session_id: string | null
+    root_status: string
+    root_voided: number
+    root_id: number
+    session_recent: number
+  }>
+  const isLive = (question: (typeof queriedRows)[number]) =>
+    answerRunLivenessRefusal(
+      { status: question.root_status, voided: Boolean(question.root_voided) },
+      [{ owner_status: question.status }],
+    ) === null
+  const selected = queriedRows.filter((question) =>
+    mine || input.activeOnly
+      ? question.answered_at === null && isLive(question)
+      : question.answered_at === null || !isLive(question),
+  )
+  const visible =
+    input.scope === 'session'
+      ? selected.filter(
+          (question) =>
+            isLive(question) &&
+            (question.session_id === null || (sid !== null && question.session_id === sid)),
+        )
+      : rowsForInboxView(selected, scopedProjectName, defaultProject?.name ?? null, mine, sid)
+  return {
+    questions: visible.map((q) => ({
+      question_id: q.id,
+      run_id: q.run_id,
+      answer_id: q.root_id,
+      job: q.job,
+      agent: q.agent,
+      repo: q.repo,
+      asked_at: q.asked_at,
+      session_live: q.session_recent ? true : null,
+      session_liveness: q.session_recent ? 'live' : 'unknown',
+      can_answer: isLive(q) && (q.session_id === null || (sid !== null && q.session_id === sid)),
+      question: q.question,
+      options: q.options ? (JSON.parse(q.options) as string[]) : [],
+      recommendation: q.recommendation,
+      why: q.why,
+      status: q.root_voided ? 'voided' : q.root_status,
+      ruling_status: rulingStatus(q.overturned_at, q.answered_at),
+      overturned_at: q.overturned_at,
+      overturned_by: q.overturned_by,
+      overturn_reason: q.overturn_reason,
+      replacement: q.replacement,
+    })),
+  }
+}
 
 export function rowsForInboxProject<T extends { repo: string | null }>(
   rows: T[],
@@ -79,11 +205,30 @@ function presentOverturn(
   if (question.replacement) log(`        replacement: ${question.replacement}`)
 }
 
+async function presentJsonInbox(
+  flags: RunInboxFlags,
+  presentation: RunInboxPresentation,
+  requestedCwd?: string,
+): Promise<boolean> {
+  if (!flags.has('json')) return false
+  const result = await queryInbox({
+    scope: 'cli-default',
+    all: flags.has('all'),
+    activeOnly: flags.has('active'),
+    requestedCwd,
+  })
+  const scopedProjectName =
+    requestedCwd === undefined ? undefined : (projectAt(requestedCwd)?.name ?? null)
+  presentation.log(inboxJson(result.questions, scopedProjectName))
+  return true
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
   requestedCwd?: string,
 ): Promise<void> {
+  if (await presentJsonInbox(flags, presentation, requestedCwd)) return
   const { has } = flags
   const { log, dur, chainHasPendingDelivery, strandedRecovery } = presentation
   const sid = sessionId()
@@ -165,35 +310,6 @@ export async function runInboxCommand(
   const terminal = rows.filter((q) => !active.includes(q))
   const answerable = active.filter((q) => canAnswer(q.session_id))
   const visible = active.filter((q) => !canAnswer(q.session_id))
-
-  if (has('json')) {
-    const presentedRows = rows.map((q) => ({
-      question_id: q.id,
-      run_id: q.run_id,
-      answer_id: q.root_id,
-      job: q.job,
-      agent: q.agent,
-      repo: q.repo,
-      asked_at: q.asked_at,
-      // Kept as a nullable compatibility field: false used to assert death,
-      // which a last-seen timestamp cannot establish.
-      session_live: q.session_recent ? true : null,
-      session_liveness: q.session_recent ? 'live' : 'unknown',
-      can_answer: isLive(q) && canAnswer(q.session_id),
-      question: q.question,
-      options: q.options ? (JSON.parse(q.options) as string[]) : [],
-      recommendation: q.recommendation,
-      why: q.why,
-      status: q.root_voided ? 'voided' : q.root_status,
-      ruling_status: rulingStatus(q.overturned_at, q.answered_at),
-      overturned_at: q.overturned_at,
-      overturned_by: q.overturned_by,
-      overturn_reason: q.overturn_reason,
-      replacement: q.replacement,
-    }))
-    log(inboxJson(presentedRows, scopedProjectName))
-    return
-  }
 
   presentHeader(header).forEach((line) => {
     log(line)

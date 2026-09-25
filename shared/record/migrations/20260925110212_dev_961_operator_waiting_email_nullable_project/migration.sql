@@ -1,0 +1,1 @@
+ALTER TABLE "operator_waiting_email" ALTER COLUMN "project" DROP NOT NULL;

@@ -200,6 +200,20 @@ test('notification claims return each waiting episode once', () => {
   expect(claimOperatorNotifications(db())).toEqual([])
 })
 
+test('a no-project question lists and notifies without a project label', () => {
+  const owner = run()
+  db().query('UPDATE run SET repo=NULL,launch_key=NULL WHERE id=?').run(owner.id)
+  const question = db()
+    .query(
+      `INSERT INTO question (run_id,asked_at,question,awaiting_operator_at)
+       VALUES (?,'2026-09-25','No project?','2026-09-25') RETURNING id`,
+    )
+    .get(owner.id) as { id: number }
+
+  expect(operatorWaiting()).toMatchObject([{ id: question.id, project: null }])
+  expect(claimOperatorNotifications(db())[0]?.notification.title).toBe('Ruling needed')
+})
+
 test('notification command prefers the platform adapter without spawning', () => {
   const all = new Set(['terminal-notifier', 'osascript', 'notify-send'])
   expect(notificationCommand('darwin', all, 'Title', 'Body', 'http://link')?.argv).toEqual([

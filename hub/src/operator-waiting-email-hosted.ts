@@ -56,7 +56,7 @@ function waitedFor(waitingSince: string, now: Date) {
 
 export function renderOperatorWaitingEmail(input: OperatorWaitingEmailInput, now = new Date()) {
   const label = input.task_key ?? input.kind
-  const subject = `Waiting on you: ${input.project} ${label}`
+  const subject = `Waiting on you: ${[input.project, label].filter(Boolean).join(' ')}`
   const options = input.options.map(
     (option) => `${option}${option === input.recommendation ? ' (recommended)' : ''}`,
   )

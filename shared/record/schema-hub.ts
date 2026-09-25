@@ -388,7 +388,7 @@ export const operatorWaitingEmail = pgTable.withRLS(
     kind: text().notNull(),
     itemId: bigint('item_id', { mode: 'number' }).notNull(),
     episode: text().notNull(),
-    project: text().notNull(),
+    project: text(),
     taskKey: text('task_key'),
     question: text().notNull(),
     options: jsonb().notNull(),

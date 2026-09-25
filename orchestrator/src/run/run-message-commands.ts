@@ -3,8 +3,11 @@
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
+  ANSWER_WORKING_FORMS,
   assertWorkerText,
   CONTINUE_WORKING_FORMS,
+  parseAnswerChannelArgs,
+  parseAnswerTextSources,
   parseWorkerMessageArgs,
   readMessageText,
   readWorkerFile,
@@ -17,7 +20,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
-import { answerRun, retryRun } from './run-answer.ts'
+import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
@@ -46,7 +49,7 @@ const controlPresentation = (presentation: Presentation): RunControlPresentation
   argvResumeLimit,
   printRunId: presentation.printRunId,
 })
-const helpers = (presentation: Presentation) => ({
+export const answerRunHelpers = (presentation: Presentation) => ({
   argvResumeLimit,
   assertWorkerText,
   readWorkerFile,
@@ -54,12 +57,63 @@ const helpers = (presentation: Presentation) => ({
   presentation: controlPresentation(presentation),
 })
 
+export async function answerInputFromArgv(
+  argv: string[],
+  recordOnly: boolean,
+  json: boolean,
+  flags: Flags,
+  helpers: Pick<ReturnType<typeof answerRunHelpers>, 'readWorkerFile' | 'readMessageText'>,
+): Promise<AnswerRunInput> {
+  const channelArgs = parseAnswerChannelArgs(argv)
+  const parsed = parseAnswerTextSources(channelArgs.argv)
+  let rulings: AnswerRunInput['rulings']
+  const cliRuling = (text: string) => {
+    if (text) assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS)
+    return text
+  }
+  if (parsed.byId.length) {
+    if (parsed.commandFile !== undefined || parsed.positionals.length) {
+      throw new Error(
+        'pass --file next to each --q<id>, not as a command-level flag or positional alongside --q\n' +
+          `working forms:\n${ANSWER_WORKING_FORMS}`,
+      )
+    }
+    rulings = parsed.byId.map((source) => ({
+      questionId: source.id,
+      text: cliRuling(
+        source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
+      ),
+    }))
+  } else if (
+    parsed.commandFile !== undefined ||
+    (!parsed.positionals.length && !process.stdin.isTTY)
+  ) {
+    rulings = cliRuling(
+      (await helpers.readMessageText({
+        missing: 'no ruling: pass it as an argument, via --file, or on stdin',
+        exclusive: 'pass the ruling either positionally or with --file, not both',
+        sources: parsed,
+      })) ?? '',
+    )
+  } else {
+    rulings = cliRuling(parsed.positionals.join(' '))
+  }
+  return {
+    rulings,
+    fromOperator: channelArgs.argv.includes('--from-operator'),
+    channel: channelArgs.channel,
+    recordOnly,
+    json,
+    flags,
+  }
+}
+
 export async function retryCommand(
   id: number,
   options: { agent?: string; model?: string; flags: Flags },
   presentation: Presentation,
 ): Promise<void> {
-  await retryRun(id, options, helpers(presentation))
+  await retryRun(id, options, answerRunHelpers(presentation))
 }
 
 export async function answerCommand(
@@ -70,7 +124,12 @@ export async function answerCommand(
   flags: Flags,
   presentation: Presentation,
 ): Promise<void> {
-  const result = await answerRun(id, { argv, recordOnly, json, flags }, helpers(presentation))
+  const helpers = answerRunHelpers(presentation)
+  const result = await answerRun(
+    id,
+    await answerInputFromArgv(argv, recordOnly, json, flags, helpers),
+    helpers,
+  )
   if (json) console.log(JSON.stringify(result))
 }
 

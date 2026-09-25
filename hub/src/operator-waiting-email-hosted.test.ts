@@ -33,6 +33,15 @@ test('rendered HTML contains the decision and obeys email CSS rules', () => {
   expect(rendered.html).not.toMatch(/display:\s*(flex|grid)|var\(--/i)
 })
 
+test('a no-project waiting item renders without a project placeholder', () => {
+  const rendered = renderOperatorWaitingEmail(
+    { ...input, project: null, task_key: null },
+    new Date('2026-09-25T11:00:00.000Z'),
+  )
+  expect(rendered.subject).toBe('Waiting on you: question')
+  expect(rendered.text).toContain(input.question)
+})
+
 test('reclaim decision bounds attempts and leaves a fresh intent in flight', () => {
   const now = new Date('2026-09-25T12:00:00.000Z')
   const row = {

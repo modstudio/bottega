@@ -82,7 +82,7 @@ export const OperatorWaitingItemSchema = z
     kind: z.enum(['question', 'workflow'] satisfies [OperatorInboxKind, ...OperatorInboxKind[]]),
     id: z.number().int().positive(),
     run_id: z.number().int().positive().nullable(),
-    project: z.string(),
+    project: z.string().nullable(),
     task_key: z.string().nullable(),
     session_id: z.string().nullable(),
     question: z.string(),
@@ -111,9 +111,53 @@ export const AnswerWaitingResultSchema = z
   })
   .strict()
 
+const OpenQuestionSchema = z
+  .object({
+    question_id: z.number().int().positive(),
+    run_id: z.number().int().positive(),
+    answer_id: z.number().int().positive(),
+    job: z.string(),
+    agent: z.string(),
+    repo: z.string().nullable(),
+    asked_at: z.string(),
+    session_live: z.literal(true).nullable(),
+    session_liveness: z.enum(['live', 'unknown']),
+    can_answer: z.boolean(),
+    question: z.string(),
+    options: z.array(z.string()),
+    recommendation: z.string().nullable(),
+    why: z.string().nullable(),
+    status: z.string(),
+    ruling_status: z.enum(['open', 'answered', 'overturned']),
+    overturned_at: z.string().nullable(),
+    overturned_by: z.string().nullable(),
+    overturn_reason: z.string().nullable(),
+    replacement: z.string().nullable(),
+  })
+  .strict()
+
+export const ListOpenQuestionsResultSchema = z
+  .object({
+    questions: z.array(OpenQuestionSchema),
+    waiting_on_operator: z.array(OperatorWaitingItemSchema),
+  })
+  .strict()
+
+export const OverturnRulingResultSchema = z
+  .object({
+    question_id: z.number().int().positive(),
+    ruling_status: z.literal('overturned'),
+    overturned_at: z.string(),
+    overturned_by: z.string(),
+    overturn_reason: z.string(),
+    replacement: z.string().nullable(),
+  })
+  .strict()
+
 export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
 export type ClaimedOperatorNotification = z.infer<typeof ClaimedOperatorNotificationSchema>
 export type AnswerWaitingResult = z.infer<typeof AnswerWaitingResultSchema>
+export type ListOpenQuestionsResult = z.infer<typeof ListOpenQuestionsResultSchema>
 
 const OrchTrackerSettingsSchema = z
   .looseObject(trackerSettingsShape)
