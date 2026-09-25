@@ -162,12 +162,17 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/operator/operator-notification.ts', []),
   module('orchestrator/src/operator/operator-waiting.ts', [
     'bun:sqlite',
+    '../../../shared/machine-config.ts',
+    '../../../shared/operator-inbox.ts',
     '../database/db.ts',
     '../run/run-authority.ts',
     '../workflow/autonomy-scopes.ts',
     './operator-notification.ts',
   ]),
-  module('orchestrator/src/operator/operator-commands.ts', ['./operator-waiting.ts']),
+  module('orchestrator/src/operator/operator-commands.ts', [
+    '../cli/args.ts',
+    './operator-waiting.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',
     'node:crypto',
@@ -280,6 +285,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/question-vocabulary.ts', []),
+  module('shared/operator-inbox.ts', []),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
     'node:fs',

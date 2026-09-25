@@ -2,9 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
 import { notificationCommand } from './operator-notification.ts'
 import {
+  claimOperatorNotifications,
   initialQuestionWaitingAt,
-  markWorkflowNotification,
-  notifyWaitingQuestion,
   operatorWaiting,
   questionAwaitingOperator,
   relayQuestion,
@@ -150,7 +149,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   ])
 })
 
-test('notification ledgers admit each item once', () => {
+test('notification claims return each waiting episode once', () => {
   const owner = run()
   const question = db()
     .query(
@@ -158,12 +157,6 @@ test('notification ledgers admit each item once', () => {
        VALUES (?,'2026-09-25','Question?','2026-09-25') RETURNING id`,
     )
     .get(owner.id) as { id: number }
-  let sent = 0
-  const send = () => sent++
-  notifyWaitingQuestion(question.id, db(), send)
-  notifyWaitingQuestion(question.id, db(), send)
-  expect(sent).toBe(1)
-
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
@@ -173,8 +166,32 @@ test('notification ledgers admit each item once', () => {
                '[]','Workflow?',1,'2026-09-25','2026-09-25') RETURNING id`,
     )
     .get() as { id: number }
-  expect(markWorkflowNotification(cursor.id, db())).toBeTrue()
-  expect(markWorkflowNotification(cursor.id, db())).toBeFalse()
+  const first = claimOperatorNotifications(db())
+  expect(first.map(({ kind, id }) => ({ kind, id }))).toEqual([
+    { kind: 'question', id: question.id },
+    { kind: 'workflow', id: cursor.id },
+  ])
+  expect(first[0]?.notification).toEqual({
+    title: 'Ruling needed: fixture DEV-943',
+    body: 'Question?',
+    link: `http://127.0.0.1:7778/inbox/question/${question.id}`,
+  })
+  expect(claimOperatorNotifications(db())).toEqual([])
+
+  db().query("UPDATE workflow_cursor SET state='running', updated_at='2026-09-26'").run()
+  db()
+    .query(
+      "UPDATE workflow_cursor SET state='awaiting-ruling', question='Again?', updated_at='2026-09-27'",
+    )
+    .run()
+  expect(
+    claimOperatorNotifications(db()).map(({ kind, id, waiting_since }) => ({
+      kind,
+      id,
+      waiting_since,
+    })),
+  ).toEqual([{ kind: 'workflow', id: cursor.id, waiting_since: '2026-09-27' }])
+  expect(claimOperatorNotifications(db())).toEqual([])
 })
 
 test('notification command prefers the platform adapter without spawning', () => {

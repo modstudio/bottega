@@ -2,11 +2,12 @@ ALTER TABLE question ADD COLUMN awaiting_operator_at TEXT;
 --> statement-breakpoint
 ALTER TABLE question ADD COLUMN relayed_by TEXT;
 --> statement-breakpoint
-ALTER TABLE question ADD COLUMN notified_at TEXT;
---> statement-breakpoint
-CREATE TABLE workflow_operator_notification (
-  cursor_id   INTEGER PRIMARY KEY REFERENCES workflow_cursor(id) ON DELETE CASCADE,
-  notified_at TEXT NOT NULL
+CREATE TABLE operator_notification (
+  kind        TEXT NOT NULL CHECK (kind IN ('question','workflow')),
+  item_id     INTEGER NOT NULL,
+  episode     TEXT NOT NULL,
+  notified_at TEXT NOT NULL,
+  PRIMARY KEY (kind,item_id,episode)
 );
 --> statement-breakpoint
 CREATE TABLE run_mutation_audit_new (

@@ -2,6 +2,8 @@
 /** Owns durable operator-waiting state, relay policy, and its stable read model. */
 
 import type { Database } from 'bun:sqlite'
+import { readMachineValue } from '../../../shared/machine-config.ts'
+import { type OperatorInboxKind, operatorInboxPath } from '../../../shared/operator-inbox.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
@@ -29,58 +31,59 @@ export async function initialQuestionWaitingAt(
 
 const firstLine = (value: string) => value.split(/\r?\n/, 1)[0]!
 
-function notificationDetails(kind: 'question' | 'workflow', id: number, d: Database) {
-  const row =
-    kind === 'question'
-      ? (d
-          .query(
-            `SELECT q.question, r.repo project, r.launch_key task_key
-             FROM question q JOIN run r ON r.id=q.run_id WHERE q.id=?`,
-          )
-          .get(id) as { question: string; project: string | null; task_key: string | null } | null)
-      : (d
-          .query(
-            `SELECT question, project, NULLIF(workflow_key,'') task_key
-             FROM workflow_cursor WHERE id=?`,
-          )
-          .get(id) as { question: string; project: string; task_key: string | null } | null)
-  if (!row?.question || !row.project) return null
+export type OperatorNotificationDetails = {
+  title: string
+  body: string
+  link: string
+}
+
+function notificationDetails(item: OperatorWaitingItem): OperatorNotificationDetails {
+  const port = readMachineValue('hub.port')
   return {
-    title: `Ruling needed: ${row.project}${row.task_key ? ` ${row.task_key}` : ''}`,
-    body: firstLine(row.question),
-    link: `http://127.0.0.1:7778/inbox/${kind}/${id}`,
+    title: `Ruling needed: ${item.project}${item.task_key ? ` ${item.task_key}` : ''}`,
+    body: firstLine(item.question),
+    link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
   }
 }
 
-export function notifyWaitingQuestion(
-  id: number,
+export type ClaimedOperatorNotification = OperatorWaitingItem & {
+  notification: OperatorNotificationDetails
+}
+
+/** Atomically claim each currently waiting episode once, optionally narrowed for direct delivery. */
+export function claimOperatorNotifications(
   d: Database = db(),
+  only?: { kind: OperatorInboxKind; id: number },
+): ClaimedOperatorNotification[] {
+  return writeTransaction(() => {
+    const items = operatorWaitingWithEpisodes(d).filter(
+      ({ item }) => !only || (item.kind === only.kind && item.id === only.id),
+    )
+    const claimed: ClaimedOperatorNotification[] = []
+    const insert = d.query(
+      `INSERT OR IGNORE INTO operator_notification (kind,item_id,episode,notified_at)
+       VALUES (?,?,?,?)`,
+    )
+    for (const { item, episode } of items) {
+      if (insert.run(item.kind, item.id, episode, nowIso()).changes !== 1) continue
+      claimed.push({ ...item, notification: notificationDetails(item) })
+    }
+    return claimed
+  }, d)
+}
+
+/** Claim and send from trusted in-process paths; delivery failure cannot fail the mutation. */
+export function notifyWaitingItem(
+  kind: OperatorInboxKind,
+  id: number,
+  d: Database,
   send: typeof sendOperatorNotification = sendOperatorNotification,
 ): void {
-  const at = nowIso()
-  const changed = d
-    .query(
-      `UPDATE question SET notified_at=?
-       WHERE id=? AND awaiting_operator_at IS NOT NULL AND answered_at IS NULL AND notified_at IS NULL`,
-    )
-    .run(at, id)
-  if (changed.changes !== 1) return
-  const details = notificationDetails('question', id, d)
-  if (details) send(details)
-}
-
-export function markWorkflowNotification(id: number, d: Database): boolean {
-  const inserted = d
-    .query(
-      `INSERT OR IGNORE INTO workflow_operator_notification (cursor_id,notified_at) VALUES (?,?)`,
-    )
-    .run(id, nowIso())
-  return inserted.changes === 1
-}
-
-export function notifyWaitingWorkflow(id: number, d: Database = db()): void {
-  const details = notificationDetails('workflow', id, d)
-  if (details) sendOperatorNotification(details)
+  try {
+    for (const item of claimOperatorNotifications(d, { kind, id })) send(item.notification)
+  } catch (error) {
+    console.error(`orch: desktop notification failed: ${String(error)}`)
+  }
 }
 
 function openQuestions(runId: number, d: Database) {
@@ -99,9 +102,8 @@ export function relayQuestion(
   questionId: number | undefined,
   note: string,
   d: Database = db(),
-  notify: (id: number, d: Database) => void = notifyWaitingQuestion,
+  notify: (kind: OperatorInboxKind, id: number, d: Database) => void = notifyWaitingItem,
 ): number {
-  if (!note.trim()) throw new Error('--note is required')
   let { authority, rows } = openQuestions(runId, d)
   if (questionId !== undefined) {
     const named = rows.find((row) => row.id === questionId)
@@ -112,7 +114,9 @@ export function relayQuestion(
     rows = rows.filter((row) => !row.answered_at)
     if (!rows.length) throw new Error(`run ${authority.rootId} has no open question`)
     if (rows.length > 1)
-      throw new Error(`run ${authority.rootId} has ${rows.length} open questions; pass --q<id>`)
+      throw new Error(
+        `run ${authority.rootId} has ${rows.length} open questions; select one question`,
+      )
   }
   const id = rows[0]!.id
   writeTransaction(() => {
@@ -125,9 +129,9 @@ export function relayQuestion(
       )
       .run(at, authority.actor, id)
     if (changed.changes !== 1) throw new Error(`question ${id} is already answered`)
-    auditRunMutation(authority, 'relay', note.trim(), d)
+    auditRunMutation(authority, 'relay', note, d)
   }, d)
-  notify(id, d)
+  notify('question', id, d)
   return id
 }
 
@@ -148,7 +152,9 @@ export type OperatorWaitingItem = {
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
-export function operatorWaiting(d: Database = db()): OperatorWaitingItem[] {
+function operatorWaitingWithEpisodes(
+  d: Database,
+): Array<{ item: OperatorWaitingItem; episode: string }> {
   const questions = d
     .query(
       `SELECT q.id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
@@ -183,9 +189,10 @@ export function operatorWaiting(d: Database = db()): OperatorWaitingItem[] {
     args: string
   }>
   return [
-    ...questions.map(
-      (row): OperatorWaitingItem => ({
-        kind: 'question',
+    ...questions.map((row) => ({
+      episode: row.awaiting_operator_at,
+      item: {
+        kind: 'question' as const,
         id: row.id,
         project: row.project,
         task_key: row.task_key,
@@ -195,28 +202,37 @@ export function operatorWaiting(d: Database = db()): OperatorWaitingItem[] {
         why: row.why,
         waiting_since: row.awaiting_operator_at,
         answer_command: `orch answer ${row.root_id} --q${row.id} --from-operator "<ruling>"`,
-      }),
-    ),
-    ...workflows.map((row): OperatorWaitingItem => {
+      },
+    })),
+    ...workflows.map((row) => {
       const args = JSON.parse(row.args) as Record<string, string>
       const flags = Object.entries(args)
         .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
         .join('')
       return {
-        kind: 'workflow',
-        id: row.id,
-        project: row.project,
-        task_key: row.task_key,
-        question: row.question,
-        options: [],
-        recommendation: null,
-        why: null,
-        waiting_since: row.updated_at,
-        answer_command: `orch workflow next ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --note "<ruling>"`,
+        episode: row.updated_at,
+        item: {
+          kind: 'workflow' as const,
+          id: row.id,
+          project: row.project,
+          task_key: row.task_key,
+          question: row.question,
+          options: [],
+          recommendation: null,
+          why: null,
+          waiting_since: row.updated_at,
+          answer_command: `orch workflow next ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --note "<ruling>"`,
+        },
       }
     }),
   ].sort(
     (a, b) =>
-      a.waiting_since.localeCompare(b.waiting_since) || a.kind.localeCompare(b.kind) || a.id - b.id,
+      a.item.waiting_since.localeCompare(b.item.waiting_since) ||
+      a.item.kind.localeCompare(b.item.kind) ||
+      a.item.id - b.item.id,
   )
+}
+
+export function operatorWaiting(d: Database = db()): OperatorWaitingItem[] {
+  return operatorWaitingWithEpisodes(d).map(({ item }) => item)
 }

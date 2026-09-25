@@ -245,28 +245,20 @@ export function register(program: Command): void {
     .command('relay <id>')
     .requiredOption('--note <why>')
     .allowUnknownOption(true)
-    .action((id, options, command) => {
-      const args = rawArgv(command).slice(2)
-      const questions = args.flatMap((arg) => {
-        const match = arg.match(/^--q(\d+)$/)
-        return match ? [Number(match[1])] : []
-      })
-      const accepted = new Set([
-        `--note=${options.note}`,
-        '--note',
-        String(options.note),
-        ...questions.map((question) => `--q${question}`),
-      ])
-      const unknown = args.filter((arg) => !accepted.has(arg))
-      if (unknown.length) throw new Error(`unrecognized relay argument ${unknown[0]}`)
-      if (questions.length > 1) throw new Error('pass at most one --q<id>')
-      relayCommand(Number(id), questions[0], options.note, presentation)
-    })
+    .action((id, options, command) =>
+      relayCommand(Number(id), rawArgv(command).slice(2), options.note, presentation),
+    )
   program
     .command('waiting')
     .option('--json')
+    .option('--claim-notifications')
     .allowExcessArguments(false)
-    .action((options) => waitingCommand(Boolean(options.json), presentation))
+    .action((options) =>
+      waitingCommand(
+        { json: Boolean(options.json), claimNotifications: Boolean(options.claimNotifications) },
+        presentation,
+      ),
+    )
   program
     .command('peek <id>')
     .option('--events <value>')

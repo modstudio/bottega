@@ -36,7 +36,7 @@ import { z } from 'zod'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
-import { initialQuestionWaitingAt, notifyWaitingQuestion } from '../operator/operator-waiting.ts'
+import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { ASKED_VIA_LIVE } from '../run/question-vocabulary.ts'
 
 /**
@@ -99,8 +99,6 @@ export async function ask(o: {
       ASKED_VIA_LIVE,
       awaitingOperatorAt,
     ) as { id: number }
-  notifyWaitingQuestion(id)
-
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
   const q = db().query('SELECT answer FROM question WHERE id = ? AND answered_at IS NOT NULL')
 

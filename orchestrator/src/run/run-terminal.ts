@@ -29,7 +29,7 @@ import type { classify } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
-import { initialQuestionWaitingAt, notifyWaitingQuestion } from '../operator/operator-waiting.ts'
+import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply } from '../outcome.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -480,7 +480,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
        VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
     )
     for (const item of questionsToInsert(existingQuestionTexts, acceptedQuestions)) {
-      const inserted = q.get(
+      q.get(
         claim.id,
         askedAt,
         item.question,
@@ -489,8 +489,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         item.why ?? null,
         ASKED_VIA_REPLY,
         awaitingOperatorAt,
-      ) as { id: number }
-      notifyWaitingQuestion(inserted.id)
+      )
     }
   }
 

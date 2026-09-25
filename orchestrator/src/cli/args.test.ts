@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import {
   ANSWER_WORKING_FORMS,
   assertWorkerText,
+  bareQuestionSelector,
   CONTINUE_WORKING_FORMS,
   flagValue,
   flagValues,
@@ -50,6 +51,7 @@ test('every registered top-level command is recognized as canon', () => {
     'peek',
     'answer',
     'tell',
+    'relay',
     'continue',
     'diff',
     'sweep',
@@ -81,9 +83,16 @@ test('every registered top-level command is recognized as canon', () => {
     'reconcile',
     'epic',
     'sync',
+    'waiting',
   ]
   for (const command of commands) expect(isCliCommand(command)).toBeTrue()
   expect(isCliCommand('nosuch')).toBeFalse()
+})
+
+test('bare question selectors accept only --q followed by an id', () => {
+  expect(bareQuestionSelector('--q42')).toBe(42)
+  expect(bareQuestionSelector('--q42=answer')).toBeNull()
+  expect(bareQuestionSelector('--question42')).toBeNull()
 })
 
 test('the singleton reader refuses duplicates while the plural reader preserves them', () => {
