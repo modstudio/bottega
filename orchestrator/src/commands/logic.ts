@@ -163,6 +163,8 @@ export function register(program: Command): void {
     .option('--session <value>')
     .option('--note <value>')
     .option('--question <value>')
+    .option('--ruling <value>')
+    .option('--from-operator')
     .option('--cwd <value>')
     .option('--check')
     .option('--all')

@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
@@ -33,6 +33,146 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
     ])
   } finally {
     database.close()
+  }
+})
+
+test('workflow question migration preserves run questions and backfills an awaiting cursor', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-workflow-questions-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex((entry) => entry.tag === '0056_workflow_questions')
+  const prior = journal.slice(0, migration)
+  for (const entry of prior) {
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  }
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    database.exec('PRAGMA foreign_keys=ON')
+    applyMigrations(database, folder)
+    const run = database
+      .query(
+        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-09-20','codex','implement','sha',1,'prompt','asking') RETURNING id`,
+      )
+      .get() as { id: number }
+    const question = database
+      .query(`INSERT INTO question (run_id,asked_at,question,asked_via) VALUES (?,?,?,'reply')`)
+      .run(run.id, '2026-09-20', 'Run question?').lastInsertRowid
+    database
+      .query(
+        `INSERT INTO question (id,run_id,asked_at,question) VALUES (99,?,'2026-09-20','deleted')`,
+      )
+      .run(run.id)
+    database.query('DELETE FROM question WHERE id=99').run()
+    const cursor = database
+      .query(
+        `INSERT INTO workflow_cursor
+          (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+           workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+           total_steps,created_at,updated_at)
+         VALUES ('fixture','ship','default','DEV-964','','owner',1,1,'{}',0,'build',
+                 'awaiting-ruling','[]','Workflow question?',1,'2026-09-20','2026-09-21')
+         RETURNING id`,
+      )
+      .get() as { id: number }
+
+    database.exec(`
+      CREATE TABLE question_mutation_audit (
+        question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
+        action TEXT NOT NULL CHECK (action IN ('rule','overturn','file')),
+        actor_session TEXT,
+        at TEXT NOT NULL,
+        reason TEXT
+      );
+      CREATE INDEX question_mutation_audit_question ON question_mutation_audit(question_id,at);
+    `)
+    database
+      .query(
+        `INSERT INTO question_delivery (question_id,run_id,mode,outcome,at,error)
+         VALUES (?,?,'resume','delivered','2026-09-22',NULL)`,
+      )
+      .run(question, run.id)
+    database
+      .query('INSERT INTO run_carried_ruling (run_id,question_id) VALUES (?,?)')
+      .run(run.id, question)
+    database
+      .query(
+        `INSERT INTO question_mutation_audit
+          (question_id,action,actor_session,at,reason)
+         VALUES (?,'file','owner','2026-09-23','fixture')`,
+      )
+      .run(question)
+
+    const source = readFileSync(join(MIGRATIONS_FOLDER, '0056_workflow_questions.sql'), 'utf8')
+    writeFileSync(
+      join(folder, '0056_workflow_questions.sql'),
+      source.split('--> statement-breakpoint').slice(2).join('--> statement-breakpoint'),
+    )
+    writeFileSync(
+      join(folder, 'meta', '_journal.json'),
+      JSON.stringify({ version: '7', dialect: 'sqlite', entries: journal }),
+    )
+    expect(applyMigrations(database, folder)).toEqual(['0056_workflow_questions'])
+    expect(
+      database
+        .query(
+          'SELECT run_id,workflow_cursor_id,workflow_key,question,asked_via FROM question ORDER BY id',
+        )
+        .all(),
+    ).toEqual([
+      {
+        run_id: run.id,
+        workflow_cursor_id: null,
+        workflow_key: null,
+        question: 'Run question?',
+        asked_via: 'reply',
+      },
+      {
+        run_id: null,
+        workflow_cursor_id: cursor.id,
+        workflow_key: 'DEV-964',
+        question: 'Workflow question?',
+        asked_via: 'workflow',
+      },
+    ])
+    expect(database.query('SELECT * FROM question_delivery').all()).toEqual([
+      {
+        id: 1,
+        question_id: Number(question),
+        run_id: run.id,
+        mode: 'resume',
+        outcome: 'delivered',
+        at: '2026-09-22',
+        error: null,
+      },
+    ])
+    expect(database.query('SELECT * FROM run_carried_ruling').all()).toEqual([
+      { run_id: run.id, question_id: Number(question) },
+    ])
+    expect(database.query('SELECT * FROM question_mutation_audit').all()).toEqual([
+      {
+        question_id: Number(question),
+        action: 'file',
+        actor_session: 'owner',
+        at: '2026-09-23',
+        reason: 'fixture',
+      },
+    ])
+    expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
+    const next = database
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,asked_via)
+         VALUES (?,'2026-09-24','Next?','reply') RETURNING id`,
+      )
+      .get(run.id) as { id: number }
+    expect(next.id).toBeGreaterThan(99)
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
   }
 })
 
@@ -72,6 +212,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0053_question_filed_ruling',
       '0054_file_ruling_audit',
       '0055_settings_doc_scope',
+      '0056_workflow_questions',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -158,6 +299,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0053_question_filed_ruling',
       '0054_file_ruling_audit',
       '0055_settings_doc_scope',
+      '0056_workflow_questions',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -231,6 +373,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0053_question_filed_ruling',
       '0054_file_ruling_audit',
       '0055_settings_doc_scope',
+      '0056_workflow_questions',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -285,6 +428,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0053_question_filed_ruling',
       '0054_file_ruling_audit',
       '0055_settings_doc_scope',
+      '0056_workflow_questions',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',

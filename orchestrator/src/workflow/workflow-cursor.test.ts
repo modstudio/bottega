@@ -9,6 +9,7 @@ import {
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
+  ruleWorkflow,
   workflowCursorProjectScope,
 } from './workflow-cursor.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
@@ -459,12 +460,71 @@ describe('workflow cursor adapter', () => {
       state: 'awaiting-ruling',
       question: 'Which ruling?',
     })
+    expect(
+      d.query('SELECT workflow_key,asked_via,question,answered_at,closed_at FROM question').get(),
+    ).toEqual({
+      workflow_key: 'DEV-822',
+      asked_via: 'workflow',
+      question: 'Which ruling?',
+      answered_at: null,
+      closed_at: null,
+    })
 
     getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
     expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
       state: 'running',
       question: null,
     })
+    expect(d.query('SELECT close_reason FROM question').get()).toEqual({
+      close_reason: 'advanced-without-ruling',
+    })
+  })
+
+  test('re-ask is idempotent and rule records the answer before resuming the same step', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'First?', context, d, () => {})
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Updated?', context, d, () => {})
+    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
+
+    ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d)
+    expect(d.query('SELECT state,ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      state: 'running',
+      ordinal: 0,
+      step_slug: 'rebase',
+    })
+    expect(
+      d.query('SELECT question,answer,answerer_kind,answer_channel FROM question').get(),
+    ).toEqual({
+      question: 'Updated?',
+      answer: 'Proceed.',
+      answerer_kind: 'operator',
+      answer_channel: 'mcp',
+    })
+    expect(d.query('SELECT action FROM question_mutation_audit').get()).toEqual({ action: 'rule' })
+    expect(() =>
+      ruleWorkflow('ship', 'fixture', 'default', args, 'Again', true, 'cli', context, d),
+    ).toThrow('is not awaiting a ruling')
+  })
+
+  test('workflow rule requires owner authority or operator override and audits the actual actor', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
+    try {
+      expect(() =>
+        ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
+      ).toThrow('owned by session session-one')
+      ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d)
+      expect(d.query('SELECT action,actor_session FROM question_mutation_audit').all()).toEqual([
+        { action: 'rule', actor_session: 'foreign-session' },
+      ])
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
+    }
   })
 
   test('await persists a rebound argument while refusing other conflicts', () => {
@@ -547,6 +607,9 @@ describe('workflow cursor adapter', () => {
       session_id: 'session-two',
     })
     expect(listWorkflowCursors({ project: 'fixture' }, d)).toEqual([])
+    expect(d.query('SELECT close_reason FROM question').get()).toEqual({
+      close_reason: 'abandoned',
+    })
   })
 
   test('abandon requires a non-blank reason and refuses done cursors', () => {

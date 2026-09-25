@@ -159,15 +159,17 @@ function operatorWaitingWithEpisodes(
   }>
   const workflows = d
     .query(
-      `SELECT id,project,NULLIF(workflow_key,'') task_key,question,updated_at,workflow_slug,
-              mode_slug,args,session_id FROM workflow_cursor WHERE state='awaiting-ruling'`,
+      `SELECT c.id,c.project,q.workflow_key task_key,q.question,q.asked_at waiting_since,
+              c.workflow_slug,c.mode_slug,c.args,c.session_id
+         FROM workflow_cursor c JOIN question q ON q.workflow_cursor_id=c.id
+        WHERE c.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL`,
     )
     .all() as Array<{
     id: number
     project: string
     task_key: string | null
     question: string
-    updated_at: string
+    waiting_since: string
     workflow_slug: string
     mode_slug: string
     args: string
@@ -198,7 +200,7 @@ function operatorWaitingWithEpisodes(
         .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
         .join('')
       return {
-        episode: row.updated_at,
+        episode: row.waiting_since,
         item: {
           kind: 'workflow' as const,
           id: row.id,
@@ -210,9 +212,9 @@ function operatorWaitingWithEpisodes(
           options: [],
           recommendation: null,
           why: null,
-          waiting_since: row.updated_at,
-          episode: row.updated_at,
-          answer_command: `orch workflow next ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --note "<ruling>"`,
+          waiting_since: row.waiting_since,
+          episode: row.waiting_since,
+          answer_command: `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
         },
       }
     }),

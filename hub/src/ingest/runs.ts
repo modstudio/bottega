@@ -1,8 +1,8 @@
 import type { Database } from 'bun:sqlite'
-import type { OrchRun } from '../../../shared/orch-contract.ts'
+import type { OrchRun, RulingListRow } from '../../../shared/orch-contract.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
-import { readRuns } from '../orch.ts'
+import { readRuns, readWorkflowRulings } from '../orch.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
 
@@ -89,6 +89,48 @@ function questionReplacer(conn: Database) {
   }
 }
 
+function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListRow[]): void {
+  const upsert = conn.query(
+    `INSERT INTO question
+      (question_id,run_ref,root_ref,workflow_cursor_id,workflow_key,project,task_key,
+       session_id,asked_at,answered_at,asked_via,answerer_kind,answer_channel,
+       overturned_at,closed_at,close_reason)
+     VALUES (?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(question_id) DO UPDATE SET
+       workflow_cursor_id=excluded.workflow_cursor_id,
+       workflow_key=excluded.workflow_key,
+       project=excluded.project,
+       task_key=excluded.task_key,
+       session_id=excluded.session_id,
+       asked_at=excluded.asked_at,
+       answered_at=excluded.answered_at,
+       asked_via=excluded.asked_via,
+       answerer_kind=excluded.answerer_kind,
+       answer_channel=excluded.answer_channel,
+       overturned_at=excluded.overturned_at,
+       closed_at=excluded.closed_at,
+       close_reason=excluded.close_reason`,
+  )
+  for (const question of questions) {
+    upsert.run(
+      question.id,
+      question.workflow_cursor_id,
+      question.workflow_key,
+      question.project,
+      question.workflow_key,
+      question.session_id,
+      question.asked_at,
+      question.answered_at,
+      question.asked_via,
+      question.answerer_kind,
+      question.answer_channel,
+      question.overturned_at,
+      question.closed_at,
+      question.close_reason,
+    )
+  }
+}
+
 export function executionSpans(r: OrchRun, now = Date.now()) {
   return (r.turns ?? [r]).flatMap((turn) => {
     const start = new Date(turn.started_at).getTime()
@@ -113,7 +155,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
   const snapshot = nowIso()
-  const runs = await readRuns(since)
+  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
   let rows = 0
   let skipped = 0
   const now = Date.now()
@@ -147,6 +189,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       WHERE source = 'orch' AND open = 1
         AND (ref = ? OR ref LIKE ?)`,
     )
+    upsertWorkflowQuestions(conn, workflowQuestions)
     for (const r of runs) {
       const a = attributeRun(r)
 

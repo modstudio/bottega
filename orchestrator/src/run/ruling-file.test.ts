@@ -78,6 +78,89 @@ const file = (
 ) => fileRuling({ fromOperator: false, channel: 'cli', ...input }, filingStores)
 
 describe('file ruling', () => {
+  test('files a workflow ruling with workflow provenance and question audit', async () => {
+    db()
+      .query(
+        `INSERT OR IGNORE INTO project (name,path,canon,settings)
+       VALUES ('workflow-fixture','/fixture',1,'{}')`,
+      )
+      .run()
+    const cursor = db()
+      .query(
+        `INSERT INTO workflow_cursor
+          (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+           workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+           total_steps,created_at,updated_at)
+         VALUES ('workflow-fixture','ship','default','DEV-964','','owner-session',1,1,'{}',0,
+                 'build','running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
+      )
+      .get() as { id: number }
+    const question = db()
+      .query(
+        `INSERT INTO question
+          (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
+           answerer_kind,answer_channel,asked_via)
+         VALUES (?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','owner-session',
+                 'agent','cli','workflow') RETURNING id`,
+      )
+      .get(cursor.id) as { id: number }
+    const writes: Array<{ subject: string | null; body: string }> = []
+
+    await file(
+      { questionId: question.id, as: 'doc' },
+      stores({
+        writeDoc: async (input) => {
+          writes.push({ subject: input.subject, body: input.body })
+          return { id: 88, revision: null }
+        },
+      }),
+    )
+
+    expect(writes[0]?.subject).toBe('workflow-fixture')
+    expect(writes[0]?.body).toContain('workflow: ship')
+    expect(writes[0]?.body).toContain('workflow_mode: default')
+    expect(writes[0]?.body).toContain(`workflow_cursor: ${cursor.id}`)
+    expect(writes[0]?.body).not.toContain('\nrun:')
+    expect(db().query('SELECT action FROM question_mutation_audit').get()).toEqual({
+      action: 'file',
+    })
+  })
+
+  test('workflow filing requires owner authority or operator override and audits the actual actor', async () => {
+    db()
+      .query(
+        `INSERT OR IGNORE INTO project (name,path,canon,settings)
+         VALUES ('workflow-fixture','/fixture',1,'{}')`,
+      )
+      .run()
+    const cursor = db()
+      .query(
+        `INSERT INTO workflow_cursor
+          (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+           workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+           total_steps,created_at,updated_at)
+         VALUES ('workflow-fixture','ship','default','DEV-964','','owner-session',1,1,'{}',0,
+                 'build','running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
+      )
+      .get() as { id: number }
+    const question = db()
+      .query(
+        `INSERT INTO question
+          (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
+         VALUES (?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','workflow') RETURNING id`,
+      )
+      .get(cursor.id) as { id: number }
+    process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
+
+    await expect(file({ questionId: question.id, as: 'doc' })).rejects.toThrow(
+      'owned by session owner-session',
+    )
+    await file({ questionId: question.id, as: 'doc', fromOperator: true })
+    expect(db().query('SELECT action,actor_session FROM question_mutation_audit').all()).toEqual([
+      { action: 'file', actor_session: 'foreign-session' },
+    ])
+  })
+
   test('records a doc filing ref and writes demand-scoped text', async () => {
     const run = addRun({
       agent: 'codex',

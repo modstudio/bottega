@@ -13,6 +13,7 @@ import { setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
+import { listRulings } from '../run/ruling-list.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { log } from './support.ts'
 
@@ -52,6 +53,17 @@ const rulingFileStores: RulingFileStores = {
 
 export function register(program: Command): void {
   const ruling = program.command('ruling')
+  ruling
+    .command('list')
+    .option('--since <ISO>')
+    .option('--kind <kind>', 'workflow, run, or all', 'all')
+    .requiredOption('--json')
+    .allowExcessArguments(false)
+    .action((options) => {
+      if (!['workflow', 'run', 'all'].includes(options.kind))
+        throw new Error('--kind must be workflow, run, or all')
+      log(JSON.stringify(listRulings({ since: options.since, kind: options.kind })))
+    })
   ruling
     .command('overturn <question-id>')
     .requiredOption('--because <reason>')

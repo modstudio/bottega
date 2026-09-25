@@ -10,7 +10,8 @@ export const TASK_RULING_MAX_RULING_CHARS = 2000
 
 export type TaskRulingRow = {
   question_id: number
-  run_id: number
+  run_id: number | null
+  workflow_cursor_id?: number | null
   question: string
   answer: string
   answered_at: string
@@ -22,7 +23,8 @@ export type TaskRulingRow = {
 
 type CarriedTaskRuling = {
   questionId: number
-  runId: number
+  runId: number | null
+  workflowCursorId: number | null
   question: string
   ruling: string
   ruledBy: 'operator' | 'agent'
@@ -49,6 +51,7 @@ function carriedRuling(row: TaskRulingRow): CarriedTaskRuling {
   return {
     questionId: row.question_id,
     runId: row.run_id,
+    workflowCursorId: row.workflow_cursor_id ?? null,
     question: question.value,
     ruling: ruling.value,
     ruledBy: row.answerer_kind === 'operator' ? 'operator' : 'agent',
@@ -73,7 +76,7 @@ function entryText(ruling: CarriedTaskRuling): string {
   return (
     `- Question${questionTruncated}:\n${quoted(ruling.question)}\n` +
     `  Ruling${replacement}${rulingTruncated}:\n${quoted(ruling.ruling)}\n` +
-    `  Ruled by: ${ruling.ruledBy} · run ${ruling.runId} · ${ruling.date}`
+    `  Ruled by: ${ruling.ruledBy} · ${ruling.runId === null ? `workflow cursor ${ruling.workflowCursorId}` : `run ${ruling.runId}`} · ${ruling.date}`
   )
 }
 

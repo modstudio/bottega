@@ -59,6 +59,7 @@ export function fileRulingDecision(input: {
   dashboardAuthorized: boolean
   runProject: string | null
   subject?: string
+  workflowAuthority?: { operator: boolean }
 }): FileRulingDecision {
   if (input.answeredAt === null) return { kind: 'refuse', code: 'unanswered' }
   if (input.overturnedAt !== null && !input.replacement) {
@@ -68,15 +69,20 @@ export function fileRulingDecision(input: {
   if (decideCanonFiling(input.requested, input.scope ?? 'project')) {
     return { kind: 'refuse', code: 'canon-direct' }
   }
-  const authority = answerAuthorityDecision({
-    channel: input.channel,
-    fromOperator: input.fromOperator,
-    sessionIdPresent: input.sessionIdPresent,
-    depthPresent: input.depthPresent,
-    dashboardAuthorized: input.dashboardAuthorized,
-    owner: input.owner,
-    actor: input.actor,
-  })
+  const authority =
+    input.workflowAuthority && input.channel !== 'ui'
+      ? input.workflowAuthority.operator
+        ? ({ kind: 'allow-as-operator', actor: 'operator:ui' } as const)
+        : ({ kind: 'allow-as-owner' } as const)
+      : answerAuthorityDecision({
+          channel: input.channel,
+          fromOperator: input.fromOperator,
+          sessionIdPresent: input.sessionIdPresent,
+          depthPresent: input.depthPresent,
+          dashboardAuthorized: input.dashboardAuthorized,
+          owner: input.owner,
+          actor: input.actor,
+        })
   if (authority.kind === 'refuse') {
     return {
       kind: 'refuse',

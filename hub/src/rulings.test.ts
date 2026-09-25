@@ -228,7 +228,10 @@ describe('ruling-loop measures', () => {
         starts_at: '2026-09-10T12:00:00.000Z',
         ends_at: '2026-09-24T12:00:00.000Z',
       },
-      questions_asked: { total: 5, by_asked_via: { live: 1, reply: 3, unknown: 1 } },
+      questions_asked: {
+        total: 5,
+        by_asked_via: { live: 1, reply: 3, workflow: 0, unknown: 1 },
+      },
       answer_wait: {
         overall: {
           count: 4,

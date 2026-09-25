@@ -237,6 +237,38 @@ const OrchQuestionSchema = z
   })
   .passthrough()
 
+const RulingListRowSchema = z
+  .object({
+    id: z.number().int().positive(),
+    run_id: z.number().int().positive().nullable(),
+    workflow_cursor_id: z.number().int().positive().nullable(),
+    workflow_key: nullableString,
+    project: nullableString,
+    workflow_slug: nullableString,
+    mode_slug: nullableString,
+    session_id: nullableString,
+    asked_at: z.string(),
+    question: z.string(),
+    answer: nullableString,
+    answered_at: nullableString,
+    answered_by: nullableString,
+    asked_via: z.enum(ASKED_VIA_VALUES).nullable(),
+    answerer_kind: z.enum(ANSWERER_KIND_VALUES).nullable(),
+    answer_channel: z.enum(ANSWER_CHANNEL_VALUES).nullable(),
+    closed_at: nullableString,
+    close_reason: nullableString,
+    overturned_at: nullableString,
+    overturned_by: nullableString,
+    overturn_reason: nullableString,
+    replacement: nullableString,
+    filed_as: nullableString,
+    filed_ref: nullableString,
+    filed_at: nullableString,
+  })
+  .strict()
+export const RulingListSchema = z.array(RulingListRowSchema)
+export type RulingListRow = z.infer<typeof RulingListRowSchema>
+
 export const OrchRunSchema = z
   .object({
     id: z.number().int(),

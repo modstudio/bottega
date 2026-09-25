@@ -41,6 +41,7 @@ import {
   mcpWorkflowCursorContext,
   nextWorkflowStep,
   resolveWorkflowCursorMode,
+  ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
@@ -516,6 +517,45 @@ export function createDocsMcpServer(): McpServer {
           ),
           workflowArgs,
           question,
+          context,
+        ),
+      )
+    },
+  )
+
+  server.registerTool(
+    'rule_workflow',
+    {
+      description: 'Record a ruling and resume the workflow on the same step.',
+      inputSchema: {
+        slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
+        mode: z.string().trim().min(1).optional(),
+        args: z.record(z.string(), z.string()).optional(),
+        ruling: z.string().trim().min(1),
+        from_operator: z.boolean().optional(),
+      },
+    },
+    async ({ slug, project, mode, args, ruling, from_operator }) => {
+      const workflowArgs = args ?? {}
+      const context = mcpWorkflowCursorContext()
+      return text(
+        ruleWorkflow(
+          slug,
+          project,
+          resolveWorkflowCursorMode(
+            slug,
+            project,
+            mode,
+            workflowArgs,
+            context,
+            'rule_workflow',
+            'pass the mode argument',
+          ),
+          workflowArgs,
+          ruling,
+          Boolean(from_operator),
+          'mcp',
           context,
         ),
       )
