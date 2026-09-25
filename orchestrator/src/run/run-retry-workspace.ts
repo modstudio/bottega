@@ -2,6 +2,7 @@
 /** Resolves and validates the retained branch/tree used by a fresh writing retry. */
 
 import { existsSync } from 'node:fs'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
 import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
@@ -9,11 +10,10 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { latestCheckpoint } from './checkpoint.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
-import {
-  decideRetryPath,
-  type RetryBranchTipRelation,
-  retryOwnerProcessAlive,
-} from './run-retry.ts'
+import { runAlive } from './run-alive.ts'
+import { refuseHeldContinuationBranch } from './run-control.ts'
+import { runLeaseState } from './run-lease.ts'
+import { decideWritingRetryWorkspace, type RetryBranchTipRelation } from './run-retry.ts'
 
 export type WritingRetryWorkspace = {
   cwd: string
@@ -44,8 +44,7 @@ export function resolveWritingRetryWorkspace(input: {
   projectId: number | null
   branchKept: string | null
   branchKeptTip: string | null
-  rulingsPresent: boolean
-  agentChanged: boolean
+  strandedRecordOnly: boolean
 }): WritingRetryWorkspace {
   const latest = db()
     .query(
@@ -84,12 +83,15 @@ export function resolveWritingRetryWorkspace(input: {
   const recordedTreeMatches = Boolean(
     latest.worktree && existsSync(latest.worktree) && branchOf(latest.worktree) === branch,
   )
-  const decision = decideRetryPath({
-    writesRepo: true,
-    rulingsPresent: input.rulingsPresent,
-    agentChanged: input.agentChanged,
+  const decision = decideWritingRetryWorkspace({
     treeExists: recordedTreeMatches,
-    treeLive: retryOwnerProcessAlive({ owner_status: latest.status, owner_pid: latest.pid }),
+    treeLive:
+      !input.strandedRecordOnly &&
+      runAlive({
+        status: latest.status,
+        lease: runLeaseState(latest.id),
+        pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+      }),
     branchTipRelation: relation,
   })
   if (decision.action === 'refuse-branch') {
@@ -143,6 +145,13 @@ export function resolveWritingRetryWorkspace(input: {
   })
   if (plan.action === 'attach-recorded' || plan.action === 'refuse') {
     throw new Error(`run ${input.id} could not prepare branch ${branch} for retry`)
+  }
+  refuseHeldContinuationBranch(input.id, project.path, latest.worktree, plan)
+  if (worktreeTool?.create && !worktreeTool.recipe && !worktreeTool.recipePath) {
+    throw new Error(
+      `run ${input.id} cannot reopen branch ${branch}: its command-template lifecycle cannot open an existing branch; ` +
+        `start over with ${startOver}`,
+    )
   }
   return { cwd: project.path, commit: liveTip, worktree: null, treePlan: plan }
 }

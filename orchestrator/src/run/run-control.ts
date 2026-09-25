@@ -363,7 +363,7 @@ function inheritedResumeWorktree(
   }
 }
 
-function refuseHeldContinuationBranch(
+export function refuseHeldContinuationBranch(
   id: number,
   projectPath: string | null,
   recordedTreePath: string | null,
@@ -569,10 +569,10 @@ export async function continueRun(
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
     resume: {
+      kind: checkpointContext ? 'fresh-session' : 'continue',
       parent: id,
       agent: checkpointContext ? latest.agent : sessionFrom!.agent,
       session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),
-      fresh: Boolean(checkpointContext),
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treePlan, latest, project?.path ?? null),

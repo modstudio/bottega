@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { decideRetryPath, type RetryPathDecision, renderWritingRetryPrompt } from './run-retry.ts'
+import {
+  atomicRetryReuseDecision,
+  decideRetryConversation,
+  decideWritingRetryWorkspace,
+  previousAttemptTaskPointer,
+  type RetryPathDecision,
+  renderWritingRetryPrompt,
+} from './run-retry.ts'
 
 const writing = {
   writesRepo: true,
@@ -12,9 +19,15 @@ const writing = {
 
 describe('retry path decision', () => {
   test.each([
-    [{ ...writing, writesRepo: false }, { action: 'regular-retry' }],
-    [{ ...writing, rulingsPresent: false }, { action: 'continue' }],
-    [{ ...writing, rulingsPresent: false, agentChanged: true }, { action: 'reuse-tree' }],
+    [{ writesRepo: false, rulingsPresent: true, agentChanged: true }, 'regular-retry'],
+    [{ writesRepo: true, rulingsPresent: false, agentChanged: false }, 'continue'],
+    [{ writesRepo: true, rulingsPresent: true, agentChanged: false }, 'needs-writing-workspace'],
+    [{ writesRepo: true, rulingsPresent: false, agentChanged: true }, 'needs-writing-workspace'],
+  ] as const)('selects conversation path %#', (facts, action) => {
+    expect(decideRetryConversation(facts)).toEqual({ action })
+  })
+
+  test.each([
     [writing, { action: 'reuse-tree' }],
     [{ ...writing, treeExists: false }, { action: 'open-tree' }],
     [{ ...writing, treeLive: true }, { action: 'refuse-live-owner' }],
@@ -28,8 +41,38 @@ describe('retry path decision', () => {
     ],
     [{ ...writing, branchTipRelation: 'descendant' as const }, { action: 'reuse-tree' }],
   ])('selects the expected outcome for %#', (facts, expected) => {
-    expect(decideRetryPath(facts)).toEqual(expected as RetryPathDecision)
+    expect(decideWritingRetryWorkspace(facts)).toEqual(expected as RetryPathDecision)
   })
+})
+
+test('atomic retry reuse requires the validated path, branch, and tip', () => {
+  const facts = {
+    pathExists: true,
+    actualBranch: 'DEV-962-work',
+    expectedBranch: 'DEV-962-work',
+    actualHead: 'abc',
+    validatedTip: 'abc',
+  }
+  expect(atomicRetryReuseDecision(facts)).toEqual({ action: 'reuse' })
+  expect(atomicRetryReuseDecision({ ...facts, pathExists: false }).action).toBe('refuse')
+  expect(atomicRetryReuseDecision({ ...facts, actualBranch: 'other' }).action).toBe('refuse')
+  expect(atomicRetryReuseDecision({ ...facts, actualHead: 'def' }).action).toBe('refuse')
+})
+
+test('previous-attempt pointer prefers checkpoint, then latest turn, then root scratch', () => {
+  expect(
+    previousAttemptTaskPointer({
+      checkpoint: 'checkpoint',
+      latestScratch: 'latest',
+      rootScratch: 'root',
+    }),
+  ).toBe('checkpoint')
+  expect(
+    previousAttemptTaskPointer({ checkpoint: null, latestScratch: 'latest', rootScratch: 'root' }),
+  ).toBe('latest')
+  expect(
+    previousAttemptTaskPointer({ checkpoint: null, latestScratch: null, rootScratch: 'root' }),
+  ).toBe('root')
 })
 
 test('the retry prompt puts the previous-attempt handoff after the spec and rulings', () => {

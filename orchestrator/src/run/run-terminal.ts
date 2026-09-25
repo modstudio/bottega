@@ -50,12 +50,17 @@ import {
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { blockersToRecord } from './run-terminal-blockers.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 
 type TerminalOptions = {
   job: string
-  resume?: { parent: number }
+  resume?: {
+    kind: 'continue' | 'fresh-session' | 'retry-root'
+    parent: number
+    turn: number
+  }
 }
 
 type TerminalMcpRuling = {
@@ -329,7 +334,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       guardEnvironment: gitConfigEnvironment ?? {},
       final: true,
     })
-    if (checkpoint.created || latestCheckpoint(db(), opts.resume?.parent ?? claim.id)) {
+    if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {
       db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
     }
     if (checkpoint.error)
@@ -672,7 +677,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
        * of work, holding where that work has got to, with the children recording
        * what each turn cost.
        */
-      if (opts.resume) {
+      const identity = claimIdentity(opts.resume)
+      if (identity.parent_run_id !== null) {
         // A resumed turn that stopped to ask reopens the conversation: the root
         // goes back to asking with no failure kind, because the chain has not
         // ended. The resolver below only writes terminal outcomes, so an asking
@@ -684,9 +690,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
               `UPDATE run SET status='asking', error=?, failure_kind=NULL
               WHERE id=? AND parent_run_id IS NULL AND status NOT IN ('stopped', 'stale')`,
             )
-            .run(error, opts.resume.parent)
+            .run(error, identity.parent_run_id)
         }
-        resolveRootFromLastTurn(db(), opts.resume.parent)
+        resolveRootFromLastTurn(db(), identity.parent_run_id)
       }
 
       // A parsed findings reply is the review event. Capture it in the same
@@ -695,7 +701,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       // recorded. Manual `orch review record` remains the recovery path for
       // historical or otherwise uncaptured outputs.
       recordTerminalReviewEvidence(db(), {
-        runId: opts.resume?.parent ?? claim.id,
+        runId: identity.parent_run_id ?? claim.id,
         parsedReview,
         status,
         failureKind,
@@ -780,7 +786,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
          WHERE id=?`,
       )
       .run(error, claim.id)
-    if (opts.resume) resolveRootFromLastTurn(db(), opts.resume.parent)
+    const identity = claimIdentity(opts.resume)
+    if (identity.parent_run_id !== null) resolveRootFromLastTurn(db(), identity.parent_run_id)
     teardownTerminalRunResources(db(), claim.id)
     console.error(`orch: ${error}`)
   }

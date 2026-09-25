@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
@@ -17,7 +18,7 @@ import { chainTransport, retryModelForAgent } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
-import { readTaskPointer } from './checkpoint.ts'
+import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import {
   type AnswerChannel,
@@ -49,7 +50,11 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
-import { decideRetryPath, renderWritingRetryPrompt, retryOwnerProcessAlive } from './run-retry.ts'
+import {
+  decideRetryConversation,
+  previousAttemptTaskPointer,
+  renderWritingRetryPrompt,
+} from './run-retry.ts'
 import { resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
 
 type RunAnswerHelpers = {
@@ -240,17 +245,11 @@ export async function retryRun(
     .all(row.root_id, row.root_id) as { id: number; question: string; answer: string }[]
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const agent = options.agent ?? row.agent
-  const preliminaryPath =
-    !writesRepo || (!recordedRulings.length && agent === row.agent)
-      ? decideRetryPath({
-          writesRepo,
-          rulingsPresent: recordedRulings.length > 0,
-          agentChanged: agent !== row.agent,
-          treeExists: false,
-          treeLive: false,
-          branchTipRelation: 'recorded',
-        })
-      : null
+  const preliminaryPath = decideRetryConversation({
+    writesRepo,
+    rulingsPresent: recordedRulings.length > 0,
+    agentChanged: agent !== row.agent,
+  })
   if (preliminaryPath?.action === 'continue') {
     const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
     auditRunMutation(retryAuthority, 'retry', `continued as run ${resumed.childId}`)
@@ -261,6 +260,23 @@ export async function retryRun(
     throw new Error(
       `run ${id} has no prompt on disk — it predates prompt capture, or the file has aged out ` +
         `after ${KEEP_RUN_FILES_DAYS} days. Nothing to re-send.`,
+    )
+  }
+  const latestTurn = db()
+    .query(
+      `SELECT id,status FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+    )
+    .get(row.root_id, row.root_id) as { id: number; status: string }
+  if (writesRepo && latestTurn.status === 'asking' && recordedRulings.length === 0) {
+    const questions = db()
+      .query(
+        `SELECT q.id,q.question FROM question q JOIN run r ON r.id=q.run_id
+         WHERE (r.id=? OR r.parent_run_id=?) AND q.answered_at IS NULL ORDER BY q.id`,
+      )
+      .all(row.root_id, row.root_id) as { id: number; question: string }[]
+    throw new Error(
+      `run ${id} is asking with open questions: ${questions.map((q) => `q${q.id}: ${q.question}`).join('; ')}. ` +
+        `Answer them, or orch abandon ${id}`,
     )
   }
   // The same agent remains the default. An explicit replacement gets a fresh
@@ -276,8 +292,7 @@ export async function retryRun(
         projectId: row.project_id,
         branchKept: row.branch_kept,
         branchKeptTip: row.branch_kept_tip,
-        rulingsPresent: recordedRulings.length > 0,
-        agentChanged: agent !== row.agent,
+        strandedRecordOnly: recordedRulings.length > 0 && latestTurn.status === 'asking',
       })
     : null
   console.error(
@@ -296,7 +311,11 @@ export async function retryRun(
         originalSpec: originalPrompt,
         rulings: renderedRulings,
         commit: workspace.commit,
-        taskPointer: readTaskPointer(runScratchDir(row.root_id)),
+        taskPointer: previousAttemptTaskPointer({
+          checkpoint: latestCheckpoint(db(), row.root_id)?.task_pointer ?? null,
+          latestScratch: readTaskPointer(runScratchDir(latestTurn.id)),
+          rootScratch: readTaskPointer(runScratchDir(row.root_id)),
+        }),
       })
     : renderedRulings
       ? `${originalPrompt}\n\n---\n\n${renderedRulings}`
@@ -343,10 +362,10 @@ export async function retryRun(
         timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,
         resume: workspace
           ? {
+              kind: 'retry-root',
               parent: row.root_id,
               agent,
-              fresh: true,
-              freshRoot: true,
+              retireAsking: recordedRulings.length > 0 && latestTurn.status === 'asking',
               turn: 1,
               sessionId: retryAuthority.owner,
               worktree: workspace.worktree,
@@ -488,7 +507,9 @@ export async function answerRun(
    * test that "proved" it wrote the answer with raw SQL, bypassing the very
    * guard that was refusing it.
    */
-  const live = open.filter(retryOwnerProcessAlive)
+  const live = open.filter(
+    (q) => (q.owner_status === 'running' || q.owner_status === 'asking') && pidAlive(q.owner_pid),
+  )
   const stopped = open.filter((q) => !live.includes(q))
   if (live.length && stopped.length) {
     const list = (questions: typeof open) =>
@@ -750,6 +771,7 @@ export async function answerRun(
       ...resumeLaunchForRoot(id),
       transport: chainTransport(id) ?? undefined,
       resume: {
+        kind: 'continue',
         parent: id,
         agent: resumeAgent,
         session: sessionFrom!.vendor_session!,
