@@ -65,11 +65,23 @@ export function resolveTierRange(
   return { from: facts.mergeBase, to: facts.to.commit! }
 }
 
-const REVIEW_HOT_PATHS: readonly {
+type ReviewHotPath = {
   tier: 1 | 2 | 3
   pattern: RegExp
   reason: string
-}[] = [
+}
+
+const AGENT_INSTRUCTION_PATHS: readonly ReviewHotPath[] = [
+  { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },
+  { tier: 1, pattern: /^\.agents\/skills\//, reason: 'agent skill' },
+  {
+    tier: 1,
+    pattern: /^\.agents\/(?:workflow-steps|workflows)\//,
+    reason: 'workflow instructions',
+  },
+]
+
+const REVIEW_HOT_PATHS: readonly ReviewHotPath[] = [
   { tier: 3, pattern: /^orchestrator\/src\/database\/db\.ts$/, reason: 'schema and DDL' },
   { tier: 3, pattern: /^orchestrator\/src\/landing\.ts$/, reason: 'landing safety' },
   { tier: 3, pattern: /^orchestrator\/src\/worktree\.ts$/, reason: 'worktree lifecycle' },
@@ -81,7 +93,7 @@ const REVIEW_HOT_PATHS: readonly {
   { tier: 2, pattern: /^orchestrator\/src\//, reason: 'orchestrator source' },
   { tier: 2, pattern: /^hub\/src\//, reason: 'hub backend source' },
   { tier: 1, pattern: /^hub\/web\//, reason: 'hub web surface' },
-  { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },
+  ...AGENT_INSTRUCTION_PATHS,
 ]
 
 const isOrdinaryConfig = (path: string) => {
@@ -90,6 +102,11 @@ const isOrdinaryConfig = (path: string) => {
 }
 
 const isReviewExcluded = (path: string) => {
+  if (
+    path === '.claude/settings.json' ||
+    AGENT_INSTRUCTION_PATHS.some(({ pattern }) => pattern.test(path))
+  )
+    return false
   const kind = categorizeFile(path)
   return (
     kind === 'generated' || kind === 'test' || kind === 'docs' || /(^|\/)fixtures?\//i.test(path)
@@ -104,8 +121,7 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
       : 'risk 0: only documentation, tests, fixtures, or configuration paths'
   for (const file of input.files) {
     const kind = categorizeFile(file.path)
-    const excluded = file.path !== '.claude/settings.json' && isReviewExcluded(file.path)
-    if (excluded) continue
+    if (isReviewExcluded(file.path)) continue
     const match = REVIEW_HOT_PATHS.find((entry) => entry.pattern.test(file.path))
     const ordinaryConfig = isOrdinaryConfig(file.path)
     const candidate = match?.tier ?? (kind === 'product' && !ordinaryConfig ? 2 : 0)
@@ -136,7 +152,7 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
-  const result = Bun.spawnSync(['git', 'diff', '--numstat', `${from}..${to}`], {
+  const result = Bun.spawnSync(['git', 'diff', '--no-renames', '--numstat', `${from}..${to}`], {
     cwd: repo,
     env: targetGitEnvironment(repo),
     stdout: 'pipe',
