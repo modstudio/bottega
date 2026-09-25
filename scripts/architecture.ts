@@ -2,6 +2,7 @@ import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { gateModules } from './architecture-gate-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
@@ -52,18 +53,8 @@ export const modules: ArchitectureModule[] = [
   ...retrievalModules,
   ...operatorWaitingModules,
   ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...gateModules,
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
-  module('orchestrator/src/gate/gate-decision.ts', []),
-  module('orchestrator/src/gate/gate-broker.ts', [
-    'node:child_process',
-    'node:fs',
-    'node:path',
-    '../database/db.ts',
-    '../idle-kill.ts',
-    '../issue/issue-shell.ts',
-    '../run/run-artifacts.ts',
-    './gate-decision.ts',
-  ]),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/install-root.ts',
     '../../../shared/orch-contract.ts',

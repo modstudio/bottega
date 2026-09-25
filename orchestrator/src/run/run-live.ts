@@ -52,7 +52,7 @@ import {
   latestCheckpoint,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
-import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
+import { childEnv, errorTail, live, liveCheckpoints, registerLiveGate } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 
@@ -223,6 +223,7 @@ function startWorkerGateBroker(input: {
     runId: input.runId,
     scratchDir: input.scratchDir,
     environment: input.environment,
+    registerActive: registerLiveGate,
   })
 }
 

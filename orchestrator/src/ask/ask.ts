@@ -33,9 +33,10 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { db, nowIso, writableDb } from '../database/db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
+  decideGateCancellation,
   decideGateConcurrency,
   decideGateEligibility,
   formatGateResult,
@@ -100,21 +101,29 @@ function gateToolAvailable(runId: number, token: string): boolean {
 
 async function requestGate(runId: number): Promise<string> {
   writableDb()
-  const concurrent = decideGateConcurrency(
-    Boolean(
-      db()
-        .query('SELECT 1 FROM gate_execution WHERE run_id=? AND finished_at IS NULL LIMIT 1')
-        .get(runId),
-    ),
-  )
-  if (!concurrent.allowed) return concurrent.message!
-  let id: number
+  let requested: { id: number } | { message: string }
   try {
-    id = (
-      db()
+    requested = writeTransaction(() => {
+      const run = db()
+        .query('SELECT status,gate_requests_closed FROM run WHERE id=?')
+        .get(runId) as { status: string; gate_requests_closed: number } | null
+      const cancellation = decideGateCancellation({
+        requestsClosed: run?.gate_requests_closed === 1,
+        runLive: run?.status === 'running' || run?.status === 'asking',
+      })
+      if (cancellation) return { message: cancellation }
+      const concurrent = decideGateConcurrency(
+        Boolean(
+          db()
+            .query('SELECT 1 FROM gate_execution WHERE run_id=? AND finished_at IS NULL LIMIT 1')
+            .get(runId),
+        ),
+      )
+      if (!concurrent.allowed) return { message: concurrent.message! }
+      return db()
         .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
         .get(runId, nowIso()) as { id: number }
-    ).id
+    })
   } catch (error) {
     if (
       String(error).includes('UNIQUE constraint failed') &&
@@ -126,28 +135,42 @@ async function requestGate(runId: number): Promise<string> {
     }
     throw error
   }
+  if ('message' in requested) return requested.message
+  const id = requested.id
   for (;;) {
     const row = db()
       .query(
-        `SELECT exit_code,timed_out,elapsed_ms,output_tail,output_artifact
-         FROM gate_execution WHERE id=? AND finished_at IS NOT NULL`,
+        `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
+                g.cancelled_reason,r.status,r.gate_requests_closed
+         FROM gate_execution g JOIN run r ON r.id=g.run_id WHERE g.id=?`,
       )
       .get(id) as {
-      exit_code: number
-      timed_out: number
-      elapsed_ms: number
-      output_tail: string
-      output_artifact: string
+      exit_code: number | null
+      timed_out: number | null
+      elapsed_ms: number | null
+      output_tail: string | null
+      output_artifact: string | null
+      cancelled_reason: string | null
+      status: string
+      gate_requests_closed: number
     } | null
-    if (row) {
+    if (!row) return 'Gate run cancelled because its execution record is no longer available.'
+    const cancellation =
+      row.cancelled_reason ??
+      decideGateCancellation({
+        requestsClosed: row.gate_requests_closed === 1,
+        runLive: row.status === 'running' || row.status === 'asking',
+      })
+    if (cancellation) return cancellation
+    if (row.exit_code !== null && row.timed_out !== null && row.elapsed_ms !== null) {
       return formatGateResult(
         shapeGateResult({
           exitCode: row.exit_code,
           timedOut: row.timed_out === 1,
           elapsedMs: row.elapsed_ms,
-          output: row.output_tail,
+          output: row.output_tail ?? '',
           outputPath: `${runScratchDir(runId)}/gate-${id}.log`,
-          artifactPath: row.output_artifact,
+          artifactPath: row.output_artifact ?? '(no artifact recorded)',
         }),
       )
     }

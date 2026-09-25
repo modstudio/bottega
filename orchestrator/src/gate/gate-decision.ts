@@ -5,6 +5,23 @@ import { isAbsolute, resolve } from 'node:path'
 
 export const GATE_OUTPUT_TAIL_BYTES = 16 * 1024
 export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000
+export const GATE_CLOSE_REASON = 'Gate run cancelled because the supervising run closed.'
+const GATE_TOOLING_PATH_NAMES = [
+  'package.json',
+  'bun.lock',
+  'bun.lockb',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'deno.lock',
+  'Cargo.lock',
+  'composer.lock',
+  'Gemfile.lock',
+  'poetry.lock',
+  'uv.lock',
+  'Makefile',
+] as const
 
 function quoteShellWord(word: string): string {
   return `'${word.replaceAll("'", `'\\''`)}'`
@@ -48,6 +65,39 @@ export function decideGateConcurrency(inProgress: boolean): { allowed: boolean; 
   return inProgress
     ? { allowed: false, message: 'A gate run is already in progress.' }
     : { allowed: true }
+}
+
+export function decideGateCancellation(input: {
+  requestsClosed: boolean
+  runLive: boolean
+}): string | null {
+  if (input.requestsClosed) return GATE_CLOSE_REASON
+  if (!input.runLive) return 'Gate run cancelled because the supervising run is no longer live.'
+  return null
+}
+
+function registeredGatePath(command: string): string | null {
+  const first = /^\s*(\S+)/.exec(command)?.[1]
+  if (!first || isAbsolute(first) || !first.includes('/')) return null
+  return first.replace(/^\.\//, '')
+}
+
+/** Classify a changed path that can affect what a registered gate executes. */
+export function isGateToolingPath(path: string, gateCommand: string): boolean {
+  const normalized = path.replaceAll('\\', '/').replace(/^\.\//, '')
+  const parts = normalized.split('/')
+  const name = parts.at(-1) ?? ''
+  if (normalized === registeredGatePath(gateCommand)) return true
+  if (parts.includes('scripts') || parts.includes('.githooks')) return true
+  if ((GATE_TOOLING_PATH_NAMES as readonly string[]).includes(name)) return true
+  if (/^docker-compose/i.test(name) || /^compose.*\.ya?ml$/i.test(name)) return true
+  if (parts.length !== 1) return false
+  return (
+    /^.+\.config\..+$/.test(name) ||
+    name.endsWith('.jsonc') ||
+    name.endsWith('.toml') ||
+    name.startsWith('.env')
+  )
 }
 
 /** Keep the last complete UTF-8 text that fits in the worker-context bound. */

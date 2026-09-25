@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
   boundedGateOutputTail,
+  decideGateCancellation,
   decideGateConcurrency,
   decideGateEligibility,
+  GATE_CLOSE_REASON,
   GATE_OUTPUT_TAIL_BYTES,
+  isGateToolingPath,
   resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
@@ -37,6 +40,37 @@ test('an active execution refuses a concurrent gate', () => {
     message: 'A gate run is already in progress.',
   })
   expect(decideGateConcurrency(false)).toEqual({ allowed: true })
+})
+
+test('broker close cancels requests before a run ceases to be live', () => {
+  expect(decideGateCancellation({ requestsClosed: true, runLive: true })).toBe(GATE_CLOSE_REASON)
+  expect(decideGateCancellation({ requestsClosed: false, runLive: false })).toContain(
+    'no longer live',
+  )
+  expect(decideGateCancellation({ requestsClosed: false, runLive: true })).toBeNull()
+})
+
+test('gate tooling paths include execution inputs and exclude ordinary source', () => {
+  const matches = [
+    'package.json',
+    'apps/web/package-lock.json',
+    'scripts/gate',
+    'nested/scripts/release.ts',
+    '.githooks/pre-commit',
+    'Makefile',
+    'ops/docker-compose.dev.yml',
+    'compose.test.yaml',
+    'eslint.config.ts',
+    'biome.jsonc',
+    'pyproject.toml',
+    '.env.test',
+    'tools/custom-gate',
+  ]
+  for (const path of matches)
+    expect(isGateToolingPath(path, 'tools/custom-gate --plain')).toBe(true)
+  for (const path of ['src/app.ts', 'nested/eslint.config.ts', 'README.md', 'package.ts']) {
+    expect(isGateToolingPath(path, 'tools/custom-gate --plain')).toBe(false)
+  }
 })
 
 test('gate result bounds the combined output tail and preserves timeout evidence', () => {
