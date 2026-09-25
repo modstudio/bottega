@@ -1,12 +1,22 @@
 // concern: record-sync-command
 /** Owns sync command presentation. Must not know record schema or run execution. */
+import { readMachineValue } from '../../../shared/machine-config.ts'
 import { syncRecord } from './record-sync.ts'
+import { recordTunnelFailure } from './record-tunnel-error.ts'
 
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
 ): Promise<void> {
-  const result = await syncRecord({ backfill: options.backfill })
+  let result: Awaited<ReturnType<typeof syncRecord>>
+  try {
+    result = await syncRecord({ backfill: options.backfill })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const enhanced = recordTunnelFailure(message, readMachineValue('record.tunnel_app'))
+    if (enhanced === message) throw error
+    throw new Error(enhanced, { cause: error })
+  }
   if (result.backfill) {
     presentation.log(
       `backfill minted ${result.backfill.minted}, enqueued ${result.backfill.enqueued}, skipped-live ${result.backfill.skippedLive}`,

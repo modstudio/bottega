@@ -171,8 +171,10 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
+    'node:net',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/machine-config.ts',
     '../canon/canon.ts',
     '../database/db.ts',
     '../resources/docker-resources.ts',
@@ -343,12 +345,15 @@ export const modules: ArchitectureModule[] = [
     './support.ts',
   ]),
   module('orchestrator/src/record/record-command.ts', [
+    '../../../shared/machine-config.ts',
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',
     './record-doctor.ts',
     './record-space-move.ts',
     './record-space.ts',
+    './record-tunnel-error.ts',
   ]),
+  module('orchestrator/src/record/record-tunnel-error.ts', []),
   module('orchestrator/src/record/record-attribution.ts', [
     'bun:sqlite',
     '../database/db.ts',

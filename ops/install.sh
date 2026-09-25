@@ -12,6 +12,10 @@ STATE_HOME="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" root)"
 MODEL_HOST="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.ssh_alias)"
 TUNNEL_LOCAL_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.tunnel_local_port)"
 TUNNEL_REMOTE_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.tunnel_remote_port)"
+RECORD_TUNNEL_APP="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get record.tunnel_app)"
+RECORD_TUNNEL_LOCAL_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get record.tunnel_local_port)"
+RECORD_TUNNEL_REMOTE_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get record.tunnel_remote_port)"
+FLYCTL="$(command -v flyctl || true)"
 if ! ENV_FILES_OUTPUT="$(bun --no-env-file "$INSTALL_ROOT/shared/config-directory.ts" env-paths)"; then
   exit 1
 fi
@@ -69,6 +73,17 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
+  if [[ "$label" == "com.user.record-tunnel" && -z "$RECORD_TUNNEL_APP" ]]; then
+    echo "skipped: $label (record.tunnel_app is unset)"
+    continue
+  fi
+  if [[ "$label" == "com.user.record-tunnel" && -z "$FLYCTL" ]]; then
+    echo "skipped: $label (flyctl is not on PATH)"
+    continue
+  fi
+  if [[ "$label" == "com.user.record-tunnel" ]]; then
+    mkdir -p "$HOME/Library/Logs/record-tunnel"
+  fi
   if [[ "$label" == "com.user.orch-record-sync" ]]; then
     has_env_file=false
     for env_file in ${ENV_FILES[@]+"${ENV_FILES[@]}"}; do
@@ -105,7 +120,11 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__FIX_DEFECT_BACKSTOP_SECONDS__#${FIX_DEFECT_BACKSTOP_SECONDS}#g" \
       -e "s#__MODEL_HOST__#${MODEL_HOST}#g" \
       -e "s#__TUNNEL_LOCAL_PORT__#${TUNNEL_LOCAL_PORT}#g" \
-      -e "s#__TUNNEL_REMOTE_PORT__#${TUNNEL_REMOTE_PORT}#g" "$tmpl" > "$target"
+      -e "s#__TUNNEL_REMOTE_PORT__#${TUNNEL_REMOTE_PORT}#g" \
+      -e "s#__FLYCTL__#${FLYCTL}#g" \
+      -e "s#__RECORD_TUNNEL_APP__#${RECORD_TUNNEL_APP}#g" \
+      -e "s#__RECORD_TUNNEL_LOCAL_PORT__#${RECORD_TUNNEL_LOCAL_PORT}#g" \
+      -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" "$tmpl" > "$target"
 
   # Load it. A label that still will not load is reported and the rest continue.
   if bootstrap_with_retry "$target"; then
@@ -118,7 +137,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-record-sync|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-record-sync|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

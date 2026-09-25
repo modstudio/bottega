@@ -10,6 +10,7 @@ import {
   orphanSandboxDirectoryConditions,
   pidBornAfterRun,
   reconcileHub,
+  recordTunnelCondition,
   rulingConditions,
   staleTrustEntryConditions,
   stalledRunConditions,
@@ -17,6 +18,29 @@ import {
   unsettledClaimConditions,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices } from './monitor-notices.ts'
+
+describe('record tunnel monitor condition', () => {
+  test('is absent when the tunnel is not configured', () => {
+    expect(recordTunnelCondition({ app: '', port: 15432, reachable: false })).toBeNull()
+  })
+
+  test('names the endpoint and kickstart remedy when configured but unreachable', () => {
+    expect(
+      recordTunnelCondition({ app: 'bottega-record', port: 15432, reachable: false }),
+    ).toMatchObject({
+      kind: 'record-tunnel-down',
+      subject: '127.0.0.1:15432',
+      detail: expect.stringContaining('com.user.record-tunnel'),
+      action: 'run launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel',
+    })
+  })
+
+  test('is absent when the configured endpoint is reachable', () => {
+    expect(
+      recordTunnelCondition({ app: 'bottega-record', port: 15432, reachable: true }),
+    ).toBeNull()
+  })
+})
 
 describe('idle run classification', () => {
   const row = {

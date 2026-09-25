@@ -51,6 +51,25 @@ const ASKING_RUN_WHERE = `parent_run_id IS NULL
 
 type AddressedRun = { id: number; started_at: string; session_id: string | null }
 
+type RecordTunnelFacts = {
+  app: string
+  port: number
+  reachable: boolean
+}
+
+/** Classify the configured record tunnel from already-observed endpoint facts. */
+export function recordTunnelCondition(facts: RecordTunnelFacts): MonitorCondition | null {
+  if (!facts.app || facts.reachable) return null
+  return {
+    kind: 'record-tunnel-down',
+    subject: `127.0.0.1:${facts.port}`,
+    since: null,
+    ageMs: null,
+    detail: `record tunnel com.user.record-tunnel is not accepting TCP connections on 127.0.0.1:${facts.port}`,
+    action: 'run launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel',
+  }
+}
+
 export function askingRuns(database = db()): AddressedRun[] {
   return database
     .query(`SELECT id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)

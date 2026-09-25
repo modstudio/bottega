@@ -7,6 +7,7 @@ Unattended daily maintenance for the machine, run by `launchd`.
 | Homebrew upgrade | 06:00 | `brew update`, `upgrade`, then `cleanup`, non-interactively |
 | Projects refresh | 06:30 | each project's own `scripts/sync/main` |
 | Local model tunnel | always, when configured | SSH local forwarding, kept alive |
+| Record tunnel | always, when configured | Fly Postgres local proxy, kept alive |
 | Orch monitor | every 4 hours (provisional) | record and report stuck operational state |
 | Orch canon eval | 07:00 | behavioral canon probes (`orch canon eval`), routing-neutral |
 

@@ -47,6 +47,9 @@ export const MACHINE_CONFIG = {
   'model_host.ssh_alias': { environment: 'LOCAL_MODEL_HOST', type: 'string', default: '' },
   'model_host.tunnel_local_port': { type: 'integer', default: 8010 },
   'model_host.tunnel_remote_port': { type: 'integer', default: 8000 },
+  'record.tunnel_app': { type: 'string', default: '' },
+  'record.tunnel_local_port': { type: 'integer', default: 15432 },
+  'record.tunnel_remote_port': { type: 'integer', default: 5432 },
 } as const satisfies Record<string, MachineConfigEntry>
 
 export type MachineConfigKey = keyof typeof MACHINE_CONFIG
