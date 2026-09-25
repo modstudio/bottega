@@ -817,8 +817,12 @@ describe('retry command', () => {
     db()
       .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'Which retained shape?')
-    await expect(retry(id)).rejects.toThrow(`run ${id} is asking with open questions: q`)
-    await expect(retry(id)).rejects.toThrow(`Answer them, or orch abandon ${id}`)
+    await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
+      `run ${id} is asking with open questions: q`,
+    )
+    await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
+      `Answer them, or orch abandon ${id}`,
+    )
   })
 
   test('a rejected retry dispatch records failed ruling delivery', async () => {
