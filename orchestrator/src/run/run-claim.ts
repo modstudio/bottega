@@ -162,6 +162,7 @@ type ClaimOptions = {
   resume?: {
     parent: number
     turn: number
+    freshRoot?: boolean
     sessionId: string | null
     worktree: Worktree | null
     treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
@@ -406,8 +407,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.retryOf ?? null,
         reason,
         claimedBranch,
-        opts.resume?.parent ?? null,
-        opts.resume ? opts.resume.turn : 1,
+        opts.resume?.freshRoot ? null : (opts.resume?.parent ?? null),
+        opts.resume && !opts.resume.freshRoot ? opts.resume.turn : 1,
         vendorSession,
         pack?.docs.length ?? 0,
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
@@ -452,8 +453,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.retryOf ?? null,
         reason,
         claimedBranch,
-        opts.resume?.parent ?? null,
-        opts.resume ? opts.resume.turn : 1,
+        opts.resume?.freshRoot ? null : (opts.resume?.parent ?? null),
+        opts.resume && !opts.resume.freshRoot ? opts.resume.turn : 1,
         vendorSession,
         pack?.docs.length ?? 0,
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
@@ -491,7 +492,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
      * makes this write incapable of retiring a genuinely waiting turn when
      * run() is called directly.
      */
-    if (opts.resume) resolveSupersededTurn(db(), opts.resume.parent, opts.resume.turn - 1)
+    if (opts.resume && !opts.resume.freshRoot) {
+      resolveSupersededTurn(db(), opts.resume.parent, opts.resume.turn - 1)
+    }
     const recordCarry = db().query(
       'INSERT INTO run_carried_ruling (run_id,question_id) VALUES (?,?)',
     )

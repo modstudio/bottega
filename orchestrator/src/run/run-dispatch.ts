@@ -97,6 +97,7 @@ export async function detach(
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
   const claimed = writeTransaction(() => {
+    const continuationParent = spec.resume?.freshRoot ? null : (spec.resume?.parent ?? null)
     const projectName = spec.repo ?? repoOf(cwd)
     const projectId = projectName ? (projectByName(projectName)?.id ?? null) : null
     const inserted = db()
@@ -127,15 +128,15 @@ export async function detach(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
-        spec.resume?.parent ?? null,
-        spec.resume?.turn ?? 1,
+        continuationParent,
+        continuationParent ? (spec.resume?.turn ?? 1) : 1,
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
         startedByUserId,
-        spec.resume?.parent ?? null,
-        spec.resume?.parent ?? null,
-        spec.resume?.parent ?? null,
-        spec.resume?.parent ?? null,
+        continuationParent,
+        continuationParent,
+        continuationParent,
+        continuationParent,
       ) as { id: number } | null
     const deliveryRoot =
       spec.resume?.parent ??

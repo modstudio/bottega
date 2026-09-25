@@ -309,6 +309,8 @@ export async function run(opts: {
     session?: string
     /** Continue the chain and retained tree in a new vendor conversation. */
     fresh?: boolean
+    /** Claim a new retry root while reusing the retained tree machinery. */
+    freshRoot?: boolean
     turn: number
     /** Inherited so the chain stays owned by the session that started it. */
     sessionId: string | null

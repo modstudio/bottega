@@ -811,15 +811,6 @@ describe('retry command', () => {
     }
   })
 
-  test('a writing retry refuses to change agents and directs a fresh start', async () => {
-    const id = failed('implement')
-    db().query("UPDATE run SET vendor_session='retry-session' WHERE id=?").run(id)
-    await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
-      'a writing run continues on its own agent (grok); to start over on codex: orch do implement --agent codex ...',
-    )
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(id)).toEqual({ n: 0 })
-  })
-
   test('a rejected retry dispatch records failed ruling delivery', async () => {
     const id = failed()
     const questionId = (

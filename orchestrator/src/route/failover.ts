@@ -66,6 +66,8 @@ export type DetachSpec = {
     session?: string
     turn: number
     fresh?: boolean
+    /** Reuse the retained workspace while claiming a new retry root. */
+    freshRoot?: boolean
     sessionId: string | null
     worktree: RetryWorktree | null
     treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
