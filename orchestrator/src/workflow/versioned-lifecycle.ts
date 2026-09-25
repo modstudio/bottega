@@ -172,8 +172,8 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       id = ownerId(slug, d)
     return writeTransaction(() => {
       const target = show(slug, n, d)
-      if (target.status !== 'production')
-        throw new Error(`${config.noun} "${slug}" version ${n} is not production`)
+      if (target.status === 'retired')
+        throw new Error(`${config.noun} "${slug}" version ${n} is retired`)
       d.query(
         `UPDATE ${config.versionTable} SET status='retired',retired_at=? WHERE ${config.foreignKey}=? AND n=?`,
       ).run(at, id, n)
