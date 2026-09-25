@@ -17,19 +17,19 @@ import {
   resolveGateCommand,
 } from './gate-decision.ts'
 
-const GATE_REQUEST_POLL_MS = 100
+/** A pending check is a plain read; only an actual claim takes the write lock. */
+const GATE_REQUEST_POLL_MS = 1000
 
 type PendingGate = { id: number; run_id: number }
 type ActiveGate = { completion: Promise<void>; cancel(reason: string): Promise<void> }
 
+const PENDING_GATE_SQL = `SELECT id,run_id FROM gate_execution
+  WHERE run_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`
+
 function claimPendingGate(runId: number): PendingGate | null {
+  if (!db().query(PENDING_GATE_SQL).get(runId)) return null
   return writeTransaction(() => {
-    const row = db()
-      .query(
-        `SELECT id,run_id FROM gate_execution
-         WHERE run_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`,
-      )
-      .get(runId) as PendingGate | null
+    const row = db().query(PENDING_GATE_SQL).get(runId) as PendingGate | null
     if (!row) return null
     const claimed = db()
       .query('UPDATE gate_execution SET started_at=? WHERE id=? AND started_at IS NULL')
