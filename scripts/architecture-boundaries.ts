@@ -1,5 +1,6 @@
 import { dirname, normalize } from 'node:path'
 import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
+import { userCanonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
   recordReadBoundariesAfterPublish,
@@ -76,6 +77,7 @@ export const importBoundaries: ImportBoundary[] = [
       './canon-write-gate.ts',
       './canon-load-files.ts',
       './canon-load.ts',
+      './user-canon-commands.ts',
       '../doc/docs.ts',
       './evals.ts',
       '../project/projects.ts',
@@ -92,7 +94,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'canon-hydrate-boundary',
     'orchestrator/src/canon/canon-hydrate.ts',
-    ['node:path', './canon-lint.ts'],
+    ['node:path', './canon-lint.ts', './user-canon-home.ts'],
     'Keep canon hydration planning pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
@@ -119,6 +121,8 @@ export const importBoundaries: ImportBoundary[] = [
     ['./canon-lint.ts'],
     'Keep canon write decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
+  ...userCanonBoundarySpecs,
+  ...canonLoadBoundarySpecs,
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',

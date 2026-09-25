@@ -29,6 +29,7 @@ import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from 
 import { gatherHarnessLoadFacts } from './canon-load-files.ts'
 import { decideCanonWrite } from './canon-write-gate.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
+import { userCanonHydrateCommand, userCanonImportCommand } from './user-canon-commands.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CanonPresentation = {
@@ -141,6 +142,10 @@ async function canonImportCommand(
   flags: CanonFlags,
   presentation: CanonPresentation,
 ): Promise<void> {
+  if (flags.has('user')) {
+    await userCanonImportCommand(flags, presentation)
+    return
+  }
   const project = requestedProject(flags)
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')
@@ -219,7 +224,14 @@ async function canonImportCommand(
   }
 }
 
-function canonHydrateCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+async function canonHydrateCommand(
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+): Promise<void> {
+  if (flags.has('user')) {
+    await userCanonHydrateCommand(flags, presentation)
+    return
+  }
   const project = requestedProject(flags)
   const requested = flags.flag('cwd')
   if (!requested) throw new Error('--cwd is required')
@@ -479,7 +491,7 @@ async function canonStoreCommand(
   presentation: CanonPresentation,
 ): Promise<boolean> {
   if (sub === 'import') await canonImportCommand(flags, presentation)
-  else if (sub === 'hydrate') canonHydrateCommand(flags, presentation)
+  else if (sub === 'hydrate') await canonHydrateCommand(flags, presentation)
   else if (sub === 'list') await canonListCommand(flags, presentation)
   else return false
   return true
