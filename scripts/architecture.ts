@@ -4,6 +4,7 @@ import { importBoundaries } from './architecture-boundaries.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
+import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 
 type ConcernManifest = {
@@ -159,6 +160,7 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     './step-catalogue.ts',
   ]),
+  ...sessionContextModules,
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',

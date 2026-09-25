@@ -65,8 +65,110 @@ def _resume_sentence(source, open_briefs):
     )
 
 
+HOOK_CONTEXT_MAX_CHARS = 9000
+HOOK_CONTEXT_TRUNCATION_MARKER = "…"
+
+# Least important first. Display order of the rest is resume table, inbox, issues, extra.
+_HOOK_CONTEXT_DROPPABLE = (
+    ("issues", "filed issues", "orch fix-defect --waiting"),
+    ("inbox", "inbox detail", "orch inbox"),
+    ("extra", "heartbeat and monitor extra", "orch monitor"),
+    ("resume_table", "resume table", "orch doc resumes"),
+)
+_HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra")
+
+
+def _join_sections(*sections):
+    return "\n".join(section for section in sections if section)
+
+
+def _drop_note(dropped):
+    if not dropped:
+        return ""
+    parts = [f"{name} ({command})" for name, command in dropped]
+    if len(parts) == 1:
+        return f"Dropped {parts[0]}."
+    return f"Dropped {', '.join(parts[:-1])} and {parts[-1]}."
+
+
+def _fit_to_budget(text, budget):
+    if len(text) <= budget:
+        return text
+    marker = HOOK_CONTEXT_TRUNCATION_MARKER
+    if budget < len(marker):
+        return ""
+    return text[: budget - len(marker)] + marker
+
+
+def assemble_additional_context(
+    autonomy="",
+    resume_offer="",
+    resume_table="",
+    inbox="",
+    issues="",
+    extra="",
+    budget=HOOK_CONTEXT_MAX_CHARS,
+):
+    sections = {
+        "autonomy": autonomy.strip(),
+        "resume_offer": resume_offer.strip(),
+        "resume_table": resume_table.strip(),
+        "inbox": inbox.strip(),
+        "issues": issues.strip(),
+        "extra": extra.strip(),
+    }
+    included = {key: sections[key] for key, _, _ in _HOOK_CONTEXT_DROPPABLE}
+    dropped = []
+
+    def compose():
+        rest = [included[key] for key in _HOOK_CONTEXT_REST]
+        body = _join_sections(sections["autonomy"], sections["resume_offer"], *rest)
+        return _join_sections(body, _drop_note(dropped))
+
+    text = compose()
+    if len(text) <= budget:
+        return text
+    for key, name, command in _HOOK_CONTEXT_DROPPABLE:
+        if not included[key]:
+            continue
+        included[key] = ""
+        dropped.append((name, command))
+        text = compose()
+        if len(text) <= budget:
+            return text
+    return _fit_to_budget(text, budget)
+
+
+def _autonomy_slice(completed):
+    if completed.returncode == -1:
+        return "", "Autonomy observation timed out; autonomy state is unknown."
+    if completed.returncode != 0:
+        return (
+            "",
+            f"Autonomy command failed with exit {completed.returncode}; autonomy state is unknown.",
+        )
+    try:
+        result = json.loads(completed.stdout)
+        if not isinstance(result, dict) or not isinstance(result.get("registered"), bool):
+            raise ValueError("invalid context JSON")
+        if not result["registered"]:
+            return "", None
+        text = result.get("text")
+        if not isinstance(text, str):
+            raise ValueError("invalid context JSON")
+        return text, None
+    except Exception:
+        return "", "Autonomy response was invalid; autonomy state is unknown."
+
+
+def orch_worker_session(env=None):
+    return bool((env if env is not None else os.environ).get("ORCH_RUN_ID"))
+
+
 def main() -> int:
-    resumes_p = inbox_p = waiting_p = monitor_p = None
+    if orch_worker_session():
+        return 0
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -99,6 +201,7 @@ def main() -> int:
             orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )
         waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
+        context_p = _start(orch, "context", "--cwd", cwd, "--json")
         monitor_failure = None
         if sid:
             try:
@@ -118,8 +221,11 @@ def main() -> int:
         resumes = _wait(resumes_p, deadline)
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
+        autonomy = _wait(context_p, deadline)
 
-        context = ""
+        resume_table = ""
+        resume_offer = ""
+        extra_section = ""
         open_briefs = []
         lines = []
         unreadable = []
@@ -167,18 +273,14 @@ def main() -> int:
             except Exception:
                 resume_failure = "Resume response was invalid; brief state is unknown."
             if lines:
-                if context and not context.endswith("\n"):
-                    context += "\n"
-                context += "\n".join(lines) + "\n"
-                context += _resume_sentence(payload.get("source"), open_briefs) + "\n"
+                resume_table = "\n".join(lines)
+                resume_offer = _resume_sentence(payload.get("source"), open_briefs)
             if unreadable:
-                if context and not context.endswith("\n"):
-                    context += "\n"
-                for item in unreadable:
-                    context += (
-                        f'UNREADABLE RESUME BRIEF `{item["slug"]}`: '
-                        f'{item["reason"]}.\n'
-                    )
+                unread = "\n".join(
+                    f'UNREADABLE RESUME BRIEF `{item["slug"]}`: {item["reason"]}.'
+                    for item in unreadable
+                )
+                resume_table = _join_sections(resume_table, unread)
         elif resumes.returncode == -1:
             resume_failure = "Resume observation timed out; brief state is unknown."
         else:
@@ -302,59 +404,76 @@ def main() -> int:
                 "waiting state is unknown."
             )
 
+        autonomy_section, autonomy_failure = _autonomy_slice(autonomy)
         notices = []
+        inbox_lines = []
+        issues_lines = []
         if inbox_failure:
             notices.append(inbox_failure)
         if resume_failure:
             notices.append(resume_failure)
         if waiting_failure:
             notices.append(waiting_failure)
+        if autonomy_failure:
+            notices.append(autonomy_failure)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
-            notices.append(f"{answerable_count} {noun} waiting on your ruling.")
+            message = f"{answerable_count} {noun} waiting on your ruling."
+            notices.append(message)
+            inbox_lines.append(message)
         if foreign_count:
             if foreign_count == 1:
-                notices.append(
+                message = (
                     "1 worker dispatched by another session is waiting on an answer. "
                     "Only the session that dispatched it can answer it."
                 )
             else:
-                notices.append(
+                message = (
                     f"{foreign_count} workers dispatched by other sessions are waiting on an "
                     "answer. Only the session that dispatched each one can answer it."
                 )
+            notices.append(message)
+            inbox_lines.append(message)
         if unknown_count:
             if unknown_count == 1:
-                notices.append(
+                message = (
                     "1 of those is from a session not seen recently. It may be closed, and that "
                     "worker may never get an answer."
                 )
             else:
-                notices.append(
+                message = (
                     f"{unknown_count} of those are from a session not seen recently. They may be "
                     "closed, and those workers may never get an answer."
                 )
+            notices.append(message)
+            inbox_lines.append(message)
         if waiting_issues:
             keys = ", ".join(item["key"] for item in waiting_issues)
-            notices.append(
-                f"{len(waiting_issues)} filed issue(s) waiting on a person: {keys}"
-            )
+            message = f"{len(waiting_issues)} filed issue(s) waiting on a person: {keys}"
+            notices.append(message)
+            issues_lines.append(message)
         if unworked_issues:
             keys = ", ".join(item["key"] for item in unworked_issues)
-            notices.append(
+            message = (
                 f"{len(unworked_issues)} filed issue(s) not yet worked: {keys} - run orch fix-defect"
             )
+            notices.append(message)
+            issues_lines.append(message)
         if unscored_loop_runs:
             ids = ", ".join(str(item["runId"]) for item in unscored_loop_runs)
-            notices.append(
+            message = (
                 f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with orch result <id>, score with orch judge <id>"
             )
+            notices.append(message)
+            issues_lines.append(message)
         if blocked_issue_loop:
             held = blocked_issue_loop["held"]
             paths = ", ".join(item["path"] for item in held)
-            notices.append(
+            message = (
                 f"Filed-issue loop blocked: {len(held)} held issue trees ({paths}) - clear them before it takes more work"
             )
+            notices.append(message)
+            issues_lines.append(message)
         if open_briefs:
             slugs = ", ".join(f"`{item['slug']}`" for item in open_briefs)
             noun = "brief" if len(open_briefs) == 1 else "briefs"
@@ -374,22 +493,28 @@ def main() -> int:
             )
             if not os.access(heartbeat, os.X_OK):
                 msg = f"Heartbeat missing or not executable: {heartbeat}"
-                if context and not context.endswith("\n"):
-                    context += "\n"
-                context += msg + "\n"
+                extra_section = _join_sections(extra_section, msg)
                 notices.append(msg)
             else:
                 # The payload's own session_id first, then the env var Claude always sets.
                 if sid:
-                    line = f"Arm under Monitor from the main checkout: {heartbeat} {sid}"
-                    if context and not context.endswith("\n"):
-                        context += "\n"
-                    context += line + "\n"
+                    extra_section = _join_sections(
+                        extra_section,
+                        f"Arm under Monitor from the main checkout: {heartbeat} {sid}",
+                    )
 
         # Health is complete and retained before notice work begins. Notice delivery is
         # supplemental: no failure in minting, fetching, parsing, or acknowledging may
         # cost the SessionStart object that carries brief and question state.
-        health_context = context
+        health_sections = {
+            "autonomy": autonomy_section,
+            "resume_offer": resume_offer,
+            "resume_table": resume_table,
+            "inbox": "\n".join(inbox_lines),
+            "issues": "\n".join(issues_lines),
+            "extra": extra_section,
+        }
+        health_context = assemble_additional_context(**health_sections)
         health_notices = list(notices)
         if health_context or health_notices:
             output = {
@@ -440,13 +565,13 @@ def main() -> int:
         if monitor_failure:
             notices.append(monitor_failure)
         if monitor_notices:
-            if context and not context.endswith("\n"):
-                context += "\n"
-            for item in monitor_notices:
-                context += (
-                    f'MONITOR {item["kind"]} {item["subject"]}: '
-                    f'{item["detail"]}\n'
-                )
+            monitor_text = "\n".join(
+                f'MONITOR {item["kind"]} {item["subject"]}: {item["detail"]}'
+                for item in monitor_notices
+            )
+            context = assemble_additional_context(
+                **{**health_sections, "extra": _join_sections(extra_section, monitor_text)}
+            )
             noun = "condition" if len(monitor_notices) == 1 else "conditions"
             notices.append(f"Monitor addressed {len(monitor_notices)} {noun} to this session.")
 
@@ -484,6 +609,7 @@ def main() -> int:
         _kill(resumes_p)
         _kill(inbox_p)
         _kill(waiting_p)
+        _kill(context_p)
         _kill(monitor_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)
