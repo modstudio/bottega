@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import { composeCanonRows } from './canon-hydrate.ts'
-import { decideCanonWrite, decideUserCanonImport } from './canon-write-gate.ts'
+import {
+  decideCanonRemoval,
+  decideNextCanonSet,
+  decideUserCanonImport,
+} from './canon-write-gate.ts'
 
 const inputs = { trackedPaths: [], packageScripts: [], sourceTexts: [] }
 
-describe('decideCanonWrite', () => {
+describe('decideNextCanonSet', () => {
   test('refuses an introduced history line', () => {
-    const findings = decideCanonWrite({
+    const findings = decideNextCanonSet({
       ...inputs,
       current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
       next: [{ slug: 'AGENTS.md', body: 'Current rule.\nIt used to be different.' }],
@@ -16,7 +20,7 @@ describe('decideCanonWrite', () => {
 
   test('allows removing a numeral', () => {
     expect(
-      decideCanonWrite({
+      decideNextCanonSet({
         ...inputs,
         current: [{ slug: 'AGENTS.md', body: 'Keep 123 items.' }],
         next: [{ slug: 'AGENTS.md', body: 'Keep items.' }],
@@ -26,7 +30,7 @@ describe('decideCanonWrite', () => {
 
   test('refuses growth of an already over-cap file', () => {
     const current = `${'x'.repeat(16_385)}\n`
-    const findings = decideCanonWrite({
+    const findings = decideNextCanonSet({
       ...inputs,
       current: [{ slug: 'AGENTS.md', body: current }],
       next: [{ slug: 'AGENTS.md', body: `${current}more` }],
@@ -42,12 +46,76 @@ describe('decideCanonWrite', () => {
       [{ subject: null, owner: 'user-1', slug: 'AGENTS.md', body }],
       [],
     ).map(({ slug, body: rowBody }) => ({ slug, body: rowBody }))
-    const findings = decideCanonWrite({
+    const findings = decideNextCanonSet({
       ...inputs,
       current: [{ slug: 'AGENTS.md', body }, rule],
       next: [...composed, rule],
     })
     expect(findings.map(({ rule }) => rule)).toContain('canon/size-always-on')
+  })
+})
+
+describe('decideCanonRemoval', () => {
+  const target = { slug: '.agents/reference/target.md', body: '# Target\n' }
+  const citer = {
+    slug: 'AGENTS.md',
+    body: 'Read [the target](.agents/reference/target.md).\n',
+  }
+
+  test('refuses removing a row cited by another canon row and names the citer', () => {
+    const findings = decideCanonRemoval({
+      current: [citer, target],
+      next: [citer],
+    })
+
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        file: 'AGENTS.md',
+        line: 1,
+        rule: 'canon/reference-path',
+        message: expect.stringContaining('.agents/reference/target.md'),
+      }),
+    )
+  })
+
+  test('allows removing an uncited row', () => {
+    expect(
+      decideCanonRemoval({
+        current: [{ slug: 'AGENTS.md', body: 'Current guidance.\n' }, target],
+        next: [{ slug: 'AGENTS.md', body: 'Current guidance.\n' }],
+      }),
+    ).toEqual([])
+  })
+
+  test('refuses removing a row cited only by a workflow step and names the step', () => {
+    const findings = decideCanonRemoval({
+      current: [target],
+      next: [],
+      workflowSteps: [
+        { slug: 'verify', body: 'Read [the target](.agents/reference/target.md).\n' },
+      ],
+    })
+
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        file: 'workflow step verify',
+        line: 1,
+        rule: 'canon/reference-path',
+        message: expect.stringContaining('.agents/reference/target.md'),
+      }),
+    )
+  })
+
+  test('pre-existing workflow rot does not block an unrelated removal', () => {
+    expect(
+      decideCanonRemoval({
+        current: [target],
+        next: [],
+        workflowSteps: [
+          { slug: 'verify', body: 'Read [the missing file](missing/reference.md).\n' },
+        ],
+      }),
+    ).toEqual([])
   })
 })
 
@@ -115,7 +183,7 @@ describe('decideUserCanonImport', () => {
     })
     expect(decision.findings).toEqual([])
     expect(
-      decideCanonWrite({ ...inputs, current: rows.slice(0, 3), next: rows }).map(
+      decideNextCanonSet({ ...inputs, current: rows.slice(0, 3), next: rows }).map(
         ({ rule }) => rule,
       ),
     ).toContain('canon/size-always-on')

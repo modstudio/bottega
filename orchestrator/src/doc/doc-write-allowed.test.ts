@@ -1,11 +1,29 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  canonRemovalRefusal,
   decideDocRevisionWrite,
   globalCanonWriteTargets,
   ownerVisible,
   refuseCanonWrite,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('canon removal refusal names the citer and remedy', () => {
+  expect(
+    canonRemovalRefusal([
+      {
+        file: 'workflow step verify',
+        line: 4,
+        rule: 'canon/reference-path',
+        message: 'repository path .agents/reference/target.md is not tracked',
+      },
+    ]),
+  ).toBe(
+    'refusing canon removal; introduced 1 reference finding:\n' +
+      'workflow step verify:4 canon/reference-path repository path .agents/reference/target.md is not tracked\n' +
+      'cleared by: update or remove the named citations first, then retry the removal',
+  )
+})
 
 const rule = {
   slug: '.agents/rules/10-code.md',

@@ -19,6 +19,8 @@ export type CanonFile = { path: string; text: string; symlinkTarget?: string }
 export type CanonSourceText = { path: string; text: string }
 export type CanonLintInput = {
   files: CanonFile[]
+  /** Markdown bodies that participate only as repository-reference citers. */
+  referenceFiles?: CanonFile[]
   trackedPaths: string[]
   packageScripts: string[]
   sourceTexts: CanonSourceText[]
@@ -763,6 +765,9 @@ export function lintCanon(input: CanonLintInput): CanonLintResult {
     ...sizeFindings(tiers, tierMeasurements),
     ...chains.findings,
     ...classified.flatMap((item) => contentFindings(item, input, facts)),
+    ...(input.referenceFiles ?? []).flatMap((file) =>
+      lintCanonReferencesWithFacts(file, input, facts),
+    ),
     ...input.files.flatMap((file) => symlinkFindings(file, paths)),
   ]
   findings.sort(
