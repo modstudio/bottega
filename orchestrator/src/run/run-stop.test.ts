@@ -144,6 +144,32 @@ test('stop by a chain root stops its running child turn', async () => {
   ])
 })
 
+test('stop omits a reviewed branch that the conversation did not mint', async () => {
+  const id = insert('running', 'review-lens')
+  db()
+    .query('UPDATE run SET worktree=?, branch=?, minted_branch=NULL WHERE id=?')
+    .run('/tmp/review-tree', 'DEV-930-orch-6210', id)
+
+  const result = await invoke('stop', id)
+
+  expect(result.out).toContain('kept worktree /tmp/review-tree for continuation')
+  expect(result.out).not.toContain('DEV-930-orch-6210')
+})
+
+test('stop names a branch minted by its conversation', async () => {
+  const id = insert('running')
+  const branch = `DEV-934-orch-${id}`
+  db()
+    .query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
+    .run('/tmp/writer-tree', branch, branch, id)
+
+  const result = await invoke('stop', id)
+
+  expect(result.out).toContain(
+    `kept worktree /tmp/writer-tree and branch ${branch} for continuation`,
+  )
+})
+
 test('stop waits for a concurrent continuation claim and stops the claimed turn', async () => {
   const root = insert('asking')
   let turn = 0
