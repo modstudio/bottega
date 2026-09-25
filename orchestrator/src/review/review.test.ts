@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
+import { getReview } from './review.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
-import { recordReview, triageFinding } from './review-triage.ts'
+import { amendFinding, completeReview, recordReview, triageFinding } from './review-triage.ts'
 
 describe('review triage', () => {
   test('review triage --severity stores explicit agreement and omission stores null', () => {
@@ -48,6 +49,108 @@ describe('review triage', () => {
         )
         .get(reviewId),
     ).toEqual({ disposition: null, triaged_severity: null, triaged_at: null })
+  })
+
+  test('a completed review finding can be amended with audit and fresh outbox rows', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'amend' })
+    const reviewId = recordReview(runId, reviewReply(1, 'high'), db())
+    triageFinding(reviewId, 1, 'rejected', 'bogus', undefined, db())
+    completeReview(reviewId, db())
+    const completed = db()
+      .query<{ completed_at: string }, [number]>('SELECT completed_at FROM review WHERE id=?')
+      .get(reviewId)!.completed_at
+    db().query('DELETE FROM outbox').run()
+
+    amendFinding(
+      reviewId,
+      1,
+      'accepted',
+      'Architect corrected the disposition',
+      undefined,
+      'medium',
+      db(),
+    )
+
+    expect(getReview(reviewId, db()).findings[0]?.amendments).toEqual([
+      {
+        at: expect.any(String),
+        actor_session: sessionId(),
+        old_disposition: 'rejected',
+        new_disposition: 'accepted',
+        old_rejection_category: 'bogus',
+        new_rejection_category: null,
+        old_triaged_severity: null,
+        new_triaged_severity: 'medium',
+        reason: 'Architect corrected the disposition',
+      },
+    ])
+
+    expect(
+      db()
+        .query(
+          `SELECT disposition,rejection_category,triaged_severity
+           FROM review_finding WHERE review_id=? AND ordinal=1`,
+        )
+        .get(reviewId),
+    ).toEqual({ disposition: 'accepted', rejection_category: null, triaged_severity: 'medium' })
+    expect(
+      db()
+        .query(
+          `SELECT old_disposition,new_disposition,old_rejection_category,new_rejection_category,
+                  old_triaged_severity,new_triaged_severity,reason,actor_session,at
+           FROM review_finding_amendment WHERE review_id=? AND finding_ordinal=1`,
+        )
+        .all(reviewId),
+    ).toEqual([
+      {
+        old_disposition: 'rejected',
+        new_disposition: 'accepted',
+        old_rejection_category: 'bogus',
+        new_rejection_category: null,
+        old_triaged_severity: null,
+        new_triaged_severity: 'medium',
+        reason: 'Architect corrected the disposition',
+        actor_session: sessionId(),
+        at: expect.any(String),
+      },
+    ])
+    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+      completed_at: completed,
+    })
+    expect(
+      db()
+        .query<{ kind: string }, []>(
+          "SELECT kind FROM outbox WHERE kind IN ('review','review_finding') ORDER BY id",
+        )
+        .all()
+        .map((row) => row.kind),
+    ).toEqual(['review_finding', 'review', 'review_finding'])
+  })
+
+  test('amendment refuses incomplete reviews, missing reasons, and rejected findings without category', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'amend-refusal' })
+    const reviewId = recordReview(runId, reviewReply(1), db())
+    expect(() =>
+      amendFinding(reviewId, 1, 'accepted', 'correction', undefined, 'low', db()),
+    ).toThrow(`review ${reviewId} is incomplete; use orch review triage ${reviewId} 1`)
+    triageFinding(reviewId, 1, 'accepted', undefined, 'low', db())
+    completeReview(reviewId, db())
+    expect(() => amendFinding(reviewId, 1, 'accepted', '   ', undefined, 'low', db())).toThrow(
+      '--reason is required and must be non-empty',
+    )
+    expect(() =>
+      amendFinding(reviewId, 1, 'rejected', 'correction', undefined, undefined, db()),
+    ).toThrow('a rejected finding requires --category')
+  })
+
+  test('completed review triage refusal names the amend remedy', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'amend-remedy' })
+    const reviewId = recordReview(runId, reviewReply(1), db())
+    triageFinding(reviewId, 1, 'accepted', undefined, 'low', db())
+    completeReview(reviewId, db())
+    expect(() => triageFinding(reviewId, 1, 'modified', undefined, 'low', db())).toThrow(
+      `use orch review amend ${reviewId} 1`,
+    )
   })
 })
 

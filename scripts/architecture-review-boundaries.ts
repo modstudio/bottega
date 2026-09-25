@@ -10,9 +10,19 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-command-dispatcher-boundary',
     file: 'orchestrator/src/review/review-command-dispatcher.ts',
-    allowed: ['./review-commands.ts', './review-finding-restore.ts'],
+    allowed: [
+      './review-commands.ts',
+      './review-finding-amend-command.ts',
+      './review-finding-restore.ts',
+    ],
     reason:
       'Keep review verb routing beside the review commands and independent of CLI registration.',
+  },
+  {
+    name: 'review-finding-amend-command-boundary',
+    file: 'orchestrator/src/review/review-finding-amend-command.ts',
+    allowed: ['./review-triage.ts', './review-vocabulary.ts'],
+    reason: 'Keep completed-review amendment command parsing inside the review concern.',
   },
   {
     name: 'review-boundary',

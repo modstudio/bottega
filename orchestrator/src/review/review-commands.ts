@@ -33,6 +33,26 @@ import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
 
+function printReviewFinding(
+  finding: ReturnType<typeof getReview>['findings'][number],
+  log: (...values: unknown[]) => void,
+): void {
+  log(
+    `finding ${finding.ordinal} ${finding.severity} ${finding.location} disposition=${finding.disposition ?? 'untriaged'} category=${finding.rejection_category ?? '—'}`,
+  )
+  log(`  evidence: ${finding.evidence}`)
+  log(`  correction: ${finding.proposed_correction}`)
+  for (const amendment of finding.amendments) {
+    log(
+      `  amendment ${amendment.at} actor=${amendment.actor_session ?? '—'} ` +
+        `disposition=${amendment.old_disposition ?? '—'}->${amendment.new_disposition} ` +
+        `category=${amendment.old_rejection_category ?? '—'}->${amendment.new_rejection_category ?? '—'} ` +
+        `severity=${amendment.old_triaged_severity ?? '—'}->${amendment.new_triaged_severity ?? '—'}`,
+    )
+    log(`    reason: ${amendment.reason}`)
+  }
+}
+
 function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabel = from) {
   const endpoint = (ref: string, label = ref): TierRangeEndpoint => {
     const peeled = Bun.spawnSync(['git', 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
@@ -215,13 +235,7 @@ export async function reviewCommand(
             .join(' ')}`,
         )
       }
-      for (const finding of review.findings) {
-        log(
-          `finding ${finding.ordinal} ${finding.severity} ${finding.location} disposition=${finding.disposition ?? 'untriaged'} category=${finding.rejection_category ?? '—'}`,
-        )
-        log(`  evidence: ${finding.evidence}`)
-        log(`  correction: ${finding.proposed_correction}`)
-      }
+      for (const finding of review.findings) printReviewFinding(finding, log)
     }
     return
   }
