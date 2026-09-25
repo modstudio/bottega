@@ -3,6 +3,7 @@ import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
+import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
@@ -177,31 +178,7 @@ export const modules: ArchitectureModule[] = [
     './workflow-cursor-transition.ts',
     './workflow-step-reference.ts',
   ]),
-  module('orchestrator/src/monitor/monitor.ts', [
-    'node:fs',
-    'node:path',
-    '../../../shared/brand.ts',
-    '../canon/canon.ts',
-    '../database/db.ts',
-    '../resources/docker-resources.ts',
-    '../resources/git-locks.ts',
-    '../worktree/keep-tree-hold.ts',
-    '../mcp/mcp.ts',
-    './monitor-conditions.ts',
-    './monitor-record-tunnel.ts',
-    './monitor-notices.ts',
-    './monitor-types.ts',
-    '../../../shared/process-identity.ts',
-    '../project/project-lock.ts',
-    '../project/projects.ts',
-    '../reclaim/reclaim.ts',
-    '../sandbox/grok-trust.ts',
-    '../idle-kill.ts',
-    '../resources/resource-ownership.ts',
-    '../review/review-vocabulary.ts',
-    '../run/run-artifacts.ts',
-    '../worktree/worktree-attribution.ts',
-  ]),
+  ...monitorModules,
   module('orchestrator/src/monitor/monitor-conditions.ts', [
     'node:fs',
     'node:path',

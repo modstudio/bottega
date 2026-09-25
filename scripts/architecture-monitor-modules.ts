@@ -1,0 +1,47 @@
+// concern: architecture-manifest
+/** Monitor module allowlists, kept beside the root manifest so it stays within its file ceiling. */
+import { dirname, normalize } from 'node:path'
+
+type MonitorModule = { file: string; allowed: string[] }
+
+const module = (file: string, allowed: string[]): MonitorModule => ({
+  file,
+  allowed: allowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
+})
+
+export const monitorModules: MonitorModule[] = [
+  module('orchestrator/src/monitor/monitor.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../canon/canon.ts',
+    '../database/db.ts',
+    '../resources/docker-resources.ts',
+    '../resources/git-locks.ts',
+    '../worktree/keep-tree-hold.ts',
+    '../mcp/mcp.ts',
+    './monitor-conditions.ts',
+    './monitor-record-tunnel.ts',
+    './monitor-harness-load.ts',
+    './monitor-notices.ts',
+    './monitor-types.ts',
+    '../../../shared/process-identity.ts',
+    '../project/project-lock.ts',
+    '../project/projects.ts',
+    '../reclaim/reclaim.ts',
+    '../sandbox/grok-trust.ts',
+    '../idle-kill.ts',
+    '../resources/resource-ownership.ts',
+    '../review/review-vocabulary.ts',
+    '../run/run-artifacts.ts',
+    '../worktree/worktree-attribution.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-harness-load.ts', [
+    '../canon/canon-load.ts',
+    '../canon/canon-load-files.ts',
+    '../project/projects.ts',
+    './monitor-types.ts',
+  ]),
+]

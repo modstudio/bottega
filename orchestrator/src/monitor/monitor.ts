@@ -46,6 +46,7 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import type {
   HumanMonitorCondition,
@@ -436,6 +437,7 @@ export async function monitor(
     })
 
   for (const project of projects()) {
+    conditions.push(...observeProjectHarnessLoad(project, process.env))
     for (const lockName of ['create', 'cleanup']) {
       try {
         const state = projectLockState(project.path, lockName)
