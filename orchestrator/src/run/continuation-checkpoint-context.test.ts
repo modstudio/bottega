@@ -32,3 +32,28 @@ test('uses the resolved continuation tree tip as the checkpoint prompt start', (
   )
   expect(context).not.toContain('Resume from checkpoint')
 })
+
+test('a checkpoint without a resolved continuation tree gives the fresh-run remedy', () => {
+  const rootId = addRun({ agent: 'codex', job: 'implement' })
+  db().query('UPDATE run SET launch_key=? WHERE id=?').run('DEV-970', rootId)
+  db()
+    .query(
+      `INSERT INTO run_checkpoint
+         (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    .run(rootId, 1, 'checkpoint-without-tree', null, 0, new Date().toISOString())
+
+  expect(() =>
+    continuationCheckpointContext({
+      database: db(),
+      rootId,
+      worktree: null,
+      treePlan: null,
+    }),
+  ).toThrow(
+    `run ${rootId} has a checkpoint but no branch or retained ref resolves for its latest started turn; ` +
+      'invariant: a resume prompt names only the commit the resumed tree exposes; ' +
+      'remedy: start a fresh keyed run from a known base with orch do implement --key DEV-970 --base <ref>',
+  )
+})

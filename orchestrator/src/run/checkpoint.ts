@@ -198,7 +198,16 @@ export function checkpointResumeContext(
   const checkpoint = latestCheckpoint(database, rootId)
   if (!checkpoint) return null
   if (!startCommit || !branch) {
-    throw new Error(`run ${rootId} has a checkpoint but no resolved continuation tree tip`)
+    const launch = database.query('SELECT job,launch_key FROM run WHERE id=?').get(rootId) as {
+      job: string
+      launch_key: string | null
+    } | null
+    throw new Error(
+      `run ${rootId} has a checkpoint but no branch or retained ref resolves for its latest started turn; ` +
+        `invariant: a resume prompt names only the commit the resumed tree exposes; ` +
+        `remedy: start a fresh keyed run from a known base with orch do ${launch?.job ?? '<job>'} ` +
+        `--key ${launch?.launch_key ?? '<task key>'} --base <ref>`,
+    )
   }
   const recentLog = worktree
     ? git(worktree, ['log', '--oneline', '--decorate=no', '--max-count=8'], {}).out
