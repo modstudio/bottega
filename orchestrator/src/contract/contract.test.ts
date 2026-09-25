@@ -137,7 +137,7 @@ describe('reply dialect resolution', () => {
     const { reviewed_commit: _reviewedCommit, ...provenance } = reviewReply.provenance
 
     expect(inline.parse(JSON.stringify({ ...reviewReply, provenance })).reply).not.toBeNull()
-    expect(inline.parse(JSON.stringify(reviewReply)).reply).toBeNull()
+    expect(inline.parse(JSON.stringify(reviewReply)).reply).not.toBeNull()
   })
 })
 

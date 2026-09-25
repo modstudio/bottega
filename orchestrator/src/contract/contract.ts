@@ -437,7 +437,7 @@ const exactKeys = (value: object, expected: string[]) => {
   )
 }
 
-export function parseReviewReply(value: unknown, requireReviewedCommit = true): ReviewReply | null {
+export function parseReviewReply(value: unknown): ReviewReply | null {
   const v = value as Partial<ReviewReply> | null
   if (
     !v ||
@@ -453,7 +453,6 @@ export function parseReviewReply(value: unknown, requireReviewedCommit = true): 
   // prose contract only; an absent list reads as empty rather than as a
   // malformed reply, so a review is never lost to a missing empty array.
   const provenanceKeys = [
-    ...(requireReviewedCommit ? ['reviewed_commit'] : []),
     'standards_read',
     'model_used',
     'files_covered',
@@ -468,14 +467,17 @@ export function parseReviewReply(value: unknown, requireReviewedCommit = true): 
     }
   }
   const withLists = (keys: string[]) => [...keys, ...optionalLists]
+  const provenanceKeySets = [
+    provenanceKeys,
+    ['reviewed_commit', ...provenanceKeys],
+    ['tree_inspected', ...provenanceKeys],
+    ['reviewed_commit', 'tree_inspected', ...provenanceKeys],
+  ]
   if (
     !p ||
     typeof p !== 'object' ||
     Array.isArray(p) ||
-    !(
-      exactKeys(p, withLists(provenanceKeys)) ||
-      exactKeys(p, withLists(['tree_inspected', ...provenanceKeys]))
-    ) ||
+    !provenanceKeySets.some((keys) => exactKeys(p, withLists(keys))) ||
     (p.tree_inspected !== undefined &&
       p.tree_inspected !== null &&
       typeof p.tree_inspected !== 'string') ||
@@ -534,27 +536,6 @@ export function parseReviewOutput(text: string): ReviewReply | null {
       return parseReviewReply(JSON.parse(text.slice(start, end + 1)))
     } catch {
       /* invalid */
-    }
-  }
-  return null
-}
-
-function parseInlineReviewOutput(text: string): ReviewReply | null {
-  const candidates = [
-    text.trim(),
-    ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? []).map((x) =>
-      x
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/```$/, '')
-        .trim(),
-    ),
-  ]
-  for (const candidate of candidates) {
-    try {
-      const parsed = parseReviewReply(JSON.parse(candidate), false)
-      if (parsed) return parsed
-    } catch {
-      /* try the next shape */
     }
   }
   return null
@@ -1100,7 +1081,7 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
       schema: inline ? INLINE_REVIEW_SCHEMA : REVIEW_SCHEMA,
       schemaName: 'REVIEW_SCHEMA',
       parse: (text) => ({
-        reply: inline ? parseInlineReviewOutput(text) : parseReviewOutput(text),
+        reply: parseReviewOutput(text),
         contractObjects: 0,
       }),
     }
