@@ -186,6 +186,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       'node:path',
       './absent-close-out-residue.ts',
+      './absent-tree-close-out.ts',
       './close-out-adoption.ts',
       './retained-branch.ts',
       '../database/db.ts',

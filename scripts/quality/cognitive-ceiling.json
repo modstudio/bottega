@@ -161,8 +161,8 @@
   {
     "file": "orchestrator/src/close/close-out.ts",
     "function": "withCleanupLock callback",
-    "line": 723,
-    "score": 22,
+    "line": 812,
+    "score": 21,
     "key": "orchestrator/src/close/close-out.ts\u0000withCleanupLock callback"
   },
   {
@@ -781,12 +781,6 @@
     "line": 148,
     "score": 21,
     "key": "orchestrator/src/worktree/worktree-remove.ts\u0000removeWithTool"
-  },
-  {
-    "file": "orchestrator/src/worktree/worktree-remove.ts",
-    "function": "removeFor",
-    "line": 222,
-    "score": 16
   },
   {
     "file": "orchestrator/src/worktree/worktree-template.ts",

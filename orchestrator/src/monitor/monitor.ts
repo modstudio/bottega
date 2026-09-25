@@ -67,6 +67,19 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
 
+function retainedDockerResourceAction(
+  owner: {
+    id: number
+    status: string
+    worktree: string | null
+  } | null,
+): string {
+  const terminal = owner && TERMINAL_STATUSES.has(owner.status)
+  return terminal && owner.worktree && !existsSync(owner.worktree)
+    ? `run orch close-out ${owner.id}`
+    : 'informational; retained resources require review before any removal'
+}
+
 export class MonitorStoreBusyError extends Error {
   constructor(cause: unknown) {
     super(cause instanceof Error ? cause.message : String(cause), { cause })
@@ -432,6 +445,7 @@ export async function monitor(
   }))
   for (const item of classifiedDockerResources(runDockerResources, dockerOwners)) {
     if (item.condition !== 'retained-worktree-resources') continue
+    const owner = dockerOwners.find(({ id }) => id === item.resource.runId)
     add({
       kind: 'retained-worktree-docker-resource',
       subject: item.resource.name,
@@ -442,7 +456,7 @@ export async function monitor(
         (item.reason
           ? `removal could not be ascertained: ${item.reason}`
           : 'its worktree is retained'),
-      action: 'informational; retained resources require review before any removal',
+      action: retainedDockerResourceAction(owner ?? null),
       affectedProject: item.project,
     })
   }

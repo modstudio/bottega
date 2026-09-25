@@ -139,6 +139,35 @@ describe('operational monitor conditions', () => {
     }
   })
 
+  test('an absent terminal tree names close-out as the retained Docker resource remedy', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(`/gone/orch-${runId}`, runId)
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+      const command = args.join(' ')
+      const stdout = command.startsWith('docker ps -a --format')
+        ? `app-orch-${runId}-web\torch.run=${runId}`
+        : ''
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(''),
+        success: true,
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+    try {
+      const result = await monitor('invoked')
+      expect(
+        result.conditions.find(
+          (condition) =>
+            condition.kind === 'retained-worktree-docker-resource' &&
+            condition.subject === `app-orch-${runId}-web`,
+        ),
+      ).toMatchObject({ action: `run orch close-out ${runId}` })
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
   test('records condition ages and reads them back by invocation', () => {
     const invocation = (
       db()

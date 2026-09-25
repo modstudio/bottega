@@ -172,6 +172,7 @@ function removeWithTool(
   forceOrchTree = false,
   keepBranch = false,
   runId?: number,
+  removeTree: () => { removed: boolean; detail: string } = () => removeWorktree(w, keepBranch),
 ): { removed: boolean; detail: string; output?: string } {
   const name = w.path.split('/').pop() ?? w.path
   const branchBefore = branchTip(w.repoRoot, w.branch)
@@ -206,7 +207,7 @@ function removeWithTool(
         ...(r.out ? { output: r.out } : {}),
       }
     }
-    const reconciled = removeWorktree(w, keepBranch)
+    const reconciled = removeTree()
     return { ...reconciled, ...(r.out ? { output: r.out } : {}) }
   }
 
@@ -383,6 +384,60 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
+function recordedTrackedRecipePlan(runId: number | undefined): boolean {
+  if (runId === undefined) return false
+  const row = db()
+    .query(
+      `SELECT recipe_snapshot FROM run
+       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+    )
+    .get(runId) as {
+    recipe_snapshot: string | null
+  } | null
+  return Boolean(row?.recipe_snapshot)
+}
+
+/** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
+export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): boolean {
+  if (recordedTrackedRecipePlan(runId)) return true
+  return Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove)
+}
+
+function removeByLifecycle(input: {
+  worktree: Worktree
+  tool: WorktreeTool | null
+  projectName: string | null
+  forceOrchTree: boolean
+  retainBranch: boolean
+  runId?: number
+  removeTree(): { removed: boolean; detail: string }
+}): { removed: boolean; detail: string; output?: string } {
+  const { worktree, tool, runId, removeTree } = input
+  if (!existsSync(worktree.path) && recordedTrackedRecipePlan(runId)) {
+    return teardownTrackedRecipe({
+      runId: runId as number,
+      worktree,
+      remove: removeTree,
+      treeExists: false,
+    })
+  }
+  if (worktree.source === 'readonly_recipe' || worktree.source === 'clone') {
+    const removed = removeReadOnlyTree(tool ?? {}, worktree, input.retainBranch)
+    return removed.output && input.projectName
+      ? { ...removed, output: `${input.projectName} readonly remove:\n${removed.output}` }
+      : removed
+  }
+  const projectOwned =
+    worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
+  const removed =
+    tool && projectOwned
+      ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
+      : removeWorktree(worktree, input.retainBranch)
+  return removed.output && input.projectName
+    ? { ...removed, output: `${input.projectName} remove:\n${removed.output}` }
+    : removed
+}
+
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
   w: Worktree,
@@ -391,6 +446,7 @@ export function removeFor(
   keepBranch = false,
   runId?: number,
   forceUnmerged = false,
+  skipGitRemoval = false,
 ): { removed: boolean; detail: string; output?: string } {
   // The marker identifies who created a tree; it does not transfer that run's
   // branch ownership to a later attacher. Cleanup names only the discarding
@@ -408,22 +464,19 @@ export function removeFor(
   const tool = resolvedWorktreeTool(project)
   const retainBranch =
     keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
-  let result: { removed: boolean; detail: string; output?: string }
-  if (w.source === 'readonly_recipe' || w.source === 'clone') {
-    const removed = removeReadOnlyTree(tool ?? {}, owned, retainBranch)
-    result = removed.output
-      ? { ...removed, output: `${project!.name} readonly remove:\n${removed.output}` }
-      : removed
-  } else {
-    const projectOwned = w.source === 'recipe' || (w.source === undefined && Boolean(tool))
-    const removed: { removed: boolean; detail: string; output?: string } =
-      tool && projectOwned
-        ? removeWithTool(tool, owned, forceOrchTree, retainBranch, runId)
-        : removeWorktree(owned, retainBranch)
-    result = removed.output
-      ? { ...removed, output: `${project!.name} remove:\n${removed.output}` }
-      : removed
-  }
+  const removeTree = () =>
+    skipGitRemoval
+      ? { removed: true, detail: `${w.path} was already gone` }
+      : removeWorktree(owned, retainBranch)
+  const result = removeByLifecycle({
+    worktree: owned,
+    tool,
+    projectName: project?.name ?? null,
+    forceOrchTree,
+    retainBranch,
+    runId,
+    removeTree,
+  })
   if (result.removed && owningRunId !== undefined && owningRunId !== null) {
     removeSharedRefGuard(repoRoot, owningRunId)
   }

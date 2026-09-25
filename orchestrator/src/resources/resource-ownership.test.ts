@@ -2,7 +2,11 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { teardownTerminalRunResources } from './resource-ownership.ts'
+import { upsertProject } from '../project/projects.ts'
+import {
+  teardownTerminalRunResources,
+  terminalDockerRetentionReasonForRun,
+} from './resource-ownership.ts'
 
 afterEach(() => {
   mock.restore()
@@ -50,6 +54,19 @@ test('an unresolvable repository root cannot ascertain removal', () => {
       removed: 0,
     }),
   )
+})
+
+test('a registered project root resolves safety after the worktree is gone', () => {
+  const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const project = `registered-root-${terminal}`
+  const repo = join(dir, project)
+  const tree = join(repo, '.claude', 'worktrees', `orch-${terminal}`)
+  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  db()
+    .query('UPDATE run SET repo=?,cwd=?,worktree=? WHERE id=?')
+    .run(project, join(dir, 'also-gone'), tree, terminal)
+
+  expect(terminalDockerRetentionReasonForRun(db(), terminal)).toBeNull()
 })
 
 test('stopped runs with gone trees retain surviving infrastructure for review', () => {
