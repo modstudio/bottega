@@ -4,19 +4,46 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from '../src/database/migrations.ts'
-import { classifyBranchStore, classifyStore, migrateStore, snapshotStore } from './branch-store.ts'
+import { classifyStore, migrateStore, snapshotStore } from './branch-store.ts'
 
-test('classifies branch journal and applied-ledger facts', () => {
-  const journal = [
-    { when: 1, hash: 'one' },
-    { when: 2, hash: 'two' },
-  ]
-  expect(classifyBranchStore(journal, null)).toBe('absent')
-  expect(classifyBranchStore(journal, journal)).toBe('current')
-  expect(classifyBranchStore(journal, journal.slice(0, 1))).toBe('behind')
-  expect(classifyBranchStore(journal.slice(0, 1), journal)).toBe('ahead')
-  expect(classifyBranchStore(journal.slice(0, 1), [journal[0]!, journal[0]!])).toBe('ahead')
-  expect(classifyBranchStore(journal, [journal[0]!, { when: 2, hash: 'changed' }])).toBe('ahead')
+function writeMigrationFolder(folder: string, entries = migrationJournal().slice(0, -1)): void {
+  mkdirSync(join(folder, 'meta'), { recursive: true })
+  for (const entry of entries) {
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  }
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries }),
+  )
+}
+
+test('classifies stores against full and truncated migration journals', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-branch-store-classify-'))
+  const migrations = join(dir, 'migrations')
+  const prior = join(dir, 'prior.db')
+  const current = join(dir, 'current.db')
+  writeMigrationFolder(migrations)
+
+  for (const [path, folder] of [
+    [prior, migrations],
+    [current, MIGRATIONS_FOLDER],
+  ] as const) {
+    const database = new Database(path, { create: true })
+    try {
+      applyMigrations(database, folder)
+    } finally {
+      database.close()
+    }
+  }
+
+  try {
+    expect(classifyStore(null)).toBe('absent')
+    expect(classifyStore(current)).toBe('current')
+    expect(classifyStore(prior)).toBe('behind')
+    expect(classifyStore(current, migrations)).toBe('ahead')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('snapshots a prior store, migrates the snapshot, and leaves the source unchanged', () => {
@@ -24,16 +51,8 @@ test('snapshots a prior store, migrates the snapshot, and leaves the source unch
   const migrations = join(dir, 'migrations')
   const source = join(dir, 'source.db')
   const snapshots = join(dir, 'snapshots')
-  mkdirSync(join(migrations, 'meta'), { recursive: true })
   mkdirSync(snapshots)
-  const prior = migrationJournal().slice(0, -1)
-  for (const entry of prior) {
-    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(migrations, `${entry.tag}.sql`))
-  }
-  writeFileSync(
-    join(migrations, 'meta', '_journal.json'),
-    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
-  )
+  writeMigrationFolder(migrations)
 
   const database = new Database(source, { create: true })
   try {

@@ -155,6 +155,16 @@ function migrationState(
   }
 }
 
+export function storeMigrationState(
+  d: Database,
+  folder = MIGRATIONS_FOLDER,
+): 'current' | 'behind' | 'ahead' {
+  const state = migrationState(d, folder)
+  if (state.ahead) return 'ahead'
+  if (state.pending.length) return 'behind'
+  return 'current'
+}
+
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {

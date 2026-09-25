@@ -4,7 +4,6 @@ export const branchStoreModuleSpecs = [
     file: 'orchestrator/scripts/branch-store.ts',
     allowed: [
       'bun:sqlite',
-      'node:crypto',
       'node:fs',
       'node:os',
       'node:path',
