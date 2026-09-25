@@ -180,6 +180,7 @@ export const modules: ArchitectureModule[] = [
     '../worktree/keep-tree-hold.ts',
     '../mcp/mcp.ts',
     './monitor-conditions.ts',
+    './monitor-record-tunnel.ts',
     './monitor-notices.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
@@ -213,6 +214,12 @@ export const modules: ArchitectureModule[] = [
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/synthetic-lifecycle-job.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
+    'node:net',
+    '../../../shared/machine-config.ts',
+    './monitor-conditions.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/run/live-run-member.ts', [
     'bun:sqlite',
@@ -343,12 +350,15 @@ export const modules: ArchitectureModule[] = [
     './support.ts',
   ]),
   module('orchestrator/src/record/record-command.ts', [
+    '../../../shared/machine-config.ts',
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',
     './record-doctor.ts',
     './record-space-move.ts',
     './record-space.ts',
+    './record-tunnel-error.ts',
   ]),
+  module('orchestrator/src/record/record-tunnel-error.ts', []),
   module('orchestrator/src/record/record-attribution.ts', [
     'bun:sqlite',
     '../database/db.ts',

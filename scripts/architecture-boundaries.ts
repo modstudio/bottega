@@ -723,7 +723,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-sync-command-boundary',
     'orchestrator/src/record/record-sync-command.ts',
-    ['./record-sync.ts'],
+    ['../../../shared/machine-config.ts', './record-sync.ts', './record-tunnel-error.ts'],
     'Enforce the record-sync-command concern boundary.',
   ),
   boundary(

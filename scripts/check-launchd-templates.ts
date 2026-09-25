@@ -24,6 +24,10 @@ const stateHomeExemptions = new Map<string, string>([
     'ops/launchd/com.user.local-model-tunnel.plist.template',
     'runs ssh only; never opens a platform store',
   ],
+  [
+    'ops/launchd/com.user.record-tunnel.plist.template',
+    'runs flyctl only; never opens a platform store',
+  ],
 ])
 const templates = templateDirectories
   .flatMap(({ directory, concern }) =>
@@ -54,6 +58,10 @@ try {
       .replaceAll('__MODEL_HOST__', 'example')
       .replaceAll('__TUNNEL_LOCAL_PORT__', '8010')
       .replaceAll('__TUNNEL_REMOTE_PORT__', '8000')
+      .replaceAll('__FLYCTL__', '/usr/bin/true')
+      .replaceAll('__RECORD_TUNNEL_APP__', 'example-record')
+      .replaceAll('__RECORD_TUNNEL_LOCAL_PORT__', '15432')
+      .replaceAll('__RECORD_TUNNEL_REMOTE_PORT__', '5432')
       .replaceAll('__HUB_PORT__', '7778')
     const path = join(renderedDirectory, name.replaceAll('/', '-').replace(/\.template$/, ''))
     writeFileSync(path, rendered)

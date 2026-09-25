@@ -1,6 +1,7 @@
 // concern: record-command
 /** Presents record migration, space, invitation, and doctor operations. */
 
+import { readMachineValue } from '../../../shared/machine-config.ts'
 import {
   appliedRecordMigrationCount,
   migratePostgres,
@@ -18,6 +19,7 @@ import {
   switchRecordSpace,
 } from './record-space.ts'
 import { moveRecordProjectSpace } from './record-space-move.ts'
+import { recordTunnelFailure } from './record-tunnel-error.ts'
 
 type Presentation = { log(value: string): void; exitCode?(code: number): void }
 
@@ -38,7 +40,8 @@ export async function recordMigrateCommand(presentation: Presentation): Promise<
     after = await appliedRecordMigrationCount(url)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(redactRecordPasswords(message, [url]))
+    const redacted = redactRecordPasswords(message, [url])
+    throw new Error(recordTunnelFailure(redacted, readMachineValue('record.tunnel_app')))
   }
   presentation.log(
     `record migrations applied before ${before}; after ${after}; shipped ${recordMigrationCount()}`,

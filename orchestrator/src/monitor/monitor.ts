@@ -46,6 +46,7 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import type {
   HumanMonitorCondition,
   MonitorCondition,
@@ -357,6 +358,9 @@ export async function monitor(
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
   conditions.push(...stalledRunConditions(clock))
+  const recordTunnel = await observeRecordTunnel()
+  conditions.push(...recordTunnel.conditions)
+  errors.push(...recordTunnel.errors)
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
