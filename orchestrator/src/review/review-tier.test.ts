@@ -146,6 +146,39 @@ describe('review tier classification', () => {
     expect(actual.reasons.join('\n')).toContain('5 product lines')
   })
 
+  test('workflow step instructions require review', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: '.agents/workflow-steps/dispatch.md', insertions: 1, deletions: 0 }],
+    })
+    expect(actual).toMatchObject({ risk: 1, tier: 1 })
+    expect(actual.reasons.join('\n')).toContain('workflow instructions')
+  })
+
+  test('agent skill instructions require review', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: '.claude/skills/review/SKILL.md', insertions: 1, deletions: 0 }],
+    })
+    expect(actual).toMatchObject({ risk: 1, tier: 1 })
+    expect(actual.reasons.join('\n')).toContain('agent skill')
+  })
+
+  test.each(['docs/guide.md', '.agents/rules/example.md'])(
+    '%s remains excluded from review',
+    (path) => {
+      expect(
+        classifyReviewTier({ files: [{ path, insertions: 500, deletions: 0 }] }),
+      ).toMatchObject({ tier: 0, risk: 0, size: 0 })
+    },
+  )
+
+  test('instruction lines count toward size', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: '.agents/workflows/code-review.md', insertions: 51, deletions: 0 }],
+    })
+    expect(actual).toMatchObject({ risk: 1, size: 2, tier: 2 })
+    expect(actual.reasons.join('\n')).toContain('51 product lines')
+  })
+
   test('unlisted product code defaults to risk two', () => {
     const actual = classifyReviewTier({
       files: [{ path: 'scripts/check.ts', insertions: 1, deletions: 0 }],

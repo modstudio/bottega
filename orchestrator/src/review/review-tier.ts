@@ -82,6 +82,11 @@ const REVIEW_HOT_PATHS: readonly {
   { tier: 2, pattern: /^hub\/src\//, reason: 'hub backend source' },
   { tier: 1, pattern: /^hub\/web\//, reason: 'hub web surface' },
   { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },
+  {
+    tier: 1,
+    pattern: /^\.agents\/(?:workflow-steps|workflows)\//,
+    reason: 'workflow instructions',
+  },
 ]
 
 const isOrdinaryConfig = (path: string) => {
@@ -90,6 +95,12 @@ const isOrdinaryConfig = (path: string) => {
 }
 
 const isReviewExcluded = (path: string) => {
+  if (
+    path === '.claude/settings.json' ||
+    /^\.claude\/skills\//.test(path) ||
+    /^\.agents\/(?:workflow-steps|workflows)\//.test(path)
+  )
+    return false
   const kind = categorizeFile(path)
   return (
     kind === 'generated' || kind === 'test' || kind === 'docs' || /(^|\/)fixtures?\//i.test(path)
@@ -104,8 +115,7 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
       : 'risk 0: only documentation, tests, fixtures, or configuration paths'
   for (const file of input.files) {
     const kind = categorizeFile(file.path)
-    const excluded = file.path !== '.claude/settings.json' && isReviewExcluded(file.path)
-    if (excluded) continue
+    if (isReviewExcluded(file.path)) continue
     const match = REVIEW_HOT_PATHS.find((entry) => entry.pattern.test(file.path))
     const ordinaryConfig = isOrdinaryConfig(file.path)
     const candidate = match?.tier ?? (kind === 'product' && !ordinaryConfig ? 2 : 0)

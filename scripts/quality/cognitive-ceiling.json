@@ -547,8 +547,9 @@
   {
     "file": "orchestrator/src/review/review-tier.ts",
     "function": "classifyReviewTier",
-    "line": 42,
-    "score": 21
+    "line": 110,
+    "score": 20,
+    "key": "orchestrator/src/review/review-tier.ts\u0000classifyReviewTier"
   },
   {
     "file": "orchestrator/src/review/review.ts",
