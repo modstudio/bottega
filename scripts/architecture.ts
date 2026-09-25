@@ -121,6 +121,8 @@ export const modules: ArchitectureModule[] = [
     '../mcp/mcp-probe.ts',
     '../transport/transport.ts',
   ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/agent/vendor-probe.ts', ['./agent-registry.ts', '../database/db.ts', '../failure/failure.ts', '../transport/transport.ts']),
   module('orchestrator/src/agent/agent-registry.ts', [
     './agents.ts',
     './capabilities.ts',

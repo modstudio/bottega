@@ -67,6 +67,7 @@ test('every registered top-level command is recognized as canon', () => {
     'spawns',
     'stats',
     'pick',
+    'probe',
     'pending',
     'metric',
     'serve',

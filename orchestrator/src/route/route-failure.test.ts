@@ -391,6 +391,7 @@ describe('routing counts failures as evidence', () => {
     expect(c.cooling).toContain('quota')
     expect(c.eligible).toBe(false)
     expect(c.why).toContain('vendor quota')
+    expect(c.why).toContain("run 'orch probe codex' to clear it")
   })
 
   test('a later-id success finishing before quota failures does not mask them', () => {

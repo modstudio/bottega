@@ -356,7 +356,7 @@ export async function doctorCommand(
     log(
       '\nan agent is cooling. If you have fixed the cause — topped up a quota,\n' +
         'logged back in — prove it and the cooldown clears immediately:\n' +
-        '  orch do file-question --agent <name> --probe "Reply with exactly: OK"\n' +
+        '  orch probe <name>\n' +
         'A probe never counts as routing evidence, but it does count as being alive.',
     )
   }

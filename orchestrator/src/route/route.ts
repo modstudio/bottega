@@ -613,7 +613,7 @@ export function candidates(
       why = `not declared for ${jobName}`
     } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
-      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run a successful probe to clear it`
+      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run 'orch probe ${name}' to clear it`
     } else if (unavailable) {
       eligible = false
       why = unavailable
