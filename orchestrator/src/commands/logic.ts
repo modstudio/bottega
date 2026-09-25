@@ -393,6 +393,7 @@ export function register(program: Command): void {
     .option('--ack-notices <value>')
     .option('--backstop')
     .option('--history')
+    .option('--lock-holder')
     .option('--notices')
     .option('--json')
     .allowExcessArguments(false)
@@ -402,6 +403,7 @@ export function register(program: Command): void {
           ackNotices: options.ackNotices,
           notices: Boolean(options.notices),
           history: Boolean(options.history),
+          lockHolder: Boolean(options.lockHolder),
           backstop: Boolean(options.backstop),
           limit: Number(options.limit ?? 20),
           json: Boolean(options.json),

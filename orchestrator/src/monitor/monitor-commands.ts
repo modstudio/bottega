@@ -21,8 +21,19 @@ import {
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
 import { sessionId } from '../database/db.ts'
-import { displayConditions, formatMonitorPass, monitor, monitorHistory } from './monitor.ts'
+import {
+  displayConditions,
+  formatMonitorPass,
+  MonitorStoreBusyError,
+  monitor,
+  monitorHistory,
+} from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
+import {
+  formatStoreWriteLockReport,
+  type StoreWriteLockReport,
+  storeWriteLockReport,
+} from './monitor-store-write-lock.ts'
 import type { MonitorNotice } from './monitor-types.ts'
 
 type Options = {
@@ -30,6 +41,7 @@ type Options = {
   notices: boolean
   history: boolean
   backstop: boolean
+  lockHolder: boolean
   limit: number
   json: boolean
 }
@@ -101,10 +113,35 @@ function deliveryAuthorized(): boolean {
 }
 
 export async function monitorCommand(options: Options, presentation: Presentation): Promise<void> {
+  if (options.lockHolder) return showLockHolder(options.json, presentation)
   if (options.ackNotices !== undefined) return acknowledge(options.ackNotices)
   if (options.notices) return showNotices(options.json, presentation)
   if (options.history) return showHistory(options.limit, options.json, presentation)
   await runMonitor(options, presentation)
+}
+
+async function showLockHolder(json: boolean, presentation: Presentation): Promise<void> {
+  const report = await storeWriteLockReport()
+  if (json) await presentation.write(`${JSON.stringify(report)}\n`)
+  else await presentation.write(`${formatStoreWriteLockReport(report)}\n`)
+  if (!report.supported) presentation.setExitCode(1)
+}
+
+function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }>) {
+  return {
+    kind: 'store-write-lock-held',
+    subject: report.store,
+    since: null,
+    ageMs: null,
+    detail: formatStoreWriteLockReport(report),
+    action: 'inspect the named process and run before retrying an orch write',
+    pid: report.pid,
+    command: report.command,
+    runId: report.runId,
+    isRunSupervisor: report.isRunSupervisor,
+    classification: report.classification,
+    sampleCount: report.sampleCount,
+  }
 }
 
 function acknowledge(ids: string): void {
@@ -143,7 +180,23 @@ async function showHistory(
 }
 
 async function runMonitor(options: Options, presentation: Presentation): Promise<void> {
-  const result = await monitor(options.backstop ? 'backstop' : 'invoked')
+  let result: Awaited<ReturnType<typeof monitor>>
+  try {
+    result = await monitor(options.backstop ? 'backstop' : 'invoked')
+  } catch (error) {
+    if (!(error instanceof MonitorStoreBusyError)) throw error
+    const report = await storeWriteLockReport()
+    if (!report.supported) {
+      presentation.error(`${error.message}; ${formatStoreWriteLockReport(report)}`)
+      presentation.setExitCode(1)
+      return
+    }
+    const condition = lockCondition(report)
+    if (options.json) await presentation.write(`${JSON.stringify({ conditions: [condition] })}\n`)
+    else await presentation.write(`${formatStoreWriteLockReport(report)}\n`)
+    presentation.setExitCode(2)
+    return
+  }
   if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
   else {
     const failing = failingCanonEvalSlugs(),

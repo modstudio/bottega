@@ -10,6 +10,10 @@ const ATTRIBUTION_FAILURE_KEY = 'record_attribution_failure'
 
 function writeFailure(local: Database, detail: string | null): void {
   if (detail === null) {
+    const present = local
+      .query<{ present: number }, [string]>('SELECT 1 AS present FROM schema_meta WHERE key=?')
+      .get(ATTRIBUTION_FAILURE_KEY)
+    if (!present) return
     local.query('DELETE FROM schema_meta WHERE key=?').run(ATTRIBUTION_FAILURE_KEY)
     return
   }

@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   createMemoryRecordApiClient,
@@ -42,7 +43,28 @@ describe('run attribution identity resolution', () => {
   })
 
   test('returns null without a stored session', async () => {
-    expect(await signedInRecordUserId()).toBeNull()
+    const readOnly = new Database(process.env.ORCH_DB!, { readonly: true })
+    expect(await signedInRecordUserId(readOnly)).toBeNull()
+    expect(recordAttributionFailure()).toBeNull()
+    readOnly.close()
+  })
+
+  test('resolves a stored session without writing through a read-only handle', async () => {
+    session.setToken('fixture-session')
+    const readOnly = new Database(process.env.ORCH_DB!, { readonly: true })
+
+    expect(await signedInRecordUserId(readOnly)).toBe('01990000-0000-7000-8000-000000000001')
+    expect(recordAttributionFailure()).toBeNull()
+    readOnly.close()
+  })
+
+  test('a successful lookup clears a stored attribution failure', async () => {
+    session.setToken('fixture-session')
+    db()
+      .query('INSERT INTO schema_meta (key, value) VALUES (?, ?)')
+      .run('record_attribution_failure', 'earlier failure')
+
+    expect(await signedInRecordUserId()).toBe('01990000-0000-7000-8000-000000000001')
     expect(recordAttributionFailure()).toBeNull()
   })
 
