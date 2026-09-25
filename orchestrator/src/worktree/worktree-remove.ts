@@ -409,6 +409,7 @@ function removeByLifecycle(input: {
   projectName: string | null
   forceOrchTree: boolean
   retainBranch: boolean
+  teardownAbsent: boolean
   runId?: number
   removeTree(): { removed: boolean; detail: string }
 }): { removed: boolean; detail: string; output?: string } {
@@ -422,14 +423,20 @@ function removeByLifecycle(input: {
     })
   }
   if (worktree.source === 'readonly_recipe' || worktree.source === 'clone') {
-    const removed = removeReadOnlyTree(tool ?? {}, worktree, input.retainBranch)
+    const removed: { removed: boolean; detail: string; output?: string } = removeReadOnlyTree(
+      tool ?? {},
+      worktree,
+      input.retainBranch,
+    )
     return removed.output && input.projectName
       ? { ...removed, output: `${input.projectName} readonly remove:\n${removed.output}` }
       : removed
   }
   const projectOwned =
-    worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
-  const removed =
+    input.teardownAbsent ||
+    worktree.source === 'recipe' ||
+    (worktree.source === undefined && Boolean(tool))
+  const removed: { removed: boolean; detail: string; output?: string } =
     tool && projectOwned
       ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
       : removeWorktree(worktree, input.retainBranch)
@@ -474,6 +481,7 @@ export function removeFor(
     projectName: project?.name ?? null,
     forceOrchTree,
     retainBranch,
+    teardownAbsent: skipGitRemoval && !existsSync(w.path),
     runId,
     removeTree,
   })

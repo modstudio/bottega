@@ -21,7 +21,6 @@ import {
   worktreeLeaseName,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -44,7 +43,12 @@ import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
-import { absentTreeCloseOut } from './absent-tree-close-out.ts'
+import {
+  absentTreeCloseOut,
+  dryRunReleaseResult,
+  reconstructibilityHold,
+  successfulReleaseResult,
+} from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { retainedBranchForCloseOut } from './retained-branch.ts'
 
@@ -511,58 +515,6 @@ function presentTreeOwnershipResult(input: {
     decision: adoptedTreeCloseOutDecision(ownership),
     dryRun: input.dryRun,
   })
-}
-
-function dryRunReleaseResult(runId: number, treePath: string, treeAbsent: boolean): CloseOutResult {
-  if (treeAbsent) {
-    return {
-      runId,
-      worktree: treePath,
-      outcome: 'absent',
-      detail:
-        'worktree was already absent; would run its recorded resource teardown and keep its branch',
-    }
-  }
-  return {
-    runId,
-    worktree: treePath,
-    outcome: 'released',
-    detail: 'would release clean terminal worktree and keep its branch',
-  }
-}
-
-function reconstructibilityHold(
-  runId: number,
-  treePath: string,
-  treeAbsent: boolean,
-): CloseOutResult | null {
-  if (treeAbsent) return null
-  const proof = proveWorktreeReconstructible(treePath)
-  return proof.ok ? null : { runId, worktree: treePath, outcome: 'held', detail: proof.action }
-}
-
-function successfulReleaseResult(
-  runId: number,
-  treePath: string,
-  treeAbsent: boolean,
-  result: { detail: string; output?: string },
-): CloseOutResult {
-  if (!treeAbsent) {
-    return {
-      runId,
-      worktree: treePath,
-      outcome: 'released',
-      detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
-    }
-  }
-  return {
-    runId,
-    worktree: treePath,
-    outcome: 'absent',
-    detail: result.output
-      ? `worktree was already absent; resources torn down\n${result.output}`
-      : 'worktree was already absent; resources torn down',
-  }
 }
 
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */

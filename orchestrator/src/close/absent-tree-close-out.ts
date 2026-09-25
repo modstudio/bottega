@@ -2,6 +2,7 @@
 /** Resolves whether a missing worktree has recorded resource teardown to run. */
 import { repoRootOf } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
+import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
 import { worktreeExists } from '../worktree/worktree.ts'
 import { branchTip, hasAbsentTreeTeardownPlan } from '../worktree/worktree-remove.ts'
 
@@ -11,6 +12,9 @@ type AbsentResult = {
   outcome: 'absent'
   detail: string
 }
+
+type ReleasedResult = Omit<AbsentResult, 'outcome'> & { outcome: 'released' }
+type HeldResult = Omit<AbsentResult, 'outcome'> & { outcome: 'held' }
 
 export function absentTreeCloseOut(input: {
   runId: number
@@ -40,5 +44,59 @@ export function absentTreeCloseOut(input: {
       outcome: 'absent',
       detail: 'worktree was already absent; recorded identity retained',
     },
+  }
+}
+
+export function dryRunReleaseResult(
+  runId: number,
+  treePath: string,
+  treeAbsent: boolean,
+): AbsentResult | ReleasedResult {
+  if (treeAbsent)
+    return {
+      runId,
+      worktree: treePath,
+      outcome: 'absent',
+      detail:
+        'worktree was already absent; would run its recorded resource teardown and keep its branch',
+    }
+  return {
+    runId,
+    worktree: treePath,
+    outcome: 'released',
+    detail: 'would release clean terminal worktree and keep its branch',
+  }
+}
+
+export function reconstructibilityHold(
+  runId: number,
+  treePath: string,
+  treeAbsent: boolean,
+): HeldResult | null {
+  if (treeAbsent) return null
+  const proof = proveWorktreeReconstructible(treePath)
+  return proof.ok ? null : { runId, worktree: treePath, outcome: 'held', detail: proof.action }
+}
+
+export function successfulReleaseResult(
+  runId: number,
+  treePath: string,
+  treeAbsent: boolean,
+  result: { detail: string; output?: string },
+): AbsentResult | ReleasedResult {
+  if (!treeAbsent)
+    return {
+      runId,
+      worktree: treePath,
+      outcome: 'released',
+      detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
+    }
+  return {
+    runId,
+    worktree: treePath,
+    outcome: 'absent',
+    detail: result.output
+      ? `worktree was already absent; resources torn down\n${result.output}`
+      : 'worktree was already absent; resources torn down',
   }
 }
