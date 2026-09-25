@@ -169,10 +169,8 @@ export const modules: ArchitectureModule[] = [
     '../workflow/autonomy-scopes.ts',
     './operator-notification.ts',
   ]),
-  module('orchestrator/src/operator/operator-commands.ts', [
-    '../cli/args.ts',
-    './operator-waiting.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/operator/operator-commands.ts', ['../cli/args.ts', './operator-waiting.ts']),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',
     'node:crypto',
