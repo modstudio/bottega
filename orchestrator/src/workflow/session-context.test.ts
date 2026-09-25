@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { upsertProject } from '../project/projects.ts'
-import { productionStepCatalogue } from './step-catalogue.ts'
 import { sessionContextCommand } from './session-context.ts'
+import { productionStepCatalogue } from './step-catalogue.ts'
 
 async function contextJson(cwd: string) {
   const lines: string[] = []
@@ -36,12 +37,13 @@ test('a registered project reports rulings and one value when a stage agrees', a
   expect(slice.registered).toBe(true)
   expect(slice.project).toBe('session-context-agree')
   expect(slice.rulings).toEqual({ value: 'user', scope: 'project' })
-  const plan = (slice.stages as { stage: string; agreed: boolean; value?: string; scope?: string }[])
-    .find((row) => row.stage === 'plan')
+  const plan = (
+    slice.stages as { stage: string; agreed: boolean; value?: string; scope?: string }[]
+  ).find((row) => row.stage === 'plan')
   expect(plan).toMatchObject({ agreed: true, value: 'review', scope: 'project' })
   const text = slice.text as string
   expect(text).toStartWith(
-    'Autonomy for session-context-agree, resolved now from bottega; change it with orch config set',
+    `Autonomy for session-context-agree, resolved now from ${PLATFORM_NAME}; change it with orch config set`,
   )
   expect(text).toContain('rulings: user (project)')
   expect(text).toContain('plan: review (project)')

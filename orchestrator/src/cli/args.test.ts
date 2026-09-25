@@ -53,6 +53,7 @@ test('every registered top-level command is recognized as canon', () => {
     'tell',
     'relay',
     'continue',
+    'context',
     'diff',
     'sweep',
     'discard',

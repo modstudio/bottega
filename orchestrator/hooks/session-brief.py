@@ -375,59 +375,76 @@ def main() -> int:
                 "waiting state is unknown."
             )
 
+        autonomy_section, autonomy_failure = _autonomy_slice(autonomy)
         notices = []
+        inbox_lines = []
+        issues_lines = []
         if inbox_failure:
             notices.append(inbox_failure)
         if resume_failure:
             notices.append(resume_failure)
         if waiting_failure:
             notices.append(waiting_failure)
+        if autonomy_failure:
+            notices.append(autonomy_failure)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
-            notices.append(f"{answerable_count} {noun} waiting on your ruling.")
+            message = f"{answerable_count} {noun} waiting on your ruling."
+            notices.append(message)
+            inbox_lines.append(message)
         if foreign_count:
             if foreign_count == 1:
-                notices.append(
+                message = (
                     "1 worker dispatched by another session is waiting on an answer. "
                     "Only the session that dispatched it can answer it."
                 )
             else:
-                notices.append(
+                message = (
                     f"{foreign_count} workers dispatched by other sessions are waiting on an "
                     "answer. Only the session that dispatched each one can answer it."
                 )
+            notices.append(message)
+            inbox_lines.append(message)
         if unknown_count:
             if unknown_count == 1:
-                notices.append(
+                message = (
                     "1 of those is from a session not seen recently. It may be closed, and that "
                     "worker may never get an answer."
                 )
             else:
-                notices.append(
+                message = (
                     f"{unknown_count} of those are from a session not seen recently. They may be "
                     "closed, and those workers may never get an answer."
                 )
+            notices.append(message)
+            inbox_lines.append(message)
         if waiting_issues:
             keys = ", ".join(item["key"] for item in waiting_issues)
-            notices.append(
-                f"{len(waiting_issues)} filed issue(s) waiting on a person: {keys}"
-            )
+            message = f"{len(waiting_issues)} filed issue(s) waiting on a person: {keys}"
+            notices.append(message)
+            issues_lines.append(message)
         if unworked_issues:
             keys = ", ".join(item["key"] for item in unworked_issues)
-            notices.append(
+            message = (
                 f"{len(unworked_issues)} filed issue(s) not yet worked: {keys} - run orch fix-defect"
             )
+            notices.append(message)
+            issues_lines.append(message)
         if unscored_loop_runs:
             ids = ", ".join(str(item["runId"]) for item in unscored_loop_runs)
-            notices.append(
+            message = (
                 f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with orch result <id>, score with orch judge <id>"
             )
+            notices.append(message)
+            issues_lines.append(message)
         if blocked_issue_loop:
             held = blocked_issue_loop["held"]
             paths = ", ".join(item["path"] for item in held)
-            notices.append(
+            message = (
                 f"Filed-issue loop blocked: {len(held)} held issue trees ({paths}) - clear them before it takes more work"
             )
+            notices.append(message)
+            issues_lines.append(message)
         if open_briefs:
             slugs = ", ".join(f"`{item['slug']}`" for item in open_briefs)
             noun = "brief" if len(open_briefs) == 1 else "briefs"
@@ -447,22 +464,27 @@ def main() -> int:
             )
             if not os.access(heartbeat, os.X_OK):
                 msg = f"Heartbeat missing or not executable: {heartbeat}"
-                if context and not context.endswith("\n"):
-                    context += "\n"
-                context += msg + "\n"
+                extra_section = _join_sections(extra_section, msg)
                 notices.append(msg)
             else:
                 # The payload's own session_id first, then the env var Claude always sets.
                 if sid:
-                    line = f"Arm under Monitor from the main checkout: {heartbeat} {sid}"
-                    if context and not context.endswith("\n"):
-                        context += "\n"
-                    context += line + "\n"
+                    extra_section = _join_sections(
+                        extra_section,
+                        f"Arm under Monitor from the main checkout: {heartbeat} {sid}",
+                    )
 
         # Health is complete and retained before notice work begins. Notice delivery is
         # supplemental: no failure in minting, fetching, parsing, or acknowledging may
         # cost the SessionStart object that carries brief and question state.
-        health_context = context
+        health_sections = {
+            "resume": resume_section,
+            "inbox": "\n".join(inbox_lines),
+            "issues": "\n".join(issues_lines),
+            "autonomy": autonomy_section,
+            "extra": extra_section,
+        }
+        health_context = assemble_additional_context(**health_sections)
         health_notices = list(notices)
         if health_context or health_notices:
             output = {
@@ -513,13 +535,13 @@ def main() -> int:
         if monitor_failure:
             notices.append(monitor_failure)
         if monitor_notices:
-            if context and not context.endswith("\n"):
-                context += "\n"
-            for item in monitor_notices:
-                context += (
-                    f'MONITOR {item["kind"]} {item["subject"]}: '
-                    f'{item["detail"]}\n'
-                )
+            monitor_text = "\n".join(
+                f'MONITOR {item["kind"]} {item["subject"]}: {item["detail"]}'
+                for item in monitor_notices
+            )
+            context = assemble_additional_context(
+                **{**health_sections, "extra": _join_sections(extra_section, monitor_text)}
+            )
             noun = "condition" if len(monitor_notices) == 1 else "conditions"
             notices.append(f"Monitor addressed {len(monitor_notices)} {noun} to this session.")
 
@@ -557,6 +579,7 @@ def main() -> int:
         _kill(resumes_p)
         _kill(inbox_p)
         _kill(waiting_p)
+        _kill(context_p)
         _kill(monitor_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)

@@ -160,6 +160,7 @@ export const modules: ArchitectureModule[] = [
     './step-catalogue.ts',
   ]),
   module('orchestrator/src/workflow/session-context.ts', [
+    '../../../shared/brand.ts',
     '../project/projects.ts',
     './autonomy.ts',
     './autonomy-scopes.ts',

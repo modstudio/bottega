@@ -1,6 +1,7 @@
 // concern: workflows
 /** Owns the architect session autonomy slice. Must not own CLI grammar or hook assembly. */
 
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   type AutonomyStage,
@@ -72,7 +73,7 @@ function renderSlice(
   stages: StageSlice[],
 ): string {
   return [
-    `Autonomy for ${project}, resolved now from bottega; change it with ${AUTONOMY_SETTER}`,
+    `Autonomy for ${project}, resolved now from ${PLATFORM_NAME}; change it with ${AUTONOMY_SETTER}`,
     `rulings: ${rulings.value} (${rulings.scope})`,
     ...stages.map(stageLine),
   ].join('\n')
