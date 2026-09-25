@@ -12,7 +12,7 @@ import {
   parseAnswerTextSources,
 } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
-import { db, writeTransaction } from '../database/db.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
@@ -31,9 +31,15 @@ import {
   QUESTION_DELIVERY_OUTCOME_FAILED,
 } from './question-vocabulary.ts'
 import { packedResumePrompt } from './run.ts'
+import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState } from './run-artifacts.ts'
-import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import {
+  adoptRunMutation,
+  auditRunMutation,
+  authorizeRunMutation,
+  runMutationActor,
+} from './run-authority.ts'
 import {
   continueRun,
   follow,
@@ -251,9 +257,13 @@ export async function retryRun(
  */
 export async function answerRun(
   requestedId: number,
-  options: { argv: string[]; recordOnly: boolean; flags: RunFlags },
+  options: { argv: string[]; recordOnly: boolean; json?: boolean; flags: RunFlags },
   helpers: RunAnswerHelpers,
-): Promise<void> {
+): Promise<{
+  outcome: 'resumed' | 'delivered-live' | 'recorded'
+  run_id: number
+  resumed_as: number | null
+}> {
   const answerArgs = parseAnswerChannelArgs(options.argv)
   const found = db()
     .query(
@@ -287,7 +297,26 @@ export async function answerRun(
   await refuseUserRuling(row.repo, row.launch_key, answerArgs.argv)
   const id = row.id
   refuseEscapedChain(id)
-  let answerAuthority = authorizeRunMutation(requestedId, 'answer')
+  writableDb()
+  let answerAuthority = runMutationActor(requestedId)
+  const authorityDecision = answerAuthorityDecision({
+    channel: answerArgs.channel,
+    fromOperator: options.argv.includes('--from-operator'),
+    sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
+    depthPresent: process.env.ORCH_DEPTH !== undefined,
+    owner: answerAuthority.owner,
+    actor: answerAuthority.actor,
+  })
+  if (authorityDecision.kind === 'refuse') {
+    throw new Error(
+      authorityDecision.reason.startsWith('run is owned')
+        ? `run ${requestedId}${authorityDecision.reason.slice(3)}`
+        : authorityDecision.reason,
+    )
+  }
+  if (authorityDecision.kind === 'allow-as-operator') {
+    answerAuthority = { ...answerAuthority, actor: authorityDecision.actor }
+  }
 
   /**
    * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
@@ -347,7 +376,7 @@ export async function answerRun(
   // command then accepted the adoption. Only the architect session that
   // dispatched the conversation has standing to change its specification.
   const callerSession = answerAuthority.actor
-  if (!row.session_id && callerSession) {
+  if (!row.session_id && callerSession && authorityDecision.kind === 'allow-as-owner') {
     console.error(
       `run ${id} is unowned; session ${callerSession} may rule and will adopt the chain, ` +
         'and that answering identity will be recorded',
@@ -556,11 +585,15 @@ export async function answerRun(
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE id=?`,
   )
-  const answeredBy = options.argv.includes('--from-operator')
-    ? `operator via ${callerSession ?? 'anonymous (no session id)'}`
-    : (callerSession ?? 'anonymous (no session id)')
+  const answeredBy =
+    authorityDecision.kind === 'allow-as-operator'
+      ? 'operator via hub'
+      : options.argv.includes('--from-operator')
+        ? `operator via ${callerSession ?? 'anonymous (no session id)'}`
+        : (callerSession ?? 'anonymous (no session id)')
   writeTransaction(() => {
-    answerAuthority = adoptRunMutation(answerAuthority, 'answer')
+    if (authorityDecision.kind === 'allow-as-owner')
+      answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     open.forEach((q, i) => {
       upd.run(
         answers[i]!.answer,
@@ -597,23 +630,25 @@ export async function answerRun(
   })
 
   if (skipResume) {
-    console.log(
-      `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
-        `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
-        `or orch abandon ${id}.`,
-    )
-    return
+    if (!options.json)
+      console.log(
+        `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
+          `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
+          `or orch abandon ${id}.`,
+      )
+    return { outcome: 'recorded', run_id: id, resumed_as: null }
   }
 
   if (ownersLive) {
     // Delivered. The worker's own tool call is polling this row and will
     // return with it inside a second; there is nothing else to do, and
     // starting a new turn here would put two workers in one worktree.
-    console.log(
-      `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
-        `pick this up from its ask_orchestrator call.`,
-    )
-    return
+    if (!options.json)
+      console.log(
+        `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
+          `pick this up from its ask_orchestrator call.`,
+      )
+    return { outcome: 'delivered-live', run_id: id, resumed_as: null }
   }
 
   const worktreePath = latest.worktree ?? row.worktree
@@ -690,7 +725,8 @@ export async function answerRun(
       at: new Date(Date.now()).toISOString(),
     },
   )
-  console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
+  if (!options.json)
+    console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
   if (options.flags.detach || !options.flags.follow) {
     if (!options.flags.quiet) {
       console.error(
@@ -700,7 +736,7 @@ export async function answerRun(
           `\n  --follow            to watch it here instead`,
       )
     }
-    return
+    return { outcome: 'resumed', run_id: id, resumed_as: childId }
   }
   const resumedStatus = await follow(childId, options.flags.quiet, false, helpers.presentation)
   if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
@@ -723,4 +759,5 @@ export async function answerRun(
       ? `\n  STILL ASKING — orch inbox`
       : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
   )
+  return { outcome: 'resumed', run_id: id, resumed_as: childId }
 }

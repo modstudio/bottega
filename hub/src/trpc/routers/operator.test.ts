@@ -6,6 +6,7 @@ import { createOperatorRouter } from './operator.ts'
 const item: OperatorWaitingItem = {
   kind: 'question',
   id: 7,
+  run_id: 42,
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
   session_id: null,
@@ -23,14 +24,15 @@ test('waiting query and answer mutation use the orch seam', async () => {
     waiting: async () => [item],
     answer: async (...args) => {
       calls.push(args)
-      return { outcome: 'resumed' as const, message: 'resumed run 42' }
+      return { outcome: 'resumed' as const, run_id: 42, resumed_as: 43 }
     },
   })
   const caller = router.createCaller({})
   expect(await caller.waiting()).toEqual([item])
   expect(await caller.answer({ runId: 42, questionId: 7, ruling: 'A' })).toEqual({
     outcome: 'resumed',
-    message: 'resumed run 42',
+    run_id: 42,
+    resumed_as: 43,
   })
   expect(calls).toEqual([[42, 7, 'A']])
 })

@@ -124,6 +124,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     {
       kind: 'question',
       id: question.id,
+      run_id: owner.id,
       project: 'fixture',
       task_key: 'DEV-943',
       session_id: null,
@@ -137,6 +138,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     {
       kind: 'workflow',
       id: cursor.id,
+      run_id: null,
       project: 'fixture',
       task_key: 'DEV-943',
       session_id: 'session-1',

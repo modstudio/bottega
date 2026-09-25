@@ -139,6 +139,7 @@ export function relayQuestion(
 export type OperatorWaitingItem = {
   kind: 'question' | 'workflow'
   id: number
+  run_id: number | null
   project: string
   task_key: string | null
   session_id: string | null
@@ -196,6 +197,7 @@ function operatorWaitingWithEpisodes(
       item: {
         kind: 'question' as const,
         id: row.id,
+        run_id: row.root_id,
         project: row.project,
         task_key: row.task_key,
         session_id: null,
@@ -217,6 +219,7 @@ function operatorWaitingWithEpisodes(
         item: {
           kind: 'workflow' as const,
           id: row.id,
+          run_id: null,
           project: row.project,
           task_key: row.task_key,
           session_id: row.session_id,

@@ -1,11 +1,5 @@
 import type { OperatorWaitingItem } from '@/trpc/client'
 
-export function waitingRunId(item: OperatorWaitingItem): number | null {
-  if (item.kind !== 'question') return null
-  const match = item.answer_command.match(/^orch answer (\d+)\b/)
-  return match ? Number(match[1]) : null
-}
-
 /** Match active run identities to their exact waiting question. */
 export function waitingByRun<Run extends { id: number | string }>(
   runs: readonly Run[],
@@ -13,7 +7,7 @@ export function waitingByRun<Run extends { id: number | string }>(
 ): Map<string, OperatorWaitingItem> {
   const questions = new Map(
     waiting.flatMap((item) => {
-      const id = waitingRunId(item)
+      const id = item.run_id
       return id === null ? [] : [[String(id), item] as const]
     }),
   )

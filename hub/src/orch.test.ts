@@ -32,6 +32,7 @@ test('operator answer argv preserves the ruling and records the UI operator chan
     '--from-operator',
     '--channel',
     'ui',
+    '--json',
   ])
 })
 

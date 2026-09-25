@@ -204,6 +204,7 @@ const ANSWER_BOOLEANS = new Set([
   '--quiet',
   '--record-only',
   '--from-operator',
+  '--json',
 ])
 
 export function parseAnswerChannelArgs(args: string[]): {

@@ -1,14 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { waitingRunId } from '@/lib/operator-waiting'
 import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Textarea } from '@/ui/field/textarea'
 import { DisplayRow } from '@/ui/form-layout/form-layout'
 import { PageHeader } from '@/ui/page-header/page-header'
-import { Segmented } from '@/ui/segmented/segmented'
+import { RadioRows } from '@/ui/radio-rows/radio-rows'
 
 export const Route = createFileRoute('/inbox_/$kind/$id')({ component: InboxDetailPage })
 
@@ -62,7 +61,7 @@ function QuestionRuling({ item }: { item: OperatorWaitingItem }) {
       await queryClient.invalidateQueries({ queryKey: trpc.operator.waiting.queryKey() })
     },
   })
-  const runId = waitingRunId(item)
+  const runId = item.run_id
   const ruling = freeText.trim() || choice
   return (
     <section className="max-w-3xl">
@@ -77,13 +76,13 @@ function QuestionRuling({ item }: { item: OperatorWaitingItem }) {
         </div>
         {item.why ? <DisplayRow label="Why" value={item.why} /> : null}
         {item.options.length ? (
-          <Segmented
+          <RadioRows
             label="Ruling"
-            size="md"
             value={choice}
             options={item.options.map((option) => ({
               value: option,
-              label: option === item.recommendation ? `${option} (recommended)` : option,
+              label: option,
+              recommended: option === item.recommendation,
             }))}
             onChange={(value) => {
               setChoice(value)
@@ -111,7 +110,11 @@ function QuestionRuling({ item }: { item: OperatorWaitingItem }) {
         </Button>
         {answer.data ? (
           <p data-tone="success" className="text-status-text">
-            {answer.data.outcome}: {answer.data.message}
+            {answer.data.outcome === 'resumed'
+              ? `resumed as run ${answer.data.resumed_as}`
+              : answer.data.outcome === 'delivered-live'
+                ? 'delivered to the live worker'
+                : 'recorded'}
           </p>
         ) : null}
         {answer.error ? (

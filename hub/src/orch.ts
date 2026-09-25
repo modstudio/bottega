@@ -45,6 +45,7 @@ export const OperatorWaitingItemSchema = z
   .object({
     kind: z.enum(['question', 'workflow']),
     id: z.number().int().positive(),
+    run_id: z.number().int().positive().nullable(),
     project: z.string(),
     task_key: z.string().nullable(),
     session_id: z.string().nullable(),
@@ -260,14 +261,19 @@ export const answerWaitingArgv = (runId: number, questionId: number, ruling: str
   '--from-operator',
   '--channel',
   'ui',
+  '--json',
 ]
 
+export const AnswerWaitingResultSchema = z
+  .object({
+    outcome: z.enum(['resumed', 'delivered-live', 'recorded']),
+    run_id: z.number().int().positive(),
+    resumed_as: z.number().int().positive().nullable(),
+  })
+  .strict()
+
 export async function answerWaiting(runId: number, questionId: number, ruling: string) {
-  const message = await orchProcess(answerWaitingArgv(runId, questionId, ruling))
-  return {
-    outcome: (message.includes('still working') ? 'recorded' : 'resumed') as 'recorded' | 'resumed',
-    message,
-  }
+  return json(answerWaitingArgv(runId, questionId, ruling), AnswerWaitingResultSchema)
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>
