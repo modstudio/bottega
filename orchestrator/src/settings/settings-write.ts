@@ -34,6 +34,11 @@ export type SettingsWritePlan = {
   mode: number
 }
 
+export type BackedUpSettingsWrite = {
+  plan: SettingsWritePlan
+  backup: string
+}
+
 type BackupMetadata = {
   version: 1
   target: string
@@ -69,6 +74,61 @@ export function applySettingsWrite(
   atomicWrite(plan.path, plan.renderedText, plan.mode)
   pruneBackups(directory, resolve(plan.path))
   return { backup, written: true }
+}
+
+export function backupSettingsWrites(
+  plans: SettingsWritePlan[],
+  environment: StateEnvironment,
+): BackedUpSettingsWrite[] {
+  if (plans.length === 0) return []
+  const directory = prepareBackupDirectory(environment)
+  reclaimStaleFiles(directory)
+  for (const plan of plans) {
+    reclaimTargetTemporaries(plan.path)
+    assertUnchanged(plan)
+  }
+  return plans.map((plan) => {
+    assertUnchanged(plan)
+    return {
+      plan,
+      backup: writeBackup(plan.path, plan.currentText, plan.renderedText, directory),
+    }
+  })
+}
+
+export function applyBackedUpSettingsWrites(
+  writes: BackedUpSettingsWrite[],
+  environment: StateEnvironment,
+): string[] {
+  if (writes.length === 0) return []
+  const written: BackedUpSettingsWrite[] = []
+  try {
+    for (const write of writes) {
+      assertUnchanged(write.plan)
+      atomicWrite(write.plan.path, write.plan.renderedText, write.plan.mode, () => {
+        written.push(write)
+      })
+    }
+  } catch (error) {
+    const restoreErrors: string[] = []
+    for (const write of written.reverse()) {
+      try {
+        restoreSettingsBackup(write.plan.path, write.backup, environment, true)
+      } catch (restoreError) {
+        restoreErrors.push(`${write.plan.path}: ${String(restoreError)}`)
+      }
+    }
+    const backups = writes.map((write) => `${write.plan.path}: ${write.backup}`).join('\n')
+    const restoration = restoreErrors.length
+      ? `\nrestore failures:\n${restoreErrors.join('\n')}`
+      : ''
+    throw new Error(`settings batch write failed; backups retained:\n${backups}${restoration}`, {
+      cause: error,
+    })
+  }
+  const directory = prepareBackupDirectory(environment)
+  for (const write of writes) pruneBackups(directory, resolve(write.plan.path))
+  return writes.map((write) => write.backup)
 }
 
 export function restoreSettingsBackup(
@@ -111,6 +171,11 @@ function changedAfterPlanning(path: string): never {
     `refusing settings write: ${path} changed after planning\n` +
       'cleared by: inspect the change and run the render command again',
   )
+}
+
+function assertUnchanged(plan: SettingsWritePlan): void {
+  const current = readRegularNoFollow(plan.path)
+  if (hash(current) !== plan.currentHash) changedAfterPlanning(plan.path)
 }
 
 function prepareBackupDirectory(environment: StateEnvironment): string {
@@ -254,7 +319,7 @@ function safeOwnedRegular(path: string): ReturnType<typeof lstatSync> | null {
   }
 }
 
-function atomicWrite(path: string, text: string, mode: number): void {
+function atomicWrite(path: string, text: string, mode: number, installed?: () => void): void {
   lstatRegular(path)
   const directory = dirname(path)
   const temporary = join(directory, `.${basename(path)}.tmp-${process.pid}-${randomUUID()}`)
@@ -268,6 +333,7 @@ function atomicWrite(path: string, text: string, mode: number): void {
     fd = null
     lstatRegular(path)
     renameSync(temporary, path)
+    installed?.()
     fsyncDirectory(directory)
   } finally {
     if (fd !== null) closeSync(fd)
@@ -308,6 +374,8 @@ function lstatRegular(path: string) {
   if (stat.isSymbolicLink())
     throw new Error(`refusing settings path ${path}: symbolic links are not allowed`)
   if (!stat.isFile()) throw new Error(`refusing settings path ${path}: expected a regular file`)
+  if (stat.nlink !== 1)
+    throw new Error(`refusing settings path ${path}: hard links are not allowed`)
   return stat
 }
 

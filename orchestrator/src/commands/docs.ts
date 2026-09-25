@@ -60,6 +60,7 @@ export function register(program: Command): void {
     .option('--harness <value>')
     .option('--role <value>')
     .option('--dry-run')
+    .option('--adopt')
     .action(async (args, options) => {
       const argv = ['canon', ...args]
       const flags = optionFlags(options)

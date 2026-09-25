@@ -12,16 +12,24 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  applyBackedUpSettingsWrites,
+  backupSettingsWrites,
+  planSettingsWrite,
+} from '../settings/settings-write.ts'
 import {
   decideUserCanonHydration,
   isUserCanonHomePath,
   mapUserCanonPath,
+  USER_CANON_MANAGED_MARKER,
 } from './user-canon-home.ts'
 
 export type UserCanonHomeFile = { slug: string; path: string; text: string }
 export type UserCanonHomePlan = {
   claudeHome: string
   writes: { slug: string; path: string; body: string }[]
+  adopts: { slug: string; path: string; body: string }[]
   deletes: { slug: string; path: string }[]
 }
 
@@ -58,6 +66,7 @@ export function planUserCanonHome(input: {
   claudeHome: string
   rows: { slug: string; body: string }[]
   files: UserCanonHomeFile[]
+  adopt?: boolean
 }): UserCanonHomePlan {
   const rows = new Map(
     input.rows.flatMap((row) => {
@@ -73,6 +82,7 @@ export function planUserCanonHome(input: {
   )
   const paths = new Set([...rows.keys(), ...files.keys()])
   const writes: UserCanonHomePlan['writes'] = []
+  const adopts: UserCanonHomePlan['adopts'] = []
   const deletes: UserCanonHomePlan['deletes'] = []
   for (const relativePath of [...paths].sort()) {
     const row = rows.get(relativePath)
@@ -83,27 +93,57 @@ export function planUserCanonHome(input: {
       homeText: file?.text ?? null,
     })
     if (decision.action === 'refuse') {
+      if (input.adopt) {
+        assertSingleLinkAdoptPath(path)
+        adopts.push({
+          slug: row!.slug,
+          path,
+          body: `${USER_CANON_MANAGED_MARKER}${row!.body}`,
+        })
+        continue
+      }
       throw new Error(
         `refusing to overwrite unmarked Claude home file ${path}: its content differs from user canon\n` +
-          'cleared by: orch canon import --user',
+          'keep the file (file wins): orch canon import --user\n' +
+          'keep the store (store wins): orch canon hydrate --user --adopt',
       )
     }
     if (decision.action === 'write') writes.push({ slug: row!.slug, path, body: decision.body })
     if (decision.action === 'delete') deletes.push({ slug: file!.slug, path })
   }
-  return { claudeHome: input.claudeHome, writes, deletes }
+  return { claudeHome: input.claudeHome, writes, adopts, deletes }
 }
 
-export function applyUserCanonHomePlan(plan: UserCanonHomePlan): void {
-  if (plan.writes.length === 0 && plan.deletes.length === 0) return
+export function applyUserCanonHomePlan(
+  plan: UserCanonHomePlan,
+  environment: StateEnvironment = process.env,
+  dryRun = false,
+): string[] {
+  if (dryRun) return []
+  if (plan.writes.length === 0 && plan.adopts.length === 0 && plan.deletes.length === 0) return []
   ensureClaudeHome(plan.claudeHome)
-  for (const row of [...plan.deletes, ...plan.writes]) preflightMutation(plan.claudeHome, row.path)
+  for (const row of [...plan.deletes, ...plan.writes, ...plan.adopts]) {
+    preflightMutation(plan.claudeHome, row.path)
+  }
+  const adoptedWrites = plan.adopts.map((row) => planSettingsWrite(row.path, row.body))
+  const backedUpAdopts = backupSettingsWrites(adoptedWrites, environment)
   for (const row of plan.deletes) rmSync(row.path)
   for (const row of plan.writes) {
     mkdirSync(dirname(row.path), { recursive: true })
     preflightMutation(plan.claudeHome, row.path)
     writeFileSync(row.path, row.body)
     assertResolvedUnderClaudeHome(plan.claudeHome, row.path)
+  }
+  return applyBackedUpSettingsWrites(backedUpAdopts, environment)
+}
+
+function assertSingleLinkAdoptPath(path: string): void {
+  const stat = lstatSync(path)
+  if (stat.nlink !== 1) {
+    throw new Error(
+      `refusing to adopt Claude home file ${path}: hard links are not allowed; ` +
+        'replace it with a singly linked regular file',
+    )
   }
 }
 
