@@ -36,7 +36,9 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     mkdirSync(source)
     writeFileSync(
       join(source, 'config.toml'),
-      'model = "grok"\n[mcp_servers.orch]\ncommand = "orch"\n',
+      'model = "grok"\n[mcp_servers.orch]\ncommand = "orch"\n' +
+        '[mcp_servers.orch-ask]\ncommand = "/old/bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n' +
+        '[mcp_servers.orch-ask.env]\nSTALE = "1"\n',
     )
     expect(prepareGrokMcpHome(runDir, ['stopal', 'alephbeis'], source)).toEqual({
       GROK_HOME: runDir,
@@ -45,6 +47,10 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     const written = readFileSync(join(runDir, 'config.toml'), 'utf8')
     expect(written.startsWith('disabled_mcp_servers = ["stopal","alephbeis"]\n\n')).toBe(true)
     expect(written).toContain('model = "grok"\n[mcp_servers.orch]')
+    expect(written).not.toContain('/main/orchestrator/src/cli.ts')
+    expect(written).not.toContain('STALE')
+    expect(written).toContain(`command = ${JSON.stringify(process.execPath)}`)
+    expect(written).toContain(JSON.stringify(join(ROOT, 'src', 'cli', 'orch.ts')))
     writeFileSync(join(source, 'config.toml'), 'replacement = true\n')
     prepareGrokMcpHome(runDir, [], source)
     expect(readFileSync(join(runDir, 'config.toml'), 'utf8')).toBe(written)
@@ -64,13 +70,19 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
 
 describe('readonly-lens sandbox profile', () => {
   afterEach(resetSandbox)
-  test('keeps the registered Grok stdio entry but points it at this checkout', () => {
+  test('replaces a stale registered Grok orch-ask entry with this checkout proxy', () => {
     const config =
       '[mcp_servers.orch-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
     const rewritten = grokSandboxConfig(config)
     expect(rewritten).toContain(`command = ${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
     expect(rewritten).toContain('"ask-server"')
     expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
+    expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
+  })
+  test('adds a live orch-ask table when the user config has none', () => {
+    const rewritten = grokSandboxConfig('model = "grok"\n')
+    expect(rewritten).toContain('model = "grok"')
+    expect(rewritten).toContain('[mcp_servers.orch-ask]')
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
   })
   test('builds allow and deny lists from the register fixture', () => {
