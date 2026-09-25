@@ -669,12 +669,14 @@ function scoringHelp(
 
 function recordRequestedUnvoid(
   id: number,
+  jobName: string,
   evidenceExcluded: string | null,
   flags: JudgmentFlags,
   options: ScoreOptions,
   presentation: JudgmentPresentation,
 ): boolean {
   if (!flags.has('unvoid')) return false
+  assertAgentWorkRun(id, jobName, 'unvoided')
   recordEvidenceUnvoid(id, evidenceExcluded, flags, options, presentation)
   return true
 }
@@ -724,7 +726,8 @@ export async function scoreRun(
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.id
   assertVoidTargetsRoot(requestedId, id, flags.has('void'))
-  if (recordRequestedUnvoid(id, row.evidence_excluded, flags, options, presentation)) return
+  if (recordRequestedUnvoid(id, row.job, row.evidence_excluded, flags, options, presentation))
+    return
   // A pick-time harness refusal never selected an agent, but it is still a
   // real failed row the owning session must be able to clear from its ledger.
   // Voiding that one shape records the note without manufacturing evidence.

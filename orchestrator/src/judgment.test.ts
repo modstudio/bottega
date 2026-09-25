@@ -6,6 +6,7 @@ import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun, dir, score as seedScore } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import { db } from './database/db.ts'
+import { UNSCORED_WHERE } from './evidence/evidence-query.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgment.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
@@ -91,6 +92,24 @@ describe('score ruling', () => {
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
       evidence_excluded: 'voided with orch score --void',
     })
+  })
+
+  test('score --unvoid refuses lifecycle rows without restoring evidence debt', async () => {
+    const id = insert('ok', 'hook-tree')
+    db().query("UPDATE run SET evidence_excluded='lifecycle evidence' WHERE id=?").run(id)
+
+    await expect(score(id, [], { unvoid: true }, { note: 'restore evidence' })).rejects.toThrow(
+      `run ${id} is a lifecycle row, not agent work; it cannot be unvoided. No action is needed because lifecycle rows are evidence-excluded`,
+    )
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+      evidence_excluded: 'lifecycle evidence',
+    })
+    expect(
+      db()
+        .query(`SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id=r.id
+          WHERE r.id=? AND ${UNSCORED_WHERE}`)
+        .get(id),
+    ).toEqual({ n: 0 })
   })
 
   test('an owner score revives evidence expired while no judgment was available', async () => {

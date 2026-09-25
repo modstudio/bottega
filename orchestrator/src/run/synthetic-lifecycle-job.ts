@@ -16,7 +16,7 @@ export function agentWorkValue<T>(job: string, value: () => T): T | null {
 export function assertAgentWorkRun(
   id: number,
   job: string,
-  action: 'judged' | 'retried' | 'scored',
+  action: 'judged' | 'retried' | 'scored' | 'unvoided',
 ): void {
   if (!isSyntheticLifecycleJob(job)) return
   throw new Error(
