@@ -11,7 +11,7 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
-import { productionWorkflows, promoteWorkflow, showWorkflow } from './workflows.ts'
+import { getWorkflowStep, productionWorkflows, promoteWorkflow, showWorkflow } from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -69,6 +69,50 @@ describe('importWorkflowTree', () => {
     expect(
       productionStepCatalogue(d).definition.steps.find((step) => step.slug === 'lens')?.body,
     ).toBe(production.definition.steps.find((step) => step.slug === 'lens')?.body)
+  })
+
+  test('design records compose through orch-docs and array-mcp', () => {
+    const d = database()
+    const root = fileURLToPath(new URL('../../..', import.meta.url))
+    const imported = importWorkflowTree(
+      parseWorkflowTree(collectWorkflowTree(root)),
+      'compose design records fixture',
+      'test',
+      d,
+    )
+    const catalogue = d
+      .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
+      .get() as { n: number }
+    promoteStepCatalogue(catalogue.n, 'compose fixture', 'test', d)
+    const ship = d
+      .query(
+        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug='ship' AND v.status='draft'",
+      )
+      .get() as { n: number }
+    expect(imported.workflows).toContain('ship')
+    promoteWorkflow('ship', ship.n, 'compose fixture', 'test', d)
+
+    for (const [project, protocol] of [
+      ['bottega-fixture', 'orch-docs'],
+      ['array-fixture', 'array-mcp'],
+    ] as const) {
+      d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+        project,
+        `/${project}`,
+        'bun',
+        JSON.stringify({ docs: { protocol } }),
+      )
+      const step = getWorkflowStep(
+        'ship',
+        project,
+        'design-records',
+        { key: 'DEV-945', branch: 'DEV-945-fixture', worktree: '/fixture' },
+        d,
+      )
+      expect(step.needs).toEqual(['docs'])
+      expect(step.body).toContain(`docs adapter named by \`${protocol}\``)
+      expect(step.body).not.toContain('{{')
+    }
   })
 
   test('one invalid floor refuses the entire import without writing a draft', () => {
