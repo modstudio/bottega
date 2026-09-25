@@ -6,7 +6,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
@@ -21,6 +20,7 @@ import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import {
+  type AnswerChannel,
   answererKindFromAnsweredBy,
   QUESTION_DELIVERY_MODE_LIVE,
   QUESTION_DELIVERY_MODE_RECORD_ONLY,

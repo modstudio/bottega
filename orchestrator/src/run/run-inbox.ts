@@ -1,6 +1,5 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
-import type { ListOpenQuestionsResult } from '../../../shared/orch-contract.ts'
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
@@ -15,7 +14,28 @@ type RunInboxPresentation = {
   chainHasPendingDelivery(rootId: number): boolean
   strandedRecovery(rootId: number): string
 }
-type InboxQuestion = ListOpenQuestionsResult['questions'][number]
+type InboxQuestion = {
+  question_id: number
+  run_id: number
+  answer_id: number
+  job: string
+  agent: string
+  repo: string | null
+  asked_at: string
+  session_live: true | null
+  session_liveness: 'live' | 'unknown'
+  can_answer: boolean
+  question: string
+  options: string[]
+  recommendation: string | null
+  why: string | null
+  status: string
+  ruling_status: 'open' | 'answered' | 'overturned'
+  overturned_at: string | null
+  overturned_by: string | null
+  overturn_reason: string | null
+  replacement: string | null
+}
 
 export type InboxQuery = {
   scope: 'session' | 'cli-default'
@@ -185,24 +205,31 @@ function presentOverturn(
   if (question.replacement) log(`        replacement: ${question.replacement}`)
 }
 
+async function presentJsonInbox(
+  flags: RunInboxFlags,
+  presentation: RunInboxPresentation,
+  requestedCwd?: string,
+): Promise<boolean> {
+  if (!flags.has('json')) return false
+  const result = await queryInbox({
+    scope: 'cli-default',
+    all: flags.has('all'),
+    activeOnly: flags.has('active'),
+    requestedCwd,
+  })
+  const scopedProjectName =
+    requestedCwd === undefined ? undefined : (projectAt(requestedCwd)?.name ?? null)
+  presentation.log(inboxJson(result.questions, scopedProjectName))
+  return true
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
   requestedCwd?: string,
 ): Promise<void> {
+  if (await presentJsonInbox(flags, presentation, requestedCwd)) return
   const { has } = flags
-  if (has('json')) {
-    const result = await queryInbox({
-      scope: 'cli-default',
-      all: has('all'),
-      activeOnly: has('active'),
-      requestedCwd,
-    })
-    const scopedProjectName =
-      requestedCwd === undefined ? undefined : (projectAt(requestedCwd)?.name ?? null)
-    presentation.log(inboxJson(result.questions, scopedProjectName))
-    return
-  }
   const { log, dur, chainHasPendingDelivery, strandedRecovery } = presentation
   const sid = sessionId()
   const mine = !has('all')
