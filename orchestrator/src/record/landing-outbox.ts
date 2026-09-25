@@ -59,6 +59,27 @@ export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = [
+  'id',
+  'spaceId',
+  'projectName',
+  'machineId',
+  'localId',
+  'branch',
+  'tip',
+  'tree',
+  'prNumber',
+  'reviewIds',
+  'patchId',
+  'tier',
+  'lensRounds',
+  'findingCount',
+  'overrideId',
+  'sessionId',
+  'at',
+  'createdAt',
+  'updatedAt',
+] as const
 export const CONTENTION_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
@@ -95,11 +116,13 @@ export type LandingEvidenceBackfillResult = {
   mintedLandings: number
   mintedOverrides: number
   mintedCarries: number
+  mintedTriageSnapshots: number
   mintedContentions: number
   mintedFlakes: number
   enqueuedLandings: number
   enqueuedOverrides: number
   enqueuedCarries: number
+  enqueuedTriageSnapshots: number
   enqueuedContentions: number
   enqueuedFlakes: number
 }
@@ -193,6 +216,30 @@ function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: string, 
   }
 }
 
+function buildLandingTriageSnapshotRecordPayload(row: LocalRow, machineId: string, at: string) {
+  return {
+    id: row.record_id,
+    spaceId: PLATFORM_SPACE_ID,
+    projectName: row.project_name,
+    machineId,
+    localId: row.id,
+    branch: row.branch,
+    tip: row.tip,
+    tree: row.tree,
+    prNumber: row.pr_number,
+    reviewIds: json(row.review_ids),
+    patchId: row.patch_id,
+    tier: row.tier,
+    lensRounds: row.lens_rounds,
+    findingCount: row.finding_count,
+    overrideId: row.override_record_id,
+    sessionId: row.session_id,
+    at: row.at,
+    createdAt: row.at,
+    updatedAt: at,
+  }
+}
+
 function buildContentionRecordPayload(row: LocalRow, machineId: string, at: string) {
   return {
     id: row.record_id,
@@ -246,7 +293,7 @@ function enqueueLanding(database: Database, id: number, at = nowIso()): void {
   enqueue(database, 'landing', String(row.record_id), value, at)
 }
 
-function enqueueLandingOverride(database: Database, id: number, at = nowIso()): void {
+export function enqueueLandingOverride(database: Database, id: number, at = nowIso()): void {
   const row = database
     .query<LocalRow, [number]>(
       `SELECT landing_override.*, project.name AS project_name FROM landing_override
@@ -256,6 +303,29 @@ function enqueueLandingOverride(database: Database, id: number, at = nowIso()): 
   if (!row?.record_id) throw new Error(`landing override ${id} has no record id`)
   const value = buildLandingOverrideRecordPayload(row, localMachineId(database), at)
   enqueue(database, 'landing_override', String(row.record_id), value, at)
+}
+
+export function enqueueLandingTriageSnapshot(database: Database, id: number, at = nowIso()): void {
+  const row = database
+    .query<LocalRow, [number]>(
+      `SELECT snapshot.*, project.name AS project_name, override.record_id AS override_record_id
+       FROM landing_triage_snapshot snapshot
+       LEFT JOIN project ON project.id=snapshot.project_id
+       LEFT JOIN landing_override override ON override.id=snapshot.override_id
+       WHERE snapshot.id=?`,
+    )
+    .get(id)
+  if (!row?.record_id) throw new Error(`landing triage snapshot ${id} has no record id`)
+  if (row.override_id != null && row.override_record_id == null) {
+    throw new Error(`landing triage snapshot ${id} has an override without a record id`)
+  }
+  enqueue(
+    database,
+    'landing_triage_snapshot',
+    String(row.record_id),
+    buildLandingTriageSnapshotRecordPayload(row, localMachineId(database), at),
+    at,
+  )
 }
 
 function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()): void {
@@ -310,6 +380,7 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
   const mintedLandings = mint('landing')
   const mintedOverrides = mint('landing_override')
   const mintedCarries = mint('landing_review_carry')
+  const mintedTriageSnapshots = mint('landing_triage_snapshot')
   const mintedContentions = mint('contention')
   const mintedFlakes = mint('test_flake')
   const backfill = (table: string, kind: string, enqueueRow: (id: number) => void) => {
@@ -326,6 +397,7 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
     mintedLandings,
     mintedOverrides,
     mintedCarries,
+    mintedTriageSnapshots,
     mintedContentions,
     mintedFlakes,
     enqueuedLandings: backfill('landing', 'landing', (id) => enqueueLanding(database, id)),
@@ -334,6 +406,9 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
     ),
     enqueuedCarries: backfill('landing_review_carry', 'landing_review_carry', (id) =>
       enqueueLandingReviewCarry(database, id),
+    ),
+    enqueuedTriageSnapshots: backfill('landing_triage_snapshot', 'landing_triage_snapshot', (id) =>
+      enqueueLandingTriageSnapshot(database, id),
     ),
     enqueuedContentions: backfill('contention', 'contention', (id) =>
       enqueueContention(database, id),

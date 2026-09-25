@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in
+    0000000000000000000000000000000000000000) continue ;;
+  esac
+  case "$remote_ref" in
+    refs/tags/*) continue ;;
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
+  if [ ! -x "$root/bin/orch" ]; then
+    echo "pre-push: triage check could not run: $root/bin/orch is missing or not executable; allowing push" >&2
+    continue
+  fi
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "pre-push: triage check could not run: bun is unavailable; allowing push" >&2
+    continue
+  fi
+  "$root/bin/orch" pr check --local-ref "$local_ref" --sha "$local_sha" --remote-ref "$remote_ref"
+done

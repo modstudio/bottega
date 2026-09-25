@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { resolve } from 'node:path'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -163,6 +164,75 @@ describe('review discipline', () => {
     } finally {
       stderr.mockRestore()
     }
+  })
+  test('a findings run without a branch records the same change measurement as a branch run', () => {
+    const repository = resolve(import.meta.dir, '../../..')
+    db()
+      .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+      .run('measurement-fixture', repository, JSON.stringify({ trunk: 'main' }))
+    const withoutBranch = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'implicit',
+      repo: 'measurement-fixture',
+      headCommit: 'tip',
+    })
+    const withBranch = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'explicit',
+      repo: 'measurement-fixture',
+      headCommit: 'tip',
+    })
+    db().query("UPDATE run SET branch='DEV-977' WHERE id=?").run(withBranch)
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+      const args = command[1] === '-C' ? command.slice(3) : command.slice(1)
+      let exitCode = 0
+      let stdout = ''
+      if (args[0] === 'show-ref') exitCode = 1
+      else if (args.includes('--git-common-dir')) stdout = `${repository}/.git`
+      else if (args[0] === 'rev-parse') stdout = 'base'
+      else if (args[0] === 'merge-base') stdout = 'base'
+      else if (args[0] === 'log') stdout = 'DEV-977 fixture'
+      else if (args[0] === 'patch-id') stdout = 'same-patch commit'
+      else if (args[0] === 'diff' && args.includes('--name-only')) stdout = 'src/change.ts'
+      else if (args[0] === 'diff' && args.includes('--numstat')) stdout = '1\t0\tsrc/change.ts'
+      else if (args[0] === 'diff') stdout = 'fixture patch'
+      return {
+        exitCode,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(''),
+        success: exitCode === 0,
+      } as unknown as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+    try {
+      const implicitReview = recordReview(withoutBranch, reviewReply(0), db())
+      const explicitReview = recordReview(withBranch, reviewReply(0), db())
+      const measurement = (reviewId: number) =>
+        db().query('SELECT patch_id, path_set, tier FROM review WHERE id=?').get(reviewId)
+
+      expect(measurement(implicitReview)).toEqual(measurement(explicitReview))
+      expect(measurement(implicitReview)).toEqual({
+        patch_id: 'same-patch',
+        path_set: '["src/change.ts"]',
+        tier: 2,
+      })
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+  test('a review without a repository or head commit keeps change measurement null', () => {
+    const reviewId = recordReview(
+      addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'unmeasured' }),
+      reviewReply(0),
+      db(),
+    )
+
+    expect(
+      db().query('SELECT patch_id, path_set, tier FROM review WHERE id=?').get(reviewId),
+    ).toEqual({ patch_id: null, path_set: null, tier: null })
   })
   test('triage records explicit severity agreement and leaves omission unassessed', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })

@@ -28,6 +28,7 @@ const none: ProjectReferenceCounts = {
   landing: 0,
   landing_override: 0,
   landing_review_carry: 0,
+  landing_triage_snapshot: 0,
   doc: 0,
   doc_revision: 0,
   review: 0,

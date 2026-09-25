@@ -34,7 +34,7 @@ export function reviewTrunkRef(remoteTrackingRefExists: boolean, trunk: string):
 }
 
 /** Trunk merge-base of a reviewed commit. Same resolution for --review and implicit lenses. */
-function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
+export function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
   const remoteTrackingRefExists =
     gitContext(cwd, 'show-ref', '--verify', `refs/remotes/origin/${trunk}`) !== null
   const trunkCommit = resolveBase(cwd, `${reviewTrunkRef(remoteTrackingRefExists, trunk)}^{commit}`)

@@ -1,11 +1,13 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
+import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
+import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
@@ -84,18 +86,8 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', ['node:fs', '../branch/branches.ts', '../database/db.ts', '../project/projects.ts', '../reclaim/reclaim-residue.ts', './cleanup.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/evidence/unjudged-expiry.ts', ['../../../shared/record/schema.ts', '../database/db.ts', '../record/machine-identity.ts', '../run/run-outbox.ts', './evidence-query.ts']),
-  module('orchestrator/src/branch/branch-landing-record.ts', ['./branch-state.ts']),
-  module('orchestrator/src/branch/branch-state.ts', ['./merged-pull-request.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/branch/task-branch-reuse.ts', ['../git/git-environment.ts', './task-branch.ts']),
-  module('orchestrator/src/branch/merged-pull-request.ts', [
-    '../git/git-environment.ts',
-    '../project/projects.ts',
-  ]),
-  module('orchestrator/src/branch/other-branch-state.ts', [
-    './branch-state.ts',
-    './merged-pull-request.ts',
-  ]),
+  ...branchModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...pullRequestModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/branch/branch-settlement.ts', [
     '../database/db.ts',
     '../evidence/evidence-query.ts',
@@ -111,6 +103,7 @@ export const modules: ArchitectureModule[] = [
     './other-branch-state.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
+    '../pull-request/pr-admission.ts',
     './task-branch.ts',
   ]),
   module('orchestrator/src/agent/agent-probe.ts', [

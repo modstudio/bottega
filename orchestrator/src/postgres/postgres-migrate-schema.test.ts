@@ -34,6 +34,7 @@ describe('Postgres substrate shape', () => {
       'landing',
       'landing_override',
       'landing_review_carry',
+      'landing_triage_snapshot',
       'contention',
       'test_flake',
       'seq',

@@ -306,6 +306,7 @@ export function applyLocalProjectRename(
     ['landing', 'project'],
     ['landing_override', 'project'],
     ['landing_review_carry', 'project'],
+    ['landing_triage_snapshot', 'project'],
   ])
     d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
   d.query('UPDATE doc SET subject=? WHERE subject=?').run(nextName, currentName)
@@ -319,6 +320,7 @@ export type ProjectReferenceCounts = {
   landing: number
   landing_override: number
   landing_review_carry: number
+  landing_triage_snapshot: number
   doc: number
   doc_revision: number
   review: number
@@ -331,6 +333,7 @@ const REFERENCE_LABELS: { key: keyof ProjectReferenceCounts; label: string }[] =
   { key: 'landing', label: 'landing' },
   { key: 'landing_override', label: 'landing_override' },
   { key: 'landing_review_carry', label: 'landing_review_carry' },
+  { key: 'landing_triage_snapshot', label: 'landing_triage_snapshot' },
   { key: 'doc', label: 'doc' },
   { key: 'doc_revision', label: 'doc_revision' },
   { key: 'review', label: 'review' },
@@ -365,6 +368,7 @@ function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
     landing: count('landing'),
     landing_override: count('landing_override'),
     landing_review_carry: count('landing_review_carry'),
+    landing_triage_snapshot: count('landing_triage_snapshot'),
     doc: count('doc'),
     doc_revision: count('doc_revision'),
     review: count('review'),

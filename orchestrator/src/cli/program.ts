@@ -11,6 +11,7 @@ import { register as registerHealth } from '../commands/health.ts'
 import { register as registerInbox } from '../commands/inbox.ts'
 import { register as registerJudgment } from '../commands/judgment.ts'
 import { register as registerLogic } from '../commands/logic.ts'
+import { register as registerPullRequest } from '../commands/pull-request.ts'
 import { register as registerRecordAuth } from '../commands/record-auth.ts'
 import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
@@ -35,6 +36,7 @@ export const program = new Command()
   .showSuggestionAfterError()
 
 registerReview(program)
+registerPullRequest(program)
 registerCode(program)
 registerBranches(program)
 registerRecordAuth(program)
@@ -54,6 +56,10 @@ registerSync(program)
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
+  const readOnlySubcommands: Record<string, readonly string[]> = {
+    review: ['coverage-audit', 'yield'],
+    pr: ['check'],
+  }
   if (argv[0] === 'migrate') return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
@@ -61,7 +67,7 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   if (argv[0] === 'waiting') return true
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
   if (argv[0] === 'canon') return argv[1] === 'audit' && argv.includes('--dry-run')
-  if (argv[0] === 'review') return ['coverage-audit', 'yield'].includes(argv[1] ?? '')
+  if (readOnlySubcommands[argv[0]!]?.includes(argv[1] ?? '')) return true
   if (argv[0] === 'settings') {
     if (argv[1] === 'render' && argv.includes('--check')) return true
     if (argv[1] === 'import' && argv.includes('--dry-run')) return true

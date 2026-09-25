@@ -105,6 +105,7 @@ export type RunRow = {
   base_commit: string | null
   review_ref: string | null
   changed_paths: string | null
+  branch: string | null
 }
 
 export type ReviewChangeRange = { from: string; to: string; paths: string[] | null }
