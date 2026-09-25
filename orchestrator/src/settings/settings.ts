@@ -13,12 +13,18 @@ export type PermissionList = (typeof PERMISSION_LISTS)[number]
 export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
+  envKeys?: string[]
 }
+
+export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const ownedSettingsSchema = z
   .object({
     permissions: z.unknown(),
     hooks: z.unknown(),
+    envKeys: z
+      .array(z.string().regex(ENV_NAME))
+      .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
   })
   .strict()
 
@@ -36,11 +42,16 @@ export function extractOwnedSettings(value: unknown): OwnedSettings {
   return {
     permissions: Object.hasOwn(value, 'permissions') ? value.permissions : {},
     hooks: Object.hasOwn(value, 'hooks') ? value.hooks : {},
+    envKeys: [],
   }
 }
 
 export function serializeOwnedSettings(owned: OwnedSettings): string {
-  return `${JSON.stringify({ permissions: owned.permissions, hooks: owned.hooks }, null, 2)}\n`
+  return `${JSON.stringify(
+    { permissions: owned.permissions, hooks: owned.hooks, envKeys: owned.envKeys ?? [] },
+    null,
+    2,
+  )}\n`
 }
 
 export function validateOwnedSettingsBody(body: string): OwnedSettings {
@@ -49,16 +60,29 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
     parsed = JSON.parse(body) as unknown
   } catch {
     throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions and hooks',
+      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, and envKeys',
     )
   }
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) {
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with exactly permissions and hooks',
+        'cleared by: write a JSON object with exactly permissions, hooks, and sorted envKeys names',
     )
   }
+  return result.data
+}
+
+export function parseStoredOwnedSettings(body: string): OwnedSettings {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body) as unknown
+  } catch {
+    throw new Error('refusing stored settings row: cannot parse JSON')
+  }
+  if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'envKeys')) parsed.envKeys = []
+  const result = ownedSettingsSchema.safeParse(parsed)
+  if (!result.success) throw new Error('refusing stored settings row: invalid owned settings shape')
   return result.data
 }
 
@@ -90,7 +114,11 @@ export function allPermissionRules(permissions: unknown): string[] {
 }
 
 export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): boolean {
-  return deepEqual(left.permissions, right.permissions) && deepEqual(left.hooks, right.hooks)
+  return (
+    deepEqual(left.permissions, right.permissions) &&
+    deepEqual(left.hooks, right.hooks) &&
+    deepEqual(left.envKeys ?? [], right.envKeys ?? [])
+  )
 }
 
 function secretShapedSettingsRefusal(owned: OwnedSettings): string | null {

@@ -26,6 +26,7 @@ type SettingsMember = {
 export type ParsedSettingsFile = {
   text: string
   owned: OwnedSettings
+  envKeys: string[]
   open: number
   close: number
   members: SettingsMember[]
@@ -34,6 +35,7 @@ export type ParsedSettingsFile = {
 export type SettingsDrift = {
   rules: Record<PermissionList, { added: string[]; removed: string[] }>
   hooks: { added: HookDrift[]; removed: HookDrift[] }
+  env: { added: string[]; removed: string[] }
 }
 
 type HookDrift = {
@@ -55,13 +57,18 @@ export function parseSettingsFile(text: string): ParsedSettingsFile {
   return {
     text,
     owned: extractOwnedSettings(parsed),
+    envKeys: isPlainObject(parsed.env) ? Object.keys(parsed.env).sort() : [],
     open: span.open,
     close: span.close,
     members: span.members,
   }
 }
 
-export function renderOwnedSettingsFile(text: string, owned: OwnedSettings): string {
+export function renderOwnedSettingsFile(
+  text: string,
+  owned: OwnedSettings,
+  environment?: Record<string, string>,
+): string {
   const parsed = parseSettingsFile(text)
   let next = text
   for (const member of [...parsed.members].reverse()) {
@@ -73,9 +80,16 @@ export function renderOwnedSettingsFile(text: string, owned: OwnedSettings): str
     parsed.members.flatMap((member) => (member.ownedKey === null ? [] : [member.ownedKey])),
   )
   const missing = OWNED_KEYS.filter((name) => !present.has(name))
-  if (missing.length === 0) return next
-  const updated = locateObject(next)
-  return insertOwnedKeys(next, { ...parsed, ...updated, members: updated.members }, owned, missing)
+  if (missing.length > 0) {
+    const updated = locateObject(next)
+    next = insertOwnedKeys(
+      next,
+      { ...parsed, ...updated, members: updated.members },
+      owned,
+      missing,
+    )
+  }
+  return environment === undefined ? next : renderEnvironment(next, environment)
 }
 
 export function displaySettingsValue(path: string, value: string): string {
@@ -115,7 +129,33 @@ export function diffOwnedSettings(file: OwnedSettings, store: OwnedSettings): Se
       added: subtractHooks(fileHooks, storeHooks),
       removed: subtractHooks(storeHooks, fileHooks),
     },
+    env: {
+      added: subtract(file.envKeys ?? [], store.envKeys ?? []),
+      removed: subtract(store.envKeys ?? [], file.envKeys ?? []),
+    },
   }
+}
+
+function renderEnvironment(text: string, environment: Record<string, string>): string {
+  const parsed = JSON.parse(text) as Record<string, unknown>
+  const names = Object.keys(parsed)
+  const envIndex = names.indexOf('env')
+  const span = locateObject(text)
+  if (envIndex >= 0) {
+    const member = span.members[envIndex]!
+    const formatted = indentJson(environment, indentOf(text, member.nameStart))
+    return `${text.slice(0, member.valueStart)}${formatted}${text.slice(member.valueEnd)}`
+  }
+  const indent = span.members.length ? indentOf(text, span.members[0]!.nameStart) : 2
+  const pad = ' '.repeat(indent)
+  const inserted = `${pad}"env": ${indentJson(environment, indent)}`
+  if (span.members.length === 0) {
+    return `${text.slice(0, span.open + 1)}\n${inserted}\n${text.slice(span.close)}`
+  }
+  const last = span.members.at(-1)!
+  const between = text.slice(last.valueEnd, span.close)
+  const comma = between.includes(',') ? '' : ','
+  return `${text.slice(0, last.valueEnd)}${comma}\n${inserted}${text.slice(span.close)}`
 }
 
 function hookDriftEntries(hooks: unknown): HookDrift[] {

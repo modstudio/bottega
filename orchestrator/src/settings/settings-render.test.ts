@@ -37,6 +37,16 @@ describe('renderOwnedSettingsFile', () => {
       SETTINGS_PARSE_REFUSAL,
     )
   })
+
+  test('renders exactly the selected env keys with supplied values', () => {
+    const rendered = renderOwnedSettingsFile(
+      source,
+      { permissions: {}, hooks: {}, envKeys: ['ALPHA'] },
+      { ALPHA: 'private-value' },
+    )
+    expect(JSON.parse(rendered).env).toEqual({ ALPHA: 'private-value' })
+    expect(JSON.parse(rendered).env).not.toHaveProperty('FOO')
+  })
 })
 
 describe('parseSettingsFile', () => {
@@ -49,9 +59,17 @@ describe('parseSettingsFile', () => {
     type Forbidden = Extract<keyof Parsed, 'value' | 'env'>
     const noPath: [Forbidden] extends [never] ? true : false = true
     expect(noPath).toBe(true)
-    expect(Object.keys(parsed).sort()).toEqual(['close', 'members', 'open', 'owned', 'text'])
+    expect(Object.keys(parsed).sort()).toEqual([
+      'close',
+      'envKeys',
+      'members',
+      'open',
+      'owned',
+      'text',
+    ])
+    expect(parsed.envKeys).toEqual(['FOO'])
     expect(parsed.members.every((member) => !('name' in member))).toBe(true)
-    expect(parsed.owned).toEqual({ permissions: { allow: ['old'] }, hooks: {} })
+    expect(parsed.owned).toEqual({ permissions: { allow: ['old'] }, hooks: {}, envKeys: [] })
   })
 })
 

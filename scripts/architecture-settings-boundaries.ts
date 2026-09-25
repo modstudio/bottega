@@ -32,6 +32,38 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     reason: 'Keep settings file access independent of stores, commands, and transports.',
   },
   {
+    name: 'settings-env-boundary',
+    file: `${source}settings-env.ts`,
+    allowed: ['node:fs', 'node:path', `${source}settings.ts`],
+    typeOnlyAllowed: [],
+    reason: 'Keep settings secrets-file access independent of stores and commands.',
+  },
+  {
+    name: 'settings-write-boundary',
+    file: `${source}settings-write.ts`,
+    allowed: ['node:crypto', 'node:fs', 'node:path', 'shared/state-directory.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep guarded settings writes independent of stores and commands.',
+  },
+  {
+    name: 'settings-apply-commands-boundary',
+    file: `${source}settings-apply-commands.ts`,
+    allowed: [
+      'node:fs',
+      'shared/git.ts',
+      'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/project/projects.ts',
+      `${source}settings.ts`,
+      `${source}settings-env.ts`,
+      `${source}settings-files.ts`,
+      `${source}settings-render.ts`,
+      `${source}settings-write.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep settings mutation commands independent of runs, routing, transports, and the CLI.',
+  },
+  {
     name: 'settings-commands-boundary',
     file: `${source}settings-commands.ts`,
     allowed: [
@@ -39,6 +71,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/project/projects.ts',
       `${source}settings.ts`,
+      `${source}settings-env.ts`,
       `${source}settings-files.ts`,
       `${source}settings-lint.ts`,
       `${source}settings-render.ts`,

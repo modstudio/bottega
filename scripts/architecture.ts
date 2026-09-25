@@ -347,7 +347,7 @@ export const modules: ArchitectureModule[] = [
     './support.ts',
   ]),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/commands/settings.ts', ['commander', '../settings/settings-commands.ts', './support.ts']),
+  module('orchestrator/src/commands/settings.ts', ['commander', '../settings/settings-apply-commands.ts', '../settings/settings-commands.ts', './support.ts']),
   ...recordModules,
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record/schema.ts',

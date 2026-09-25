@@ -23,6 +23,7 @@ describe('extractOwnedSettings', () => {
     expect(extractOwnedSettings(extra)).toEqual({
       permissions: extra.permissions,
       hooks: extra.hooks,
+      envKeys: [],
     })
   })
 
@@ -30,6 +31,7 @@ describe('extractOwnedSettings', () => {
     expect(extractOwnedSettings({ env: { A: '1' } })).toEqual({
       permissions: {},
       hooks: {},
+      envKeys: [],
     })
   })
 
@@ -47,6 +49,24 @@ describe('validateOwnedSettingsBody', () => {
   test('accepts exactly permissions and hooks', () => {
     const owned = extractOwnedSettings(extra)
     expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual(owned)
+  })
+
+  test('accepts only sorted env names and never env values', () => {
+    expect(
+      validateOwnedSettingsBody(
+        serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: ['ALPHA', 'BETA_2'] }),
+      ).envKeys,
+    ).toEqual(['ALPHA', 'BETA_2'])
+    expect(() =>
+      validateOwnedSettingsBody(
+        JSON.stringify({ permissions: {}, hooks: {}, envKeys: ['BETA', 'ALPHA'] }),
+      ),
+    ).toThrow(/unknown or missing/)
+    expect(() =>
+      validateOwnedSettingsBody(
+        JSON.stringify({ permissions: {}, hooks: {}, envKeys: { ALPHA: 'secret' } }),
+      ),
+    ).toThrow(/unknown or missing/)
   })
 
   test('refuseSettingsBody ignores other scopes', () => {
