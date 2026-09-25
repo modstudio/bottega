@@ -443,6 +443,30 @@ export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): bool
   })
 }
 
+function absentLifecycleRemoval(input: {
+  worktree: Worktree
+  runId?: number
+  removeTree(): { removed: boolean; detail: string }
+}): WorktreeRemovalResult | null {
+  if (existsSync(input.worktree.path)) return null
+  const facts = recordedAbsentTreeFacts(input.runId)
+  if (facts.resourceTeardown !== 'pending') return input.removeTree()
+  if (!facts.recipeSnapshot) return null
+  let teardownCompleted = false
+  const removed = teardownTrackedRecipe({
+    runId: input.runId as number,
+    worktree: input.worktree,
+    remove: () => {
+      teardownCompleted = true
+      return input.removeTree()
+    },
+    treeExists: false,
+  })
+  return teardownCompleted
+    ? { ...removed, resourceTeardownCompleted: true }
+    : { ...removed, resourceTeardownFailed: true }
+}
+
 function removeByLifecycle(input: {
   worktree: Worktree
   tool: WorktreeTool | null
@@ -453,24 +477,8 @@ function removeByLifecycle(input: {
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult {
   const { worktree, tool, runId, removeTree } = input
-  const treeAbsent = !existsSync(worktree.path)
-  const absentFacts = treeAbsent ? recordedAbsentTreeFacts(runId) : null
-  if (treeAbsent && absentFacts?.resourceTeardown !== 'pending') return removeTree()
-  if (treeAbsent && absentFacts?.recipeSnapshot) {
-    let teardownCompleted = false
-    const removed = teardownTrackedRecipe({
-      runId: runId as number,
-      worktree,
-      remove: () => {
-        teardownCompleted = true
-        return removeTree()
-      },
-      treeExists: false,
-    })
-    return teardownCompleted
-      ? { ...removed, resourceTeardownCompleted: true }
-      : { ...removed, resourceTeardownFailed: true }
-  }
+  const absentRemoval = absentLifecycleRemoval({ worktree, runId, removeTree })
+  if (absentRemoval) return absentRemoval
   if (worktree.source === 'readonly_recipe' || worktree.source === 'clone') {
     const removed: { removed: boolean; detail: string; output?: string } = removeReadOnlyTree(
       tool ?? {},

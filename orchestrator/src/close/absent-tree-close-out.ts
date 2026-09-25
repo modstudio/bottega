@@ -16,6 +16,32 @@ type AbsentResult = {
 type ReleasedResult = Omit<AbsentResult, 'outcome'> & { outcome: 'released' }
 type HeldResult = Omit<AbsentResult, 'outcome'> & { outcome: 'held' }
 
+export type ResourceTeardownResult = {
+  resourceTeardownCompleted?: true
+  resourceTeardownFailed?: true
+}
+
+export function failedResourceRemovalResult(input: {
+  runId: number
+  treePath: string
+  treeAbsent: boolean
+  detail: string
+  teardown: ResourceTeardownResult
+}): Omit<AbsentResult, 'outcome'> & { outcome: 'failed' } & ResourceTeardownResult {
+  return {
+    runId: input.runId,
+    worktree: input.treePath,
+    outcome: 'failed',
+    detail: input.detail,
+    ...(input.teardown.resourceTeardownCompleted
+      ? { resourceTeardownCompleted: true as const }
+      : {}),
+    ...(input.treeAbsent && input.teardown.resourceTeardownFailed
+      ? { resourceTeardownFailed: true as const }
+      : {}),
+  }
+}
+
 export function absentTreeCloseOut(input: {
   runId: number
   treePath: string

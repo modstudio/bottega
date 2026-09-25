@@ -42,10 +42,15 @@ import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-h
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
+import {
+  markResourceTeardownDone,
+  releaseAbsentCloseOutResidue,
+} from './absent-close-out-residue.ts'
 import {
   absentTreeCloseOut,
   dryRunReleaseResult,
+  failedResourceRemovalResult,
+  type ResourceTeardownResult,
   reconstructibilityHold,
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
@@ -59,10 +64,7 @@ export type CloseOutResult = {
   detail: string
 }
 
-type CloseOutAttemptResult = CloseOutResult & {
-  resourceTeardownCompleted?: true
-  resourceTeardownFailed?: true
-}
+type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
@@ -890,18 +892,13 @@ function attemptCloseOutRun(
               })
             }
             if (!result.removed)
-              return {
+              return failedResourceRemovalResult({
                 runId: row.root_id,
-                worktree: treePath,
-                outcome: 'failed' as const,
+                treePath,
+                treeAbsent,
+                teardown: result,
                 detail: result.detail,
-                ...(result.resourceTeardownCompleted
-                  ? { resourceTeardownCompleted: true as const }
-                  : {}),
-                ...(treeAbsent && result.resourceTeardownFailed
-                  ? { resourceTeardownFailed: true as const }
-                  : {}),
-              }
+              })
             const acquired = liveRows()
             if (acquired.length) {
               return {
@@ -982,7 +979,6 @@ export function closeOutRun(
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   const resourceTeardownCompleted = result.resourceTeardownCompleted === true
-  const resourceTeardownFailed = result.resourceTeardownFailed === true
   result.detail = releaseAbsentCloseOutResidue({
     runId: result.runId,
     outcome: result.outcome,
@@ -1003,18 +999,11 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
-      if (resourceTeardownCompleted) {
-        db()
-          .query(
-            `UPDATE run SET resource_teardown='done'
-             WHERE id=? AND resource_teardown='pending'`,
-          )
-          .run(result.runId)
-      }
+      markResourceTeardownDone(result.runId, resourceTeardownCompleted)
       if (
         result.worktree &&
         pointerMustClear(result.outcome, result.worktree) &&
-        !resourceTeardownFailed
+        !result.resourceTeardownFailed
       ) {
         const spellings = spellingsBefore.get(result.worktree) ?? [result.worktree]
         db()
