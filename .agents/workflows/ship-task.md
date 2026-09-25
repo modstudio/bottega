@@ -9,6 +9,7 @@ arguments:
     description: The branch to ship.
   - name: worktree
     required: true
+    rebind: true
     description: "The branch's worktree path."
   - name: depth
     required: false

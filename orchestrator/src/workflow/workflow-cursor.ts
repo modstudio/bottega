@@ -12,7 +12,13 @@ import {
 } from './workflow-cursor-transition.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { composeWorkflow, getWorkflowStep, resolveWorkflowMode, showWorkflow } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  productionWorkflows,
+  resolveWorkflowMode,
+  showWorkflow,
+} from './workflows.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null
@@ -21,6 +27,14 @@ export type WorkflowCursorContext = {
 }
 
 type ClosedStep = { n: number; slug: string; note: string; at: string; review?: true }
+type ArgumentReboundEvent = {
+  event: 'argument-rebound'
+  name: string
+  oldValue: string
+  newValue: string
+  at: string
+}
+type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 type CursorRow = {
   id: number
   project: string
@@ -126,18 +140,29 @@ export function resolveWorkflowCursorMode(
 }
 
 export type CursorArgumentDecision =
-  | { action: 'merge'; args: Record<string, string> }
+  | {
+      action: 'merge'
+      args: Record<string, string>
+      rebindings: Array<{ name: string; oldValue: string; newValue: string }>
+    }
   | { action: 'refuse'; reason: string }
 
 export function decideCursorArguments(
   stored: Record<string, string>,
   supplied: Record<string, string>,
+  rebindable: ReadonlySet<string>,
 ): CursorArgumentDecision {
   const merged = { ...stored }
+  const rebindings: Array<{ name: string; oldValue: string; newValue: string }> = []
   for (const [name, suppliedValue] of Object.entries(supplied)) {
     if (!suppliedValue.trim()) continue
     const storedValue = stored[name]
     if (storedValue?.trim() && storedValue !== suppliedValue) {
+      if (name !== 'key' && rebindable.has(name)) {
+        merged[name] = suppliedValue
+        rebindings.push({ name, oldValue: storedValue, newValue: suppliedValue })
+        continue
+      }
       return {
         action: 'refuse',
         reason:
@@ -147,7 +172,23 @@ export function decideCursorArguments(
     }
     if (!storedValue?.trim()) merged[name] = suppliedValue
   }
-  return { action: 'merge', args: merged }
+  return { action: 'merge', args: merged, rebindings }
+}
+
+const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
+
+function cursorRebindableArguments(row: CursorRow, d: Database): Set<string> {
+  const current = productionWorkflows(d).find(({ slug }) => slug === row.workflow_slug)
+  const definitions = [
+    showWorkflow(row.workflow_slug, row.workflow_version, d).definition,
+    ...(current ? [current.definition] : []),
+  ]
+  return new Set(
+    definitions
+      .flatMap((definition) => definition.arguments)
+      .filter((argument) => argument.name !== 'key' && argument.rebind === true)
+      .map((argument) => argument.name),
+  )
 }
 
 function applyCursorArguments(
@@ -155,10 +196,36 @@ function applyCursorArguments(
   supplied: Record<string, string>,
   d: Database,
 ): Record<string, string> {
-  const decision = decideCursorArguments(JSON.parse(row.args) as Record<string, string>, supplied)
+  const decision = decideCursorArguments(
+    JSON.parse(row.args) as Record<string, string>,
+    supplied,
+    cursorRebindableArguments(row, d),
+  )
   if (decision.action === 'refuse') throw new Error(decision.reason)
   const encoded = JSON.stringify(decision.args)
-  if (encoded !== row.args) {
+  if (decision.rebindings.length) {
+    const at = nowIso()
+    const trail = JSON.parse(row.closed) as CursorTrailEntry[]
+    trail.push(
+      ...decision.rebindings.map(
+        ({ name, oldValue, newValue }): ArgumentReboundEvent => ({
+          event: 'argument-rebound',
+          name,
+          oldValue,
+          newValue,
+          at,
+        }),
+      ),
+    )
+    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE id=?').run(
+      encoded,
+      JSON.stringify(trail),
+      at,
+      row.id,
+    )
+    row.args = encoded
+    row.closed = JSON.stringify(trail)
+  } else if (encoded !== row.args) {
     d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE id=?').run(
       encoded,
       nowIso(),
@@ -269,6 +336,8 @@ export function composeWorkflowWithCursor(
       decideCursorStart(existing?.state ?? null) === 'reuse'
         ? takenOverFrom(existing, context)
         : null
+    if (existing && decideCursorStart(existing.state) === 'reuse')
+      applyCursorArguments(existing, args, d)
     const row = insertCursor(composition, context, d, autonomy)
     return {
       ...cursorComposition(row, d),
@@ -445,7 +514,7 @@ function nextWorkflowStepImpl(
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   }
   const at = nowIso()
-  const closed = JSON.parse(row.closed) as ClosedStep[]
+  const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
   closed.push({
     n: row.ordinal + 1,
@@ -459,11 +528,12 @@ function nextWorkflowStepImpl(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    const reviews = closed
+    const closedSteps = closed.filter(isClosedStep)
+    const reviews = closedSteps
       .filter((step) => step.review)
       .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
     return [
-      `${cursorName(slug, mode, row.workflow_key, true)} is finished: ${closed.length} steps closed.`,
+      `${cursorName(slug, mode, row.workflow_key, true)} is finished: ${closedSteps.length} steps closed.`,
       ...reviews,
     ].join('\n')
   }
@@ -528,7 +598,7 @@ function abandonWorkflowCursorImpl(
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   const at = nowIso()
-  const closed = JSON.parse(row.closed) as ClosedStep[]
+  const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   closed.push({
     n: row.ordinal + 1,
     slug: row.step_slug,
@@ -574,6 +644,7 @@ function awaitWorkflowRulingImpl(
     )
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
+  applyCursorArguments(row, args, d)
   const at = nowIso()
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,

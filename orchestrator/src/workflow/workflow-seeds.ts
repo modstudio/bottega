@@ -17,7 +17,7 @@ const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 const seeds = [
   {
     slug: 'ship',
-    revision: 3,
+    revision: 4,
     definition: {
       title: 'Ship a task',
       description:
@@ -25,7 +25,12 @@ const seeds = [
       arguments: [
         { name: 'key', required: true, description: 'The task key.' },
         { name: 'branch', required: true, description: 'The branch to ship.' },
-        { name: 'worktree', required: true, description: "The branch's worktree path." },
+        {
+          name: 'worktree',
+          required: true,
+          rebind: true,
+          description: "The branch's worktree path.",
+        },
       ],
       modes: [
         {

@@ -21,7 +21,7 @@ import {
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 
-type WorkflowArgument = { name: string; required: boolean; description: string }
+type WorkflowArgument = { name: string; required: boolean; description: string; rebind?: boolean }
 type WorkflowMode = {
   slug: string
   title: string
@@ -56,6 +56,28 @@ const workflowDefaultPresetErrors = (preset: unknown): string[] =>
   (typeof preset === 'string' && autonomyPresets.includes(preset as AutonomyPreset))
     ? []
     : ['defaultPreset must be manual, guided, or autonomous']
+
+function workflowArgumentErrors(argument: unknown, index: number): string[] {
+  if (!object(argument)) return [`argument ${index + 1} must be an object`]
+  const name = text(argument.name)
+  return [
+    ...(typeof argument.name === 'string'
+      ? workflowPromptArgumentNameErrors(argument.name)
+      : [`argument ${index + 1} name must be a string`]),
+    ...(typeof argument.required === 'boolean'
+      ? []
+      : [`argument "${name}" required must be a boolean`]),
+    ...(typeof argument.description === 'string'
+      ? []
+      : [`argument "${name}" description must be a string`]),
+    ...(argument.rebind === undefined || typeof argument.rebind === 'boolean'
+      ? []
+      : [`argument "${name}" rebind must be a boolean`]),
+    ...(argument.name === 'key' && argument.rebind !== undefined
+      ? ['argument "key" cannot declare rebind']
+      : []),
+  ]
+}
 
 function workflowModeRequirementErrors(mode: Record<string, unknown>, args: unknown[]): string[] {
   if (mode.requires === undefined) return []
@@ -105,19 +127,8 @@ export function validateWorkflowDefinition(
   if (!Array.isArray(value.modes)) errors.push('modes must be an array')
   if ('steps' in value) errors.push('steps belongs in the shared step catalogue')
 
-  for (const [index, argument] of args.entries()) {
-    if (!object(argument)) {
-      errors.push(`argument ${index + 1} must be an object`)
-      continue
-    }
-    if (typeof argument.name !== 'string')
-      errors.push(`argument ${index + 1} name must be a string`)
-    errors.push(...workflowPromptArgumentNameErrors(argument.name))
-    if (typeof argument.required !== 'boolean')
-      errors.push(`argument "${text(argument.name)}" required must be a boolean`)
-    if (typeof argument.description !== 'string')
-      errors.push(`argument "${text(argument.name)}" description must be a string`)
-  }
+  for (const [index, argument] of args.entries())
+    errors.push(...workflowArgumentErrors(argument, index))
   for (const [index, mode] of modes.entries()) {
     if (!object(mode)) {
       errors.push(`mode ${index + 1} must be an object`)

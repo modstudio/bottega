@@ -34,19 +34,170 @@ const context = { session: 'session-one' }
 
 describe('workflow cursor adapter', () => {
   test('late cursor arguments merge into empty slots and conflicting values refuse', () => {
-    expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' })).toEqual({
+    const none = new Set<string>()
+    expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' }, none)).toEqual({
       action: 'merge',
       args: { key: 'DEV-822', branch: 'DEV-822-work' },
+      rebindings: [],
     })
-    expect(decideCursorArguments({ key: 'DEV-822', branch: ' ' }, { branch: 'work' })).toEqual({
+    expect(
+      decideCursorArguments({ key: 'DEV-822', branch: ' ' }, { branch: 'work' }, none),
+    ).toEqual({
       action: 'merge',
       args: { key: 'DEV-822', branch: 'work' },
+      rebindings: [],
     })
-    expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' })).toEqual({
+    expect(
+      decideCursorArguments(
+        { key: 'DEV-822', worktree: '/tmp/old' },
+        { worktree: '/tmp/new' },
+        new Set(['worktree']),
+      ),
+    ).toEqual({
+      action: 'merge',
+      args: { key: 'DEV-822', worktree: '/tmp/new' },
+      rebindings: [{ name: 'worktree', oldValue: '/tmp/old', newValue: '/tmp/new' }],
+    })
+    expect(
+      decideCursorArguments(
+        { key: 'DEV-822', branch: 'DEV-822-work' },
+        { branch: 'DEV-999-work' },
+        none,
+      ),
+    ).toEqual({
       action: 'refuse',
       reason:
-        'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"; run orch workflow abandon for this cursor, then compose again',
     })
+    expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' }, new Set(['key']))).toEqual(
+      {
+        action: 'refuse',
+        reason:
+          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+      },
+    )
+  })
+
+  test('next advances with a rebound argument from the pinned workflow and records the event', () => {
+    const d = database()
+    const draft = setWorkflow(
+      'rebind-fixture',
+      {
+        title: 'Rebind fixture',
+        description: 'Exercises cursor argument rebinding.',
+        arguments: [
+          { name: 'key', required: true, description: 'Task key.' },
+          { name: 'worktree', required: true, rebind: true, description: 'Worktree path.' },
+        ],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['lens', 'score'],
+          },
+        ],
+      },
+      'test fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('rebind-fixture', draft.n, 'test fixture', 'test', d)
+    composeWorkflowWithCursor(
+      'rebind-fixture',
+      'fixture',
+      'default',
+      { key: 'DEV-822', worktree: '/tmp/old' },
+      context,
+      d,
+    )
+
+    expect(
+      nextWorkflowStep(
+        'rebind-fixture',
+        'fixture',
+        'default',
+        { key: 'DEV-822', worktree: '/tmp/new' },
+        'reviewed',
+        context,
+        d,
+      ),
+    ).toContain('this is the last step of rebind-fixture')
+    const row = d.query('SELECT args,closed FROM workflow_cursor').get() as {
+      args: string
+      closed: string
+    }
+    expect(JSON.parse(row.args).worktree).toBe('/tmp/new')
+    expect(JSON.parse(row.closed)).toEqual([
+      expect.objectContaining({
+        event: 'argument-rebound',
+        name: 'worktree',
+        oldValue: '/tmp/old',
+        newValue: '/tmp/new',
+      }),
+      expect.objectContaining({ n: 1, slug: 'lens', note: 'reviewed' }),
+    ])
+  })
+
+  test('a current production declaration can rebind an argument for an older pinned cursor', () => {
+    const d = database()
+    const definition = {
+      title: 'Policy fixture',
+      description: 'Exercises production rebind policy.',
+      arguments: [
+        { name: 'key', required: true, description: 'Task key.' },
+        { name: 'worktree', required: true, description: 'Worktree path.' },
+      ],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: ['lens', 'score'],
+        },
+      ],
+    }
+    const original = setWorkflow('policy-fixture', definition, 'test fixture', 'test', d)
+    promoteWorkflow('policy-fixture', original.n, 'test fixture', 'test', d)
+    composeWorkflowWithCursor(
+      'policy-fixture',
+      'fixture',
+      'default',
+      { key: 'DEV-822', worktree: '/tmp/old' },
+      context,
+      d,
+    )
+    const current = setWorkflow(
+      'policy-fixture',
+      {
+        ...definition,
+        arguments: definition.arguments.map((argument) =>
+          argument.name === 'worktree' ? { ...argument, rebind: true } : argument,
+        ),
+      },
+      'test fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('policy-fixture', current.n, 'test fixture', 'test', d)
+
+    expect(
+      nextWorkflowStep(
+        'policy-fixture',
+        'fixture',
+        'default',
+        { key: 'DEV-822', worktree: '/tmp/new' },
+        'reviewed',
+        context,
+        d,
+      ),
+    ).toContain('this is the last step of policy-fixture')
+    const row = d.query('SELECT workflow_version,args FROM workflow_cursor').get() as {
+      workflow_version: number
+      args: string
+    }
+    expect(row.workflow_version).toBe(original.n)
+    expect(JSON.parse(row.args).worktree).toBe('/tmp/new')
   })
 
   test('listing scope honors explicit flags and refuses an unresolved cwd', () => {
@@ -83,6 +234,47 @@ describe('workflow cursor adapter', () => {
     expect(renderWorkflowComposition(recomposed)).toContain(
       'Cursor: at step 2 lens (running); continue with next.',
     )
+  })
+
+  test('recompose persists and renders a rebound argument while refusing other conflicts', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+
+    const reopenedArgs = { ...args, worktree: '/tmp/reopened' }
+    const recomposed = composeWorkflowWithCursor(
+      'ship',
+      'fixture',
+      'default',
+      reopenedArgs,
+      context,
+      d,
+    )
+
+    expect(recomposed.arguments.worktree).toBe('/tmp/reopened')
+    expect(renderWorkflowComposition(recomposed)).toContain('--arg worktree=/tmp/reopened')
+    const row = d.query('SELECT args,closed FROM workflow_cursor').get() as {
+      args: string
+      closed: string
+    }
+    expect(JSON.parse(row.args).worktree).toBe('/tmp/reopened')
+    expect(JSON.parse(row.closed)).toContainEqual(
+      expect.objectContaining({
+        event: 'argument-rebound',
+        name: 'worktree',
+        oldValue: '/tmp/work',
+        newValue: '/tmp/reopened',
+      }),
+    )
+    expect(() =>
+      composeWorkflowWithCursor(
+        'ship',
+        'fixture',
+        'default',
+        { ...reopenedArgs, branch: 'DEV-822-other' },
+        context,
+        d,
+      ),
+    ).toThrow('workflow argument "branch" conflicts with the cursor')
   })
 
   test('abandoned cursor is retired and compose starts a fresh run', () => {
@@ -275,6 +467,36 @@ describe('workflow cursor adapter', () => {
     })
   })
 
+  test('await persists a rebound argument while refusing other conflicts', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+
+    const reopenedArgs = { ...args, worktree: '/tmp/reopened' }
+    awaitWorkflowRuling('ship', 'fixture', 'default', reopenedArgs, 'Which ruling?', context, d)
+
+    const row = d.query('SELECT state,args,closed FROM workflow_cursor').get() as {
+      state: string
+      args: string
+      closed: string
+    }
+    expect(row.state).toBe('awaiting-ruling')
+    expect(JSON.parse(row.args).worktree).toBe('/tmp/reopened')
+    expect(JSON.parse(row.closed)).toContainEqual(
+      expect.objectContaining({ event: 'argument-rebound', name: 'worktree' }),
+    )
+    expect(() =>
+      awaitWorkflowRuling(
+        'ship',
+        'fixture',
+        'default',
+        { ...reopenedArgs, branch: 'DEV-822-other' },
+        'Another ruling?',
+        context,
+        d,
+      ),
+    ).toThrow('workflow argument "branch" conflicts with the cursor')
+  })
+
   test('abandon closes a running cursor and terminal operations refuse it', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
@@ -373,7 +595,7 @@ describe('workflow cursor adapter', () => {
       d,
     )
     expect(recomposed.workflow.title).toBe('Ship a task')
-    expect(recomposed.arguments.worktree).toBe('/tmp/work')
+    expect(recomposed.arguments.worktree).toBe('/tmp/other')
     expect(recomposed.steps.map((step) => step.slug).slice(0, 2)).toEqual(['rebase', 'lens'])
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
     expect(nextWorkflowStep('ship', 'fixture', 'default', args, 'lensed', context, d)).toContain(
