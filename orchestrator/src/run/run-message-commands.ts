@@ -46,7 +46,7 @@ const controlPresentation = (presentation: Presentation): RunControlPresentation
   argvResumeLimit,
   printRunId: presentation.printRunId,
 })
-const helpers = (presentation: Presentation) => ({
+export const answerRunHelpers = (presentation: Presentation) => ({
   argvResumeLimit,
   assertWorkerText,
   readWorkerFile,
@@ -59,7 +59,7 @@ export async function retryCommand(
   options: { agent?: string; model?: string; flags: Flags },
   presentation: Presentation,
 ): Promise<void> {
-  await retryRun(id, options, helpers(presentation))
+  await retryRun(id, options, answerRunHelpers(presentation))
 }
 
 export async function answerCommand(
@@ -70,7 +70,11 @@ export async function answerCommand(
   flags: Flags,
   presentation: Presentation,
 ): Promise<void> {
-  const result = await answerRun(id, { argv, recordOnly, json, flags }, helpers(presentation))
+  const result = await answerRun(
+    id,
+    { argv, recordOnly, json, flags },
+    answerRunHelpers(presentation),
+  )
   if (json) console.log(JSON.stringify(result))
 }
 
