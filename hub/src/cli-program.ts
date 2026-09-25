@@ -50,7 +50,12 @@ import {
   rulingsStatsPayload,
 } from './rulings.ts'
 import { serve } from './serve.ts'
-import { ownServeRecord, servePortIsFree, stopRecordedServe } from './serve-lifecycle.ts'
+import {
+  checkServeDown,
+  ownServeRecord,
+  reportServeDown,
+  stopRecordedServe,
+} from './serve-lifecycle.ts'
 import { formatServiceRevisionDoctor, startRevisionMonitor } from './service-revision.ts'
 import { printSyncResult, syncEvidence } from './sync.ts'
 import {
@@ -250,7 +255,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub serve [--port 7778]     the dashboard
   hub serve-stop --port N     stop this checkout's recorded dashboard
   hub serve-check --port N --down
-                              confirm that loopback port N accepts no connection
+                              confirm this checkout's dashboard is not serving on N
   hub reconcile [--dry-run]   close open intervals whose orch runs are terminal
                               using exact run ids, never an age or time window
   hub rulings [--json]        open questions ingested from orch, with age
@@ -907,11 +912,8 @@ try {
         process.exitCode = 2
         break
       }
-      const free = await servePortIsFree(port)
-      console.log(
-        free ? `hub: port ${port} is free` : `hub: port ${port} is still accepting connections`,
-      )
-      if (!free) process.exitCode = 1
+      const decision = await checkServeDown(port)
+      if (!reportServeDown(port, decision)) process.exitCode = 1
       break
     }
     case 'reconcile':
