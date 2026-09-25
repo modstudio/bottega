@@ -12,6 +12,7 @@ import {
   TaskBranchLandingRefusalError,
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
+import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
@@ -213,7 +214,7 @@ function resolveTaskBranchForDispatch(
   reportReuse: boolean,
   error: (...values: unknown[]) => void,
 ): ReturnType<typeof resolveTaskBranch> {
-  const candidate = resolveTaskBranch(cwd, key)
+  const candidate = resolveCompatibleTaskBranch(cwd, key)
   if (candidate && reportReuse) error(taskBranchReuseNotice(candidate))
   return candidate
 }

@@ -10,7 +10,8 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { Agent } from '../agent/agents.ts'
-import { resolveTaskBranch, type TaskBranchCandidate } from '../branch/task-branch.ts'
+import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -89,7 +90,7 @@ function taskBranchResolution(
   callerCwd: string,
   key: string,
 ): TaskBranchCandidate | null {
-  return supplied !== undefined ? supplied : resolveTaskBranch(callerCwd, key)
+  return supplied !== undefined ? supplied : resolveCompatibleTaskBranch(callerCwd, key)
 }
 
 type ClaimOptions = {
