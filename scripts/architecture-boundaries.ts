@@ -8,6 +8,7 @@ import {
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
+import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
@@ -39,6 +40,8 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
+  // biome-ignore format: compact extracted boundary registration keeps this frozen manifest from growing.
+  ...runRetryBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
   ...branchStoreModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -772,6 +775,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../outcome.ts',
       '../workflow/autonomy.ts',
       '../workflow/autonomy-scopes.ts',
+      './checkpoint.ts',
       './run.ts',
       './run-answer-liveness.ts',
       './run-answer-authority.ts',
@@ -779,6 +783,8 @@ export const importBoundaries: ImportBoundary[] = [
       './run-authority.ts',
       './run-control.ts',
       './run-dispatch.ts',
+      './run-retry.ts',
+      './run-retry-workspace.ts',
       './question-delivery.ts',
       './question-vocabulary.ts',
       '../git/git-environment.ts',

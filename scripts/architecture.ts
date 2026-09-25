@@ -381,6 +381,18 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/resources/resource-claims.ts', ['../run/synthetic-lifecycle-job.ts']),
   module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
   module('orchestrator/src/run/resume-tree.ts', []),
+  module('orchestrator/src/run/run-retry.ts', ['../../../shared/process-identity.ts']),
+  module('orchestrator/src/run/run-retry-workspace.ts', [
+    'node:fs',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../project/projects.ts',
+    '../worktree/worktree-types.ts',
+    './branch-owner-guard.ts',
+    './checkpoint.ts',
+    './resume-tree.ts',
+    './run-retry.ts',
+  ]),
   module('orchestrator/src/review/review-calibration.ts', [
     '../database/db.ts',
     './review-vocabulary.ts',

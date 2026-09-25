@@ -263,10 +263,8 @@ export async function retryRun(
         `after ${KEEP_RUN_FILES_DAYS} days. Nothing to re-send.`,
     )
   }
-  // The SAME agent by default, which is the whole point. A quota limit or a
-  // dropped connection is a fact about the moment, not about the agent, and
-  // routing around it starts a different agent from scratch on work the first
-  // one had already partly done.
+  // The same agent remains the default. An explicit replacement gets a fresh
+  // vendor conversation while the retained writing workspace travels with it.
   const workspace = writesRepo
     ? resolveWritingRetryWorkspace({
         id,

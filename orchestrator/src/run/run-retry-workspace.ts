@@ -22,6 +22,18 @@ export type WritingRetryWorkspace = {
   treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
 }
 
+function branchTipRelation(
+  projectPath: string,
+  recordedTip: string,
+  liveTip: string | null,
+): RetryBranchTipRelation {
+  if (!liveTip) return 'missing'
+  if (liveTip === recordedTip) return 'recorded'
+  return gitOk(['merge-base', '--is-ancestor', recordedTip, liveTip], projectPath) !== null
+    ? 'descendant'
+    : 'diverged'
+}
+
 export function resolveWritingRetryWorkspace(input: {
   id: number
   rootId: number
@@ -68,13 +80,7 @@ export function resolveWritingRetryWorkspace(input: {
     )
   }
   const liveTip = gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
-  const relation: RetryBranchTipRelation = !liveTip
-    ? 'missing'
-    : liveTip === recordedTip
-      ? 'recorded'
-      : gitOk(['merge-base', '--is-ancestor', recordedTip, liveTip], project.path) !== null
-        ? 'descendant'
-        : 'diverged'
+  const relation = branchTipRelation(project.path, recordedTip, liveTip)
   const recordedTreeMatches = Boolean(
     latest.worktree && existsSync(latest.worktree) && branchOf(latest.worktree) === branch,
   )
