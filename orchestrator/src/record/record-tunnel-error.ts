@@ -4,7 +4,7 @@
 const CONNECTION_FAILURE =
   /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b|connection (?:refused|closed|reset)|connect(?:ion)? timed out|connection timeout/i
 
-export const RECORD_TUNNEL_REMEDY = 'launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel'
+const RECORD_TUNNEL_REMEDY = 'launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel'
 
 /** Add the supervised-tunnel remedy only to connection-class failures on configured machines. */
 export function recordTunnelFailure(message: string, tunnelApp: string): string {

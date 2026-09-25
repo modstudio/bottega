@@ -2,10 +2,8 @@
 /** Owns monitor pass composition, persistence, history, and human-readable reporting. */
 
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { createConnection } from 'node:net'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readMachineValue } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
@@ -36,7 +34,6 @@ import {
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
   reconcileHub,
-  recordTunnelCondition,
   refGuardConditions,
   retainedRefConditions,
   rulingConditions,
@@ -49,6 +46,7 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import type {
   HumanMonitorCondition,
   MonitorCondition,
@@ -57,24 +55,6 @@ import type {
 } from './monitor-types.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
-const RECORD_TUNNEL_PROBE_TIMEOUT_MS = 500
-
-function tcpEndpointReachable(port: number): Promise<boolean> {
-  return new Promise((resolveReachable) => {
-    const socket = createConnection({ host: '127.0.0.1', port })
-    let settled = false
-    const settle = (reachable: boolean) => {
-      if (settled) return
-      settled = true
-      socket.destroy()
-      resolveReachable(reachable)
-    }
-    socket.setTimeout(RECORD_TUNNEL_PROBE_TIMEOUT_MS)
-    socket.once('connect', () => settle(true))
-    socket.once('error', () => settle(false))
-    socket.once('timeout', () => settle(false))
-  })
-}
 
 function directorySize(path: string): number {
   const entry = lstatSync(path)
@@ -378,20 +358,9 @@ export async function monitor(
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
   conditions.push(...stalledRunConditions(clock))
-  try {
-    const app = readMachineValue('record.tunnel_app')
-    if (app) {
-      const port = readMachineValue('record.tunnel_local_port')
-      const condition = recordTunnelCondition({
-        app,
-        port,
-        reachable: await tcpEndpointReachable(port),
-      })
-      if (condition) conditions.push(condition)
-    }
-  } catch (cause) {
-    errors.push(`record tunnel observation: ${String((cause as Error).message ?? cause)}`)
-  }
+  const recordTunnel = await observeRecordTunnel()
+  conditions.push(...recordTunnel.conditions)
+  errors.push(...recordTunnel.errors)
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)

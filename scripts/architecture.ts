@@ -171,10 +171,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
-    'node:net',
     'node:path',
     '../../../shared/brand.ts',
-    '../../../shared/machine-config.ts',
     '../canon/canon.ts',
     '../database/db.ts',
     '../resources/docker-resources.ts',
@@ -182,6 +180,7 @@ export const modules: ArchitectureModule[] = [
     '../worktree/keep-tree-hold.ts',
     '../mcp/mcp.ts',
     './monitor-conditions.ts',
+    './monitor-record-tunnel.ts',
     './monitor-notices.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
@@ -215,6 +214,12 @@ export const modules: ArchitectureModule[] = [
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/synthetic-lifecycle-job.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
+    'node:net',
+    '../../../shared/machine-config.ts',
+    './monitor-conditions.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/run/live-run-member.ts', [
     'bun:sqlite',

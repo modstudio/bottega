@@ -26,7 +26,7 @@ describe('record tunnel monitor condition', () => {
 
   test('names the endpoint and kickstart remedy when configured but unreachable', () => {
     expect(
-      recordTunnelCondition({ app: 'bottega-record', port: 15432, reachable: false }),
+      recordTunnelCondition({ app: 'record-app', port: 15432, reachable: false }),
     ).toMatchObject({
       kind: 'record-tunnel-down',
       subject: '127.0.0.1:15432',
@@ -36,9 +36,7 @@ describe('record tunnel monitor condition', () => {
   })
 
   test('is absent when the configured endpoint is reachable', () => {
-    expect(
-      recordTunnelCondition({ app: 'bottega-record', port: 15432, reachable: true }),
-    ).toBeNull()
+    expect(recordTunnelCondition({ app: 'record-app', port: 15432, reachable: true })).toBeNull()
   })
 })
 
