@@ -25,6 +25,7 @@ import {
 } from '../resources/resource-inventory.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { runAlive } from '../run/run-alive.ts'
+import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
   HOOK_TREE_JOB,
@@ -462,6 +463,54 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
           `run ${run.id} is running but agent pid ${run.agent_pid} is gone; ` +
           `${worker}; ${elapsedDetail(ageMs)}; output ${run.output_bytes ?? 'unknown'} bytes`,
         action: 'reported; disposition and status repair require intent',
+        ownerSession: run.session_id,
+      },
+    ]
+  })
+}
+
+/** Report reserved rows whose coordinator never completed the launch handoff. */
+export function abandonedBootstrapConditions(clock = Date.now()): MonitorCondition[] {
+  const pending = db()
+    .query(
+      `SELECT id, started_at, pid, agent, session_id
+       FROM run WHERE status='running' AND agent='(pending)'`,
+    )
+    .all() as {
+    id: number
+    started_at: string
+    pid: number | null
+    agent: string
+    session_id: string | null
+  }[]
+  return pending.flatMap((run): MonitorCondition[] => {
+    const leaseState = runLeaseState(run.id)
+    if (
+      !abandonedBootstrap({
+        agent: run.agent,
+        pid: run.pid,
+        pidAlive: Boolean(run.pid && pidAlive(run.pid)),
+        leaseState,
+        startedAt: run.started_at,
+        now: clock,
+      })
+    ) {
+      return []
+    }
+    const cause =
+      run.pid === null
+        ? 'has no coordinator pid'
+        : leaseState === 'free'
+          ? `has a free coordinator lease and recorded pid ${run.pid}`
+          : `has dead coordinator pid ${run.pid}`
+    return [
+      {
+        kind: 'abandoned-bootstrap',
+        subject: `run:${run.id}`,
+        since: run.started_at,
+        ageMs: age(run.started_at, clock),
+        detail: `pending run ${run.id} ${cause} after the ${PENDING_BOOTSTRAP_MS}ms launch grace`,
+        action: 'run orch sweep to terminalize the abandoned bootstrap',
         ownerSession: run.session_id,
       },
     ]

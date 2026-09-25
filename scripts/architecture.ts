@@ -211,6 +211,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
     '../resources/resource-inventory.ts',
     '../run/run-alive.ts',
+    '../run/run-bootstrap.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/synthetic-lifecycle-job.ts',
@@ -459,6 +460,7 @@ export const modules: ArchitectureModule[] = [
     './change-identity.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-bootstrap.ts', ['./run-alive.ts']),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',

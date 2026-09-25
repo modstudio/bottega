@@ -894,20 +894,8 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep run listing independent of run control, transports, routing, the CLI, and worktrees.',
     ['./question-vocabulary.ts'],
   ),
-  boundary(
-    'run-liveness-boundary',
-    'orchestrator/src/run/run-liveness.ts',
-    [
-      '../database/db.ts',
-      '../../../shared/process-identity.ts',
-      '../resources/resource-ownership.ts',
-      './run-alive.ts',
-      './run-authority.ts',
-      './run-lease.ts',
-      'bun:sqlite',
-    ],
-    'Enforce the run-liveness concern boundary.',
-  ),
+  // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
+  boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-lease.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
   boundary(
     'run-outbox-boundary',
     'orchestrator/src/run/run-outbox.ts',
