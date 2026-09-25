@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
+import type { OperatorWaitingItem } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { operatorInboxPath } from '../../../../shared/operator-inbox.ts'
-import type { OperatorWaitingItem } from '../../../src/orch.ts'
 
 export function WaitingBadge({ item }: { item: OperatorWaitingItem }) {
   return (

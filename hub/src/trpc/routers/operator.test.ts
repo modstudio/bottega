@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import type { OperatorWaitingItem } from '../../orch.ts'
 import { createOperatorRouter } from './operator.ts'
 
 const item: OperatorWaitingItem = {
   kind: 'question',
   id: 7,
-  project: 'bottega',
+  project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
   session_id: null,
   question: 'Which?',

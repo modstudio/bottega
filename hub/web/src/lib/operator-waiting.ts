@@ -1,4 +1,4 @@
-import type { OperatorWaitingItem } from '../../../src/orch.ts'
+import type { OperatorWaitingItem } from '@/trpc/client'
 
 export function waitingRunId(item: OperatorWaitingItem): number | null {
   if (item.kind !== 'question') return null

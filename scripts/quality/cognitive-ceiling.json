@@ -72,8 +72,9 @@
   {
     "file": "hub/web/src/routes/runs.$id.tsx",
     "function": "RunDetailPage",
-    "line": 30,
-    "score": 29
+    "line": 132,
+    "score": 26,
+    "key": "hub/web/src/routes/runs.$id.tsx\u0000RunDetailPage"
   },
   {
     "file": "orchestrator/src/agent/agent-probe.ts",

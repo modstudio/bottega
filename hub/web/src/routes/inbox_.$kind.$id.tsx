@@ -2,16 +2,15 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { waitingRunId } from '@/lib/operator-waiting'
-import { queryClient, trpc } from '@/trpc/client'
+import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Textarea } from '@/ui/field/textarea'
 import { DisplayRow } from '@/ui/form-layout/form-layout'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
-import type { OperatorWaitingItem } from '../../../src/orch.ts'
 
-export const Route = createFileRoute('/inbox/$kind/$id')({ component: InboxDetailPage })
+export const Route = createFileRoute('/inbox_/$kind/$id')({ component: InboxDetailPage })
 
 function InboxDetailPage() {
   const { kind, id } = Route.useParams()

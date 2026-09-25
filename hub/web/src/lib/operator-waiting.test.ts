@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { waitingByRun } from './operator-waiting.ts'
 
 test('maps only the exact active run named by a waiting question', () => {
   const question = {
     kind: 'question' as const,
     id: 7,
-    project: 'bottega',
+    project: PLATFORM_NAME.toLowerCase(),
     task_key: 'DEV-943',
     session_id: null,
     question: 'Which?',
