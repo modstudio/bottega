@@ -1,11 +1,26 @@
 // concern: user-canon-home-files
 /** Reads and applies Claude-home canon files. Must not know stores, commands, runs, routing, or transports. */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { decideUserCanonHydration, mapUserCanonPath } from './user-canon-home.ts'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import {
+  decideUserCanonHydration,
+  isUserCanonHomePath,
+  mapUserCanonPath,
+} from './user-canon-home.ts'
 
 export type UserCanonHomeFile = { slug: string; path: string; text: string }
 export type UserCanonHomePlan = {
+  claudeHome: string
   writes: { slug: string; path: string; body: string }[]
   deletes: { slug: string; path: string }[]
 }
@@ -17,19 +32,25 @@ export function claudeHomeFromEnvironment(env: NodeJS.ProcessEnv): string {
 }
 
 export function collectUserCanonHome(claudeHome: string): UserCanonHomeFile[] {
-  const relativePaths = ['CLAUDE.md']
+  if (!existsSync(claudeHome)) return []
+  assertRegularPath(claudeHome, 'directory')
+  const relativePaths = isUserCanonHomePath('CLAUDE.md') ? ['CLAUDE.md'] : []
   const rules = join(claudeHome, 'rules')
   if (existsSync(rules)) {
+    assertRegularPath(rules, 'directory')
     relativePaths.push(
       ...readdirSync(rules)
-        .filter((name) => name.endsWith('.md'))
-        .map((name) => join('rules', name)),
+        .map((name) => join('rules', name))
+        .filter(isUserCanonHomePath),
     )
   }
   return relativePaths.flatMap((relativePath) => {
     const path = join(claudeHome, relativePath)
     const slug = mapUserCanonPath({ kind: 'claude', path: relativePath })
-    return slug && existsSync(path) ? [{ slug, path, text: readFileSync(path, 'utf8') }] : []
+    if (!slug || !existsSync(path)) return []
+    assertRegularPath(path, 'file')
+    assertResolvedUnderClaudeHome(claudeHome, path)
+    return [{ slug, path, text: readFileSync(path, 'utf8') }]
   })
 }
 
@@ -70,13 +91,80 @@ export function planUserCanonHome(input: {
     if (decision.action === 'write') writes.push({ slug: row!.slug, path, body: decision.body })
     if (decision.action === 'delete') deletes.push({ slug: file!.slug, path })
   }
-  return { writes, deletes }
+  return { claudeHome: input.claudeHome, writes, deletes }
 }
 
 export function applyUserCanonHomePlan(plan: UserCanonHomePlan): void {
+  ensureClaudeHome(plan.claudeHome)
+  for (const row of [...plan.deletes, ...plan.writes]) preflightMutation(plan.claudeHome, row.path)
   for (const row of plan.deletes) rmSync(row.path)
   for (const row of plan.writes) {
     mkdirSync(dirname(row.path), { recursive: true })
+    preflightMutation(plan.claudeHome, row.path)
     writeFileSync(row.path, row.body)
+    assertResolvedUnderClaudeHome(plan.claudeHome, row.path)
+  }
+}
+
+function ensureClaudeHome(claudeHome: string): void {
+  if (existsSync(claudeHome)) {
+    assertRegularPath(claudeHome, 'directory')
+    return
+  }
+  const parent = dirname(claudeHome)
+  assertRegularPath(parent, 'directory')
+  mkdirSync(claudeHome)
+  assertRegularPath(claudeHome, 'directory')
+}
+
+function refuseUnsafePath(path: string, detail: string): never {
+  throw new Error(
+    `refusing Claude home path ${path}: ${detail}; replace the link with a regular file or directory`,
+  )
+}
+
+function assertRegularPath(path: string, expected: 'file' | 'directory'): void {
+  const stat = lstatSync(path)
+  if (stat.isSymbolicLink()) {
+    refuseUnsafePath(path, `symbolic link targets ${readlinkSync(path)}`)
+  }
+  if (expected === 'file' ? !stat.isFile() : !stat.isDirectory()) {
+    refuseUnsafePath(path, `expected a regular ${expected}`)
+  }
+}
+
+function assertResolvedUnderClaudeHome(claudeHome: string, path: string): void {
+  const realHome = realpathSync(claudeHome)
+  const realPath = realpathSync(path)
+  const fromHome = relative(realHome, realPath)
+  if (
+    fromHome === '..' ||
+    fromHome.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+    isAbsolute(fromHome)
+  ) {
+    refuseUnsafePath(path, `resolved outside ${realHome} to ${realPath}`)
+  }
+}
+
+function preflightMutation(claudeHome: string, path: string): void {
+  const absoluteHome = resolve(claudeHome)
+  const absolutePath = resolve(path)
+  const fromHome = relative(absoluteHome, absolutePath)
+  if (
+    fromHome === '..' ||
+    fromHome.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+    isAbsolute(fromHome)
+  ) {
+    refuseUnsafePath(path, `is outside ${absoluteHome}`)
+  }
+  const segments = fromHome.split(/[\\/]/).filter(Boolean)
+  let cursor = absoluteHome
+  assertRegularPath(cursor, 'directory')
+  assertResolvedUnderClaudeHome(absoluteHome, cursor)
+  for (const [index, segment] of segments.entries()) {
+    cursor = join(cursor, segment)
+    if (!existsSync(cursor)) break
+    assertRegularPath(cursor, index === segments.length - 1 ? 'file' : 'directory')
+    assertResolvedUnderClaudeHome(absoluteHome, cursor)
   }
 }

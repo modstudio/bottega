@@ -1,10 +1,16 @@
 // concern: user-canon-commands
 /** Knows user canon import and hydration command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
+import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { importUserCanon } from '../doc/user-canon-import.ts'
-import { lintCanon } from './canon-lint.ts'
-import { mapUserCanonPath, stripUserCanonManagedMarker } from './user-canon-home.ts'
+import { projects } from '../project/projects.ts'
+import { decideUserCanonImport } from './canon-write-gate.ts'
+import {
+  isUserCanonSlug,
+  mapUserCanonPath,
+  stripUserCanonManagedMarker,
+} from './user-canon-home.ts'
 import {
   applyUserCanonHomePlan,
   claudeHomeFromEnvironment,
@@ -51,17 +57,39 @@ export async function userCanonImportCommand(
     mapUserCanonPath({ kind: 'canon', path: slug }),
   )
   const removals = mappedCurrent.filter(({ slug }) => !importedSlugs.has(slug))
-  const previewFindings = lintCanon({
-    files: rows.map(({ slug, body }) => ({ path: slug, text: body })),
-    trackedPaths: [],
-    packageScripts: [],
-    sourceTexts: [],
-  }).findings
+  const global = listDocs({ scope: 'canon', subject: null }).map(({ slug, body }) => ({
+    slug,
+    body,
+  }))
+  const surroundings = userCanonWriteTargets(projects()).map((project) => ({
+    global,
+    project: project
+      ? listDocs({ scope: 'canon', subject: project.name }).map(({ slug, body }) => ({
+          slug,
+          body,
+        }))
+      : [],
+  }))
+  const preview = decideUserCanonImport({
+    current: currentRows.map(({ slug, body }) => ({ slug, body })),
+    next: [
+      ...currentRows
+        .filter(({ slug }) => !isUserCanonSlug(slug))
+        .map(({ slug, body }) => ({ slug, body })),
+      ...rows,
+    ],
+    surroundings,
+  })
 
   for (const row of rows) presentation.log(`write ${row.slug}`)
   for (const row of removals) presentation.log(`delete ${row.slug}`)
-  if (flags.has('dry-run')) printFindings(previewFindings, presentation.log)
   if (flags.has('dry-run')) {
+    printFindings(preview.findings, presentation.log)
+    if (!preview.bootstrap && preview.findings.length) {
+      presentation.log('refusing user canon import: introduced canon findings')
+      presentation.exitCode(1)
+      return
+    }
     presentation.log(`would import ${rows.length} canon rows, remove ${removals.length}`)
     return
   }

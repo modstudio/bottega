@@ -1,6 +1,7 @@
 // concern: record-doc-api-schemas
 /** Validates hosted document import payloads at the HTTP edge. */
 import { z } from 'zod'
+import { isUserCanonSlug } from '../canon/user-canon-home.ts'
 
 const isoSchema = z.string().datetime({ offset: true })
 const deliverySchema = z.enum(['inject', 'demand'])
@@ -50,7 +51,7 @@ export const recordDocImportSchema = z.object({
 export const recordUserCanonImportSchema = z.object({
   rows: z.array(
     z.object({
-      slug: z.union([z.literal('AGENTS.md'), z.string().regex(/^\.agents\/rules\/[^/]+\.md$/)]),
+      slug: z.string().refine(isUserCanonSlug, 'slug has no Claude home mapping'),
       title: z.string(),
       body: z.string(),
     }),

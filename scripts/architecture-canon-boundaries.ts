@@ -22,8 +22,11 @@ export const userCanonBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'shared/ratchet.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/doc/user-canon-import.ts',
+      'orchestrator/src/project/projects.ts',
       `${source}canon-lint.ts`,
+      `${source}canon-write-gate.ts`,
       `${source}user-canon-home.ts`,
       `${source}user-canon-home-files.ts`,
     ],

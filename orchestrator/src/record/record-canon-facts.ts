@@ -1,7 +1,7 @@
 /** Builds hosted canon write-gate facts. Must not know local stores, CLI, or HTTP. */
 import type { SQL } from 'bun'
 import type { CanonFinding } from '../canon/canon-lint.ts'
-import { decideCanonWrite, decideUserCanonImport } from '../canon/canon-write-gate.ts'
+import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { composeCanonRows, refuseCanonWrite } from '../doc/doc-write-allowed.ts'
 
 type Row = { slug: string; body: string }
@@ -79,7 +79,7 @@ export async function managedCanonProjectNames(tx: SQL, spaceId: string): Promis
 
 export async function userCanonImportFindings(
   tx: SQL,
-  input: { spaceId: string; owner: string; current: Row[]; next: Row[]; bootstrap: boolean },
+  input: { spaceId: string; owner: string; current: Row[]; next: Row[] },
 ): Promise<CanonFinding[]> {
   const global = asRows(
     await tx`
@@ -90,7 +90,7 @@ export async function userCanonImportFindings(
   )
   const names = await managedCanonProjectNames(tx, input.spaceId)
   const targets = names.length ? names : [null]
-  const findings: CanonFinding[] = []
+  const surroundings: Array<{ global: Row[]; project: Row[] }> = []
   for (const name of targets) {
     const project = name
       ? asRows(
@@ -101,27 +101,13 @@ export async function userCanonImportFindings(
           `,
         )
       : []
-    const current = compose(global, input.current, project, input.owner, name)
-    const next = compose(global, input.next, project, input.owner, name)
-    if (input.bootstrap) {
-      findings.push(...decideUserCanonImport({ current: [], next }).findings)
-      continue
-    }
-    let working = input.current
-    for (const row of input.next) {
-      const changed = replace(working, row.slug, row.body)
-      const before = compose(global, working, project, input.owner, name)
-      const after = compose(global, changed, project, input.owner, name)
-      const introduced = decideCanonWrite({ current: before, next: after })
-      if (introduced.length) {
-        findings.push(...introduced)
-        break
-      }
-      working = changed
-    }
-    if (!findings.length) findings.push(...decideCanonWrite({ current, next }))
+    surroundings.push({ global, project })
   }
-  return [...new Map(findings.map((finding) => [JSON.stringify(finding), finding])).values()]
+  return decideUserCanonImport({
+    current: input.current,
+    next: input.next,
+    surroundings,
+  }).findings
 }
 
 export async function canonFacts(

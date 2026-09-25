@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { USER_CANON_MANAGED_MARKER } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlan,
@@ -52,5 +52,38 @@ describe('Claude home canon files', () => {
     )
     expect(() => readFileSync(join(claudeHome, 'rules/old.md'), 'utf8')).toThrow()
     expect(readFileSync(join(claudeHome, 'rules/personal.md'), 'utf8')).toBe('personal')
+  })
+
+  test('refuses a file symlink without reading or writing through it', () => {
+    const claudeHome = temporaryClaudeHome()
+    mkdirSync(claudeHome, { recursive: true })
+    const outside = join(dirname(claudeHome), 'outside.md')
+    writeFileSync(outside, 'outside secret')
+    symlinkSync(outside, join(claudeHome, 'CLAUDE.md'))
+
+    expect(() => collectUserCanonHome(claudeHome)).toThrow(
+      /CLAUDE\.md: symbolic link targets.*replace the link/,
+    )
+    const plan = planUserCanonHome({
+      claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'replacement' }],
+      files: [],
+    })
+    expect(() => applyUserCanonHomePlan(plan)).toThrow(/CLAUDE\.md: symbolic link targets/)
+    expect(readFileSync(outside, 'utf8')).toBe('outside secret')
+  })
+
+  test('refuses a symlinked rules directory and leaves its outside target untouched', () => {
+    const claudeHome = temporaryClaudeHome()
+    mkdirSync(claudeHome, { recursive: true })
+    const outside = join(dirname(claudeHome), 'outside-rules')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'secret.md'), 'outside secret')
+    symlinkSync(outside, join(claudeHome, 'rules'))
+
+    expect(() => collectUserCanonHome(claudeHome)).toThrow(
+      /rules: symbolic link targets.*replace the link/,
+    )
+    expect(readFileSync(join(outside, 'secret.md'), 'utf8')).toBe('outside secret')
   })
 })

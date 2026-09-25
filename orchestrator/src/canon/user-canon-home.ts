@@ -19,6 +19,22 @@ export function mapUserCanonPath(input: UserCanonPath): string | null {
   return match ? posix.join('.agents/rules', match[1]!) : null
 }
 
+export function isUserCanonSlug(slug: string): boolean {
+  return mapUserCanonPath({ kind: 'canon', path: slug }) !== null
+}
+
+export function isUserCanonHomePath(path: string): boolean {
+  return mapUserCanonPath({ kind: 'claude', path }) !== null
+}
+
+export function userCanonHomeImportDeletionSlugs(
+  currentSlugs: string[],
+  importedSlugs: Iterable<string>,
+): string[] {
+  const imported = new Set(importedSlugs)
+  return currentSlugs.filter((slug) => isUserCanonSlug(slug) && !imported.has(slug))
+}
+
 export function stripUserCanonManagedMarker(text: string): string {
   return text.startsWith(USER_CANON_MANAGED_MARKER)
     ? text.slice(USER_CANON_MANAGED_MARKER.length)

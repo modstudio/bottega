@@ -1,6 +1,9 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { lintCanon } from '../../src/canon/canon-lint.ts'
-import { decideCanonWrite } from '../../src/canon/canon-write-gate.ts'
+import { decideUserCanonImport } from '../../src/canon/canon-write-gate.ts'
+import {
+  isUserCanonSlug,
+  userCanonHomeImportDeletionSlugs,
+} from '../../src/canon/user-canon-home.ts'
 import {
   consumeDocBody,
   decideDocRevisionWrite,
@@ -271,16 +274,14 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         }
       }
       const currentCanon = current.map(({ slug, body }) => ({ slug, body }))
-      const nextCanon = input.rows.map(({ slug, body }) => ({ slug, body }))
-      const bootstrap = current.length === 0
-      const findings = bootstrap
-        ? lintCanon({
-            files: nextCanon.map(({ slug, body }) => ({ path: slug, text: body })),
-            trackedPaths: [],
-            packageScripts: [],
-            sourceTexts: [],
-          }).findings
-        : decideCanonWrite({ current: currentCanon, next: nextCanon })
+      const nextCanon = [
+        ...currentCanon.filter(({ slug }) => !isUserCanonSlug(slug)),
+        ...input.rows.map(({ slug, body }) => ({ slug, body })),
+      ]
+      const { bootstrap, findings } = decideUserCanonImport({
+        current: currentCanon,
+        next: nextCanon,
+      })
       if (!bootstrap && findings.length) throw new Error('refusing canon write')
       const now = new Date().toISOString()
       const rows = input.rows.map((row) => {
@@ -321,7 +322,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       })
       const desired = new Set(input.rows.map(({ slug }) => slug))
       const deletions = current
-        .filter(({ slug }) => !desired.has(slug))
+        .filter(({ slug }) => userCanonHomeImportDeletionSlugs([slug], desired).includes(slug))
         .map((doc) => {
           const revisionId = newRecordId()
           docs.set(doc.id, { ...doc, deletedAt: now, updatedAt: now })

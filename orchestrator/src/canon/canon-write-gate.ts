@@ -49,20 +49,49 @@ export function decideCanonWrite(input: {
   return findings.filter((finding) => !skipped.has(finding.rule))
 }
 
-export function decideUserCanonImport(input: { current: Row[]; next: Row[] }): {
+export function decideUserCanonImport(input: {
+  current: Row[]
+  next: Row[]
+  surroundings?: Array<{ global: Row[]; project: Row[] }>
+}): {
   bootstrap: boolean
   findings: CanonFinding[]
 } {
+  const surroundings = input.surroundings ?? [{ global: [], project: [] }]
   const bootstrap = input.current.length === 0
+  const findings: CanonFinding[] = []
+  const compose = (owner: Row[], around: (typeof surroundings)[number]) => [
+    ...around.global,
+    ...owner,
+    ...around.project,
+  ]
+  for (const around of surroundings) {
+    if (bootstrap) {
+      findings.push(
+        ...decideCanonWrite({
+          current: compose([], around),
+          next: compose(input.next, around),
+        }),
+      )
+      continue
+    }
+    let working = input.current
+    for (const row of input.next) {
+      const changed = [...working.filter(({ slug }) => slug !== row.slug), row]
+      findings.push(
+        ...decideCanonWrite({ current: compose(working, around), next: compose(changed, around) }),
+      )
+      working = changed
+    }
+    findings.push(
+      ...decideCanonWrite({
+        current: compose(working, around),
+        next: compose(input.next, around),
+      }),
+    )
+  }
   return {
     bootstrap,
-    findings: bootstrap
-      ? lintCanon({
-          files: input.next.map(({ slug, body }) => ({ path: slug, text: body })),
-          trackedPaths: [],
-          packageScripts: [],
-          sourceTexts: [],
-        }).findings
-      : decideCanonWrite(input),
+    findings: [...new Map(findings.map((finding) => [JSON.stringify(finding), finding])).values()],
   }
 }

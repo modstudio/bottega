@@ -4,6 +4,7 @@ import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
+import { isUserCanonSlug, userCanonHomeImportDeletionSlugs } from '../canon/user-canon-home.ts'
 import {
   consumeDocBody,
   type DocDelivery,
@@ -530,9 +531,15 @@ async function deleteMissingUserCanonRows(
   at: string,
 ): Promise<RecordUserCanonImportResult['deletions']> {
   const results: RecordUserCanonImportResult['deletions'] = []
+  const deletedSlugs = new Set(
+    userCanonHomeImportDeletionSlugs(
+      currentRows.map((row) => String(row.slug)),
+      desired.keys(),
+    ),
+  )
   for (const prior of currentRows) {
     const slug = String(prior.slug)
-    if (desired.has(slug)) continue
+    if (!deletedSlugs.has(slug)) continue
     const id = String(prior.id)
     await tx`
       UPDATE doc SET deleted_at=${at}::timestamptz, updated_at=${at}::timestamptz
@@ -572,18 +579,22 @@ export async function importRecordUserCanon(
       ORDER BY slug
       FOR UPDATE
     `
-    const current = currentRows.map((row: Record<string, unknown>) => ({
-      slug: String(row.slug),
-      body: String(row.body),
-    }))
-    const next = input.rows.map(({ slug, body }) => ({ slug, body }))
+    const current: Array<{ slug: string; body: string }> = currentRows.map(
+      (row: Record<string, unknown>) => ({
+        slug: String(row.slug),
+        body: String(row.body),
+      }),
+    )
+    const next = [
+      ...current.filter(({ slug }) => !isUserCanonSlug(slug)),
+      ...input.rows.map(({ slug, body }) => ({ slug, body })),
+    ]
     const bootstrap = currentRows.length === 0
     const findings = await userCanonImportFindings(tx, {
       spaceId: input.spaceId,
       owner: input.userId,
       current,
       next,
-      bootstrap,
     })
     if (!bootstrap && findings.length) throw new RecordDocError(canonFindingsRefusal(findings))
 

@@ -70,4 +70,28 @@ describe('decideUserCanonImport', () => {
     expect(decision.bootstrap).toBe(false)
     expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
   })
+
+  test('bootstrap reports imported findings but not pre-existing surrounding findings', () => {
+    const decision = decideUserCanonImport({
+      current: [],
+      next: [{ slug: 'AGENTS.md', body: 'A clean personal rule.' }],
+      surroundings: [
+        {
+          global: [{ slug: '.agents/rules/global.md', body: 'Keep 123 global things.' }],
+          project: [],
+        },
+      ],
+    })
+    expect(decision.bootstrap).toBe(true)
+    expect(decision.findings.map(({ rule }) => rule)).not.toContain('canon/numeral')
+  })
+
+  test('non-empty imports inspect each row before mapped deletions can hide a finding', () => {
+    const decision = decideUserCanonImport({
+      current: [{ slug: '.agents/rules/old.md', body: 'It used to differ.' }],
+      next: [{ slug: '.agents/rules/new.md', body: 'It used to differ.' }],
+    })
+    expect(decision.bootstrap).toBe(false)
+    expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
+  })
 })

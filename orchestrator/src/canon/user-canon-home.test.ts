@@ -4,6 +4,7 @@ import {
   mapUserCanonPath,
   stripUserCanonManagedMarker,
   USER_CANON_MANAGED_MARKER,
+  userCanonHomeImportDeletionSlugs,
 } from './user-canon-home.ts'
 
 describe('mapUserCanonPath', () => {
@@ -27,6 +28,15 @@ describe('mapUserCanonPath', () => {
     expect(stripUserCanonManagedMarker(`before\n${USER_CANON_MANAGED_MARKER}body`)).toBe(
       `before\n${USER_CANON_MANAGED_MARKER}body`,
     )
+  })
+
+  test('an import deletes only absent rows that map to the Claude home', () => {
+    expect(
+      userCanonHomeImportDeletionSlugs(
+        ['AGENTS.md', '.agents/rules/old.md', '.agents/contexts/keep.md'],
+        ['AGENTS.md'],
+      ),
+    ).toEqual(['.agents/rules/old.md'])
   })
 })
 
