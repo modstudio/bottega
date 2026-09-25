@@ -66,6 +66,8 @@ export function gatherHostedReport(
     const engaged = engagedMs(itemSpans)
     const item: Item = {
       key,
+      projectId: first.project_id ?? null,
+      spaceId: first.space_id,
       project,
       title: key ? first.task_title : null,
       status: key ? first.task_status : null,
@@ -78,9 +80,11 @@ export function gatherHostedReport(
   })
   projected.sort((left, right) => right.item.engagedMs - left.item.engagedMs)
   const items = projected.map(({ item }) => item)
-  const projects = [...new Set(items.map((item) => item.project))]
-    .map((project) => {
-      const mine = projected.filter(({ item }) => item.project === project)
+  const projectIdentity = (item: Item) => item.projectId ?? `${item.spaceId}:${item.project}`
+  const projects = [...new Set(items.map(projectIdentity))]
+    .map((identity) => {
+      const mine = projected.filter(({ item }) => projectIdentity(item) === identity)
+      const project = mine[0]!.item.project
       const tasks = mine.map(({ item }) => item).filter((item) => item.key)
       const untasked = mine.map(({ item }) => item).find((item) => !item.key) ?? null
       return {

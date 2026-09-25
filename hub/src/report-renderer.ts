@@ -5,6 +5,8 @@ import type { Measures } from './measures.ts'
 
 export type Item = {
   key: string | null
+  projectId?: string | null
+  spaceId?: string
   project: string
   title: string | null
   status: string | null

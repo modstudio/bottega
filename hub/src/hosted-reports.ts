@@ -72,6 +72,7 @@ export type HostedReportProject = {
   id: string
   project_id: string
   project_name: string
+  current_project_name: string | null
   space_id: string
   space_name: string
 }
@@ -417,6 +418,7 @@ export async function selectHostedReportSubscriptions(tx: SQL, spaceId: string) 
   const projects = rows<HostedReportProject & { subscription_id: string }>(
     await tx`SELECT x.id,x.subscription_id,x.project_id,
       COALESCE(p.name,x.project_name) AS project_name,
+      CASE WHEN p.retired_at IS NULL THEN p.name ELSE NULL END AS current_project_name,
       x.project_space_id AS space_id,sp.name AS space_name
     FROM hub_report_subscription_project x
       LEFT JOIN project p ON p.id=x.project_id

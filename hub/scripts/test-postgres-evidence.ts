@@ -47,7 +47,10 @@ import {
   hostedTaskDetail,
 } from '../src/hosted-work.ts'
 import { computeMeasures } from '../src/measures.ts'
-import { hostedDeliveryRepository } from '../src/report-delivery-hosted.ts'
+import {
+  hostedDeliveryRepository,
+  sendHostedReportSubscriptionTest,
+} from '../src/report-delivery-hosted.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
 const actorUrl = process.env.ORCH_RECORD_URL
@@ -57,8 +60,10 @@ const USER = '01990000-0000-7000-8000-000000000650'
 const SECOND_USER = '01990000-0000-7000-8000-000000000651'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
+const SPACE_C = '01990000-0000-7000-8000-00000000066b'
 const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
 const PROJECT_B = '01990000-0000-7000-8000-00000000066c'
+const PROJECT_MOVE = '01990000-0000-7000-8000-00000000067c'
 const interval: IntervalEvidence = {
   task_key: 'DEV-655',
   project_name: PLATFORM_SLUG,
@@ -84,13 +89,16 @@ try {
       (${SECOND_USER}::uuid,'hub-second@example.test','Hub Second',true,now(),now())`
   await admin`INSERT INTO space (id,name,slug,created_at) VALUES
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
-    (${SPACE_B}::uuid,'Evidence B','evidence-b',now())`
+    (${SPACE_B}::uuid,'Evidence B','evidence-b',now()),
+    (${SPACE_C}::uuid,'Evidence C','evidence-c',now())`
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
-      (${PROJECT_B}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now())`
+      (${PROJECT_B}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
+      (${PROJECT_MOVE}::uuid,${SPACE_B}::uuid,'move-proof',ARRAY['MOVE'],now())`
   await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
     VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_B}::uuid,${USER}::uuid,'member','write',now()),
+      (${newRecordId()}::uuid,${SPACE_C}::uuid,${USER}::uuid,'owner','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now())`
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
@@ -555,6 +563,103 @@ try {
     )
     if (projectsSubscription.projects.length !== 2)
       throw new Error('projects subscription did not retain both chosen project ids')
+    const movedProjectSubscription = await createHostedReportSubscription(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B, SPACE_C] },
+      {
+        scope: { kind: 'projects', projectIds: [PROJECT_MOVE] },
+        cadence: 'daily',
+        hour: 8,
+        zone: 'America/New_York',
+        recipientUserIds: [USER],
+      },
+    )
+    const moveRows = await client.begin(async (tx) => {
+      await bindTenant(tx, {
+        userId: USER,
+        spaceId: SPACE_B,
+        spaceIds: [SPACE_A, SPACE_B, SPACE_C],
+      })
+      const preview = (await tx`SELECT * FROM record_move_project_space(
+        'evidence-b','move-proof','evidence-c')`) as { row_count: number }[]
+      const total = preview.reduce((sum, row) => sum + Number(row.row_count), 0)
+      return tx`SELECT * FROM record_move_project_space(
+        'evidence-b','move-proof','evidence-c',${total}::bigint)`
+    })
+    const selectionMove = moveRows.find(
+      (row) => row.table_name === 'hub_report_subscription_project',
+    )
+    if (
+      !selectionMove?.moved ||
+      selectionMove.reached_by !== 'report selection; space reference updated, ownership kept'
+    )
+      throw new Error('project move did not report the report-selection reference update')
+    const movedSelection = (
+      await admin`SELECT space_id,project_space_id FROM hub_report_subscription_project
+        WHERE subscription_id=${movedProjectSubscription.id}::uuid`
+    )[0]
+    if (movedSelection?.space_id !== SPACE_A || movedSelection.project_space_id !== SPACE_C)
+      throw new Error(
+        'project move changed selection ownership or missed its current-space reference',
+      )
+    const movedCandidate = {
+      subscriptionId: movedProjectSubscription.id,
+      spaceId: SPACE_A,
+      cadence: 'daily' as const,
+      hour: 8,
+      weekday: null,
+      zone: 'America/New_York',
+      createdAt: movedProjectSubscription.created_at,
+      lastPeriodEnd: null,
+    }
+    const deliveryPeriod = {
+      from: '2026-09-17T00:00:00.000Z',
+      to: '2026-09-18T00:00:00.000Z',
+      key: '2026-09-18T00:00:00.000Z',
+    }
+    const movedDelivery = await hostedDeliveryRepository(actorUrl).load(
+      movedCandidate,
+      deliveryPeriod,
+    )
+    if (
+      movedDelivery.scope.kind !== 'projects' ||
+      !movedDelivery.scope.projectIds.includes(PROJECT_MOVE)
+    )
+      throw new Error('delivery did not resolve a moved project in its destination space')
+    await admin`UPDATE membership SET role='member'
+      WHERE space_id=${SPACE_C}::uuid AND user_id=${USER}::uuid`
+    const movedDemotedDelivery = await hostedDeliveryRepository(actorUrl).load(
+      movedCandidate,
+      deliveryPeriod,
+    )
+    if (
+      movedDemotedDelivery.scope.kind !== 'projects' ||
+      movedDemotedDelivery.scope.projectIds.length !== 0 ||
+      !movedDemotedDelivery.exclusions?.some(
+        (line) => line.includes('move-proof') && line.includes('owner or admin'),
+      )
+    )
+      throw new Error('moved project was not excluded with its named owner/admin reason')
+    let unavailableTestSends = 0
+    const unavailableTest = await sendHostedReportSubscriptionTest(
+      actorUrl,
+      identity,
+      movedProjectSubscription.id,
+      {
+        now: new Date('2026-09-18T12:00:00.000Z'),
+        mail: {
+          async send() {
+            unavailableTestSends++
+          },
+        },
+      },
+    )
+    if (
+      unavailableTest.status !== 'skipped' ||
+      unavailableTestSends !== 0 ||
+      !unavailableTest.message.includes('owner or admin')
+    )
+      throw new Error('test send did not skip an unavailable projects subscription with a message')
     await admin`UPDATE membership SET role='member' WHERE space_id=${SPACE_B}::uuid AND user_id=${USER}::uuid`
     const demotedDelivery = await hostedDeliveryRepository(actorUrl).load(
       {
@@ -581,6 +686,30 @@ try {
       )
     )
       throw new Error('demoted project was not excluded with its snapshotted name and reason')
+    let partialTestSends = 0
+    const partialTest = await sendHostedReportSubscriptionTest(
+      actorUrl,
+      identity,
+      projectsSubscription.id,
+      {
+        now: new Date('2026-09-18T12:00:00.000Z'),
+        mail: {
+          async send() {
+            partialTestSends++
+          },
+        },
+      },
+    )
+    const partialTestRow = (
+      await admin`SELECT status,error FROM hub_send WHERE id=${partialTest.id}::uuid`
+    )[0]
+    if (
+      partialTest.status !== 'sent' ||
+      partialTestSends !== 1 ||
+      partialTestRow?.status !== 'sent' ||
+      !String(partialTestRow.error).includes('owner or admin')
+    )
+      throw new Error('test send did not send and record its excluded projects')
     await unsubscribeHostedReportSubscription(actorUrl, identity, projectsSubscription.id)
     const emailSubscription = await createHostedReportSubscription(actorUrl, identity, {
       scope: { kind: 'space' },
@@ -1062,24 +1191,24 @@ try {
 } finally {
   await admin`DROP TRIGGER IF EXISTS fail_hub_task_insert ON hub_task`
   await admin`DROP FUNCTION IF EXISTS fail_hub_task_insert()`
-  await admin`DELETE FROM hub_note_acknowledgement WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_send_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_report_subscription_member WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_report_subscription_project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_report_subscription_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_report_subscription WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM membership WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_task_document WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_task_comment WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_task WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_interval WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM hub_day WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
-  await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid)`
+  await admin`DELETE FROM hub_note_acknowledgement WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_note WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_send_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_send WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_report_subscription_member WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_report_subscription_project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_report_subscription_recipient WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_report_subscription WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM membership WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_task_status_event WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_task_document WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_task_comment WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_task WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_interval WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_day WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid)`
   await admin.close()
 }

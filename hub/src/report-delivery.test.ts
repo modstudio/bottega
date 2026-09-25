@@ -246,6 +246,21 @@ describe('hosted report delivery', () => {
     })
   })
 
+  test('a skipped report retains excluded project names and reasons', async () => {
+    const fake = fakeRepository([candidate('skip-excluded')], async () =>
+      subscription({
+        measures: measures(false),
+        exclusions: ['Other/same: subscription owner is no longer an owner or admin'],
+      }),
+    )
+    await runReportDeliveryPass({ repository: fake.repository, mail: { async send() {} }, now })
+    expect(fake.rows[0]).toMatchObject({
+      status: 'skipped',
+      reason:
+        'scope had no recorded work in this period\nOther/same: subscription owner is no longer an owner or admin',
+    })
+  })
+
   test('a sent report records excluded project names and reasons', async () => {
     const fake = fakeRepository([candidate('excluded')], async () =>
       subscription({

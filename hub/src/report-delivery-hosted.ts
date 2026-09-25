@@ -449,6 +449,18 @@ export async function sendHostedReportSubscriptionTest(
     const subscription = await hostedDeliveryRepository(databaseUrl).load(candidate, period, {
       includeDisabled: true,
     })
+    if (subscription.unavailableReason) {
+      await withHostedTenant(databaseUrl, caller, async (tx) => {
+        await tx`UPDATE hub_send SET status='skipped',error=${subscription.unavailableReason},
+          items=${subscription.report.items.length},at=now() WHERE id=${sendId}::uuid`
+      })
+      return {
+        id: sendId,
+        status: 'skipped' as const,
+        email: loaded.email,
+        message: subscription.unavailableReason,
+      }
+    }
     const rendered = renderReport(candidate, period, {
       ...subscription,
       recipients: [
@@ -461,11 +473,13 @@ export async function sendHostedReportSubscriptionTest(
       ],
     })
     await (options.mail ?? sesReportMailClient()).send({ ...rendered, to: [loaded.email] })
+    const exclusions = subscription.exclusions?.join('\n') || null
     await withHostedTenant(databaseUrl, caller, async (tx) => {
-      await tx`UPDATE hub_send SET status='sent',items=${subscription.report.items.length},at=now()
+      await tx`UPDATE hub_send SET status='sent',error=${exclusions},
+        items=${subscription.report.items.length},at=now()
         WHERE id=${sendId}::uuid`
     })
-    return { id: sendId, status: 'sent' as const, email: loaded.email }
+    return { id: sendId, status: 'sent' as const, email: loaded.email, message: null }
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause)
     await withHostedTenant(databaseUrl, caller, async (tx) => {

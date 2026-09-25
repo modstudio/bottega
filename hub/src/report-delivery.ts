@@ -297,9 +297,10 @@ async function recordSkip(
   dryRun: boolean,
 ) {
   if (dryRun) return
+  const exclusions = subscription.exclusions?.join('\n')
   await repository.recordFinal(candidate, period, {
     status: 'skipped',
-    reason,
+    reason: exclusions && !reason.includes(exclusions) ? `${reason}\n${exclusions}` : reason,
     recipients: subscription.recipients.map((recipient) => recipient.email).join(', '),
     items: subscription.report.items.length,
   })

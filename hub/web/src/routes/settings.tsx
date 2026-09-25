@@ -33,19 +33,12 @@ type Draft = {
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.record.settings.queryKey() })
 
-function initialDraft(
-  row: Subscription | undefined,
-  projects: string[],
-  manageableProjects: Settings['manageableProjects'],
-): Draft {
+function initialDraft(row: Subscription | undefined, projects: string[]): Draft {
   return {
     scope: row?.scope_kind ?? 'space',
     project: row?.project_name ?? projects[0] ?? '',
     memberUserIds: row?.members.map((member) => member.user_id) ?? [],
-    projectIds:
-      row?.projects
-        .map((project) => project.project_id)
-        .filter((id) => manageableProjects.some((project) => project.id === id)) ?? [],
+    projectIds: row?.projects.map((project) => project.project_id) ?? [],
     cadence: row?.cadence ?? 'daily',
     hour: row?.hour ?? 9,
     weekday: row?.weekday ?? 'monday',
@@ -69,20 +62,36 @@ function draftScope(draft: Draft) {
 
 function ProjectsAcrossSpaces({
   projects,
+  storedProjects,
   selected,
   onChange,
 }: {
   projects: Settings['manageableProjects']
+  storedProjects: Subscription['projects']
   selected: string[]
   onChange: (projectIds: string[]) => void
 }) {
+  const options = [
+    ...projects.map((project) => ({ ...project, note: null as string | null })),
+    ...storedProjects
+      .filter((stored) => !projects.some((project) => project.id === stored.project_id))
+      .map((stored) => ({
+        id: stored.project_id,
+        name: stored.project_name,
+        space_id: stored.space_id,
+        space_name: stored.space_name,
+        note: stored.current_project_name
+          ? 'you are no longer an owner or admin of this space'
+          : 'project was deleted',
+      })),
+  ]
   return (
     <div className="grid gap-2">
       <span className="text-sm text-text-muted">Projects across spaces</span>
-      {[...new Set(projects.map((project) => project.space_name))].map((spaceName) => (
+      {[...new Set(options.map((project) => project.space_name))].map((spaceName) => (
         <div key={spaceName} className="grid gap-1">
           <span className="text-sm">{spaceName}</span>
-          {projects
+          {options
             .filter((project) => project.space_name === spaceName)
             .map((project) => (
               <label
@@ -102,6 +111,7 @@ function ProjectsAcrossSpaces({
                   }
                 />
                 {project.name}
+                {project.note ? ` (${project.note})` : ''}
               </label>
             ))}
         </div>
@@ -133,7 +143,7 @@ function SubscriptionDialog({
   canManageEmails: boolean
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, projects, manageableProjects))
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, projects))
   const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
@@ -161,7 +171,7 @@ function SubscriptionDialog({
   const sendTest = useMutation({
     ...trpc.record.sendReportSubscriptionTest.mutationOptions(),
     onSuccess: (result) => {
-      setTestMessage(`Test sent to ${result.email}`)
+      setTestMessage(result.message ?? `Test sent to ${result.email}`)
       void refresh()
     },
     onError: (error) => setTestMessage(error.message),
@@ -270,6 +280,7 @@ function SubscriptionDialog({
         {draft.scope === 'projects' ? (
           <ProjectsAcrossSpaces
             projects={manageableProjects}
+            storedProjects={row?.projects ?? []}
             selected={draft.projectIds}
             onChange={(projectIds) => change({ projectIds })}
           />
