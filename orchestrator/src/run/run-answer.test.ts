@@ -877,6 +877,23 @@ describe('retry command', () => {
     )
   })
 
+  test('fresh retry refuses a continuation turn whose instructions are unrecoverable', async () => {
+    const id = failed('implement')
+    const child = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 2,
+    })
+
+    await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
+      `run ${id} continuation turn ${child} has no recoverable continue instructions. ` +
+        `Re-send the instructions with orch continue ${id} --file <spec>, ` +
+        `or pass orch retry ${child} for that turn directly.`,
+    )
+  })
+
   test('a rejected retry dispatch records failed ruling delivery', async () => {
     const id = failed()
     const questionId = (

@@ -43,6 +43,12 @@ export function decideWritingRetryWorkspace(input: {
 
 export type AtomicRetryReuseDecision = { action: 'reuse' } | { action: 'refuse'; reason: string }
 
+export type ContinuationInstruction = {
+  turnId: number
+  at: string
+  instructions: string
+}
+
 /** Pure post-lock decision: all facts must still describe the validated retained tree. */
 export function atomicRetryReuseDecision(input: {
   pathExists: boolean
@@ -67,10 +73,22 @@ export function atomicRetryReuseDecision(input: {
 
 export function renderWritingRetryPrompt(input: {
   originalSpec: string
+  continuationInstructions: ContinuationInstruction[]
   rulings: string | null
   commit: string
   taskPointer: string | null
 }): string {
+  const continuationInstructions = input.continuationInstructions.length
+    ? [
+        'INSTRUCTIONS GIVEN SINCE THE ORIGINAL SPEC',
+        '',
+        ...input.continuationInstructions.flatMap((instruction, index) => [
+          ...(index ? [''] : []),
+          `Turn ${instruction.turnId} at ${instruction.at}:`,
+          instruction.instructions,
+        ]),
+      ].join('\n')
+    : null
   const previousAttempt = [
     'PREVIOUS ATTEMPT',
     '',
@@ -80,7 +98,7 @@ export function renderWritingRetryPrompt(input: {
   ]
     .filter((line): line is string => line !== null)
     .join('\n')
-  return [input.originalSpec, input.rulings, previousAttempt]
+  return [input.originalSpec, continuationInstructions, input.rulings, previousAttempt]
     .filter((section): section is string => Boolean(section))
     .join('\n\n---\n\n')
 }

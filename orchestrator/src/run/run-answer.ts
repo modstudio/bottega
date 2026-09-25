@@ -52,6 +52,7 @@ import {
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
 import {
+  type ContinuationInstruction,
   decideRetryConversation,
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
@@ -211,6 +212,57 @@ function latestRetryTurn(
   )
 }
 
+function continuationInstructionsForFreshRetry(
+  writesRepo: boolean,
+  requestedId: number,
+  rootId: number,
+): ContinuationInstruction[] {
+  if (!writesRepo || requestedId !== rootId) return []
+  const turns = db()
+    .query(
+      `SELECT turn.id
+       FROM run turn
+      WHERE turn.parent_run_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM run_carried_ruling carried WHERE carried.run_id = turn.id
+        )
+      ORDER BY turn.turn, turn.id`,
+    )
+    .all(rootId) as { id: number }[]
+  const audits = db()
+    .query(
+      `SELECT audit.at, audit.reason,
+              (SELECT turn.id
+                 FROM run turn
+                WHERE turn.parent_run_id = audit.root_id
+                  AND turn.started_at <= audit.at
+                  AND NOT EXISTS (
+                    SELECT 1 FROM run_carried_ruling carried WHERE carried.run_id = turn.id
+                  )
+                ORDER BY turn.started_at DESC, turn.id DESC
+                LIMIT 1) turn_id
+         FROM run_mutation_audit audit
+        WHERE audit.root_id = ? AND audit.action = 'continue'
+        ORDER BY audit.at, audit.rowid`,
+    )
+    .all(rootId) as { at: string; reason: string | null; turn_id: number | null }[]
+  const auditByTurn = new Map(
+    audits.filter((audit) => audit.turn_id !== null).map((audit) => [audit.turn_id, audit]),
+  )
+  const missing = turns.find((turn) => !auditByTurn.get(turn.id)?.reason)
+  if (missing) {
+    throw new Error(
+      `run ${rootId} continuation turn ${missing.id} has no recoverable continue instructions. ` +
+        `Re-send the instructions with orch continue ${rootId} --file <spec>, ` +
+        `or pass orch retry ${missing.id} for that turn directly.`,
+    )
+  }
+  return turns.map((turn) => {
+    const audit = auditByTurn.get(turn.id)!
+    return { turnId: turn.id, at: audit.at, instructions: audit.reason! }
+  })
+}
+
 export async function retryRun(
   id: number,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -289,6 +341,11 @@ export async function retryRun(
     )
   }
   const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
+  const continuationInstructions = continuationInstructionsForFreshRetry(
+    writesRepo,
+    id,
+    row.root_id,
+  )
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
   const workspace = writesRepo
@@ -319,6 +376,7 @@ export async function retryRun(
   const retryPrompt = workspace
     ? renderWritingRetryPrompt({
         originalSpec: originalPrompt,
+        continuationInstructions,
         rulings: renderedRulings,
         commit: workspace.commit,
         taskPointer: previousAttemptTaskPointer({
