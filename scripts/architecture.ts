@@ -113,6 +113,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
+  module('orchestrator/src/agent/worker-launch-env.ts', []),
   ...mcpModules,
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',

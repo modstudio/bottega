@@ -12,6 +12,7 @@ import {
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
+import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { listDocs, removeDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
@@ -473,7 +474,16 @@ function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): v
   if (!requested) throw new Error('--cwd is required')
   const cwd = resolve(requested)
   const harness = requestedHarness(flags)
-  const loadFacts = gatherHarnessLoadFacts(cwd)
+  const role = flags.flag('role') ?? 'architect'
+  if (role !== 'architect' && role !== 'worker') {
+    throw new Error(`unknown --role ${JSON.stringify(role)}; use architect or worker`)
+  }
+  const agent = flags.flag('agent')
+  if (role === 'worker' && !agent) throw new Error('--agent is required with --role worker')
+  const loadFacts = gatherHarnessLoadFacts(cwd, {
+    ...process.env,
+    ...(role === 'worker' ? workerLaunchEnv(agent!) : {}),
+  })
   const names = harness ? [harness] : [...HARNESS_NAMES]
   const plans = names.map((name) => planHarnessLoad(loadFacts, name))
   if (flags.has('json')) {

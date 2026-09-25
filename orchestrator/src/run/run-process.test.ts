@@ -1,7 +1,24 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { acceptableRunProcessIds, commandNamesRun } from './run-process.ts'
+import { acceptableRunProcessIds, childEnv, commandNamesRun } from './run-process.ts'
+
+test('worker context controls override inherited values only for grok', () => {
+  const parent = process.env.GROK_CLAUDE_AGENTS_ENABLED
+  process.env.GROK_CLAUDE_AGENTS_ENABLED = '1'
+  try {
+    expect(childEnv(AGENTS.grok!, undefined, undefined, {}, false)).toMatchObject({
+      GROK_CLAUDE_AGENTS_ENABLED: '0',
+    })
+    expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).toMatchObject({
+      GROK_CLAUDE_AGENTS_ENABLED: '1',
+    })
+  } finally {
+    if (parent === undefined) delete process.env.GROK_CLAUDE_AGENTS_ENABLED
+    else process.env.GROK_CLAUDE_AGENTS_ENABLED = parent
+  }
+})
 
 test('a coordinator command may name any run in the acceptable chain', () => {
   expect(commandNamesRun('bun orchestrator/src/exec.ts 41', [41, 42])).toBe(true)
