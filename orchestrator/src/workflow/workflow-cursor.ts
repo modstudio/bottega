@@ -11,7 +11,7 @@ import {
 } from './workflow-cursor-transition.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { composeWorkflow, getWorkflowStep } from './workflows.ts'
+import { composeWorkflow, getWorkflowStep, resolveWorkflowMode, showWorkflow } from './workflows.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null
@@ -86,6 +86,42 @@ function findCursor(
     )
     .get(project, workflow, mode, key, instanceOf(key, context)) as CursorRow | null
   return row
+}
+
+export function resolveWorkflowCursorMode(
+  slug: string,
+  project: string,
+  requested: string | undefined,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  caller: string,
+  remedy: string,
+  d: Database = db(),
+): string {
+  if (requested) return requested
+  const key = keyOf(args)
+  const rows = d
+    .query(
+      `SELECT DISTINCT mode_slug FROM workflow_cursor
+       WHERE project=? AND workflow_slug=? AND workflow_key=? AND instance_id=?
+         AND state NOT IN ('done','abandoned')
+       ORDER BY mode_slug`,
+    )
+    .all(project, slug, key, instanceOf(key, context)) as { mode_slug: string }[]
+  if (rows.length === 1) return rows[0]!.mode_slug
+  if (rows.length > 1) {
+    throw new Error(
+      `${caller} cannot resolve a mode for workflow "${slug}"; active cursor modes: ` +
+        `${rows.map(({ mode_slug }) => mode_slug).join(', ')}; ${remedy}`,
+    )
+  }
+  const definition = showWorkflow(slug, undefined, d).definition
+  const mode = resolveWorkflowMode(definition)
+  if (mode) return mode.slug
+  throw new Error(
+    `${caller} cannot resolve a default mode for workflow "${slug}"; ` +
+      `modes: ${definition.modes.map(({ slug: modeSlug }) => modeSlug).join(', ')}; ${remedy}`,
+  )
 }
 
 export type CursorArgumentDecision =
