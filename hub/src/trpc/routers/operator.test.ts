@@ -29,12 +29,12 @@ test('waiting query and answer mutation use the orch seam', async () => {
   })
   const caller = router.createCaller({})
   expect(await caller.waiting()).toEqual([item])
-  expect(await caller.answer({ runId: 42, questionId: 7, ruling: 'A' })).toEqual({
+  expect(await caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: 'A' }] })).toEqual({
     outcome: 'resumed',
     run_id: 42,
     resumed_as: 43,
   })
-  expect(calls).toEqual([[42, 7, 'A']])
+  expect(calls).toEqual([[42, [{ questionId: 7, ruling: 'A' }]]])
 })
 
 test('answer mutation surfaces orch refusals and validates input at the edge', async () => {
@@ -45,11 +45,15 @@ test('answer mutation surfaces orch refusals and validates input at the edge', a
     },
   })
   const caller = router.createCaller({})
-  await expect(caller.answer({ runId: 42, questionId: 7, ruling: 'A' })).rejects.toMatchObject({
+  await expect(
+    caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: 'A' }] }),
+  ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
     message: 'run 42 is no longer asking',
   })
-  await expect(caller.answer({ runId: 42, questionId: 7, ruling: '   ' })).rejects.toMatchObject({
+  await expect(
+    caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: '   ' }] }),
+  ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
   })
 })

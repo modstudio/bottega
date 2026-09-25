@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
@@ -34,7 +34,20 @@ function InboxDetailPage() {
         <Link to="/inbox">Return to the inbox</Link>
       </section>
     )
-  return item.kind === 'workflow' ? <WorkflowRuling item={item} /> : <QuestionRuling item={item} />
+  const questions =
+    item.kind === 'question'
+      ? (waiting.data ?? []).filter(
+          (candidate) => candidate.kind === 'question' && candidate.run_id === item.run_id,
+        )
+      : []
+  return item.kind === 'workflow' ? (
+    <WorkflowRuling item={item} />
+  ) : (
+    <QuestionRuling
+      key={questions.map((question) => question.id).join(':')}
+      questions={questions}
+    />
+  )
 }
 
 function WorkflowRuling({ item }: { item: { question: string; session_id: string | null } }) {
@@ -50,61 +63,92 @@ function WorkflowRuling({ item }: { item: { question: string; session_id: string
   )
 }
 
-function QuestionRuling({ item }: { item: OperatorWaitingItem }) {
-  const recommended = item.recommendation ?? item.options[0] ?? ''
-  const [choice, setChoice] = useState(recommended)
-  const [freeText, setFreeText] = useState('')
-  useEffect(() => setChoice(recommended), [recommended])
+type Draft = { choice: string; freeText: string }
+
+function QuestionRuling({ questions }: { questions: OperatorWaitingItem[] }) {
+  const first = questions[0]!
+  const [drafts, setDrafts] = useState<Record<number, Draft>>(() =>
+    Object.fromEntries(
+      questions.map((question) => [
+        question.id,
+        {
+          choice: question.recommendation ?? question.options[0] ?? '',
+          freeText: '',
+        },
+      ]),
+    ),
+  )
   const answer = useMutation({
     ...trpc.operator.answer.mutationOptions(),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: trpc.operator.waiting.queryKey() })
     },
   })
-  const runId = item.run_id
-  const ruling = freeText.trim() || choice
+  const runId = first.run_id
+  const rulings = questions.map((question) => ({
+    questionId: question.id,
+    ruling: drafts[question.id]?.freeText.trim() || drafts[question.id]?.choice || '',
+  }))
   return (
     <section className="max-w-3xl">
       <PageHeader
         title="Operator question"
-        subtitle={`${item.project}${item.task_key ? ` · ${item.task_key}` : ''}`}
+        subtitle={`${first.project}${first.task_key ? ` · ${first.task_key}` : ''}`}
       />
       <div className="space-y-6 border border-border-default bg-surface-raised p-6">
-        <div>
-          <Badge tone="warning">waiting on you</Badge>
-          <h2 className="mt-3 font-mono text-xl">{item.question}</h2>
-        </div>
-        {item.why ? <DisplayRow label="Why" value={item.why} /> : null}
-        {item.options.length ? (
-          <RadioRows
-            label="Ruling"
-            value={choice}
-            options={item.options.map((option) => ({
-              value: option,
-              label: option,
-              recommended: option === item.recommendation,
-            }))}
-            onChange={(value) => {
-              setChoice(value)
-              setFreeText('')
-            }}
-          />
-        ) : null}
-        <div>
-          <label htmlFor="custom-ruling" className="mb-2 block font-medium text-sm">
-            Free-text ruling
-          </label>
-          <Textarea
-            id="custom-ruling"
-            value={freeText}
-            placeholder="Write a different ruling"
-            onChange={(event) => setFreeText(event.target.value)}
-          />
-        </div>
+        <Badge tone="warning">waiting on you</Badge>
+        {questions.map((question, index) => {
+          const draft = drafts[question.id] ?? { choice: '', freeText: '' }
+          const update = (change: Partial<Draft>) =>
+            setDrafts((current) => ({
+              ...current,
+              [question.id]: { ...draft, ...change },
+            }))
+          return (
+            <div
+              key={question.id}
+              className="space-y-4 border-b border-border-default pb-6 last:border-0 last:pb-0"
+            >
+              <h2 className="font-mono text-xl">
+                {questions.length > 1 ? `${index + 1}. ` : ''}
+                {question.question}
+              </h2>
+              {question.why ? <DisplayRow label="Why" value={question.why} /> : null}
+              {question.options.length ? (
+                <RadioRows
+                  label="Ruling"
+                  value={draft.choice}
+                  options={question.options.map((option) => ({
+                    value: option,
+                    label: option,
+                    recommended: option === question.recommendation,
+                  }))}
+                  onChange={(value) => update({ choice: value, freeText: '' })}
+                />
+              ) : null}
+              <div>
+                <label
+                  htmlFor={`custom-ruling-${question.id}`}
+                  className="mb-2 block font-medium text-sm"
+                >
+                  Free-text ruling
+                </label>
+                <Textarea
+                  id={`custom-ruling-${question.id}`}
+                  value={draft.freeText}
+                  placeholder="Write a different ruling"
+                  onChange={(event) => update({ freeText: event.target.value })}
+                />
+              </div>
+            </div>
+          )
+        })}
         <Button
           variant="primary"
-          disabled={!runId || !ruling || answer.isPending || answer.isSuccess}
-          onClick={() => runId && answer.mutate({ runId, questionId: item.id, ruling })}
+          disabled={
+            !runId || rulings.some(({ ruling }) => !ruling) || answer.isPending || answer.isSuccess
+          }
+          onClick={() => runId && answer.mutate({ runId, rulings })}
         >
           {answer.isPending ? 'Submitting...' : 'Submit ruling'}
         </Button>

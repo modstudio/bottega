@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
-import { waitingByRun } from './operator-waiting.ts'
+import { waitingByRun, waitingInboxEntries } from './operator-waiting.ts'
 
 test('maps only the exact active run named by a waiting question', () => {
   const question = {
@@ -24,7 +24,16 @@ test('maps only the exact active run named by a waiting question', () => {
     run_id: null,
     session_id: 'session-1',
   }
-  const mapped = waitingByRun([{ id: 41 }, { id: 42 }, { id: 43 }], [question, workflow])
-  expect([...mapped.keys()]).toEqual(['42'])
-  expect(mapped.get('42')).toBe(question)
+  const mapped = waitingByRun(
+    [{ id: 41 }, { id: 99, root_id: 42 }, { id: 43 }],
+    [question, workflow],
+  )
+  expect([...mapped.keys()]).toEqual(['99'])
+  expect(mapped.get('99')).toBe(question)
+
+  const second = { ...question, id: 9, question: 'And then?' }
+  expect(waitingInboxEntries([question, second, workflow])).toEqual([
+    { ...question, questionCount: 2 },
+    { ...workflow, questionCount: 1 },
+  ])
 })

@@ -4,7 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { type OperatorInboxKind, operatorInboxPath } from '../../../shared/operator-inbox.ts'
-import { sendOperatorNotification } from '../../../shared/operator-notification.ts'
+import {
+  type OperatorNotification,
+  sendOperatorNotification,
+} from '../../../shared/operator-notification.ts'
+import type {
+  ClaimedOperatorNotification,
+  OperatorWaitingItem,
+} from '../../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
@@ -31,23 +38,13 @@ export async function initialQuestionWaitingAt(
 
 const firstLine = (value: string) => value.split(/\r?\n/, 1)[0]!
 
-type OperatorNotificationDetails = {
-  title: string
-  body: string
-  link: string
-}
-
-function notificationDetails(item: OperatorWaitingItem): OperatorNotificationDetails {
+function notificationDetails(item: OperatorWaitingItem): OperatorNotification {
   const port = readMachineValue('hub.port')
   return {
     title: `Ruling needed: ${item.project}${item.task_key ? ` ${item.task_key}` : ''}`,
     body: firstLine(item.question),
     link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
   }
-}
-
-export type ClaimedOperatorNotification = OperatorWaitingItem & {
-  notification: OperatorNotificationDetails
 }
 
 /** Atomically claim each currently waiting episode once, optionally narrowed for direct delivery. */
@@ -133,22 +130,6 @@ export function relayQuestion(
   }, d)
   notify('question', id, d)
   return id
-}
-
-/** Stable JSON contract consumed by hub: field names and nullability are part of the interface. */
-export type OperatorWaitingItem = {
-  kind: 'question' | 'workflow'
-  id: number
-  run_id: number | null
-  project: string
-  task_key: string | null
-  session_id: string | null
-  question: string
-  options: string[]
-  recommendation: string | null
-  why: string | null
-  waiting_since: string
-  answer_command: string
 }
 
 const shellWord = (value: string) =>

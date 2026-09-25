@@ -5,6 +5,7 @@ import {
   type TrackerRowSource,
   trackerCapabilities,
 } from '../../shared/trackers.ts'
+import { runRef } from './reconcile.ts'
 
 export type ProjectionProject = TrackerProject & { spaceId?: string; spaceName?: string }
 
@@ -345,7 +346,7 @@ function projectRuns(rows: IntervalRow[], now: number): TaskRun[] {
   return rows
     .filter((row) => row.source === 'orch')
     .map((row) => ({
-      id: Number(row.ref?.match(/^orch:(\d+)/)?.[1] ?? 0),
+      id: row.ref ? (runRef(row.ref)?.root ?? 0) : 0,
       agent: row.agent,
       job: row.job,
       start: row.start_at,

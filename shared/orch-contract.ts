@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import type { OperatorInboxKind } from './operator-inbox.ts'
+import type { OperatorNotification } from './operator-notification.ts'
 import {
   ANSWER_CHANNEL_VALUES,
   ANSWERER_KIND_VALUES,
@@ -74,6 +76,43 @@ export type CodeSearchOutput = z.infer<typeof CodeSearchOutputSchema>
 
 const nullableString = z.string().nullable()
 const nullableNumber = z.number().finite().nullable()
+
+export const OperatorWaitingItemSchema = z
+  .object({
+    kind: z.enum(['question', 'workflow'] satisfies [OperatorInboxKind, ...OperatorInboxKind[]]),
+    id: z.number().int().positive(),
+    run_id: z.number().int().positive().nullable(),
+    project: z.string(),
+    task_key: z.string().nullable(),
+    session_id: z.string().nullable(),
+    question: z.string(),
+    options: z.array(z.string()),
+    recommendation: z.string().nullable(),
+    why: z.string().nullable(),
+    waiting_since: z.string(),
+    answer_command: z.string(),
+  })
+  .strict()
+
+const OperatorNotificationSchema: z.ZodType<OperatorNotification> = z
+  .object({ title: z.string(), body: z.string(), link: z.string() })
+  .strict()
+
+export const ClaimedOperatorNotificationSchema = OperatorWaitingItemSchema.extend({
+  notification: OperatorNotificationSchema,
+}).strict()
+
+export const AnswerWaitingResultSchema = z
+  .object({
+    outcome: z.enum(['resumed', 'delivered-live', 'recorded']),
+    run_id: z.number().int().positive(),
+    resumed_as: z.number().int().positive().nullable(),
+  })
+  .strict()
+
+export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
+export type ClaimedOperatorNotification = z.infer<typeof ClaimedOperatorNotificationSchema>
+export type AnswerWaitingResult = z.infer<typeof AnswerWaitingResultSchema>
 
 const OrchTrackerSettingsSchema = z
   .looseObject(trackerSettingsShape)
@@ -214,6 +253,7 @@ export const OrchStateSchema = z
       z
         .object({
           id: z.number().int(),
+          root_id: z.number().int(),
           agent: z.string(),
           job: z.string(),
           repo: nullableString,
@@ -453,6 +493,7 @@ export const HarnessHealthSchema = z.object({
 export const OrchRunDetailSchema = z
   .object({
     id: z.number().int(),
+    root_id: z.number().int(),
     agent: z.string(),
     job: z.string(),
     project: nullableString,

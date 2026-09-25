@@ -7,6 +7,7 @@ const decide = (overrides: Partial<Parameters<typeof answerAuthorityDecision>[0]
     fromOperator: false,
     sessionIdPresent: true,
     depthPresent: true,
+    dashboardAuthorized: false,
     owner: 'owner-session',
     actor: 'owner-session',
     ...overrides,
@@ -17,8 +18,9 @@ describe('answer authority decision', () => {
     expect(decide()).toEqual({ kind: 'allow-as-owner' })
     expect(decide({ actor: 'other-session' })).toEqual({
       kind: 'refuse',
-      reason:
-        'run is owned by session owner-session; current session other-session cannot answer it',
+      code: 'owner-mismatch',
+      owner: 'owner-session',
+      actor: 'other-session',
     })
   })
 
@@ -30,19 +32,44 @@ describe('answer authority decision', () => {
         sessionIdPresent: false,
         depthPresent: false,
       }),
-    ).toEqual({ kind: 'refuse', reason: '--channel ui requires --from-operator' })
+    ).toEqual({ kind: 'refuse', code: 'operator-attribution' })
+  })
+
+  test('requires the dashboard capability for UI answers', () => {
+    expect(
+      decide({
+        channel: 'ui',
+        fromOperator: true,
+        dashboardAuthorized: false,
+        sessionIdPresent: false,
+        depthPresent: false,
+      }),
+    ).toEqual({ kind: 'refuse', code: 'dashboard-capability' })
   })
 
   test('refuses UI authority from either agent-session marker', () => {
     expect(
-      decide({ channel: 'ui', fromOperator: true, sessionIdPresent: true, depthPresent: false }),
+      decide({
+        channel: 'ui',
+        fromOperator: true,
+        dashboardAuthorized: true,
+        sessionIdPresent: true,
+        depthPresent: false,
+      }),
     ).toEqual({
       kind: 'refuse',
-      reason: '--channel ui is refused when CLAUDE_CODE_SESSION_ID is set',
+      code: 'session-marker',
+      actor: 'CLAUDE_CODE_SESSION_ID',
     })
     expect(
-      decide({ channel: 'ui', fromOperator: true, sessionIdPresent: false, depthPresent: true }),
-    ).toEqual({ kind: 'refuse', reason: '--channel ui is refused when ORCH_DEPTH is set' })
+      decide({
+        channel: 'ui',
+        fromOperator: true,
+        dashboardAuthorized: true,
+        sessionIdPresent: false,
+        depthPresent: true,
+      }),
+    ).toEqual({ kind: 'refuse', code: 'session-marker', actor: 'ORCH_DEPTH' })
   })
 
   test('grants the external UI operator without adopting the owner identity', () => {
@@ -50,6 +77,7 @@ describe('answer authority decision', () => {
       decide({
         channel: 'ui',
         fromOperator: true,
+        dashboardAuthorized: true,
         sessionIdPresent: false,
         depthPresent: false,
         actor: null,

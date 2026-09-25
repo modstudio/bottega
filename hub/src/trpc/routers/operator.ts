@@ -20,13 +20,31 @@ export function createOperatorRouter(
       .input(
         z.object({
           runId: z.number().int().positive(),
-          questionId: z.number().int().positive(),
-          ruling: z.string().trim().min(1),
+          rulings: z
+            .array(
+              z.object({
+                questionId: z.number().int().positive(),
+                ruling: z.string().trim().min(1),
+              }),
+            )
+            .min(1)
+            .superRefine((rulings, context) => {
+              const ids = new Set<number>()
+              rulings.forEach(({ questionId }, index) => {
+                if (ids.has(questionId))
+                  context.addIssue({
+                    code: 'custom',
+                    path: [index, 'questionId'],
+                    message: 'question ids must be unique',
+                  })
+                ids.add(questionId)
+              })
+            }),
         }),
       )
       .mutation(async ({ input }) => {
         try {
-          return await dependencies.answer(input.runId, input.questionId, input.ruling)
+          return await dependencies.answer(input.runId, input.rulings)
         } catch (cause) {
           throw new TRPCError({
             code: 'BAD_REQUEST',

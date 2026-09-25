@@ -25,6 +25,22 @@ describe('probes are excluded from every query that reports', () => {
   })
 })
 
+test('live child turns publish their chain root for hub badge matching', () => {
+  const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+  })
+  db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .run(child, nowIso(), 'Which?')
+  const live = state(null).live as { id: number; root_id: number }[]
+  expect(live.find((row) => row.id === child)).toMatchObject({ id: child, root_id: root })
+})
+
 describe('run detail', () => {
   test('publishes local review lenses and findings in hosted detail shape', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })

@@ -22,8 +22,12 @@ import { z } from 'zod'
 import type { DocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import {
+  AnswerWaitingResultSchema,
+  ClaimedOperatorNotificationSchema,
   type HarnessHealth,
   HarnessHealthSchema,
+  type OperatorWaitingItem,
+  OperatorWaitingItemSchema,
   type OrchBlockers,
   OrchBlockersSchema,
   type OrchProject,
@@ -39,30 +43,12 @@ import {
   OrchUnknownRunSchema,
 } from '../../shared/orch-contract.ts'
 
-export type { OrchProject, OrchRun, OrchRunDetail } from '../../shared/orch-contract.ts'
-
-export const OperatorWaitingItemSchema = z
-  .object({
-    kind: z.enum(['question', 'workflow']),
-    id: z.number().int().positive(),
-    run_id: z.number().int().positive().nullable(),
-    project: z.string(),
-    task_key: z.string().nullable(),
-    session_id: z.string().nullable(),
-    question: z.string(),
-    options: z.array(z.string()),
-    recommendation: z.string().nullable(),
-    why: z.string().nullable(),
-    waiting_since: z.string(),
-    answer_command: z.string(),
-  })
-  .strict()
-
-export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
-
-const ClaimedOperatorNotificationSchema = OperatorWaitingItemSchema.extend({
-  notification: z.object({ title: z.string(), body: z.string(), link: z.string() }).strict(),
-}).strict()
+export type {
+  OperatorWaitingItem,
+  OrchProject,
+  OrchRun,
+  OrchRunDetail,
+} from '../../shared/orch-contract.ts'
 
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
@@ -124,6 +110,15 @@ export function stopDashboardCapability(): void {
   dashboardCapability = null
 }
 
+function dashboardCapabilityEnvironment(): Record<string, string> {
+  return dashboardCapability
+    ? {
+        [DASHBOARD_CAPABILITY_PATH_ENV]: dashboardCapability.path,
+        [DASHBOARD_CAPABILITY_TOKEN_ENV]: dashboardCapability.token,
+      }
+    : {}
+}
+
 async function orchProcess(
   args: string[],
   timeoutMs = 20_000,
@@ -164,7 +159,7 @@ async function orchProcess(
 async function json<T>(
   args: string[],
   schema: { parse(value: unknown): T },
-  opts: { stdin?: string } = {},
+  opts: { stdin?: string; env?: Record<string, string> } = {},
 ): Promise<T> {
   const out = await orchProcess(args, 20_000, opts)
   let value: unknown
@@ -253,27 +248,22 @@ export const waiting = (): Promise<OperatorWaitingItem[]> =>
 export const claimWaitingNotifications = () =>
   json(['waiting', '--claim-notifications', '--json'], z.array(ClaimedOperatorNotificationSchema))
 
-export const answerWaitingArgv = (runId: number, questionId: number, ruling: string): string[] => [
+export type WaitingRuling = { questionId: number; ruling: string }
+
+export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling[]): string[] => [
   'answer',
   String(runId),
-  `--q${questionId}`,
-  ruling,
+  ...rulings.flatMap(({ questionId, ruling }) => [`--q${questionId}`, ruling]),
   '--from-operator',
   '--channel',
   'ui',
   '--json',
 ]
 
-export const AnswerWaitingResultSchema = z
-  .object({
-    outcome: z.enum(['resumed', 'delivered-live', 'recorded']),
-    run_id: z.number().int().positive(),
-    resumed_as: z.number().int().positive().nullable(),
+export async function answerWaiting(runId: number, rulings: readonly WaitingRuling[]) {
+  return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
+    env: dashboardCapabilityEnvironment(),
   })
-  .strict()
-
-export async function answerWaiting(runId: number, questionId: number, ruling: string) {
-  return json(answerWaitingArgv(runId, questionId, ruling), AnswerWaitingResultSchema)
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>
@@ -434,13 +424,7 @@ export async function score(
     'hub-dashboard',
     ...(note ? ['--note', note] : []),
   ]
-  const capabilityEnv: Record<string, string> = dashboardCapability
-    ? {
-        [DASHBOARD_CAPABILITY_PATH_ENV]: dashboardCapability.path,
-        [DASHBOARD_CAPABILITY_TOKEN_ENV]: dashboardCapability.token,
-      }
-    : {}
-  return orchProcess(args, 20_000, { env: capabilityEnv })
+  return orchProcess(args, 20_000, { env: dashboardCapabilityEnvironment() })
 }
 
 export type { DocScope }

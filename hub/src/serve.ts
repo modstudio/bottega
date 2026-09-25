@@ -109,6 +109,14 @@ export function clearOrchCache(): void {
   orchCache.clear()
 }
 
+/** Browser mutations must prove they came from the page served by this hub. */
+export function trpcMutationRequestAllowed(request: Request): boolean {
+  if (request.method.toUpperCase() !== 'POST') return true
+  const origin = request.headers.get('origin')
+  const fetchSite = request.headers.get('sec-fetch-site')
+  return origin === new URL(request.url).origin || fetchSite === 'same-origin'
+}
+
 /** The shared hub.db strip on an orch procedure follows the orch clock too. */
 export function cachedStrip(hours: number) {
   return orchCache.get(`strip:${hours}`, () => strip(hours))
@@ -550,6 +558,8 @@ export function serve(port: number) {
       const url = new URL(req.url)
 
       if (url.pathname.startsWith('/trpc')) {
+        if (!trpcMutationRequestAllowed(req))
+          return new Response('cross-origin tRPC mutation refused', { status: 403 })
         return fetchRequestHandler({
           endpoint: '/trpc',
           req,

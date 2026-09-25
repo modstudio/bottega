@@ -657,6 +657,29 @@ test('answer rejects a fixture ruling from a non-owning session without writing 
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
 })
 
+test('UI operator answers require the hub dashboard capability', async () => {
+  const id = insert('asking', 'implement')
+  const question = db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+    .get(id, new Date().toISOString(), 'which?') as { id: number }
+  delete process.env.CLAUDE_CODE_SESSION_ID
+  delete process.env.ORCH_DEPTH
+  await expect(
+    answerRun(
+      id,
+      {
+        argv: [`--q${question.id}`, 'use it', '--from-operator', '--channel', 'ui'],
+        recordOnly: false,
+        flags,
+      },
+      { ...helpers, dashboardAuthorized: () => false },
+    ),
+  ).rejects.toThrow('--channel ui requires the hub dashboard capability')
+  expect(db().query('SELECT answer FROM question WHERE id=?').get(question.id)).toEqual({
+    answer: null,
+  })
+})
+
 test('UI operator answers a foreign-owned chain without adopting it and resumes under its owner', async () => {
   const id = insert('asking', 'implement')
   db()
@@ -687,7 +710,7 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
       json: true,
       flags,
     },
-    { ...helpers, dispatch },
+    { ...helpers, dispatch, dashboardAuthorized: () => true },
   )
   expect(result).toEqual({ outcome: 'resumed', run_id: id, resumed_as: expect.any(Number) })
   expect(resumedSession).toBe('dispatching-session')
@@ -695,7 +718,9 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     session_id: 'dispatching-session',
   })
   expect(
-    db().query('SELECT answered_by,answerer_kind,answer_channel FROM question WHERE id=?').get(question.id),
+    db()
+      .query('SELECT answered_by,answerer_kind,answer_channel FROM question WHERE id=?')
+      .get(question.id),
   ).toEqual({ answered_by: 'operator via hub', answerer_kind: 'operator', answer_channel: 'ui' })
   expect(
     db()

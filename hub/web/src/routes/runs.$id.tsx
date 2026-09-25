@@ -23,6 +23,7 @@ type Quality = (typeof QUALITIES)[number]
 type Fidelity = (typeof FIDELITIES)[number]
 type RunDetail = {
   id: number | string
+  root_id: number | string
   agent: string
   job: string
   project: string | null
@@ -70,12 +71,12 @@ function useRunDetail(id: string, numericId: number, hosted: boolean) {
   return hosted ? hostedDetail : localDetail
 }
 
-function useWaitingItem(id: string, hosted: boolean) {
+function useWaitingItem(id: string, rootId: number | string, hosted: boolean) {
   const waiting = useQuery({
     ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
     enabled: !hosted,
   })
-  return waitingByRun([{ id }], waiting.data ?? []).get(id)
+  return waitingByRun([{ id, root_id: rootId }], waiting.data ?? []).get(id)
 }
 
 function useRunScore(id: string, numericId: number, hosted: boolean, onSigned: () => void) {
@@ -135,7 +136,7 @@ function RunDetailPage({ id }: { id: string }) {
   const numericId = Number(id)
   const detail = useRunDetail(id, numericId, hosted)
   const run = detail.data as unknown as RunDetail | undefined
-  const waitingItem = useWaitingItem(id, hosted)
+  const waitingItem = useWaitingItem(id, run?.root_id ?? id, hosted)
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
   const [fidelity, setFidelity] = useState<Fidelity | null>(null)

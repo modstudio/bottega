@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { relativeTime } from '@/lib/format'
+import { type WaitingInboxEntry, waitingInboxEntries } from '@/lib/operator-waiting'
 import { trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Identifier } from '@/ui/identifier/identifier'
@@ -10,10 +11,7 @@ import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/inbox')({ component: InboxPage })
 
-type WaitingItem =
-  Awaited<ReturnType<typeof trpc.operator.waiting.queryOptions>> extends never
-    ? never
-    : NonNullable<ReturnType<typeof useWaiting>['data']>[number]
+type WaitingItem = WaitingInboxEntry
 
 function useWaiting() {
   return useQuery(trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }))
@@ -33,7 +31,13 @@ function InboxPage() {
       id: 'question',
       label: 'Question',
       grow: true,
-      render: (item) => <span className="block max-w-2xl truncate">{item.question}</span>,
+      render: (item) => (
+        <span className="block max-w-2xl truncate">
+          {item.kind === 'question' && item.questionCount > 1
+            ? `${item.questionCount} questions`
+            : item.question}
+        </span>
+      ),
     },
     {
       id: 'waited',
@@ -64,9 +68,9 @@ function InboxPage() {
       ) : null}
       <Collection
         title="Inbox"
-        count={waiting.data?.length ?? 0}
+        count={waitingInboxEntries(waiting.data ?? []).length}
         columns={columns}
-        rows={waiting.data ?? []}
+        rows={waitingInboxEntries(waiting.data ?? [])}
         getKey={(item) => `${item.kind}:${item.id}`}
         onOpen={(item) =>
           void navigate({

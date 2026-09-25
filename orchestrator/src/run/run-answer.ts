@@ -12,6 +12,7 @@ import {
   parseAnswerTextSources,
 } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
+import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
@@ -61,6 +62,7 @@ type RunAnswerHelpers = {
   }): Promise<string | undefined>
   presentation: RunControlPresentation
   dispatch?: typeof detach
+  dashboardAuthorized?: () => boolean
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
 
@@ -304,15 +306,18 @@ export async function answerRun(
     fromOperator: options.argv.includes('--from-operator'),
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
     depthPresent: process.env.ORCH_DEPTH !== undefined,
+    dashboardAuthorized: (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
     owner: answerAuthority.owner,
     actor: answerAuthority.actor,
   })
   if (authorityDecision.kind === 'refuse') {
-    throw new Error(
-      authorityDecision.reason.startsWith('run is owned')
-        ? `run ${requestedId}${authorityDecision.reason.slice(3)}`
-        : authorityDecision.reason,
-    )
+    const refusal = {
+      'operator-attribution': '--channel ui requires --from-operator',
+      'dashboard-capability': '--channel ui requires the hub dashboard capability',
+      'session-marker': `--channel ui is refused when ${authorityDecision.actor} is set`,
+      'owner-mismatch': `run ${requestedId} is owned by session ${authorityDecision.owner}; current session ${authorityDecision.actor ?? 'no session identity is present'} cannot answer it`,
+    }[authorityDecision.code]
+    throw new Error(refusal)
   }
   if (authorityDecision.kind === 'allow-as-operator') {
     answerAuthority = { ...answerAuthority, actor: authorityDecision.actor }

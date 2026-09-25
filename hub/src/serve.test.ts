@@ -1,7 +1,17 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
-import { clearOrchCache, view } from './serve.ts'
+import { clearOrchCache, trpcMutationRequestAllowed, view } from './serve.ts'
+
+test('tRPC mutation requests require browser same-origin proof', () => {
+  const request = (headers?: HeadersInit, method = 'POST') =>
+    new Request('http://127.0.0.1:4567/trpc/run.score', { method, headers })
+  expect(trpcMutationRequestAllowed(request({ Origin: 'http://127.0.0.1:4567' }))).toBe(true)
+  expect(trpcMutationRequestAllowed(request({ 'Sec-Fetch-Site': 'same-origin' }))).toBe(true)
+  expect(trpcMutationRequestAllowed(request({ Origin: 'https://attacker.example' }))).toBe(false)
+  expect(trpcMutationRequestAllowed(request({ 'Content-Type': 'text/plain' }))).toBe(false)
+  expect(trpcMutationRequestAllowed(request(undefined, 'GET'))).toBe(true)
+})
 
 beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)

@@ -49,6 +49,7 @@ type RunRow = {
 }
 type LiveRow = {
   id: number | string
+  root_id: number | string
   space?: string
   agent: string
   job: string

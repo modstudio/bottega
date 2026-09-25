@@ -1,14 +1,12 @@
 // concern: operator-waiting
 /** Thin CLI adapters for relaying and listing operator rulings. */
 
+import type {
+  ClaimedOperatorNotification,
+  OperatorWaitingItem,
+} from '../../../shared/orch-contract.ts'
 import { bareQuestionSelector } from '../cli/args.ts'
-import {
-  type ClaimedOperatorNotification,
-  claimOperatorNotifications,
-  type OperatorWaitingItem,
-  operatorWaiting,
-  relayQuestion,
-} from './operator-waiting.ts'
+import { claimOperatorNotifications, operatorWaiting, relayQuestion } from './operator-waiting.ts'
 
 type Presentation = { log(value: string): void }
 const hasNotification = (

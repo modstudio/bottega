@@ -24,11 +24,18 @@ import {
 } from './orch.ts'
 
 test('operator answer argv preserves the ruling and records the UI operator channel', () => {
-  expect(answerWaitingArgv(42, 7, 'Use the existing shape')).toEqual([
+  expect(
+    answerWaitingArgv(42, [
+      { questionId: 7, ruling: 'Use the existing shape' },
+      { questionId: 8, ruling: 'Keep both' },
+    ]),
+  ).toEqual([
     'answer',
     '42',
     '--q7',
     'Use the existing shape',
+    '--q8',
+    'Keep both',
     '--from-operator',
     '--channel',
     'ui',

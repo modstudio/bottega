@@ -10,6 +10,7 @@ import {
 import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
+import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
 import { queryClient, trpc } from '@/trpc/client'
 import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
@@ -134,7 +135,7 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     icon: item.icon,
     count:
       item.count === 'inbox'
-        ? waiting.data?.length || undefined
+        ? waitingInboxEntries(waiting.data ?? []).length || undefined
         : (item.count && counts?.[item.count]) || undefined,
     live: item.to === '/flight' && Boolean(counts?.flight),
   })
