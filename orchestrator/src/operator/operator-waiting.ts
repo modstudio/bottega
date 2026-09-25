@@ -40,8 +40,9 @@ const firstLine = (value: string) => value.split(/\r?\n/, 1)[0]!
 
 function notificationDetails(item: OperatorWaitingItem): OperatorNotification {
   const port = readMachineValue('hub.port')
+  const subject = [item.project, item.task_key].filter(Boolean).join(' ')
   return {
-    title: `Ruling needed: ${item.project}${item.task_key ? ` ${item.task_key}` : ''}`,
+    title: `Ruling needed${subject ? `: ${subject}` : ''}`,
     body: firstLine(item.question),
     link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
   }
@@ -152,7 +153,7 @@ function operatorWaitingWithEpisodes(
     recommendation: string | null
     why: string | null
     awaiting_operator_at: string
-    project: string
+    project: string | null
     task_key: string | null
     root_id: number
   }>

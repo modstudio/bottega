@@ -67,6 +67,38 @@ describe('operator MCP tools', () => {
     })
   })
 
+  test('list_open_questions excludes a same-project foreign session and accepts no-project waiting items', async () => {
+    const ownRun = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'asking',
+      session: SESSION,
+    })
+    db().query('UPDATE run SET repo=NULL WHERE id=?').run(ownRun)
+    const ownQuestion = addQuestion(ownRun, 'Owned without a project?', true)
+    const foreignRun = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'asking',
+      session: 'foreign-session',
+      repo: PLATFORM_SLUG,
+    })
+    const foreignQuestion = addQuestion(foreignRun, 'Foreign question?')
+
+    const result = await withClient((client) =>
+      client.callTool({ name: 'list_open_questions', arguments: {} }),
+    )
+
+    expect(result.isError).not.toBe(true)
+    expect(result.structuredContent).toMatchObject({
+      questions: [{ question_id: ownQuestion }],
+      waiting_on_operator: [{ id: ownQuestion, project: null }],
+    })
+    expect(JSON.stringify(result.structuredContent)).not.toContain(
+      `"question_id":${foreignQuestion}`,
+    )
+  })
+
   test('answer_questions delivers through the in-process client and records the MCP channel', async () => {
     const runId = addRun({
       agent: 'codex',
@@ -96,6 +128,51 @@ describe('operator MCP tools', () => {
     expect(
       db().query('SELECT answer,answer_channel FROM question WHERE id=?').get(questionId),
     ).toEqual({ answer: 'Use the existing shape.', answer_channel: 'mcp' })
+  })
+
+  test('answer_questions stores flag-shaped rulings verbatim and attributes only explicit operators', async () => {
+    const literals = [
+      '--file=/etc/hosts',
+      '--file',
+      '--from-operator',
+      '--record-only',
+      '--channel',
+      '--channel=ui',
+      '--q9',
+    ]
+    await withClient(async (client) => {
+      for (const [index, ruling] of literals.entries()) {
+        const runId = addRun({
+          agent: 'codex',
+          job: 'file-question',
+          status: 'running',
+          session: SESSION,
+        })
+        db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, runId)
+        const questionId = addQuestion(runId, `Literal ${index}?`)
+        const fromOperator = index === literals.length - 1
+
+        const result = await client.callTool({
+          name: 'answer_questions',
+          arguments: {
+            run_id: runId,
+            rulings: [{ question_id: questionId, ruling }],
+            from_operator: fromOperator,
+          },
+        })
+
+        expect(result.isError).not.toBe(true)
+        expect(
+          db()
+            .query('SELECT answer,answered_by,answer_channel FROM question WHERE id=?')
+            .get(questionId),
+        ).toEqual({
+          answer: ruling,
+          answered_by: fromOperator ? `operator via ${SESSION}` : SESSION,
+          answer_channel: 'mcp',
+        })
+      }
+    })
   })
 
   test('answer_questions returns the all-open-questions refusal as a tool error', async () => {

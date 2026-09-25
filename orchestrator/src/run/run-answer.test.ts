@@ -8,10 +8,11 @@ import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.t
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { packedResumePrompt } from './run.ts'
-import { answerRun, retryRun } from './run-answer.ts'
+import { answerRun as answerRunService, retryRun } from './run-answer.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { continueRun } from './run-control.ts'
 import type { detach } from './run-dispatch.ts'
+import { answerInputFromArgv } from './run-message-commands.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -29,6 +30,22 @@ const helpers = {
   presentation,
 }
 const flags = { detach: true, follow: false, quiet: true }
+const answerRun = async (
+  id: number,
+  options: { argv: string[]; recordOnly: boolean; json?: boolean; flags: typeof flags },
+  runHelpers: Parameters<typeof answerRunService>[2] & typeof helpers,
+) =>
+  answerRunService(
+    id,
+    await answerInputFromArgv(
+      options.argv,
+      options.recordOnly,
+      options.json ?? false,
+      options.flags,
+      runHelpers,
+    ),
+    runHelpers,
+  )
 const retry = (id: number, options: { agent?: string; model?: string } = {}) =>
   retryRun(id, { ...options, flags }, helpers)
 

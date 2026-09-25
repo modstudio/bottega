@@ -82,7 +82,7 @@ export const OperatorWaitingItemSchema = z
     kind: z.enum(['question', 'workflow'] satisfies [OperatorInboxKind, ...OperatorInboxKind[]]),
     id: z.number().int().positive(),
     run_id: z.number().int().positive().nullable(),
-    project: z.string(),
+    project: z.string().nullable(),
     task_key: z.string().nullable(),
     session_id: z.string().nullable(),
     question: z.string(),

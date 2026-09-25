@@ -12,7 +12,7 @@ import {
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { answerRun } from '../run/run-answer.ts'
-import { runInboxCommand } from '../run/run-inbox.ts'
+import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
 
 const text = (value: unknown) => ({
@@ -27,21 +27,8 @@ const structured = <T extends Record<string, unknown>>(value: T) => ({
 })
 
 async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
-  let encoded: string | undefined
-  await runInboxCommand(
-    { has: (name) => name === 'json' },
-    {
-      log: (value) => {
-        encoded = String(value)
-      },
-      dur: () => '',
-      chainHasPendingDelivery: () => false,
-      strandedRecovery: () => '',
-    },
-  )
-  if (encoded === undefined) throw new Error('orch inbox returned no JSON result')
   return ListOpenQuestionsResultSchema.parse({
-    questions: JSON.parse(encoded),
+    questions: (await queryInbox({ scope: 'session' })).questions,
     waiting_on_operator: operatorWaiting(),
   })
 }
@@ -84,13 +71,15 @@ export function registerOperatorTools(server: McpServer): void {
       outputSchema: AnswerWaitingResultSchema,
     },
     async ({ run_id, rulings, from_operator, record_only }) => {
-      const argv = rulings.flatMap(({ question_id, ruling }) => [`--q${question_id}`, ruling])
-      if (from_operator) argv.push('--from-operator')
-      argv.push('--channel', 'mcp')
       const result = await answerRun(
         run_id,
         {
-          argv,
+          rulings: rulings.map(({ question_id, ruling }) => ({
+            questionId: question_id,
+            text: ruling,
+          })),
+          fromOperator: from_operator ?? false,
+          channel: 'mcp',
           recordOnly: record_only ?? false,
           json: true,
           flags: { detach: true, follow: false, quiet: true },

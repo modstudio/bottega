@@ -187,7 +187,7 @@ function RunDetailPage({ id }: { id: string }) {
   const subtitle = [
     run.agent,
     run.job,
-    run.project,
+    run.project ?? 'no project',
     run.latency_ms != null ? duration(run.latency_ms) : null,
   ]
     .filter(Boolean)
@@ -262,7 +262,7 @@ function RunDetailPage({ id }: { id: string }) {
     >
       <DisplayRow label="Agent" value={run.agent} />
       <DisplayRow label="Job" value={run.job} />
-      <DisplayRow label="Project" value={run.project ?? '-'} />
+      <DisplayRow label="Project" value={run.project ?? 'no project'} />
       <DisplayRow label="Tokens" value={run.vendor_tokens?.toLocaleString() ?? '-'} />
       {run.probe ? (
         <p className="text-sm text-text-muted mb-3">Probe, not routing evidence.</p>

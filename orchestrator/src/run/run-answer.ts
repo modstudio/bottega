@@ -6,12 +6,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import {
-  ANSWER_WORKING_FORMS,
-  parseAnswerChannelArgs,
-  parseAnswerTextSources,
-} from '../cli/args.ts'
+import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
@@ -55,18 +52,19 @@ import { detach } from './run-dispatch.ts'
 
 type RunAnswerHelpers = {
   argvResumeLimit(agentName: string): number | undefined
-  assertWorkerText(text: string, noun: string, workingForms: string, argvLimit?: number): void
-  readWorkerFile(path: string): string
-  readMessageText(options: {
-    missing: string
-    exclusive?: string
-    sources: { commandFile?: string; positionals: string[] }
-  }): Promise<string | undefined>
   presentation: RunControlPresentation
   dispatch?: typeof detach
   dashboardAuthorized?: () => boolean
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
+export type AnswerRunInput = {
+  rulings: string | { questionId: number; text: string }[]
+  fromOperator: boolean
+  channel: AnswerChannel
+  recordOnly: boolean
+  json: boolean
+  flags: RunFlags
+}
 type OpenQuestion = {
   id: number
   question: string
@@ -87,7 +85,7 @@ function answeredBy(
 
 function requireAnswerAuthority(
   requestedId: number,
-  channel: ReturnType<typeof parseAnswerChannelArgs>['channel'],
+  channel: AnswerChannel,
   fromOperator: boolean,
   dashboardAuthorized: boolean,
   authority: { owner: string | null; actor: string | null },
@@ -168,11 +166,11 @@ function reportUnownedAdoption(
 async function refuseUserRuling(
   project: string | null,
   launchKey: string | null,
-  argv: string[],
+  fromOperator: boolean,
 ): Promise<void> {
   if (!project) return
   const rulings = await resolveAnswerRulings(project, launchKey)
-  const refusal = answerRulingRefusal(rulings, argv.includes('--from-operator'))
+  const refusal = answerRulingRefusal(rulings, fromOperator)
   if (refusal) throw new Error(refusal)
 }
 
@@ -358,10 +356,9 @@ export async function retryRun(
  */
 export async function answerRun(
   requestedId: number,
-  options: { argv: string[]; recordOnly: boolean; json?: boolean; flags: RunFlags },
+  input: AnswerRunInput,
   helpers: RunAnswerHelpers,
 ): Promise<AnswerWaitingResult> {
-  const answerArgs = parseAnswerChannelArgs(options.argv)
   const found = db()
     .query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
@@ -391,15 +388,15 @@ export async function answerRun(
     launch_key: string | null
   } | null
   const row = requireAnswerRun(found, requestedId)
-  await refuseUserRuling(row.repo, row.launch_key, answerArgs.argv)
+  await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
   const id = row.id
   refuseEscapedChain(id)
   writableDb()
   let answerAuthority = runMutationActor(requestedId)
   const authorityDecision = requireAnswerAuthority(
     requestedId,
-    answerArgs.channel,
-    options.argv.includes('--from-operator'),
+    input.channel,
+    input.fromOperator,
     (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
     answerAuthority,
   )
@@ -464,7 +461,7 @@ export async function answerRun(
     )
   }
   const ownersLive = live.length > 0
-  const recordOnly = options.recordOnly
+  const recordOnly = input.recordOnly
   const skipResume = recordOnly && !ownersLive
   if (
     !ownersLive &&
@@ -507,49 +504,54 @@ export async function answerRun(
       } | null)
   const resumeAgent = sessionFrom?.agent ?? latest.agent
 
-  // Two ways to rule: one joined positional / --file / stdin message, or
-  // by question id when there are several. `--q<id> --file PATH` binds that
-  // file to that question; a command-level `--file` is the single-ruling form.
+  // The CLI adapter resolves positional, file, and stdin sources before the
+  // service boundary. Other adapters supply validated ruling text directly.
   const answers: { id: number; question: string; answer: string }[] = []
-  const parsed = parseAnswerTextSources(answerArgs.argv)
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
   const rulingFrom = (text: string): string => {
-    helpers.assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS, argvLimit)
+    if (!text.trim())
+      throw new Error(
+        `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+      )
+    const nul = text.indexOf('\0')
+    if (nul >= 0)
+      throw new Error(
+        `ruling contains a NUL at byte offset ${Buffer.byteLength(text.slice(0, nul), 'utf8')}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+      )
+    const bytes = Buffer.byteLength(text, 'utf8')
+    if (argvLimit !== undefined && bytes > argvLimit)
+      throw new Error(
+        `ruling is ${bytes} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+      )
     return text
   }
-  if (parsed.byId.length) {
-    if (parsed.commandFile !== undefined || parsed.positionals.length) {
-      throw new Error(
-        'pass --file next to each --q<id>, not as a command-level flag or positional alongside --q\n' +
-          `working forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    }
+  if (Array.isArray(input.rulings)) {
     const invalid: string[] = []
     const seen = new Set<number>()
-    for (const src of parsed.byId) {
-      if (seen.has(src.id)) invalid.push(`--q${src.id} given more than once`)
-      seen.add(src.id)
-      if (open.some((q) => q.id === src.id)) continue
+    for (const ruling of input.rulings) {
+      if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
+      seen.add(ruling.questionId)
+      if (open.some((q) => q.id === ruling.questionId)) continue
       const named = db()
         .query(
           `SELECT q.id, q.answered_at, r.id AS run_id,
               COALESCE(r.parent_run_id, r.id) AS root_id
          FROM question q JOIN run r ON r.id = q.run_id WHERE q.id = ?`,
         )
-        .get(src.id) as {
+        .get(ruling.questionId) as {
         id: number
         answered_at: string | null
         run_id: number
         root_id: number
       } | null
       if (!named) {
-        invalid.push(`--q${src.id} names no question`)
+        invalid.push(`--q${ruling.questionId} names no question`)
       } else if (named.root_id !== id) {
-        invalid.push(`--q${src.id} belongs to run ${named.root_id}, not this chain`)
+        invalid.push(`--q${ruling.questionId} belongs to run ${named.root_id}, not this chain`)
       } else if (named.answered_at) {
-        invalid.push(`--q${src.id} on run ${named.run_id} is already closed`)
+        invalid.push(`--q${ruling.questionId} on run ${named.run_id} is already closed`)
       } else {
-        invalid.push(`--q${src.id} is not open on this chain`)
+        invalid.push(`--q${ruling.questionId} is not open on this chain`)
       }
     }
     if (invalid.length) {
@@ -559,32 +561,22 @@ export async function answerRun(
       )
     }
     for (const q of open) {
-      const src = parsed.byId.find((item) => item.id === q.id)
-      if (!src) continue
-      const given = src.file !== undefined ? helpers.readWorkerFile(src.file) : src.text!
-      answers.push({ id: q.id, question: q.question, answer: rulingFrom(given) })
+      const ruling = input.rulings.find((item) => item.questionId === q.id)
+      if (!ruling) continue
+      answers.push({ id: q.id, question: q.question, answer: rulingFrom(ruling.text) })
     }
   } else {
-    const positional = parsed.positionals
-    if (parsed.commandFile !== undefined || (!positional.length && !process.stdin.isTTY)) {
-      const given = await helpers.readMessageText({
-        missing: 'no ruling: pass it as an argument, via --file, or on stdin',
-        exclusive: 'pass the ruling either positionally or with --file, not both',
-        sources: parsed,
-      })
-      answers.push({ id: open[0]!.id, question: open[0]!.question, answer: rulingFrom(given!) })
-    } else if (!positional.length) {
+    if (!input.rulings) {
       throw new Error(
         `run ${id} is waiting on ${open.length} question(s). ` +
           `Rule with: orch answer ${id} --q${open[0]!.id} "<ruling>", ` +
           'or pass a ruling via --file or stdin.',
       )
     } else {
-      // One reader: positional words join into one message, never one-per-question.
       answers.push({
         id: open[0]!.id,
         question: open[0]!.question,
-        answer: rulingFrom(positional.join(' ')),
+        answer: rulingFrom(input.rulings),
       })
     }
   }
@@ -638,7 +630,7 @@ export async function answerRun(
   )
   const answeringIdentity = answeredBy(
     authorityDecision.kind === 'allow-as-operator',
-    options.argv.includes('--from-operator'),
+    input.fromOperator,
     callerSession,
   )
   writeTransaction(() => {
@@ -650,7 +642,7 @@ export async function answerRun(
         now,
         answeringIdentity,
         answererKindFromAnsweredBy(answeringIdentity),
-        answerArgs.channel,
+        input.channel,
         ownersLive ? null : now,
         q.id,
       )
@@ -680,7 +672,7 @@ export async function answerRun(
   })
 
   if (skipResume) {
-    if (!options.json)
+    if (!input.json)
       console.log(
         `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
           `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
@@ -693,7 +685,7 @@ export async function answerRun(
     // Delivered. The worker's own tool call is polling this row and will
     // return with it inside a second; there is nothing else to do, and
     // starting a new turn here would put two workers in one worktree.
-    if (!options.json)
+    if (!input.json)
       console.log(
         `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
           `pick this up from its ask_orchestrator call.`,
@@ -775,10 +767,10 @@ export async function answerRun(
       at: new Date(Date.now()).toISOString(),
     },
   )
-  if (!options.json)
+  if (!input.json)
     console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
-  if (options.flags.detach || !options.flags.follow) {
-    if (!options.flags.quiet) {
+  if (input.flags.detach || !input.flags.follow) {
+    if (!input.flags.quiet) {
       console.error(
         `\n— ${row.job} runs detached; a foreground one dies with its shell.` +
           `\n  orch wait ${childId}      then:  orch result ${childId}` +
@@ -788,7 +780,7 @@ export async function answerRun(
     }
     return { outcome: 'resumed', run_id: id, resumed_as: childId }
   }
-  const resumedStatus = await follow(childId, options.flags.quiet, false, helpers.presentation)
+  const resumedStatus = await follow(childId, input.flags.quiet, false, helpers.presentation)
   if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
     const failed = db()
       .query(`SELECT status, error, failure_kind, exit_code FROM run WHERE id=?`)

@@ -21,7 +21,7 @@ function InboxPage() {
   const navigate = useNavigate()
   const waiting = useWaiting()
   const columns: CollectionColumn<WaitingItem>[] = [
-    { id: 'project', label: 'Project', render: (item) => item.project },
+    { id: 'project', label: 'Project', render: (item) => item.project ?? 'no project' },
     {
       id: 'task',
       label: 'Task',
