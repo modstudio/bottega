@@ -61,14 +61,15 @@ export type RecordDocImportInput = {
   }>
 }
 
-export type RecordUserCanonImportInput = {
+export type RecordCanonImportInput = {
+  address: { kind: 'user' } | { kind: 'project'; subject: string }
   rows: Array<{ slug: string; title: string; body: string }>
   expectedRevisions: Record<string, string>
   reason: string
   author: string
 }
 
-export type RecordUserCanonImportResult = {
+export type RecordCanonImportResult = {
   rows: Array<{ slug: string; id: string; revisionId: string }>
   deletions: Array<{ slug: string; id: string; revisionId: string }>
   findings: CanonFinding[]
@@ -108,7 +109,7 @@ export type RecordApiClient = {
   listRevisions(id: string): Promise<Record<string, unknown>[]>
   upsertDoc(input: RecordDocUpsertInput): Promise<{ id: string; revisionId: string }>
   importDoc(input: RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
-  importUserCanon(input: RecordUserCanonImportInput): Promise<RecordUserCanonImportResult>
+  importCanon(input: RecordCanonImportInput): Promise<RecordCanonImportResult>
   deleteDoc(
     id: string,
     input: { reason: string; author: string; expectedRevision?: string },
@@ -265,8 +266,8 @@ export function recordApiClient(): RecordApiClient {
       request('/v1/docs', { method: 'PUT', body: JSON.stringify(input) }).then(ids),
     importDoc: (input) =>
       request('/v1/docs/import', { method: 'POST', body: JSON.stringify(input) }).then(importIds),
-    importUserCanon: (input) =>
-      request('/v1/docs/user-canon/import', { method: 'POST', body: JSON.stringify(input) }),
+    importCanon: (input) =>
+      request('/v1/docs/canon/import', { method: 'POST', body: JSON.stringify(input) }),
     deleteDoc: (id, input) =>
       request(`/v1/docs/${id}`, { method: 'DELETE', body: JSON.stringify(input) }).then(ids),
     consumeDoc: async (id, input) => {

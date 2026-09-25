@@ -7,7 +7,7 @@ import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import { recordDocImportSchema, recordUserCanonImportSchema } from './record-api-doc-schemas.ts'
+import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
@@ -21,13 +21,13 @@ import type {
 } from './record-config.ts'
 import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
 import {
+  type RecordCanonImportInput,
+  type RecordCanonImportResult,
   type RecordDoc,
   RecordDocError,
   type RecordDocImportInput,
   type RecordDocListInput,
   type RecordDocRevision,
-  type RecordUserCanonImportInput,
-  type RecordUserCanonImportResult,
 } from './record-docs.ts'
 import {
   type RecordProject,
@@ -102,7 +102,7 @@ type Deps = {
     },
   ): Promise<{ id: string; revisionId: string }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
-  importUserCanon(input: Tenant & RecordUserCanonImportInput): Promise<RecordUserCanonImportResult>
+  importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
   deleteDoc(
     input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
   ): Promise<{ id: string; revisionId: string }>
@@ -820,13 +820,13 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       return writeError(context, error)
     }
   })
-  app.post('/v1/docs/user-canon/import', async (context) => {
+  app.post('/v1/docs/canon/import', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
-    const body = recordUserCanonImportSchema.safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'invalid user canon import' }, 400)
+    const body = recordCanonImportSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid canon import' }, 400)
     try {
-      return context.json(await deps.importUserCanon({ ...tenant, ...body.data }))
+      return context.json(await deps.importCanon({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }

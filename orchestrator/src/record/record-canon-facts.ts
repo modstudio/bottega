@@ -1,6 +1,5 @@
 /** Builds hosted canon write-gate facts. Must not know local stores, CLI, or HTTP. */
 import type { SQL } from 'bun'
-import type { CanonFinding } from '../canon/canon-lint.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { canonFindingsRefusal, composeCanonRows } from '../doc/doc-write-allowed.ts'
 
@@ -82,10 +81,10 @@ export async function managedCanonProjectNames(tx: SQL, spaceId: string): Promis
   return targets.map((row: Record<string, unknown>) => String(row.name))
 }
 
-export async function userCanonImportFindings(
+export async function recordCanonImportSurroundings(
   tx: SQL,
-  input: { spaceId: string; owner: string; current: Row[]; next: Row[] },
-): Promise<CanonFinding[]> {
+  input: { spaceId: string; address: { kind: 'user' } | { kind: 'project'; subject: string } },
+): Promise<Array<{ global: Row[]; project: Row[] }>> {
   const global = asRows(
     await tx`
       SELECT slug, body FROM doc
@@ -93,6 +92,7 @@ export async function userCanonImportFindings(
         AND owner_user_id IS NULL AND deleted_at IS NULL
     `,
   )
+  if (input.address.kind === 'project') return [{ global, project: [] }]
   const names = await managedCanonProjectNames(tx, input.spaceId)
   const targets = names.length ? names : [null]
   const surroundings: Array<{ global: Row[]; project: Row[] }> = []
@@ -108,11 +108,7 @@ export async function userCanonImportFindings(
       : []
     surroundings.push({ global, project })
   }
-  return decideUserCanonImport({
-    current: input.current,
-    next: input.next,
-    surroundings,
-  }).findings
+  return surroundings
 }
 
 export async function canonFacts(

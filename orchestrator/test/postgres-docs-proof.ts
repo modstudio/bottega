@@ -48,7 +48,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     listRevisions: unused,
     upsertDoc: unused,
     importDoc: unused,
-    importUserCanon: unused,
+    importCanon: unused,
     deleteDoc: unused,
     consumeDoc: unused,
     restoreDoc: unused,
@@ -81,6 +81,104 @@ async function proveCanonRefusal(origin: string, headers: Record<string, string>
   expect(await canon.json()).toMatchObject({
     error: expect.stringContaining('refusing canon write'),
   })
+}
+
+type CanonProofAddress = { kind: 'user' } | { kind: 'project'; subject: string }
+type CanonBatch = {
+  rows: Array<{ slug: string; id: string; revisionId: string }>
+  deletions: Array<{ slug: string; id: string; revisionId: string }>
+  bootstrap: boolean
+}
+
+async function proveCanonImportAddress(
+  origin: string,
+  headers: Record<string, string>,
+  address: CanonProofAddress,
+): Promise<void> {
+  const post = (
+    rows: Array<{ slug: string; title: string; body: string }>,
+    expectedRevisions = {},
+  ) =>
+    fetch(`${origin}/v1/docs/canon/import`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        address,
+        rows,
+        expectedRevisions,
+        reason: 'canon batch proof',
+        author: 'proof',
+      }),
+    })
+  const entry = { slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Current guidance.\n' }
+  const rule = {
+    slug: '.agents/rules/proof.md',
+    title: 'Proof rule',
+    body: '---\ndescription: Proof rule\nalways: true\n---\n\nKeep this rule current.\n',
+  }
+  const empty = await post([])
+  expect(empty.status).toBe(400)
+  expect(await empty.json()).toMatchObject({ error: expect.stringContaining('empty canon import') })
+
+  const created = await post([entry, rule])
+  expect(created.status).toBe(200)
+  const first = (await created.json()) as CanonBatch
+  expect(first.bootstrap).toBe(true)
+  expect(first.rows).toHaveLength(2)
+  const revisions = Object.fromEntries(first.rows.map((row) => [row.slug, row.revisionId]))
+
+  const refused = await post(
+    [
+      { ...entry, body: 'Changed guidance.\n' },
+      { ...rule, body: `${rule.body}It used to differ.\n` },
+    ],
+    revisions,
+  )
+  expect(refused.status).toBe(400)
+  expect(await refused.json()).toMatchObject({ error: expect.stringContaining('canon/history') })
+  const unchanged = await fetch(`${origin}/v1/docs/${first.rows[0]!.id}`, { headers })
+  expect(((await unchanged.json()) as { body: string }).body).toBe(entry.body)
+
+  const removed = await post([entry], revisions)
+  expect(removed.status).toBe(200)
+  const second = (await removed.json()) as CanonBatch
+  expect(second.deletions.map(({ slug }) => slug)).toEqual([rule.slug])
+  const deleted = await fetch(`${origin}/v1/docs/${first.rows[1]!.id}`, { headers })
+  expect(((await deleted.json()) as { deletedAt: string | null }).deletedAt).toBeString()
+
+  const remaining = second.rows.find(({ slug }) => slug === entry.slug)!
+  const deleteLast = await fetch(`${origin}/v1/docs/${remaining.id}`, {
+    method: 'DELETE',
+    headers,
+    body: JSON.stringify({
+      reason: 'remove final canon row',
+      author: 'proof',
+      expectedRevision: remaining.revisionId,
+    }),
+  })
+  expect(deleteLast.status).toBe(200)
+  const regained = await post([{ ...entry, body: 'It used to differ.\n' }])
+  expect(regained.status).toBe(400)
+  expect(await regained.json()).toMatchObject({ error: expect.stringContaining('canon/history') })
+}
+
+async function proveCanonImports(origin: string, headers: Record<string, string>): Promise<void> {
+  const subject = `canon-proof-${newRecordId()}`
+  const project = await fetch(`${origin}/v1/projects`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      name: subject,
+      path: `/tmp/${subject}`,
+      stack: null,
+      canon: true,
+      settings: {},
+      retiredAt: null,
+    }),
+  })
+  expect(project.status).toBe(200)
+  await proveCanonImportAddress(origin, headers, { kind: 'project', subject })
+  await proveCanonImportAddress(origin, headers, { kind: 'user' })
 }
 
 async function proveCachePull(
@@ -333,6 +431,7 @@ export async function proveHostedDocs(input: {
   expect(inject.status).toBe(400)
   await proveCanonRefusal(input.origin, headers)
   await selectSpace(identity.personalSpaceId)
+  await proveCanonImports(input.origin, headers)
 
   const runs = await fetch(`${input.origin}/v1/runs?limit=1`, { headers })
   expect(runs.status).toBe(200)

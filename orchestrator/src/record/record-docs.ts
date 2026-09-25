@@ -3,8 +3,8 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { planCanonImport } from '../canon/canon-import-policy.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
-import { isUserCanonSlug, userCanonHomeImportDeletionSlugs } from '../canon/user-canon-home.ts'
 import {
   canonFindingsRefusal,
   consumeDocBody,
@@ -17,7 +17,7 @@ import {
   refuseOwnedDocAddress,
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
-import { canonFacts, userCanonImportFindings } from './record-canon-facts.ts'
+import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
 
 export type RecordDoc = {
   id: string
@@ -84,14 +84,15 @@ export type RecordDocImportInput = {
   }>
 }
 
-export type RecordUserCanonImportInput = {
+export type RecordCanonImportInput = {
+  address: { kind: 'user' } | { kind: 'project'; subject: string }
   rows: Array<{ slug: string; title: string; body: string }>
   expectedRevisions: Record<string, string>
   reason: string
   author: string
 }
 
-export type RecordUserCanonImportResult = {
+export type RecordCanonImportResult = {
   rows: Array<{ slug: string; id: string; revisionId: string }>
   deletions: Array<{ slug: string; id: string; revisionId: string }>
   findings: CanonFinding[]
@@ -437,19 +438,16 @@ async function insertRevision(
   return storedId
 }
 
-type UserCanonRow = RecordUserCanonImportInput['rows'][number]
-type StoredUserCanonRow = Record<string, unknown>
+type CanonImportRow = RecordCanonImportInput['rows'][number]
+type StoredCanonRow = Record<string, unknown>
 
-function indexUserCanonBatch(
-  input: Tenant & RecordUserCanonImportInput,
-  currentRows: StoredUserCanonRow[],
-) {
-  const desired = new Map<string, UserCanonRow>()
+function indexCanonBatch(input: Tenant & RecordCanonImportInput, currentRows: StoredCanonRow[]) {
+  const desired = new Map<string, CanonImportRow>()
   for (const row of input.rows) {
-    if (desired.has(row.slug)) throw new RecordDocError(`duplicate user canon slug: ${row.slug}`)
+    if (desired.has(row.slug)) throw new RecordDocError(`duplicate canon slug: ${row.slug}`)
     desired.set(row.slug, row)
   }
-  const existing = new Map<string, StoredUserCanonRow>(
+  const existing = new Map<string, StoredCanonRow>(
     currentRows.map((row) => [String(row.slug), row]),
   )
   for (const row of currentRows) {
@@ -462,19 +460,20 @@ function indexUserCanonBatch(
   }
   for (const slug of Object.keys(input.expectedRevisions)) {
     if (!existing.has(slug)) {
-      throw new RecordDocError(`refusing stale user canon import: no current row for ${slug}`, 409)
+      throw new RecordDocError(`refusing stale canon import: no current row for ${slug}`, 409)
     }
   }
   return { desired, existing }
 }
 
-async function writeUserCanonRows(
+async function writeCanonRows(
   tx: SQL,
-  input: Tenant & RecordUserCanonImportInput,
-  existing: Map<string, StoredUserCanonRow>,
+  input: Tenant & RecordCanonImportInput,
+  existing: Map<string, StoredCanonRow>,
+  address: { subject: string | null; owner: string | null; projectId: string | null },
   at: string,
-): Promise<RecordUserCanonImportResult['rows']> {
-  const results: RecordUserCanonImportResult['rows'] = []
+): Promise<RecordCanonImportResult['rows']> {
+  const results: RecordCanonImportResult['rows'] = []
   for (const row of input.rows) {
     const prior = existing.get(row.slug)
     const id = prior ? String(prior.id) : newRecordId()
@@ -487,10 +486,11 @@ async function writeUserCanonRows(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, project_id, created_at, updated_at
         ) VALUES (
-          ${id}::uuid, ${input.spaceId}::uuid, 'canon', NULL, ${input.userId}::uuid,
-          ${row.slug}, ${row.title}, ${row.body}, 'demand', ${at}::timestamptz, ${at}::timestamptz
+          ${id}::uuid, ${input.spaceId}::uuid, 'canon', ${address.subject}, ${address.owner}::uuid,
+          ${row.slug}, ${row.title}, ${row.body}, 'demand', ${address.projectId}::uuid,
+          ${at}::timestamptz, ${at}::timestamptz
         )
       `
     }
@@ -498,10 +498,10 @@ async function writeUserCanonRows(
       spaceId: input.spaceId,
       docId: id,
       scope: 'canon',
-      subject: null,
-      owner: input.userId,
+      subject: address.subject,
+      owner: address.owner,
       slug: row.slug,
-      projectId: null,
+      projectId: address.projectId,
       op: 'import',
       title: row.title,
       body: row.body,
@@ -516,20 +516,16 @@ async function writeUserCanonRows(
   return results
 }
 
-async function deleteMissingUserCanonRows(
+async function deleteMissingCanonRows(
   tx: SQL,
-  input: Tenant & RecordUserCanonImportInput,
-  currentRows: StoredUserCanonRow[],
-  desired: Map<string, UserCanonRow>,
+  input: Tenant & RecordCanonImportInput,
+  currentRows: StoredCanonRow[],
+  deletionSlugs: string[],
+  address: { subject: string | null; owner: string | null; projectId: string | null },
   at: string,
-): Promise<RecordUserCanonImportResult['deletions']> {
-  const results: RecordUserCanonImportResult['deletions'] = []
-  const deletedSlugs = new Set(
-    userCanonHomeImportDeletionSlugs(
-      currentRows.map((row) => String(row.slug)),
-      desired.keys(),
-    ),
-  )
+): Promise<RecordCanonImportResult['deletions']> {
+  const results: RecordCanonImportResult['deletions'] = []
+  const deletedSlugs = new Set(deletionSlugs)
   for (const prior of currentRows) {
     const slug = String(prior.slug)
     if (!deletedSlugs.has(slug)) continue
@@ -542,10 +538,10 @@ async function deleteMissingUserCanonRows(
       spaceId: input.spaceId,
       docId: id,
       scope: 'canon',
-      subject: null,
-      owner: input.userId,
+      subject: address.subject,
+      owner: address.owner,
       slug,
-      projectId: null,
+      projectId: address.projectId,
       op: 'delete',
       title: String(prior.title),
       body: String(prior.body),
@@ -560,15 +556,29 @@ async function deleteMissingUserCanonRows(
   return results
 }
 
-export async function importRecordUserCanon(
-  input: Tenant & RecordUserCanonImportInput,
-): Promise<RecordUserCanonImportResult> {
+export async function importRecordCanon(
+  input: Tenant & RecordCanonImportInput,
+): Promise<RecordCanonImportResult> {
   return tenant(input, async (tx) => {
-    await tx`SELECT id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE`
+    const address =
+      input.address.kind === 'user'
+        ? { subject: null, owner: input.userId, projectId: null }
+        : {
+            subject: input.address.subject,
+            owner: null,
+            projectId: await projectId(tx, input.spaceId, input.address.subject),
+          }
+    if (input.address.kind === 'user') {
+      await tx`SELECT id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE`
+    } else {
+      await tx`SELECT id FROM project WHERE id=${address.projectId}::uuid FOR UPDATE`
+    }
     const currentRows = await tx`
       SELECT * FROM doc
-      WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject IS NULL
-        AND owner_user_id=${input.userId}::uuid AND deleted_at IS NULL
+      WHERE space_id=${input.spaceId}::uuid AND scope='canon'
+        AND COALESCE(subject, '')=${address.subject ?? ''}
+        AND COALESCE(owner_user_id::text, '')=${address.owner ?? ''}
+        AND deleted_at IS NULL
       ORDER BY slug
       FOR UPDATE
     `
@@ -578,24 +588,40 @@ export async function importRecordUserCanon(
         body: String(row.body),
       }),
     )
-    const next = [
-      ...current.filter(({ slug }) => !isUserCanonSlug(slug)),
-      ...input.rows.map(({ slug, body }) => ({ slug, body })),
-    ]
-    const bootstrap = currentRows.length === 0
-    const findings = await userCanonImportFindings(tx, {
-      spaceId: input.spaceId,
-      owner: input.userId,
+    const history = await tx`
+      SELECT id FROM doc_revision
+      WHERE space_id=${input.spaceId}::uuid AND scope='canon'
+        AND COALESCE(subject, '')=${address.subject ?? ''}
+        AND COALESCE(owner_user_id::text, '')=${address.owner ?? ''}
+      LIMIT 1
+    `
+    const plan = planCanonImport({
+      address: { kind: input.address.kind },
       current,
-      next,
+      desired: input.rows.map(({ slug, body }) => ({ slug, body })),
+      hasHistory: history.length > 0,
+      surroundings: await recordCanonImportSurroundings(tx, {
+        spaceId: input.spaceId,
+        address: input.address,
+      }),
     })
-    if (!bootstrap && findings.length) throw new RecordDocError(canonFindingsRefusal(findings)!)
+    if (plan.refusal === 'empty') throw new RecordDocError('refusing empty canon import')
+    if (plan.refusal === 'findings') {
+      throw new RecordDocError(canonFindingsRefusal(plan.findings)!)
+    }
 
-    const { desired, existing } = indexUserCanonBatch(input, currentRows)
+    const { existing } = indexCanonBatch(input, currentRows)
     const at = new Date().toISOString()
-    const rows = await writeUserCanonRows(tx, input, existing, at)
-    const deletions = await deleteMissingUserCanonRows(tx, input, currentRows, desired, at)
-    return { rows, deletions, findings, bootstrap }
+    const rows = await writeCanonRows(tx, input, existing, address, at)
+    const deletions = await deleteMissingCanonRows(
+      tx,
+      input,
+      currentRows,
+      plan.deletionSlugs,
+      address,
+      at,
+    )
+    return { rows, deletions, findings: plan.findings, bootstrap: plan.bootstrap }
   })
 }
 
