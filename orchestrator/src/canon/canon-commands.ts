@@ -14,8 +14,10 @@ import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
+import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
 import { listDocs, removeDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import {
   acceptPackDiff,
   allInjectChecks,
@@ -29,7 +31,7 @@ import { composeCanonRows, planHydration } from './canon-hydrate.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts } from './canon-load-files.ts'
-import { decideCanonWrite } from './canon-write-gate.ts'
+import { decideNextCanonSet } from './canon-write-gate.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { userCanonHydrateCommand, userCanonImportCommand } from './user-canon-commands.ts'
 
@@ -184,14 +186,17 @@ async function canonImportCommand(
     projectSlugs,
     rows.map(({ slug }) => slug),
   )
-  const findings = decideCanonWrite({
+  const findings = decideNextCanonSet({
     current,
     next,
     trackedPaths: collected.trackedPaths,
     packageScripts: collected.packageScripts,
     sourceTexts: collected.sourceTexts,
+    workflowSteps: productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body })),
   })
   const bootstrap = projectSlugs.length === 0
+  const refusal = bootstrap ? null : canonFindingsRefusal(findings)
+  if (refusal) throw new Error(refusal)
   for (const row of rows) {
     await setDoc({
       scope: 'canon',
@@ -211,6 +216,7 @@ async function canonImportCommand(
     if (
       await removeDoc('canon', project.name, slug, {
         reason,
+        canonRemovalDecision: 'already-decided-next-set',
         expectedRevision: projectBySlug.get(slug)?.revision ?? undefined,
       })
     ) {

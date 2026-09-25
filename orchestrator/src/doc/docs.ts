@@ -28,6 +28,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/record-auth.ts'
+import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
@@ -69,6 +70,8 @@ export type DocWriteContext = {
   /** A complete preflighted set used only while bootstrapping an empty canon store. */
   canonSet?: CanonRow[]
   allowCanonBootstrap?: boolean
+  /** The caller already decided the complete next canon set as one set. */
+  canonRemovalDecision?: 'already-decided-next-set'
   expectedRevision?: string
 }
 
@@ -272,12 +275,12 @@ type DocWriteInput = {
   delivery?: 'inject' | 'demand'
 } & DocWriteContext
 
-function ownedCanonWriteRefusal(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
+function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
     global,
     project: target ? listDocs({ scope: 'canon', subject: target.name }) : [],
   }))
-  return canonFindingsRefusal(decideUserCanonImport({ current, next, surroundings }).findings)
+  return decideUserCanonImport({ current, next, surroundings }).findings
 }
 
 function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }): void {
@@ -287,7 +290,7 @@ function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }):
     ...user.filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
   ]
-  const refusal = ownedCanonWriteRefusal(global, user, changedRows)
+  const refusal = canonFindingsRefusal(ownedCanonWriteFindings(global, user, changedRows))
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
 }
 
@@ -343,6 +346,12 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
   })
   const refusal = refusals.find((value) => value)
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
+}
+
+function assertCanonRemovalAllowed(doc: Doc): void {
+  if (doc.scope !== 'canon') return
+  const refusal = storedCanonRemovalRefusal(doc)
+  if (refusal) throw new Error(refusal)
 }
 
 function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): void {
@@ -510,6 +519,9 @@ export async function removeDoc(
     doc.revision,
     false,
   )
+  if (context.canonRemovalDecision !== 'already-decided-next-set') {
+    assertCanonRemovalAllowed(doc)
+  }
   let recordId = doc.record_id
   let hostedExpected = context.expectedRevision
   if (!recordId) {

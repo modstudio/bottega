@@ -2,7 +2,7 @@
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
-import { decideCanonWrite } from '../canon/canon-write-gate.ts'
+import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
 
@@ -50,6 +50,17 @@ export function canonFindingsRefusal(findings: CanonFinding[]): string | null {
     findings
       .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
       .join('\n')
+  )
+}
+
+export function canonRemovalRefusal(findings: CanonFinding[]): string | null {
+  if (!findings.length) return null
+  return (
+    `refusing canon removal; introduced ${findings.length} reference finding${findings.length === 1 ? '' : 's'}:\n` +
+    findings
+      .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
+      .join('\n') +
+    '\ncleared by: update or remove the named citations first, then retry the removal'
   )
 }
 
@@ -181,7 +192,7 @@ export function refuseCanonWrite(input: {
   packageScripts?: string[]
   sourceTexts?: CanonSourceText[]
 }): string | null {
-  const findings = decideCanonWrite({
+  const findings = decideNextCanonSet({
     current: input.current,
     next: input.next,
     trackedPaths: input.trackedPaths,

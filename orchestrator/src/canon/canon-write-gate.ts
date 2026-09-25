@@ -4,6 +4,7 @@ import { posix } from 'node:path'
 import { generatedLinks } from './canon-hydrate.ts'
 import {
   type CanonFinding,
+  type CanonLintInput,
   type CanonSourceText,
   introducedCanonFindings,
   lintCanon,
@@ -16,6 +17,7 @@ import {
 import { mapUserCanonPath } from './user-canon-home.ts'
 
 type Row = { slug: string; body: string }
+export type WorkflowStepBody = { slug: string; body: string }
 
 const SYNTHETIC_REPO = '/repo'
 const SYNTHETIC_CLAUDE_HOME = '/home/.claude'
@@ -115,24 +117,76 @@ function treeFactsSupplied(input: {
   )
 }
 
-export function decideCanonWrite(input: {
+type CanonTreeFacts = Pick<CanonLintInput, 'trackedPaths' | 'packageScripts' | 'sourceTexts'>
+
+function factsForCanonRows(
+  rows: Row[],
+  knownCanonPaths: Set<string>,
+  facts: CanonTreeFacts,
+  sourceTexts: CanonSourceText[],
+): CanonLintInput {
+  const rowPaths = new Set(rows.map(({ slug }) => slug))
+  return {
+    files: rows.map(({ slug, body }) => ({ path: slug, text: body })),
+    trackedPaths: [...facts.trackedPaths.filter((path) => !knownCanonPaths.has(path)), ...rowPaths],
+    packageScripts: facts.packageScripts,
+    sourceTexts,
+  }
+}
+
+/** Decides one complete next repository-canon set, including its shared workflow citers. */
+export function decideNextCanonSet(input: {
   current: Row[]
   next: Row[]
   trackedPaths?: string[]
   packageScripts?: string[]
   sourceTexts?: CanonSourceText[]
+  workflowSteps?: WorkflowStepBody[]
+}): CanonFinding[] {
+  const knownCanonPaths = new Set([...input.current, ...input.next].map(({ slug }) => slug))
+  const suppliedFacts = {
+    trackedPaths: input.trackedPaths ?? [],
+    packageScripts: input.packageScripts ?? [],
+    sourceTexts: input.sourceTexts ?? [],
+  }
+  const sourceTexts = suppliedFacts.sourceTexts.filter(({ path }) => !knownCanonPaths.has(path))
+  const currentFacts = factsForCanonRows(input.current, knownCanonPaths, suppliedFacts, sourceTexts)
+  const nextFacts = factsForCanonRows(input.next, knownCanonPaths, suppliedFacts, sourceTexts)
+  const referenceFiles = (input.workflowSteps ?? []).map(({ slug, body }) => ({
+    path: `workflow step ${slug}`,
+    text: body,
+  }))
+  currentFacts.referenceFiles = referenceFiles
+  nextFacts.referenceFiles = referenceFiles
+  const findings = introducedCanonFindings(
+    lintCanon(currentFacts).findings,
+    lintCanon(nextFacts).findings,
+  )
+  if (treeFactsSupplied(input)) return findings
+  const skipped = new Set<string>(TREE_DEPENDENT_CANON_RULES)
+  return findings.filter((finding) => !skipped.has(finding.rule))
+}
+
+/** Decides whether removing rows strands canon or shared-workflow references. */
+export function decideCanonRemoval(input: {
+  current: Row[]
+  next: Row[]
+  workflowSteps?: WorkflowStepBody[]
 }): CanonFinding[] {
   const lint = (rows: Row[]) =>
     lintCanon({
       files: rows.map(({ slug, body }) => ({ path: slug, text: body })),
-      trackedPaths: input.trackedPaths ?? [],
-      packageScripts: input.packageScripts ?? [],
-      sourceTexts: input.sourceTexts ?? [],
+      referenceFiles: (input.workflowSteps ?? []).map(({ slug, body }) => ({
+        path: `workflow step ${slug}`,
+        text: body,
+      })),
+      trackedPaths: rows.map(({ slug }) => slug),
+      packageScripts: [],
+      sourceTexts: [],
     }).findings
-  const findings = introducedCanonFindings(lint(input.current), lint(input.next))
-  if (treeFactsSupplied(input)) return findings
-  const skipped = new Set<string>(TREE_DEPENDENT_CANON_RULES)
-  return findings.filter((finding) => !skipped.has(finding.rule))
+  return introducedCanonFindings(lint(input.current), lint(input.next)).filter(({ rule }) =>
+    rule.startsWith('canon/reference-'),
+  )
 }
 
 export function decideUserCanonImport(input: {

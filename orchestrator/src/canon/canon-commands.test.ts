@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addAgent, refreshAgents, removeAgent } from '../agent/agent-registry.ts'
+import { getDoc, setDoc } from '../doc/docs.ts'
+import { upsertProject } from '../project/projects.ts'
 import { dispatchCanonCommand } from './canon-commands.ts'
 
 test('worker load measurement resolves a registered agent name to its harness', async () => {
@@ -45,6 +47,54 @@ test('worker load measurement resolves a registered agent name to its harness', 
     else process.env.HOME = priorHome
     removeAgent('grok-variant')
     refreshAgents()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('canon import can drop a citer and its target after deciding the complete next set', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-import-removal-'))
+  try {
+    Bun.spawnSync(['git', 'init'], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+    writeFileSync(join(root, 'AGENTS.md'), 'Current guidance.\n')
+    Bun.spawnSync(['git', 'add', 'AGENTS.md'], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+    upsertProject({ name: 'canon-import-removal', path: root, canon: true, settings: {} })
+    const target = '.agents/reference/old-target.md'
+    await setDoc({
+      scope: 'canon',
+      subject: 'canon-import-removal',
+      slug: target,
+      title: target,
+      body: '---\ndescription: Old target\n---\n\n# Old target\n',
+      reason: 'seed target',
+      allowCanonBootstrap: true,
+    })
+    await setDoc({
+      scope: 'canon',
+      subject: 'canon-import-removal',
+      slug: '.agents/reference/old-citer.md',
+      title: 'Old citer',
+      body: `---\ndescription: Old citer\n---\n\nRead [the target](${target}).\n`,
+      reason: 'seed citer',
+      allowCanonBootstrap: true,
+    })
+    const output: string[] = []
+    const values = new Map([
+      ['project', 'canon-import-removal'],
+      ['cwd', root],
+      ['reason', 'import complete next set'],
+    ])
+
+    await dispatchCanonCommand(
+      ['canon', 'import'],
+      { has: (name) => values.has(name), flag: (name) => values.get(name) },
+      { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: () => root },
+    )
+
+    expect(getDoc('canon', 'canon-import-removal', target)).toBeNull()
+    expect(getDoc('canon', 'canon-import-removal', '.agents/reference/old-citer.md')).toBeNull()
+    expect(output).toContain('removed .agents/reference/old-target.md')
+    expect(output).toContain('removed .agents/reference/old-citer.md')
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })

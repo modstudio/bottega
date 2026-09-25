@@ -22,8 +22,10 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/worker-launch-env.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/doc-write-allowed.ts',
       `${source}evals.ts`,
       'orchestrator/src/project/projects.ts',
+      'orchestrator/src/workflow/workflow-tree-store.ts',
       'shared/ratchet.ts',
     ],
     typeOnlyAllowed: [],
@@ -82,8 +84,28 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
   },
 ]
 
+const canonRemovalBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-removal-boundary',
+    file: 'orchestrator/src/doc/canon-removal.ts',
+    allowed: [
+      `${source}canon-files.ts`,
+      `${source}canon-hydrate.ts`,
+      `${source}canon-write-gate.ts`,
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/workflow/workflow-tree-store.ts',
+      'orchestrator/src/doc/doc-read-store.ts',
+      'orchestrator/src/doc/doc-write-allowed.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep canon removal preflight dependent on canon decisions and the services that gather its repository and workflow facts.',
+  },
+]
+
 export const canonBoundarySpecs = [
   ...canonCommandBoundarySpecs,
+  ...canonRemovalBoundarySpecs,
   ...userCanonBoundarySpecs,
   ...canonLoadBoundarySpecs,
 ]
