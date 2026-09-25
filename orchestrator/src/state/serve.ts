@@ -105,6 +105,14 @@ export function runDetail(id: number, receipt = false) {
        FROM run_mutation_audit WHERE root_id=? ORDER BY at, rowid`,
     )
     .all(rootId)
+  const questions = db()
+    .query(
+      `SELECT q.id,q.run_id,q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
+              q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
+         FROM question q JOIN run owner ON owner.id=q.run_id
+        WHERE owner.id=? OR owner.parent_run_id=? ORDER BY q.id`,
+    )
+    .all(rootId, rootId) as Record<string, unknown>[]
   return {
     ...row,
     requested_id: id,
@@ -120,6 +128,14 @@ export function runDetail(id: number, receipt = false) {
     reviews: reviewsForRun(id),
     messages,
     audit,
+    questions: questions.map((question) => ({
+      ...question,
+      ruling_status: question.overturned_at
+        ? 'overturned'
+        : question.answered_at
+          ? 'answered'
+          : 'open',
+    })),
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,
   }

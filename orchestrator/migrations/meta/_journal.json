@@ -351,6 +351,13 @@
       "when": 1788900000043,
       "tag": "0049_operator_waiting",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1790272800003,
+      "tag": "0050_task_rulings",
+      "breakpoints": true
     }
   ]
 }

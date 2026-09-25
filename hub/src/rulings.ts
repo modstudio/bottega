@@ -30,6 +30,7 @@ export type RulingMeasureQuestion = {
   answered_at: string | null
   asked_via: AskedVia | null
   answerer_kind: AnswererKind | null
+  overturned_at?: string | null
 }
 
 export type RulingMeasureDelivery = {
@@ -134,6 +135,31 @@ export function measureRulings(
       questions.filter((question) => question.asked_via === via).length,
     ]),
   ) as Record<AskedVia, number>
+  const inWindow = (value: string | null | undefined) => {
+    if (value == null) return false
+    const at = Date.parse(value)
+    return Number.isFinite(at) && at >= startsAt && at <= now
+  }
+  const overturnSummary = (kind: 'operator' | 'agent') => {
+    const answered = questions.filter(
+      (question) => question.answered_at !== null && question.answerer_kind === kind,
+    )
+    const count = questions.filter(
+      (question) => question.answerer_kind === kind && inWindow(question.overturned_at),
+    ).length
+    return { count, rate: answered.length ? count / answered.length : null }
+  }
+  const overturnByKind = {
+    operator: overturnSummary('operator'),
+    agent: overturnSummary('agent'),
+  }
+  const overturnCount = overturnByKind.operator.count + overturnByKind.agent.count
+  const knownAnswered = questions.filter(
+    (question) =>
+      question.answered_at !== null &&
+      (question.answerer_kind === 'operator' || question.answerer_kind === 'agent') &&
+      inWindow(question.asked_at),
+  ).length
 
   return {
     window: {
@@ -172,6 +198,11 @@ export function measureRulings(
     operator_answers: {
       count: operatorSummary.count,
       median_wait_ms: operatorSummary.median_ms,
+    },
+    overturns: {
+      count: overturnCount,
+      rate: knownAnswered ? overturnCount / knownAnswered : null,
+      by_answerer_kind: overturnByKind,
     },
   }
 }
@@ -233,7 +264,7 @@ export function rulingsPayload(now = Date.now()) {
 export function rulingsStatsPayload(days = DEFAULT_STATS_DAYS, now = Date.now()) {
   const questionRows = db()
     .query<RulingMeasureQuestion, []>(
-      `SELECT question_id, asked_at, answered_at, asked_via, answerer_kind FROM question`,
+      `SELECT question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at FROM question`,
     )
     .all()
   const deliveryRows = db()

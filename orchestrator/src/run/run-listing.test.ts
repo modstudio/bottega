@@ -335,7 +335,7 @@ describe('run listing', () => {
       row.questions.every(
         (question: object) =>
           Object.keys(question).sort().join() ===
-          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,deliveries,id,run_id',
+          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,deliveries,id,overturned_at,run_id',
       ),
     ).toBe(true)
   })

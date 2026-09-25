@@ -14,6 +14,7 @@ import { register as registerLogic } from '../commands/logic.ts'
 import { register as registerRecordAuth } from '../commands/record-auth.ts'
 import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
+import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
@@ -45,6 +46,7 @@ registerConfig(program)
 registerContext(program)
 registerJudgment(program)
 registerRouting(program)
+registerRulings(program)
 registerLogic(program)
 registerSync(program)
 

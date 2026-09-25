@@ -35,8 +35,8 @@ function questionReplacer(conn: Database) {
   const upsertQuestion = conn.query(
     `INSERT INTO question
       (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
-       asked_via, answerer_kind, answer_channel)
-   VALUES (?,?,?,?,?,?,?,?,?,?)
+       asked_via, answerer_kind, answer_channel, overturned_at)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?)
    ON CONFLICT(question_id) DO UPDATE SET
      run_ref        = excluded.run_ref,
      root_ref       = excluded.root_ref,
@@ -46,7 +46,8 @@ function questionReplacer(conn: Database) {
      answered_at    = excluded.answered_at,
      asked_via      = excluded.asked_via,
      answerer_kind  = excluded.answerer_kind,
-     answer_channel = excluded.answer_channel`,
+     answer_channel = excluded.answer_channel,
+     overturned_at   = excluded.overturned_at`,
   )
   const deleteQuestionDeliveries = conn.query(`DELETE FROM question_delivery WHERE question_id = ?`)
   const insertQuestionDelivery = conn.query(
@@ -71,6 +72,7 @@ function questionReplacer(conn: Database) {
         question.asked_via,
         question.answerer_kind,
         question.answer_channel,
+        question.overturned_at,
       )
       deleteQuestionDeliveries.run(question.id)
       for (const delivery of question.deliveries) {

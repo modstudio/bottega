@@ -67,7 +67,11 @@ import {
   calibrationLine,
   reviewCalibration,
 } from '../review/review-calibration.ts'
-import { implicitReviewCoverageBase, resolveReviewTarget } from '../review/review-target.ts'
+import {
+  implicitReviewCoverageBase,
+  inferredReadOnlyKey,
+  resolveReviewTarget,
+} from '../review/review-target.ts'
 import { chainTransport, type ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
@@ -117,6 +121,7 @@ import { bindSignals, childEnv, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
+import { renderTaskRulings, selectTaskRulings, type TaskRulingRow } from './task-rulings.ts'
 
 async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
   if (reserveId !== undefined) return null
@@ -489,12 +494,33 @@ export async function run(opts: {
     }
   }
   const docsSection = operatorKnowledgeSection(pack ?? null)
+  const dispatchKey = writesJob ? (opts.key ?? null) : (opts.key ?? inferredReadOnlyKey(callerCwd))
+  const carriedRulings =
+    !opts.resume && dispatchKey && runProjectName
+      ? selectTaskRulings(
+          db()
+            .query(
+              `SELECT q.id question_id, root.id run_id, root.repo project,
+                      root.launch_key, q.question, q.answer, q.answered_at,
+                      q.answerer_kind, q.overturned_at, q.replacement
+                 FROM question q
+                 JOIN run owner ON owner.id=q.run_id
+                 JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
+                WHERE q.answered_at IS NOT NULL`,
+            )
+            .all() as TaskRulingRow[],
+          runProjectName,
+          dispatchKey,
+        )
+      : { rulings: [], omitted: 0 }
+  const rulingsSection = renderTaskRulings(carriedRulings)
   let prompt =
     writesJob && (!opts.resume || opts.resume.fresh)
       ? [
           workerPreamble(opts.job),
           infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
           docsSection ? `\n${docsSection}` : '',
+          rulingsSection ? `\n${rulingsSection}` : '',
           `\n---\n\nTHE SPEC\n\n${originalPrompt}`,
         ]
           .filter(Boolean)
@@ -506,7 +532,8 @@ export async function run(opts: {
             repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
             infra ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
             docsSection,
-            `---\n\n${originalPrompt}`,
+            rulingsSection,
+            `---\n\nTHE SPEC\n\n${originalPrompt}`,
           ]
             .filter(Boolean)
             .join('\n\n')
@@ -738,6 +765,7 @@ export async function run(opts: {
     usingMcp,
     startedByUserId,
     replySchemaName,
+    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
   })
   prompt = claimedBoundPrompt
   mcpConnection = claimedMcpConnection

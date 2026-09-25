@@ -173,6 +173,7 @@ describe('ruling-loop measures', () => {
         answered_at: answered(180, 2),
         asked_via: 'reply' as const,
         answerer_kind: 'operator' as const,
+        overturned_at: asked(30),
       },
       {
         question_id: 2,
@@ -290,6 +291,14 @@ describe('ruling-loop measures', () => {
       },
       open: { count: 1, older_than_stale: 1 },
       operator_answers: { count: 1, median_wait_ms: 120_000 },
+      overturns: {
+        count: 1,
+        rate: 0.5,
+        by_answerer_kind: {
+          operator: { count: 1, rate: 1 },
+          agent: { count: 0, rate: 0 },
+        },
+      },
     })
   })
 })

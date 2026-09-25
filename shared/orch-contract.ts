@@ -163,6 +163,7 @@ const OrchQuestionSchema = z
     asked_via: z.enum(ASKED_VIA_VALUES).nullable(),
     answerer_kind: z.enum(ANSWERER_KIND_VALUES).nullable(),
     answer_channel: z.enum(ANSWER_CHANNEL_VALUES).nullable(),
+    overturned_at: z.iso.datetime().nullable(),
     deliveries: z.array(
       z
         .object({

@@ -276,6 +276,7 @@ describe('run ingest', () => {
           asked_via: 'reply',
           answerer_kind: 'operator',
           answer_channel: 'cli',
+          overturned_at: '2026-09-05T13:00:00.000Z',
           deliveries: [
             {
               id: 1,
@@ -304,10 +305,15 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT asked_via, answerer_kind, answer_channel FROM question WHERE question_id = 50`,
+          `SELECT asked_via, answerer_kind, answer_channel, overturned_at FROM question WHERE question_id = 50`,
         )
         .get(),
-    ).toEqual({ asked_via: 'reply', answerer_kind: 'operator', answer_channel: 'cli' })
+    ).toEqual({
+      asked_via: 'reply',
+      answerer_kind: 'operator',
+      answer_channel: 'cli',
+      overturned_at: '2026-09-05T13:00:00.000Z',
+    })
     expect(
       db()
         .query(
