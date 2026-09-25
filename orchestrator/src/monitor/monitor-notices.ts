@@ -4,6 +4,7 @@
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
+  abandonedBootstrapConditions,
   askingRuns,
   deadRunningProcessConditions,
   idleRunConditions,
@@ -21,6 +22,7 @@ const APPEND_ONLY_DELIVERY_KINDS = new Set([
 ])
 
 const REVALIDATED_DELIVERY_KINDS = new Set([
+  'abandoned-bootstrap',
   'asking-run',
   'dead-running-process',
   'idle',
@@ -84,6 +86,17 @@ function recordStalledRunSubjects(
   )
 }
 
+function recordAbandonedBootstrapSubjects(
+  kinds: Set<string>,
+  record: (kind: string, subjects: string[]) => void,
+): void {
+  if (!kinds.has('abandoned-bootstrap')) return
+  record(
+    'abandoned-bootstrap',
+    abandonedBootstrapConditions().map((condition) => condition.subject),
+  )
+}
+
 function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
   for (const kind of kinds) {
     if (!APPEND_ONLY_DELIVERY_KINDS.has(kind) && !REVALIDATED_DELIVERY_KINDS.has(kind)) {
@@ -93,6 +106,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
 
   const current = new Map<string, Set<string>>()
   const record = (kind: string, subjects: string[]) => current.set(kind, new Set(subjects))
+  recordAbandonedBootstrapSubjects(kinds, record)
   if (kinds.has('asking-run')) {
     record(
       'asking-run',

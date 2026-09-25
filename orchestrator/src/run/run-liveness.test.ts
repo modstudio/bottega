@@ -3,7 +3,8 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
-import { PENDING_BOOTSTRAP_MS, reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
 describe('reapStale', () => {
   test('elapsed time does not kill a legacy run while its pid is alive', () => {
@@ -126,5 +127,19 @@ describe('reapStale', () => {
     expect(
       (db().query('SELECT status FROM run WHERE id=?').get(young) as { status: string }).status,
     ).toBe('running')
+  })
+
+  test('a pending row with a dead recorded pid past the bootstrap bound is failed/harness', () => {
+    const id = addRun({ agent: '(pending)', job: 'craft', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, started_at=? WHERE id=?')
+      .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
+
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
+      status: 'failed',
+      failure_kind: 'harness',
+      error: 'the worker process never started',
+    })
   })
 })

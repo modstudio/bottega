@@ -25,6 +25,7 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import {
+  abandonedBootstrapConditions,
   age,
   askingRuns,
   deadRunningProcessConditions,
@@ -358,6 +359,7 @@ export async function monitor(
       ownerSession: run.session_id,
     })
 
+  conditions.push(...abandonedBootstrapConditions(clock))
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
   conditions.push(...stalledRunConditions(clock))

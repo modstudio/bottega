@@ -230,82 +230,73 @@ export async function detach(
     )
   }
   const { id } = claimed
-  // The row now exists, so its id replaces that temporary random name and is
-  // also stored on the row for run() to reuse rather than creating a second file.
-  const promptPath = runFilePaths(runsDir, Date.now(), id, 'detach', jobName).prompt
-  writeFileSync(promptPath, prompt)
-  db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, id)
-
-  /**
-   * Spawned into its OWN SESSION, which is the whole point and was missing.
-   *
-   * `Bun.spawn` has no `detached`, and `unref()` only frees this process's event
-   * loop - it does not move the child out of the process group. A harness
-   * command timeout does not kill a pid, it kills the GROUP, so the worker died
-   * with its caller exactly as the in-process agent had, and detaching bought
-   * nothing. Verified the wrong way first: killing the parent PID alone let the
-   * run finish, which proved nothing about the case that actually happens.
-   * Under `kill -TERM -<pgid>` the run came back `stale`/`interrupted`.
-   *
-   * node:child_process does have it, and `detached: true` is setsid(2): a new
-   * session, a new process group, out of reach of the group kill.
-   */
-  const execPath = process.env.ORCH_EXEC_PATH ?? process.execPath
-  const spawnArgs = [
-    '--no-env-file',
-    /**
-     * `exec.ts`, not the `orch.ts` process entry point, and that is the whole point of it.
-     *
-     * A detached worker is a fresh process that imports this concern's source
-     * at spawn time, so an edit anywhere in the graph kills every run launched
-     * during it — the child dies on import, before it can fill in the row this
-     * function already claimed. Three of another session's runs were lost that
-     * way this morning and reported only as "orch was dropping runs".
-     *
-     * `program.ts` imports the full command graph, so no `try` inside it can catch
-     * that. `exec.ts` imports almost nothing and pulls the rest in inside a
-     * catch, turning a broken sibling into a recorded failure with a reason.
-     */
-    assetPath('orchestrator', 'src', 'run', 'exec.ts'),
-    String(id),
-    promptPath,
-    jobName,
-    JSON.stringify({ ...spec, seed }),
-  ]
-  const spawnFacts = callerCheckoutFacts(cwd)
-  const spawnOpts = {
-    cwd: spawnCwd(
-      cwd,
-      spawnFacts.registeredProjectPath,
-      spawnFacts.linkedWorktree,
-      existsSync(cwd),
-      process.cwd(),
-    ),
-    // The child must not inherit this process's session id: the run row
-    // already records the session that ASKED for the work, and run() would
-    // otherwise re-stamp it from the child's environment.
-    env: { ...process.env, ORCH_DETACHED: '1' },
-    stdio: 'ignore' as const,
-    detached: true,
-  }
-
-  const failSpawn = (err: unknown): never => {
-    const why = `spawn failed: ${String((err as Error)?.message ?? err)}`
-    db()
-      .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
-      .run(why, id)
-    throw err
-  }
-
-  const spawnWorker = (): ChildProcess => {
-    try {
-      return spawn(execPath, spawnArgs, spawnOpts)
-    } catch (err) {
-      return failSpawn(err)
-    }
-  }
-  const child = spawnWorker()
+  let handoffStep = 'write prompt artifact'
   try {
+    // The row now exists, so its id replaces that temporary random name and is
+    // also stored on the row for run() to reuse rather than creating a second file.
+    const promptPath = runFilePaths(runsDir, Date.now(), id, 'detach', jobName).prompt
+    writeFileSync(promptPath, prompt)
+    handoffStep = 'record prompt artifact'
+    db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, id)
+
+    /**
+     * Spawned into its OWN SESSION, which is the whole point and was missing.
+     *
+     * `Bun.spawn` has no `detached`, and `unref()` only frees this process's event
+     * loop - it does not move the child out of the process group. A harness
+     * command timeout does not kill a pid, it kills the GROUP, so the worker died
+     * with its caller exactly as the in-process agent had, and detaching bought
+     * nothing. Verified the wrong way first: killing the parent PID alone let the
+     * run finish, which proved nothing about the case that actually happens.
+     * Under `kill -TERM -<pgid>` the run came back `stale`/`interrupted`.
+     *
+     * node:child_process does have it, and `detached: true` is setsid(2): a new
+     * session, a new process group, out of reach of the group kill.
+     */
+    handoffStep = 'resolve coordinator executable'
+    const execPath = process.env.ORCH_EXEC_PATH ?? process.execPath
+    const spawnArgs = [
+      '--no-env-file',
+      /**
+       * `exec.ts`, not the `orch.ts` process entry point, and that is the whole point of it.
+       *
+       * A detached worker is a fresh process that imports this concern's source
+       * at spawn time, so an edit anywhere in the graph kills every run launched
+       * during it — the child dies on import, before it can fill in the row this
+       * function already claimed. Three of another session's runs were lost that
+       * way this morning and reported only as "orch was dropping runs".
+       *
+       * `program.ts` imports the full command graph, so no `try` inside it can catch
+       * that. `exec.ts` imports almost nothing and pulls the rest in inside a
+       * catch, turning a broken sibling into a recorded failure with a reason.
+       */
+      assetPath('orchestrator', 'src', 'run', 'exec.ts'),
+      String(id),
+      promptPath,
+      jobName,
+      JSON.stringify({ ...spec, seed }),
+    ]
+    handoffStep = 'resolve coordinator working directory'
+    const spawnFacts = callerCheckoutFacts(cwd)
+    const spawnOpts = {
+      cwd: spawnCwd(
+        cwd,
+        spawnFacts.registeredProjectPath,
+        spawnFacts.linkedWorktree,
+        existsSync(cwd),
+        process.cwd(),
+      ),
+      // The child must not inherit this process's session id: the run row
+      // already records the session that ASKED for the work, and run() would
+      // otherwise re-stamp it from the child's environment.
+      env: { ...process.env, ORCH_DETACHED: '1' },
+      stdio: 'ignore' as const,
+      detached: true,
+    }
+
+    handoffStep = 'spawn coordinator'
+    const child: ChildProcess = spawn(execPath, spawnArgs, spawnOpts)
+    handoffStep = 'await coordinator spawn'
     await new Promise<void>((resolve, reject) => {
       let onError: (err: Error) => void
       let onSpawn: () => void
@@ -320,19 +311,28 @@ export async function detach(
       child.once('error', onError)
       child.once('spawn', onSpawn)
     })
-  } catch (err) {
-    failSpawn(err)
-  }
 
-  // The WORKER's pid, recorded now rather than left to run() to overwrite with
-  // the agent's. Without one, reapStale skips its liveness check entirely - the
-  // check is guarded on `if (r.pid)` - so a worker that dies before it spawns
-  // an agent leaves a row claiming to run for the full thirty-minute cutoff.
-  // Four such rows were sitting on the dashboard as `(pending)`, one of them
-  // for fifteen minutes.
-  if (child.pid) db().query('UPDATE run SET pid=? WHERE id=?').run(child.pid, id)
-  child.unref()
-  return id
+    // The WORKER's pid, recorded now rather than left to run() to overwrite with
+    // the agent's. Without one, reapStale skips its liveness check entirely - the
+    // check is guarded on `if (r.pid)` - so a worker that dies before it spawns
+    // an agent leaves a row claiming to run for the full thirty-minute cutoff.
+    // Four such rows were sitting on the dashboard as `(pending)`, one of them
+    // for fifteen minutes.
+    handoffStep = 'record coordinator pid'
+    if (!child.pid) throw new Error('spawned coordinator has no pid')
+    const pidUpdate = db().query('UPDATE run SET pid=? WHERE id=?').run(child.pid, id)
+    if (pidUpdate.changes !== 1) {
+      throw new Error(`coordinator pid update changed ${pidUpdate.changes} rows`)
+    }
+    child.unref()
+    return id
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    db()
+      .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+      .run(`detach handoff failed during ${handoffStep}: ${message}`, id)
+    throw error
+  }
 }
 
 /**

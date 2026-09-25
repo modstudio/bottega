@@ -9,6 +9,7 @@ import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
+import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { runLeaseState } from './run-lease.ts'
 
 /**
@@ -17,16 +18,6 @@ import { runLeaseState } from './run-lease.ts'
  * a quiet worker, including one blocked on a ruling, has died.
  */
 export const STALE_AFTER_MS = 60 * 60 * 1000
-
-/**
- * How long a pid-less `(pending)` row may sit before it is abandoned bootstrap.
- *
- * detach() inserts the reserved row, then spawns the worker, then records the
- * pid. A spawn error or a parent death in that gap leaves agent='(pending)',
- * status='running', no pid. That is not an agent run, and waiting for
- * the ordinary run lease. After this bound they are failed/harness instead.
- */
-export const PENDING_BOOTSTRAP_MS = 60_000
 
 /**
  * When the terminal outcome of a conversation chain became observable.
@@ -184,19 +175,30 @@ function deadRunReason(row: RunningRow): string {
 }
 
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
-  const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
+  const now = Date.now()
   const rows = d
     .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
     .all() as RunningRow[]
 
   const dead: number[] = []
-  const abandonedBootstrap: number[] = []
+  const abandonedBootstraps: number[] = []
   for (const r of rows) {
-    // A pid-less `(pending)` row is abandoned bootstrap, not an agent run.
+    // An abandoned `(pending)` row is bootstrap residue, not an agent run.
     // Checked before the hour cutoff so these are failed/harness rather than
     // waiting for stale/interrupted.
     if (r.agent === '(pending)') {
-      if (!r.pid && r.started_at < bootstrapCutoff) abandonedBootstrap.push(r.id)
+      if (
+        abandonedBootstrap({
+          agent: r.agent,
+          pid: r.pid,
+          pidAlive: Boolean(r.pid && pidAlive(r.pid)),
+          leaseState: runLeaseState(r.id),
+          startedAt: r.started_at,
+          now,
+        })
+      ) {
+        abandonedBootstraps.push(r.id)
+      }
       continue
     }
     if (!runningRowAlive(r)) dead.push(r.id)
@@ -210,25 +212,25 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
           reason: deadRunReason(row),
         }
       }),
-      ...abandonedBootstrap.map((id) => ({
+      ...abandonedBootstraps.map((id) => ({
         id,
-        reason: `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`,
+        reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
     ]
   }
-  if (abandonedBootstrap.length) {
+  if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness',
               error='the worker process never started' WHERE id=? AND status='running'`,
     )
-    for (const id of abandonedBootstrap) {
+    for (const id of abandonedBootstraps) {
       writeTransaction(() => {
         if (update.run(id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(
           authority,
           'reap',
-          `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`,
+          `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
           d,
         )
       }, d)
@@ -262,7 +264,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       }, d)
     }
   }
-  const ended = [...dead, ...abandonedBootstrap]
+  const ended = [...dead, ...abandonedBootstraps]
   if (ended.length) {
     const roots = d
       .query(
@@ -273,5 +275,5 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     for (const { id } of roots) resolveRootFromLastTurn(d, id)
     for (const id of ended) teardownTerminalRunResources(d, id)
   }
-  return dead.length + abandonedBootstrap.length
+  return dead.length + abandonedBootstraps.length
 }

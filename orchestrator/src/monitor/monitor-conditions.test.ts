@@ -3,6 +3,7 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
 import {
+  abandonedBootstrapConditions,
   askingRuns,
   deadRunningProcessConditions,
   idleRunCondition,
@@ -492,6 +493,28 @@ describe('operational monitor conditions', () => {
       conditions: [],
       errors: ['Grok trust inventory unavailable: unreadable row'],
     })
+  })
+
+  test('reports a pending row whose launch handoff was abandoned', () => {
+    const clock = Date.parse('2026-09-04T20:02:00Z')
+    const id = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'running',
+      startedAt: '2026-09-04T20:00:00Z',
+    })
+    db().query('UPDATE run SET pid=? WHERE id=?').run(4_194_304, id)
+
+    expect(abandonedBootstrapConditions(clock)).toEqual([
+      expect.objectContaining({
+        kind: 'abandoned-bootstrap',
+        subject: `run:${id}`,
+        since: '2026-09-04T20:00:00Z',
+        ageMs: 120_000,
+        detail: expect.stringContaining('dead coordinator pid 4194304'),
+        action: 'run orch sweep to terminalize the abandoned bootstrap',
+      }),
+    ])
   })
 
   test('reports a running row whose agent process is gone with elapsed time and output size', () => {
