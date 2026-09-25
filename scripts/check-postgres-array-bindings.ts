@@ -16,6 +16,14 @@ for (const sourceRoot of SOURCE_ROOTS) {
     const file = join(sourceRoot, relative)
     const lines = readFileSync(join(ROOT, file), 'utf8').split('\n')
     for (const [index, line] of lines.entries()) {
+      const trimmed = line.trim()
+      if (
+        trimmed.startsWith('//') ||
+        trimmed.startsWith('*') ||
+        trimmed.startsWith('/*') ||
+        trimmed.startsWith('#')
+      )
+        continue
       DIRECT_ARRAY_CAST.lastIndex = 0
       if (DIRECT_ARRAY_CAST.test(line)) violations.push(`${file}:${index + 1}`)
     }
@@ -24,7 +32,7 @@ for (const sourceRoot of SOURCE_ROOTS) {
 
 for (const violation of violations) {
   console.error(
-    `${violation}: do not cast an interpolated value directly to a Postgres array; use the SQL client's array helper`,
+    `${violation}: refused an interpolation immediately followed by '::<type>[]' on one line; use sql.array(values, type), or tx.array(values, type) inside a transaction`,
   )
 }
 if (violations.length) process.exit(1)
