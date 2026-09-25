@@ -23,6 +23,18 @@ const GATE_TOOLING_PATH_NAMES = [
   'Makefile',
 ] as const
 
+/** Add broker-only host paths before applying the orchestrator environment overlay. */
+export function brokerGateEnvironment(
+  base: Readonly<Record<string, string>>,
+  source: Readonly<Record<string, string | undefined>>,
+  overlay: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const hostPaths: Record<string, string> = {}
+  if (source.HOME) hostPaths.HOME = source.HOME
+  if (source.TMPDIR) hostPaths.TMPDIR = source.TMPDIR
+  return { ...base, ...hostPaths, ...overlay }
+}
+
 function quoteShellWord(word: string): string {
   return `'${word.replaceAll("'", `'\\''`)}'`
 }
