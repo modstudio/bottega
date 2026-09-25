@@ -187,8 +187,8 @@ describe('run answers', () => {
   test('failed resume keeps its delivery failure after reopening the question', async () => {
     const id = insert('asking')
     db()
-      .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
-      .run('orch-test-session', 'vendor', id)
+      .query('UPDATE run SET session_id=?,vendor_session=?,record_id=? WHERE id=?')
+      .run('orch-test-session', 'vendor', '01990000-0000-7000-8000-000000000042', id)
     db()
       .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'which shape?')
@@ -205,7 +205,7 @@ describe('run answers', () => {
     expect(
       db()
         .query(
-          `SELECT answer,answered_at,answered_by,answerer_kind,answer_channel,delivery_pending_at
+          `SELECT answer,answered_at,answered_by,answerer_kind,answer_channel,delivery_pending_at,revision
              FROM question WHERE run_id=?`,
         )
         .get(id),
@@ -216,6 +216,15 @@ describe('run answers', () => {
       answerer_kind: null,
       answer_channel: null,
       delivery_pending_at: null,
+      revision: 3,
+    })
+    const pending = db()
+      .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
+      .get()!
+    expect(JSON.parse(pending.payload)).toMatchObject({
+      answer: null,
+      answeredAt: null,
+      revision: 3,
     })
     expect(
       db()
@@ -229,6 +238,41 @@ describe('run answers', () => {
       outcome: 'failed',
       error: 'fixture dispatch failed',
     })
+  })
+
+  test('failed resume emits a newer withdrawal after an answer already synced', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=?,record_id=? WHERE id=?')
+      .run('orch-test-session', 'vendor', '01990000-0000-7000-8000-000000000043', id)
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+    const dispatch: typeof detach = async () => {
+      db()
+        .query("UPDATE outbox SET synced_at='2026-09-25T12:00:00.000Z' WHERE kind='question'")
+        .run()
+      throw new Error('fixture dispatch failed after sync')
+    }
+
+    await expect(
+      answerRun(
+        id,
+        { argv: ['use the existing shape'], recordOnly: false, flags },
+        { ...helpers, dispatch },
+      ),
+    ).rejects.toThrow('Resume failed: fixture dispatch failed after sync')
+
+    const payloads = db()
+      .query<{ payload: string }, []>(
+        "SELECT payload FROM outbox WHERE kind='question' ORDER BY id",
+      )
+      .all()
+      .map((row) => JSON.parse(row.payload) as { answer: string | null; revision: number })
+    expect(payloads).toEqual([
+      expect.objectContaining({ answer: 'use the existing shape', revision: 2 }),
+      expect.objectContaining({ answer: null, revision: 3 }),
+    ])
   })
   test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', async () => {
     const id = insert('asking', 'implement')

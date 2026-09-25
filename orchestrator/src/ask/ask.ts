@@ -45,8 +45,11 @@ import {
 import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
-import { ASKED_VIA_LIVE } from '../run/question-vocabulary.ts'
+import { machineId } from '../record/machine-identity.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
+import { enqueueRunRecord } from '../run/run-outbox.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -66,6 +69,61 @@ function boundedTimeout(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
 const ASK_TIMEOUT_MS = boundedTimeout()
+
+function recordQuestion(input: {
+  runId: number
+  askedAt: string
+  question: string
+  options?: string[] | null
+  recommendation?: string | null
+  why?: string | null
+  askedVia: AskedVia
+  awaitingOperatorAt: string | null
+}): number {
+  const inserted = db()
+    .query(
+      `INSERT INTO question
+       (run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
+       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+    )
+    .get(
+      input.runId,
+      input.askedAt,
+      input.question,
+      input.options?.length ? JSON.stringify(input.options) : null,
+      input.recommendation ?? null,
+      input.why ?? null,
+      input.askedVia,
+      input.awaitingOperatorAt,
+    ) as { id: number }
+  enqueueQuestionRecord(db(), inserted.id)
+  return inserted.id
+}
+
+export function recordReplyQuestions(input: {
+  runId: number
+  questions: Array<{
+    question: string
+    options?: string[] | null
+    recommendation?: string | null
+    why?: string | null
+  }>
+  askedAt: string
+  awaitingOperatorAt: string | null
+}): void {
+  writeTransaction(() => {
+    enqueueRunRecord(db(), input.runId, machineId(), input.askedAt)
+    for (const question of input.questions) {
+      recordQuestion({
+        runId: input.runId,
+        askedAt: input.askedAt,
+        ...question,
+        askedVia: ASKED_VIA_REPLY,
+        awaitingOperatorAt: input.awaitingOperatorAt,
+      })
+    }
+  })
+}
 
 /** How often to look for a ruling. Cheap: one indexed read of a local file. */
 const POLL_MS = 1_000
@@ -195,25 +253,22 @@ export async function ask(o: {
   timeoutMs?: number
 }): Promise<AskResult> {
   writableDb()
-  db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(o.runId)
   const askedAt = nowIso()
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
-  const { id } = db()
-    .query(
-      `INSERT INTO question
-        (run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
-       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
-    )
-    .get(
-      o.runId,
+  const id = writeTransaction(() => {
+    db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(o.runId)
+    enqueueRunRecord(db(), o.runId, machineId(), askedAt)
+    return recordQuestion({
+      runId: o.runId,
       askedAt,
-      o.question,
-      o.options?.length ? JSON.stringify(o.options) : null,
-      o.recommendation ?? null,
-      o.why ?? null,
-      ASKED_VIA_LIVE,
+      question: o.question,
+      options: o.options,
+      recommendation: o.recommendation,
+      why: o.why,
+      askedVia: ASKED_VIA_LIVE,
       awaitingOperatorAt,
-    ) as { id: number }
+    })
+  })
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
   const q = db().query('SELECT answer FROM question WHERE id = ? AND answered_at IS NOT NULL')
 

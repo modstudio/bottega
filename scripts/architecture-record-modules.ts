@@ -12,6 +12,16 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/run/question-delivery.ts', [
+    '../database/db.ts',
+    './question-vocabulary.ts',
+  ]),
+  module('orchestrator/src/run/question-outbox.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../../../shared/secret-shaped.ts',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/record/record-command.ts', [
     '../../../shared/machine-config.ts',
     '../postgres/postgres-migrate.ts',
@@ -30,11 +40,13 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-doctor.ts', [
     '../postgres/postgres-migrate.ts',
+    '../database/db.ts',
     '../../../shared/record/schema.ts',
     './record-attribution.ts',
     './record-auth.ts',
     './record-session.ts',
     './record-sync.ts',
+    './machine-identity.ts',
   ]),
   module('orchestrator/src/record/record-session.ts', [
     '../../../shared/record-session.ts',

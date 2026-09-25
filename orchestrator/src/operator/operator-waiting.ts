@@ -13,6 +13,7 @@ import type {
   OperatorWaitingItem,
 } from '../../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 
@@ -122,12 +123,14 @@ export function relayQuestion(
     const at = nowIso()
     const changed = d
       .query(
-        `UPDATE question SET awaiting_operator_at=COALESCE(awaiting_operator_at,?), relayed_by=?
+        `UPDATE question SET awaiting_operator_at=COALESCE(awaiting_operator_at,?), relayed_by=?,
+          revision=revision+1
          WHERE id=? AND answered_at IS NULL`,
       )
       .run(at, authority.actor, id)
     if (changed.changes !== 1) throw new Error(`question ${id} is already answered`)
     auditRunMutation(authority, 'relay', note, d)
+    enqueueQuestionRecord(d, id)
   }, d)
   notify('question', id, d)
   return id

@@ -96,6 +96,10 @@ describe('the live ask channel always answers', () => {
       .query('SELECT asked_via FROM question WHERE run_id = ? AND answered_at IS NULL')
       .get(run)
     expect(open).toEqual({ asked_via: 'live' })
+    expect(db().query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
+      { kind: 'run' },
+      { kind: 'question' },
+    ])
   })
 
   test('missing required text instructs the worker without recording or returning an error', async () => {

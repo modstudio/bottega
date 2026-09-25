@@ -10,6 +10,7 @@ export const postgresSchema =
     'schema.ts',
     'schema-auth.ts',
     'schema-run.ts',
+    'schema-question.ts',
     'schema-review.ts',
     'schema-landing.ts',
     'schema-hub.ts',

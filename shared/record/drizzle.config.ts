@@ -6,6 +6,7 @@ export default defineConfig({
     './shared/record/schema.ts',
     './shared/record/schema-auth.ts',
     './shared/record/schema-run.ts',
+    './shared/record/schema-question.ts',
     './shared/record/schema-review.ts',
     './shared/record/schema-landing.ts',
     './shared/record/schema-docs.ts',

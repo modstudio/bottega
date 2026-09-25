@@ -21,6 +21,7 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
@@ -522,11 +523,16 @@ async function releaseEvalOwnedScratchWorktree(repo: string, runId: number | nul
  */
 function terminaliseJudgedProbe(runId: number): void {
   const answeredAt = nowIso()
+  const questions = db()
+    .query<{ id: number }, [number]>(
+      'SELECT id FROM question WHERE run_id=? AND answered_at IS NULL',
+    )
+    .all(runId)
   const answered = db()
     .query(
       `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
-            answerer_kind=?, answer_channel=?, awaiting_operator_at=NULL
+            answerer_kind=?, answer_channel=?, awaiting_operator_at=NULL, revision=revision+1
       WHERE run_id=? AND answered_at IS NULL`,
     )
     .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)
@@ -538,6 +544,7 @@ function terminaliseJudgedProbe(runId: number): void {
     .run(runId)
   if (answered.changes || terminalised.changes) {
     auditRunMutation(runMutationActor(runId), 'canon-eval')
+    for (const question of questions) enqueueQuestionRecord(db(), question.id)
   }
 }
 

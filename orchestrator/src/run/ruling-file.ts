@@ -6,6 +6,7 @@ import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
+import { enqueueQuestionRecord } from './question-outbox.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
 import { answererKindFromAnsweredBy } from './question-vocabulary.ts'
 import {
@@ -244,7 +245,7 @@ async function writeCanonProposal(
 function recordFiling(row: QuestionRow, requested: FiledRulingKind, filedRef: string, at: string) {
   const changed = db()
     .query(
-      `UPDATE question SET filed_as=?, filed_ref=?, filed_at=?
+      `UPDATE question SET filed_as=?, filed_ref=?, filed_at=?, revision=revision+1
         WHERE id=? AND filed_as IS NULL`,
     )
     .run(requested, filedRef, at, row.id)
@@ -329,6 +330,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
         at,
         reason: `as ${requested}`,
       })
+    enqueueQuestionRecord(db(), row.id)
   })
   return {
     question_id: row.id,

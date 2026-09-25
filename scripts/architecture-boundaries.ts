@@ -9,6 +9,7 @@ import {
 } from './architecture-record-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
+import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
@@ -696,14 +697,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-sync-boundary',
     'orchestrator/src/record/record-sync.ts',
+    // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
     [
-      'bun',
-      'drizzle-orm/bun-sql',
-      '../../../shared/record/schema.ts',
-      '../../../shared/record/schema-landing.ts',
-      '../../../shared/record/schema-review.ts',
-      '../../../shared/record/schema-run.ts',
-      '../../../shared/record-space-membership.ts',
+      'bun', 'drizzle-orm/bun-sql', 'drizzle-orm',
+      '../../../shared/record/schema.ts', '../../../shared/record/schema-landing.ts',
+      '../../../shared/record/schema-review.ts', '../../../shared/record/schema-run.ts',
+      '../../../shared/record/schema-question.ts', '../../../shared/record-space-membership.ts',
       '../database/db.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
@@ -711,6 +710,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-session.ts',
       '../review/review-outbox.ts',
       '../run/run-outbox.ts',
+      '../run/question-outbox.ts',
       '../score/score-outbox.ts',
       '../verdict/verdict-payload.ts',
       '../verdict/verdict-rules.ts',
@@ -792,6 +792,7 @@ export const importBoundaries: ImportBoundary[] = [
       './run-retry.ts',
       './run-retry-workspace.ts',
       './question-delivery.ts',
+      './question-outbox.ts',
       './question-vocabulary.ts',
       '../git/git-environment.ts',
     ],
@@ -916,20 +917,8 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep run process control independent of routing, contracts, reviews, and transports.',
   ),
-  boundary(
-    'run-stop-boundary',
-    'orchestrator/src/run/run-stop.ts',
-    [
-      '../cleanup/cleanup.ts',
-      '../database/db.ts',
-      '../resources/resource-ownership.ts',
-      './run-authority.ts',
-      './run-liveness.ts',
-      './question-vocabulary.ts',
-      '../worktree/worktree-remove.ts',
-      '../worktree/worktree-types.ts',
-    ],
-    'Keep run-stop independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  ...runStopBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
   boundary(
     'score-boundary',

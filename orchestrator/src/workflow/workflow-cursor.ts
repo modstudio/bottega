@@ -7,6 +7,7 @@ import {
   auditQuestionMutation,
   authorizeWorkflowQuestionMutation,
 } from '../run/question-mutation.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
@@ -96,10 +97,17 @@ function closeOpenWorkflowQuestion(
   at: string,
   d: Database,
 ): void {
+  const questions = d
+    .query<{ id: number }, [number]>(
+      `SELECT id FROM question
+       WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+    )
+    .all(cursorId)
   d.query(
-    `UPDATE question SET closed_at=?,close_reason=?
+    `UPDATE question SET closed_at=?,close_reason=?,revision=revision+1
      WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
   ).run(at, reason, cursorId)
+  for (const question of questions) enqueueQuestionRecord(d, question.id)
 }
 
 function findCursor(
@@ -691,17 +699,21 @@ function awaitWorkflowRulingImpl(
     )
     .get(row.id) as { id: number } | null
   if (open) {
-    d.query('UPDATE question SET question=?,workflow_key=? WHERE id=?').run(
+    d.query('UPDATE question SET question=?,workflow_key=?,revision=revision+1 WHERE id=?').run(
       question.trim(),
       row.workflow_key || null,
       open.id,
     )
+    enqueueQuestionRecord(d, open.id)
   } else {
-    d.query(
-      `INSERT INTO question
+    const inserted = d
+      .query(
+        `INSERT INTO question
         (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-       VALUES (?,?,?,?, 'workflow', ?)`,
-    ).run(row.id, row.workflow_key || null, at, question.trim(), at)
+       VALUES (?,?,?,?, 'workflow', ?) RETURNING id`,
+      )
+      .get(row.id, row.workflow_key || null, at, question.trim(), at) as { id: number }
+    enqueueQuestionRecord(d, inserted.id)
   }
   return {
     summary: { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' },
@@ -741,7 +753,8 @@ export function ruleWorkflow(
     const answeredBy = rulingActor(fromOperator, actor)
     const changed = d
       .query(
-        `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
+        `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
+          revision=revision+1
          WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
       )
       .run(ruling.trim(), at, answeredBy, fromOperator ? 'operator' : 'agent', channel, row.id)
@@ -754,6 +767,7 @@ export function ruleWorkflow(
       { questionId: question.id, action: 'rule', actor, at, reason: ruling.trim() },
       d,
     )
+    enqueueQuestionRecord(d, question.id)
     d.query(
       `UPDATE workflow_cursor SET state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
