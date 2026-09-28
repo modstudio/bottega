@@ -41,11 +41,7 @@ function lensRunId(database: Database, lensRecordId: string): string | null {
   return nullableString((JSON.parse(row.payload) as Payload).runId)
 }
 
-export function outboxParentRecordIds(
-  row: OutboxRow,
-  payload: Payload,
-  database: Database,
-): ParentRef[] {
+function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Database): ParentRef[] {
   switch (row.kind) {
     case 'score':
       return [{ kind: 'run', recordId: row.record_id }]
@@ -72,7 +68,7 @@ export function outboxParentRecordIds(
   }
 }
 
-export function outboxDependencyState(
+function outboxDependencyState(
   database: Database,
   parents: readonly ParentRef[],
 ): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string } {
@@ -92,7 +88,7 @@ export function outboxDependencyState(
   return { disposition: 'ready' }
 }
 
-export function outboxDependency(row: OutboxRow, payload: Payload, database: Database) {
+function outboxDependency(row: OutboxRow, payload: Payload, database: Database) {
   return outboxDependencyState(database, outboxParentRecordIds(row, payload, database))
 }
 
