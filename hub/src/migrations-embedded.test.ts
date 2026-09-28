@@ -22,6 +22,7 @@ test('embedded migrations produce the disk journal and schema hash', () => {
   }
   registerEmbeddedAssets({
     assets,
+    files: {},
     manifest: {
       name: PLATFORM_NAME,
       version: '1.2.3',

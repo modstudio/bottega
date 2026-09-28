@@ -41,6 +41,7 @@ test('source entries preserve their current argv prefixes', () => {
 test('compiled entries re-execute the current binary', () => {
   registerEmbeddedAssets({
     assets: {},
+    files: {},
     manifest: { name: PLATFORM_NAME, version: 'test', built: 'now', commit: 'test' },
   })
   for (const entry of entries) {

@@ -16,7 +16,7 @@ export function resolveAppStatic(pathname: string, built: boolean): AppStaticRes
 }
 
 /**
- * The absolute path of a resolved asset.
+ * Join a distribution directory and a resolved asset path.
  *
  * Both servers used to concatenate the dist directory and the relative path,
  * which produced `distindex.html` and served a 500 whose headers had already

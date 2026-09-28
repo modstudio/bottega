@@ -1,14 +1,12 @@
-import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { assetPath } from '../../shared/install-root.ts'
 import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
-import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { attributeRun } from './attribute.ts'
 import { leaseHolder, releaseLease, watch } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
+import { localAppStaticResponse } from './local-app-static.ts'
 import { LOCAL_LOGIN_MESSAGE, LocalHubAuth } from './local-auth.ts'
 import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
 import { routingViewData } from './orch-transforms.ts'
@@ -593,26 +591,7 @@ export function serve(port: number) {
         return Response.redirect(new URL(target + url.search, url), 301)
       }
 
-      const dist = assetPath('hub', 'web', 'dist')
-      const resolved = resolveAppStatic(url.pathname, existsSync(dist))
-      if (resolved.kind === '503') {
-        return new Response('hub/web is not built: cd hub/web && bun run build', {
-          status: 503,
-          headers: { 'content-type': 'text/plain; charset=utf-8' },
-        })
-      }
-      const file = Bun.file(appStaticPath(dist, resolved))
-      if (!(await file.exists())) {
-        // The index is checked too: streaming a missing file sends 200 headers
-        // first and fails mid-body, which reads as a broken page, not an error.
-        return resolved.kind === 'file'
-          ? new Response('not found', { status: 404 })
-          : new Response('hub/web is not built: cd hub/web && bun run build', {
-              status: 503,
-              headers: { 'content-type': 'text/plain; charset=utf-8' },
-            })
-      }
-      return new Response(file)
+      return localAppStaticResponse(url.pathname)
     },
   })
   if (port !== 0) {
