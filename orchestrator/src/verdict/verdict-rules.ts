@@ -30,6 +30,24 @@ export function refuseUnvoid(evidenceExcluded: string | null): string | null {
   return `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is ${evidenceExcluded === null ? 'none' : `'${evidenceExcluded}'`}`
 }
 
+export function refuseHostedUnvoid(
+  activeExclusionReason: string | null,
+  runEvidenceExcluded: string | null,
+): string | null {
+  const activeRefusal = refuseUnvoid(activeExclusionReason)
+  const runRefusal = refuseUnvoid(runEvidenceExcluded)
+  const activeIsOther = activeExclusionReason !== null && activeRefusal !== null
+  const runIsOther = runEvidenceExcluded !== null && runRefusal !== null
+  if (!activeIsOther && !runIsOther) return null
+  if (runEvidenceExcluded === null) return activeRefusal
+  if (activeExclusionReason === null) return runRefusal
+  return (
+    `unvoid requires '${VOID_EXCLUSION_REASON}'; active exclusion is '${activeExclusionReason}' ` +
+    `and run evidence_excluded is '${runEvidenceExcluded}'; ` +
+    'the other exclusion must be cleared by the command that owns it'
+  )
+}
+
 /**
  * What the job declares. Null where the scoring side cannot see it: the hosted
  * record knows a run's job by name only, and a machine that has not published

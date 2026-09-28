@@ -3,6 +3,7 @@ import {
   effectiveHostedExclusion,
   type JobFacts,
   refuseChildTurnVoid,
+  refuseHostedUnvoid,
   refuseUnvoid,
   refuseVerdict,
   type VerdictFacts,
@@ -55,6 +56,44 @@ describe('verdict rules', () => {
       expect(refuseUnvoid(reason)).toContain(`actual exclusion is '${reason}'`)
     }
   })
+
+  test.each([
+    [null, null],
+    [VOID_EXCLUSION_REASON, null],
+    [null, VOID_EXCLUSION_REASON],
+    [VOID_EXCLUSION_REASON, VOID_EXCLUSION_REASON],
+  ] as const)(
+    'hosted unvoid allows active exclusion %p and run exclusion %p',
+    (activeExclusionReason, runEvidenceExcluded) => {
+      expect(refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)).toBeNull()
+    },
+  )
+
+  test.each([
+    ['blocked by its tree: database unavailable', null],
+    [null, 'blocked by its tree: database unavailable'],
+  ] as const)(
+    'hosted unvoid keeps the single-exclusion refusal for active exclusion %p and run exclusion %p',
+    (activeExclusionReason, runEvidenceExcluded) => {
+      expect(refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)).toBe(
+        `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is 'blocked by its tree: database unavailable'`,
+      )
+    },
+  )
+
+  test.each([
+    ['blocked by its tree: database unavailable', VOID_EXCLUSION_REASON],
+    [VOID_EXCLUSION_REASON, 'unjudged: owner gone'],
+    ['blocked by its tree: database unavailable', 'unjudged: owner gone'],
+  ] as const)(
+    'hosted unvoid refuses active exclusion %p with run exclusion %p',
+    (activeExclusionReason, runEvidenceExcluded) => {
+      const refusal = refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)
+      expect(refusal).toContain(`active exclusion is '${activeExclusionReason}'`)
+      expect(refusal).toContain(`run evidence_excluded is '${runEvidenceExcluded}'`)
+      expect(refusal).toContain('the other exclusion must be cleared by the command that owns it')
+    },
+  )
 
   test.each([
     [{ delivery: 'other' }, 'delivery must be one of'],
