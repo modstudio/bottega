@@ -106,6 +106,8 @@ export type ProjectSettings = {
   autonomy?: AutonomySettings
   /** Whether Bottega manages and validates this project's hydrated canon context. */
   managedContext?: boolean
+  /** Standing task key used by the scheduled repository canon mirror. */
+  canonMirrorKey?: string
   /** Optional repository checks. Absent and false both leave a check disabled. */
   checks?: {
     spelling?: boolean

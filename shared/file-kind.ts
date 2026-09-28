@@ -1,6 +1,7 @@
 export type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
 
 const RULES: [FileKind, RegExp][] = [
+  ['docs', /^(?:\.claude\/rules|\.agents\/rules\/contexts)$/],
   ['generated', /drizzle\/(.*snapshot\.json$|meta\/)/],
   [
     'generated',

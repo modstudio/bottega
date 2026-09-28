@@ -8,6 +8,7 @@ export const PROJECT_SETTINGS_NOT_IMPORTED = [
   { key: 'autonomy', reason: 'local-register policy is not carried by the hosted project row' },
   { key: 'checks', reason: 'local-register policy is not carried by the hosted project row' },
   { key: 'search', reason: 'local search policy is not carried by the hosted project row' },
+  { key: 'canonMirrorKey', reason: 'local scheduled-job identity is not carried by the hosted project row' },
 ] as const
 
 export type HostedProjectColumns = {

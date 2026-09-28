@@ -524,6 +524,12 @@ function managedContextProblems(value: unknown): string[] {
     : ['managedContext must be a boolean']
 }
 
+function canonMirrorKeyProblems(value: unknown): string[] {
+  return value === undefined || (typeof value === 'string' && /^[A-Z][A-Z0-9]+-[0-9]+$/.test(value))
+    ? []
+    : ['canonMirrorKey must be a task key such as DEV-1002']
+}
+
 function projectSearchProblems(value: unknown): string[] {
   if (value === undefined) return []
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -555,6 +561,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...autonomyProblems(settings.autonomy),
     ...projectChecksProblems(settings.checks),
     ...managedContextProblems(settings.managedContext),
+    ...canonMirrorKeyProblems(settings.canonMirrorKey),
     ...projectSearchProblems(settings.search),
   ]
 
