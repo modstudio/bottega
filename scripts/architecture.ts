@@ -88,7 +88,7 @@ export const modules: ArchitectureModule[] = [
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', ['node:fs', '../branch/branches.ts', '../database/db.ts', '../project/projects.ts', '../reclaim/reclaim-residue.ts', './cleanup.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/cleanup/claim-reconciliation.ts', ['node:fs', '../../../shared/process-identity.ts', '../database/db.ts', '../git/git-environment.ts', '../run/run-lease.ts', '../sandbox/grok-trust.ts', './cleanup.ts', './cleanup-sweep-decisions.ts']),
+  module('orchestrator/src/cleanup/claim-reconciliation.ts', ['node:fs', '../../../shared/process-identity.ts', '../database/db.ts', '../git/git-environment.ts', '../project/project-lock.ts', '../resources/resource-claims.ts', '../run/run-lease.ts', '../sandbox/grok-trust.ts', './cleanup.ts', './cleanup-sweep-decisions.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/evidence/unjudged-expiry.ts', ['../../../shared/record/schema.ts', '../database/db.ts', '../record/machine-identity.ts', '../run/run-outbox.ts', './evidence-query.ts']),
   ...branchModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),

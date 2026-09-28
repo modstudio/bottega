@@ -58,3 +58,85 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
     { id: present, state: 'claimed' },
   ])
 })
+
+test('reconciling an absent worktree also settles its dependent port claim', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const project = `claim-cascade-${runId}`
+  upsertProject({ name: project, path: `/repo/${project}` })
+  const projectId = (
+    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+  ).id
+  db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
+  const insert = db().query(
+    `INSERT INTO resource_claim
+     (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     VALUES (?,?,?,?,?,'claimed',?)`,
+  )
+  insert.run(runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
+  insert.run(runId, runId, projectId, 'port', '21991', nowIso())
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project,
+    presentation: { log: () => {}, error: () => {}, setExitCode: () => {}, keptBranchLine: String },
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      path: () => ({ outcome: 'absent' }),
+      ref: () => ({ outcome: 'failed', detail: 'unused' }),
+      trust: { succeeded: true, headings: [] },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(
+    db().query('SELECT kind,state FROM resource_claim WHERE root_run_id=? ORDER BY id').all(runId),
+  ).toEqual([
+    { kind: 'worktree', state: 'absent' },
+    { kind: 'port', state: 'released' },
+  ])
+})
+
+test('a guard that changes before locked settlement leaves the claim claimed', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const project = `claim-race-${runId}`
+  upsertProject({ name: project, path: `/repo/${project}` })
+  const projectId = (
+    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+  ).id
+  db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
+  const claimId = Number(
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?,?,?,'worktree','/absent-tree','claimed',?)`,
+      )
+      .run(runId, runId, projectId, nowIso()).lastInsertRowid,
+  )
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project,
+    presentation: { log: () => {}, error: () => {}, setExitCode: () => {}, keptBranchLine: String },
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      path: () => ({ outcome: 'absent' }),
+      ref: () => ({ outcome: 'failed', detail: 'unused' }),
+      trust: { succeeded: true, headings: [] },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => {
+      db().query("UPDATE run SET status='running' WHERE id=?").run(runId)
+      reconcile()
+    },
+  })
+
+  expect(db().query('SELECT state FROM resource_claim WHERE id=?').get(claimId)).toEqual({
+    state: 'claimed',
+  })
+})

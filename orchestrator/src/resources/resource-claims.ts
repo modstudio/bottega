@@ -583,6 +583,7 @@ export function settleClaims(
     settledAt: string
     detail: string
     allocationKey?: string
+    claimId?: number
   },
 ): void {
   const settled = database
@@ -590,7 +591,8 @@ export function settleClaims(
       `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
        WHERE root_run_id=? AND kind=?
          AND (state='claimed' OR (?='released' AND state='retained'))
-         AND (? IS NULL OR allocation_key=?)`,
+         AND (? IS NULL OR allocation_key=?)
+         AND (? IS NULL OR id=?)`,
     )
     .run(
       input.state,
@@ -601,6 +603,8 @@ export function settleClaims(
       input.state,
       input.allocationKey ?? null,
       input.allocationKey ?? null,
+      input.claimId ?? null,
+      input.claimId ?? null,
     )
   if (settled.changes && input.kind === 'worktree') {
     const allocationState = settledStateForWorktreeResource(input.state, 'port')

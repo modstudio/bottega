@@ -4,8 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { lstatSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db, nowIso } from '../database/db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
+import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
+import { settleClaims } from '../resources/resource-claims.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import type { CleanupPresentation } from './cleanup.ts'
@@ -29,6 +31,7 @@ type ClaimedRow = {
   project_name: string | null
   project_path: string | null
   repository_path: string | null
+  worktree_path: string | null
 }
 
 export type ClaimReconciliationObservers = {
@@ -38,6 +41,11 @@ export type ClaimReconciliationObservers = {
   leaseState: typeof runLeaseState
   pidAlive: typeof pidAlive
 }
+
+type ClaimSynchronizer = (
+  row: Pick<ClaimedRow, 'id' | 'project_path' | 'worktree_path'>,
+  reconcile: () => void,
+) => void
 
 function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; detail?: string } {
   try {
@@ -63,7 +71,12 @@ function claimedRows(database: Database, projectName: string | undefined): Claim
   return database
     .query(
       `SELECT claim.id,claim.root_run_id,claim.project_id,claim.kind,claim.allocation_key,
-              project.name project_name,project.path project_path,root.cwd repository_path
+              project.name project_name,project.path project_path,root.cwd repository_path,
+              CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
+                (SELECT tree.allocation_key FROM resource_claim tree
+                 WHERE tree.root_run_id=claim.root_run_id AND tree.kind='worktree'
+                 ORDER BY CASE WHEN tree.run_id=claim.run_id THEN 0 ELSE 1 END,tree.id DESC LIMIT 1)
+              END worktree_path
        FROM resource_claim claim
        JOIN run root ON root.id=claim.root_run_id
        LEFT JOIN project ON project.id=claim.project_id
@@ -73,6 +86,18 @@ function claimedRows(database: Database, projectName: string | undefined): Claim
        ORDER BY claim.id`,
     )
     .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
+}
+
+function claimedRow(database: Database, claimId: number): ClaimedRow | null {
+  return claimedRows(database, undefined).find((row) => row.id === claimId) ?? null
+}
+
+const synchronizeClaim: ClaimSynchronizer = (row, reconcile) => {
+  if (!row.project_path) return reconcile()
+  const identity = { session: sessionId(), what: `reconcile absent claim ${row.id}` }
+  const underCleanupLock = () => withCleanupLock(row.project_path!, identity, reconcile)
+  if (!row.worktree_path) return underCleanupLock()
+  return withWorktreeLease(row.project_path, row.worktree_path, identity, underCleanupLock)
 }
 
 function resourceObservation(
@@ -157,6 +182,28 @@ function landingInFlight(database: Database, row: ClaimedRow): boolean {
   )
 }
 
+function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconciliationObservers) {
+  const repositoryObservation = row.repository_path
+    ? observers.path(row.repository_path)
+    : { outcome: 'failed' as const }
+  const repositoryState = row.project_id
+    ? ('known' as const)
+    : repositoryObservation.outcome === 'absent'
+      ? ('unknown-absent' as const)
+      : ('unknown-present' as const)
+  const observation = resourceObservation(row, repositoryState, observers)
+  const conversation = conversationFacts(database, row, observers)
+  return {
+    observation,
+    ruling: decideAbsentClaim({
+      probe: observation.probe,
+      owningRepository: repositoryState,
+      ...conversation,
+      landingInFlight: landingInFlight(database, row),
+    }),
+  }
+}
+
 export function reconcileAbsentClaims(input: {
   dryRun: boolean
   project?: string
@@ -164,26 +211,13 @@ export function reconcileAbsentClaims(input: {
   trust: GrokTrustObservation
   database?: Database
   observers?: ClaimReconciliationObservers
+  synchronize?: ClaimSynchronizer
 }): void {
   const database = input.database ?? db()
   const observers = input.observers ?? defaultObservers(input.trust)
+  const synchronize = input.synchronize ?? synchronizeClaim
   for (const row of claimedRows(database, input.project)) {
-    const repositoryObservation = row.repository_path
-      ? observers.path(row.repository_path)
-      : { outcome: 'failed' as const }
-    const repositoryState = row.project_id
-      ? ('known' as const)
-      : repositoryObservation.outcome === 'absent'
-        ? ('unknown-absent' as const)
-        : ('unknown-present' as const)
-    const observation = resourceObservation(row, repositoryState, observers)
-    const conversation = conversationFacts(database, row, observers)
-    const ruling = decideAbsentClaim({
-      probe: observation.probe,
-      owningRepository: repositoryState,
-      ...conversation,
-      landingInFlight: landingInFlight(database, row),
-    })
+    const { ruling } = rulingFor(database, row, observers)
     const label = `claim ${row.id} ${row.kind} ${row.allocation_key}`
     if (ruling.action === 'keep') {
       if (input.dryRun) input.presentation.log(`kept: ${label}: ${ruling.reason}`)
@@ -193,12 +227,25 @@ export function reconcileAbsentClaims(input: {
       input.presentation.log(`would settle absent ${label}`)
       continue
     }
-    database
-      .query(
-        `UPDATE resource_claim SET state='absent',settled_at=?,settled_detail=?
-         WHERE id=? AND state='claimed'`,
-      )
-      .run(nowIso(), observation.detail, row.id)
-    input.presentation.log(`settled absent ${label}`)
+    let settled = false
+    synchronize(row, () => {
+      writeTransaction(() => {
+        const lockedRow = claimedRow(database, row.id)
+        if (!lockedRow) return
+        const locked = rulingFor(database, lockedRow, observers)
+        if (locked.ruling.action === 'keep') return
+        settleClaims(database, {
+          rootRunId: lockedRow.root_run_id,
+          kind: lockedRow.kind,
+          state: 'absent',
+          settledAt: nowIso(),
+          detail: locked.observation.detail,
+          allocationKey: lockedRow.allocation_key,
+          claimId: lockedRow.id,
+        })
+        settled = true
+      }, database)
+    })
+    if (settled) input.presentation.log(`settled absent ${label}`)
   }
 }
