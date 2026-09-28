@@ -7,6 +7,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
+import { LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS } from './landing-outbox.ts'
 import { outboxOrder, syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
@@ -107,6 +108,45 @@ function localOutbox(
       .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'run',?,?,?)")
       .run(id, values.id ?? null, JSON.stringify(values), STAMP)
   }
+  return local
+}
+
+function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
+  const local = new Database(':memory:')
+  local.exec(`CREATE TABLE outbox (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
+  )`)
+  const payload = Object.fromEntries(
+    LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
+  )
+  Object.assign(payload, {
+    id: RECORD_ID,
+    spaceId: '01990000-0000-7000-8000-000000000001',
+    projectName: PLATFORM_SLUG,
+    machineId: MACHINE_ID,
+    localId: 42,
+    branch: 'DEV-977-old-shape',
+    tip: 'tip',
+    tree: 'tree',
+    prNumber: 586,
+    reviewIds: [],
+    patchId: 'patch',
+    tier: 2,
+    lensRounds: 1,
+    findingCount: 0,
+    admissionPath: 'architect_read',
+    overrideId: 'override-record',
+    at: STAMP,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  })
+  mutate(payload)
+  local
+    .query(
+      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'landing_triage_snapshot',?,?,?)",
+    )
+    .run(RECORD_ID, JSON.stringify(payload), STAMP)
   return local
 }
 
@@ -458,6 +498,42 @@ test('a pre-attribution run payload stays null instead of borrowing the pushing 
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
   expect(remote.parameters.flat()).toContain(null)
+  local.close()
+})
+
+test('an old-shape triage snapshot syncs with declared fills and keeps its override', async () => {
+  const local = localTriageSnapshotOutbox((payload) => {
+    delete payload.admissionPath
+    delete payload.readId
+  })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  const values = remote.parameters.find((parameters) => parameters.includes('override-record'))
+  expect(values).toContain('exact_review')
+  expect(values).toContain(null)
+  local.close()
+})
+
+test.each([
+  {
+    name: 'an unexpected extra column',
+    mutate: (payload: Record<string, unknown>) => Object.assign(payload, { unexpected: null }),
+  },
+  {
+    name: 'a missing required column',
+    mutate: (payload: Record<string, unknown>) => {
+      delete payload.branch
+    },
+  },
+])('triage snapshot sync refuses $name', async ({ mutate }) => {
+  const local = localTriageSnapshotOutbox(mutate)
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toBe('landing_triage_snapshot outbox payload has an unexpected column set')
   local.close()
 })
 

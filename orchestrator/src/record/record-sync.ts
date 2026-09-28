@@ -33,19 +33,22 @@ import {
 import { db, nowIso } from '../database/db.ts'
 import {
   backfillReviewRecords,
-  REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
-  REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
-  REVIEW_READ_RECORD_PAYLOAD_COLUMNS,
-  REVIEW_RECORD_PAYLOAD_COLUMNS,
+  REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
+  REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
+  REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
+  REVIEW_RECORD_PAYLOAD_CONTRACT,
   type ReviewRecordBackfillResult,
 } from '../review/review-outbox.ts'
-import { backfillQuestionRecords, QUESTION_RECORD_PAYLOAD_COLUMNS } from '../run/question-outbox.ts'
+import {
+  backfillQuestionRecords,
+  QUESTION_RECORD_PAYLOAD_CONTRACT,
+} from '../run/question-outbox.ts'
 import {
   backfillRunRecords,
-  RUN_RECORD_PAYLOAD_COLUMNS,
+  RUN_RECORD_PAYLOAD_CONTRACT,
   type RunRecordBackfillResult,
 } from '../run/run-outbox.ts'
-import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_COLUMNS } from '../score/score-outbox.ts'
+import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_CONTRACT } from '../score/score-outbox.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
 import {
   effectiveHostedExclusion,
@@ -54,13 +57,13 @@ import {
 } from '../verdict/verdict-rules.ts'
 import {
   backfillLandingEvidenceRecords,
-  CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_RECORD_PAYLOAD_COLUMNS,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
+  CONTENTION_RECORD_PAYLOAD_CONTRACT,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
+  LANDING_RECORD_PAYLOAD_CONTRACT,
+  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
+  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
   type LandingEvidenceBackfillResult,
-  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+  TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
@@ -204,16 +207,8 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('outbox payload must be a JSON object')
   }
-  const compatibleProjectKinds = new Set(['score', 'review_lens', 'review_finding', 'review_read'])
-  if (compatibleProjectKinds.has(kind) && !Object.hasOwn(parsed, 'projectName')) {
-    Object.assign(parsed, { projectName: null })
-  }
-  if (kind === 'run' && !Object.hasOwn(parsed, 'startedByUserId')) {
-    Object.assign(parsed, { startedByUserId: null })
-  }
-  if (kind === 'run' && !Object.hasOwn(parsed, 'taskKey')) Object.assign(parsed, { taskKey: null })
-  if (kind === 'run' && !Object.hasOwn(parsed, 'evidenceUnvoid')) {
-    Object.assign(parsed, { evidenceUnvoid: null })
+  for (const [column, fill] of Object.entries(recordKinds[kind].laterAdded)) {
+    if (!Object.hasOwn(parsed, column)) Object.assign(parsed, { [column]: fill })
   }
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
@@ -725,9 +720,12 @@ async function projectRecordId(
 }
 
 const recordKinds = {
-  run: { columns: RUN_RECORD_PAYLOAD_COLUMNS, push: pushRun },
+  run: {
+    ...RUN_RECORD_PAYLOAD_CONTRACT,
+    push: pushRun,
+  },
   score: {
-    columns: SCORE_RECORD_PAYLOAD_COLUMNS,
+    ...SCORE_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -742,7 +740,7 @@ const recordKinds = {
       }),
   },
   question: {
-    columns: QUESTION_RECORD_PAYLOAD_COLUMNS,
+    ...QUESTION_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -773,7 +771,7 @@ const recordKinds = {
       }),
   },
   review: {
-    columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
+    ...REVIEW_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -786,7 +784,7 @@ const recordKinds = {
       }),
   },
   review_lens: {
-    columns: REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
+    ...REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -799,7 +797,7 @@ const recordKinds = {
       }),
   },
   review_finding: {
-    columns: REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
+    ...REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -812,7 +810,7 @@ const recordKinds = {
       }),
   },
   review_read: {
-    columns: REVIEW_READ_RECORD_PAYLOAD_COLUMNS,
+    ...REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -829,7 +827,7 @@ const recordKinds = {
       }),
   },
   landing: {
-    columns: LANDING_RECORD_PAYLOAD_COLUMNS,
+    ...LANDING_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -842,7 +840,7 @@ const recordKinds = {
       }),
   },
   landing_override: {
-    columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+    ...LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -855,7 +853,7 @@ const recordKinds = {
       }),
   },
   landing_review_carry: {
-    columns: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+    ...LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -868,7 +866,7 @@ const recordKinds = {
       }),
   },
   landing_triage_snapshot: {
-    columns: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
+    ...LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -881,7 +879,7 @@ const recordKinds = {
       }),
   },
   contention: {
-    columns: CONTENTION_RECORD_PAYLOAD_COLUMNS,
+    ...CONTENTION_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -894,7 +892,7 @@ const recordKinds = {
       }),
   },
   test_flake: {
-    columns: TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+    ...TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)

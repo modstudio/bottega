@@ -69,6 +69,10 @@ export const RUN_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const RUN_RECORD_PAYLOAD_CONTRACT = {
+  columns: RUN_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: { startedByUserId: null, taskKey: null, evidenceUnvoid: null },
+} as const
 
 type LocalRun = Record<string, unknown> & {
   id: number
