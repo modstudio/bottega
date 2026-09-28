@@ -71,7 +71,7 @@ describe('epic scoreboard', () => {
     })
     db()
       .query(`UPDATE run SET launch_key='DEV-501',branch='DEV-501-orch-1',latency_ms=NULL,
-      last_event_at='2026-09-08T08:30:00.000Z' WHERE id=?`)
+      last_event_at='2026-09-08T08:30:00.000Z',agent_pid=4194304 WHERE id=?`)
       .run(ghost)
     db()
       .query(`INSERT INTO review (recorded_at,completed_at,outdated_at,outdated_reason)

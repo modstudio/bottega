@@ -4,8 +4,8 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
-import { runCoordinatorLogPath } from './run-artifacts.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
 describe('reapStale', () => {

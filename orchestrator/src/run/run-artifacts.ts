@@ -64,10 +64,6 @@ export function runFilePaths(
   }
 }
 
-/** A detached coordinator's diagnostics, derivable after only its run id survives. */
-export const runCoordinatorLogPath = (id: number, runsDir = RUNS_DIR): string =>
-  join(runsDir, `${id}.coordinator.log`)
-
 /** Opportunistic, on the way past: cheap, and no cron has to remember. */
 export function pruneRuns(dir: string): void {
   const cutoff = Date.now() - KEEP_RUN_FILES_DAYS * 86_400_000

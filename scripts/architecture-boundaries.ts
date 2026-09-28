@@ -850,6 +850,12 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
   ),
   boundary(
+    'run-coordinator-log-boundary',
+    'orchestrator/src/run/run-coordinator-log.ts',
+    ['node:fs', 'node:path', '../../../shared/secret-shaped.ts', './run-artifacts.ts'],
+    'Keep coordinator diagnostics independent of run lifecycle policy and database state.',
+  ),
+  boundary(
     'run-diff-boundary',
     'orchestrator/src/run/run-diff.ts',
     ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../project/projects.ts'],
@@ -871,7 +877,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../project/projects.ts',
       '../record/record-attribution.ts',
-      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
+      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-coordinator-log.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
     ],
     'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
   ),
@@ -907,7 +913,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['./question-vocabulary.ts'],
   ),
   // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
-  boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-lease.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
+  boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-coordinator-log.ts', './run-lease.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
   boundary(
     'run-outbox-boundary',
     'orchestrator/src/run/run-outbox.ts',

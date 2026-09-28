@@ -4,19 +4,13 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { readFileSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
-import { runCoordinatorLogPath } from './run-artifacts.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
-import {
-  abandonedBootstrap,
-  coordinatorErrorTail,
-  coordinatorSetupDeath,
-  PENDING_BOOTSTRAP_MS,
-} from './run-bootstrap.ts'
+import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { coordinatorSetupError } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 
 /**
@@ -173,14 +167,36 @@ function deadRunReason(row: RunningRow): string {
   return 'legacy run has no live pid'
 }
 
-function setupDeathError(id: number): string {
-  let output = ''
-  try {
-    output = readFileSync(runCoordinatorLogPath(id), 'utf8')
-  } catch {
-    // A missing or unreadable log is still an observed setup death.
+type RunningDisposition = 'alive' | 'dead' | 'abandoned-bootstrap' | 'setup-death'
+
+function runningDisposition(row: RunningRow, now: number): RunningDisposition {
+  const leaseState = runLeaseState(row.id)
+  const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
+  if (row.agent === '(pending)') {
+    return abandonedBootstrap({
+      agent: row.agent,
+      pid: row.pid,
+      pidAlive: coordinatorPidAlive,
+      leaseState,
+      startedAt: row.started_at,
+      now,
+    })
+      ? 'abandoned-bootstrap'
+      : 'alive'
   }
-  return `coordinator exited during setup before the agent started; last output: ${coordinatorErrorTail(output)}`
+  if (
+    coordinatorSetupDeath({
+      agent: row.agent,
+      agentPidPresent: row.agent_pid !== null,
+      leaseState,
+      pidAlive: coordinatorPidAlive,
+    })
+  ) {
+    return 'setup-death'
+  }
+  return runAlive({ status: 'running', lease: leaseState, pidAlive: coordinatorPidAlive })
+    ? 'alive'
+    : 'dead'
 }
 
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
@@ -193,39 +209,15 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const abandonedBootstraps: number[] = []
   const setupDeaths: number[] = []
   for (const r of rows) {
-    const leaseState = runLeaseState(r.id)
-    const coordinatorPidAlive = Boolean(r.pid && pidAlive(r.pid))
-    // An abandoned `(pending)` row is bootstrap residue, not an agent run.
-    // Checked before the hour cutoff so these are failed/harness rather than
-    // waiting for stale/interrupted.
-    if (r.agent === '(pending)') {
-      if (
-        abandonedBootstrap({
-          agent: r.agent,
-          pid: r.pid,
-          pidAlive: coordinatorPidAlive,
-          leaseState,
-          startedAt: r.started_at,
-          now,
-        })
-      ) {
+    switch (runningDisposition(r, now)) {
+      case 'dead':
+        dead.push(r.id)
+        break
+      case 'abandoned-bootstrap':
         abandonedBootstraps.push(r.id)
-      }
-      continue
-    }
-    if (
-      coordinatorSetupDeath({
-        agent: r.agent,
-        agentPidPresent: r.agent_pid !== null,
-        leaseState,
-        pidAlive: coordinatorPidAlive,
-      })
-    ) {
-      setupDeaths.push(r.id)
-      continue
-    }
-    if (!runAlive({ status: 'running', lease: leaseState, pidAlive: coordinatorPidAlive })) {
-      dead.push(r.id)
+        break
+      case 'setup-death':
+        setupDeaths.push(r.id)
     }
   }
   if (linkedWorktreeReadOnly) {
@@ -241,7 +233,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         id,
         reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
-      ...setupDeaths.map((id) => ({ id, reason: setupDeathError(id) })),
+      ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupError(id) })),
     ]
   }
   if (abandonedBootstraps.length) {
@@ -268,7 +260,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         WHERE id=? AND status='running'`,
     )
     for (const id of setupDeaths) {
-      const error = setupDeathError(id)
+      const error = coordinatorSetupError(id)
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)

@@ -450,6 +450,12 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
   module('orchestrator/src/run/run-bootstrap.ts', ['./run-alive.ts']),
+  module('orchestrator/src/run/run-coordinator-log.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/secret-shaped.ts',
+    './run-artifacts.ts',
+  ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',

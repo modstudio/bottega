@@ -1,7 +1,6 @@
 // concern: run-bootstrap
 /** Knows only whether a reserved run's coordinator handoff was abandoned. */
 
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { RunLeaseState } from './run-alive.ts'
 
 /**
@@ -31,9 +30,6 @@ type CoordinatorSetupFacts = {
   pidAlive: boolean
 }
 
-const COORDINATOR_ERROR_TAIL_LIMIT = 2000
-const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
-
 /** Decide whether a reserved run was abandoned before its coordinator claimed it. */
 export function abandonedBootstrap(facts: BootstrapFacts): boolean {
   if (facts.agent !== '(pending)') return false
@@ -49,15 +45,4 @@ export function coordinatorSetupDeath(facts: CoordinatorSetupFacts): boolean {
     facts.leaseState !== 'held' &&
     !facts.pidAlive
   )
-}
-
-/** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
-export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
-  const trimmed = output.trim()
-  if (!trimmed) return '(no output)'
-  if (containsSecretShaped(trimmed)) return SECRET_SHAPED_OUTPUT
-  if (trimmed.length <= limit) return trimmed
-  const marker = '… [earlier output omitted] …\n'
-  if (limit <= marker.length) return trimmed.slice(-limit)
-  return `${marker}${trimmed.slice(-(limit - marker.length))}`
 }
