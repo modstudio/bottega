@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   createMemoryRecordApiClient,
@@ -9,10 +10,20 @@ import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
-import { canonMirrorFixtureRepository } from './canon-mirror-fixture.ts'
+
+function repository(): string {
+  const root = mkdtempSync(join(tmpdir(), 'canon-mirror-lint-'))
+  spawnFixtureGitSync(['init'], { cwd: root })
+  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
+  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
+  writeFileSync(join(root, 'README.txt'), 'fixture\n')
+  spawnFixtureGitSync(['add', '.'], { cwd: root })
+  spawnFixtureGitSync(['commit', '-m', 'fixture'], { cwd: root })
+  return root
+}
 
 test('a canon lint finding stops publication before push', async () => {
-  const root = canonMirrorFixtureRepository('canon-mirror-lint')
+  const root = repository()
   let pushed = false
   try {
     installRecordApiClient(createMemoryRecordApiClient())

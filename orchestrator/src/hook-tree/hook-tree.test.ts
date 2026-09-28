@@ -75,6 +75,8 @@ describe('hook-tree lifecycle decisions', () => {
     expect(hookTreeEvidenceDecision()).toEqual({
       evidenceExcluded: 'hook tree lifecycle row; not agent execution',
     })
-    expect(agentExecutionStatsSql('r')).toBe("r.job NOT IN ('hook-tree','landing-tree')")
+    expect(agentExecutionStatsSql('r')).toBe(
+      "r.job NOT IN ('hook-tree','landing-tree','canon-mirror')",
+    )
   })
 })
