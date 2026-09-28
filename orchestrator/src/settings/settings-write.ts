@@ -9,6 +9,7 @@ import {
   fchmodSync,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -141,6 +142,7 @@ export function writeNewSettingsFileAtomically(
   text: string,
   mode = 0o644,
   installed?: () => void,
+  beforePublish?: () => void,
 ): void {
   if (pathExistsNoFollow(path)) changedAfterPlanning(path)
   const directory = dirname(path)
@@ -154,13 +156,24 @@ export function writeNewSettingsFileAtomically(
     closeSync(fd)
     fd = null
     if (pathExistsNoFollow(path)) changedAfterPlanning(path)
-    renameSync(temporary, path)
+    beforePublish?.()
+    try {
+      publishFileToAbsentPath(temporary, path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') changedAfterPlanning(path)
+      throw error
+    }
     installed?.()
-    fsyncDirectory(directory)
   } finally {
     if (fd !== null) closeSync(fd)
     rmSync(temporary, { force: true })
   }
+}
+
+export function publishFileToAbsentPath(source: string, target: string): void {
+  linkSync(source, target)
+  unlinkSync(source)
+  fsyncDirectory(dirname(target))
 }
 
 function pathExistsNoFollow(path: string): boolean {

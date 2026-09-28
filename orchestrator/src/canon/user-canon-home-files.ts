@@ -16,6 +16,7 @@ import {
   applyBackedUpSettingsWrites,
   backupSettingsWrites,
   planSettingsWrite,
+  publishFileToAbsentPath,
   restoreSettingsBackup,
   writeNewSettingsFileAtomically,
 } from '../settings/settings-write.ts'
@@ -58,7 +59,15 @@ type PlannedUserCanonDelete = { slug: string; path: string; collected: Collected
 
 export type UserCanonHomeBatchHooks = {
   beforeDelete?: (path: string) => void
+  beforeCreatePublish?: (path: string) => void
   afterMutation?: (path: string) => void
+  beforeDeletedFileRestore?: (path: string) => void
+  beforeQuarantineCleanup?: (path: string) => void
+}
+
+export type UserCanonHomeBatchResult = {
+  backups: string[]
+  cleanupFailures: string[]
 }
 
 export function userCanonHomesFromEnvironment(
@@ -194,12 +203,12 @@ export function applyUserCanonHomePlans(
   environment: StateEnvironment = process.env,
   dryRun = false,
   hooks: UserCanonHomeBatchHooks = {},
-): string[] {
-  if (dryRun) return []
+): UserCanonHomeBatchResult {
+  if (dryRun) return { backups: [], cleanupFailures: [] }
   const changedPlans = plans.filter(
     (plan) => plan.writes.length > 0 || plan.adopts.length > 0 || plan.deletes.length > 0,
   )
-  if (changedPlans.length === 0) return []
+  if (changedPlans.length === 0) return { backups: [], cleanupFailures: [] }
   preflightUserCanonHomePlans(changedPlans)
   const existingMutations = existingUserCanonMutations(changedPlans)
   const backedUpMutations = backupSettingsWrites(
@@ -216,7 +225,7 @@ export function applyUserCanonHomePlans(
     ),
   )
   const backedUpWrites = backedUpMutations.filter((write) => writePaths.has(write.plan.path))
-  const createdFiles: { path: string; body: string }[] = []
+  const createdFiles: { path: string; body: string; dev: number; ino: number }[] = []
   const createdDirectories: { path: string; dev: number; ino: number }[] = []
   const deletedFiles: { path: string; quarantine: string }[] = []
   const installedWrites: string[] = []
@@ -237,7 +246,6 @@ export function applyUserCanonHomePlans(
         },
       })
     }
-    for (const deleted of deletedFiles) rmSync(deleted.quarantine)
   } catch (error) {
     throw rollbackUserCanonHomeBatch(
       error,
@@ -247,9 +255,22 @@ export function applyUserCanonHomePlans(
       deletedFiles,
       installedWrites,
       environment,
+      hooks,
     )
   }
-  return backedUpMutations.map((write) => write.backup)
+  const cleanupFailures: string[] = []
+  for (const deleted of deletedFiles) {
+    try {
+      hooks.beforeQuarantineCleanup?.(deleted.quarantine)
+      rmSync(deleted.quarantine)
+    } catch (error) {
+      cleanupFailures.push(`${deleted.quarantine}: ${String(error)}`)
+    }
+  }
+  return {
+    backups: backedUpMutations.map((write) => write.backup),
+    cleanupFailures,
+  }
 }
 
 function preflightUserCanonHomePlans(plans: UserCanonHomePlan[]): void {
@@ -275,7 +296,7 @@ function existingUserCanonMutations(plans: UserCanonHomePlan[]) {
 
 function applyUserCanonCreatesAndDeletes(
   plans: UserCanonHomePlan[],
-  createdFiles: { path: string; body: string }[],
+  createdFiles: { path: string; body: string; dev: number; ino: number }[],
   createdDirectories: { path: string; dev: number; ino: number }[],
   deletedFiles: { path: string; quarantine: string }[],
   hooks: UserCanonHomeBatchHooks,
@@ -287,7 +308,7 @@ function applyUserCanonCreatesAndDeletes(
       hooks.afterMutation?.(row.path)
     }
     for (const row of plan.writes.filter((write) => !write.existing)) {
-      createUserCanonFile(plan.home, row, createdFiles, createdDirectories)
+      createUserCanonFile(plan.home, row, createdFiles, createdDirectories, hooks)
       hooks.afterMutation?.(row.path)
     }
   }
@@ -296,8 +317,9 @@ function applyUserCanonCreatesAndDeletes(
 function createUserCanonFile(
   home: UserCanonHomeTarget,
   row: { path: string; body: string },
-  createdFiles: { path: string; body: string }[],
+  createdFiles: { path: string; body: string; dev: number; ino: number }[],
   createdDirectories: { path: string; dev: number; ino: number }[],
+  hooks: UserCanonHomeBatchHooks,
 ): void {
   const parent = dirname(row.path)
   if (!pathState(parent)) {
@@ -313,25 +335,33 @@ function createUserCanonFile(
     assertRegularPath(parent, 'directory', home)
     assertResolvedUnderHome(home, parent)
   }
-  writeNewSettingsFileAtomically(row.path, row.body, 0o644, () => {
-    createdFiles.push({ path: row.path, body: row.body })
-  })
+  writeNewSettingsFileAtomically(
+    row.path,
+    row.body,
+    0o644,
+    () => {
+      const created = lstatSync(row.path)
+      createdFiles.push({ path: row.path, body: row.body, dev: created.dev, ino: created.ino })
+    },
+    () => hooks.beforeCreatePublish?.(row.path),
+  )
   assertResolvedUnderHome(home, row.path)
 }
 
 function rollbackUserCanonHomeBatch(
   cause: unknown,
   backups: ReturnType<typeof backupSettingsWrites>,
-  createdFiles: { path: string; body: string }[],
+  createdFiles: { path: string; body: string; dev: number; ino: number }[],
   createdDirectories: { path: string; dev: number; ino: number }[],
   deletedFiles: { path: string; quarantine: string }[],
   installedWrites: string[],
   environment: StateEnvironment,
+  hooks: UserCanonHomeBatchHooks,
 ): Error {
   const restorationErrors: string[] = []
   removeCreatedFiles(createdFiles, restorationErrors)
   restoreUserCanonWrites(backups, installedWrites, environment, restorationErrors)
-  restoreDeletedFiles(deletedFiles, restorationErrors)
+  restoreDeletedFiles(deletedFiles, restorationErrors, hooks)
   removeCreatedDirectories(createdDirectories, restorationErrors)
   const backupLines = backups.map((write) => `${write.plan.path}: ${write.backup}`).join('\n')
   const restoration = restorationErrors.length
@@ -343,11 +373,20 @@ function rollbackUserCanonHomeBatch(
   )
 }
 
-function removeCreatedFiles(files: { path: string; body: string }[], errors: string[]): void {
-  for (const { path, body } of [...files].reverse()) {
+function removeCreatedFiles(
+  files: { path: string; body: string; dev: number; ino: number }[],
+  errors: string[],
+): void {
+  for (const { path, body, dev, ino } of [...files].reverse()) {
     try {
       const state = pathState(path)
-      if (!state?.isFile() || state.nlink !== 1 || readFileSync(path, 'utf8') !== body) {
+      if (
+        !state?.isFile() ||
+        state.dev !== dev ||
+        state.ino !== ino ||
+        state.nlink !== 1 ||
+        readFileSync(path, 'utf8') !== body
+      ) {
         errors.push(`${path}: restoration conflict; created file changed after installation`)
         continue
       }
@@ -378,14 +417,30 @@ function restoreUserCanonWrites(
 function restoreDeletedFiles(
   deletedFiles: { path: string; quarantine: string }[],
   errors: string[],
+  hooks: UserCanonHomeBatchHooks,
 ): void {
   for (const deleted of [...deletedFiles].reverse()) {
     try {
       if (pathState(deleted.path)) {
-        errors.push(`${deleted.path}: restoration conflict; path was recreated after deletion`)
+        errors.push(
+          `${deleted.path}: restoration conflict; path was recreated after deletion; ` +
+            `quarantine retained at ${deleted.quarantine}`,
+        )
         continue
       }
-      renameSync(deleted.quarantine, deleted.path)
+      try {
+        hooks.beforeDeletedFileRestore?.(deleted.path)
+        publishFileToAbsentPath(deleted.quarantine, deleted.path)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+          errors.push(
+            `${deleted.path}: restoration conflict; path was recreated after deletion; ` +
+              `quarantine retained at ${deleted.quarantine}`,
+          )
+          continue
+        }
+        throw error
+      }
     } catch (error) {
       errors.push(`${deleted.path}: ${String(error)}`)
     }

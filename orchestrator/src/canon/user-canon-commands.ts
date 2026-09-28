@@ -154,7 +154,10 @@ export async function userCanonHydrateCommand(
     return
   }
   const dryRun = flags.has('dry-run')
-  const backups = applyUserCanonHomePlans(plans, process.env, dryRun)
-  for (const path of backups) presentation.log(`backup ${path}`)
+  const result = applyUserCanonHomePlans(plans, process.env, dryRun)
+  for (const path of result.backups) presentation.log(`backup ${path}`)
+  for (const failure of result.cleanupFailures) {
+    presentation.log(`quarantine cleanup failed; committed hydrate retained ${failure}`)
+  }
   presentation.log(`${dryRun ? 'would hydrate' : 'hydrated'} ${count} paths`)
 }

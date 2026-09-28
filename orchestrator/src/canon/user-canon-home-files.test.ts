@@ -106,7 +106,7 @@ describe('Claude home canon files', () => {
       adopt: true,
     })
 
-    const backups = applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state })
+    const { backups } = applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state })
 
     expect(plan.adopts.map(({ path: adoptedPath }) => adoptedPath)).toEqual([path])
     expect(backups).toHaveLength(1)
@@ -128,7 +128,10 @@ describe('Claude home canon files', () => {
     })
 
     const state = join(dirname(claudeHome.path), 'state')
-    expect(applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state }, true)).toEqual([])
+    expect(applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state }, true)).toEqual({
+      backups: [],
+      cleanupFailures: [],
+    })
     expect(plan.adopts.map(({ path: adoptedPath }) => adoptedPath)).toEqual([path])
     expect(readFileSync(path, 'utf8')).toBe('local')
     expect(() => lstatSync(state)).toThrow()
@@ -321,6 +324,119 @@ describe('Claude home canon files', () => {
     expect(() => applyUserCanonHomePlans([plan])).toThrow(/symbolic link targets/)
     expect(lstatSync(entry).isSymbolicLink()).toBe(true)
     expect(() => readFileSync(entry, 'utf8')).toThrow()
+  })
+
+  test('does not overwrite a destination created at the final publish boundary', () => {
+    const claudeHome = temporaryClaudeHome()
+    const entry = join(claudeHome.path, 'CLAUDE.md')
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'rendered' }],
+      files: [],
+    })
+
+    expect(() =>
+      applyUserCanonHomePlans([plan], process.env, false, {
+        beforeCreatePublish: () => writeFileSync(entry, 'concurrent file'),
+      }),
+    ).toThrow(/changed after planning/)
+    expect(readFileSync(entry, 'utf8')).toBe('concurrent file')
+  })
+
+  test('rollback keeps a same-bytes replacement of a created file', () => {
+    const claudeHome = temporaryClaudeHome()
+    const entry = join(claudeHome.path, 'CLAUDE.md')
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'rendered' }],
+      files: [],
+    })
+    let failure: unknown
+
+    try {
+      applyUserCanonHomePlans([plan], process.env, false, {
+        afterMutation: () => {
+          const body = readFileSync(entry, 'utf8')
+          rmSync(entry)
+          writeFileSync(entry, body)
+          throw new Error('forced failure')
+        },
+      })
+    } catch (error) {
+      failure = error
+    }
+
+    expect(readFileSync(entry, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}rendered`)
+    expect(String(failure)).toContain(`${entry}: restoration conflict`)
+  })
+
+  test('rollback does not overwrite a destination created at the restore publish boundary', () => {
+    const claudeHome = temporaryClaudeHome()
+    const rules = join(claudeHome.path, 'rules')
+    const stale = join(rules, 'stale.md')
+    mkdirSync(rules)
+    writeFileSync(stale, `${USER_CANON_MANAGED_MARKER}stale`)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [],
+      files: collectUserCanonHome(claudeHome),
+    })
+    let failure: unknown
+
+    try {
+      applyUserCanonHomePlans(
+        [plan],
+        { BOTTEGA_STATE_HOME: join(dirname(claudeHome.path), 'state') },
+        false,
+        {
+          afterMutation: () => {
+            throw new Error('forced failure')
+          },
+          beforeDeletedFileRestore: () => writeFileSync(stale, 'concurrent file'),
+        },
+      )
+    } catch (error) {
+      failure = error
+    }
+
+    expect(readFileSync(stale, 'utf8')).toBe('concurrent file')
+    expect(String(failure)).toContain(`${stale}: restoration conflict`)
+    expect(String(failure)).toContain('quarantine retained at')
+  })
+
+  test('a failed quarantine cleanup leaves the committed result and names the quarantine', () => {
+    const claudeHome = temporaryClaudeHome()
+    const rules = join(claudeHome.path, 'rules')
+    mkdirSync(rules)
+    for (const name of ['first.md', 'second.md']) {
+      writeFileSync(join(rules, name), `${USER_CANON_MANAGED_MARKER}${name}`)
+    }
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [],
+      files: collectUserCanonHome(claudeHome),
+    })
+    let cleanup = 0
+
+    const result = applyUserCanonHomePlans(
+      [plan],
+      { BOTTEGA_STATE_HOME: join(dirname(claudeHome.path), 'state') },
+      false,
+      {
+        beforeQuarantineCleanup: () => {
+          cleanup += 1
+          if (cleanup === 2) throw new Error('forced cleanup failure')
+        },
+      },
+    )
+
+    expect(existsSync(join(rules, 'first.md'))).toBe(false)
+    expect(existsSync(join(rules, 'second.md'))).toBe(false)
+    expect(result.cleanupFailures).toHaveLength(1)
+    expect(result.cleanupFailures[0]).toContain('user-canon-delete')
+    expect(result.cleanupFailures[0]).toContain('forced cleanup failure')
+    const quarantine = result.cleanupFailures[0]!.split(': Error:')[0]!
+    expect(existsSync(quarantine)).toBe(true)
   })
 })
 
