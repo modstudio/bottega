@@ -622,6 +622,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
     '../../../shared/config-directory.ts',
+    '../../../shared/state-directory.ts',
     '../database/db.ts',
     '../mcp/mcp-probe.ts',
     '../project/projects.ts',

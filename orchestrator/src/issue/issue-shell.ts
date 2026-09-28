@@ -3,11 +3,11 @@
 
 import { type ChildProcess, spawn } from 'node:child_process'
 import { resolve } from 'node:path'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import { isGroupKillablePgid, sampleProcesses, terminateProcessGroup } from '../idle-kill.ts'
 import {
-  expandHome,
-  READONLY_LENS_DENY_PATHS,
+  createSandboxRuntimeConfig,
   READONLY_LENS_DENY_SOCKETS,
   type SandboxRuntimeConfig,
 } from '../sandbox/sandbox.ts'
@@ -178,11 +178,11 @@ export function filedIssueCommandPlan(input: {
   operatorEnvPaths: readonly string[]
   secretPaths: readonly string[]
   workerEnvironment?: Readonly<Record<string, string>>
+  environment?: ConfigEnvironment
 }): FiledIssueCommandPlan {
   const worktree = resolve(input.worktree)
   const sandboxHome = resolve(input.sandboxHome)
   const denied = [
-    ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
     ...READONLY_LENS_DENY_SOCKETS,
     ...input.secretPaths,
     ...input.operatorEnvPaths,
@@ -196,19 +196,22 @@ export function filedIssueCommandPlan(input: {
       LANG: input.lang,
       TMPDIR: sandboxHome,
     },
-    profile: {
-      network: {
-        allowedDomains: [],
-        deniedDomains: [],
-        allowUnixSockets: [],
-        allowLocalBinding: true,
+    profile: createSandboxRuntimeConfig(
+      {
+        network: {
+          allowedDomains: [],
+          deniedDomains: [],
+          allowUnixSockets: [],
+          allowLocalBinding: true,
+        },
+        filesystem: {
+          denyRead: [...new Set(denied)],
+          allowWithinDeny: [],
+          allowWrite: [worktree, sandboxHome],
+          denyWrite: [],
+        },
       },
-      filesystem: {
-        denyRead: [...new Set(denied)],
-        allowWithinDeny: [],
-        allowWrite: [worktree, sandboxHome],
-        denyWrite: [],
-      },
-    },
+      input.environment,
+    ),
   }
 }

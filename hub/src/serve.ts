@@ -9,6 +9,7 @@ import { leaseHolder, releaseLease, watch } from './collect.ts'
 import { db, enableSchemaReload, nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
+import { LOCAL_LOGIN_MESSAGE, LocalHubAuth } from './local-auth.ts'
 import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
 import { routingViewData } from './orch-transforms.ts'
 import { projectNames, projects } from './projects.ts'
@@ -98,6 +99,7 @@ export class TtlCache {
 }
 
 const orchCache = new TtlCache(ORCH_CACHE_TTL_MS)
+const localAuth = new LocalHubAuth()
 
 /** Cache a complete orch-backed procedure response, including its strip. */
 export function cachedOrchResponse<T>(key: string, load: () => Promise<T> | T): Promise<T> {
@@ -117,7 +119,13 @@ export function trpcMutationRequestAllowed(request: Request): boolean {
   return origin === new URL(request.url).origin || fetchSite === 'same-origin'
 }
 
-export function handleTrpcRequest(request: Request): Promise<Response> {
+export function handleTrpcRequest(
+  request: Request,
+  auth: Pick<LocalHubAuth, 'allows'> = localAuth,
+): Promise<Response> {
+  if (request.method.toUpperCase() === 'POST' && !auth.allows(request)) {
+    return Promise.resolve(new Response(LOCAL_LOGIN_MESSAGE, { status: 401 }))
+  }
   if (!trpcMutationRequestAllowed(request)) {
     return Promise.resolve(new Response('cross-origin tRPC mutation refused', { status: 403 }))
   }
@@ -567,12 +575,14 @@ export function serve(port: number) {
     idleTimeout: 255,
     port,
     // Loopback only. This page carries a per-task record of everything this
-    // machine works on across five private repos, and accepts an
-    // unauthenticated POST that runs a collect.
+    // machine works on across five private repos. Mutations require both a
+    // same-origin browser request and a valid local login session.
     hostname: '127.0.0.1',
     async fetch(req) {
       db()
       const url = new URL(req.url)
+
+      if (url.pathname === '/login') return localAuth.exchange(req)
 
       if (url.pathname.startsWith('/trpc')) {
         return handleTrpcRequest(req)

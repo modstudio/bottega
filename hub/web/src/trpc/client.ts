@@ -4,6 +4,10 @@ import type { inferRouterOutputs } from '@trpc/server'
 import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 import { isHostedMode } from '../lib/hub-mode.ts'
+import { toast } from '../ui/toast/toast.tsx'
+import { fetchWithHubCredentials } from './transport.ts'
+
+const LOCAL_LOGIN_MESSAGE = 'Your local session expired. Run `hub login` to sign in again.'
 
 function isUnauthorized(error: unknown) {
   return error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED'
@@ -42,11 +46,13 @@ const client = createTRPCClient<AppRouter>({
     httpBatchLink({
       url: '/trpc',
       fetch(url, options) {
-        const init = (options ?? {}) as RequestInit
-        return fetch(url, {
-          ...init,
-          credentials: isHostedMode() ? 'include' : init.credentials,
-        })
+        return fetchWithHubCredentials(
+          fetch,
+          isHostedMode(),
+          () => toast.error(LOCAL_LOGIN_MESSAGE),
+          url,
+          (options ?? {}) as RequestInit,
+        )
       },
     }),
   ],

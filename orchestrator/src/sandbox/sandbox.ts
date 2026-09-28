@@ -19,6 +19,7 @@ import {
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
+import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
@@ -56,6 +57,31 @@ export const READONLY_LENS_DENY_PATHS = [
  * project's checks only run in containers and the operator accepts host-equivalent access.
  */
 export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
+
+/** Reads denied by every SRT profile, including profiles outside normal runs. */
+function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
+  const loginTokenDirectory = ensureHubLoginTokenDirectory(environment)
+  return [
+    ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+    loginTokenDirectory,
+  ]
+}
+
+/** Construct an SRT profile while preserving the mandatory read denials. */
+export function createSandboxRuntimeConfig(
+  profile: SandboxRuntimeConfig,
+  environment: ConfigEnvironment = process.env,
+): SandboxRuntimeConfig {
+  return {
+    ...profile,
+    filesystem: {
+      ...profile.filesystem,
+      denyRead: [
+        ...new Set([...mandatorySrtDenyRead(environment), ...profile.filesystem.denyRead]),
+      ],
+    },
+  }
+}
 
 export const SRT_LIBRARY = join(
   ROOT,
@@ -166,7 +192,7 @@ export function readonlyLensProfile(input: {
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
   const protectedDenies = [
     ...new Set([
-      ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+      ...mandatorySrtDenyRead(environment),
       ...resolveEnvFilePaths(environment).map((path) => resolve(path)),
       ...resolveSecretPaths(input.project),
     ]),
@@ -208,34 +234,37 @@ export function readonlyLensProfile(input: {
   const allowWithinDeny = candidateAllows.filter(
     (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
   )
-  return {
-    network: {
-      allowedDomains: [
-        ...new Set([
-          ...vendorDomains,
-          'localhost',
-          '127.0.0.1',
-          '[::1]',
-          ...(input.mcpAllowlist ?? []),
-        ]),
-      ],
-      deniedDomains: [],
-      allowUnixSockets: input.allowDockerSocket ? dockerSocketPaths(environment) : [],
-      // On macOS srt's one switch covers both binding and outbound loopback.
-      // The per-run orch-ask listener uses an OS-assigned loopback port, so it
-      // cannot be named in the static domain list before srt starts.
-      allowLocalBinding: true,
+  return createSandboxRuntimeConfig(
+    {
+      network: {
+        allowedDomains: [
+          ...new Set([
+            ...vendorDomains,
+            'localhost',
+            '127.0.0.1',
+            '[::1]',
+            ...(input.mcpAllowlist ?? []),
+          ]),
+        ],
+        deniedDomains: [],
+        allowUnixSockets: input.allowDockerSocket ? dockerSocketPaths(environment) : [],
+        // On macOS srt's one switch covers both binding and outbound loopback.
+        // The per-run orch-ask listener uses an OS-assigned loopback port, so it
+        // cannot be named in the static domain list before srt starts.
+        allowLocalBinding: true,
+      },
+      filesystem: {
+        denyRead: [
+          ...protectedDenies,
+          ...(input.allowDockerSocket ? [] : READONLY_LENS_DENY_SOCKETS),
+        ],
+        allowWithinDeny,
+        allowWrite: [...new Set([worktree, runsDir, ...(scratchDir ? [scratchDir] : [])])],
+        denyWrite: [],
+      },
     },
-    filesystem: {
-      denyRead: [
-        ...protectedDenies,
-        ...(input.allowDockerSocket ? [] : READONLY_LENS_DENY_SOCKETS),
-      ],
-      allowWithinDeny,
-      allowWrite: [...new Set([worktree, runsDir, ...(scratchDir ? [scratchDir] : [])])],
-      denyWrite: [],
-    },
-  }
+    environment,
+  )
 }
 
 export type SandboxSelection = {

@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
   expandHome,
@@ -15,37 +18,45 @@ import {
 
 describe('filed issue command confinement', () => {
   test('denies secrets without carrying the coordinator environment', () => {
-    const plan = filedIssueCommandPlan({
-      command: 'bun run check',
-      worktree: '/trees/DEV-392',
-      sandboxHome: '/tmp/issue-home',
-      path: '/usr/bin:/bin',
-      lang: 'en_US.UTF-8',
-      operatorEnvPaths: ['/Users/operator/.claude/.env', '/Users/operator/config/platform.env'],
-      secretPaths: ['/project/.env', '/keys/token'],
-      workerEnvironment: { ORCH_RUN_ID: '41' },
-    })
+    const state = mkdtempSync(join(tmpdir(), 'issue-shell-state-'))
+    const environment = { [STATE_HOME_ENV]: state }
+    try {
+      const plan = filedIssueCommandPlan({
+        command: 'bun run check',
+        worktree: '/trees/DEV-392',
+        sandboxHome: '/tmp/issue-home',
+        path: '/usr/bin:/bin',
+        lang: 'en_US.UTF-8',
+        operatorEnvPaths: ['/Users/operator/.claude/.env', '/Users/operator/config/platform.env'],
+        secretPaths: ['/project/.env', '/keys/token'],
+        workerEnvironment: { ORCH_RUN_ID: '41' },
+        environment,
+      })
 
-    expect(plan.argv).toEqual(['sh', '-lc', 'bun run check'])
-    expect(plan.profile.network.allowLocalBinding).toBe(true)
-    expect(plan.profile.network.allowedDomains).toEqual([])
-    expect(plan.profile.filesystem.allowWrite).toEqual(['/trees/DEV-392', '/tmp/issue-home'])
-    expect(plan.profile.filesystem.denyRead).toEqual([
-      ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-      ...READONLY_LENS_DENY_SOCKETS,
-      '/project/.env',
-      '/keys/token',
-      '/Users/operator/.claude/.env',
-      '/Users/operator/config/platform.env',
-    ])
-    expect(plan.env).toEqual({
-      ORCH_RUN_ID: '41',
-      PATH: '/usr/bin:/bin',
-      HOME: '/tmp/issue-home',
-      LANG: 'en_US.UTF-8',
-      TMPDIR: '/tmp/issue-home',
-    })
-    expect(plan.env).not.toHaveProperty('UNRELATED_COORDINATOR_VALUE')
+      expect(plan.argv).toEqual(['sh', '-lc', 'bun run check'])
+      expect(plan.profile.network.allowLocalBinding).toBe(true)
+      expect(plan.profile.network.allowedDomains).toEqual([])
+      expect(plan.profile.filesystem.allowWrite).toEqual(['/trees/DEV-392', '/tmp/issue-home'])
+      expect(plan.profile.filesystem.denyRead).toEqual([
+        ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+        hubLoginTokenDirectory(environment),
+        ...READONLY_LENS_DENY_SOCKETS,
+        '/project/.env',
+        '/keys/token',
+        '/Users/operator/.claude/.env',
+        '/Users/operator/config/platform.env',
+      ])
+      expect(plan.env).toEqual({
+        ORCH_RUN_ID: '41',
+        PATH: '/usr/bin:/bin',
+        HOME: '/tmp/issue-home',
+        LANG: 'en_US.UTF-8',
+        TMPDIR: '/tmp/issue-home',
+      })
+      expect(plan.env).not.toHaveProperty('UNRELATED_COORDINATOR_VALUE')
+    } finally {
+      rmSync(state, { recursive: true, force: true })
+    }
   })
 
   test('worker gate environment withholds credentials and SSH_AUTH_SOCK', () => {
