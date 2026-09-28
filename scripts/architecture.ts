@@ -501,6 +501,7 @@ export const modules: ArchitectureModule[] = [
     './run-resume-claim.ts',
     './run-retry-claim.ts',
     './run-task-reference.ts',
+    './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
   module('orchestrator/src/run/run-task-reference.ts', []),
@@ -559,7 +560,12 @@ export const modules: ArchitectureModule[] = [
     '../contract/contract.ts',
     '../transport/transport.ts',
   ]),
-  module('orchestrator/src/run/run-launch.ts', ['../transport/transport.ts']),
+  module('orchestrator/src/run/run-launch.ts', [
+    '../route/failover.ts',
+    '../transport/transport.ts',
+  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/run/run-worker-home.ts', ['../agent/agents.ts', '../recipe/tracked-recipe.ts', '../sandbox/codex-mcp-preflight.ts', '../sandbox/codex-mcp-scope.ts', '../sandbox/sandbox.ts', '../worktree/worktree-types.ts', './run-process.ts']),
   module('orchestrator/src/live-outcome.ts', [
     './failure/failure.ts',
     './outcome.ts',

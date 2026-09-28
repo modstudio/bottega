@@ -4,6 +4,7 @@ import { basename } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
 import {
@@ -54,7 +55,6 @@ import {
   storedMcpProbe,
 } from '../mcp/mcp-probe.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
-import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
@@ -72,12 +72,15 @@ import {
   implicitReviewCoverageBase,
   resolveReviewTarget,
 } from '../review/review-target.ts'
-import { chainTransport, type ResolvedTaskBranch } from '../route/failover.ts'
+import type { ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
-import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
-import { codexMcpSetupHeader, codexProjectServersForRun } from '../sandbox/codex-mcp-scope.ts'
 import {
-  prepareSandboxHome,
+  type CodexMcpCatalogue,
+  codexMcpSetupHeader,
+  codexProjectServersForRun,
+} from '../sandbox/codex-mcp-scope.ts'
+import {
+  removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxLaunchArgv,
   selectReadonlySandbox,
@@ -85,14 +88,12 @@ import {
 import {
   assertAcpAllowed,
   assertAcpReady,
-  resolveTransportName,
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveBase, resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
-import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -104,7 +105,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
 import { workerGitConfigEnvironment } from './run-git-guard.ts'
-import { decideRunLaunch } from './run-launch.ts'
+import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -117,12 +118,13 @@ import {
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
-import { bindSignals, childEnv, sha } from './run-process.ts'
+import { bindSignals, sha } from './run-process.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
+import { prepareWorkerHomeLaunch, trackedWorkerEnvironment } from './run-worker-home.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
@@ -147,30 +149,6 @@ function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefi
   if (!refusal) return
   if (reserveId) db().query('DELETE FROM run WHERE id=?').run(reserveId)
   throw new Error(refusal)
-}
-
-/** From the run's recorded recipe, never a second register read that can differ from the one that built the tree. */
-function trackedWorkerEnvironment(
-  repoJob: boolean,
-  writesJob: boolean,
-  worktree: Worktree | null,
-  runId: number,
-): Record<string, string> {
-  return {
-    ...(writesJob && worktree ? trackedRecipeEnvironment(runId) : {}),
-    ...(repoJob && worktree ? { ORCH_MAIN_CHECKOUT: worktree.repoRoot } : {}),
-  }
-}
-
-function resolveRunTransport(opts: {
-  transport?: TransportName
-  resume?: { kind: 'continue' | 'fresh-session' | 'retry-root'; parent: number }
-}): TransportName {
-  if (opts.resume?.kind === 'continue' || opts.resume?.kind === 'fresh-session') {
-    const inherited = chainTransport(opts.resume.parent)
-    if (inherited) return inherited
-  }
-  return resolveTransportName(opts.transport)
 }
 
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
@@ -567,6 +545,7 @@ export async function run(opts: {
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const { agent: name, reason } = launch
+  const harnessName = workerHarnessName(a)
   const codexSandboxFacts = {
     agentIsCodex: name === 'codex',
     readsRepo: repoJob,
@@ -705,6 +684,7 @@ export async function run(opts: {
     mcpTrustGranted,
     grokMcpEnvironment,
     sandboxRunDir,
+    sandboxRunDirExisted,
     cwd,
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
@@ -778,6 +758,10 @@ export async function run(opts: {
     null
   const mcpAllowlist = mcpConfigAllowlist(mcpConfig)
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
+  let sandboxEnvironment: Record<string, string>
+  let mcpEnvironment: Record<string, string>
+  let codexMcpCatalogues: CodexMcpCatalogue[]
+  let hasRunScopedHome: boolean
   try {
     sandboxSelection = selectReadonlySandbox({
       agent: name,
@@ -794,7 +778,26 @@ export async function run(opts: {
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
+    const home = await prepareWorkerHomeLaunch({
+      agent: a,
+      harness: harnessName,
+      sandboxProfile: Boolean(sandboxSelection.profile),
+      runDir: sandboxRunDir,
+      runId: claim.id,
+      runToken,
+      environment: gitConfigEnvironment ?? {},
+      grokEnvironment: grokMcpEnvironment,
+      includeStore: repoJob,
+      codexMcpScope,
+    })
+    ;({
+      codexMcpCatalogues,
+      environment: mcpEnvironment,
+      hasRunScopedHome,
+      sandboxEnvironment,
+    } = home)
   } catch (e) {
+    removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
     db()
       .query(
@@ -804,15 +807,6 @@ export async function run(opts: {
     teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-  const sandboxEnvironment = sandboxSelection.profile ? prepareSandboxHome(name, sandboxRunDir) : {}
-  const mcpEnvironment = childEnv(
-    a,
-    claim.id,
-    runToken,
-    { ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment, ...grokMcpEnvironment },
-    repoJob,
-  )
-  const codexMcpCatalogues = await preflightCodexMcpCatalogues(codexMcpScope, mcpEnvironment)
   mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
@@ -821,7 +815,7 @@ export async function run(opts: {
     db()
       .query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
       .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-    if (sandboxSelection.profile) {
+    if (hasRunScopedHome) {
       const rootRunId = (
         db()
           .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')

@@ -214,7 +214,8 @@ export function gatherHarnessLoadFacts(
   const home = env.HOME
   if (!home) throw new Error('HOME is unset; set HOME to the user home directory')
   const claudeHome = resolve(home, '.claude')
-  const grokHome = resolve(home, '.grok')
+  const grokHome =
+    env.GROK_HOME && env.GROK_HOME.length > 0 ? resolve(env.GROK_HOME) : resolve(home, '.grok')
   const codexHome =
     env.CODEX_HOME && env.CODEX_HOME.length > 0 ? resolve(env.CODEX_HOME) : resolve(home, '.codex')
   const files: CandidateFile[] = []
@@ -249,4 +250,24 @@ export function gatherHarnessLoadFacts(
       grokClaudeRulesEnabled: envEnabled(env, 'GROK_CLAUDE_RULES_ENABLED'),
     },
   }
+}
+
+/** Gather files through the same unmaterialized chain-scoped homes a worker receives. */
+export function gatherWorkerHarnessLoadFacts(
+  cwd: string,
+  harness: string,
+  env: NodeJS.ProcessEnv = process.env,
+): HarnessLoadFacts {
+  const runHome = resolve(cwd, '.orch-worker-home')
+  if (harness === 'codex') {
+    return gatherHarnessLoadFacts(cwd, { ...env, CODEX_HOME: join(runHome, 'codex') })
+  }
+  if (harness === 'grok') {
+    return gatherHarnessLoadFacts(cwd, {
+      ...env,
+      HOME: join(runHome, 'home'),
+      GROK_HOME: runHome,
+    })
+  }
+  return gatherHarnessLoadFacts(cwd, env)
 }

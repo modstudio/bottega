@@ -1,18 +1,35 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
   grokSandboxConfig,
+  prepareCodexHome,
   prepareGrokMcpHome,
+  prepareSandboxHome,
+  prepareWorkerHomeMirror,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
   readonlyLensProfile,
+  removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxRuntimeConfig,
   selectReadonlySandbox,
@@ -62,6 +79,169 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     )
     expect(() => prepareGrokMcpHome(join(fixture, 'conflict-run'), [], conflict)).toThrow(
       `disabled_mcp_servers is already declared in ${join(conflict, 'config.toml')}`,
+    )
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('prepares one persistent Codex home per chain without operator canon or sessions', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-codex-home-'))
+  try {
+    const source = join(fixture, 'operator-codex')
+    const runDir = join(fixture, 'sandbox-41')
+    mkdirSync(join(source, 'rules'), { recursive: true })
+    mkdirSync(join(source, 'sessions'))
+    writeFileSync(join(source, 'auth.json'), '{}')
+    writeFileSync(join(source, 'config.toml'), 'model = "fixture"\n')
+    writeFileSync(join(source, 'AGENTS.md'), 'Operator canon.')
+    writeFileSync(join(source, 'rules', 'default.rules'), 'allow')
+
+    const first = prepareCodexHome(runDir, { HOME: fixture, CODEX_HOME: source })
+    expect(first).toEqual({ CODEX_HOME: join(runDir, 'codex') })
+    expect(lstatSync(join(first.CODEX_HOME!, 'auth.json')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(first.CODEX_HOME!, 'auth.json'))).toBe(join(source, 'auth.json'))
+    expect(readFileSync(join(first.CODEX_HOME!, 'config.toml'), 'utf8')).toBe('model = "fixture"\n')
+    expect(statSync(runDir).mode & 0o777).toBe(0o700)
+    expect(statSync(first.CODEX_HOME!).mode & 0o777).toBe(0o700)
+    expect(statSync(join(first.CODEX_HOME!, 'config.toml')).mode & 0o777).toBe(0o600)
+    for (const omitted of ['AGENTS.md', 'AGENTS.override.md', 'rules', 'sessions']) {
+      expect(existsSync(join(first.CODEX_HOME!, omitted))).toBe(false)
+    }
+
+    writeFileSync(join(source, 'config.toml'), 'model = "changed-after-first-turn"\n')
+    chmodSync(runDir, 0o755)
+    chmodSync(first.CODEX_HOME!, 0o755)
+    const resumed = prepareSandboxHome('codex', runDir, { HOME: fixture, CODEX_HOME: source })
+    expect(resumed).toEqual(first)
+    expect(readFileSync(join(resumed.CODEX_HOME!, 'config.toml'), 'utf8')).toBe(
+      'model = "fixture"\n',
+    )
+    expect(statSync(runDir).mode & 0o777).toBe(0o700)
+    expect(statSync(resumed.CODEX_HOME!).mode & 0o777).toBe(0o700)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('Codex home refuses a missing credential with a login remedy', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-codex-auth-'))
+  try {
+    expect(() => prepareCodexHome(join(fixture, 'run'), { HOME: fixture })).toThrow(
+      `Codex worker home refusal: ${join(fixture, '.codex', 'auth.json')} is absent; run codex login for that home and retry`,
+    )
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('mirrors operator tooling into a worker HOME without harness homes', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-'))
+  try {
+    const operatorHome = join(fixture, 'operator')
+    const runDir = join(fixture, 'sandbox-42')
+    mkdirSync(operatorHome)
+    mkdirSync(join(operatorHome, '.claude'))
+    mkdirSync(join(operatorHome, 'dotfiles', '.claude'), { recursive: true })
+    writeFileSync(join(operatorHome, '.claude.json'), '{}')
+    symlinkSync(join(operatorHome, '.claude'), join(operatorHome, 'linked-claude'))
+    for (const name of ['.codex', '.grok', '.bun', '.gitconfig', '.ssh'])
+      writeFileSync(join(operatorHome, name), '', { flag: 'a' })
+    const workerHome = prepareWorkerHomeMirror(runDir, operatorHome)
+    for (const linked of ['.bun', '.gitconfig', '.ssh']) {
+      expect(lstatSync(join(workerHome, linked)).isSymbolicLink()).toBe(true)
+      expect(readlinkSync(join(workerHome, linked))).toBe(join(operatorHome, linked))
+    }
+    for (const omitted of [
+      '.claude',
+      '.claude.json',
+      '.codex',
+      '.grok',
+      'dotfiles',
+      'linked-claude',
+    ]) {
+      expect(existsSync(join(workerHome, omitted))).toBe(false)
+    }
+    expect(statSync(runDir).mode & 0o777).toBe(0o700)
+    expect(statSync(workerHome).mode & 0o777).toBe(0o700)
+    expect(prepareWorkerHomeMirror(runDir, operatorHome)).toBe(workerHome)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('harness aliases prepare the Codex and Grok chain homes', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-alias-home-'))
+  try {
+    const operatorHome = join(fixture, 'operator')
+    mkdirSync(join(operatorHome, '.codex'), { recursive: true })
+    mkdirSync(join(operatorHome, '.grok'))
+    writeFileSync(join(operatorHome, '.codex', 'auth.json'), '{}')
+    writeFileSync(join(operatorHome, '.codex', 'config.toml'), '')
+    const environment = { HOME: operatorHome }
+    const codex = prepareSandboxHome(
+      workerHarnessName({ name: 'registered-codex', harness: 'codex' }),
+      join(fixture, 'codex-run'),
+      environment,
+    )
+    const grok = prepareSandboxHome(
+      workerHarnessName({ name: 'registered-grok', harness: 'grok' }),
+      join(fixture, 'grok-run'),
+      environment,
+    )
+    expect(codex.CODEX_HOME).toBe(join(fixture, 'codex-run', 'codex'))
+    expect(grok.GROK_HOME).toBe(join(fixture, 'grok-run'))
+    expect(grok.HOME).toBe(join(fixture, 'grok-run', 'home'))
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('failed home setup or MCP preflight removes only a newly created chain directory', async () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-failure-'))
+  try {
+    const grokSource = join(fixture, 'operator-grok')
+    mkdirSync(grokSource)
+    writeFileSync(join(grokSource, 'config.toml'), 'disabled_mcp_servers = []\n')
+    const failedSetup = join(fixture, 'home-setup')
+    try {
+      prepareGrokMcpHome(failedSetup, [], grokSource)
+    } catch {
+      removeNewSandboxHomeAfterFailure(failedSetup, false)
+    }
+    expect(existsSync(failedSetup)).toBe(false)
+
+    const codexSource = join(fixture, 'operator-codex')
+    mkdirSync(codexSource)
+    writeFileSync(join(codexSource, 'auth.json'), '{}')
+    writeFileSync(join(codexSource, 'config.toml'), '')
+    const failedPreflight = join(fixture, 'MCP-preflight')
+    try {
+      prepareCodexHome(failedPreflight, { CODEX_HOME: codexSource })
+      await Promise.reject(new Error('MCP preflight'))
+    } catch {
+      removeNewSandboxHomeAfterFailure(failedPreflight, false)
+    }
+    expect(existsSync(failedPreflight)).toBe(false)
+
+    const reused = join(fixture, 'reused')
+    mkdirSync(reused)
+    removeNewSandboxHomeAfterFailure(reused, true)
+    expect(existsSync(reused)).toBe(true)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('worker HOME refuses an unreadable operator path with a remedy', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-refusal-'))
+  try {
+    const missing = join(fixture, 'missing')
+    expect(() => prepareWorkerHomeMirror(join(fixture, 'run'), missing)).toThrow(
+      `worker HOME refusal: could not list ${missing}`,
+    )
+    expect(() => prepareWorkerHomeMirror(join(fixture, 'run'), missing)).toThrow(
+      'set HOME to a readable operator home and retry',
     )
   } finally {
     rmSync(fixture, { recursive: true, force: true })

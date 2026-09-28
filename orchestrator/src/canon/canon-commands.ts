@@ -38,7 +38,7 @@ import {
 import { planCanonImport } from './canon-import-policy.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
-import { gatherHarnessLoadFacts } from './canon-load-files.ts'
+import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { userCanonHydrateCommand, userCanonImportCommand } from './user-canon-commands.ts'
@@ -530,11 +530,18 @@ function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): v
   const agent = flags.flag('agent')
   if (role === 'worker' && !agent) throw new Error('--agent is required with --role worker')
   const harnessName = agent ? (requireAgent(agent).harness ?? agent) : null
-  const loadFacts = gatherHarnessLoadFacts(cwd, {
-    ...process.env,
-    ...(role === 'worker' ? workerLaunchEnv(harnessName!) : {}),
-  })
-  const names = harness ? [harness] : [...HARNESS_NAMES]
+  const loadFacts =
+    role === 'worker'
+      ? gatherWorkerHarnessLoadFacts(cwd, harnessName!, {
+          ...process.env,
+          ...workerLaunchEnv(harnessName!),
+        })
+      : gatherHarnessLoadFacts(cwd, process.env)
+  const names = harness
+    ? [harness]
+    : role === 'worker'
+      ? [harnessName as HarnessName]
+      : [...HARNESS_NAMES]
   const plans = names.map((name) => planHarnessLoad(loadFacts, name))
   if (flags.has('json')) {
     presentation.log(

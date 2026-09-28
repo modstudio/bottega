@@ -28,7 +28,6 @@ test('worker load measurement resolves a registered agent name to its harness', 
     const output: string[] = []
     const values = new Map([
       ['cwd', root],
-      ['harness', 'grok'],
       ['role', 'worker'],
       ['agent', 'grok-variant'],
     ])
@@ -47,6 +46,7 @@ test('worker load measurement resolves a registered agent name to its harness', 
 
     expect(output.join('\n')).toContain(`${root}/CLAUDE.md`)
     expect(output.join('\n')).not.toContain(`${home}/.claude/CLAUDE.md`)
+    expect(output[0]).toBe('grok')
   } finally {
     if (priorHome === undefined) delete process.env.HOME
     else process.env.HOME = priorHome

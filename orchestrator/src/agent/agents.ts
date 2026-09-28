@@ -528,7 +528,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     timeoutMs: 25 * 60_000,
     contextTokens: Number.POSITIVE_INFINITY,
     outputCeilingStopReason: 'max_tokens',
-    notes: 'OIDC subscription auth. Inherits Claude rules and MCP config with no setup.',
+    notes: 'OIDC subscription auth. Loads project rules through a chain-scoped worker home.',
     argv({ prompt, ...o }) {
       // The session id is minted by US and handed in, so the resume handle
       // exists before the run does. `--session-id` is only legal for a NEW
