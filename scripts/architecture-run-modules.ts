@@ -1,3 +1,14 @@
+export const runModuleSpecs = [
+  {
+    file: 'orchestrator/src/run/run-bootstrap.ts',
+    allowed: ['./run-alive.ts'],
+  },
+  {
+    file: 'orchestrator/src/run/run-coordinator-log.ts',
+    allowed: ['node:fs', 'node:path', '../../../shared/secret-shaped.ts', './run-artifacts.ts'],
+  },
+] as const
+
 export const runModuleBoundarySpecs = [
   {
     name: 'run-coordinator-log-boundary',

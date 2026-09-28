@@ -11,6 +11,7 @@ import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { releaseModules } from './architecture-release.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
+import { runModuleSpecs } from './architecture-run-modules.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
@@ -60,6 +61,7 @@ export const modules: ArchitectureModule[] = [
   ...operatorWaitingModules,
   ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...gateModules,
+  ...runModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...runResumeModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
@@ -449,13 +451,6 @@ export const modules: ArchitectureModule[] = [
     './change-identity.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
-  module('orchestrator/src/run/run-bootstrap.ts', ['./run-alive.ts']),
-  module('orchestrator/src/run/run-coordinator-log.ts', [
-    'node:fs',
-    'node:path',
-    '../../../shared/secret-shaped.ts',
-    './run-artifacts.ts',
-  ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',
