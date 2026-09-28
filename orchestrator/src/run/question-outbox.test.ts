@@ -75,6 +75,39 @@ test('question payload contains the hosted shape and replaces a pending mutation
   })
 })
 
+test.each(['quarantined', 'retired'])(
+  'a question mutation does not overwrite a %s row',
+  (state) => {
+    const database = fixture()
+    const question = database
+      .query(
+        `INSERT INTO question (run_id,asked_at,question)
+       VALUES (42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
+      )
+      .get() as { id: number }
+    enqueueQuestionRecord(database, question.id)
+    const original = database
+      .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox')
+      .get()!
+    database
+      .query(
+        `UPDATE outbox SET ${state === 'quarantined' ? 'quarantined_at' : 'retired_at'}=? WHERE id=?`,
+      )
+      .run('2026-09-25T10:02:00.000Z', original.id)
+    database.query("UPDATE question SET answer='Corrected',revision=2 WHERE id=?").run(question.id)
+
+    enqueueQuestionRecord(database, question.id)
+
+    const rows = database
+      .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox ORDER BY id')
+      .all()
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toEqual(original)
+    expect(JSON.parse(rows[1]!.payload)).toMatchObject({ answer: 'Corrected', revision: 2 })
+    database.close()
+  },
+)
+
 test('secret-shaped hosted fields are withheld while local text stays intact', () => {
   const database = fixture()
   const secret = 'Authorization: Bearer top-secret-value'

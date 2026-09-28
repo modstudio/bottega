@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   localQuestionCountForSpace,
+  outboxQuarantineCheck,
+  outboxRetiredParentCheck,
   recordDoctorExitCode,
   redactRecordPasswords,
   unattributedShare,
@@ -29,6 +31,80 @@ describe('record doctor decisions', () => {
   test('reports unattributed rows rather than presenting a clean estate', () => {
     expect(unattributedShare(3, 4)).toBe('3/4 (75.0%) unattributed')
     expect(unattributedShare(0, 0)).toBe('0/0 (0.0%) unattributed')
+  })
+
+  test('fails while an outbox row is quarantined', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,quarantined_at,quarantine_reason)
+         VALUES (12,'score','record-12','{}','2026-09-28','2026-09-28','verdict refused')`,
+      )
+      .run()
+    const check = outboxQuarantineCheck(database)
+    expect(check).toMatchObject({ name: 'outbox quarantine is empty', status: 'fail' })
+    expect(check.detail).toContain('12 score')
+    expect(recordDoctorExitCode([check])).toBe(1)
+    database.close()
+  })
+
+  test('fails while an active outbox row is blocked by a retired parent', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
+         VALUES (11,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
+                (12,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
+      )
+      .run()
+    const check = outboxRetiredParentCheck(database)
+    expect(check).toMatchObject({
+      name: 'outbox has no rows blocked by a retired parent',
+      status: 'fail',
+    })
+    expect(check.detail).toContain('12 run (parent parent)')
+    expect(recordDoctorExitCode([check])).toBe(1)
+    database.close()
+  })
+
+  test('a synced parent stays ready after a later snapshot is retired', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,synced_at,retired_at,retirement_reason)
+         VALUES (10,'run','parent','{}','2026-09-28','2026-09-28',NULL,NULL),
+                (11,'run','parent','{}','2026-09-28',NULL,'2026-09-28','later snapshot'),
+                (12,'run','child','{"retryOf":"parent"}','2026-09-28',NULL,NULL,NULL)`,
+      )
+      .run()
+    expect(outboxRetiredParentCheck(database)).toEqual({
+      name: 'outbox has no rows blocked by a retired parent',
+      status: 'pass',
+    })
+    database.close()
+  })
+
+  test('reports a malformed retired lens payload as an unreadable parent', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
+         VALUES (11,'review_lens','lens-parent','{','2026-09-28','2026-09-28','bad payload'),
+                (12,'review_finding','finding','{"reviewId":"review","reviewLensId":"lens-parent"}','2026-09-28',NULL,NULL)`,
+      )
+      .run()
+    const check = outboxRetiredParentCheck(database)
+    expect(check).toMatchObject({ status: 'fail' })
+    expect(check.detail).toContain('unreadable stored payload')
+    database.close()
   })
 
   test('counts synced questions for projects whose effective space is active', () => {

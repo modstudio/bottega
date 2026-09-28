@@ -10,6 +10,8 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'ghost-open-interval': 'append-only',
   idle: 'revalidated',
   'observation-error': 'append-only',
+  'outbox-quarantined': 'revalidated',
+  'outbox-retired-parent': 'revalidated',
   'stale-run': 'append-only',
   'stalled-run': 'revalidated',
   'task-waiting-on-ruling': 'revalidated',

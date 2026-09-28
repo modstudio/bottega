@@ -157,7 +157,10 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
   }
   const pending = database
     .query<{ id: number }, [string]>(
-      "SELECT id FROM outbox WHERE kind='question' AND record_id=? AND synced_at IS NULL ORDER BY id LIMIT 1",
+      `SELECT id FROM outbox
+        WHERE kind='question' AND record_id=? AND synced_at IS NULL
+          AND quarantined_at IS NULL AND retired_at IS NULL
+        ORDER BY id LIMIT 1`,
     )
     .get(recordId)
   if (pending) {

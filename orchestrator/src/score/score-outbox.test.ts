@@ -100,3 +100,27 @@ test('score backfill enqueues each hosted score once', () => {
   expect(JSON.parse(outbox.payload)).toMatchObject({ note: 'first', scoredBy: 'architect' })
   database.close()
 })
+
+test.each(['quarantined', 'retired'])('a new score does not overwrite a %s row', (state) => {
+  const database = scoredRun()
+  enqueueScoreRecord(database, 42, MACHINE_ID)
+  const original = database
+    .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox')
+    .get()!
+  database
+    .query(
+      `UPDATE outbox SET ${state === 'quarantined' ? 'quarantined_at' : 'retired_at'}=? WHERE id=?`,
+    )
+    .run(STAMP, original.id)
+  database.query("UPDATE score SET note='corrected' WHERE run_id=42").run()
+
+  enqueueScoreRecord(database, 42, MACHINE_ID)
+
+  const rows = database
+    .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox ORDER BY id')
+    .all()
+  expect(rows).toHaveLength(2)
+  expect(rows[0]).toEqual(original)
+  expect(JSON.parse(rows[1]!.payload)).toMatchObject({ note: 'corrected' })
+  database.close()
+})

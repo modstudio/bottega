@@ -3,6 +3,8 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { projects } from '../project/projects.ts'
+import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
+import { retryOutboxRow } from '../record/outbox-quarantine.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
   recordDoctorCommand,
@@ -44,6 +46,22 @@ export function register(program: Command): void {
     .action((options) => signInCommand(String(options.email), promptPassword, { log }))
   record.command('whoami').action(() => whoamiCommand({ log }))
   record.command('migrate').action(() => recordMigrateCommand(presentation))
+  const outbox = record.command('outbox')
+  outbox
+    .command('retry')
+    .argument('<row-id>')
+    .action((rowId) => {
+      retryOutboxRow(Number(rowId))
+      log(`outbox row ${String(rowId)} will retry on the next sync`)
+    })
+  outbox
+    .command('retire')
+    .argument('<row-id>')
+    .requiredOption('--reason <text>')
+    .action((rowId, options) => {
+      retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
+      log(`outbox row ${String(rowId)} retired`)
+    })
   const space = record.command('space')
   space.command('list').action(() => recordSpaceListCommand(presentation))
   space

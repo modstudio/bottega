@@ -37,17 +37,12 @@ import {
   REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
   REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
   REVIEW_RECORD_PAYLOAD_CONTRACT,
-  type ReviewRecordBackfillResult,
 } from '../review/review-outbox.ts'
 import {
   backfillQuestionRecords,
   QUESTION_RECORD_PAYLOAD_CONTRACT,
 } from '../run/question-outbox.ts'
-import {
-  backfillRunRecords,
-  RUN_RECORD_PAYLOAD_CONTRACT,
-  type RunRecordBackfillResult,
-} from '../run/run-outbox.ts'
+import { backfillRunRecords, RUN_RECORD_PAYLOAD_CONTRACT } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_CONTRACT } from '../score/score-outbox.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -58,18 +53,31 @@ import {
   LANDING_RECORD_PAYLOAD_CONTRACT,
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
-  type LandingEvidenceBackfillResult,
   TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
+import { deferOutboxRow, markOutboxRowSynced, outboxRowIsEligible } from './outbox-dependency.ts'
+import {
+  OutboxRowError,
+  outboxErrorDetail,
+  outboxFailureDisposition,
+  unreachableSpaceProject,
+} from './outbox-failure.ts'
+import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
+import type {
+  BlockedOutboxRow,
+  OutboxRow,
+  Payload,
+  RecordSyncOptions,
+  RecordSyncResult,
+} from './record-sync-types.ts'
 import { validateRecordVerdict } from './record-verdicts.ts'
 
-type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
-type Payload = Record<string, unknown>
+export type { RecordSyncOptions, RecordSyncResult } from './record-sync-types.ts'
 
 export function outboxOrder(kind: string, id: number): readonly [phase: number, id: number] {
   if (kind === 'run') return [0, id]
@@ -85,30 +93,6 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
     default:
       return [1, id]
   }
-}
-
-export type RecordSyncResult = {
-  pushed: number
-  failed: number
-  pending: number
-  configured: boolean
-  backfill?: RunRecordBackfillResult & {
-    scores: number
-    reviews: ReviewRecordBackfillResult
-    landingEvidence: LandingEvidenceBackfillResult
-    questions: { minted: number; enqueued: number }
-  }
-}
-export type RecordSyncOptions = {
-  backfill?: boolean
-  recordUrl?: string
-  local?: Database
-  openSql?: (url: string) => SQL
-  now?: () => string
-  identity?: { id: string; name: string }
-  principal?: { userId: string; spaceId: string }
-  memberships?: RecordSpaceMembership[]
-  projectSpaces?: Record<string, string>
 }
 
 type RecordPrincipal = { userId: string; spaceId: string }
@@ -163,8 +147,10 @@ function projectPrincipal(
   if (effectiveSpace === fallback.spaceId) return fallback
   const membership = recordSpaceMembership(effectiveSpace, memberships)
   if (!membership) {
-    throw new Error(
+    throw new OutboxRowError(
       `project ${projectName} declares record space ${declared}, but the signed-in user is not a member; join it first with an invitation, then retry`,
+      'declared-space',
+      projectName,
     )
   }
   return { userId: fallback.userId, spaceId: membership.spaceId }
@@ -189,19 +175,20 @@ function cachedProjectPrincipal(
  * is not a member of. That is one project's problem, so sync skips its rows and
  * carries on rather than stopping at the first of them.
  */
-export function unreachableSpaceProject(detail: string): string | null {
-  return /project (.+?) declares record space /.exec(detail)?.[1] ?? null
-}
-
 async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
   await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`
   await tx`SELECT set_config('app.space_id', ${principal.spaceId}, true)`
 }
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
-  const parsed = JSON.parse(source) as unknown
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    throw new OutboxRowError('outbox payload must be valid JSON', 'payload')
+  }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('outbox payload must be a JSON object')
+    throw new OutboxRowError('outbox payload must be a JSON object', 'payload')
   }
   for (const [column, fill] of Object.entries(recordKinds[kind].laterAdded)) {
     if (!Object.hasOwn(parsed, column)) Object.assign(parsed, { [column]: fill })
@@ -209,7 +196,7 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   const keys = Object.keys(parsed).sort()
   const expected = [...recordKinds[kind].columns].sort()
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
-    throw new Error(`${kind} outbox payload has an unexpected column set`)
+    throw new OutboxRowError(`${kind} outbox payload has an unexpected column set`, 'payload')
   }
   return parsed as Payload
 }
@@ -251,21 +238,6 @@ const nullableBigint = (value: unknown) => (value == null ? null : bigint(value)
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
-
-function errorDetail(error: unknown): string {
-  const details: string[] = []
-  const seen = new Set<unknown>()
-  let current: unknown = error
-  while (current !== null && typeof current === 'object' && !seen.has(current)) {
-    seen.add(current)
-    const message = current instanceof Error ? current.message : String(current)
-    const code = 'code' in current && typeof current.code === 'string' ? current.code : null
-    const detail = code ? `[${code}] ${message}` : message
-    if (!details.includes(detail)) details.push(detail)
-    current = 'cause' in current ? current.cause : null
-  }
-  return details.join('\ncaused by: ')
-}
 
 function runValues(row: Payload, projectId: string | null) {
   return {
@@ -389,7 +361,7 @@ function hostedUnvoidNote(value: unknown): string {
     Array.isArray(value) ||
     typeof (value as Record<string, unknown>).note !== 'string'
   ) {
-    throw new Error('run outbox evidenceUnvoid must contain a note')
+    throw new OutboxRowError('run outbox evidenceUnvoid must contain a note', 'row-validation')
   }
   return String((value as Record<string, unknown>).note)
 }
@@ -407,8 +379,9 @@ async function applyHostedUnvoid(
       AND column_name IN ('superseded_at','superseded_by','supersede_note')
   `
   if (columns.length !== 3) {
-    throw new Error(
+    throw new OutboxRowError(
       'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying',
+      'migration-mismatch',
     )
   }
   const exclusions = await tx`
@@ -425,7 +398,7 @@ async function applyHostedUnvoid(
   const activeExclusionReason = exclusionReason == null ? null : String(exclusionReason)
   const runEvidenceExcluded = runReason == null ? null : String(runReason)
   const refusal = refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)
-  if (refusal) throw new Error(`refused: ${refusal}`)
+  if (refusal) throw new OutboxRowError(`refused: ${refusal}`, 'row-validation')
   if (activeExclusionReason === null && runEvidenceExcluded === null) return
   const now = new Date().toISOString()
   await tx`
@@ -453,7 +426,7 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
         WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}
       `
       if (projects.length !== 1) {
-        throw new Error(`record project is absent: ${projectName}`)
+        throw new OutboxRowError(`record project is absent: ${projectName}`, 'row-validation')
       }
       projectId = String(projects[0]!.id)
     }
@@ -546,7 +519,9 @@ type QuestionAuditPayload = {
 }
 
 function questionAudits(row: Payload): QuestionAuditPayload[] {
-  if (!Array.isArray(row.audits)) throw new Error('question outbox audits must be an array')
+  if (!Array.isArray(row.audits)) {
+    throw new OutboxRowError('question outbox audits must be an array', 'row-validation')
+  }
   return row.audits as QuestionAuditPayload[]
 }
 
@@ -709,7 +684,9 @@ async function projectRecordId(
   if (projectName === null) return null
   const projects = await tx`SELECT id FROM project
     WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
-  if (projects.length !== 1) throw new Error(`record project is absent: ${projectName}`)
+  if (projects.length !== 1) {
+    throw new OutboxRowError(`record project is absent: ${projectName}`, 'row-validation')
+  }
   return String(projects[0]!.id)
 }
 
@@ -911,32 +888,29 @@ type OutboxAttempt = {
   blockedProjects: Set<string>
   projectSpaces?: Record<string, string>
   now: () => string
+  blocked: BlockedOutboxRow[]
 }
 
 /**
  * One outbox row's push.
  *
  * `skipped` is a row belonging to a project already known to be blocked,
- * `stop` is a failure that ends the pass, and `failed` is a failure that blocks
- * only its own project, so one project's unreachable space cannot keep every
- * other project's evidence out of the record.
+ * `stop` is a pass-fatal failure, and `failed` is a quarantined row-fatal
+ * failure. A declared-space refusal also blocks the remaining rows for that
+ * project during this pass.
  */
 async function pushOutboxRow(
   attempt: OutboxAttempt,
 ): Promise<'pushed' | 'skipped' | 'deferred' | 'failed' | 'stop'> {
   const { row, local, identity } = attempt
   try {
-    if (!(row.kind in recordKinds)) throw new Error(`unknown outbox kind: ${row.kind}`)
+    if (!(row.kind in recordKinds)) {
+      throw new OutboxRowError(`unknown outbox kind: ${row.kind}`, 'payload')
+    }
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
-    if (kind === 'question' && parsed.runId) {
-      const runOutbox = local
-        .query<{ synced_at: string | null }, [string]>(
-          "SELECT synced_at FROM outbox WHERE kind='run' AND record_id=? ORDER BY id DESC LIMIT 1",
-        )
-        .get(String(parsed.runId))
-      if (!runOutbox?.synced_at) return 'deferred'
-    }
+    if (deferOutboxRow(local, row, parsed, attempt.blocked)) return 'deferred'
+    if (!outboxRowIsEligible(local, row)) return 'skipped'
     const projectName = outboxProjectName(row.kind, parsed, local)
     if (projectName && attempt.blockedProjects.has(projectName)) return 'skipped'
     const rowPrincipal = cachedProjectPrincipal(attempt.principals, projectName, () =>
@@ -950,24 +924,29 @@ async function pushOutboxRow(
     )
     const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
     if (String(record.machineId) !== identity.id) {
-      throw new Error(
+      throw new OutboxRowError(
         `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${identity.id}`,
+        'row-validation',
       )
     }
     await recordKinds[kind].push(attempt.postgres, record, rowPrincipal)
-    local
-      .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=? AND payload=?')
-      .run(attempt.now(), row.id, row.payload)
+    markOutboxRowSynced(local, row, attempt.now())
     return 'pushed'
   } catch (error) {
-    const detail = errorDetail(error)
+    const detail = outboxErrorDetail(error)
+    if (outboxFailureDisposition(error) === 'row-fatal') {
+      quarantineOutboxRow(local, row.id, row.payload, detail, attempt.now())
+      const blocked = unreachableSpaceProject(error)
+      if (blocked) attempt.blockedProjects.add(blocked)
+      return 'failed'
+    }
     local
-      .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=? AND payload=?')
+      .query(
+        `UPDATE outbox SET attempts=attempts+1,last_error=? WHERE id=? AND payload=?
+         AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+      )
       .run(detail, row.id, row.payload)
-    const blocked = unreachableSpaceProject(detail)
-    if (!blocked) return 'stop'
-    attempt.blockedProjects.add(blocked)
-    return 'failed'
+    return 'stop'
   }
 }
 
@@ -990,6 +969,8 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       failed: 0,
       pending: 0,
       configured: false,
+      quarantined: [],
+      blocked: [],
       ...(backfill ? { backfill } : {}),
     }
   }
@@ -1010,7 +991,8 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity, principal)
     const rows = writableLocal
       .query<OutboxRow, []>(
-        'SELECT id, kind, record_id, payload FROM outbox WHERE synced_at IS NULL ORDER BY id',
+        `SELECT id, kind, record_id, payload FROM outbox
+          WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
       )
       .all()
       .sort((left, right) => {
@@ -1023,6 +1005,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     // rows. Halting the whole outbox would let one project's misconfiguration
     // stop every other project's evidence from ever reaching the record.
     const blockedProjects = new Set<string>()
+    const blocked: BlockedOutboxRow[] = []
     for (const row of rows) {
       const outcome = await pushOutboxRow({
         row,
@@ -1035,16 +1018,28 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         blockedProjects,
         projectSpaces: options.projectSpaces,
         now: options.now ?? nowIso,
+        blocked,
       })
       if (outcome === 'pushed') pushed++
       if (outcome === 'failed' || outcome === 'stop') failed++
       if (outcome === 'stop') break
     }
     const pending = writableLocal
-      .query<{ count: number }, []>('SELECT count(*) AS count FROM outbox WHERE synced_at IS NULL')
+      .query<{ count: number }, []>(
+        `SELECT count(*) AS count FROM outbox
+          WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+      )
       .get()!.count
     await pullRecordCache(writableLocal)
-    return { pushed, failed, pending, configured: true, ...(backfill ? { backfill } : {}) }
+    return {
+      pushed,
+      failed,
+      pending,
+      configured: true,
+      quarantined: quarantinedOutboxRows(writableLocal),
+      blocked,
+      ...(backfill ? { backfill } : {}),
+    }
   } finally {
     await postgres.close()
   }

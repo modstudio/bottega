@@ -4,6 +4,21 @@ import { readMachineValue } from '../../../shared/machine-config.ts'
 import { syncRecord } from './record-sync.ts'
 import { recordTunnelFailure } from './record-tunnel-error.ts'
 
+export function quarantinedOutboxLines(
+  rows: Awaited<ReturnType<typeof syncRecord>>['quarantined'],
+): string[] {
+  return rows.map((row) => `quarantined ${row.id}\t${row.kind}\t${row.error}`)
+}
+
+export function blockedOutboxLines(
+  rows: Awaited<ReturnType<typeof syncRecord>>['blocked'],
+): string[] {
+  return rows.map(
+    (row) =>
+      `blocked ${row.id}\t${row.kind}\t${row.reason ?? `retired parent ${row.parentRecordId}`}`,
+  )
+}
+
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
@@ -35,4 +50,6 @@ export async function syncCommand(
     return
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
+  for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
+  for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
 }
