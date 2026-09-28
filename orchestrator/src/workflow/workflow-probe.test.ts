@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { recordWorkflowProbe } from './workflow-probe.ts'
+import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -93,4 +93,127 @@ test('refuses a probe outside a registered project', async () => {
       runner: () => ({ exitCode: 0, output: 'ok' }),
     }),
   ).rejects.toThrow('no registered project contains /outside/project')
+})
+
+test('exec records an architect command with its kind and session', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    const result = await recordWorkflowExec(['printf', 'ok'], {
+      cwd: '/tmp/probe',
+      d,
+      commit: 'abc',
+      runner: () => ({ exitCode: 0, output: 'ok\n' }),
+    })
+    expect(result).toEqual({ id: 1, withheld: false, exitCode: 0 })
+    expect(d.query('SELECT kind,session_id,exit_code FROM probe').get()).toEqual({
+      kind: 'exec',
+      session_id: 'architect-session',
+      exit_code: 0,
+    })
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec streams only a bounded output tail', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    await recordWorkflowExec(['/bin/sh', '-c', '/usr/bin/yes z | /usr/bin/head -c 20000'], {
+      cwd: process.cwd(),
+      d,
+      commit: 'abc',
+      write: () => {},
+    })
+    const tail = (d.query('SELECT output_tail FROM probe').get() as { output_tail: string })
+      .output_tail
+    expect(Buffer.byteLength(tail)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec detects a chunk-split secret after it rolls out of the retained tail', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    const command = [
+      '/bin/sh',
+      '-c',
+      "printf '\\x67\\x68'; /bin/sleep 0.02; printf '\\x70\\x5fexampletokenvalue'; /usr/bin/yes z | /usr/bin/head -c 20000",
+    ]
+    const result = await recordWorkflowExec(command, {
+      cwd: process.cwd(),
+      d,
+      commit: 'abc',
+      write: () => {},
+    })
+    expect(result.withheld).toBe(true)
+    expect(
+      (d.query('SELECT output_tail FROM probe').get() as { output_tail: string }).output_tail,
+    ).toBe('[withheld: secret-shaped content]')
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec refuses worker depth and missing architect identity', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    process.env.ORCH_DEPTH = '1'
+    await expect(recordWorkflowExec(['true'], { d: database() })).rejects.toThrow(
+      'ORCH_DEPTH is set',
+    )
+    delete process.env.ORCH_DEPTH
+    delete process.env.CLAUDE_CODE_SESSION_ID
+    await expect(recordWorkflowExec(['true'], { d: database() })).rejects.toThrow(
+      'CLAUDE_CODE_SESSION_ID is not set',
+    )
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec refuses a checkout outside a registered project', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    await expect(
+      recordWorkflowExec(['true'], {
+        cwd: '/outside/project',
+        d: database(),
+        registeredProject: false,
+      }),
+    ).rejects.toThrow('no registered project contains /outside/project')
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
 })

@@ -29,6 +29,7 @@ export type Floor = {
 export type ArtifactRef =
   | { kind: 'comment'; key: string; id: number }
   | { kind: 'probe'; id: number }
+  | { kind: 'exec'; id: number }
   | { kind: 'doc'; id: number }
   | { kind: 'run'; id: number }
   | { kind: 'id'; id: number }
@@ -54,6 +55,8 @@ export type ValidatedEvidence = {
   review?: { id: number; allFindingsDisposed: boolean; allLensesGraded: boolean }
   gate?: { id: number; finished: boolean; exitCode: number | null }
   run?: { id: number; terminal: boolean; exitCode: number | null }
+  probe?: { id: number; exitCode: number }
+  exec?: { id: number; exitCode: number }
   artifact?: { ref: string; exists: boolean }
   task?: { key: string; status: string | null; mergedPullRequest: boolean }
   deferReason?: string
@@ -89,9 +92,10 @@ export type FloorSatisfactionInput = {
 
 function flagForFloor(kind: FloorKind): string {
   if (kind === 'ruling') return '--ruling <question id> or --review <review id>'
-  if (kind === 'command-exit') return '--gate <gate execution id> or --run <run id>'
+  if (kind === 'command-exit')
+    return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc id | task:<KEY>#comment:<id> | run id | probe:<id>>'
+    return '--artifact <doc id | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id>>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -102,13 +106,15 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (comment) return { kind: 'comment', key: comment[1]!.toUpperCase(), id: Number(comment[2]) }
   const probe = /^probe:(\d+)$/i.exec(trimmed)
   if (probe) return { kind: 'probe', id: Number(probe[1]) }
+  const exec = /^exec:(\d+)$/i.exec(trimmed)
+  if (exec) return { kind: 'exec', id: Number(exec[1]) }
   const doc = /^doc:(\d+)$/i.exec(trimmed)
   if (doc) return { kind: 'doc', id: Number(doc[1]) }
   const run = /^run:(\d+)$/i.exec(trimmed)
   if (run) return { kind: 'run', id: Number(run[1]) }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
-    error: `--artifact ${trimmed} is not a doc id, task:<KEY>#comment:<id>, run id, or probe:<id>`,
+    error: `--artifact ${trimmed} is not a doc id, task:<KEY>#comment:<id>, run id, probe:<id>, or exec:<id>`,
   }
 }
 
@@ -143,7 +149,9 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const run = evidence.run
   const gateOk = Boolean(gate?.finished && gate.exitCode === floor.expectedExitCode)
   const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)
-  return gateOk || runOk
+  const probeOk = evidence.probe?.exitCode === floor.expectedExitCode
+  const execOk = evidence.exec?.exitCode === floor.expectedExitCode
+  return gateOk || runOk || probeOk || execOk
 }
 
 function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {

@@ -1,7 +1,7 @@
 // concern: workflows
-/** Records a read-only probe command as an artifact. Must not know floor decisions. */
+/** Records probe and architect-executed commands as artifacts. Must not know floor decisions. */
 import type { Database } from 'bun:sqlite'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,9 +21,11 @@ const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 export type ProbeRunner = (input: { command: string[]; cwd: string }) => {
   exitCode: number
   output: string
+  secretFound?: boolean
 }
 
 export type ProbeRecord = { id: number; withheld: boolean }
+export type ExecRecord = ProbeRecord & { exitCode: number }
 
 function probeEnv(scratch: string): NodeJS.ProcessEnv {
   return {
@@ -41,6 +43,7 @@ async function sandboxedRunner(
 ): Promise<{
   exitCode: number
   output: string
+  secretFound: boolean
 }> {
   if (!srtInstalled()) {
     throw new Error(
@@ -63,12 +66,12 @@ async function sandboxedRunner(
         }; install the sandbox runtime at ${SRT_LIBRARY} with bun install, then retry`,
       )
     }
-    const result = spawnSync(launch[0]!, launch.slice(1), {
+    return await streamingRunner(launch, {
       cwd,
-      encoding: 'utf8',
       env: probeEnv(scratch),
+      stdin: 'ignore',
+      write: () => {},
     })
-    return { exitCode: result.status ?? -1, output: `${result.stdout ?? ''}${result.stderr ?? ''}` }
   } finally {
     await resetSandbox()
     rmSync(scratch, { recursive: true, force: true })
@@ -96,21 +99,69 @@ export async function recordWorkflowProbe(
   const ran = input.runner
     ? input.runner({ command, cwd })
     : await sandboxedRunner(command, cwd, database)
+  return recordWorkflowCommand(command, cwd, ran, 'probe', input)
+}
+
+async function execRunner(
+  command: string[],
+  cwd: string,
+  write: (chunk: string) => void,
+): Promise<{ exitCode: number; output: string; secretFound: boolean }> {
+  return streamingRunner(command, { cwd, env: process.env, stdin: 'inherit', write })
+}
+
+async function streamingRunner(
+  command: string[],
+  input: {
+    cwd: string
+    env: NodeJS.ProcessEnv
+    stdin: 'ignore' | 'inherit'
+    write: (chunk: string) => void
+  },
+): Promise<{ exitCode: number; output: string; secretFound: boolean }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command[0]!, command.slice(1), {
+      cwd: input.cwd,
+      env: input.env,
+      stdio: [input.stdin, 'pipe', 'pipe'],
+    })
+    let output = ''
+    let secretFound = false
+    const record = (chunk: Buffer | string) => {
+      const text = Buffer.isBuffer(chunk) ? chunk.toString() : chunk
+      const candidate = output + text
+      secretFound ||= containsSecretShaped(candidate)
+      output = boundedGateOutputTail(candidate, GATE_OUTPUT_TAIL_BYTES)
+      input.write(text)
+    }
+    child.stdout?.on('data', record)
+    child.stderr?.on('data', record)
+    child.once('error', reject)
+    child.once('close', (code) => resolve({ exitCode: code ?? -1, output, secretFound }))
+  })
+}
+
+async function recordWorkflowCommand(
+  command: string[],
+  cwd: string,
+  ran: { exitCode: number; output: string; secretFound?: boolean },
+  kind: 'probe' | 'exec',
+  input: { d?: Database; commit?: string | null },
+): Promise<ProbeRecord> {
   const commandJson = JSON.stringify(command)
-  const withheld = containsSecretShaped(commandJson) || containsSecretShaped(ran.output)
+  const outputContainsSecret = ran.secretFound === true || containsSecretShaped(ran.output)
+  const withheld = containsSecretShaped(commandJson) || outputContainsSecret
   const storedCommand = containsSecretShaped(commandJson) ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(
-    containsSecretShaped(ran.output) || containsSecretShaped(commandJson)
-      ? PROBE_WITHHELD
-      : ran.output,
+    outputContainsSecret || containsSecretShaped(commandJson) ? PROBE_WITHHELD : ran.output,
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at,kind)
+         VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         storedCommand,
@@ -121,8 +172,42 @@ export async function recordWorkflowProbe(
         withheld ? 1 : 0,
         sessionId(),
         nowIso(),
+        kind,
       )
     if (!row) throw new Error('probe record was not inserted')
     return { id: row.id, withheld }
   }, d)
+}
+
+export async function recordWorkflowExec(
+  command: string[],
+  input: {
+    cwd?: string
+    d?: Database
+    runner?:
+      | ProbeRunner
+      | ((input: {
+          command: string[]
+          cwd: string
+        }) => Promise<{ exitCode: number; output: string }>)
+    commit?: string | null
+    write?: (chunk: string) => void
+    registeredProject?: boolean
+  } = {},
+): Promise<ExecRecord> {
+  if (!command.length) throw new Error('orch workflow exec needs a command after --')
+  if (process.env.ORCH_DEPTH !== undefined)
+    throw new Error('orch workflow exec is reserved for architect sessions; ORCH_DEPTH is set')
+  if (!sessionId())
+    throw new Error(
+      'orch workflow exec is reserved for architect sessions; CLAUDE_CODE_SESSION_ID is not set',
+    )
+  const cwd = input.cwd ?? process.cwd()
+  if (input.registeredProject === false)
+    throw new Error(`orch workflow exec: no registered project contains ${cwd}`)
+  const ran = input.runner
+    ? await input.runner({ command, cwd })
+    : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)))
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', input)
+  return { ...recorded, exitCode: ran.exitCode }
 }

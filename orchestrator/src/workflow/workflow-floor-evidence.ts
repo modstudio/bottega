@@ -422,21 +422,17 @@ function resolveArtifact(
     requireDoc(`--artifact doc:${ref.id}`, ref.id, identity, d)
     return { ref: raw, exists: true }
   }
-  if (ref.kind === 'probe') {
+  if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
-      .query<{ cwd: string; head_commit: string | null }, [number]>(
-        'SELECT cwd,head_commit FROM probe WHERE id=?',
-      )
+      .query<
+        { cwd: string; head_commit: string | null; exit_code: number; kind: string },
+        [number]
+      >('SELECT cwd,head_commit,exit_code,kind FROM probe WHERE id=?')
       .get(ref.id)
-    if (!row) throw new Error(`--artifact probe:${ref.id} does not exist`)
-    requireCheckout(
-      `--artifact probe:${ref.id}`,
-      row.cwd,
-      row.head_commit,
-      identity,
-      resolveCheckout,
-      false,
-    )
+    const flag = `--artifact ${ref.kind}:${ref.id}`
+    if (!row) throw new Error(`${flag} does not exist`)
+    if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${ref.id}`)
+    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout, false)
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
@@ -570,6 +566,12 @@ export function gatherValidatedEvidence(input: {
       ports,
       resolveCheckout,
     )
+    if (parsed.kind === 'probe' || parsed.kind === 'exec') {
+      const row = d
+        .query<{ exit_code: number }, [number]>('SELECT exit_code FROM probe WHERE id=?')
+        .get(parsed.id)!
+      gathered[parsed.kind] = { id: parsed.id, exitCode: row.exit_code }
+    }
   }
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
