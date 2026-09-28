@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { workflowCommand } from './workflow-commands.ts'
@@ -9,6 +10,18 @@ const presentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),
   setExitCode: () => {},
 })
+
+const recordedArtifact = (project: string) => {
+  const row = db()
+    .query<{ id: number }, [string, string]>(
+      `INSERT INTO doc (scope,subject,slug,title,body,delivery,created_at,updated_at,project_id)
+       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', 't', 't', id
+         FROM project WHERE name=?
+       RETURNING id`,
+    )
+    .get(project, project) as { id: number }
+  return [`--artifact`, `doc:${row.id}`] as const
+}
 
 const registerFixtureProject = (name: string) =>
   upsertProject({
@@ -61,6 +74,12 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
   expect(lines.join('\n')).toContain(`Autonomy: ${step.autonomy} (built-in)`)
 })
 
+test('workflow probe refuses a missing command', async () => {
+  expect(workflowCommand(['workflow', 'probe'], presentation([]))).rejects.toThrow(
+    'orch workflow probe needs a command after --',
+  )
+})
+
 test('next resolves an omitted mode to the composed cursor default', async () => {
   const slug = 'cursor-default-next'
   const project = 'cursor-default-next-project'
@@ -81,6 +100,7 @@ test('next resolves an omitted mode to the composed cursor default', async () =>
       project,
       '--arg',
       'key=DEV-937-default',
+      ...recordedArtifact(project),
       '--note',
       'completed the report',
     ],
@@ -133,6 +153,7 @@ test('next preserves an explicit mode', async () => {
       'repair',
       '--arg',
       'key=DEV-937-explicit',
+      ...recordedArtifact(project),
       '--note',
       'completed the repair',
     ],
@@ -179,7 +200,7 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
       presentation(lines),
     )
 
-  await command('next', '--note', 'completed the report')
+  await command('next', ...recordedArtifact(project), '--note', 'completed the report')
   await command('await', '--question', 'which ruling applies?')
   await command('abandon', '--reason', 'operator stopped')
 

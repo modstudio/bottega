@@ -529,6 +529,8 @@ export function composeWorkflow(
           autonomy: step.autonomy,
           resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
           floor: step.floor,
+          deferrable: step.deferrable ?? [],
+          requirePullRequest: Boolean(step.requirePullRequest),
           needs: step.needs,
         }
       }) ?? [],

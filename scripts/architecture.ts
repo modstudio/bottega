@@ -13,6 +13,7 @@ import { retrievalModules } from './architecture-retrieval.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
+import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 
 type ConcernManifest = {
   roots: typeof CONCERNS
@@ -173,22 +174,7 @@ export const modules: ArchitectureModule[] = [
     './step-catalogue.ts',
   ]),
   ...sessionContextModules,
-  module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
-  module('orchestrator/src/workflow/workflow-cursor.ts', [
-    'bun:sqlite',
-    'node:crypto',
-    '../database/db.ts',
-    '../project/projects.ts',
-    '../operator/operator-waiting.ts',
-    './autonomy.ts',
-    '../run/question-vocabulary.ts',
-    '../run/question-mutation.ts',
-    '../run/question-outbox.ts',
-    './workflow-render.ts',
-    './workflows.ts',
-    './workflow-cursor-transition.ts',
-    './workflow-step-reference.ts',
-  ]),
+  ...workflowFloorModules,
   ...monitorModules,
   module('orchestrator/src/monitor/monitor-conditions.ts', [
     'node:fs',

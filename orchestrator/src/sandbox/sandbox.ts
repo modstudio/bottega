@@ -267,6 +267,31 @@ export function readonlyLensProfile(input: {
   )
 }
 
+/** Write-deny everywhere except a throwaway directory; no network; no secret paths. */
+export function probeSandboxProfile(allowWriteDir: string): SandboxRuntimeConfig {
+  const allowWrite = resolve(allowWriteDir)
+  return {
+    network: {
+      allowedDomains: [],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: [
+        ...new Set([
+          ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+          ...resolveEnvFilePaths(process.env).map((path) => resolve(path)),
+          ...READONLY_LENS_DENY_SOCKETS,
+        ]),
+      ],
+      allowWithinDeny: [],
+      allowWrite: [allowWrite],
+      denyWrite: [],
+    },
+  }
+}
+
 export type SandboxSelection = {
   sandbox: RunSandbox
   profile: SandboxRuntimeConfig | null

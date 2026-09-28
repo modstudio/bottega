@@ -45,6 +45,8 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         title: step.title,
         ...(step.stage === undefined ? {} : { stage: step.stage }),
         floor: step.floor,
+        ...(step.deferrable?.length ? { deferrable: step.deferrable } : {}),
+        ...(step.requirePullRequest ? { requirePullRequest: true } : {}),
         job: step.job,
         autonomy: step.autonomy,
         needs: step.needs,
@@ -126,6 +128,12 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         title: frontMatter.title as string,
         stage: frontMatter.stage as CatalogueStep['stage'],
         floor: frontMatter.floor as CatalogueStep['floor'],
+        ...(frontMatter.deferrable === undefined
+          ? {}
+          : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
+        ...(frontMatter.requirePullRequest === undefined
+          ? {}
+          : { requirePullRequest: frontMatter.requirePullRequest === true }),
         job: frontMatter.job as string | null,
         autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
         needs: frontMatter.needs as CatalogueStep['needs'],

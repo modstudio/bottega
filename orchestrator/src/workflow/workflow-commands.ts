@@ -27,6 +27,12 @@ import {
   resolveWorkflowCursorMode,
   ruleWorkflow,
 } from './workflow-cursor.ts'
+import {
+  type FloorEvidencePorts,
+  productionFloorPorts,
+  type WorkflowEvidenceInput,
+} from './workflow-floor-evidence.ts'
+import { recordWorkflowProbe } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -82,27 +88,53 @@ export async function workflowCommand(argv: string[], presentation: Presentation
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
   else if (sub === 'step') await stepCommand(argv, print)
-  else if (cursorCommand(sub, argv, print)) return
+  else if (await cursorCommand(sub, argv, print)) return
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | rule | abandon | cursors | hydrate | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | rule | abandon | cursors | probe | hydrate | import',
     )
 }
 
-function cursorCommand(
+async function cursorCommand(
   sub: string | undefined,
   argv: string[],
   print: (value: unknown, line?: string) => void,
-): boolean {
+): Promise<boolean> {
   if (sub === 'next') nextCommand(argv, print)
   else if (sub === 'await') awaitCommand(argv, print)
   else if (sub === 'rule') ruleCommand(argv, print)
   else if (sub === 'abandon') abandonCommand(argv, print)
   else if (sub === 'cursors') cursorsCommand(argv, print)
+  else if (sub === 'probe') await probeCommand(argv, print)
   else return false
   return true
+}
+
+async function probeCommand(
+  argv: string[],
+  print: (value: unknown, line?: string) => void,
+): Promise<void> {
+  const dash = argv.indexOf('--')
+  const command = (dash >= 0 ? argv.slice(dash + 1) : argv.slice(2)).filter(
+    (value) => value !== '--',
+  )
+  const result = await recordWorkflowProbe(command)
+  print({ id: result.id, withheld: result.withheld }, String(result.id))
+}
+
+function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
+  return {
+    ruling: positive(flagValue(argv, 'ruling'), '--ruling'),
+    review: positive(flagValue(argv, 'review'), '--review'),
+    gate: positive(flagValue(argv, 'gate'), '--gate'),
+    run: positive(flagValue(argv, 'run'), '--run'),
+    artifact: flagValue(argv, 'artifact'),
+    task: flagValue(argv, 'task'),
+    defer: flagValue(argv, 'defer'),
+    satisfies: positive(flagValue(argv, 'satisfies'), '--satisfies'),
+  }
 }
 
 function ruleCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
@@ -225,7 +257,17 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     'orch workflow next',
     'pass --mode <slug>',
   )
-  const result = nextWorkflowStep(argv[2]!, project, mode, args, flagValue(argv, 'note'), context)
+  const result = nextWorkflowStep(
+    argv[2]!,
+    project,
+    mode,
+    args,
+    flagValue(argv, 'note'),
+    context,
+    undefined,
+    evidenceFromArgv(argv),
+    productionFloorPorts() as FloorEvidencePorts,
+  )
   print(result, result)
 }
 

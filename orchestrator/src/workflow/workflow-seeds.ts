@@ -10,7 +10,7 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
-import { validateStepCatalogue } from './step-catalogue.ts'
+import { type FloorKind, validateStepCatalogue } from './step-catalogue.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 
@@ -185,7 +185,7 @@ const seeds = [
   },
 ]
 
-const floors: Record<string, Record<string, string[]>> = {
+const floors: Record<string, Record<string, FloorKind[]>> = {
   ship: {
     rebase: ['command-exit'],
     lens: ['recorded-artifact'],
@@ -215,7 +215,9 @@ type SeedCatalogueStep = {
   slug: string
   title: string
   body: string
-  floor: string[]
+  floor: FloorKind[]
+  deferrable?: FloorKind[]
+  requirePullRequest?: boolean
   job: string | null
   stage: AutonomyStage
   autonomy: AutonomyValue
@@ -265,6 +267,7 @@ function catalogueDefinition() {
         body: catalogueBody(seed.slug, legacy.slug, legacy.body),
         stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
+        ...(catalogueSlug(seed.slug, legacy.slug) === 'close' ? { requirePullRequest: true } : {}),
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
         needs: [...(runsGate ? ['gate'] : []), ...(runsOnTrunk ? ['trunk'] : [])],
@@ -312,7 +315,7 @@ function workflowDefinition(seed: LegacySeed) {
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
-    revision = 3,
+    revision = 4,
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {

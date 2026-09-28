@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
@@ -27,6 +27,7 @@ import {
   prepareGrokMcpHome,
   prepareSandboxHome,
   prepareWorkerHomeMirror,
+  probeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
   readonlyLensProfile,
@@ -270,6 +271,21 @@ test('worker HOME refuses an unreadable operator path with a remedy', () => {
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }
+})
+
+test('probe sandbox profile denies network and writes except the throwaway directory', () => {
+  const scratch = '/tmp/orch-probe-scratch'
+  const profile = probeSandboxProfile(scratch)
+  expect(profile.network.allowedDomains).toEqual([])
+  expect(profile.network.allowUnixSockets).toEqual([])
+  expect(profile.network.allowLocalBinding).toBe(false)
+  expect(profile.filesystem.allowWrite).toEqual([resolve(scratch)])
+  expect(profile.filesystem.denyRead).toEqual(
+    expect.arrayContaining([
+      ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
+      ...READONLY_LENS_DENY_SOCKETS,
+    ]),
+  )
 })
 
 describe('readonly-lens sandbox profile', () => {

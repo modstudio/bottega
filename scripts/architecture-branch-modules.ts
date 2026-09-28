@@ -1,5 +1,9 @@
 export const branchModuleSpecs = [
   { file: 'orchestrator/src/branch/branch-landing-record.ts', allowed: ['./branch-state.ts'] },
+  {
+    file: 'orchestrator/src/branch/task-key-pull-request.ts',
+    allowed: ['bun:sqlite', '../database/db.ts'],
+  },
   { file: 'orchestrator/src/branch/branch-state.ts', allowed: ['./merged-pull-request.ts'] },
   {
     file: 'orchestrator/src/branch/task-branch-reuse.ts',

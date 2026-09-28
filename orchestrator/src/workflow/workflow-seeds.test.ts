@@ -143,7 +143,7 @@ describe('workflow projection and seeds', () => {
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
     const catalogue = productionStepCatalogue(d)
-    expect(catalogue.reason).toBe('seed r3')
+    expect(catalogue.reason).toBe('seed r4')
     expect(validateStepCatalogue(catalogue.definition)).toEqual([])
     expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
     for (const [slug, revision] of [
@@ -210,7 +210,7 @@ describe('workflow projection and seeds', () => {
     expect(showStepCatalogue(1, d).status).toBe('retired')
     const advanced = showStepCatalogue(2, d)
     expect(advanced.status).toBe('production')
-    expect(advanced.reason).toBe('seed r3')
+    expect(advanced.reason).toBe('seed r4')
     for (const slug of ['rebase', 'pr']) {
       const step = advanced.definition.steps.find((item) => item.slug === slug)!
       expect(step.needs).toContain('trunk')
