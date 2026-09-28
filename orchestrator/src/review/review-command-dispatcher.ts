@@ -4,6 +4,7 @@ import { reviewCommand } from './review-commands.ts'
 import { amendReviewFindingCommand } from './review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from './review-finding-restore.ts'
 import { recordArchitectReadCommand } from './review-read.ts'
+import { restoreReviewTriageCommand } from './review-triage-restore.ts'
 
 type ReviewFlags = {
   has(name: string): boolean
@@ -33,6 +34,11 @@ export async function dispatchReviewCommand(
       )
     }
     restoreReviewFindingsCommand(flags, presentation)
+    return
+  }
+  if (sub === 'restore-triage') {
+    if (argv.length !== 2) throw new Error('orch review restore-triage [--dry-run] [--json]')
+    restoreReviewTriageCommand(flags, presentation)
     return
   }
   await reviewCommand(sub, argv, flags, presentation)

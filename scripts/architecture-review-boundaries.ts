@@ -15,6 +15,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-finding-amend-command.ts',
       './review-finding-restore.ts',
       './review-read.ts',
+      './review-triage-restore.ts',
     ],
     reason:
       'Keep review verb routing beside the review commands and independent of CLI registration.',
@@ -87,6 +88,25 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review/review-finding-restore-policy.ts',
     allowed: ['zod'],
     reason: 'Keep review-finding restore decisions independent of SQLite.',
+  },
+  {
+    name: 'review-triage-restore-boundary',
+    file: 'orchestrator/src/review/review-triage-restore.ts',
+    allowed: [
+      'bun:sqlite',
+      'zod',
+      '../database/db.ts',
+      './review-triage.ts',
+      './review-triage-restore-policy.ts',
+    ],
+    reason: 'Keep review-triage restoration in its SQLite adapter and pure policy.',
+  },
+  {
+    name: 'review-triage-restore-policy-boundary',
+    file: 'orchestrator/src/review/review-triage-restore-policy.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./review-triage.ts'],
+    reason: 'Keep review-triage restore decisions independent of SQLite.',
   },
   {
     name: 'review-outbox-boundary',
