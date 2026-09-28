@@ -417,6 +417,16 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-read.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../../../shared/secret-shaped.ts',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../project/projects.ts',
+    './review-group.ts',
+    './review-outbox.ts',
+  ]),
   module('orchestrator/src/review/review-pins.ts', [
     '../database/db.ts',
     '../git/git-environment.ts',

@@ -1,0 +1,3 @@
+ALTER TABLE "review_read" FORCE ROW LEVEL SECURITY;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "review_read" TO record_actor;

@@ -94,6 +94,21 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     reason: 'Enforce the review-outbox concern boundary.',
   },
   {
+    name: 'review-read-boundary',
+    file: 'orchestrator/src/review/review-read.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/record/schema.ts',
+      '../../../shared/secret-shaped.ts',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      './review-group.ts',
+      './review-outbox.ts',
+    ],
+    reason: 'Keep architect review reads inside the review evidence concern.',
+  },
+  {
     name: 'review-target-boundary',
     file: 'orchestrator/src/review/review-target.ts',
     allowed: [

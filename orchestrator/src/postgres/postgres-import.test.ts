@@ -294,7 +294,7 @@ realPostgres('project import against copied live SQLite data', () => {
     )
     console.log(`live-copy score backfill: enqueued ${scoreBackfill}`)
     console.log(
-      `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings; enqueued ${reviewBackfill.enqueuedReviews} reviews`,
+      `live-copy review backfill: minted ${reviewBackfill.mintedReviews} reviews, ${reviewBackfill.mintedLenses} lenses, ${reviewBackfill.mintedFindings} findings, ${reviewBackfill.mintedReads} reads; enqueued ${reviewBackfill.enqueuedReviews} reviews and ${reviewBackfill.enqueuedReads} reads`,
     )
     console.log(`live-copy landing evidence backfill: ${JSON.stringify(landingEvidenceBackfill)}`)
     const attemptsBeforeReplay = new Map(

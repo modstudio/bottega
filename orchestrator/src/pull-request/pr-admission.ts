@@ -10,7 +10,9 @@ import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/
 import {
   type ChangeGroup,
   measureChangeGroup,
+  reviewsForBranch,
   reviewsForChangeGroup,
+  serializePathSet,
 } from '../review/review-group.ts'
 import { validateTriageOverride } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
@@ -73,10 +75,35 @@ function resolvePullRequestChange(
 function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   return decideTriage({
     patchId: change.group.patchId,
+    pathSet: serializePathSet(change.group.pathSet),
+    tip: change.tip,
     tier: change.tier,
     reviews: reviewsForChangeGroup(database, {
       ...change.group,
     }),
+    branchReviews: reviewsForBranch(database, change.project.name, change.branch),
+    reads: database
+      .query<
+        {
+          id: number
+          tip: string
+          patch_id: string
+          path_set: string
+          recorded_at: string
+        },
+        [string, string]
+      >(
+        `SELECT id,tip,patch_id,path_set,recorded_at FROM review_read
+        WHERE project=? AND branch=? ORDER BY id DESC`,
+      )
+      .all(change.project.name, change.branch)
+      .map((row) => ({
+        id: row.id,
+        tip: row.tip,
+        patchId: row.patch_id,
+        pathSet: row.path_set,
+        recordedAt: row.recorded_at,
+      })),
   })
 }
 
@@ -105,6 +132,19 @@ function refusal(
   if (decision.roundsOwed) {
     lines.push(
       `${decision.roundsOwed} lens round${decision.roundsOwed === 1 ? '' : 's'} still owed for tier ${change.tier}; cleared by: run and record ${decision.roundsOwed} more review lens round${decision.roundsOwed === 1 ? '' : 's'}`,
+    )
+  }
+  if (decision.finalTierRaised) {
+    lines.push(
+      `architect-read path failed: final tip tier ${change.tier} exceeds credited review ${decision.earlierReviewId} tier ${decision.earlierReviewTier}; cleared by: run and record a complete tier ${change.tier} review for ${change.branch}`,
+    )
+  } else if (decision.architectReadRequired) {
+    lines.push(
+      `architect-read path failed: review ${decision.earlierReviewId} can be credited only after an architect reads this exact tip; cleared by: orch review read --sha ${change.tip} --note "<what was read and why it lands>"`,
+    )
+  } else if (decision.earlierReviewId === null) {
+    lines.push(
+      `architect-read path failed: no earlier complete review round exists on ${change.branch}; cleared by: run and record the tier ${change.tier} review for ${change.branch}`,
     )
   }
   return lines.join('\n')
@@ -145,12 +185,13 @@ export function recordTriageIntent(
     .query(
       `INSERT INTO landing_triage_snapshot
          (record_id,project,project_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,
-          lens_rounds,finding_count,override_id,session_id,at)
-       VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?)
+          lens_rounds,finding_count,admission_path,read_id,override_id,session_id,at)
+       VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(project,branch,tip) DO UPDATE SET
          tree=excluded.tree,pr_number=NULL,review_ids=excluded.review_ids,patch_id=excluded.patch_id,
          tier=excluded.tier,lens_rounds=excluded.lens_rounds,
-         finding_count=excluded.finding_count,override_id=excluded.override_id,
+         finding_count=excluded.finding_count,admission_path=excluded.admission_path,
+         read_id=excluded.read_id,override_id=excluded.override_id,
          session_id=excluded.session_id,at=excluded.at
        RETURNING id`,
     )
@@ -166,6 +207,8 @@ export function recordTriageIntent(
       decision.snapshot.tier,
       decision.snapshot.lensRounds,
       decision.snapshot.findingCount,
+      decision.snapshot.admissionPath,
+      decision.snapshot.readId,
       overrideId,
       sessionId(),
       nowIso(),

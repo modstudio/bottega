@@ -101,3 +101,28 @@ export const reviewFinding = pgTable.withRLS(
     ...tenantPolicies('review_finding', table.spaceId),
   ],
 )
+
+export const reviewRead = pgTable.withRLS(
+  'review_read',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    projectId: uuid('project_id').references(() => project.id),
+    machineId: machineIdentity(),
+    localId: localIdentity(),
+    branch: text().notNull(),
+    tip: text().notNull(),
+    patchId: text('patch_id').notNull(),
+    pathSet: jsonb('path_set').notNull(),
+    tier: integer().notNull(),
+    note: text().notNull(),
+    sessionId: text('session_id'),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique('review_read_machine_local_unique').on(table.machineId, table.localId),
+    ...tenantPolicies('review_read', table.spaceId),
+  ],
+)

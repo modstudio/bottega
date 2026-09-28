@@ -23,7 +23,7 @@ export async function syncCommand(
     )
     presentation.log(`score backfill enqueued ${result.backfill.scores}`)
     presentation.log(
-      `review backfill minted ${result.backfill.reviews.mintedReviews} reviews, ${result.backfill.reviews.mintedLenses} lenses, ${result.backfill.reviews.mintedFindings} findings; enqueued ${result.backfill.reviews.enqueuedReviews} reviews`,
+      `review backfill minted ${result.backfill.reviews.mintedReviews} reviews, ${result.backfill.reviews.mintedLenses} lenses, ${result.backfill.reviews.mintedFindings} findings, ${result.backfill.reviews.mintedReads} reads; enqueued ${result.backfill.reviews.enqueuedReviews} reviews and ${result.backfill.reviews.enqueuedReads} reads`,
     )
     const evidence = result.backfill.landingEvidence
     presentation.log(

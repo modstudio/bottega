@@ -72,12 +72,31 @@ export const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const REVIEW_READ_RECORD_PAYLOAD_COLUMNS = [
+  'id',
+  'spaceId',
+  'projectName',
+  'machineId',
+  'localId',
+  'branch',
+  'tip',
+  'patchId',
+  'pathSet',
+  'tier',
+  'note',
+  'sessionId',
+  'recordedAt',
+  'createdAt',
+  'updatedAt',
+] as const
 
 export type ReviewRecordBackfillResult = {
   mintedReviews: number
   mintedLenses: number
   mintedFindings: number
+  mintedReads: number
   enqueuedReviews: number
+  enqueuedReads: number
 }
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
@@ -249,8 +268,42 @@ export function enqueueReviewFinding(
   )
 }
 
+export function enqueueReviewRead(database: Database, readId: number): void {
+  const at = nowIso()
+  const row = database
+    .query<Record<string, unknown>, [number]>(
+      `SELECT review_read.*, project.name AS project_name FROM review_read
+     LEFT JOIN project ON project.id=review_read.project_id WHERE review_read.id=?`,
+    )
+    .get(readId)
+  if (!row?.record_id) throw new Error(`review read ${readId} does not exist or has no record id`)
+  enqueue(
+    database,
+    'review_read',
+    String(row.record_id),
+    {
+      id: row.record_id,
+      spaceId: PLATFORM_SPACE_ID,
+      projectName: row.project_name,
+      machineId: machineId(database),
+      localId: row.id,
+      branch: row.branch,
+      tip: row.tip,
+      patchId: row.patch_id,
+      pathSet: json(row.path_set),
+      tier: row.tier,
+      note: row.note,
+      sessionId: row.session_id,
+      recordedAt: row.recorded_at,
+      createdAt: row.recorded_at,
+      updatedAt: at,
+    },
+    at,
+  )
+}
+
 export function backfillReviewRecords(database: Database): ReviewRecordBackfillResult {
-  const mint = (table: 'review' | 'review_lens' | 'review_finding') => {
+  const mint = (table: 'review' | 'review_lens' | 'review_finding' | 'review_read') => {
     const rows = database
       .query<{ id: number }, []>(`SELECT id FROM ${table} WHERE record_id IS NULL ORDER BY id`)
       .all()
@@ -261,6 +314,7 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
   const mintedReviews = mint('review')
   const mintedLenses = mint('review_lens')
   const mintedFindings = mint('review_finding')
+  const mintedReads = mint('review_read')
   const reviews = database
     .query<{ id: number }, []>(
       `SELECT id FROM review WHERE NOT EXISTS
@@ -268,5 +322,19 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
     )
     .all()
   for (const row of reviews) enqueueReview(database, row.id)
-  return { mintedReviews, mintedLenses, mintedFindings, enqueuedReviews: reviews.length }
+  const reads = database
+    .query<{ id: number }, []>(
+      `SELECT id FROM review_read WHERE NOT EXISTS
+     (SELECT 1 FROM outbox WHERE kind='review_read' AND record_id=review_read.record_id) ORDER BY id`,
+    )
+    .all()
+  for (const row of reads) enqueueReviewRead(database, row.id)
+  return {
+    mintedReviews,
+    mintedLenses,
+    mintedFindings,
+    mintedReads,
+    enqueuedReviews: reviews.length,
+    enqueuedReads: reads.length,
+  }
 }

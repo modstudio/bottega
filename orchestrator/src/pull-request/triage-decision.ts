@@ -5,8 +5,18 @@ import type { TriageReviewRow } from '../review/review-group.ts'
 
 export type TriageEvidence = {
   patchId: string
+  pathSet: string
+  tip: string
   tier: 0 | 1 | 2 | 3
   reviews: readonly TriageReviewRow[]
+  branchReviews: readonly TriageReviewRow[]
+  reads: readonly {
+    id: number
+    tip: string
+    patchId: string
+    pathSet: string
+    recordedAt: string
+  }[]
 }
 
 type TriageSnapshot = {
@@ -15,6 +25,8 @@ type TriageSnapshot = {
   tier: 0 | 1 | 2 | 3
   lensRounds: number
   findingCount: number
+  admissionPath: 'exact_review' | 'architect_read'
+  readId: number | null
 }
 
 export type TriageDecision =
@@ -26,6 +38,10 @@ export type TriageDecision =
       unfinishedReviewIds: number[]
       undisposedFindings: { id: number; reviewId: number; ordinal: number }[]
       roundsOwed: number
+      architectReadRequired: boolean
+      earlierReviewId: number | null
+      earlierReviewTier: 0 | 1 | 2 | 3 | null
+      finalTierRaised: boolean
     }
 
 /** One pure decision over the already-selected rows for a patch/path change group. */
@@ -41,6 +57,8 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     tier: evidence.tier,
     lensRounds,
     findingCount: findings.length,
+    admissionPath: 'exact_review' as const,
+    readId: null,
   }
   const missingReview = evidence.tier > 0 && reviewIds.length === 0
   const unfinishedReviewIds = evidence.reviews
@@ -55,6 +73,41 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   if (!missingReview && !unfinishedReviewIds.length && !undisposedFindings.length && !roundsOwed) {
     return { complete: true, snapshot }
   }
+  const earlierReview = evidence.branchReviews.find((review) => {
+    const lensRounds = new Set(review.lensIds).size
+    return (
+      review.completedAt !== null &&
+      review.tier !== null &&
+      lensRounds >= review.tier &&
+      review.findings.every((finding) => finding.disposition !== null)
+    )
+  })
+  const exactRead = earlierReview
+    ? evidence.reads.find(
+        (read) =>
+          read.tip === evidence.tip &&
+          read.patchId === evidence.patchId &&
+          read.pathSet === evidence.pathSet &&
+          read.recordedAt > earlierReview.completedAt!,
+      )
+    : undefined
+  const finalTierRaised = Boolean(
+    earlierReview?.tier !== null && earlierReview && evidence.tier > earlierReview.tier!,
+  )
+  if (earlierReview && !finalTierRaised && exactRead) {
+    return {
+      complete: true,
+      snapshot: {
+        reviewIds: [earlierReview.reviewId],
+        patchId: evidence.patchId,
+        tier: evidence.tier,
+        lensRounds: new Set(earlierReview.lensIds).size,
+        findingCount: earlierReview.findings.length,
+        admissionPath: 'architect_read',
+        readId: exactRead.id,
+      },
+    }
+  }
   return {
     complete: false,
     snapshot,
@@ -62,5 +115,9 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     unfinishedReviewIds,
     undisposedFindings,
     roundsOwed,
+    architectReadRequired: Boolean(earlierReview && !finalTierRaised && !exactRead),
+    earlierReviewId: earlierReview?.reviewId ?? null,
+    earlierReviewTier: earlierReview?.tier ?? null,
+    finalTierRaised,
   }
 }

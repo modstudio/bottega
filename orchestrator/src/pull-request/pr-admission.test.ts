@@ -56,6 +56,8 @@ test('records the exact triage snapshot and outboxes it', () => {
         tier: 2,
         lensRounds: 2,
         findingCount: 3,
+        admissionPath: 'exact_review',
+        readId: null,
       },
     },
     null,
@@ -72,7 +74,7 @@ test('records the exact triage snapshot and outboxes it', () => {
   expect(
     database
       .query(
-        `SELECT pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,override_id
+        `SELECT pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,admission_path,read_id,override_id
          FROM landing_triage_snapshot WHERE id=?`,
       )
       .get(id),
@@ -83,6 +85,8 @@ test('records the exact triage snapshot and outboxes it', () => {
     tier: 2,
     lens_rounds: 2,
     finding_count: 3,
+    admission_path: 'exact_review',
+    read_id: null,
     override_id: null,
   })
   const outbox = database
@@ -98,5 +102,7 @@ test('records the exact triage snapshot and outboxes it', () => {
     tier: 2,
     lensRounds: 2,
     findingCount: 3,
+    admissionPath: 'exact_review',
+    readId: null,
   })
 })
