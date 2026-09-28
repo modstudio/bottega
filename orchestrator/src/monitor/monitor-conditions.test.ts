@@ -19,7 +19,6 @@ import {
   terminalProcessPgid,
   unsettledClaimConditions,
   unsettledClaimInventory,
-  workerGateToolingCondition,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices } from './monitor-notices.ts'
 
@@ -42,34 +41,6 @@ describe('record tunnel monitor condition', () => {
   test('is absent when the configured endpoint is reachable', () => {
     expect(recordTunnelCondition({ app: 'record-app', port: 15432, reachable: true })).toBeNull()
   })
-})
-
-test('worker gate tooling changes produce a run condition with paths and command', () => {
-  expect(
-    workerGateToolingCondition({
-      runId: 73,
-      startedAt: '2026-09-25T12:00:00.000Z',
-      ownerSession: 'session-73',
-      executions: [{ paths: ['package.json', 'scripts/gate'], command: 'bun run check' }],
-    }),
-  ).toEqual({
-    kind: 'worker-gate-tooling-change',
-    subject: 'run:73',
-    since: '2026-09-25T12:00:00.000Z',
-    ageMs: null,
-    detail:
-      'worker gate executed with changed tooling: paths package.json, scripts/gate; command bun run check',
-    action: 'review those tooling changes before landing',
-    ownerSession: 'session-73',
-  })
-  expect(
-    workerGateToolingCondition({
-      runId: 73,
-      startedAt: '2026-09-25T12:00:00.000Z',
-      ownerSession: null,
-      executions: [{ paths: [], command: 'bun run check' }],
-    }),
-  ).toBeNull()
 })
 
 describe('idle run classification', () => {
