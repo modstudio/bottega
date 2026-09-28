@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
 import {
   collectDocReferenceProjects,
@@ -74,6 +75,17 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
 function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined {
   if (value === undefined || value === 'inject' || value === 'demand') return value
   throw new Error('--delivery must be inject or demand')
+}
+
+function commandCanonTree(
+  scope: string,
+  subject: string | null,
+  flags: DocFlags,
+  presentation: DocPresentation,
+): ReturnType<typeof selectCanonWriteTree> {
+  const tree = selectCanonWriteTree({ scope, subject, cwd: flags.flag('cwd') })
+  if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
+  return tree
 }
 
 export function formatDocSearchRefresh(refresh: {
@@ -178,9 +190,10 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || title === undefined || !reason?.trim()) {
       throw new Error(
-        'orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
+        'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
       )
     }
+    const canonTree = commandCanonTree(scope, subject, flags, presentation)
     const body = flag('file')
       ? readFileSync(flag('file')!, 'utf8')
       : !presentation.stdinIsTTY
@@ -204,10 +217,11 @@ export async function docCommand(
       forceInject,
       delivery,
       expectedRevision: flag('expect'),
+      canonTree,
     })
-    const root = repoRootForDoc(doc)
+    const root = repoRootForDoc(doc, canonTree?.root)
     const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-    if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings }))
+    if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
     else {
       presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
       for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
@@ -239,8 +253,9 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || !reason?.trim())
       throw new Error(
-        'orch doc rm <slug> --scope S [--subject X] --reason TEXT [--expect REVISION]',
+        'orch doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]',
       )
+    const canonTree = commandCanonTree(scope, subject, flags, presentation)
     const removed = await removeDoc(
       scope,
       subject,
@@ -249,11 +264,12 @@ export async function docCommand(
         reason,
         author: flag('author'),
         expectedRevision: flag('expect'),
+        canonTree,
       },
       owner,
     )
     if (has('json')) {
-      presentation.log(JSON.stringify({ removed }))
+      presentation.log(JSON.stringify({ removed, tree: canonTree?.root }))
       return
     }
     presentation.log(

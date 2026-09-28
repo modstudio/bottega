@@ -10,6 +10,7 @@ import {
   docHasRepositoryReferences,
   lintDoc,
 } from './doc-lint.ts'
+import type { CanonWriteTree } from './doc-write-allowed.ts'
 
 type StoredDoc = { scope: string; subject: string | null; slug: string; body: string }
 
@@ -19,8 +20,15 @@ export function storedDocsHaveRepositoryReferences(docs: Pick<StoredDoc, 'body'>
   return docs.some((doc) => docHasRepositoryReferences(doc.body))
 }
 
-function targetProjects(doc: Pick<StoredDoc, 'scope' | 'subject'>): Project[] {
+function targetProjects(
+  doc: Pick<StoredDoc, 'scope' | 'subject'> & { owner?: string | null },
+): Project[] {
   const registered = projects()
+  if (doc.scope === 'canon') {
+    if (doc.owner) return registered
+    if (doc.subject) return registered.filter(({ name }) => name === doc.subject)
+    return registered.filter(({ settings }) => settings.managedContext === true)
+  }
   if (doc.scope === 'project') return registered.filter(({ name }) => name === doc.subject)
   if (doc.scope === 'stack') return registered.filter(({ stack }) => stack === doc.subject)
   return registered
@@ -40,18 +48,20 @@ function gitHead(root: string): string {
 }
 
 export function collectDocReferenceProjects(
-  doc: Pick<StoredDoc, 'scope' | 'subject'>,
+  doc: Pick<StoredDoc, 'scope' | 'subject'> & { owner?: string | null },
+  selectedTree?: CanonWriteTree,
 ): DocReferenceProject[] {
   return targetProjects(doc).map((project) => {
-    if (!existsSync(project.path))
-      return { name: project.name, stack: project.stack, checkout: null }
+    const path = selectedTree?.project.name === project.name ? selectedTree.root : project.path
+    if (!existsSync(path)) return { name: project.name, stack: project.stack, checkout: null }
     try {
-      const root = canonGitRoot(project.path)
+      const root = canonGitRoot(path)
       const head = gitHead(root)
-      let checkout = checkoutCache.get(head)
+      const cacheKey = `${root}\0${head}`
+      let checkout = checkoutCache.get(cacheKey)
       if (checkout === undefined) {
         checkout = collectCanonLintInput(root)
-        checkoutCache.set(head, checkout)
+        checkoutCache.set(cacheKey, checkout)
       }
       return { name: project.name, stack: project.stack, checkout }
     } catch (error) {

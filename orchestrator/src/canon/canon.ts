@@ -510,9 +510,14 @@ export function checkDoc(body: string, options: { repoRoot: string }): Finding[]
   return findings
 }
 
-export function repoRootForDoc(doc: Pick<Doc, 'scope' | 'subject'>): string | null {
+export function repoRootForDoc(
+  doc: Pick<Doc, 'scope' | 'subject'>,
+  selectedCanonRoot?: string,
+): string | null {
   if (doc.scope === 'project')
     return doc.subject ? (projectByName(doc.subject)?.path ?? null) : null
+  if (doc.scope === 'canon' && doc.subject)
+    return selectedCanonRoot ?? projectByName(doc.subject)?.path ?? null
   return ROOT
 }
 
