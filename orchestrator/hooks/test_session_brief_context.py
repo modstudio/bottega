@@ -175,6 +175,43 @@ class WorkerSessionSkip(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
 
 
+class SettingsApplyNotice(unittest.TestCase):
+    def completed(self, returncode=0, stdout="", stderr=""):
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+    def test_changed_settings_announce_next_session(self):
+        notice = session_brief._settings_apply_notice(
+            self.completed(stdout="settings /tmp/settings.json: applied; backup /tmp/backup\n")
+        )
+        self.assertEqual(notice, "settings applied; they take effect in the next session")
+
+    def test_current_settings_add_no_notice(self):
+        notice = session_brief._settings_apply_notice(
+            self.completed(stdout="settings /tmp/settings.json: already current\n")
+        )
+        self.assertIsNone(notice)
+
+    def test_refusals_are_one_notice_line(self):
+        notice = session_brief._settings_apply_notice(
+            self.completed(
+                returncode=1,
+                stdout=(
+                    "settings /tmp/settings.json: refused; move the key first\n"
+                    "canon codex /tmp/codex: refused; not written: canon batch refused\n"
+                ),
+            )
+        )
+        self.assertEqual(notice.count("\n"), 0)
+        self.assertIn("move the key first", notice)
+        self.assertIn("canon batch refused", notice)
+
+    def test_timeout_is_a_notice(self):
+        self.assertEqual(
+            session_brief._settings_apply_notice(self.completed(returncode=-1)),
+            "Settings apply timed out; settings state is unknown.",
+        )
+
+
 if __name__ == "__main__":
     result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(
         unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])

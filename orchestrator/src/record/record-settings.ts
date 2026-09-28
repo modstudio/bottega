@@ -50,7 +50,9 @@ export async function applyRecordSettingsPermission(
   })
   const row = rows.find(
     (candidate) =>
-      candidate.slug === SETTINGS_SLUG && candidate.owner === owner && candidate.subject === subject,
+      candidate.slug === SETTINGS_SLUG &&
+      candidate.owner === owner &&
+      candidate.subject === subject,
   )
   if (!row) throw new RecordDocError('settings doc not found', 404)
   const revisions = await listRecordDocRevisions({ ...input, id: row.id })

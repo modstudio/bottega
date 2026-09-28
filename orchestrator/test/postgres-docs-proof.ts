@@ -353,6 +353,42 @@ export async function proveHostedDocs(input: {
       `expected revision ${created.revisionId}, current revision ${afterFutureDated.revisionId}`,
     ),
   })
+  const settingsCreate = await fetch(`${input.origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'settings',
+      subject: null,
+      owner: identity.user.id,
+      slug: 'settings',
+      title: 'settings',
+      body: '{"permissions":{},"hooks":{},"envKeys":[]}\n',
+      delivery: 'demand',
+      reason: 'postgres settings revision proof',
+      author: 'proof',
+    }),
+  })
+  expect(settingsCreate.status).toBe(200)
+  const settingsCreated = (await settingsCreate.json()) as { revisionId: string }
+  const settingsMissingRevision = await fetch(`${input.origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'settings',
+      subject: null,
+      owner: identity.user.id,
+      slug: 'settings',
+      title: 'settings',
+      body: '{"permissions":{"allow":[]},"hooks":{},"envKeys":[]}\n',
+      delivery: 'demand',
+      reason: 'postgres missing settings revision proof',
+      author: 'proof',
+    }),
+  })
+  expect(settingsMissingRevision.status).toBe(409)
+  expect(await settingsMissingRevision.json()).toMatchObject({
+    error: expect.stringContaining(`current revision ${settingsCreated.revisionId}`),
+  })
   await selectSpace(identity.personalSpaceId)
   const personalDefault = await fetch(`${input.origin}/v1/docs?scope=machine`, { headers })
   expect(personalDefault.status).toBe(200)

@@ -2,6 +2,7 @@
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
   containsSecretShaped,
@@ -17,10 +18,7 @@ import {
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
-import {
-  editSettingsPermission,
-  type SettingsPermissionOperation,
-} from './settings-permission.ts'
+import { editSettingsPermission, type SettingsPermissionOperation } from './settings-permission.ts'
 import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
 import {
   claudeHomeFromEnvironment,
@@ -76,6 +74,13 @@ export async function settingsPermissionCommand(
     }
     throw new Error(`refusing settings permission add: no settings row for ${targetLabel(target)}`)
   }
+  const revision = decideDocRevisionWrite({
+    expected: expectedRevision,
+    current: row.revision ?? null,
+    isCreate: false,
+    scope: SETTINGS_SCOPE,
+  })
+  if (!revision.allow) throw new Error(revision.reason)
   const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), { list, rule, operation })
   if (!edit.changed) {
     return {

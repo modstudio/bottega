@@ -161,6 +161,25 @@ def _autonomy_slice(completed):
         return "", "Autonomy response was invalid; autonomy state is unknown."
 
 
+def _settings_apply_notice(completed):
+    if completed.returncode == -1:
+        return "Settings apply timed out; settings state is unknown."
+    lines = [
+        line.strip()
+        for text in (completed.stdout or "", completed.stderr or "")
+        for line in text.splitlines()
+        if line.strip()
+    ]
+    if completed.returncode != 0:
+        refused = [line for line in lines if "refused" in line]
+        detail = "; ".join(refused or lines[:1])
+        suffix = f": {detail}" if detail else ""
+        return f"Settings apply failed with exit {completed.returncode}{suffix}."
+    if any(": applied;" in line for line in lines):
+        return "settings applied; they take effect in the next session"
+    return None
+
+
 def orch_worker_session(env=None):
     return bool((env if env is not None else os.environ).get("ORCH_RUN_ID"))
 
@@ -168,7 +187,7 @@ def orch_worker_session(env=None):
 def main() -> int:
     if orch_worker_session():
         return 0
-    resumes_p = inbox_p = waiting_p = monitor_p = context_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -202,6 +221,7 @@ def main() -> int:
         )
         waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
         context_p = _start(orch, "context", "--cwd", cwd, "--json")
+        settings_p = _start(orch, "settings", "apply")
         monitor_failure = None
         if sid:
             try:
@@ -222,6 +242,7 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
+        settings_apply = _wait(settings_p, deadline)
 
         resume_table = ""
         resume_offer = ""
@@ -416,6 +437,9 @@ def main() -> int:
             notices.append(waiting_failure)
         if autonomy_failure:
             notices.append(autonomy_failure)
+        settings_notice = _settings_apply_notice(settings_apply)
+        if settings_notice:
+            notices.append(settings_notice)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
             message = f"{answerable_count} {noun} waiting on your ruling."
@@ -610,6 +634,7 @@ def main() -> int:
         _kill(inbox_p)
         _kill(waiting_p)
         _kill(context_p)
+        _kill(settings_p)
         _kill(monitor_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)
