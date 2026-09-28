@@ -1,6 +1,7 @@
 // concern: user-canon-commands
 /** Knows user canon import and hydration command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
+import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
@@ -8,10 +9,13 @@ import { projects } from '../project/projects.ts'
 import { planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
-  applyUserCanonHomePlan,
-  claudeHomeFromEnvironment,
+  applyUserCanonHomePlans,
   collectUserCanonHome,
   planUserCanonHome,
+  userCanonHomeInstallationStatus,
+  userCanonHomeOverridesStatus,
+  userCanonHomePlanDrift,
+  userCanonHomesFromEnvironment,
 } from './user-canon-home-files.ts'
 
 type UserCanonFlags = { has(name: string): boolean }
@@ -38,10 +42,13 @@ export async function userCanonImportCommand(
   presentation: UserCanonPresentation,
 ): Promise<void> {
   const owner = await signedInDocOwner()
-  const claudeHome = claudeHomeFromEnvironment(process.env)
+  const claudeHome = userCanonHomesFromEnvironment(
+    process.env,
+    resolveRunsDirectory(process.env),
+  )[0]!
   const files = collectUserCanonHome(claudeHome)
   if (files.length === 0) {
-    throw new Error(`refusing user canon import: no canon files found under ${claudeHome}`)
+    throw new Error(`refusing user canon import: no canon files found under ${claudeHome.path}`)
   }
   const rows = files.map(({ slug, text }) => ({
     slug,
@@ -118,23 +125,39 @@ export async function userCanonHydrateCommand(
     throw new Error('unknown flag for orch canon hydrate --user: --force')
   }
   const owner = await signedInDocOwner()
-  const claudeHome = claudeHomeFromEnvironment(process.env)
-  const plan = planUserCanonHome({
-    claudeHome,
-    rows: listDocs({ scope: 'canon', subject: null, owner }),
-    files: collectUserCanonHome(claudeHome),
-    adopt: flags.has('adopt'),
-  })
-  for (const row of plan.writes) presentation.log(`write ${row.path}`)
-  for (const row of plan.adopts) presentation.log(`adopt ${row.path}`)
-  for (const row of plan.deletes) presentation.log(`delete ${row.path}`)
-  const count = plan.writes.length + plan.adopts.length + plan.deletes.length
+  const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
+  const overrideStatus = userCanonHomeOverridesStatus(homes)
+  if (overrideStatus) presentation.log(overrideStatus)
+  const rows = listDocs({ scope: 'canon', subject: null, owner })
+  const plans = homes
+    .filter((home) => {
+      const status = userCanonHomeInstallationStatus(home)
+      if (status) presentation.log(status)
+      return home.installed
+    })
+    .map((home) =>
+      planUserCanonHome({
+        home,
+        rows,
+        files: collectUserCanonHome(home),
+        adopt: flags.has('adopt'),
+      }),
+    )
+  for (const plan of plans) {
+    for (const row of plan.writes) presentation.log(`write ${row.path}`)
+    for (const row of plan.adopts) presentation.log(`adopt ${row.path}`)
+    for (const row of plan.deletes) presentation.log(`delete ${row.path}`)
+  }
+  const count = plans.reduce((sum, plan) => sum + userCanonHomePlanDrift(plan), 0)
   if (flags.has('check')) {
     if (count) presentation.exitCode(1)
     return
   }
   const dryRun = flags.has('dry-run')
-  const backups = applyUserCanonHomePlan(plan, process.env, dryRun)
-  for (const path of backups) presentation.log(`backup ${path}`)
+  const result = applyUserCanonHomePlans(plans, process.env, dryRun)
+  for (const path of result.backups) presentation.log(`backup ${path}`)
+  for (const failure of result.cleanupFailures) {
+    presentation.log(`quarantine cleanup failed; committed hydrate retained ${failure}`)
+  }
   presentation.log(`${dryRun ? 'would hydrate' : 'hydrated'} ${count} paths`)
 }

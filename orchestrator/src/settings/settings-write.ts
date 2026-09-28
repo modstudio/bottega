@@ -5,9 +5,11 @@ import {
   chmodSync,
   closeSync,
   constants,
+  existsSync,
   fchmodSync,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -99,6 +101,7 @@ export function backupSettingsWrites(
 export function applyBackedUpSettingsWrites(
   writes: BackedUpSettingsWrite[],
   environment: StateEnvironment,
+  options: { rollbackOnFailure?: boolean; installed?: (path: string) => void } = {},
 ): string[] {
   if (writes.length === 0) return []
   const written: BackedUpSettingsWrite[] = []
@@ -107,15 +110,18 @@ export function applyBackedUpSettingsWrites(
       assertUnchanged(write.plan)
       atomicWrite(write.plan.path, write.plan.renderedText, write.plan.mode, () => {
         written.push(write)
+        options.installed?.(write.plan.path)
       })
     }
   } catch (error) {
     const restoreErrors: string[] = []
-    for (const write of written.reverse()) {
-      try {
-        restoreSettingsBackup(write.plan.path, write.backup, environment, true)
-      } catch (restoreError) {
-        restoreErrors.push(`${write.plan.path}: ${String(restoreError)}`)
+    if (options.rollbackOnFailure !== false) {
+      for (const write of written.reverse()) {
+        try {
+          restoreSettingsBackup(write.plan.path, write.backup, environment, true)
+        } catch (restoreError) {
+          restoreErrors.push(`${write.plan.path}: ${String(restoreError)}`)
+        }
       }
     }
     const backups = writes.map((write) => `${write.plan.path}: ${write.backup}`).join('\n')
@@ -131,11 +137,61 @@ export function applyBackedUpSettingsWrites(
   return writes.map((write) => write.backup)
 }
 
+export function writeNewSettingsFileAtomically(
+  path: string,
+  text: string,
+  mode = 0o644,
+  installed?: () => void,
+  beforePublish?: () => void,
+): void {
+  if (pathExistsNoFollow(path)) changedAfterPlanning(path)
+  const directory = dirname(path)
+  const temporary = join(directory, `.${basename(path)}.tmp-${process.pid}-${randomUUID()}`)
+  let fd: number | null = null
+  try {
+    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
+    writeFileSync(fd, text)
+    fchmodSync(fd, mode)
+    fsyncSync(fd)
+    closeSync(fd)
+    fd = null
+    if (pathExistsNoFollow(path)) changedAfterPlanning(path)
+    beforePublish?.()
+    try {
+      publishFileToAbsentPath(temporary, path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') changedAfterPlanning(path)
+      throw error
+    }
+    installed?.()
+  } finally {
+    if (fd !== null) closeSync(fd)
+    rmSync(temporary, { force: true })
+  }
+}
+
+export function publishFileToAbsentPath(source: string, target: string): void {
+  linkSync(source, target)
+  unlinkSync(source)
+  fsyncDirectory(dirname(target))
+}
+
+function pathExistsNoFollow(path: string): boolean {
+  try {
+    lstatSync(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
 export function restoreSettingsBackup(
   target: string,
   backup: string,
   environment: StateEnvironment,
   force = false,
+  missingMode?: number,
 ): void {
   const directory = prepareBackupDirectory(environment)
   const resolvedBackup = resolve(backup)
@@ -154,6 +210,13 @@ export function restoreSettingsBackup(
   const text = readRegularNoFollow(resolvedBackup)
   if (hash(text) !== metadata.backupHash) {
     throw new Error(`refusing settings restore: ${backup} does not match its metadata`)
+  }
+  if (!existsSync(target)) {
+    if (!force || missingMode === undefined) {
+      throw new Error(`refusing settings restore: ${target} no longer exists`)
+    }
+    writeNewSettingsFileAtomically(target, text, missingMode)
+    return
   }
   const current = readRegularNoFollow(target)
   if (!force && hash(current) !== metadata.installedHash) {

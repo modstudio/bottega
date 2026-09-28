@@ -160,6 +160,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     file: `${source}user-canon-commands.ts`,
     allowed: [
       'shared/ratchet.ts',
+      'shared/state-directory.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/doc/canon-import.ts',

@@ -12,7 +12,12 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
+import {
+  applySettingsWrite,
+  planSettingsWrite,
+  restoreSettingsBackup,
+  writeNewSettingsFileAtomically,
+} from './settings-write.ts'
 
 let root = ''
 beforeEach(() => {
@@ -86,6 +91,16 @@ describe('guarded settings write', () => {
     ).toEqual({ backup: null, written: false })
     expect(readdirSync(backups)).toEqual([])
     expect(lstatSync(backups).mode & 0o777).toBe(0o700)
+  })
+
+  test('an absent-path write never replaces a file created at its publish boundary', () => {
+    const path = join(root, 'new-settings.json')
+    expect(() =>
+      writeNewSettingsFileAtomically(path, '{"new":true}\n', 0o640, undefined, () => {
+        writeFileSync(path, '{"concurrent":true}\n')
+      }),
+    ).toThrow(/changed after planning/)
+    expect(readFileSync(path, 'utf8')).toBe('{"concurrent":true}\n')
   })
 
   test('keeps only the newest configured number of complete backups', () => {

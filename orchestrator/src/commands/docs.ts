@@ -6,7 +6,24 @@ import { docCommand } from '../doc/doc-commands.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
+import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { log, optionFlags, write, writeStdout } from './support.ts'
+
+type Flags = { has(name: string): boolean }
+
+export function assertUserCanonHydrateAllowed(
+  flags: Flags,
+  env: Record<string, string | undefined> = process.env,
+  pid = process.pid,
+  inventory?: ProcessInventory,
+): void {
+  if (!isOrchWorkerProcess(env, pid, inventory)) return
+  if (flags.has('check') && !flags.has('adopt')) return
+  const command = `orch canon hydrate --user${flags.has('adopt') ? ' --adopt' : ''}`
+  throw new Error(
+    `refusing user canon hydrate from an orch worker run; an operator must run ${command}`,
+  )
+}
 
 export function register(program: Command): void {
   program
@@ -64,6 +81,7 @@ export function register(program: Command): void {
     .action(async (args, options) => {
       const argv = ['canon', ...args]
       const flags = optionFlags(options)
+      if (argv[1] === 'hydrate' && flags.has('user')) assertUserCanonHydrateAllowed(flags)
       await import('../jobs/jobs.ts')
       if (argv[1] === 'lint') {
         canonLintCommand(flags, {
