@@ -33,6 +33,8 @@ const gradedReview: ValidatedEvidence = {
 }
 const passingGate: ValidatedEvidence = { gate: { id: 2, finished: true, exitCode: 0 } }
 const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
+const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
+const passingExec: ValidatedEvidence = { exec: { id: 4, exitCode: 0 } }
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
 const closedTask: ValidatedEvidence = {
   task: { key: 'DEV-977', status: 'done', mergedPullRequest: true },
@@ -91,6 +93,20 @@ test('a terminal run with the expected exit satisfies command-exit', () => {
     action: 'allow',
     refs: [{ flag: '--run', value: '8' }],
   })
+})
+
+test('a probe with the expected exit satisfies command-exit', () => {
+  expect(decide({ floors: [commandExit], evidence: passingProbe }).action).toBe('allow')
+  expect(
+    decide({ floors: [commandExit], evidence: { probe: { id: 3, exitCode: 1 } } }).action,
+  ).toBe('refuse')
+})
+
+test('an exec with the expected exit satisfies command-exit', () => {
+  expect(decide({ floors: [commandExit], evidence: passingExec }).action).toBe('allow')
+  expect(decide({ floors: [commandExit], evidence: { exec: { id: 4, exitCode: 1 } } }).action).toBe(
+    'refuse',
+  )
 })
 
 test('a non-zero gate fails unless the floor states otherwise', () => {
@@ -306,6 +322,7 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     id: 4,
   })
   expect(parseArtifactRef('probe:12')).toEqual({ kind: 'probe', id: 12 })
+  expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
   expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
   expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: 8 })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })

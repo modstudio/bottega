@@ -129,6 +129,7 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   ).run()
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
+  expect(gathered.probe).toEqual({ id: 1, exitCode: 0 })
   expect(gathered.task).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: true })
 })
 
@@ -303,6 +304,39 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
      VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-01')`,
   ).run()
   expect(gather(d, { artifact: 'probe:2' }).artifact).toEqual({ ref: 'probe:2', exists: true })
+})
+
+test('exec evidence is branch-bound and carries its exit code', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('["true"]','/other','abc',0,'','2026-09-01','exec')`,
+  ).run()
+  expect(() =>
+    gather(
+      d,
+      { artifact: 'exec:1' },
+      {
+        resolveCheckout: () => ({
+          project: 'other',
+          branch: 'other-branch',
+          headIsTipOrAncestor: true,
+        }),
+      },
+    ),
+  ).toThrow("--artifact exec:1 cwd project is other, not this cursor's fixture")
+
+  d.query(
+    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-01','exec')`,
+  ).run()
+  expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
+    artifact: { ref: 'exec:2', exists: true },
+    exec: { id: 2, exitCode: 0 },
+  })
+  expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
+    '--artifact probe:2 is recorded as exec:2',
+  )
 })
 
 test('a foreign doc is refused and a matching doc is allowed', () => {

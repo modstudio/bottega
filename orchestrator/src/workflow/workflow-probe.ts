@@ -1,7 +1,7 @@
 // concern: workflows
-/** Records a read-only probe command as an artifact. Must not know floor decisions. */
+/** Records probe and architect-executed commands as artifacts. Must not know floor decisions. */
 import type { Database } from 'bun:sqlite'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +24,7 @@ export type ProbeRunner = (input: { command: string[]; cwd: string }) => {
 }
 
 export type ProbeRecord = { id: number; withheld: boolean }
+export type ExecRecord = ProbeRecord & { exitCode: number }
 
 function probeEnv(scratch: string): NodeJS.ProcessEnv {
   return {
@@ -96,6 +97,40 @@ export async function recordWorkflowProbe(
   const ran = input.runner
     ? input.runner({ command, cwd })
     : await sandboxedRunner(command, cwd, database)
+  return recordWorkflowCommand(command, cwd, ran, 'probe', input)
+}
+
+async function execRunner(
+  command: string[],
+  cwd: string,
+  write: (chunk: string) => void,
+): Promise<{ exitCode: number; output: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command[0]!, command.slice(1), {
+      cwd,
+      env: process.env,
+      stdio: ['inherit', 'pipe', 'pipe'],
+    })
+    let output = ''
+    const record = (chunk: Buffer | string) => {
+      const text = Buffer.isBuffer(chunk) ? chunk.toString() : chunk
+      output += text
+      write(text)
+    }
+    child.stdout?.on('data', record)
+    child.stderr?.on('data', record)
+    child.once('error', reject)
+    child.once('close', (code) => resolve({ exitCode: code ?? -1, output }))
+  })
+}
+
+async function recordWorkflowCommand(
+  command: string[],
+  cwd: string,
+  ran: { exitCode: number; output: string },
+  kind: 'probe' | 'exec',
+  input: { d?: Database; commit?: string | null },
+): Promise<ProbeRecord> {
   const commandJson = JSON.stringify(command)
   const withheld = containsSecretShaped(commandJson) || containsSecretShaped(ran.output)
   const storedCommand = containsSecretShaped(commandJson) ? PROBE_WITHHELD : commandJson
@@ -109,8 +144,8 @@ export async function recordWorkflowProbe(
   return writeTransaction(() => {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at,kind)
+         VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         storedCommand,
@@ -121,8 +156,42 @@ export async function recordWorkflowProbe(
         withheld ? 1 : 0,
         sessionId(),
         nowIso(),
+        kind,
       )
     if (!row) throw new Error('probe record was not inserted')
     return { id: row.id, withheld }
   }, d)
+}
+
+export async function recordWorkflowExec(
+  command: string[],
+  input: {
+    cwd?: string
+    d?: Database
+    runner?:
+      | ProbeRunner
+      | ((input: {
+          command: string[]
+          cwd: string
+        }) => Promise<{ exitCode: number; output: string }>)
+    commit?: string | null
+    write?: (chunk: string) => void
+    registeredProject?: boolean
+  } = {},
+): Promise<ExecRecord> {
+  if (!command.length) throw new Error('orch workflow exec needs a command after --')
+  if (process.env.ORCH_DEPTH !== undefined)
+    throw new Error('orch workflow exec is reserved for architect sessions; ORCH_DEPTH is set')
+  if (!sessionId())
+    throw new Error(
+      'orch workflow exec is reserved for architect sessions; CLAUDE_CODE_SESSION_ID is not set',
+    )
+  const cwd = input.cwd ?? process.cwd()
+  if (input.registeredProject === false)
+    throw new Error(`orch workflow exec: no registered project contains ${cwd}`)
+  const ran = input.runner
+    ? await input.runner({ command, cwd })
+    : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)))
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', input)
+  return { ...recorded, exitCode: ran.exitCode }
 }

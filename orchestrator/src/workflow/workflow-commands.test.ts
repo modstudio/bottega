@@ -80,6 +80,12 @@ test('workflow probe refuses a missing command', async () => {
   )
 })
 
+test('workflow exec refuses a missing command', async () => {
+  expect(workflowCommand(['workflow', 'exec'], presentation([]))).rejects.toThrow(
+    'orch workflow exec needs a command after --',
+  )
+})
+
 test('next resolves an omitted mode to the composed cursor default', async () => {
   const slug = 'cursor-default-next'
   const project = 'cursor-default-next-project'

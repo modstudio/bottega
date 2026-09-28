@@ -32,7 +32,7 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
-import { recordWorkflowProbe } from './workflow-probe.ts'
+import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -93,7 +93,7 @@ export async function workflowCommand(argv: string[], presentation: Presentation
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | rule | abandon | cursors | probe | hydrate | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | rule | abandon | cursors | probe | exec | hydrate | import',
     )
 }
 
@@ -108,8 +108,26 @@ async function cursorCommand(
   else if (sub === 'abandon') abandonCommand(argv, print)
   else if (sub === 'cursors') cursorsCommand(argv, print)
   else if (sub === 'probe') await probeCommand(argv, print)
+  else if (sub === 'exec') await execCommand(argv, print)
   else return false
   return true
+}
+
+async function execCommand(
+  argv: string[],
+  print: (value: unknown, line?: string) => void,
+): Promise<void> {
+  const dash = argv.indexOf('--')
+  const command = (dash >= 0 ? argv.slice(dash + 1) : argv.slice(2)).filter(
+    (value) => value !== '--',
+  )
+  if (!command.length) throw new Error('orch workflow exec needs a command after --')
+  const cwd = process.cwd()
+  const registeredProject = projects().some(
+    (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
+  )
+  const result = await recordWorkflowExec(command, { registeredProject })
+  print(result, String(result.id))
 }
 
 async function probeCommand(
