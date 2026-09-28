@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
+import { embeddedDistributionManifest } from './embedded-assets.ts'
 
 export type InstallEnvironment = Record<string, string | undefined>
 
@@ -47,6 +48,7 @@ function isCheckoutRoot(directory: string): boolean {
 
 /** Resolve the running distribution or checkout using only the supplied start and environment. */
 export function resolveInstallRoot(fromDirectory: string, env: InstallEnvironment): string {
+  if (embeddedDistributionManifest()) return dirname(process.execPath)
   const override = env[INSTALL_HOME_ENV]
   if (override && isAbsolute(override)) return override
   let directory = fromDirectory
@@ -87,6 +89,8 @@ function damagedManifest(path: string, root: string, detail: string): Error {
 
 /** Validate the distribution manifest once, where bytes from disk enter the program. */
 export function readDistributionManifest(root: string): DistributionManifest | null {
+  const embedded = embeddedDistributionManifest()
+  if (embedded) return embedded
   const path = join(root, DIST_MANIFEST)
   if (!existsSync(path)) return null
   let value: unknown
@@ -126,6 +130,8 @@ function installationIdentity(
   fromDirectory: string,
   env: InstallEnvironment,
 ): InstallationIdentity {
+  const embedded = embeddedDistributionManifest()
+  if (embedded) return { kind: 'distribution', root: dirname(process.execPath), manifest: embedded }
   const root = resolveInstallRoot(fromDirectory, env)
   const manifest = readDistributionManifest(root)
   if (manifest) return { kind: 'distribution', root, manifest }
@@ -149,6 +155,7 @@ export function isAuthorizedPlatformInstallation(
   env: InstallEnvironment,
   checkoutAuthorized: boolean,
 ): boolean {
+  if (embeddedDistributionManifest()) return true
   try {
     const root = resolveInstallRoot(fromDirectory, env)
     if (readDistributionManifest(root)) return true

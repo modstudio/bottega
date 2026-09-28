@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
 import {
@@ -112,7 +113,9 @@ export function resolveDatabase(
   env: StateEnvironment = process.env as StateEnvironment,
   binaryRoot = ROOT,
 ): DatabaseResolution {
-  const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
+  const binaryRepository = embeddedDistributionManifest()
+    ? null
+    : (repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot))
   const path = resolveOrchestratorDatabase(env)
   if (env.ORCH_DB) {
     // ORCH_DB is independently sufficient. When HOME is available, retaining
@@ -192,6 +195,7 @@ export function legacyDatabaseRefusal(
   env: StateEnvironment = process.env as StateEnvironment,
 ): string | null {
   if (resolution.method === 'ORCH_DB') return null
+  if (embeddedDistributionManifest()) return null
   const binaryRepository = repositoryRootFromGit(ROOT) ?? repositoryRootFromDotGit(ROOT)
   if (!binaryRepository) return null
   const legacyStore = join(

@@ -30,22 +30,40 @@ export type WalWriteLockSampleResult =
   | WalWriteLockSamples
   | { supported: false; reason: string; sampleCount: number }
 
-const darwinFcntl =
-  platform() === 'darwin'
-    ? cc({
-        source: join(ORCHESTRATOR_ROOT, 'src/database/store-write-lock.c'),
-        symbols: {
-          orch_fcntl_getlk: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
-        },
-      })
-    : null
+function compileDarwinFcntl() {
+  return cc({
+    source: join(ORCHESTRATOR_ROOT, 'src/database/store-write-lock.c'),
+    symbols: {
+      orch_fcntl_getlk: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
+    },
+  })
+}
+
+type DarwinFcntl = ReturnType<typeof compileDarwinFcntl>
+let darwinFcntl: DarwinFcntl | null | undefined
+let darwinFcntlFailure: string | null = null
+
+function loadDarwinFcntl(): DarwinFcntl | null {
+  if (platform() !== 'darwin') return null
+  if (darwinFcntl !== undefined) return darwinFcntl
+  try {
+    darwinFcntl = compileDarwinFcntl()
+  } catch (error) {
+    darwinFcntl = null
+    darwinFcntlFailure = error instanceof Error ? error.message : String(error)
+  }
+  return darwinFcntl
+}
 
 /** Return the process holding SQLite's WAL write byte, without opening SQLite. */
 export function probeWalWriteLock(storePath: string): WalWriteLockProbe {
-  if (!darwinFcntl) {
+  const fcntl = loadDarwinFcntl()
+  if (!fcntl) {
     return {
       unsupported: true,
-      reason: `WAL write-lock holder probing is unsupported on ${platform()}`,
+      reason: darwinFcntlFailure
+        ? `WAL write-lock holder probing needs a source checkout: ${darwinFcntlFailure}`
+        : `WAL write-lock holder probing is unsupported on ${platform()}`,
     }
   }
   let fd: number
@@ -65,7 +83,7 @@ export function probeWalWriteLock(storePath: string): WalWriteLockProbe {
     flock.setBigInt64(8, 1n, true)
     flock.setInt16(20, F_WRLCK, true)
     flock.setInt16(22, SEEK_SET, true)
-    const errno = darwinFcntl.symbols.orch_fcntl_getlk(fd, ptr(bytes))
+    const errno = fcntl.symbols.orch_fcntl_getlk(fd, ptr(bytes))
     if (errno !== 0) {
       throw new Error(`fcntl(F_GETLK) failed for ${storePath}-shm (errno ${errno})`)
     }

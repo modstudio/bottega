@@ -13,6 +13,7 @@
   "scripts": {
     "check": "bun scripts/check.ts",
     "release:build": "bun scripts/build-release.ts",
+    "release:binary": "bun scripts/build-binary.ts",
     "format": "biome format --write .",
     "lint": "biome check .",
     "orch": "bun --no-env-file orchestrator/src/cli/orch.ts",

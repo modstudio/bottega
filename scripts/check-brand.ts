@@ -46,6 +46,8 @@ const ALLOWED = new Set([
   'install.sh',
   // This policy test intentionally uses a project whose name happens to match the platform slug.
   'orchestrator/src/run/run-mcp-attachment.test.ts',
+  // The architecture manifest must name the platform-derived release entry by its exact path.
+  'scripts/architecture-release.ts',
 ])
 
 const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')

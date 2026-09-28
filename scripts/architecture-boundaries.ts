@@ -1,6 +1,7 @@
 import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
+import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
   recordReadBoundariesAfterPublish,
@@ -236,22 +237,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../jobs/jobs.ts', '../outcome.ts', '../review/review-vocabulary.ts', '../run/checkpoint.ts'],
     'Keep reply dialect resolution independent of lifecycle and impure transport concerns.',
   ),
-  boundary(
-    'database-boundary',
-    'orchestrator/src/database/db.ts',
-    [
-      'bun:sqlite',
-      'node:crypto',
-      'node:fs',
-      'node:path',
-      'node:url',
-      '../../../shared/brand.ts',
-      './contention.ts',
-      './database-location.ts',
-      './migrations.ts',
-    ],
-    'Enforce the database concern boundary.',
-  ),
+  ...databaseBoundarySpecs,
   boundary(
     'dispatch-commands-boundary',
     'orchestrator/src/dispatch/dispatch-commands.ts',

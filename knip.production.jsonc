@@ -35,6 +35,8 @@
         "local-stack/bin/*.sh!",
         "ops/install.sh!",
         "ops/bin/*.sh!",
+        "release/bottega.ts!",
+        "scripts/{build-binary,smoke-binary}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
         "!scripts/**/*.test.ts",
