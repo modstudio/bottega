@@ -15,8 +15,10 @@ import {
   rulingConditions,
   staleTrustEntryConditions,
   stalledRunConditions,
+  terminalConversationTime,
   terminalProcessPgid,
   unsettledClaimConditions,
+  unsettledClaimInventory,
   workerGateToolingCondition,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices } from './monitor-notices.ts'
@@ -219,6 +221,86 @@ describe('operational monitor conditions', () => {
 
     test('catches passing a reused vendor pgid as descendant evidence', () => {
       expect(terminalProcessPgid('reused', 66547)).toBe(null)
+    })
+  })
+
+  describe('terminal conversation time', () => {
+    test('uses started_at plus latency_ms when both are valid', () => {
+      expect(
+        terminalConversationTime({
+          started_at: '2026-09-16T14:00:00.000Z',
+          latency_ms: 44_000,
+          last_event_at: '2026-09-16T14:44:20Z',
+        }),
+      ).toBe('2026-09-16T14:00:44.000Z')
+    })
+
+    test('uses last_event_at when latency is missing, the 4155 shape', () => {
+      expect(
+        terminalConversationTime({
+          started_at: '2026-09-16T14:00:00.000Z',
+          latency_ms: null,
+          last_event_at: '2026-09-16T14:44:20Z',
+        }),
+      ).toBe('2026-09-16T14:44:20.000Z')
+    })
+
+    test('uses started_at when it is the only valid timestamp', () => {
+      expect(
+        terminalConversationTime({
+          started_at: '2026-09-16T14:00:00.000Z',
+          latency_ms: null,
+          last_event_at: null,
+        }),
+      ).toBe('2026-09-16T14:00:00.000Z')
+    })
+
+    test('is unresolvable when nothing is valid', () => {
+      expect(
+        terminalConversationTime({
+          started_at: 'not-a-date',
+          latency_ms: null,
+          last_event_at: null,
+        }),
+      ).toBeNull()
+    })
+  })
+
+  test('an unresolvable terminal conversation does not blind the rest of the unsettled-claim inventory', () => {
+    const clock = Date.parse('2026-09-15T12:00:00Z')
+    const normal = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      startedAt: '2026-09-15T10:00:00.000Z',
+      latency: 1000,
+    })
+    const broken = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'stale',
+      startedAt: 'not-a-date',
+    })
+    db().query('UPDATE run SET latency_ms=NULL, last_event_at=NULL WHERE id=?').run(broken)
+    const insertClaim = db().query(
+      `INSERT INTO resource_claim
+     (root_run_id,run_id,kind,allocation_key,state,claimed_at)
+     VALUES (?,?,'sandbox_dir',?,'claimed',?)`,
+    )
+    insertClaim.run(normal, normal, `/runs/sandbox-${normal}`, '2026-09-15T10:00:00.000Z')
+    insertClaim.run(broken, broken, `/runs/sandbox-${broken}`, '2026-09-15T10:00:00.000Z')
+    expect(unsettledClaimConditions(unsettledClaimInventory(), clock)).toEqual({
+      conditions: [
+        {
+          kind: 'unsettled-claim',
+          subject: `sandbox_dir:${normal}`,
+          since: '2026-09-15T10:00:01.000Z',
+          ageMs: 7_199_000,
+          detail: `sandbox_dir claim for terminal conversation ${normal} remains claimed; allocation key /runs/sandbox-${normal}`,
+          action: 'run orch sweep',
+        },
+      ],
+      errors: [`terminal time for conversation ${broken} could not be established`],
     })
   })
 
