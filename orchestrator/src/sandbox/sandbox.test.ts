@@ -397,7 +397,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.network.allowLocalBinding).toBe(true)
   })
 
-  test('creates the exact token-directory deny and repairs private permissions', () => {
+  test('profile construction includes the exact token-directory deny without creating it', () => {
     const environment = {
       HOME: homedir(),
       [STATE_HOME_ENV]: temporaryState(),
@@ -417,11 +417,7 @@ describe('readonly-lens sandbox profile', () => {
     }
     const first = readonlyLensProfile(input)
     expect(first.filesystem.denyRead.filter((path) => path === directory)).toEqual([directory])
-    expect(statSync(directory).mode & 0o777).toBe(0o700)
-
-    chmodSync(directory, 0o755)
-    readonlyLensProfile(input)
-    expect(statSync(directory).mode & 0o777).toBe(0o700)
+    expect(existsSync(directory)).toBe(false)
   })
 
   test('a registered exact deny removes an otherwise allowed read', () => {

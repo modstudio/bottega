@@ -8,7 +8,7 @@ const review = (overrides: Partial<TriageEvidence['reviews'][number]> = {}) => (
   tier: 1 as const,
   patchId: 'patch-old',
   pathSet: '["a.ts"]',
-  lensIds: [8],
+  lensIdentities: ['correctness'],
   findings: [{ id: 12, ordinal: 1, disposition: 'accepted' }],
   ...overrides,
 })
@@ -46,7 +46,11 @@ describe('pull-request triage decision', () => {
   })
 
   test('path b admits a complete earlier round plus a later read of the exact tip', () => {
-    const earlier = review({ reviewId: 3, tier: 2, lensIds: [6, 7] })
+    const earlier = review({
+      reviewId: 3,
+      tier: 2,
+      lensIdentities: ['correctness', 'safety'],
+    })
     expect(
       decideTriage(
         evidence({
@@ -68,6 +72,89 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({
       complete: true,
       snapshot: { admissionPath: 'architect_read', reviewIds: [3], readId: 9 },
+    })
+  })
+
+  test('path b credits a full pre-rebase round recorded as separate lens reviews', () => {
+    const firstLens = review({
+      reviewId: 3,
+      tier: 2,
+      lensIdentities: ['correctness'],
+    })
+    const secondLens = review({
+      reviewId: 4,
+      recordedAt: '2026-09-25T00:30:00Z',
+      completedAt: '2026-09-25T01:30:00Z',
+      tier: 2,
+      lensIdentities: ['safety'],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 2,
+          reviews: [],
+          branchReviews: [secondLens, firstLens],
+          reads: [
+            {
+              id: 9,
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: {
+        admissionPath: 'architect_read',
+        reviewIds: [3, 4],
+        lensRounds: 2,
+        readId: 9,
+      },
+    })
+  })
+
+  test('the same lens twice does not satisfy a tier-two exact review', () => {
+    const first = review({
+      reviewId: 3,
+      tier: 2,
+      lensIdentities: ['correctness'],
+      patchId: 'patch-a',
+    })
+    const second = review({
+      reviewId: 4,
+      tier: 2,
+      lensIdentities: ['correctness'],
+      patchId: 'patch-a',
+    })
+
+    expect(decideTriage(evidence({ tier: 2, reviews: [first, second] }))).toMatchObject({
+      complete: false,
+      roundsOwed: 1,
+    })
+  })
+
+  test('an unfinished review blocks an otherwise complete identical patch group', () => {
+    const complete = review({
+      reviewId: 3,
+      tier: 1,
+      lensIdentities: ['correctness'],
+      patchId: 'patch-a',
+    })
+    const unfinished = review({
+      reviewId: 4,
+      completedAt: null,
+      tier: 1,
+      lensIdentities: ['safety'],
+      patchId: 'patch-a',
+    })
+
+    expect(decideTriage(evidence({ reviews: [complete, unfinished] }))).toMatchObject({
+      complete: false,
+      unfinishedReviewIds: [4],
     })
   })
 

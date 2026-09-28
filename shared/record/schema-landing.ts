@@ -53,6 +53,8 @@ export const landingOverride = pgTable.withRLS(
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
+    patchId: text('patch_id'),
+    pathSet: jsonb('path_set'),
     reason: text().notNull(),
     sessionId: text('session_id'),
     at: recordedAt('at'),

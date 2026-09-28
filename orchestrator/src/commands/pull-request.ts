@@ -1,7 +1,11 @@
 // concern: cli
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
 import type { Command } from 'commander'
-import { checkPushedTip, createPullRequest } from '../pull-request/pr-admission.ts'
+import {
+  checkPushedTip,
+  createPullRequest,
+  recordTriageOverride,
+} from '../pull-request/pr-admission.ts'
 import { log } from './support.ts'
 
 const forbiddenGithubFlag = (value: string): string | null => {
@@ -37,7 +41,19 @@ export function register(program: Command): void {
         process.cwd(),
       )
       if (result.output) log(result.output)
-      if (result.overridden) log('pull-request triage was overridden by the operator')
+      if (result.overrideId !== null) {
+        log(`pull-request triage admitted by operator override ${result.overrideId}`)
+      }
+    })
+
+  pr.command('override')
+    .description('record an operator override for the checked-out tip')
+    .requiredOption('--reason <reason>')
+    .option('--from-operator')
+    .allowExcessArguments(false)
+    .action((options) => {
+      const id = recordTriageOverride(options.reason, Boolean(options.fromOperator), process.cwd())
+      log(String(id))
     })
 
   pr.command('check')
@@ -53,6 +69,9 @@ export function register(program: Command): void {
         return
       }
       if (result.refusal) throw new Error(result.refusal)
+      if (result.overrideId !== null) {
+        log(`triage admitted by operator override ${result.overrideId}`)
+      }
       if (result.pendingIntent) {
         log(
           `triage snapshot intent for ${options.remoteRef} is pending pull-request reconciliation`,
