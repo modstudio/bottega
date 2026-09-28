@@ -37,17 +37,12 @@ import {
   REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
   REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
   REVIEW_RECORD_PAYLOAD_CONTRACT,
-  type ReviewRecordBackfillResult,
 } from '../review/review-outbox.ts'
 import {
   backfillQuestionRecords,
   QUESTION_RECORD_PAYLOAD_CONTRACT,
 } from '../run/question-outbox.ts'
-import {
-  backfillRunRecords,
-  RUN_RECORD_PAYLOAD_CONTRACT,
-  type RunRecordBackfillResult,
-} from '../run/run-outbox.ts'
+import { backfillRunRecords, RUN_RECORD_PAYLOAD_CONTRACT } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_CONTRACT } from '../score/score-outbox.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -58,7 +53,6 @@ import {
   LANDING_RECORD_PAYLOAD_CONTRACT,
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
-  type LandingEvidenceBackfillResult,
   TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'

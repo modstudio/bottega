@@ -13,7 +13,7 @@ import {
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
-import { outboxOrder, syncRecord, unreachableSpaceProject } from './record-sync.ts'
+import { outboxOrder, syncRecord } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -126,7 +126,13 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
+    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
+    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
+  );
+  CREATE TABLE outbox_quarantine_audit (
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
+    at TEXT NOT NULL, reason TEXT
   )`)
   const payload = Object.fromEntries(
     LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
