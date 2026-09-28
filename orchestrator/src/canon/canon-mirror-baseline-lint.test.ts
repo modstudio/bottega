@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -60,12 +60,7 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
           headSha: 'different-head',
           checks: 'passed',
         }),
-        releaseRun: () => {
-          const tree = join(root, '.claude/worktrees/canon-mirror')
-          if (existsSync(tree))
-            spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
-          return { outcome: 'released', detail: 'fixture release' }
-        },
+        releaseRun: () => ({ outcome: 'released', detail: 'fixture release' }),
       },
       noteFailure: async () => {},
     })
