@@ -154,7 +154,7 @@ describe('installation identity', () => {
     writeFileSync(join(release, DIST_MANIFEST), JSON.stringify(manifest))
     const diskVersion = installationVersionText(release, {})
 
-    registerEmbeddedAssets({ assets: {}, manifest })
+    registerEmbeddedAssets({ assets: {}, files: {}, manifest })
     expect(installationVersionText('/$bunfs/root', {})).toBe(diskVersion)
     expect(isAuthorizedPlatformInstallation('/$bunfs/root', {}, false)).toBeTrue()
     expect(installRoot()).toBe(dirname(process.execPath))

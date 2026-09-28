@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs'
 import type { DistributionManifest } from './install-root.ts'
 
 type EmbeddedAssetRegistry = Readonly<Record<string, string>>
+type EmbeddedFileRegistry = Readonly<Record<string, string>>
 
 export type EmbeddedAssets = Readonly<{
   assets: EmbeddedAssetRegistry
+  files: EmbeddedFileRegistry
   manifest: DistributionManifest
 }>
 
@@ -24,6 +26,12 @@ export function readInstallAsset(relativePath: string, diskPath: string): string
     throw new Error(`compiled ${relativePath} asset is missing`)
   }
   return value
+}
+
+/** Resolve a Bun.file-openable install asset without falling through to disk in a binary. */
+export function resolveInstallFile(relativePath: string, diskPath: string): string | undefined {
+  if (embedded === null) return diskPath
+  return embedded.files[relativePath]
 }
 
 export function embeddedDistributionManifest(): DistributionManifest | null {

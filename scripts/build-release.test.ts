@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME } from '../shared/brand.ts'
 import { DIST_MANIFEST } from '../shared/install-root.ts'
+import { embeddedAssetPaths } from './build-binary.ts'
 import {
   DECLARED_PAYLOAD_PATHS,
   distributionManifest,
@@ -38,6 +39,22 @@ test('the payload has only the declared runtime paths', () => {
     'bin/hub',
     'bin/retrieval-search',
   ])
+})
+
+test('binary asset paths include files below dot-prefixed directories', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'binary-assets-'))
+  try {
+    mkdirSync(join(root, '.well-known'), { recursive: true })
+    writeFileSync(join(root, 'app.js'), '')
+    writeFileSync(join(root, '.well-known', 'assetlinks.json'), '')
+
+    expect(await embeddedAssetPaths('hub/web/dist', root)).toEqual([
+      'hub/web/dist/.well-known/assetlinks.json',
+      'hub/web/dist/app.js',
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('the packaged hook reads its marker list from the release layout', async () => {
