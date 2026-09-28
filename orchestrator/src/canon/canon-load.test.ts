@@ -101,6 +101,19 @@ scoped
     expect(plan.files.find((row) => row.path === '/home/.codex/AGENTS.md')?.size).toBe(50)
   })
 
+  test('Codex chooses the generated override instead of the root entry', () => {
+    const input = facts({
+      files: [
+        file('/proj/AGENTS.md', 'entry-only'),
+        file('/proj/AGENTS.override.md', 'entry-and-rules'),
+      ],
+    })
+
+    const plan = planHarnessLoad(input, 'codex')
+    expect(pathsOf(plan)).toEqual(['/proj/AGENTS.override.md'])
+    expect(plan.total).toBe(Buffer.byteLength('entry-and-rules'))
+  })
+
   test('the Grok env toggles remove the Claude-compat files', () => {
     const input = facts({
       files: [

@@ -16,10 +16,12 @@ import {
   introducedCanonFindings,
   lintCanon,
 } from './canon-lint.ts'
+import { CODEX_PROJECT_DOC_MAX_BYTES } from './canon-load.ts'
 
 const lint = (files: CanonFile[], extra: Partial<Omit<CanonLintInput, 'files'>> = {}) =>
   lintCanon({
     files,
+    codexProjectDoc: true,
     trackedPaths: extra.trackedPaths ?? [],
     packageScripts: extra.packageScripts ?? [],
     sourceTexts: extra.sourceTexts ?? [],
@@ -38,6 +40,23 @@ const referenceDoc = (body = 'Current reference.') =>
   `---\ndescription: A reference\n---\n${body}\n`
 
 describe('canon tier size rules', () => {
+  test('Codex project doc size names the limit and largest contributing rows', () => {
+    const result = lint([
+      { path: 'AGENTS.md', text: text(16_000) },
+      {
+        path: '.agents/rules/large.md',
+        text: `---\ndescription: Large\nalways: true\n---\n${text(17_000)}`,
+      },
+    ])
+    const finding = result.findings.find(({ rule }) => rule === 'canon/size-codex-project-doc')
+
+    expect(finding?.file).toBe('AGENTS.override.md')
+    expect(finding?.message).toContain(`limit ${CODEX_PROJECT_DOC_MAX_BYTES} bytes`)
+    expect(finding?.message).toContain('largest contributing rows:')
+    expect(finding?.message).toContain('.agents/rules/large.md')
+    expect(finding?.message).toContain('AGENTS.md')
+  })
+
   test('entry size reports only above its byte cap', () => {
     expect(
       rules([{ path: 'AGENTS.md', text: text(ENTRY_BYTES + 1) }], 'canon/size-entry'),

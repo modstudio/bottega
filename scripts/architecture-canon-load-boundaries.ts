@@ -18,6 +18,12 @@ const boundary = (
 
 export const canonLoadBoundarySpecs: ImportBoundary[] = [
   boundary(
+    'codex-project-doc-boundary',
+    'orchestrator/src/canon/codex-project-doc.ts',
+    ['./canon-load.ts'],
+    'Keep generated Codex project document composition pure and independent of filesystems, stores, commands, and processes.',
+  ),
+  boundary(
     'canon-load-boundary',
     'orchestrator/src/canon/canon-load.ts',
     ['node:path'],

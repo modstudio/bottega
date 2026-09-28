@@ -129,6 +129,7 @@ function factsForCanonRows(
   const rowPaths = new Set(rows.map(({ slug }) => slug))
   return {
     files: rows.map(({ slug, body }) => ({ path: slug, text: body })),
+    codexProjectDoc: true,
     trackedPaths: [...facts.trackedPaths.filter((path) => !knownCanonPaths.has(path)), ...rowPaths],
     packageScripts: facts.packageScripts,
     sourceTexts,

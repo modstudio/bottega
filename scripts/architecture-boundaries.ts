@@ -79,13 +79,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'canon-files-boundary',
     'orchestrator/src/canon/canon-files.ts',
-    ['node:fs', 'node:path', '../../../shared/git.ts', './canon-lint.ts'],
+    ['node:fs', 'node:path', '../../../shared/git.ts', './canon-lint.ts', './codex-project-doc.ts'],
     'Keep canon file collection independent of stores, commands, runs, routing, transports, and worktrees.',
   ),
   boundary(
     'canon-hydrate-boundary',
     'orchestrator/src/canon/canon-hydrate.ts',
-    ['node:path', './canon-lint.ts', './user-canon-home.ts'],
+    ['node:path', './canon-lint.ts', './codex-project-doc.ts', './user-canon-home.ts'],
     'Keep canon hydration planning pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
@@ -97,6 +97,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/canon-references.ts',
       '../../../shared/ratchet.ts',
       './canon-budget.ts',
+      './codex-project-doc.ts',
       './prose-lint.ts',
     ],
     'Keep canon lint decisions pure and independent of filesystems, stores, commands, and processes.',

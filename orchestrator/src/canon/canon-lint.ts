@@ -13,12 +13,19 @@ import {
   REFERENCE_BYTES,
   RULE_BYTES,
 } from './canon-budget.ts'
+import {
+  CODEX_PROJECT_DOC_PATH,
+  codexProjectDocBudgetRefusal,
+  composeCodexProjectDoc,
+} from './codex-project-doc.ts'
 import { lintProse, proseLines } from './prose-lint.ts'
 
 export type CanonFile = { path: string; text: string; symlinkTarget?: string }
 export type CanonSourceText = { path: string; text: string }
 export type CanonLintInput = {
   files: CanonFile[]
+  /** Repository canon composes a generated Codex project document; user canon does not. */
+  codexProjectDoc?: boolean
   /** Markdown bodies that participate only as repository-reference citers. */
   referenceFiles?: CanonFile[]
   trackedPaths: string[]
@@ -628,6 +635,26 @@ function sizeFindings(tiers: TierFiles, summary: CanonLintSummary['tiers']): Can
   return findings
 }
 
+function codexProjectDocFindings(files: CanonFile[]): CanonFinding[] {
+  const doc = composeCodexProjectDoc(
+    files
+      .filter((file) => file.symlinkTarget === undefined)
+      .map(({ path, text }) => ({ slug: path, body: text })),
+  )
+  if (!doc) return []
+  const refusal = codexProjectDocBudgetRefusal(doc)
+  if (!refusal) return []
+  return [
+    {
+      file: CODEX_PROJECT_DOC_PATH,
+      line: 1,
+      rule: 'canon/size-codex-project-doc',
+      message: refusal.replace('refusing canon hydrate: ', ''),
+      measuredBytes: doc.bytes,
+    },
+  ]
+}
+
 function chainMeasurements(classified: Classified[]): {
   measurements: CanonMeasurement[]
   findings: CanonFinding[]
@@ -805,6 +832,7 @@ export function lintCanon(input: CanonLintInput): CanonLintResult {
   const facts = referenceFacts(input)
   const findings = [
     ...sizeFindings(tiers, tierMeasurements),
+    ...(input.codexProjectDoc ? codexProjectDocFindings(input.files) : []),
     ...chains.findings,
     ...classified.flatMap((item) => contentFindings(item, input, facts)),
     ...(input.referenceFiles ?? []).flatMap((file) =>
