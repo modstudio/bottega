@@ -1,10 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { SQL } from 'bun'
-import {
-  RecordVerdictError,
-  supersedeRecordVoid,
-} from './record-verdicts.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { RecordVerdictError, supersedeRecordVoid } from './record-verdicts.ts'
 
 test('hosted API unvoid refuses a void plus another exclusion without an update', async () => {
   const statements: string[] = []
@@ -38,12 +35,8 @@ test('hosted API unvoid refuses a void plus another exclusion without an update'
   } catch (error) {
     expect(error).toBeInstanceOf(RecordVerdictError)
     expect((error as RecordVerdictError).status).toBe(409)
-    expect((error as Error).message).toContain(
-      `active exclusion is '${VOID_EXCLUSION_REASON}'`,
-    )
-    expect((error as Error).message).toContain(
-      "run evidence_excluded is 'unjudged: owner gone'",
-    )
+    expect((error as Error).message).toContain(`active exclusion is '${VOID_EXCLUSION_REASON}'`)
+    expect((error as Error).message).toContain("run evidence_excluded is 'unjudged: owner gone'")
   }
   expect(statements.some((statement) => statement.includes('UPDATE'))).toBe(false)
 })
