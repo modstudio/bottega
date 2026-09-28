@@ -218,6 +218,9 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         break
       case 'setup-death':
         setupDeaths.push(r.id)
+        break
+      case 'alive':
+        break
     }
   }
   if (linkedWorktreeReadOnly) {
