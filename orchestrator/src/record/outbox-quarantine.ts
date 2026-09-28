@@ -134,11 +134,24 @@ export function retireOutboxRow(
   database: Database = db(),
   at = nowIso(),
   actorSession = sessionId(),
+  additionalEligibility?: (database: Database, rowId: number) => boolean,
 ): void {
   const trimmed = reason.trim()
   if (!trimmed) throw new Error('retiring an outbox row requires a non-empty --reason')
   writeTransaction(() => {
-    const row = quarantinedRow(database, rowId)
+    const candidate = outboxRow(database, rowId)
+    if (candidate.retired_at) {
+      throw new Error(
+        `outbox row ${rowId} is retired and permanently not deliverable; inspect its outbox quarantine audit instead`,
+      )
+    }
+    const blocked = candidate.quarantined_at ? false : additionalEligibility?.(database, rowId)
+    if (!candidate.quarantined_at && !blocked) {
+      throw new Error(
+        `outbox row ${rowId} is not quarantined or blocked by a retired parent; run \`orch sync\` and retire only a reported row`,
+      )
+    }
+    const row = candidate
     audit(database, row, 'retire', row.quarantine_reason, trimmed, actorSession, at)
     database
       .query('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=?')

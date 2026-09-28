@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import type { BlockedOutboxRow, OutboxRow, Payload } from './record-sync-types.ts'
 
-type ParentRef = { kind: string; recordId: string }
+type ParentRef = { kind: string; recordId: string; blockedReason?: string }
 
 type ParentState = {
   synced_at: string | null
@@ -31,14 +31,36 @@ function reviewRunIds(database: Database, reviewRecordId: string): string[] {
     .map((row) => row.record_id)
 }
 
-function lensRunId(database: Database, lensRecordId: string): string | null {
+function lensRun(
+  database: Database,
+  lensRecordId: string,
+): {
+  runId: string | null
+  unreadable: boolean
+} {
+  const normalized = database
+    .query<{ record_id: string }, [string]>(
+      `SELECT run.record_id FROM review_lens
+       JOIN run ON run.id=review_lens.run_id
+       WHERE review_lens.record_id=? AND run.record_id IS NOT NULL`,
+    )
+    .get(lensRecordId)
+  if (normalized) return { runId: normalized.record_id, unreadable: false }
   const row = database
     .query<{ payload: string }, [string]>(
       `SELECT payload FROM outbox WHERE kind='review_lens' AND record_id=? ORDER BY id DESC LIMIT 1`,
     )
     .get(lensRecordId)
-  if (!row) return null
-  return nullableString((JSON.parse(row.payload) as Payload).runId)
+  if (!row) return { runId: null, unreadable: false }
+  try {
+    const payload = JSON.parse(row.payload) as unknown
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return { runId: null, unreadable: true }
+    }
+    return { runId: nullableString((payload as Payload).runId), unreadable: false }
+  } catch {
+    return { runId: null, unreadable: true }
+  }
 }
 
 function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Database): ParentRef[] {
@@ -62,10 +84,17 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
       ].filter((value): value is ParentRef => value.recordId !== null)
     case 'review_finding': {
       const lensId = nullableString(payload.reviewLensId)
+      const lens = lensId ? lensRun(database, lensId) : { runId: null, unreadable: false }
       return [
         { kind: 'review', recordId: nullableString(payload.reviewId) },
-        { kind: 'review_lens', recordId: lensId },
-        { kind: 'run', recordId: lensId ? lensRunId(database, lensId) : null },
+        {
+          kind: 'review_lens',
+          recordId: lensId,
+          blockedReason: lens.unreadable
+            ? `review_lens parent ${lensId} has an unreadable stored payload and no local normalized run`
+            : undefined,
+        },
+        { kind: 'run', recordId: lens.runId },
       ].filter((value): value is ParentRef => value.recordId !== null)
     }
     default:
@@ -89,10 +118,8 @@ export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow
       continue
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-    const dependency = outboxDependency(row, parsed as Payload, database)
-    if (dependency.disposition === 'blocked') {
-      blocked.push({ id: row.id, kind: row.kind, parentRecordId: dependency.parentRecordId! })
-    }
+    const blockedRow = blockedByRetiredParent(row, parsed as Payload, database)
+    if (blockedRow) blocked.push(blockedRow)
   }
   return blocked
 }
@@ -100,10 +127,10 @@ export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow
 function outboxDependencyState(
   database: Database,
   parents: readonly ParentRef[],
-): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string } {
+): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string; reason?: string } {
   const unique = new Map(parents.map((parent) => [`${parent.kind}:${parent.recordId}`, parent]))
   let deferred = false
-  for (const { kind, recordId: parentRecordId } of unique.values()) {
+  for (const { kind, recordId: parentRecordId, blockedReason } of unique.values()) {
     const rows = database
       .query<ParentState, [string, string]>(
         `SELECT synced_at,quarantined_at,retired_at FROM outbox
@@ -111,18 +138,54 @@ function outboxDependencyState(
       )
       .all(kind, parentRecordId)
     const latest = rows[0]
-    if (!latest || latest.synced_at !== null) continue
+    if (!latest || rows.some((row) => row.synced_at !== null)) continue
     if (latest.retired_at === null) {
       deferred = true
       continue
     }
-    return { disposition: 'blocked', parentRecordId }
+    return { disposition: 'blocked', parentRecordId, reason: blockedReason }
   }
   return { disposition: deferred ? 'deferred' : 'ready' }
 }
 
 function outboxDependency(row: OutboxRow, payload: Payload, database: Database) {
   return outboxDependencyState(database, outboxParentRecordIds(row, payload, database))
+}
+
+function blockedByRetiredParent(
+  row: OutboxRow,
+  payload: Payload,
+  database: Database,
+): BlockedOutboxRow | null {
+  const dependency = outboxDependency(row, payload, database)
+  if (dependency.disposition !== 'blocked') return null
+  return {
+    id: row.id,
+    kind: row.kind,
+    parentRecordId: dependency.parentRecordId!,
+    ...(dependency.reason ? { reason: dependency.reason } : {}),
+  }
+}
+
+export function outboxRowBlockedByRetiredParent(
+  database: Database,
+  rowId: number,
+): BlockedOutboxRow | null {
+  const row = database
+    .query<OutboxRow, [number]>(
+      `SELECT id,kind,record_id,payload FROM outbox WHERE id=?
+       AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+    )
+    .get(rowId)
+  if (!row) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(row.payload)
+  } catch {
+    return null
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  return blockedByRetiredParent(row, parsed as Payload, database)
 }
 
 export function deferOutboxRow(
@@ -134,7 +197,12 @@ export function deferOutboxRow(
   const dependency = outboxDependency(row, payload, database)
   if (dependency.disposition === 'ready') return false
   if (dependency.disposition === 'blocked') {
-    blocked.push({ id: row.id, kind: row.kind, parentRecordId: dependency.parentRecordId! })
+    blocked.push({
+      id: row.id,
+      kind: row.kind,
+      parentRecordId: dependency.parentRecordId!,
+      ...(dependency.reason ? { reason: dependency.reason } : {}),
+    })
   }
   return true
 }

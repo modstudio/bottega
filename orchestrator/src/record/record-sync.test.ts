@@ -831,6 +831,36 @@ test('a dependent reports a retired parent without attempting delivery', async (
   local.close()
 })
 
+test('a synced parent lets its child flow after a later re-enqueue is retired', async () => {
+  const local = localOutbox(3)
+  const parent = local
+    .query<{ record_id: string; payload: string }, []>(
+      'SELECT record_id,payload FROM outbox WHERE id=1',
+    )
+    .get()!
+  const child = local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=3').get()!
+  local.query('UPDATE outbox SET synced_at=? WHERE id=1').run(STAMP)
+  local
+    .query(
+      `UPDATE outbox SET record_id=?,retired_at=?,retirement_reason='later snapshot' WHERE id=2`,
+    )
+    .run(parent.record_id, STAMP)
+  local
+    .query('UPDATE outbox SET payload=? WHERE id=3')
+    .run(JSON.stringify({ ...JSON.parse(child.payload), parentRunId: parent.record_id }))
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+    blocked: [],
+  })
+  expect(local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox WHERE id=3').get())
+    .toEqual({ synced_at: STAMP })
+  local.close()
+})
+
 test('a projectless payload syncs without resolving a project', async () => {
   const local = localOutbox(1, null)
   const remote = fakePostgres()

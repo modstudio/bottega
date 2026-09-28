@@ -46,7 +46,7 @@ export function outboxRetiredParentCheck(database: Database): RecordDoctorCheck 
     ? {
         name: 'outbox has no rows blocked by a retired parent',
         status: 'fail',
-        detail: `${rows.length} blocked: ${rows.map((row) => `${row.id} ${row.kind} (parent ${row.parentRecordId})`).join(', ')}; retry the retired parent is unavailable, so inspect the parent retirement and explicitly retire or replace each dependent row`,
+        detail: `${rows.length} blocked: ${rows.map((row) => `${row.id} ${row.kind} (${row.reason ?? `parent ${row.parentRecordId}`})`).join(', ')}; inspect the parent retirement, then run \`orch record outbox retire <row-id> --reason <text>\` or replace the dependent row`,
       }
     : { name: 'outbox has no rows blocked by a retired parent', status: 'pass' }
 }

@@ -13,7 +13,10 @@ export function quarantinedOutboxLines(
 export function blockedOutboxLines(
   rows: Awaited<ReturnType<typeof syncRecord>>['blocked'],
 ): string[] {
-  return rows.map((row) => `blocked ${row.id}\t${row.kind}\tretired parent ${row.parentRecordId}`)
+  return rows.map(
+    (row) =>
+      `blocked ${row.id}\t${row.kind}\t${row.reason ?? `retired parent ${row.parentRecordId}`}`,
+  )
 }
 
 export async function syncCommand(

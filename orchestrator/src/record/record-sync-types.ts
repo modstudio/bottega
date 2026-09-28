@@ -10,7 +10,12 @@ import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 
 export type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 export type Payload = Record<string, unknown>
-export type BlockedOutboxRow = { id: number; kind: string; parentRecordId: string }
+export type BlockedOutboxRow = {
+  id: number
+  kind: string
+  parentRecordId: string
+  reason?: string
+}
 
 export type RecordSyncResult = {
   pushed: number

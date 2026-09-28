@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
 import { quarantineOutboxRow, retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 
 function fixture(): Database {
@@ -79,6 +80,48 @@ describe('outbox quarantine exits', () => {
     retryOutboxRow(7, database)
     expect(() => retryOutboxRow(7, database)).toThrow('outbox row 7 is not quarantined')
     expect(() => retireOutboxRow(7, 'discard', database)).toThrow('outbox row 7 is not quarantined')
+    database.close()
+  })
+
+  test('retire accepts an active row blocked by a retired parent and audits it', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
+         VALUES (8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
+                (9,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
+      )
+      .run()
+
+    retireOutboxRowWithDependencyProof(
+      9,
+      'parent cannot be delivered',
+      database,
+      '2026-09-28T00:04:00.000Z',
+    )
+
+    expect(
+      database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=9').get(),
+    ).toEqual({
+      retired_at: '2026-09-28T00:04:00.000Z',
+      retirement_reason: 'parent cannot be delivered',
+    })
+    expect(
+      database
+        .query(
+          `SELECT outbox_id,disposition,error,attempts,reason
+           FROM outbox_quarantine_audit WHERE outbox_id=9`,
+        )
+        .get(),
+    ).toEqual({
+      outbox_id: 9,
+      disposition: 'retire',
+      error: null,
+      attempts: 0,
+      reason: 'parent cannot be delivered',
+    })
     database.close()
   })
 })

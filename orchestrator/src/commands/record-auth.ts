@@ -3,7 +3,8 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { projects } from '../project/projects.ts'
-import { retireOutboxRow, retryOutboxRow } from '../record/outbox-quarantine.ts'
+import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
+import { retryOutboxRow } from '../record/outbox-quarantine.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
   recordDoctorCommand,
@@ -58,7 +59,7 @@ export function register(program: Command): void {
     .argument('<row-id>')
     .requiredOption('--reason <text>')
     .action((rowId, options) => {
-      retireOutboxRow(Number(rowId), String(options.reason))
+      retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
       log(`outbox row ${String(rowId)} retired`)
     })
   const space = record.command('space')

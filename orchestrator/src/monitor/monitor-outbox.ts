@@ -23,8 +23,8 @@ export function outboxRetiredParentConditions(database: Database): AddressedMoni
     subject: `outbox:${row.id}`,
     since: null,
     ageMs: null,
-    detail: `${row.kind} outbox row ${row.id} is blocked by retired parent ${row.parentRecordId}`,
-    action: 'inspect the parent retirement, then explicitly retire or replace the dependent row',
+    detail: `${row.kind} outbox row ${row.id} is blocked by ${row.reason ?? `retired parent ${row.parentRecordId}`}`,
+    action: `inspect the parent retirement, then run orch record outbox retire ${row.id} --reason <text> or replace the dependent row`,
     ownerSession: null,
   }))
 }
