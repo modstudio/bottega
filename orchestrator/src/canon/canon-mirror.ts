@@ -21,7 +21,7 @@ import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
 import { collectCanonLintInput, collectCanonTreeAtRef } from './canon-files.ts'
 import { hydrationDrift, planHydration } from './canon-hydrate.ts'
-import { lintCanon } from './canon-lint.ts'
+import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 
 export type ChecksState = 'passed' | 'failed' | 'pending'
@@ -328,9 +328,13 @@ async function mirrorProject(
       runId,
       () => recordTree(runId, project, path, branch, base),
     )
+    const baselineFindings = lintCanon(collectCanonLintInput(path)).findings
     applyHydration(path, plan)
     port.stage(path)
-    const findings = lintCanon(collectCanonLintInput(path)).findings
+    const findings = introducedCanonFindings(
+      baselineFindings,
+      lintCanon(collectCanonLintInput(path)).findings,
+    )
     if (findings.length)
       throw new Error(
         `canon lint found ${findings.length} findings: ${findings.map((finding) => `${finding.file}:${finding.line} ${finding.message}`).join('; ')}`,
