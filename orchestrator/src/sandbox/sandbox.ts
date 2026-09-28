@@ -1,11 +1,14 @@
 // concern: readonly sandbox policy and its sandbox-runtime adapter; must not know run control, worktrees, or CLI grammar.
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -424,7 +427,7 @@ export function prepareGrokMcpHome(
   disabled: string[],
   source = join(homedir(), '.grok'),
 ): Record<string, string> {
-  mkdirSync(runDir, { recursive: true })
+  ensurePrivateDirectory(runDir)
   const authSource = join(source, 'auth.json')
   const authTarget = join(runDir, 'auth.json')
   if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
@@ -442,37 +445,169 @@ export function prepareGrokMcpHome(
       join(ROOT, 'src', 'cli', 'orch.ts'),
       process.execPath,
     )
-    writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${live}`)
+    writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${live}`, {
+      mode: 0o600,
+    })
   }
+  chmodSync(configTarget, 0o600)
   return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
 }
 
-function prepareGrokSandboxHome(runDir: string): Record<string, string> {
-  const authSource = join(homedir(), '.grok', 'auth.json')
+function prepareGrokSandboxHome(runDir: string, operatorHome: string): Record<string, string> {
+  ensurePrivateDirectory(runDir)
+  const authSource = join(operatorHome, '.grok', 'auth.json')
   const authTarget = join(runDir, 'auth.json')
   if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
 
-  const configSource = join(homedir(), '.grok', 'config.toml')
+  const configSource = join(operatorHome, '.grok', 'config.toml')
   const configTarget = join(runDir, 'config.toml')
   if (!existsSync(configTarget)) {
     const config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
-    writeFileSync(configTarget, grokSandboxConfig(config))
+    writeFileSync(configTarget, grokSandboxConfig(config), { mode: 0o600 })
   }
+  chmodSync(configTarget, 0o600)
   return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
 }
 
+const OMITTED_WORKER_HOME_ENTRIES = new Set(['.claude', '.claude.json', '.codex', '.grok'])
+
+function pathEntryExists(path: string): boolean {
+  try {
+    lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function ensurePrivateDirectory(path: string): void {
+  mkdirSync(path, { recursive: true, mode: 0o700 })
+  const entry = lstatSync(path)
+  if (!entry.isDirectory() || entry.isSymbolicLink()) {
+    throw new Error(`worker home refusal: ${path} is not an owned directory; remove it and retry`)
+  }
+  const uid = process.getuid?.()
+  if (uid !== undefined && entry.uid !== uid) {
+    throw new Error(
+      `worker home refusal: ${path} is not owned by the current user; fix ownership and retry`,
+    )
+  }
+  chmodSync(path, 0o700)
+}
+
+function isWithin(path: string, parent: string): boolean {
+  const fromParent = relative(parent, path)
+  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
+}
+
+function exposesOmittedWorkerSource(path: string, operatorHome: string): boolean {
+  let real: string
+  let realOperatorHome: string
+  try {
+    real = realpathSync(path)
+    realOperatorHome = realpathSync(operatorHome)
+  } catch {
+    return false
+  }
+  for (const name of OMITTED_WORKER_HOME_ENTRIES) {
+    if (isWithin(real, resolve(realOperatorHome, name))) return true
+  }
+  try {
+    return readdirSync(real).some((name) => OMITTED_WORKER_HOME_ENTRIES.has(name))
+  } catch {
+    return false
+  }
+}
+
+/** Mirror ordinary operator tooling into a chain home without exposing harness canon. */
+export function prepareWorkerHomeMirror(runDir: string, operatorHome: string): string {
+  const targetHome = join(runDir, 'home')
+  let entries: string[]
+  try {
+    entries = readdirSync(operatorHome)
+  } catch (error) {
+    throw new Error(
+      `worker HOME refusal: could not list ${operatorHome}: ${String((error as Error).message ?? error)}; set HOME to a readable operator home and retry`,
+    )
+  }
+  ensurePrivateDirectory(runDir)
+  ensurePrivateDirectory(targetHome)
+  for (const name of entries) {
+    if (OMITTED_WORKER_HOME_ENTRIES.has(name)) continue
+    if (exposesOmittedWorkerSource(join(operatorHome, name), operatorHome)) continue
+    const target = join(targetHome, name)
+    if (!pathEntryExists(target)) symlinkSync(join(operatorHome, name), target)
+  }
+  return targetHome
+}
+
+/** Prepare one persistent Codex home for every turn in a conversation chain. */
+export function prepareCodexHome(
+  runDir: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const operatorHome = environment.HOME
+  const source = environment.CODEX_HOME
+    ? resolve(environment.CODEX_HOME)
+    : operatorHome
+      ? join(resolve(operatorHome), '.codex')
+      : null
+  if (!source) {
+    throw new Error(
+      'Codex worker home refusal: HOME and CODEX_HOME are unset; set HOME to the operator home or CODEX_HOME to the authenticated Codex home and retry',
+    )
+  }
+  const authSource = join(source, 'auth.json')
+  if (!existsSync(authSource)) {
+    throw new Error(
+      `Codex worker home refusal: ${authSource} is absent; run codex login for that home and retry`,
+    )
+  }
+  const configSource = join(source, 'config.toml')
+  if (!existsSync(configSource)) {
+    throw new Error(
+      `Codex worker home refusal: ${configSource} is absent; create the operator Codex configuration and retry`,
+    )
+  }
+  const targetHome = join(runDir, 'codex')
+  ensurePrivateDirectory(runDir)
+  ensurePrivateDirectory(targetHome)
+  const authTarget = join(targetHome, 'auth.json')
+  // Codex rotates refresh tokens, so the chain must share the operator credential file.
+  if (!existsSync(authTarget)) symlinkSync(authSource, authTarget)
+  const configTarget = join(targetHome, 'config.toml')
+  if (!existsSync(configTarget)) {
+    copyFileSync(configSource, configTarget)
+  }
+  chmodSync(configTarget, 0o600)
+  return { CODEX_HOME: targetHome }
+}
+
 /**
- * Put vendor session state under this run's writable directory without copying
- * long-lived credentials into retained run evidence. Grok follows its official
- * GROK_HOME override; Qwen follows HOME and receives only its non-secret user
- * settings as read-only links.
+ * Put vendor session state under this chain's writable directory. Codex and
+ * Grok receive isolated harness homes; Grok also receives a mirrored HOME that
+ * excludes every harness home. Qwen receives only its non-secret user settings.
  */
-export function prepareSandboxHome(agent: string, runDir: string): Record<string, string> {
-  mkdirSync(runDir, { recursive: true })
-  if (agent === 'grok') return prepareGrokSandboxHome(runDir)
+export function prepareSandboxHome(
+  agent: string,
+  runDir: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  if (agent === 'codex') return prepareCodexHome(runDir, environment)
+  if (agent === 'grok') {
+    const operatorHome = environment.HOME
+    if (!operatorHome) {
+      throw new Error(
+        'worker HOME refusal: HOME is unset; set HOME to a readable operator home and retry',
+      )
+    }
+    const home = prepareWorkerHomeMirror(runDir, resolve(operatorHome))
+    return { ...prepareGrokSandboxHome(runDir, resolve(operatorHome)), HOME: home }
+  }
   if (agent === 'qwen36-qwencli') {
     const qwenDir = join(runDir, '.qwen')
-    mkdirSync(qwenDir, { recursive: true })
+    ensurePrivateDirectory(runDir)
+    ensurePrivateDirectory(qwenDir)
     for (const name of ['settings.json', 'output-language.md']) {
       const source = join(homedir(), '.qwen', name)
       const target = join(qwenDir, name)
@@ -480,5 +615,11 @@ export function prepareSandboxHome(agent: string, runDir: string): Record<string
     }
     return { HOME: runDir }
   }
+  ensurePrivateDirectory(runDir)
   return {}
+}
+
+/** Remove only a chain directory first created by a failed launch attempt. */
+export function removeNewSandboxHomeAfterFailure(runDir: string, existedBefore: boolean): void {
+  if (!existedBefore) rmSync(runDir, { recursive: true, force: true })
 }

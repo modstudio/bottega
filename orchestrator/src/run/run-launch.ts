@@ -29,3 +29,17 @@ export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {
       facts.source === 'resume' || facts.explicitTransport || facts.envTransport,
   }
 }
+
+export function resolveRunTransport(opts: {
+  transport?: TransportName
+  resume?: { kind: 'continue' | 'fresh-session' | 'retry-root'; parent: number }
+}): TransportName {
+  if (opts.resume?.kind === 'continue' || opts.resume?.kind === 'fresh-session') {
+    const inherited = chainTransport(opts.resume.parent)
+    if (inherited) return inherited
+  }
+  return resolveTransportName(opts.transport)
+}
+
+import { chainTransport } from '../route/failover.ts'
+import { resolveTransportName, type TransportName } from '../transport/transport.ts'

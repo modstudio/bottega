@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { Agent } from '../agent/agents.ts'
@@ -49,7 +49,6 @@ import {
   grokTrustHeadings,
   grokTrustStorePath,
 } from '../sandbox/grok-trust.ts'
-import { prepareProjectGrokMcpScope } from '../sandbox/sandbox.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
@@ -84,6 +83,7 @@ import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
+import { prepareClaimedGrokMcpScope } from './run-worker-home.ts'
 
 function taskBranchResolution(
   supplied: TaskBranchCandidate | null | undefined,
@@ -173,6 +173,7 @@ export type ClaimResult = {
   mcpTrustGranted: boolean
   grokMcpEnvironment: Record<string, string>
   sandboxRunDir: string
+  sandboxRunDirExisted: boolean
   cwd: string
   prompt: string
   mcpConnection: McpConnection | null
@@ -549,6 +550,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     }
   ).id
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
+  const sandboxRunDirExisted = existsSync(sandboxRunDir)
   const attachedTree = resolvedTaskBranch?.worktree ?? null
   const claimTreePlan = decideClaimTreePlan({
     hasResolvedTaskWorktree: attachedTree !== null,
@@ -947,25 +949,27 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         mcpConnection = { server, connected: false, error: config.error }
       } else {
         const grokTrust = name === 'grok'
-        const grokScope = prepareProjectGrokMcpScope(
-          name,
-          sandboxRunDir,
-          Object.keys(readMcpConfig(cwd)),
-          project.settings.workerMcpServers,
-          mcpSetupHeader,
+        const grokScope = prepareClaimedGrokMcpScope(
+          {
+            agent: name,
+            runDir: sandboxRunDir,
+            runDirExisted: sandboxRunDirExisted,
+            names: Object.keys(readMcpConfig(cwd)),
+            allowed: project.settings.workerMcpServers,
+            header: mcpSetupHeader,
+          },
+          () =>
+            writeTransaction(() => {
+              recordSandboxDirectoryClaim(db(), {
+                rootRunId: sandboxRoot,
+                runId: claim.id,
+                projectId: runProjectId,
+                path: sandboxRunDir,
+                claimedAt: nowIso(),
+              })
+            }),
         )
         grokMcpEnvironment = grokScope.environment
-        if (name === 'grok') {
-          writeTransaction(() => {
-            recordSandboxDirectoryClaim(db(), {
-              rootRunId: sandboxRoot,
-              runId: claim.id,
-              projectId: runProjectId,
-              path: sandboxRunDir,
-              claimedAt: nowIso(),
-            })
-          })
-        }
         mcpSetupHeader = grokScope.header
         const recorded = db()
           .query('SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?')
@@ -1094,6 +1098,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     mcpTrustGranted,
     grokMcpEnvironment,
     sandboxRunDir,
+    sandboxRunDirExisted,
     cwd,
     prompt,
     mcpConnection,

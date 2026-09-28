@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto'
 import type { AGENTS } from '../agent/agent-registry.ts'
-import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
+import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -70,7 +70,7 @@ export function childEnv(
     ...env,
     ...(a.env?.() ?? {}),
     ...extra,
-    ...workerLaunchEnv(a.harness ?? a.name),
+    ...workerLaunchEnv(workerHarnessName(a)),
   }
   if (!includeStore) delete child.ORCH_DB
   return child

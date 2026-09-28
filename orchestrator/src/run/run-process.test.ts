@@ -7,12 +7,18 @@ import { acceptableRunProcessIds, childEnv, commandNamesRun } from './run-proces
 test('worker context controls override inherited values only for grok', () => {
   const parentAgents = process.env.GROK_CLAUDE_AGENTS_ENABLED
   const parentHooks = process.env.GROK_CLAUDE_HOOKS_ENABLED
+  const parentMcps = process.env.GROK_CLAUDE_MCPS_ENABLED
+  const parentSkills = process.env.GROK_CLAUDE_SKILLS_ENABLED
   process.env.GROK_CLAUDE_AGENTS_ENABLED = '1'
   process.env.GROK_CLAUDE_HOOKS_ENABLED = '1'
+  process.env.GROK_CLAUDE_MCPS_ENABLED = '1'
+  process.env.GROK_CLAUDE_SKILLS_ENABLED = '1'
   try {
     expect(childEnv(AGENTS.grok!, undefined, undefined, {}, false)).toMatchObject({
       GROK_CLAUDE_AGENTS_ENABLED: '0',
       GROK_CLAUDE_HOOKS_ENABLED: '0',
+      GROK_CLAUDE_MCPS_ENABLED: '0',
+      GROK_CLAUDE_SKILLS_ENABLED: '0',
     })
     expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).toMatchObject({
       GROK_CLAUDE_AGENTS_ENABLED: '1',
@@ -23,6 +29,10 @@ test('worker context controls override inherited values only for grok', () => {
     else process.env.GROK_CLAUDE_AGENTS_ENABLED = parentAgents
     if (parentHooks === undefined) delete process.env.GROK_CLAUDE_HOOKS_ENABLED
     else process.env.GROK_CLAUDE_HOOKS_ENABLED = parentHooks
+    if (parentMcps === undefined) delete process.env.GROK_CLAUDE_MCPS_ENABLED
+    else process.env.GROK_CLAUDE_MCPS_ENABLED = parentMcps
+    if (parentSkills === undefined) delete process.env.GROK_CLAUDE_SKILLS_ENABLED
+    else process.env.GROK_CLAUDE_SKILLS_ENABLED = parentSkills
   }
 })
 
@@ -31,7 +41,16 @@ test('worker context controls follow a registered agent harness rather than its 
   expect(childEnv(variant, undefined, undefined, {}, false)).toMatchObject({
     GROK_CLAUDE_AGENTS_ENABLED: '0',
     GROK_CLAUDE_HOOKS_ENABLED: '0',
+    GROK_CLAUDE_MCPS_ENABLED: '0',
+    GROK_CLAUDE_SKILLS_ENABLED: '0',
   })
+})
+
+test('a Codex worker environment uses its chain-scoped CODEX_HOME', () => {
+  expect(
+    childEnv(AGENTS.codex!, undefined, undefined, { CODEX_HOME: '/runs/sandbox-41/codex' }, false)
+      .CODEX_HOME,
+  ).toBe('/runs/sandbox-41/codex')
 })
 
 test('a coordinator command may name any run in the acceptable chain', () => {

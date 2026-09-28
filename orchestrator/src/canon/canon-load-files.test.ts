@@ -13,9 +13,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectionGitEnv } from '../../../shared/git.ts'
-import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { CLAUDE_FILE_MAX_BYTES, planHarnessLoad } from './canon-load.ts'
-import { gatherHarnessLoadFacts } from './canon-load-files.ts'
+import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'
 
 const roots: string[] = []
 
@@ -74,13 +73,29 @@ test('grok worker facts exclude the home Claude file', () => {
   writeFileSync(join(home, '.claude', 'CLAUDE.md'), 'Architect instructions.')
   writeFileSync(join(root, 'CLAUDE.md'), 'Project instructions.')
 
-  const facts = gatherHarnessLoadFacts(root, {
+  const facts = gatherWorkerHarnessLoadFacts(root, 'grok', {
     HOME: home,
     GROK_CLAUDE_AGENTS_ENABLED: '1',
-    ...workerLaunchEnv('grok'),
   })
   const plan = planHarnessLoad(facts, 'grok')
 
   expect(plan.files.map(({ path }) => path)).toContain(`${facts.directoryChain[0]}/CLAUDE.md`)
   expect(plan.files.map(({ path }) => path)).not.toContain(`${facts.home.claude}/CLAUDE.md`)
+})
+
+test('codex worker facts exclude operator Codex canon and keep project canon', () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-load-codex-worker-'))
+  roots.push(root)
+  gitInit(root)
+  const home = join(root, 'home')
+  const codexHome = join(home, '.codex')
+  mkdirSync(codexHome, { recursive: true })
+  writeFileSync(join(codexHome, 'AGENTS.md'), 'Architect instructions.')
+  writeFileSync(join(root, 'AGENTS.md'), 'Project instructions.')
+
+  const facts = gatherWorkerHarnessLoadFacts(root, 'codex', { HOME: home })
+  const plan = planHarnessLoad(facts, 'codex')
+
+  expect(plan.files.map(({ path }) => path)).toContain(`${facts.directoryChain[0]}/AGENTS.md`)
+  expect(plan.files.map(({ path }) => path)).not.toContain(join(codexHome, 'AGENTS.md'))
 })
