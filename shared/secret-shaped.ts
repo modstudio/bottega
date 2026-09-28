@@ -12,19 +12,34 @@ const SECRET_PEM_PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/
 const SECRET_JWT = /[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g
 const SECRET_BASE64_RUN = /[A-Za-z0-9+_-]{27,}={0,2}/g
 const SECRET_BASE64_BYTES = 20
+const EXEMPT_EVIDENCE_TOKEN =
+  /\b(?:[0-9a-f]{64}|[0-9a-f]{40}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/gi
+
+const RULES: Array<{ name: string; matches: (text: string) => boolean }> = [
+  { name: 'authorization', matches: (text) => SECRET_AUTHORIZATION.test(text) },
+  { name: 'bearer', matches: (text) => SECRET_BEARER.test(text) },
+  { name: 'assignment', matches: (text) => SECRET_ASSIGNMENT.test(text) },
+  { name: 'provider-prefix', matches: (text) => SECRET_TOKEN_PREFIX.test(text) },
+  { name: 'hex-run', matches: (text) => SECRET_HEX_RUN.test(text) },
+  { name: 'url-userinfo', matches: (text) => SECRET_URL_USERINFO.test(text) },
+  { name: 'pem', matches: (text) => SECRET_PEM_PRIVATE_KEY.test(text) },
+  { name: 'jwt', matches: containsJwt },
+  { name: 'base64', matches: containsBase64Secret },
+]
+
+export function secretShapedRule(text: string): string | null {
+  for (const rule of RULES) {
+    if (rule.matches(text)) return rule.name
+  }
+  return null
+}
+
+export function evidenceSecretShapedRule(text: string): string | null {
+  return secretShapedRule(text.replace(EXEMPT_EVIDENCE_TOKEN, '_'))
+}
 
 export function containsSecretShaped(text: string): boolean {
-  return (
-    SECRET_AUTHORIZATION.test(text) ||
-    SECRET_BEARER.test(text) ||
-    SECRET_ASSIGNMENT.test(text) ||
-    SECRET_TOKEN_PREFIX.test(text) ||
-    SECRET_HEX_RUN.test(text) ||
-    SECRET_URL_USERINFO.test(text) ||
-    SECRET_PEM_PRIVATE_KEY.test(text) ||
-    containsJwt(text) ||
-    containsBase64Secret(text)
-  )
+  return secretShapedRule(text) !== null
 }
 
 function containsJwt(text: string): boolean {

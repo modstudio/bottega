@@ -2,6 +2,7 @@
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export const LANDING_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -21,12 +22,13 @@ export const LANDING_RECORD_PAYLOAD_COLUMNS = [
   'requestedAt',
   'steps',
   'causingLandingId',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const LANDING_RECORD_PAYLOAD_CONTRACT = {
   columns: LANDING_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { withheldFields: null },
 } as const
 export const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -42,12 +44,13 @@ export const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = [
   'reason',
   'sessionId',
   'at',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = {
   columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { patchId: null, pathSet: null },
+  laterAdded: { patchId: null, pathSet: null, withheldFields: null },
 } as const
 export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -114,12 +117,13 @@ export const CONTENTION_RECORD_PAYLOAD_COLUMNS = [
   'cause',
   'runId',
   'landingId',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const CONTENTION_RECORD_PAYLOAD_CONTRACT = {
   columns: CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { withheldFields: null },
 } as const
 export const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -132,12 +136,13 @@ export const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = [
   'loadAtFailure',
   'signal',
   'at',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const TEST_FLAKE_RECORD_PAYLOAD_CONTRACT = {
   columns: TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { withheldFields: null },
 } as const
 
 export type LandingEvidenceBackfillResult = {
@@ -171,12 +176,16 @@ const enqueue = (
   database: Database,
   kind: string,
   recordId: string,
-  value: object,
+  value: Record<string, unknown>,
   at: string,
 ): void => {
+  const payload =
+    kind === 'landing_review_carry' || kind === 'landing_triage_snapshot'
+      ? JSON.stringify(value)
+      : stringifyOutboxPayload(kind as OutboxSanitizeKind, value)
   database
     .query('INSERT INTO outbox (kind, record_id, payload, created_at) VALUES (?,?,?,?)')
-    .run(kind, recordId, JSON.stringify(value), at)
+    .run(kind, recordId, payload, at)
 }
 
 function buildLandingRecordPayload(row: LocalRow, machineId: string, at: string) {

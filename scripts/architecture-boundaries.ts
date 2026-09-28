@@ -478,7 +478,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'landing-outbox-boundary',
     'orchestrator/src/record/landing-outbox.ts',
-    ['../../../shared/record/schema.ts', 'bun:sqlite'],
+    ['../../../shared/record/schema.ts', './outbox-sanitize.ts', 'bun:sqlite'],
     'Enforce the landing-outbox concern boundary.',
   ),
   boundary(
@@ -905,12 +905,8 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
   boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-coordinator-log.ts', './run-lease.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
-  boundary(
-    'run-outbox-boundary',
-    'orchestrator/src/run/run-outbox.ts',
-    ['../../../shared/record/schema.ts', './synthetic-lifecycle-job.ts', 'bun:sqlite'],
-    'Enforce the run-outbox concern boundary.',
-  ),
+  // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
+  boundary('run-outbox-boundary', 'orchestrator/src/run/run-outbox.ts', ['../../../shared/record/schema.ts', '../record/outbox-sanitize.ts', './synthetic-lifecycle-job.ts', 'bun:sqlite'], 'Enforce the run-outbox concern boundary.'),
   boundary(
     'run-process-boundary',
     'orchestrator/src/run/run-process.ts',

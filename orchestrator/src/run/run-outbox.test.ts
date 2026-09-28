@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
+import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
   backfillRunRecords,
   buildRunRecordPayload,
@@ -9,22 +10,25 @@ import {
 } from './run-outbox.ts'
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
-  const payload = buildRunRecordPayload(
-    {
-      id: 42,
-      record_id: '01990000-0000-7000-8000-000000000042',
-      project_name: 'project',
-      started_at: '2026-09-15T01:00:00.000Z',
-      retry_record_id: null,
-      parent_record_id: null,
-      changed_paths: '["a.ts"]',
-      doc_revisions: '["revision"]',
-      outside_worktree_writes: null,
-      review_provenance: '{"commands_run":[]}',
-      started_by_user_id: '01990000-0000-7000-8000-000000000123',
-    },
-    '01990000-0000-7000-8000-000000000099',
-    '2026-09-15T01:01:00.000Z',
+  const payload = sanitizeOutboxPayload(
+    'run',
+    buildRunRecordPayload(
+      {
+        id: 42,
+        record_id: '01990000-0000-7000-8000-000000000042',
+        project_name: 'project',
+        started_at: '2026-09-15T01:00:00.000Z',
+        retry_record_id: null,
+        parent_record_id: null,
+        changed_paths: '["a.ts"]',
+        doc_revisions: '["revision"]',
+        outside_worktree_writes: null,
+        review_provenance: '{"commands_run":[]}',
+        started_by_user_id: '01990000-0000-7000-8000-000000000123',
+      },
+      '01990000-0000-7000-8000-000000000099',
+      '2026-09-15T01:01:00.000Z',
+    ),
   )
   expect(Object.keys(payload).sort()).toEqual([...RUN_RECORD_PAYLOAD_COLUMNS].sort())
   expect(payload).toMatchObject({

@@ -567,6 +567,18 @@ test.each([
   local.close()
 })
 
+test('an old-shape run payload without withheldFields still syncs', async () => {
+  const local = localOutbox(1)
+  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const payload = JSON.parse(row.payload) as Record<string, unknown>
+  delete payload.withheldFields
+  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(remote.parameters.flat()).toContain(null)
+  local.close()
+})
+
 test('a pre-attribution run payload stays null instead of borrowing the pushing user', async () => {
   const local = localOutbox(1)
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
@@ -603,7 +615,7 @@ test('an old-shape landing override syncs with a null change group', async () =>
 
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
-  expect(values?.filter((value) => value === null)).toHaveLength(4)
+  expect(values?.filter((value) => value === null)).toHaveLength(6)
   local.close()
 })
 

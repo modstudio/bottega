@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
+import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 const REVIEW_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -22,12 +23,13 @@ const REVIEW_RECORD_PAYLOAD_COLUMNS = [
   'commitMessage',
   'outdatedAt',
   'outdatedReason',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const REVIEW_RECORD_PAYLOAD_CONTRACT = {
   columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { withheldFields: null },
 } as const
 const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -53,12 +55,13 @@ const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
   'coverage',
   'limits',
   'overlap',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = {
   columns: REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { projectName: null },
+  laterAdded: { projectName: null, withheldFields: null },
 } as const
 const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -77,12 +80,13 @@ const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
   'rejectionCategory',
   'triagedSeverity',
   'triagedAt',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = {
   columns: REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { projectName: null },
+  laterAdded: { projectName: null, withheldFields: null },
 } as const
 const REVIEW_READ_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -98,12 +102,13 @@ const REVIEW_READ_RECORD_PAYLOAD_COLUMNS = [
   'note',
   'sessionId',
   'recordedAt',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = {
   columns: REVIEW_READ_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { projectName: null },
+  laterAdded: { projectName: null, withheldFields: null },
 } as const
 
 export type ReviewRecordBackfillResult = {
@@ -125,10 +130,16 @@ const machineId = (database: Database): string => {
   database.query("INSERT INTO schema_meta (key, value) VALUES ('machine_id', ?)").run(id)
   return id
 }
-const enqueue = (database: Database, kind: string, recordId: string, value: object, at: string) => {
+const enqueue = (
+  database: Database,
+  kind: OutboxSanitizeKind,
+  recordId: string,
+  value: Record<string, unknown>,
+  at: string,
+) => {
   database
     .query('INSERT INTO outbox (kind, record_id, payload, created_at) VALUES (?,?,?,?)')
-    .run(kind, recordId, JSON.stringify(value), at)
+    .run(kind, recordId, stringifyOutboxPayload(kind, value), at)
 }
 
 export function enqueueReview(database: Database, reviewId: number): void {

@@ -2,10 +2,8 @@
 /** Knows how local question evidence becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { nowIso } from '../database/db.ts'
-
-export const WITHHELD_SECRET_SHAPED = '[withheld: secret-shaped content]'
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export const QUESTION_RECORD_PAYLOAD_COLUMNS = [
   'id',
@@ -89,23 +87,12 @@ function loadQuestion(database: Database, questionId: number): QuestionRow {
   return row
 }
 
-function withheldValue(field: string, value: unknown, withheldFields: string[]): unknown {
-  if (value == null) return value
-  const texts = Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [String(value)]
-  if (!texts.some(containsSecretShaped)) return value
-  withheldFields.push(field)
-  return WITHHELD_SECRET_SHAPED
-}
-
 /** Returns false while a parent run has no hosted identity. */
 export function enqueueQuestionRecord(database: Database, questionId: number): boolean {
   const row = loadQuestion(database, questionId)
   if (row.run_id !== null && row.run_record_id === null) return false
   const recordId = row.record_id!
   const at = nowIso()
-  const withheldFields: string[] = []
   const audits = database
     .query<Record<string, unknown>, [number]>(
       `SELECT action,actor_session,at,reason FROM question_mutation_audit
@@ -116,9 +103,9 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
       action: audit.action,
       actorSession: audit.actor_session,
       at: audit.at,
-      reason: withheldValue('audit_reason', audit.reason, withheldFields),
+      reason: audit.reason,
     }))
-  const payload = {
+  const payload = stringifyOutboxPayload('question', {
     id: recordId,
     spaceId: PLATFORM_SPACE_ID,
     runId: row.run_record_id,
@@ -129,12 +116,12 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
     localId: row.id,
     revision: row.revision,
     askedAt: row.asked_at,
-    question: withheldValue('question', row.question, withheldFields),
-    options: withheldValue('options', json(row.options), withheldFields),
-    recommendation: withheldValue('recommendation', row.recommendation, withheldFields),
-    why: withheldValue('why', row.why, withheldFields),
+    question: row.question,
+    options: json(row.options),
+    recommendation: row.recommendation,
+    why: row.why,
     askedVia: row.asked_via,
-    answer: withheldValue('answer', row.answer, withheldFields),
+    answer: row.answer,
     answeredAt: row.answered_at,
     answeredBy: row.answered_by,
     answererKind: row.answerer_kind,
@@ -143,18 +130,17 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
     relayedBy: row.relayed_by,
     overturnedAt: row.overturned_at,
     overturnedBy: row.overturned_by,
-    overturnReason: withheldValue('overturn_reason', row.overturn_reason, withheldFields),
-    replacement: withheldValue('replacement', row.replacement, withheldFields),
+    overturnReason: row.overturn_reason,
+    replacement: row.replacement,
     filedAs: row.filed_as,
-    filedRef: withheldValue('filed_ref', row.filed_ref, withheldFields),
+    filedRef: row.filed_ref,
     filedAt: row.filed_at,
     closedAt: row.closed_at,
     closeReason: row.close_reason,
-    withheldFields: [...new Set(withheldFields)],
     audits,
     createdAt: row.asked_at,
     updatedAt: at,
-  }
+  })
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
@@ -166,12 +152,12 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
   if (pending) {
     database
       .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
-      .run(JSON.stringify(payload), at, pending.id)
+      .run(payload, at, pending.id)
     return true
   }
   database
     .query("INSERT INTO outbox (kind,record_id,payload,created_at) VALUES ('question',?,?,?)")
-    .run(recordId, JSON.stringify(payload), at)
+    .run(recordId, payload, at)
   return true
 }
 

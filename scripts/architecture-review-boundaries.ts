@@ -91,7 +91,12 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-outbox-boundary',
     file: 'orchestrator/src/review/review-outbox.ts',
-    allowed: ['../../../shared/record/schema.ts', '../database/db.ts', 'bun:sqlite'],
+    allowed: [
+      '../../../shared/record/schema.ts',
+      '../database/db.ts',
+      '../record/outbox-sanitize.ts',
+      'bun:sqlite',
+    ],
     reason: 'Enforce the review-outbox concern boundary.',
   },
   {

@@ -2,11 +2,11 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { writeTransaction } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import {
   backfillQuestionRecords,
   enqueueQuestionRecord,
   QUESTION_RECORD_PAYLOAD_COLUMNS,
-  WITHHELD_SECRET_SHAPED,
 } from './question-outbox.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 

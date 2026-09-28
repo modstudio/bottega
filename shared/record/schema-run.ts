@@ -83,6 +83,7 @@ export const run = pgTable.withRLS(
     workPreserved: boolean('work_preserved').notNull(),
     closeOutOutcome: text('close_out_outcome'),
     closeOutDetail: text('close_out_detail'),
+    withheldFields: jsonb('withheld_fields'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -104,6 +105,7 @@ export const runScore = pgTable.withRLS(
     note: text(),
     scoredAt: timestamp('scored_at', { withTimezone: true }).notNull(),
     scoredBy: text('scored_by').notNull(),
+    withheldFields: jsonb('withheld_fields'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [

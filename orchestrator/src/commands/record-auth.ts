@@ -7,6 +7,7 @@ import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts
 import { retryOutboxRow } from '../record/outbox-quarantine.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
+  recordAuditSecretsCommand,
   recordDoctorCommand,
   recordMigrateCommand,
   recordSpaceAcceptCommand,
@@ -46,6 +47,16 @@ export function register(program: Command): void {
     .action((options) => signInCommand(String(options.email), promptPassword, { log }))
   record.command('whoami').action(() => whoamiCommand({ log }))
   record.command('migrate').action(() => recordMigrateCommand(presentation))
+  record
+    .command('audit-secrets')
+    .option('--json')
+    .option('--ids')
+    .action((options) =>
+      recordAuditSecretsCommand(
+        { json: Boolean(options.json), ids: Boolean(options.ids) },
+        presentation,
+      ),
+    )
   const outbox = record.command('outbox')
   outbox
     .command('retry')

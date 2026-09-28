@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
   backfillScoreRecords,
   buildScoreRecordPayload,
@@ -33,23 +34,26 @@ function scoredRun(recordId: string | null = RECORD_ID): Database {
 }
 
 test('score payload maps every hosted verdict field', () => {
-  const payload = buildScoreRecordPayload(
-    {
-      record_id: RECORD_ID,
-      local_id: 42,
-      project_name: null,
-      delivery: 'full',
-      quality: 'right',
-      fidelity: 'faithful',
-      note: 'complete',
-      scored_at: STAMP,
-      scored_by: 'architect',
-      reproduced: null,
-      coverage: null,
-      limits: null,
-      overlap: null,
-    },
-    MACHINE_ID,
+  const payload = sanitizeOutboxPayload(
+    'score',
+    buildScoreRecordPayload(
+      {
+        record_id: RECORD_ID,
+        local_id: 42,
+        project_name: null,
+        delivery: 'full',
+        quality: 'right',
+        fidelity: 'faithful',
+        note: 'complete',
+        scored_at: STAMP,
+        scored_by: 'architect',
+        reproduced: null,
+        coverage: null,
+        limits: null,
+        overlap: null,
+      },
+      MACHINE_ID,
+    ),
   )
   expect(Object.keys(payload).sort()).toEqual([...SCORE_RECORD_PAYLOAD_COLUMNS].sort())
   expect(payload).toMatchObject({

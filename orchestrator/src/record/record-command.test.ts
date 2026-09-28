@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { recordSpaceMoveProjectCommand } from './record-command.ts'
+import { closeDatabaseForFixture, registerOpenHooks } from '../database/db.ts'
+import { recordAuditSecretsCommand, recordSpaceMoveProjectCommand } from './record-command.ts'
 
 const project = {
   id: 1,
@@ -73,5 +74,32 @@ describe('record space move-project command', () => {
     expect(events.slice(0, 2)).toEqual(['hosted', 'project\t1\tmoved\tproject.id'])
     expect(events[2]).toBe('register:destination')
     expect(events.at(-1)).toContain('local hosted-row caches were not rewritten')
+  })
+})
+
+describe('record audit-secrets command', () => {
+  test('default open does not enter writable-open hooks', () => {
+    closeDatabaseForFixture()
+    let entered = 0
+    const restore = registerOpenHooks({
+      afterWritableOpen: [
+        () => {
+          entered += 1
+        },
+      ],
+      afterInitialize: [
+        () => {
+          entered += 1
+        },
+      ],
+    })
+    try {
+      const output: string[] = []
+      recordAuditSecretsCommand({ json: true, ids: false }, { log: (value) => output.push(value) })
+      expect(entered).toBe(0)
+      expect(JSON.parse(output.join(''))).toEqual({ counts: [] })
+    } finally {
+      restore()
+    }
   })
 })
