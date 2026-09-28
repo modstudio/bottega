@@ -1,6 +1,11 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
+import { LocalHubAuth } from './local-auth.ts'
 import { stopDashboardCapability } from './orch.ts'
 import { clearOrchCache, handleTrpcRequest, trpcMutationRequestAllowed, view } from './serve.ts'
 
@@ -14,7 +19,7 @@ test('tRPC mutation requests require browser same-origin proof', () => {
   expect(trpcMutationRequestAllowed(request(undefined, 'GET'))).toBe(true)
 })
 
-test('a forged same-origin context mutation without the process capability never reaches orch', async () => {
+test('a forged same-origin context mutation without a login cookie never reaches orch', async () => {
   stopDashboardCapability()
   const spawn = spyOn(Bun, 'spawn')
   try {
@@ -30,10 +35,44 @@ test('a forged same-origin context mutation without the process capability never
         body: JSON.stringify({ json: { project: 'alpha', stage: 'review', value: 'auto' } }),
       }),
     )
+    expect(response.status).toBe(401)
+    expect(await response.text()).toContain('hub login')
+    expect(spawn).not.toHaveBeenCalled()
+  } finally {
+    spawn.mockRestore()
+  }
+})
+
+test('a valid login session admits a same-origin mutation to the router', async () => {
+  stopDashboardCapability()
+  const spawn = spyOn(Bun, 'spawn')
+  const state = mkdtempSync(join(tmpdir(), 'hub-serve-auth-'))
+  const ids = ['a'.repeat(64), 'b'.repeat(64)]
+  const auth = new LocalHubAuth({ [STATE_HOME_ENV]: state }, Date.now, () => ids.shift()!)
+  try {
+    const origin = 'http://127.0.0.1:4567'
+    const login = auth.mintLoginUrl(4567)
+    const exchange = auth.exchange(new Request(login))
+    const cookie = exchange.headers.get('set-cookie')!
+    const response = await handleTrpcRequest(
+      new Request(`${origin}/trpc/context.autonomy.set`, {
+        method: 'POST',
+        headers: {
+          Origin: origin,
+          'Sec-Fetch-Site': 'same-origin',
+          'Content-Type': 'application/json',
+          cookie,
+        },
+        body: JSON.stringify({ json: { project: 'alpha', stage: 'review', value: 'auto' } }),
+      }),
+      auth,
+    )
+    expect(response.status).not.toBe(401)
     expect(await response.text()).toContain('Dashboard mutation capability is unavailable')
     expect(spawn).not.toHaveBeenCalled()
   } finally {
     spawn.mockRestore()
+    rmSync(state, { recursive: true, force: true })
   }
 })
 

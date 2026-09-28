@@ -1,3 +1,12 @@
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+} from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from './brand.ts'
 
@@ -63,6 +72,38 @@ export function concernStateDirectory(
 ): string {
   const paths = resolveStatePaths(env)
   return concern === 'orchestrator' ? paths.orchestratorDirectory : paths.hubDirectory
+}
+
+/** Pending local-dashboard login tokens, denied to sandboxed workers. */
+export function hubLoginTokenDirectory(env: StateEnvironment): string {
+  return join(concernStateDirectory('hub', env), 'login-tokens')
+}
+
+/** Ensure the sandbox-denied login-token directory exists with private permissions. */
+export function ensureHubLoginTokenDirectory(env: StateEnvironment): string {
+  const directory = hubLoginTokenDirectory(env)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const pathStat = lstatSync(directory)
+  if (pathStat.isSymbolicLink() || !pathStat.isDirectory()) {
+    throw new Error(`hub login-token path is not a directory: ${directory}`)
+  }
+  const descriptor = openSync(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  )
+  try {
+    const descriptorStat = fstatSync(descriptor)
+    const getuid = process.getuid
+    if (!getuid) throw new Error('hub login-token directory ownership is unavailable')
+    const uid = getuid()
+    if (!descriptorStat.isDirectory() || descriptorStat.uid !== uid) {
+      throw new Error(`hub login-token directory is not owned by the current user: ${directory}`)
+    }
+    fchmodSync(descriptor, 0o700)
+  } finally {
+    closeSync(descriptor)
+  }
+  return directory
 }
 
 export function resolveOrchestratorDatabase(env: StateEnvironment): string {

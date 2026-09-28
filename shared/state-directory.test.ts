@@ -1,7 +1,19 @@
 import { describe, expect, test } from 'bun:test'
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import {
+  ensureHubLoginTokenDirectory,
+  hubLoginTokenDirectory,
   legacyStoreRefusal,
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -9,6 +21,26 @@ import {
   resolveStateRoot,
   STATE_HOME_ENV,
 } from './state-directory.ts'
+
+test('the login-token directory refuses a symlink without changing its target', () => {
+  const state = mkdtempSync(join(tmpdir(), 'state-directory-symlink-'))
+  const target = join(state, 'target')
+  const environment = { [STATE_HOME_ENV]: state }
+  try {
+    mkdirSync(join(state, 'hub'))
+    mkdirSync(target, { mode: 0o755 })
+    chmodSync(target, 0o755)
+    symlinkSync(target, hubLoginTokenDirectory(environment))
+
+    expect(() => ensureHubLoginTokenDirectory(environment)).toThrow(
+      'hub login-token path is not a directory',
+    )
+    expect(lstatSync(hubLoginTokenDirectory(environment)).isSymbolicLink()).toBe(true)
+    expect(statSync(target).mode & 0o777).toBe(0o755)
+  } finally {
+    rmSync(state, { recursive: true, force: true })
+  }
+})
 
 describe('state root resolution', () => {
   test('platform override wins over XDG and HOME', () => {

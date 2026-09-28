@@ -20,6 +20,7 @@ import {
 } from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
+import { LocalHubAuth } from './local-auth.ts'
 import { credentials, Mcp } from './mcp.ts'
 import {
   acknowledgeNote,
@@ -249,6 +250,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub sync [--dry-run]        push changed local evidence to the hosted hub
   hub doctor                  report the live structural schema hash and user_version
   hub tasks [--hours N]       what has been worked on, newest window first
+  hub login [--port 7778]     print a one-time local dashboard login URL
   hub serve [--port 7778]     the dashboard
   hub serve-stop --port N     stop this checkout's recorded dashboard
   hub serve-check --port N --down
@@ -877,6 +879,11 @@ try {
     case 'tasks':
       tasks()
       break
+    case 'login': {
+      const port = Number(flag('port') ?? readMachineValue('hub.port'))
+      console.log(new LocalHubAuth().mintLoginUrl(port))
+      break
+    }
     case 'serve': {
       startDashboardCapability()
       const dashboard = serve(Number(flag('port') ?? readMachineValue('hub.port')))

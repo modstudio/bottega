@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   chmodSync,
   existsSync,
@@ -16,6 +16,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
+import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
@@ -43,6 +44,29 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   canon: true,
   retiredAt: null,
   settings,
+})
+
+const temporaryDirectories: string[] = []
+const temporaryState = () => {
+  const directory = mkdtempSync(join(tmpdir(), 'orch-sandbox-state-'))
+  temporaryDirectories.push(directory)
+  return directory
+}
+
+test('every SRT profile construction routes through the one mandatory-deny constructor', () => {
+  const sources = [...new Bun.Glob('**/*.ts').scanSync({ cwd: join(ROOT, 'src') })]
+    .filter((path) => !path.endsWith('.test.ts'))
+    .map((path) => [path, readFileSync(join(ROOT, 'src', path), 'utf8')] as const)
+  const constructors = sources
+    .filter(([, source]) => /createSandboxRuntimeConfig\(\s*\{/.test(source))
+    .map(([path]) => path)
+    .sort()
+  const definitions = sources.filter(([, source]) =>
+    source.includes('export function createSandboxRuntimeConfig('),
+  )
+
+  expect(constructors).toEqual(['issue/issue-shell.ts', 'sandbox/sandbox.ts'])
+  expect(definitions.map(([path]) => path)).toEqual(['sandbox/sandbox.ts'])
 })
 
 test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
@@ -249,7 +273,18 @@ test('worker HOME refuses an unreadable operator path with a remedy', () => {
 })
 
 describe('readonly-lens sandbox profile', () => {
-  afterEach(resetSandbox)
+  const originalStateHome = process.env[STATE_HOME_ENV]
+  beforeEach(() => {
+    process.env[STATE_HOME_ENV] = temporaryState()
+  })
+  afterEach(async () => {
+    await resetSandbox()
+    if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = originalStateHome
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
   test('replaces a stale registered Grok orch-ask entry with this checkout proxy', () => {
     const config =
       '[mcp_servers.orch-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
@@ -279,6 +314,13 @@ describe('readonly-lens sandbox profile', () => {
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
   })
   test('builds allow and deny lists from the register fixture', () => {
+    const state = temporaryState()
+    const environment = {
+      HOME: '/Users/operator',
+      [STATE_HOME_ENV]: state,
+      [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
+      [HARNESS_ENV_FILE_ENV]: '',
+    }
     const project = fixtureProject({
       secretPaths: ['/shared/absolute.secret', '~/.tokens/private', 'config/operator.secret'],
     })
@@ -289,15 +331,12 @@ describe('readonly-lens sandbox profile', () => {
       agent: 'grok',
       path: '/opt/toolchain/bin:/usr/bin',
       nodeModuleLinks: ['/projects/fixture/node_modules'],
-      environment: {
-        HOME: '/Users/operator',
-        [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
-        [HARNESS_ENV_FILE_ENV]: '',
-      },
+      environment,
     })
 
     expect(profile.filesystem.denyRead).toEqual([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
+      hubLoginTokenDirectory(environment),
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
@@ -316,6 +355,7 @@ describe('readonly-lens sandbox profile', () => {
       ROOT,
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
+    expect(profile.filesystem.allowWrite).not.toContain(hubLoginTokenDirectory(environment))
     expect(profile.network.allowedDomains).toEqual([
       'cli-chat-proxy.grok.com',
       'auth.x.ai',
@@ -326,6 +366,33 @@ describe('readonly-lens sandbox profile', () => {
     ])
     expect(profile.network.allowUnixSockets).toEqual([])
     expect(profile.network.allowLocalBinding).toBe(true)
+  })
+
+  test('creates the exact token-directory deny and repairs private permissions', () => {
+    const environment = {
+      HOME: homedir(),
+      [STATE_HOME_ENV]: temporaryState(),
+      [HARNESS_ENV_FILE_ENV]: '',
+    }
+    const directory = hubLoginTokenDirectory(environment)
+    expect(existsSync(directory)).toBe(false)
+
+    const input = {
+      worktree: '/runs/tree',
+      runsDir: '/runs/evidence',
+      agent: 'grok',
+      project: fixtureProject(),
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+      environment,
+    }
+    const first = readonlyLensProfile(input)
+    expect(first.filesystem.denyRead.filter((path) => path === directory)).toEqual([directory])
+    expect(statSync(directory).mode & 0o777).toBe(0o700)
+
+    chmodSync(directory, 0o755)
+    readonlyLensProfile(input)
+    expect(statSync(directory).mode & 0o777).toBe(0o700)
   })
 
   test('a registered exact deny removes an otherwise allowed read', () => {
@@ -415,6 +482,7 @@ describe('readonly-lens sandbox profile', () => {
       path: '/usr/bin',
       environment: {
         HOME: homedir(),
+        [STATE_HOME_ENV]: temporaryState(),
         [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
         [HARNESS_ENV_FILE_ENV]: '',
         DOCKER_HOST: '',
@@ -448,6 +516,7 @@ describe('readonly-lens sandbox profile', () => {
       path: '/usr/bin',
       environment: {
         HOME: homedir(),
+        [STATE_HOME_ENV]: temporaryState(),
         [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
         [HARNESS_ENV_FILE_ENV]: '',
         DOCKER_HOST: '',
@@ -471,6 +540,7 @@ describe('readonly-lens sandbox profile', () => {
       allowDockerSocket: true,
       environment: {
         HOME: homedir(),
+        [STATE_HOME_ENV]: temporaryState(),
         [CONFIG_HOME_ENV]: '/Users/operator/.config/platform',
         [HARNESS_ENV_FILE_ENV]: '',
         DOCKER_HOST: 'unix:///custom/docker.sock',
