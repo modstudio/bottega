@@ -147,7 +147,7 @@ export async function voidRecordRun(input: Tenant & { id: string; reason: string
 const UNVOID_MIGRATION_REMEDY =
   'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying'
 
-export async function supersedeRecordVoid(
+async function supersedeRecordVoid(
   tx: SQL,
   input: Pick<Tenant, 'spaceId' | 'userId'> & { id: string; note: string },
 ): Promise<void> {
