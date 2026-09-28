@@ -1,22 +1,24 @@
 // concern: canon-mirror
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
-
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
+import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { type Project, projects, stackAt } from '../project/projects.ts'
-import { createPullRequest } from '../pull-request/pr-admission.ts'
-import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
+import { createPullRequest, recordPullRequestRefresh } from '../pull-request/pr-admission.ts'
+import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
+import { inspectTreeOwnership, ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
 import { collectCanonLintInput, collectCanonTreeAtRef } from './canon-files.ts'
@@ -26,407 +28,194 @@ import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 
 export type ChecksState = 'passed' | 'failed' | 'pending'
 export type MergeDecision = { merge: true } | { merge: false; reason: string }
-
-export function decideCanonMirrorMerge(input: {
-  shipLevel: string
-  headMatches: boolean
-  baseUnchanged: boolean
-  checks: ChecksState
-}): MergeDecision {
-  if (input.shipLevel !== 'auto')
-    return { merge: false, reason: `ship autonomy is ${input.shipLevel}` }
-  if (!input.headMatches)
-    return { merge: false, reason: 'pull-request head does not match the pushed commit' }
-  if (!input.baseUnchanged)
-    return { merge: false, reason: 'the landing branch changed after hydration was planned' }
-  if (input.checks !== 'passed')
-    return { merge: false, reason: `GitHub checks are ${input.checks}` }
+export function decideCanonMirrorMerge(input: { shipLevel: string; headMatches: boolean; baseUnchanged: boolean; checks: ChecksState }): MergeDecision {
+  if (input.shipLevel !== 'auto') return { merge: false, reason: `ship autonomy is ${input.shipLevel}` }
+  if (!input.headMatches) return { merge: false, reason: 'pull-request head does not match the pushed commit' }
+  if (!input.baseUnchanged) return { merge: false, reason: 'the landing branch changed after hydration was planned' }
+  if (input.checks !== 'passed') return { merge: false, reason: `GitHub checks are ${input.checks}` }
   return { merge: true }
 }
 
 export type MirrorRevision = { path: string; revision: string; op: string; reason: string }
-
 export function canonMirrorCommitBody(rows: MirrorRevision[]): string {
-  return rows
-    .sort((left, right) => left.path.localeCompare(right.path))
-    .map(
-      (row) =>
-        `${row.path}\nRevision: ${row.revision}\nOperation: ${row.op}\nReason: ${row.reason}`,
-    )
-    .join('\n\n')
+  return rows.sort((a, b) => a.path.localeCompare(b.path)).map((r) => `${r.path}\nRevision: ${r.revision}\nOperation: ${r.op}\nReason: ${r.reason}`).join('\n\n')
 }
 
-type PullRequest = { number: number; url: string; headSha: string; checks: ChecksState }
-
+type PullRequest = { number: number; url: string; headSha: string; headRef: string; baseRef: string; checks: ChecksState }
 export type CanonMirrorPort = {
   fetch(project: Project): void
-  createTree(input: {
-    project: Project
-    path: string
-    branch: string
-    base: string
-    runId: number
-  }): string
+  localBranch(project: Project, branch: string): boolean
+  remoteBranchTip(project: Project, branch: string): string | null
+  refTip(project: Project, ref: string): string
+  createTree(input: { project: Project; path: string; branch: string; base: string; runId: number; record(base: string): void }): string
   changedPaths(path: string): string[]
   stage(path: string): void
   commit(path: string, subject: string, body: string): string
-  push(path: string, branch: string): void
+  push(path: string, branch: string, expected: string | null): void
   pullRequest(path: string, branch: string): PullRequest | null
   openPullRequest(path: string, title: string, bodyFile: string): PullRequest
+  recordPullRequest(path: string, number: number): void
   refreshPullRequest(path: string, number: number, title: string, bodyFile: string): PullRequest
-  remoteTip(project: Project, ref: string): string
-  merge(path: string, number: number): void
+  merge(path: string, number: number, commit: string): void
+  releaseBranch(project: Project, branch: string): void
   releaseRun(runId: number): { outcome: string; detail: string }
 }
 
+const WITHHELD = 'command failed: output withheld because it resembles a secret'
+export function screenCanonMirrorError(value: unknown): string {
+  const text = value instanceof Error ? value.message : String(value)
+  return containsSecretShaped(text) ? WITHHELD : text
+}
+function spawn(cwd: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
+  return Bun.spawnSync(args, { cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe' })
+}
 function command(cwd: string, args: string[]): string {
-  const child = Bun.spawnSync(args, {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const child = spawn(cwd, args)
   if (child.exitCode !== 0) {
-    throw new Error(
-      `${args.join(' ')} failed: ${child.stderr.toString().trim() || `exit ${child.exitCode}`}`,
-    )
+    const detail = child.stderr.toString().trim() || `exit ${child.exitCode}`
+    if (containsSecretShaped(detail)) throw new Error(WITHHELD)
+    throw new Error(`${args.join(' ')} failed: ${detail}`)
   }
   return child.stdout.toString().trim()
 }
-
 function parsePullRequest(text: string): PullRequest | null {
-  const rows = JSON.parse(text) as Array<{
-    number: number
-    url: string
-    headRefOid: string
-    statusCheckRollup?: Array<{ status?: string; conclusion?: string }>
-  }>
-  const row = rows[0]
+  const row = (JSON.parse(text) as Array<{ number: number; url: string; headRefOid: string; headRefName: string; baseRefName: string; statusCheckRollup?: Array<{ status?: string; conclusion?: string }> }>)[0]
   if (!row) return null
   const checks = row.statusCheckRollup ?? []
-  const state: ChecksState = checks.some(
-    (check) => check.conclusion && check.conclusion !== 'SUCCESS',
-  )
-    ? 'failed'
-    : checks.some((check) => !check.conclusion || check.status !== 'COMPLETED')
-      ? 'pending'
-      : 'passed'
-  return { number: row.number, url: row.url, headSha: row.headRefOid, checks: state }
+  const state: ChecksState = checks.some((c) => c.conclusion && c.conclusion !== 'SUCCESS') ? 'failed' : checks.some((c) => !c.conclusion || c.status !== 'COMPLETED') ? 'pending' : 'passed'
+  return { number: row.number, url: row.url, headSha: row.headRefOid, headRef: row.headRefName, baseRef: row.baseRefName, checks: state }
 }
 
 export const systemCanonMirrorPort: CanonMirrorPort = {
-  fetch: (project) => {
-    command(project.path, ['git', 'fetch', 'origin', project.settings.trunk!])
+  fetch: (p) => { command(p.path, ['git', 'fetch', 'origin', p.settings.trunk!]) },
+  localBranch: (p, branch) => spawn(p.path, ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).exitCode === 0,
+  remoteBranchTip: (p, branch) => {
+    const out = command(p.path, ['git', 'ls-remote', '--heads', 'origin', `refs/heads/${branch}`])
+    return out ? (out.split(/\s+/)[0] ?? null) : null
   },
-  createTree: ({ project, path, branch, base }) => {
+  refTip: (p, ref) => command(p.path, ['git', 'rev-parse', ref]),
+  createTree: ({ project, path, branch, base, record }) => {
     mkdirSync(dirname(path), { recursive: true })
-    if (existsSync(path)) command(project.path, ['git', 'worktree', 'remove', '--force', path])
-    command(project.path, ['git', 'worktree', 'add', '-B', branch, path, base])
-    return command(path, ['git', 'rev-parse', 'HEAD'])
+    const child = spawn(project.path, ['git', 'worktree', 'add', '-B', branch, path, base])
+    if (existsSync(path)) record(base)
+    if (child.exitCode !== 0) {
+      const detail = child.stderr.toString().trim() || `exit ${child.exitCode}`
+      if (containsSecretShaped(detail)) throw new Error(WITHHELD)
+      throw new Error(`git worktree add failed: ${detail}`)
+    }
+    if (!existsSync(path)) throw new Error(`git worktree add did not create ${path}`)
+    return base
   },
-  changedPaths: (path) =>
-    command(path, ['git', 'diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean),
-  stage: (path) => {
-    command(path, ['git', 'add', '--all'])
-  },
-  commit: (path, subject, body) => {
-    command(path, ['git', 'commit', '-m', subject, '-m', body])
-    return command(path, ['git', 'rev-parse', 'HEAD'])
-  },
-  push: (path, branch) => {
-    command(path, ['git', 'push', '--force-with-lease', '-u', 'origin', branch])
-  },
-  pullRequest: (path, branch) =>
-    parsePullRequest(
-      command(path, [
-        'gh',
-        'pr',
-        'list',
-        '--state',
-        'open',
-        '--head',
-        branch,
-        '--json',
-        'number,url,headRefOid,statusCheckRollup',
-      ]),
-    ),
+  changedPaths: (path) => command(path, ['git', 'diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean),
+  stage: (path) => { command(path, ['git', 'add', '--all']) },
+  commit: (path, subject, body) => { command(path, ['git', 'commit', '-m', subject, '-m', body]); return command(path, ['git', 'rev-parse', 'HEAD']) },
+  push: (path, branch, expected) => { command(path, ['git', 'push', `--force-with-lease=${branch}:${expected ?? ''}`, '-u', 'origin', `HEAD:refs/heads/${branch}`]) },
+  pullRequest: (path, branch) => parsePullRequest(command(path, ['gh', 'pr', 'list', '--state', 'open', '--head', branch, '--json', 'number,url,headRefOid,headRefName,baseRefName,statusCheckRollup'])),
   openPullRequest: (path, title, bodyFile) => {
     createPullRequest(['--title', title, '--body-file', bodyFile], {}, path)
-    const branch = command(path, ['git', 'branch', '--show-current'])
-    const opened = systemCanonMirrorPort.pullRequest(path, branch)
+    const opened = systemCanonMirrorPort.pullRequest(path, command(path, ['git', 'branch', '--show-current']))
     if (!opened) throw new Error('opened pull request could not be read back')
     return opened
   },
+  recordPullRequest: (path, number) => { recordPullRequestRefresh(path, number) },
   refreshPullRequest: (path, number, title, bodyFile) => {
     command(path, ['gh', 'pr', 'edit', String(number), '--title', title, '--body-file', bodyFile])
-    const branch = command(path, ['git', 'branch', '--show-current'])
-    const refreshed = systemCanonMirrorPort.pullRequest(path, branch)
+    const refreshed = systemCanonMirrorPort.pullRequest(path, command(path, ['git', 'branch', '--show-current']))
     if (!refreshed) throw new Error(`pull request ${number} could not be read back`)
     return refreshed
   },
-  remoteTip: (project, ref) => command(project.path, ['git', 'rev-parse', ref]),
-  merge: (path, number) => {
-    command(path, ['gh', 'pr', 'merge', String(number), '--squash'])
+  merge: (path, number, commit) => {
+    // gh exposes a head-SHA precondition but no corresponding base-SHA precondition.
+    command(path, ['gh', 'pr', 'merge', String(number), '--squash', '--match-head-commit', commit])
   },
+  releaseBranch: (p, branch) => { command(p.path, ['git', 'branch', '-D', branch]) },
   releaseRun: (runId) => closeOutRun(runId, { intent: 'tree-remove' }),
 }
 
 type MirrorResult = { project: string; text: string; failed: boolean }
-
 function createLifecycleRun(project: Project, key: string): number {
   writableDb()
-  const startedAt = nowIso()
   const prompt = `canon mirror ${project.name}`
-  return (
-    db()
-      .query(
-        `INSERT INTO run
-         (started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
-          session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded,pid)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
-      )
-      .get(
-        startedAt,
-        '(architect)',
-        CANON_MIRROR_JOB,
-        project.name,
-        project.id,
-        project.path,
-        createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-        Buffer.byteLength(prompt),
-        prompt,
-        sessionId(),
-        project.path,
-        key,
-        `origin/${project.settings.trunk}`,
-        stackAt(project.path),
-        'canon mirror lifecycle row; not agent execution',
-        process.pid,
-      ) as { id: number }
-  ).id
+  return (db().query(
+    `INSERT INTO run
+     (started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded,pid)
+     VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
+  ).get(
+    nowIso(), '(architect)', CANON_MIRROR_JOB, project.name, project.id, project.path,
+    createHash('sha256').update(prompt).digest('hex').slice(0, 16), Buffer.byteLength(prompt),
+    prompt, sessionId(), project.path, key, `origin/${project.settings.trunk}`,
+    stackAt(project.path), 'canon mirror lifecycle row; not agent execution', process.pid,
+  ) as { id: number }).id
 }
-
-function recordTree(
-  runId: number,
-  project: Project,
-  path: string,
-  branch: string,
-  base: string,
-): void {
+function recordTree(runId: number, project: Project, path: string, branch: string, base: string): void {
   writeTransaction(() => {
-    db()
-      .query(
-        `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source='git'
-         WHERE id=?`,
-      )
-      .run(path, path, branch, branch, base, runId)
-    recordCreatedWorktreeClaims(db(), {
-      rootRunId: runId,
-      runId,
-      projectId: project.id,
-      owned: true,
-      path,
-      head: base,
-      mintedBranch: branch,
-      label: String(runId),
-      claimedAt: nowIso(),
-    })
+    db().query(`UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source='git' WHERE id=?`).run(path, path, branch, branch, base, runId)
+    recordCreatedWorktreeClaims(db(), { rootRunId: runId, runId, projectId: project.id, owned: true, path, head: base, mintedBranch: branch, label: String(runId), claimedAt: nowIso() })
   })
 }
-
-function revisionRows(paths: string[], database: Database = db()): MirrorRevision[] {
+export function revisionRows(project: string, paths: string[], database: Database = db()): MirrorRevision[] {
   return paths.map((path) => {
-    const row = database
-      .query(
-        `SELECT record_id revision,op,reason FROM doc_revision
-         WHERE scope='canon' AND slug=? AND owner IS NULL ORDER BY id DESC LIMIT 1`,
-      )
-      .get(path) as { revision: string | null; op: string; reason: string } | null
-    return {
-      path,
-      revision: row?.revision ?? 'unrecorded',
-      op: row?.op ?? 'link',
-      reason: row?.reason ?? 'generated canon link',
-    }
+    const row = database.query(
+      `SELECT record_id revision,op,reason FROM doc_revision
+       WHERE scope='canon' AND slug=? AND owner IS NULL AND (subject=? OR subject IS NULL)
+       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,id DESC LIMIT 1`,
+    ).get(path, project, project) as { revision: string | null; op: string; reason: string } | null
+    return { path, revision: row?.revision ?? 'unrecorded', op: row?.op ?? 'link', reason: row?.reason ?? 'generated canon link' }
   })
 }
-
 function setRunTerminal(runId: number, started: number, error?: string): void {
-  db()
-    .query(`UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL WHERE id=?`)
-    .run(error ? 'failed' : 'ok', Date.now() - started, error ? 1 : 0, error ?? null, runId)
+  const safe = error ? screenCanonMirrorError(error) : null
+  db().query(`UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL WHERE id=?`).run(safe ? 'failed' : 'ok', Date.now() - started, safe ? 1 : 0, safe, runId)
 }
-
-function releaseLifecycle(
-  port: CanonMirrorPort,
-  runId: number,
-  started: number,
-  outcome: MirrorResult | null,
-): void {
-  let cleanupFailure: string | null = null
+function releaseLifecycle(port: CanonMirrorPort, runId: number): string | null {
   try {
     const closed = port.releaseRun(runId)
-    if (!['released', 'absent'].includes(closed.outcome)) {
-      cleanupFailure = `canon mirror cleanup ${closed.outcome}: ${closed.detail}`
-    }
+    return ['released', 'absent'].includes(closed.outcome) ? null : screenCanonMirrorError(`canon mirror cleanup ${closed.outcome}: ${closed.detail}`)
   } catch (cause) {
-    cleanupFailure = `canon mirror cleanup failed: ${cause instanceof Error ? cause.message : String(cause)}`
-  }
-  if (!cleanupFailure) return
-  setRunTerminal(runId, started, cleanupFailure)
-  if (outcome) {
-    outcome.failed = true
-    outcome.text = `failed, ${cleanupFailure}`
+    return screenCanonMirrorError(`canon mirror cleanup failed: ${screenCanonMirrorError(cause)}`)
   }
 }
 
-async function mirrorProject(
-  project: Project,
-  dryRun: boolean,
-  port: CanonMirrorPort,
-): Promise<MirrorResult> {
-  const key = project.settings.canonMirrorKey?.trim()
-  if (!key) {
-    return {
-      project: project.name,
-      failed: true,
-      text: `failed, missing canonMirrorKey; remedy: orch project set ${project.name} --settings '{"canonMirrorKey":"<KEY>"}'`,
-    }
+type Publication = { tip: string; prNumber: number }
+function previousPublication(project: Project, branch: string, runId: number): Publication | null {
+  return db().query<Publication, [string, string, number, string, number]>(
+    `SELECT snapshot.tip tip,snapshot.pr_number prNumber FROM landing_triage_snapshot snapshot
+     WHERE snapshot.project=? AND snapshot.branch=? AND snapshot.pr_number IS NOT NULL
+       AND EXISTS (SELECT 1 FROM run WHERE run.id<>? AND run.job=?
+         AND run.minted_branch=snapshot.branch
+         AND (run.project_id=? OR (run.project_id IS NULL AND run.repo=snapshot.project)))
+     ORDER BY snapshot.id DESC LIMIT 1`,
+  ).get(project.name, branch, runId, CANON_MIRROR_JOB, project.id) as Publication | null
+}
+function releaseOwnedLeftover(project: Project, path: string, port: CanonMirrorPort): void {
+  if (!existsSync(path)) return
+  const owners = db().query<{ id: number }, [string, string, number, string]>(
+    `SELECT id FROM run WHERE job=? AND worktree=?
+     AND (project_id=? OR (project_id IS NULL AND repo=?)) ORDER BY id`,
+  ).all(CANON_MIRROR_JOB, path, project.id, project.name)
+  const ownership = inspectTreeOwnership(path, project.path, owners.map((r) => r.id))
+  let markerRun = 0
+  try { markerRun = Number(readFileSync(join(path, ORCH_RUN_MARKER), 'utf8').split('\n')[0]) } catch { markerRun = 0 }
+  if (ownership !== 'owned' || !owners.some((r) => r.id === markerRun)) {
+    throw new Error(`refusing unowned canon mirror worktree ${path}; it was left intact`)
   }
-  const started = Date.now()
-  const runId = createLifecycleRun(project, key)
-  let lease = acquireRunLease(runId)
-  let outcome: MirrorResult | null = null
-  const finish = (result: MirrorResult): MirrorResult => {
-    outcome = result
-    return result
-  }
-  try {
-    const trunk = project.settings.trunk?.trim()
-    if (!trunk) throw new Error('registered project has no landing branch in settings.trunk')
-    port.fetch(project)
-    const ref = `origin/${trunk}`
-    const landed = collectCanonTreeAtRef(project.path, ref)
-    const plan = planHydration({ rows: storedRepositoryCanonRows(project.name), tree: landed.tree })
-    if (hydrationDrift(plan).length === 0) {
-      setRunTerminal(runId, started)
-      return finish({ project: project.name, failed: false, text: 'nothing to do' })
-    }
-    if (dryRun) {
-      setRunTerminal(runId, started)
-      return finish({
-        project: project.name,
-        failed: false,
-        text: `left open, dry-run: ${hydrationDrift(plan).length} paths differ`,
-      })
-    }
-    const branch = `${key}-canon-mirror`
-    const path = join(project.path, '.claude', 'worktrees', 'canon-mirror')
-    const base = port.createTree({ project, path, branch, base: ref, runId })
-    attributeWorktree(
-      { path, branch, base, repoRoot: project.path, source: 'git', mintedBranch: branch },
-      runId,
-      () => recordTree(runId, project, path, branch, base),
-    )
-    const baselineFindings = lintCanon(collectCanonLintInput(path)).findings
-    applyHydration(path, plan)
-    port.stage(path)
-    const findings = introducedCanonFindings(
-      baselineFindings,
-      lintCanon(collectCanonLintInput(path)).findings,
-    )
-    if (findings.length)
-      throw new Error(
-        `canon lint found ${findings.length} findings: ${findings.map((finding) => `${finding.file}:${finding.line} ${finding.message}`).join('; ')}`,
-      )
-    const changed = port.changedPaths(path)
-    const commit = port.commit(
-      path,
-      `${key} sync canon from the store`,
-      canonMirrorCommitBody(revisionRows(changed)),
-    )
-    port.push(path, branch)
-    const prBody = join(tmpdir(), `canon-mirror-${runId}-pr.md`)
-    writeFileSync(
-      prBody,
-      `Automated canon hydration from the managed store.\n\nCommit: ${commit}\n`,
-    )
-    const existing = port.pullRequest(path, branch)
-    const title = `${key} sync canon from the store`
-    const pr = existing
-      ? port.refreshPullRequest(path, existing.number, title, prBody)
-      : port.openPullRequest(path, title, prBody)
-    rmSync(prBody, { force: true })
-    const autonomy = await resolveProjectAutonomy(
-      project.name,
-      undefined,
-      undefined,
-      productionWorkflowTree().steps,
-      {},
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      ['ship'],
-    )
-    const decision = decideCanonMirrorMerge({
-      shipLevel: autonomy.stages?.ship?.value ?? 'ask',
-      headMatches: pr.headSha === commit,
-      baseUnchanged: port.remoteTip(project, ref) === base,
-      checks: pr.checks,
-    })
-    setRunTerminal(runId, started)
-    if (decision.merge) {
-      port.merge(path, pr.number)
-      return finish({ project: project.name, failed: false, text: `merged, ${pr.url}` })
-    }
-    return finish({
-      project: project.name,
-      failed: false,
-      text: `${existing ? 'PR updated' : 'PR opened'}, ${pr.url}; left open, ${decision.reason}`,
-    })
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause)
-    setRunTerminal(runId, started, reason)
-    return finish({ project: project.name, failed: true, text: `failed, ${reason}` })
-  } finally {
-    lease.release()
-    lease = null as never
-    releaseLifecycle(port, runId, started, outcome)
+  const closed = port.releaseRun(markerRun)
+  if (!['released', 'absent'].includes(closed.outcome) || existsSync(path)) {
+    throw new Error(`owned canon mirror worktree ${path} could not be released: ${closed.outcome}: ${closed.detail}`)
   }
 }
-
-async function fileFailure(result: MirrorResult, project: Project): Promise<void> {
-  const text = `canon mirror: ${project.name} ${result.text}`
-  const notes = await listHubNotes(project.name, { cwd: project.path })
-  const same = notes.find((note) => note.text === text)
-  await fileNote(same ? { text, same_as: same.id } : { text, new: true }, { cwd: project.path })
+function proveLocalBranchOwnership(project: Project, branch: string, runId: number, port: CanonMirrorPort): void {
+  if (!port.localBranch(project, branch)) return
+  const owner = db().query(
+    `SELECT id FROM run WHERE id<>? AND job=? AND minted_branch=?
+     AND (project_id=? OR (project_id IS NULL AND repo=?)) ORDER BY id DESC LIMIT 1`,
+  ).get(runId, CANON_MIRROR_JOB, branch, project.id, project.name)
+  if (!owner) throw new Error(`refusing unowned local branch ${branch}; it was left intact`)
 }
-
-export async function mirrorRepositoryCanon(input: {
-  project?: string
-  dryRun: boolean
-  port?: CanonMirrorPort
-  noteFailure?: (result: MirrorResult, project: Project) => Promise<void>
-}): Promise<MirrorResult[]> {
-  const selected = projects().filter(
-    (project) =>
-      project.settings.managedContext === true &&
-      (!input.project || project.name === input.project),
-  )
-  if (input.project && selected.length === 0)
-    throw new Error(`unknown managed project ${JSON.stringify(input.project)}`)
-  const results: MirrorResult[] = []
-  for (const project of selected) {
-    const result = await mirrorProject(project, input.dryRun, input.port ?? systemCanonMirrorPort)
-    results.push(result)
-    if (result.failed && !input.dryRun) {
-      try {
-        await (input.noteFailure ?? fileFailure)(result, project)
-      } catch (cause) {
-        result.text += `; note filing failed: ${cause instanceof Error ? cause.message : String(cause)}`
-      }
-    }
-  }
-  return results
+function settleReleasedBranch(runId: number, branch: string): void {
+  writeTransaction(() => {
+    db().query('UPDATE run SET branch_kept=NULL,branch_kept_tip=NULL WHERE id=?').run(runId)
+    settleClaims(db(), { rootRunId: runId, kind: 'branch', state: 'released', settledAt: nowIso(), detail: 'local branch deleted after canon mirror push', allocationKey: `refs/heads/${branch}` })
+  })
 }
