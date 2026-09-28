@@ -52,12 +52,14 @@ export function mirrorFixturePort(
   root: string,
   overrides: Partial<CanonMirrorPort> = {},
 ): CanonMirrorPort {
+  const head = spawnFixtureGitSync(['rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim()
   return {
     ...systemCanonMirrorPort,
     fetch: () => {},
     localBranch: () => false,
-    refTip: () => 'HEAD',
+    refTip: () => head,
     remoteBranchTip: () => null,
+    remoteTrunkTip: () => head,
     push: () => {},
     pullRequest: () => null,
     openPullRequest: () => ({
@@ -72,13 +74,13 @@ export function mirrorFixturePort(
         spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
       return { outcome: 'released', detail: 'fixture release' }
     },
-    releaseBranch: (_project, branch) => {
+    releaseBranch: (_project, branch, expected) => {
       if (
         spawnFixtureGitSync(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {
           cwd: root,
         }).exitCode === 0
       )
-        spawnFixtureGitSync(['branch', '-D', branch], { cwd: root })
+        spawnFixtureGitSync(['update-ref', '-d', `refs/heads/${branch}`, expected], { cwd: root })
     },
     ...overrides,
   }

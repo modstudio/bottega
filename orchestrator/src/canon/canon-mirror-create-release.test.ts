@@ -11,6 +11,7 @@ import {
 test('a createTree failure after recording the tree still releases it', async () => {
   const root = mirrorRepository('cm-create-fail')
   let released = false
+  let releasedBranchAt = ''
   try {
     await registerManagedMirror(root, 'cm-create-fail')
     const base = mirrorFixturePort(root)
@@ -23,6 +24,10 @@ test('a createTree failure after recording the tree still releases it', async ()
         released = true
         return base.releaseRun(id)
       },
+      releaseBranch: (project, branch, expected) => {
+        releasedBranchAt = expected
+        base.releaseBranch(project, branch, expected)
+      },
     })
     const result = await mirrorRepositoryCanon({
       project: 'cm-create-fail',
@@ -32,6 +37,7 @@ test('a createTree failure after recording the tree still releases it', async ()
     })
     expect(result[0]?.text).toContain('fixture failure after create')
     expect(released).toBe(true)
+    expect(releasedBranchAt).toMatch(/^[0-9a-f]{40}$/)
     expect(existsSync(join(root, '.claude', 'worktrees', 'canon-mirror'))).toBe(false)
   } finally {
     rmSync(root, { recursive: true, force: true })

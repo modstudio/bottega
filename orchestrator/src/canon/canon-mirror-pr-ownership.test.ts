@@ -7,7 +7,7 @@ import {
   registerManagedMirror,
 } from './canon-mirror-ownership.fixture.ts'
 
-test('a foreign open pull request is refused before push', async () => {
+test('a foreign open pull request is refused after the pushed tip is recorded', async () => {
   const root = mirrorRepository('cm-foreign-pr')
   let pushed = false
   try {
@@ -32,7 +32,7 @@ test('a foreign open pull request is refused before push', async () => {
       noteFailure: async () => {},
     })
     expect(result[0]?.text).toContain('refusing unowned pull request 99')
-    expect(pushed).toBe(false)
+    expect(pushed).toBe(true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -89,6 +89,13 @@ test('secret-shaped command failures are withheld', () => {
   )
 })
 
+test('git object ids remain visible when screening ownership refusals', () => {
+  const sha = '0123456789abcdef0123456789abcdef01234567'
+  expect(screenCanonMirrorError(`refusing remote branch at ${sha}`)).toBe(
+    `refusing remote branch at ${sha}`,
+  )
+})
+
 test('hydration refuses a symlinked ancestor directory', () => {
   const root = mkdtempSync(join(tmpdir(), 'canon-apply-symlink-'))
   const outside = mkdtempSync(join(tmpdir(), 'canon-apply-outside-'))

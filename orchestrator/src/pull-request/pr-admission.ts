@@ -323,28 +323,6 @@ export function finalizeTriageIntent(
   }, database)
 }
 
-/** Record the admitted pushed tip for a pull request that already existed. */
-export function recordPullRequestRefresh(
-  cwd: string,
-  prNumber: number,
-  database: Database = writableDb(),
-): number {
-  const change = resolvePullRequestChange(cwd, 'HEAD', database)
-  const decision = admissionDecision(change, database)
-  if (!decision.complete && !decision.triage.complete) {
-    throw new Error(refusal(change, decision.triage))
-  }
-  const snapshotId = writeTransaction(
-    () => recordTriageIntent(change, decision.triage, decision.overrideId, database),
-    database,
-  )
-  const finalized = finalizeTriageIntent(change.project.name, change.branch, prNumber, database)
-  if (finalized !== snapshotId) {
-    throw new Error(`pull request ${prNumber} admission snapshot could not be finalized`)
-  }
-  return snapshotId
-}
-
 function pullRequestForBranch(cwd: string, branch: string): { number: number; url: string } | null {
   let process: ReturnType<typeof Bun.spawnSync>
   try {
