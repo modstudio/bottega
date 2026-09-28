@@ -38,6 +38,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     '../gate/gate-decision.ts',
     '../sandbox/sandbox.ts',
+    '../sandbox/sandbox-runtime.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',

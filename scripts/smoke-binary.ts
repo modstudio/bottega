@@ -1,11 +1,21 @@
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
+import { run } from './build-release.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-smoke-`))
 
@@ -17,6 +27,7 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
   }
   delete env.ORCH_DB
   delete env.ORCH_DB_WRITE
+  delete env.ORCH_RECORD_URL
   delete env.HUB_DB
   return env
 }
@@ -27,9 +38,11 @@ async function smoke(
   stateHome: string,
   expectedOutput?: string,
   expectedExit = 0,
+  cwd?: string,
 ): Promise<void> {
   const rendered = [executable, ...args].join(' ')
   const child = Bun.spawn([executable, ...args], {
+    cwd,
     env: smokeEnvironment(stateHome),
     stdout: 'pipe',
     stderr: 'pipe',
@@ -127,6 +140,7 @@ try {
   const output = join(scratch, 'bin')
   const stateHome = join(scratch, 'state')
   const binary = await buildHostBinary('v0.1.0', output)
+  console.log(`binary size ${statSync(binary).size} bytes`)
   const orch = join(output, 'orch')
   const hub = join(output, 'hub')
   symlinkSync(binary, orch)
@@ -180,6 +194,35 @@ try {
     '/$bunfs/root/',
     1,
   )
+  const probeRepository = join(scratch, 'probe-repository')
+  mkdirSync(probeRepository)
+  writeFileSync(join(probeRepository, 'README.md'), 'binary sandbox smoke\n')
+  await run(['git', 'init', '--initial-branch=main'], probeRepository)
+  await run(['git', 'config', 'user.email', 'smoke@example.invalid'], probeRepository)
+  await run(['git', 'config', 'user.name', 'Binary Smoke'], probeRepository)
+  await run(['git', 'add', 'README.md'], probeRepository)
+  await run(['git', 'commit', '-m', 'DEV-997 binary smoke fixture'], probeRepository)
+  const smokeStore = new Database(join(stateHome, 'orchestrator', 'orch.db'))
+  try {
+    smokeStore
+      .query('INSERT INTO project (name, path, stack, canon, settings) VALUES (?, ?, ?, 0, ?)')
+      .run('binary-smoke', realpathSync(probeRepository), 'fixture', '{}')
+  } finally {
+    smokeStore.close()
+  }
+  await smoke(
+    binary,
+    ['orch', 'workflow', 'probe', '--', 'git', 'status', '--short'],
+    stateHome,
+    undefined,
+    0,
+    probeRepository,
+  )
+  const extractedRuntime = join(stateHome, 'runtime', '0.1.0', 'sandbox-runtime')
+  if (!existsSync(extractedRuntime)) {
+    throw new Error(`sandbox workflow probe did not extract ${extractedRuntime}`)
+  }
+  console.log(`sandboxed workflow probe extracted ${extractedRuntime}`)
   await smokeDashboard(binary, stateHome)
 } finally {
   rmSync(scratch, { recursive: true, force: true })

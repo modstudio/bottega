@@ -345,6 +345,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../canon/pack-budget.ts',
       '../canon/evals.ts',
       '../sandbox/sandbox.ts',
+      '../sandbox/sandbox-runtime.ts',
       '../database/migrations.ts',
       './health.ts',
       '../project/projects.ts',
