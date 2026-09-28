@@ -177,6 +177,10 @@ function deadRunReason(row: RunningRow): string {
 
 type RunningDisposition = 'alive' | 'dead' | 'abandoned-bootstrap' | 'setup-death'
 
+function preservedFailureKindTurnId(setupDeathIds: Set<number>, lastTurnId: number): number | null {
+  return setupDeathIds.has(lastTurnId) ? lastTurnId : null
+}
+
 function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   const leaseState = runLeaseState(row.id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
@@ -321,7 +325,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       .all(...ended) as { id: number; last_id: number }[]
     const setupDeathIds = new Set(setupDeaths)
     for (const { id, last_id } of roots) {
-      resolveRootFromLastTurnPreserving(d, id, setupDeathIds.has(last_id) ? last_id : null)
+      resolveRootFromLastTurnPreserving(d, id, preservedFailureKindTurnId(setupDeathIds, last_id))
     }
     for (const id of ended) teardownTerminalRunResources(d, id)
   }
