@@ -27,7 +27,9 @@ function refuseSymlinkedAncestor(root: string, path: string): void {
     const stat = statOrNull(ancestor)
     if (!stat) return
     if (stat.isSymbolicLink()) {
-      throw new Error(`refusing canon hydration through symlinked ancestor for ${path}: ${ancestor}`)
+      throw new Error(
+        `refusing canon hydration through symlinked ancestor for ${path}: ${ancestor}`,
+      )
     }
   }
 }

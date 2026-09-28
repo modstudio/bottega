@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -14,11 +14,7 @@ import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 function repository(): string {
   const root = mkdtempSync(join(tmpdir(), 'canon-mirror-lint-'))
   spawnFixtureGitSync(['init'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
-  writeFileSync(join(root, 'README.txt'), 'fixture\n')
-  spawnFixtureGitSync(['add', '.'], { cwd: root })
-  spawnFixtureGitSync(['commit', '-m', 'fixture'], { cwd: root })
+  spawnFixtureGitSync(['-c', 'user.email=mirror@example.test', '-c', 'user.name=Mirror Test', 'commit', '--allow-empty', '-m', 'fixture'], { cwd: root })
   return root
 }
 
@@ -42,13 +38,14 @@ test('a hydration that introduces a canon lint finding stops publication before 
       reason: 'fixture lint finding',
       allowCanonBootstrap: true,
     })
-    spawnFixtureGitSync(['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root })
     const results = await mirrorRepositoryCanon({
       project: 'canon-mirror-lint',
       dryRun: false,
       port: {
         ...systemCanonMirrorPort,
         fetch: () => {},
+        refTip: () => 'HEAD',
+        remoteBranchTip: () => null,
         push: () => {
           pushed = true
         },

@@ -124,6 +124,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'node:os',
       'node:path',
       `${source}canon-apply.ts`,
+      'shared/secret-shaped.ts',
       `${source}canon-files.ts`,
       `${source}canon-hydrate.ts`,
       `${source}canon-lint.ts`,
@@ -132,6 +133,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/database/db.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/mcp/hub-notes.ts',
+      'orchestrator/src/project/project-lock.ts',
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/pull-request/pr-admission.ts',
       'orchestrator/src/resources/resource-claims.ts',
@@ -140,6 +142,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/workflow/autonomy-scopes.ts',
       'orchestrator/src/workflow/workflow-tree-store.ts',
       'orchestrator/src/worktree/worktree-create.ts',
+      'orchestrator/src/worktree/worktree-attribution.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite'],
     reason:

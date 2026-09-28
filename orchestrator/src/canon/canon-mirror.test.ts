@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { categorizeFile } from '../../../shared/file-kind.ts'
 import { classifyReviewTier } from '../review/review-tier.ts'
-import { canonMirrorCommitBody, decideCanonMirrorMerge } from './canon-mirror.ts'
+import { applyHydration } from './canon-apply.ts'
+import {
+  canonMirrorCommitBody,
+  canonMirrorMergeArgs,
+  decideCanonMirrorMerge,
+  screenCanonMirrorError,
+} from './canon-mirror.ts'
 
 describe('canon mirror commit body', () => {
   test('lists each changed path with latest store revision operation and reason', () => {
@@ -59,5 +68,42 @@ test('generated canon directory links classify as tier-zero docs', () => {
       risk: 0,
       size: 0,
     })
+  }
+})
+
+test('merge binds gh to the pushed head commit', () => {
+  expect(canonMirrorMergeArgs(42, 'abc123')).toEqual([
+    'gh',
+    'pr',
+    'merge',
+    '42',
+    '--squash',
+    '--match-head-commit',
+    'abc123',
+  ])
+})
+
+test('secret-shaped command failures are withheld', () => {
+  expect(screenCanonMirrorError(new Error('gh failed: token=abc123'))).toBe(
+    'command failed: output withheld because it resembles a secret',
+  )
+})
+
+test('hydration refuses a symlinked ancestor directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-apply-symlink-'))
+  const outside = mkdtempSync(join(tmpdir(), 'canon-apply-outside-'))
+  try {
+    mkdirSync(join(root, '.agents'))
+    symlinkSync(outside, join(root, '.agents', 'rules'))
+    expect(() =>
+      applyHydration(root, {
+        writes: [{ path: '.agents/rules/guard.md', body: 'guard\n' }],
+        deletes: [],
+        links: [],
+      }),
+    ).toThrow('symlinked ancestor')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
   }
 })

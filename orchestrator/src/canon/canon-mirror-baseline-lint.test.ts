@@ -14,12 +14,10 @@ import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 function repository(): string {
   const root = mkdtempSync(join(tmpdir(), 'canon-mirror-baseline-lint-'))
   spawnFixtureGitSync(['init'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
   writeFileSync(join(root, 'README.txt'), 'fixture\n')
   writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n\nOld managed context.\n')
   spawnFixtureGitSync(['add', '.'], { cwd: root })
-  spawnFixtureGitSync(['commit', '-m', 'fixture'], { cwd: root })
+  spawnFixtureGitSync(['-c', 'user.email=mirror@example.test', '-c', 'user.name=Mirror Test', 'commit', '-m', 'fixture'], { cwd: root })
   return root
 }
 
@@ -43,13 +41,14 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
       reason: 'change context while preserving baseline lint finding',
       allowCanonBootstrap: true,
     })
-    spawnFixtureGitSync(['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root })
     const results = await mirrorRepositoryCanon({
       project: 'canon-mirror-baseline-lint',
       dryRun: false,
       port: {
         ...systemCanonMirrorPort,
         fetch: () => {},
+        refTip: () => 'HEAD',
+        remoteBranchTip: () => null,
         push: () => {
           pushed = true
         },
@@ -60,6 +59,7 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
           headSha: 'different-head',
           checks: 'passed',
         }),
+        releaseBranch: () => {},
         releaseRun: () => ({ outcome: 'released', detail: 'fixture release' }),
       },
       noteFailure: async () => {},
