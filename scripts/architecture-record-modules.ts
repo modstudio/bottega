@@ -47,7 +47,10 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
     './record-sync.ts',
     './machine-identity.ts',
+    './outbox-quarantine.ts',
   ]),
+  module('orchestrator/src/record/outbox-failure.ts', ['./record-verdicts.ts']),
+  module('orchestrator/src/record/outbox-quarantine.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/record/record-session.ts', [
     '../../../shared/record-session.ts',
     '../../../shared/record-remedies.ts',

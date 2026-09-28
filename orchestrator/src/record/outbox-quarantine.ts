@@ -19,12 +19,13 @@ type OutboxIdentity = {
   attempts: number
   quarantine_reason: string | null
   quarantined_at: string | null
+  retired_at: string | null
 }
 
 function outboxRow(database: Database, rowId: number): OutboxIdentity {
   const row = database
     .query<OutboxIdentity, [number]>(
-      `SELECT id,kind,record_id,attempts,quarantine_reason,quarantined_at
+      `SELECT id,kind,record_id,attempts,quarantine_reason,quarantined_at,retired_at
          FROM outbox WHERE id=?`,
     )
     .get(rowId)
@@ -38,6 +39,11 @@ function outboxRow(database: Database, rowId: number): OutboxIdentity {
 
 function quarantinedRow(database: Database, rowId: number): OutboxIdentity {
   const row = outboxRow(database, rowId)
+  if (row.retired_at) {
+    throw new Error(
+      `outbox row ${rowId} is retired and permanently not deliverable; inspect its outbox quarantine audit instead`,
+    )
+  }
   if (!row.quarantined_at) {
     throw new Error(
       `outbox row ${rowId} is not quarantined; run \`orch sync\` and use retry or retire only after the row is reported as quarantined`,

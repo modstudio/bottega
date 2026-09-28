@@ -57,6 +57,20 @@ describe('outbox quarantine exits', () => {
         .query('SELECT disposition,reason FROM outbox_quarantine_audit ORDER BY id DESC LIMIT 1')
         .get(),
     ).toEqual({ disposition: 'retire', reason: 'invalid historical verdict' })
+    expect(() => retryOutboxRow(7, database)).toThrow(
+      'outbox row 7 is retired and permanently not deliverable',
+    )
+    database.close()
+  })
+
+  test('audit rows cannot be changed or deleted', () => {
+    const database = fixture()
+    expect(() =>
+      database.query("UPDATE outbox_quarantine_audit SET reason='changed'").run(),
+    ).toThrow('outbox quarantine audit is append-only')
+    expect(() => database.query('DELETE FROM outbox_quarantine_audit').run()).toThrow(
+      'outbox quarantine audit is append-only',
+    )
     database.close()
   })
 

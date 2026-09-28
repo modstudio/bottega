@@ -385,7 +385,7 @@ async function applyHostedUnvoid(
   if (columns.length !== 3) {
     throw new OutboxRowError(
       'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying',
-      'row-validation',
+      'migration-mismatch',
     )
   }
   const exclusions = await tx`

@@ -26,6 +26,7 @@ describe('hosted record outbox failure classification', () => {
     ['authentication', { sqlState: '28P01', responseReceived: true }],
     ['session shutdown', { sqlState: '57P01', responseReceived: true }],
     ['missing migration column', { sqlState: '42703', responseReceived: true }],
+    ['explicit migration mismatch', { errorClass: 'migration-mismatch', responseReceived: true }],
   ] satisfies Array<[string, Partial<OutboxFailureFacts>]>)('%s is pass-fatal', (_name, facts) => {
     expect(classify(facts)).toBe('pass-fatal')
   })

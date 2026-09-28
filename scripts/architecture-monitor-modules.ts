@@ -27,6 +27,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-harness-load.ts',
     './monitor-canon-drift.ts',
     './monitor-notices.ts',
+    './monitor-outbox.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
@@ -55,5 +56,10 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-store-write-lock.ts', [
     '../database/db.ts',
     '../database/store-write-lock.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-outbox.ts', [
+    'bun:sqlite',
+    '../record/outbox-quarantine.ts',
+    './monitor-types.ts',
   ]),
 ]

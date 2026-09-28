@@ -19,3 +19,15 @@ CREATE TABLE outbox_quarantine_audit (
 );
 
 CREATE INDEX outbox_quarantine_audit_row ON outbox_quarantine_audit(outbox_id, id);
+
+CREATE TRIGGER outbox_quarantine_audit_no_update
+BEFORE UPDATE ON outbox_quarantine_audit
+BEGIN
+  SELECT RAISE(ABORT, 'outbox quarantine audit is append-only');
+END;
+
+CREATE TRIGGER outbox_quarantine_audit_no_delete
+BEFORE DELETE ON outbox_quarantine_audit
+BEGIN
+  SELECT RAISE(ABORT, 'outbox quarantine audit is append-only');
+END;

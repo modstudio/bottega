@@ -4,7 +4,13 @@ import { RecordVerdictError } from './record-verdicts.ts'
 
 export type OutboxFailureFacts = {
   sqlState: string | null
-  errorClass: 'declared-space' | 'payload' | 'verdict-rule' | 'row-validation' | 'unknown'
+  errorClass:
+    | 'declared-space'
+    | 'migration-mismatch'
+    | 'payload'
+    | 'verdict-rule'
+    | 'row-validation'
+    | 'unknown'
   responseReceived: boolean
 }
 
@@ -29,6 +35,7 @@ const MIGRATION_MISMATCH_STATES = new Set(['42P01', '42703', '42883', '3F000'])
 const SESSION_FAILURE_STATES = new Set(['57P01', '57P02', '57P03', '25006'])
 
 export function classifyOutboxFailure(facts: OutboxFailureFacts): OutboxFailureDisposition {
+  if (facts.errorClass === 'migration-mismatch') return 'pass-fatal'
   if (facts.errorClass !== 'unknown') return 'row-fatal'
   if (!facts.responseReceived) return 'pass-fatal'
   const sqlState = facts.sqlState?.toUpperCase() ?? null
@@ -85,7 +92,10 @@ export function outboxFailureDisposition(error: unknown): OutboxFailureDispositi
     if (item instanceof RecordVerdictError) {
       return classifyOutboxFailure({ sqlState, errorClass: 'verdict-rule', responseReceived: true })
     }
-    if (item instanceof Error && item.name === 'ZodError') {
+    if (
+      item instanceof Error &&
+      (item instanceof SyntaxError || item instanceof RangeError || item.name === 'ZodError')
+    ) {
       return classifyOutboxFailure({
         sqlState,
         errorClass: 'row-validation',
