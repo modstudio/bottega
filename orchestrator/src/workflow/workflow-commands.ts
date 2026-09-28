@@ -117,10 +117,7 @@ async function execCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
 ): Promise<void> {
-  const dash = argv.indexOf('--')
-  const command = (dash >= 0 ? argv.slice(dash + 1) : argv.slice(2)).filter(
-    (value) => value !== '--',
-  )
+  const command = argv[2] === '--' ? argv.slice(3) : argv.slice(2)
   if (!command.length) throw new Error('orch workflow exec needs a command after --')
   const cwd = process.cwd()
   const registeredProject = projects().some(
@@ -134,10 +131,7 @@ async function probeCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
 ): Promise<void> {
-  const dash = argv.indexOf('--')
-  const command = (dash >= 0 ? argv.slice(dash + 1) : argv.slice(2)).filter(
-    (value) => value !== '--',
-  )
+  const command = argv[2] === '--' ? argv.slice(3) : argv.slice(2)
   const result = await recordWorkflowProbe(command)
   print({ id: result.id, withheld: result.withheld }, String(result.id))
 }

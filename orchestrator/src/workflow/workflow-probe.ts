@@ -21,6 +21,7 @@ const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 export type ProbeRunner = (input: { command: string[]; cwd: string }) => {
   exitCode: number
   output: string
+  secretFound?: boolean
 }
 
 export type ProbeRecord = { id: number; withheld: boolean }
@@ -42,6 +43,7 @@ async function sandboxedRunner(
 ): Promise<{
   exitCode: number
   output: string
+  secretFound: boolean
 }> {
   if (!srtInstalled()) {
     throw new Error(
@@ -64,12 +66,12 @@ async function sandboxedRunner(
         }; install the sandbox runtime at ${SRT_LIBRARY} with bun install, then retry`,
       )
     }
-    const result = spawnSync(launch[0]!, launch.slice(1), {
+    return await streamingRunner(launch, {
       cwd,
-      encoding: 'utf8',
       env: probeEnv(scratch),
+      stdin: 'ignore',
+      write: () => {},
     })
-    return { exitCode: result.status ?? -1, output: `${result.stdout ?? ''}${result.stderr ?? ''}` }
   } finally {
     await resetSandbox()
     rmSync(scratch, { recursive: true, force: true })
@@ -104,40 +106,54 @@ async function execRunner(
   command: string[],
   cwd: string,
   write: (chunk: string) => void,
-): Promise<{ exitCode: number; output: string }> {
+): Promise<{ exitCode: number; output: string; secretFound: boolean }> {
+  return streamingRunner(command, { cwd, env: process.env, stdin: 'inherit', write })
+}
+
+async function streamingRunner(
+  command: string[],
+  input: {
+    cwd: string
+    env: NodeJS.ProcessEnv
+    stdin: 'ignore' | 'inherit'
+    write: (chunk: string) => void
+  },
+): Promise<{ exitCode: number; output: string; secretFound: boolean }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command[0]!, command.slice(1), {
-      cwd,
-      env: process.env,
-      stdio: ['inherit', 'pipe', 'pipe'],
+      cwd: input.cwd,
+      env: input.env,
+      stdio: [input.stdin, 'pipe', 'pipe'],
     })
     let output = ''
+    let secretFound = false
     const record = (chunk: Buffer | string) => {
       const text = Buffer.isBuffer(chunk) ? chunk.toString() : chunk
-      output += text
-      write(text)
+      const candidate = output + text
+      secretFound ||= containsSecretShaped(candidate)
+      output = boundedGateOutputTail(candidate, GATE_OUTPUT_TAIL_BYTES)
+      input.write(text)
     }
     child.stdout?.on('data', record)
     child.stderr?.on('data', record)
     child.once('error', reject)
-    child.once('close', (code) => resolve({ exitCode: code ?? -1, output }))
+    child.once('close', (code) => resolve({ exitCode: code ?? -1, output, secretFound }))
   })
 }
 
 async function recordWorkflowCommand(
   command: string[],
   cwd: string,
-  ran: { exitCode: number; output: string },
+  ran: { exitCode: number; output: string; secretFound?: boolean },
   kind: 'probe' | 'exec',
   input: { d?: Database; commit?: string | null },
 ): Promise<ProbeRecord> {
   const commandJson = JSON.stringify(command)
-  const withheld = containsSecretShaped(commandJson) || containsSecretShaped(ran.output)
+  const outputContainsSecret = ran.secretFound === true || containsSecretShaped(ran.output)
+  const withheld = containsSecretShaped(commandJson) || outputContainsSecret
   const storedCommand = containsSecretShaped(commandJson) ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(
-    containsSecretShaped(ran.output) || containsSecretShaped(commandJson)
-      ? PROBE_WITHHELD
-      : ran.output,
+    outputContainsSecret || containsSecretShaped(commandJson) ? PROBE_WITHHELD : ran.output,
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()

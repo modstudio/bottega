@@ -122,6 +122,60 @@ test('exec records an architect command with its kind and session', async () => 
   }
 })
 
+test('exec streams only a bounded output tail', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    await recordWorkflowExec(['/bin/sh', '-c', '/usr/bin/yes z | /usr/bin/head -c 20000'], {
+      cwd: process.cwd(),
+      d,
+      commit: 'abc',
+      write: () => {},
+    })
+    const tail = (d.query('SELECT output_tail FROM probe').get() as { output_tail: string })
+      .output_tail
+    expect(Buffer.byteLength(tail)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec detects a chunk-split secret after it rolls out of the retained tail', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    const command = [
+      '/bin/sh',
+      '-c',
+      "printf '\\x67\\x68'; /bin/sleep 0.02; printf '\\x70\\x5fexampletokenvalue'; /usr/bin/yes z | /usr/bin/head -c 20000",
+    ]
+    const result = await recordWorkflowExec(command, {
+      cwd: process.cwd(),
+      d,
+      commit: 'abc',
+      write: () => {},
+    })
+    expect(result.withheld).toBe(true)
+    expect(
+      (d.query('SELECT output_tail FROM probe').get() as { output_tail: string }).output_tail,
+    ).toBe('[withheld: secret-shaped content]')
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
 test('exec refuses worker depth and missing architect identity', async () => {
   const priorDepth = process.env.ORCH_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID

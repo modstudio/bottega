@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { program } from '../cli/program.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -84,6 +85,49 @@ test('workflow exec refuses a missing command', async () => {
   expect(workflowCommand(['workflow', 'exec'], presentation([]))).rejects.toThrow(
     'orch workflow exec needs a command after --',
   )
+})
+
+test('Commander preserves an embedded separator in workflow exec child argv', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    upsertProject({
+      name: 'workflow-exec-adapter',
+      path: process.cwd(),
+      stack: 'bun',
+      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    })
+
+    await program.parseAsync([
+      'bun',
+      'orch',
+      'workflow',
+      'exec',
+      '--',
+      '/usr/bin/printf',
+      '[%s]\\n',
+      'first',
+      '--',
+      'tail',
+    ])
+
+    expect(
+      db().query('SELECT command,output_tail FROM probe').get() as {
+        command: string
+        output_tail: string
+      },
+    ).toEqual({
+      command: JSON.stringify(['/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail']),
+      output_tail: '[first]\n[--]\n[tail]\n',
+    })
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
 })
 
 test('next resolves an omitted mode to the composed cursor default', async () => {
