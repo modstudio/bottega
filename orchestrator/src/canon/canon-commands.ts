@@ -1,14 +1,6 @@
 // concern: canon-commands
 /** Knows canon command semantics over canon, lint, and evals. Must not know runs, routing, transports, the CLI, or worktrees. */
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import type { Finding } from '../../../shared/ratchet.ts'
@@ -27,6 +19,7 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
+import { applyHydration } from './canon-apply.ts'
 import { auditRepositoryCanon, type CanonAuditResult } from './canon-audit.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
 import {
@@ -192,32 +185,6 @@ function printHydrationPlan(
   for (const row of plan.writes) log(`write ${row.path}`)
   for (const row of plan.links) log(`link ${row.path} -> ${row.target}`)
   for (const path of plan.deletes) log(`delete ${path}`)
-}
-
-function applyHydration(root: string, plan: ReturnType<typeof planHydration>): void {
-  for (const path of plan.deletes) rmSync(resolve(root, path))
-  for (const { path, body } of plan.writes) {
-    const target = resolve(root, path)
-    mkdirSync(dirname(target), { recursive: true })
-    const targetStat = statOrNull(target)
-    if (targetStat?.isSymbolicLink()) rmSync(target)
-    writeFileSync(target, body)
-  }
-  for (const { path, target } of plan.links) {
-    const destination = resolve(root, path)
-    mkdirSync(dirname(destination), { recursive: true })
-    if (statOrNull(destination)) rmSync(destination, { recursive: true })
-    symlinkSync(target, destination)
-  }
-}
-
-function statOrNull(path: string): ReturnType<typeof lstatSync> | null {
-  try {
-    return lstatSync(path)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
 }
 
 async function canonImportCommand(
@@ -484,7 +451,7 @@ async function canonCommand(
     return
   }
   throw new Error(
-    'unknown: orch canon. Try audit | import | hydrate | list | check | diff | eval | evals | lint | load',
+    'unknown: orch canon. Try audit | mirror | import | hydrate | list | check | diff | eval | evals | lint | load',
   )
 }
 
@@ -569,6 +536,17 @@ export async function dispatchCanonCommand(
   flags: CanonFlags,
   presentation: CanonPresentation,
 ): Promise<void> {
+  if (argv[1] === 'mirror') {
+    refuseUnsupportedFlags(flags, ['project', 'dry-run'])
+    const { mirrorRepositoryCanon } = await import('./canon-mirror.ts')
+    const results = await mirrorRepositoryCanon({
+      project: flags.flag('project'),
+      dryRun: flags.has('dry-run'),
+    })
+    for (const result of results) presentation.log(`${result.project}: ${result.text}`)
+    if (results.some((result) => result.failed)) presentation.exitCode(1)
+    return
+  }
   if (argv[1] === 'audit') {
     const result = await auditRepositoryCanon({ dryRun: flags.has('dry-run') })
     if (flags.has('json')) presentation.log(JSON.stringify(result))

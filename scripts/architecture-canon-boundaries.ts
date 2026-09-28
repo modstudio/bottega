@@ -79,6 +79,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       'node:path',
       'zod',
       `${source}canon.ts`,
+      `${source}canon-apply.ts`,
       `${source}canon-audit.ts`,
       `${source}canon-files.ts`,
       `${source}canon-hydrate.ts`,
@@ -88,6 +89,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       `${source}canon-load-files.ts`,
       `${source}canon-load.ts`,
       `${source}canon-stored-rows.ts`,
+      `${source}canon-mirror.ts`,
       `${source}user-canon-commands.ts`,
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/worker-launch-env.ts',
@@ -102,6 +104,49 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep canon command adapters independent of runs, routing, transports, the CLI, and worktrees.',
+  },
+]
+
+const canonMirrorBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-apply-boundary',
+    file: `${source}canon-apply.ts`,
+    allowed: ['node:fs', 'node:path'],
+    typeOnlyAllowed: [`${source}canon-hydrate.ts`],
+    reason: 'Keep hydration file writes independent of stores, commands, runs, and transports.',
+  },
+  {
+    name: 'canon-mirror-boundary',
+    file: `${source}canon-mirror.ts`,
+    allowed: [
+      'node:crypto',
+      'node:fs',
+      'node:os',
+      'node:path',
+      `${source}canon-apply.ts`,
+      'shared/secret-shaped.ts',
+      `${source}canon-files.ts`,
+      `${source}canon-hydrate.ts`,
+      `${source}canon-lint.ts`,
+      `${source}canon-stored-rows.ts`,
+      'orchestrator/src/close/close-out.ts',
+      'orchestrator/src/database/db.ts',
+      'orchestrator/src/git/git-environment.ts',
+      'orchestrator/src/mcp/hub-notes.ts',
+      'orchestrator/src/project/project-lock.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/pull-request/pr-admission.ts',
+      'orchestrator/src/resources/resource-claims.ts',
+      'orchestrator/src/run/run-lease.ts',
+      'orchestrator/src/run/synthetic-lifecycle-job.ts',
+      'orchestrator/src/workflow/autonomy-scopes.ts',
+      'orchestrator/src/workflow/workflow-tree-store.ts',
+      'orchestrator/src/worktree/worktree-create.ts',
+      'orchestrator/src/worktree/worktree-attribution.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason:
+      'Keep scheduled canon publication limited to hydration, registered lifecycle, pull-request admission, and its Git/GitHub port.',
   },
 ]
 
@@ -221,6 +266,7 @@ export const canonBoundarySpecs = [
   ...canonEditGuardBoundarySpecs,
   ...canonAuditBoundarySpecs,
   ...canonCommandBoundarySpecs,
+  ...canonMirrorBoundarySpecs,
   ...canonRemovalBoundarySpecs,
   ...userCanonBoundarySpecs,
   ...canonLoadBoundarySpecs,

@@ -3,7 +3,8 @@
 
 export const HOOK_TREE_JOB = 'hook-tree'
 export const LANDING_TREE_JOB = 'landing-tree'
-export const SYNTHETIC_LIFECYCLE_JOBS = [HOOK_TREE_JOB, LANDING_TREE_JOB] as const
+export const CANON_MIRROR_JOB = 'canon-mirror'
+export const SYNTHETIC_LIFECYCLE_JOBS = [HOOK_TREE_JOB, LANDING_TREE_JOB, CANON_MIRROR_JOB] as const
 
 export function isSyntheticLifecycleJob(job: string): boolean {
   return (SYNTHETIC_LIFECYCLE_JOBS as readonly string[]).includes(job)
