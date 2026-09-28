@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test'
+import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
-import { decideHubDatabasePath, unauthorizedHubMigrationMessage } from './db.ts'
+import {
+  decideHubDatabasePath,
+  implicitHubDatabaseCreationRefusal,
+  missingHubDatabaseMessage,
+  unauthorizedHubMigrationMessage,
+} from './db.ts'
 
 const livePath = '/nonexistent-live-hub-store/hub.db'
 const tempPath = '/nonexistent-temp-hub-store/hub.db'
@@ -31,6 +40,38 @@ describe('hub database path decision', () => {
   test('non-test empty HUB_DB mutation: falls back to the live store', () => {
     expect(decideHubDatabasePath(false, '', livePath)).toBe(livePath)
   })
+})
+
+test('the absent explicit-store refusal names the condition and explicit remedy', () => {
+  expect(missingHubDatabaseMessage('/scratch/missing.db')).toBe(
+    'hub database does not exist: /scratch/missing.db\n' +
+      'invariant: An absent HUB_DB path is a mistake, not a request to create a store.\n' +
+      'cleared by: unset HUB_DB to use the installation store, or name an existing database',
+  )
+})
+
+test('implicit creation refuses explicit, linked, and unauthorized resolutions', () => {
+  expect(implicitHubDatabaseCreationRefusal(false, true, false, '/state/hub.db')).toBeNull()
+  expect(implicitHubDatabaseCreationRefusal(true, true, false, '/state/hub.db')).toBe(
+    missingHubDatabaseMessage('/state/hub.db'),
+  )
+  expect(implicitHubDatabaseCreationRefusal(false, false, false, '/state/hub.db')).toBe(
+    unauthorizedHubMigrationMessage('/state/hub.db'),
+  )
+  expect(implicitHubDatabaseCreationRefusal(false, true, true, '/state/hub.db')).toContain(
+    'linked worktree',
+  )
+})
+
+test('the migrate creation decision refuses an absent HUB_DB before touching its parent', () => {
+  const parent = join(tmpdir(), `hub-explicit-${randomUUID()}`)
+  const path = join(parent, 'hub.db')
+
+  expect(implicitHubDatabaseCreationRefusal(true, true, false, path)).toBe(
+    missingHubDatabaseMessage(path),
+  )
+  expect(existsSync(path)).toBeFalse()
+  expect(existsSync(parent)).toBeFalse()
 })
 
 test('the unauthorized default-store migration refusal names the condition and remedy', () => {

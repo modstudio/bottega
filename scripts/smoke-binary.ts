@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { Database } from 'bun:sqlite'
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +10,11 @@ import { buildHostBinary } from './build-binary.ts'
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-smoke-`))
 
 function smokeEnvironment(stateHome: string): Record<string, string | undefined> {
-  const env = { ...process.env, BOTTEGA_STATE_HOME: stateHome }
+  const env = {
+    ...process.env,
+    BOTTEGA_STATE_HOME: stateHome,
+    CLAUDE_CODE_SESSION_ID: 'DEV-997-binary-smoke',
+  }
   delete env.ORCH_DB
   delete env.ORCH_DB_WRITE
   delete env.HUB_DB
@@ -129,11 +134,31 @@ try {
   await smoke(binary, ['--version'], stateHome)
   await smoke(binary, ['orch', '--version'], stateHome)
   await smoke(binary, ['hub', '--version'], stateHome)
-  await smoke(hub, ['--help'], stateHome, `hub — every project's tasks in flight`)
-  await smoke(binary, ['orch', 'migrate'], stateHome)
-  await smoke(binary, ['hub', 'migrate'], stateHome)
+  await smoke(binary, ['--help'], stateHome)
+  await smoke(binary, ['orch', '--help'], stateHome)
+  await smoke(binary, ['hub', '--help'], stateHome, `hub — every project's tasks in flight`)
+  if (existsSync(stateHome))
+    throw new Error('help and version commands created the state directory')
   await smoke(orch, ['jobs'], stateHome, 'implement')
   await smoke(binary, ['orch', 'jobs'], stateHome)
+  await smoke(binary, ['hub', 'task', 'list'], stateHome)
+  if (!existsSync(join(stateHome, 'orchestrator', 'orch.db'))) {
+    throw new Error('orch jobs did not create the orchestrator store')
+  }
+  if (!existsSync(join(stateHome, 'hub', 'hub.db'))) {
+    throw new Error('hub task list did not create the hub store')
+  }
+  const orchestrator = new Database(join(stateHome, 'orchestrator', 'orch.db'), {
+    readonly: true,
+  })
+  try {
+    const seen = orchestrator
+      .query('SELECT 1 FROM session_seen WHERE session_id = ?')
+      .get('DEV-997-binary-smoke')
+    if (!seen) throw new Error('orch jobs did not stamp the invoking session')
+  } finally {
+    orchestrator.close()
+  }
   await smoke(binary, ['hub', 'collect', '--only', 'runs'], stateHome, 'collected in')
   await smoke(
     binary,

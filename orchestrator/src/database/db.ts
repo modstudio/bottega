@@ -6,14 +6,14 @@ import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
 import {
   DATABASE_RESOLUTION,
   DB_PATH,
+  existingDatabaseMigrationRefusal,
+  implicitDatabaseCreationRefusal,
   legacyDatabaseRefusal,
-  missingDatabaseMessage,
-  unauthorizedDatabaseInitializationMessage,
+  linkedWorktreeDatabaseInitializationMessage,
 } from './database-location.ts'
 import {
   applyMigrations,
@@ -59,10 +59,6 @@ const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
   'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
   'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy'
-const LINKED_WORKTREE_SCHEMA_REFUSAL =
-  'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
-  "invariant: Only the main checkout's binary migrates the store.\n" +
-  'cleared by: orch migrate'
 
 /**
  * Two paths name one file when their real paths agree. The file may not exist
@@ -194,7 +190,7 @@ export function db(writable = false): Database {
   }
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
-  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  ensureDatabase()
   requireOpenHooksForWritableMode()
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
   const readOnlyPath =
@@ -306,28 +302,16 @@ export function tryWriteContention(
   }
 }
 
-/** The sole path that may create the orchestrator database. */
-export function initializeDatabase(): string {
-  if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
-  if (existsSync(DB_PATH))
-    throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
-  const legacyRefusal = legacyDatabaseRefusal()
-  if (legacyRefusal) throw new Error(legacyRefusal)
-  if (!DATABASE_RESOLUTION.initializable) {
-    throw new Error(unauthorizedDatabaseInitializationMessage())
-  }
-  registeredOpenHooks()
-  mkdirSync(dirname(DB_PATH), { recursive: true })
-  const d = new Database(DB_PATH, { create: true })
-  try {
-    d.exec('PRAGMA foreign_keys = ON;')
-    applyMigrations(d)
-    seedProjects(d)
-    runOpenHooks('afterInitialize', d)
-  } finally {
-    d.close()
-  }
+/** Ensure an ordinary store-needing command has a current, authorized store. */
+export function ensureDatabase(): string {
+  if (existsSync(DB_PATH)) return DB_PATH
+  migrateDatabase()
   return DB_PATH
+}
+
+/** Explicit, idempotent alias for ensuring the orchestrator database exists. */
+export function initializeDatabase(): string {
+  return ensureDatabase()
 }
 
 /** Seed the project register once from paths already recorded in run history. */
@@ -358,11 +342,13 @@ function seedProjects(d: Database): void {
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
 export function migrateDatabase(): { path: string; versions: string[] } {
-  if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
-  const create = !existsSync(DB_PATH) && embeddedDistributionManifest() !== null
-  if (!existsSync(DB_PATH) && !create) throw new Error(missingDatabaseMessage())
+  const create = !existsSync(DB_PATH)
+  const creationRefusal = create ? implicitDatabaseCreationRefusal() : null
+  if (creationRefusal) throw new Error(creationRefusal)
+  const migrationRefusal = !create ? existingDatabaseMigrationRefusal() : null
+  if (migrationRefusal) throw new Error(migrationRefusal)
   registeredOpenHooks()
   if (create) mkdirSync(dirname(DB_PATH), { recursive: true })
   const d = new Database(DB_PATH, { readwrite: true, create })
@@ -379,7 +365,8 @@ export function migrateDatabase(): { path: string; versions: string[] } {
 
 /** One-time maintenance pass for roots whose original caller prompt remains on disk. */
 export function backfillSpecSha(): { updated: number; missing: number } {
-  if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary)
+    throw new Error(linkedWorktreeDatabaseInitializationMessage())
   const database = writableDb()
   const roots = database
     .query(

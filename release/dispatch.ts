@@ -24,6 +24,14 @@ export async function dispatchBinary(
     console.log(version())
     return 0
   }
+  const publicCommands = Object.values(BOTTEGA_ENTRY_PROTOCOL)
+    .filter((entry) => entry.usage === 'public')
+    .map((entry) => entry.compiledArguments[0])
+  const usage = `usage: ${PLATFORM_SLUG} <${publicCommands.join('|')}> [arguments]`
+  if (argv.length === 1 && argv[0] === '--help') {
+    console.log(usage)
+    return 0
+  }
   const [command, ...rest] = argv
   if (command === BOTTEGA_ENTRY_PROTOCOL.orch.compiledArguments[0]) return entries.orch(rest)
   if (command === BOTTEGA_ENTRY_PROTOCOL.hub.compiledArguments[0]) return entries.hub(rest)
@@ -37,9 +45,6 @@ export async function dispatchBinary(
     await entries.retrievalSearch(rest)
     return Number(process.exitCode ?? 0)
   }
-  const publicCommands = Object.values(BOTTEGA_ENTRY_PROTOCOL)
-    .filter((entry) => entry.usage === 'public')
-    .map((entry) => entry.compiledArguments[0])
-  console.error(`usage: ${PLATFORM_SLUG} <${publicCommands.join('|')}> [arguments]`)
+  console.error(usage)
   return 2
 }

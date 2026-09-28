@@ -179,15 +179,44 @@ export const DB_PATH = decideOrchestratorDatabasePath(
 )
 
 export function missingDatabaseMessage(path = DB_PATH): string {
-  return `orchestrator database does not exist: ${path}\nrun orch init-db to create it`
+  return (
+    `orchestrator database does not exist: ${path}\n` +
+    'invariant: An absent ORCH_DB path is a mistake, not a request to create a store.\n' +
+    'cleared by: unset ORCH_DB to use the installation store, or name an existing database'
+  )
 }
 
 export function unauthorizedDatabaseInitializationMessage(path = DB_PATH): string {
   return (
     `refusing to initialize the default store: cannot establish an authorized ${PLATFORM_NAME} installation: ${path}\n` +
     'invariant: A default store is initialized only by a checkout or an installed distribution.\n' +
-    `cleared by: run orch init-db from a checkout or reinstall ${PLATFORM_NAME}`
+    `cleared by: run the command from the main checkout or reinstall ${PLATFORM_NAME}`
   )
+}
+
+export function linkedWorktreeDatabaseInitializationMessage(): string {
+  return (
+    'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
+    "invariant: Only the main checkout's binary migrates the store.\n" +
+    'cleared by: orch migrate'
+  )
+}
+
+export function implicitDatabaseCreationRefusal(
+  resolution: DatabaseResolution = DATABASE_RESOLUTION,
+  path = resolution.path,
+): string | null {
+  if (resolution.method === 'ORCH_DB') return missingDatabaseMessage(path)
+  if (resolution.linkedWorktreeBinary) return linkedWorktreeDatabaseInitializationMessage()
+  if (!resolution.initializable) return unauthorizedDatabaseInitializationMessage(path)
+  return null
+}
+
+/** Existing stores retain the linked-worktree migration refusal. */
+export function existingDatabaseMigrationRefusal(
+  resolution: DatabaseResolution = DATABASE_RESOLUTION,
+): string | null {
+  return resolution.linkedWorktreeBinary ? linkedWorktreeDatabaseInitializationMessage() : null
 }
 
 export function legacyDatabaseRefusal(

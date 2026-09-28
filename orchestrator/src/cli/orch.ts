@@ -1,5 +1,4 @@
 import { Database } from 'bun:sqlite'
-import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
 
@@ -22,7 +21,7 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
     const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
     registerStandardRuntime()
     const { initializeDatabase } = await import('../database/db.ts')
-    console.log(`created orchestrator database: ${initializeDatabase()}`)
+    console.log(initializeDatabase())
     return 0
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
@@ -30,20 +29,27 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
   }
 }
 
-async function fullCli(argv: string[]): Promise<number> {
-  const { DB_PATH, legacyDatabaseRefusal, missingDatabaseMessage } = await import(
-    '../database/database-location.ts'
-  )
-  const legacyRefusal = legacyDatabaseRefusal()
-  if (legacyRefusal) throw new Error(legacyRefusal)
-  const { existsSync } = await import('node:fs')
-  if (!existsSync(DB_PATH) && !(argv[0] === 'migrate' && embeddedDistributionManifest())) {
-    throw new Error(missingDatabaseMessage())
-  }
+async function fullCli(argv: string[], helpShaped: boolean): Promise<number> {
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
   registerStandardRuntime()
-  const { run } = await import('./program.ts')
+  if (!helpShaped && argv[0] !== 'migrate') {
+    const { ensureDatabase } = await import('../database/db.ts')
+    ensureDatabase()
+  }
+  const { recordInvocationSession, run } = await import('./program.ts')
+  if (!helpShaped) recordInvocationSession(argv)
   return run(argv)
+}
+
+/** The one outer-boundary decision that keeps informational invocations store-free. */
+export function isHelpShapedInvocation(argv: string[]): boolean {
+  return (
+    argv.length === 0 ||
+    argv[0] === 'help' ||
+    argv.includes('--help') ||
+    argv.includes('-h') ||
+    argv.includes('--version')
+  )
 }
 
 async function degradedCollection(argv: string[], error: unknown): Promise<number> {
@@ -68,10 +74,11 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
 }
 
 export async function main(argv: string[]): Promise<number> {
+  const helpShaped = isHelpShapedInvocation(argv)
   if (argv.length === 1 && argv[0] === '--version') return versionCommand()
-  if (argv[0] === 'init-db') return initDatabaseCommand(argv)
+  if (argv[0] === 'init-db' && !helpShaped) return initDatabaseCommand(argv)
   try {
-    return await fullCli(argv)
+    return await fullCli(argv, helpShaped)
   } catch (error) {
     if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
     return degradedCollection(argv, error)

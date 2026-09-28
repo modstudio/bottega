@@ -4,6 +4,22 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { dispatchBinary } from './dispatch.ts'
 
+test('top-level help succeeds without dispatching a store-owning concern', async () => {
+  const unreachable = async (): Promise<never> => {
+    throw new Error('help dispatched an entry')
+  }
+  const entries = {
+    orch: unreachable,
+    hub: unreachable,
+    runExec: unreachable,
+    askProxy: unreachable,
+    retrievalSearch: unreachable,
+  }
+  expect(
+    await dispatchBinary(['--help'], PLATFORM_SLUG, entries, () => 'unreachable version'),
+  ).toBe(0)
+})
+
 test('hidden subcommands route their unchanged arguments without appearing in usage', async () => {
   const calls: Array<{ entry: string; argv: string[] }> = []
   const dispatch = {

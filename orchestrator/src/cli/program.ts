@@ -87,9 +87,12 @@ function exitCodeFor(error: unknown): number {
  * cut at the pipe buffer and the caller parses a fragment as the answer.
  */
 
+export function recordInvocationSession(argv: string[]): void {
+  if (!isReadOnlyInvocation(argv)) recordSessionSeen()
+}
+
 export async function run(argv: string[]): Promise<number> {
   setRawArgv(argv)
-  if (!isReadOnlyInvocation(argv)) recordSessionSeen()
   try {
     await program.parseAsync(['bun', 'orch', ...(argv.length ? argv : ['--help'])])
     await drainStdout()
