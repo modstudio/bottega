@@ -18,16 +18,27 @@ export function refuseChildTurnVoid(
   )
 }
 
-export function effectiveHostedExclusion(
-  activeExclusionReason: string | null,
-  runEvidenceExcluded: string | null,
-): string | null {
-  return activeExclusionReason ?? runEvidenceExcluded
-}
-
 export function refuseUnvoid(evidenceExcluded: string | null): string | null {
   if (evidenceExcluded === VOID_EXCLUSION_REASON) return null
   return `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is ${evidenceExcluded === null ? 'none' : `'${evidenceExcluded}'`}`
+}
+
+export function refuseHostedUnvoid(
+  activeExclusionReason: string | null,
+  runEvidenceExcluded: string | null,
+): string | null {
+  const activeRefusal = refuseUnvoid(activeExclusionReason)
+  const runRefusal = refuseUnvoid(runEvidenceExcluded)
+  const activeIsOther = activeExclusionReason !== null && activeRefusal !== null
+  const runIsOther = runEvidenceExcluded !== null && runRefusal !== null
+  if (!activeIsOther && !runIsOther) return null
+  if (runEvidenceExcluded === null) return activeRefusal
+  if (activeExclusionReason === null) return runRefusal
+  return (
+    `unvoid requires '${VOID_EXCLUSION_REASON}'; active exclusion is '${activeExclusionReason}' ` +
+    `and run evidence_excluded is '${runEvidenceExcluded}'; ` +
+    'the other exclusion must be cleared by the command that owns it'
+  )
 }
 
 /**

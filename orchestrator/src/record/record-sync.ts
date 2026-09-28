@@ -50,11 +50,7 @@ import {
 } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_CONTRACT } from '../score/score-outbox.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
-import {
-  effectiveHostedExclusion,
-  refuseUnvoid,
-  VOID_EXCLUSION_REASON,
-} from '../verdict/verdict-rules.ts'
+import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import {
   backfillLandingEvidenceRecords,
   CONTENTION_RECORD_PAYLOAD_CONTRACT,
@@ -426,13 +422,11 @@ async function applyHostedUnvoid(
   `
   const exclusionReason = exclusions[0]?.reason
   const runReason = runs[0]?.evidence_excluded
-  const reason = effectiveHostedExclusion(
-    exclusionReason == null ? null : String(exclusionReason),
-    runReason == null ? null : String(runReason),
-  )
-  if (reason === null) return
-  const refusal = refuseUnvoid(reason)
+  const activeExclusionReason = exclusionReason == null ? null : String(exclusionReason)
+  const runEvidenceExcluded = runReason == null ? null : String(runReason)
+  const refusal = refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)
   if (refusal) throw new Error(`refused: ${refusal}`)
+  if (activeExclusionReason === null && runEvidenceExcluded === null) return
   const now = new Date().toISOString()
   await tx`
     UPDATE run_exclusion
