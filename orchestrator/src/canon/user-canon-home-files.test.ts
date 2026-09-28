@@ -286,7 +286,7 @@ describe('Codex and Grok home canon files', () => {
     }
   })
 
-  test('honours CODEX_HOME and GROK_HOME overrides', () => {
+  test('honors CODEX_HOME and GROK_HOME overrides', () => {
     const root = mkdtempSync(join(tmpdir(), 'user-canon-overrides-'))
     roots.push(root)
     const codex = join(root, 'custom-codex')

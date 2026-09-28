@@ -39,10 +39,6 @@ export type UserCanonHomePlan = {
   deletes: { slug: string; path: string }[]
 }
 
-export function claudeHomeFromEnvironment(env: NodeJS.ProcessEnv): string {
-  return userCanonHomesFromEnvironment(env)[0]!.path
-}
-
 export function userCanonHomesFromEnvironment(env: NodeJS.ProcessEnv): UserCanonHomeTarget[] {
   const home = env.HOME
   if (!home) throw new Error('HOME is required to locate user canon homes')
@@ -66,7 +62,7 @@ export function userCanonHomePlanDrift(plan: UserCanonHomePlan): number {
 export function collectUserCanonHome(target: UserCanonHomeTarget): UserCanonHomeFile[] {
   if (!target.installed) return []
   assertRegularPath(target.path, 'directory', target)
-  const relativePaths = [target.mapping.entry.home]
+  const relativePaths: string[] = [target.mapping.entry.home]
   const rules = target.mapping.rules && join(target.path, target.mapping.rules.homeDirectory)
   if (rules && existsSync(rules)) {
     assertRegularPath(rules, 'directory', target)

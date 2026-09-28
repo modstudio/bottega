@@ -57,10 +57,6 @@ export function isUserCanonSlug(slug: string): boolean {
   return mapUserCanonPath({ kind: 'canon', path: slug }) !== null
 }
 
-export function isUserCanonHomePath(path: string): boolean {
-  return mapUserCanonPath({ kind: 'claude', path }) !== null
-}
-
 export function userCanonHomeImportDeletionSlugs(
   currentSlugs: string[],
   importedSlugs: Iterable<string>,
