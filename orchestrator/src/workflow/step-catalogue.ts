@@ -21,6 +21,7 @@ export type CatalogueStep = {
   body: string
   floor: FloorKind[]
   deferrable?: FloorKind[]
+  expectedStatus?: string
   requirePullRequest?: boolean
   job: string | null
   /** Optional only when reading a stored catalogue created before stages existed. */
@@ -205,6 +206,11 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   validateDeferrable(item, floor, errors)
   if (item.requirePullRequest !== undefined && typeof item.requirePullRequest !== 'boolean')
     errors.push(`step "${slug}" requirePullRequest must be a boolean`)
+  if (
+    item.expectedStatus !== undefined &&
+    (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
+  )
+    errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
 }
 
 function validateNeeds(item: Record<string, unknown>, errors: string[]): void {

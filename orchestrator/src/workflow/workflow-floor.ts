@@ -115,6 +115,7 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
 export function catalogueFloors(
   kinds: readonly string[],
   deferrable: readonly string[] = [],
+  expectedStatus = DEFAULT_EXPECTED_STATUS,
   requirePullRequest = false,
 ): Floor[] {
   return kinds.map((kind) => {
@@ -123,7 +124,7 @@ export function catalogueFloors(
       kind,
       deferrable: deferrable.includes(kind),
       expectedExitCode: DEFAULT_EXPECTED_EXIT_CODE,
-      expectedStatus: DEFAULT_EXPECTED_STATUS,
+      expectedStatus,
       requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
     }
   })

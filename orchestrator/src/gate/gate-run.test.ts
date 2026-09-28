@@ -1,8 +1,23 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
 import { runArchitectGate } from './gate-run.ts'
+
+let priorDepth: string | undefined
+let priorSession: string | undefined
+beforeEach(() => {
+  priorDepth = process.env.ORCH_DEPTH
+  priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  delete process.env.ORCH_DEPTH
+  process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+})
+afterEach(() => {
+  if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+  else process.env.ORCH_DEPTH = priorDepth
+  if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+})
 
 const database = () => {
   const d = new Database(':memory:')
@@ -112,4 +127,18 @@ test('refuses a project without a registered gate', async () => {
       },
     }),
   ).rejects.toThrow('has no registered gate')
+})
+
+test('refuses a worker session', async () => {
+  process.env.ORCH_DEPTH = '1'
+  expect(runArchitectGate({ cwd: '/tmp/gate-run', d: database() })).rejects.toThrow(
+    'ORCH_DEPTH is set',
+  )
+})
+
+test('refuses when the architect session identity is absent', async () => {
+  delete process.env.CLAUDE_CODE_SESSION_ID
+  expect(runArchitectGate({ cwd: '/tmp/gate-run', d: database() })).rejects.toThrow(
+    'CLAUDE_CODE_SESSION_ID is not set',
+  )
 })

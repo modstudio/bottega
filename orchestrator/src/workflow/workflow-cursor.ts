@@ -589,7 +589,12 @@ function applyFloorDecision(
     d,
   })
   return decideFloorSatisfaction({
-    floors: catalogueFloors(step.floor, step.deferrable ?? [], Boolean(step.requirePullRequest)),
+    floors: catalogueFloors(
+      step.floor,
+      step.deferrable ?? [],
+      step.expectedStatus,
+      Boolean(step.requirePullRequest),
+    ),
     evidence: gathered,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
@@ -714,6 +719,7 @@ function nextWorkflowStepImpl(
       catalogueFloors(
         composition.steps[row.ordinal]!.floor,
         composition.steps[row.ordinal]!.deferrable ?? [],
+        composition.steps[row.ordinal]!.expectedStatus,
         Boolean(composition.steps[row.ordinal]!.requirePullRequest),
       ),
       at,

@@ -275,7 +275,11 @@ test('worker HOME refuses an unreadable operator path with a remedy', () => {
 
 test('probe sandbox profile denies network and writes except the throwaway directory', () => {
   const scratch = '/tmp/orch-probe-scratch'
-  const profile = probeSandboxProfile(scratch)
+  const profile = probeSandboxProfile({
+    allowWriteDir: scratch,
+    cwd: '/projects/fixture',
+    project: fixtureProject(),
+  })
   expect(profile.network.allowedDomains).toEqual([])
   expect(profile.network.allowUnixSockets).toEqual([])
   expect(profile.network.allowLocalBinding).toBe(false)
@@ -286,6 +290,15 @@ test('probe sandbox profile denies network and writes except the throwaway direc
       ...READONLY_LENS_DENY_SOCKETS,
     ]),
   )
+})
+
+test('probe sandbox profile denies a project-declared secret path', () => {
+  const profile = probeSandboxProfile({
+    allowWriteDir: '/tmp/orch-probe-scratch',
+    cwd: '/projects/fixture',
+    project: fixtureProject({ secretPaths: ['/operator/project-secret'] }),
+  })
+  expect(profile.filesystem.denyRead).toContain('/operator/project-secret')
 })
 
 describe('readonly-lens sandbox profile', () => {

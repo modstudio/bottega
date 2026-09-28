@@ -137,6 +137,33 @@ test('tracker-transition requires the stated status and a merged pull request wh
   ).toBe('refuse')
 })
 
+test('start closes on the active tracker state without a pull request', () => {
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'active', requirePullRequest: false }],
+      evidence: { task: { key: 'DEV-977', status: 'active', mergedPullRequest: false } },
+    }),
+  ).toMatchObject({ action: 'allow' })
+})
+
+test('close refuses without a merged pull request', () => {
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'done', requirePullRequest: true }],
+      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+    }),
+  ).toMatchObject({ action: 'refuse' })
+})
+
+test('a done task does not satisfy start', () => {
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'active', requirePullRequest: false }],
+      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+    }),
+  ).toMatchObject({ action: 'refuse' })
+})
+
 test('alternative floors close when any one is met', () => {
   expect(decide({ floors: [commandExit, artifact], evidence: presentArtifact }).action).toBe(
     'allow',
@@ -290,7 +317,8 @@ test('catalogueFloors marks deferrable kinds and pull-request tracker floors', (
     { ...commandExit, deferrable: true },
     artifact,
   ])
-  expect(catalogueFloors(['tracker-transition'], [], true)[0]).toMatchObject({
+  expect(catalogueFloors(['tracker-transition'], [], 'active', true)[0]).toMatchObject({
+    expectedStatus: 'active',
     requirePullRequest: true,
   })
 })

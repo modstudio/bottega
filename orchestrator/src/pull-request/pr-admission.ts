@@ -8,10 +8,10 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
 import {
+  branchRunOwnerSession,
   type ChangeGroup,
   measureChangeGroup,
-  reviewsForBranch,
-  reviewsForChangeGroup,
+  reviewsForTriage,
   serializePathSet,
 } from '../review/review-group.ts'
 import { validateTriageOverride } from './override-decision.ts'
@@ -73,15 +73,15 @@ function resolvePullRequestChange(
 }
 
 function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
+  const reviews = reviewsForTriage(database, change.group)
   return decideTriage({
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),
     tip: change.tip,
     tier: change.tier,
-    reviews: reviewsForChangeGroup(database, {
-      ...change.group,
-    }),
-    branchReviews: reviewsForBranch(database, change.project.name, change.branch),
+    branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
+    reviews: reviews.reviews,
+    branchReviews: reviews.branchReviews,
     reads: database
       .query<
         {
@@ -90,10 +90,11 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
           patch_id: string
           path_set: string
           recorded_at: string
+          session_id: string | null
         },
         [string, string]
       >(
-        `SELECT id,tip,patch_id,path_set,recorded_at FROM review_read
+        `SELECT id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
         WHERE project=? AND branch=? ORDER BY id DESC`,
       )
       .all(change.project.name, change.branch)
@@ -103,6 +104,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
         patchId: row.patch_id,
         pathSet: row.path_set,
         recordedAt: row.recorded_at,
+        sessionId: row.session_id,
       })),
   })
 }

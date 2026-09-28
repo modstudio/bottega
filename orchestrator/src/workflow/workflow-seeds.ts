@@ -217,6 +217,7 @@ type SeedCatalogueStep = {
   body: string
   floor: FloorKind[]
   deferrable?: FloorKind[]
+  expectedStatus?: string
   requirePullRequest?: boolean
   job: string | null
   stage: AutonomyStage
@@ -267,10 +268,16 @@ function catalogueDefinition() {
         body: catalogueBody(seed.slug, legacy.slug, legacy.body),
         stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
-        ...(catalogueSlug(seed.slug, legacy.slug) === 'close' ? { requirePullRequest: true } : {}),
+        ...(catalogueSlug(seed.slug, legacy.slug) === 'close'
+          ? { expectedStatus: '{{tracker.states.done}}', requirePullRequest: true }
+          : {}),
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
-        needs: [...(runsGate ? ['gate'] : []), ...(runsOnTrunk ? ['trunk'] : [])],
+        needs: [
+          ...(runsGate ? ['gate'] : []),
+          ...(runsOnTrunk ? ['trunk'] : []),
+          ...(catalogueSlug(seed.slug, legacy.slug) === 'close' ? ['tracker'] : []),
+        ],
       })
     }
   }

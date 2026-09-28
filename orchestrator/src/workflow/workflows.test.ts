@@ -40,7 +40,12 @@ const database = () => {
     'fixture',
     '/fixture',
     'bun',
-    JSON.stringify({ gate: 'bun run check', trunk: 'develop', docs: { protocol: 'orch-docs' } }),
+    JSON.stringify({
+      gate: 'bun run check',
+      trunk: 'develop',
+      docs: { protocol: 'orch-docs' },
+      tracker: { protocol: 'hub' },
+    }),
   )
   return d
 }

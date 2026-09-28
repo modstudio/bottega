@@ -45,6 +45,16 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
+
+function resolveWorkflowTemplate(template: string, values: Record<string, unknown>): string {
+  return template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
+    let value: unknown = values
+    for (const part of path.split('.')) value = object(value) ? value[part] : undefined
+    if (value === undefined || value === null || typeof value === 'object')
+      throw new Error(`unresolved workflow placeholder "${path}"`)
+    return String(value)
+  })
+}
 const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project', 'autonomy'])
 const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
   typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
@@ -530,6 +540,13 @@ export function composeWorkflow(
           resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
           floor: step.floor,
           deferrable: step.deferrable ?? [],
+          expectedStatus: step.expectedStatus
+            ? resolveWorkflowTemplate(step.expectedStatus, {
+                project: projectName,
+                ...args,
+                ...facts,
+              })
+            : undefined,
           requirePullRequest: Boolean(step.requirePullRequest),
           needs: step.needs,
         }
@@ -592,21 +609,23 @@ export function getWorkflowStep(
       slug,
     )
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
-  const body = step.body.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
-    let value: unknown = values
-    for (const part of path.split('.')) value = object(value) ? value[part] : undefined
-    if (value === undefined || value === null || typeof value === 'object') {
-      const remedy = definition.arguments.some((argument) => argument.name === path)
-        ? `; pass --arg ${path}=<value> on this step or next call`
-        : ''
-      throw new Error(`unresolved workflow placeholder "${path}"${remedy}`)
-    }
-    if (path.startsWith('tracker.actions.') && typeof value === 'string') {
-      const reason = unresolvedTrackerActionPlaceholder(value, project.name, args.key)
-      if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
-    }
-    return String(value)
-  })
+  const resolve = (template: string) =>
+    template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
+      let value: unknown = values
+      for (const part of path.split('.')) value = object(value) ? value[part] : undefined
+      if (value === undefined || value === null || typeof value === 'object') {
+        const remedy = definition.arguments.some((argument) => argument.name === path)
+          ? `; pass --arg ${path}=<value> on this step or next call`
+          : ''
+        throw new Error(`unresolved workflow placeholder "${path}"${remedy}`)
+      }
+      if (path.startsWith('tracker.actions.') && typeof value === 'string') {
+        const reason = unresolvedTrackerActionPlaceholder(value, project.name, args.key)
+        if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
+      }
+      return String(value)
+    })
+  const body = resolve(step.body)
   const successor = (mode: WorkflowMode) => {
     const index = mode.steps.indexOf(stepSlug)
     if (index === mode.steps.length - 1) return null
@@ -621,6 +640,7 @@ export function getWorkflowStep(
       : undefined
   return {
     ...step,
+    expectedStatus: step.expectedStatus ? resolve(step.expectedStatus) : undefined,
     resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
     workflow: slug,
     version: row.n,

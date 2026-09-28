@@ -8,6 +8,7 @@ export type TriageEvidence = {
   pathSet: string
   tip: string
   tier: 0 | 1 | 2 | 3
+  branchOwnerSession: string | null
   reviews: readonly TriageReviewRow[]
   branchReviews: readonly TriageReviewRow[]
   reads: readonly {
@@ -16,6 +17,7 @@ export type TriageEvidence = {
     patchId: string
     pathSet: string
     recordedAt: string
+    sessionId: string | null
   }[]
 }
 
@@ -88,7 +90,8 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
           read.tip === evidence.tip &&
           read.patchId === evidence.patchId &&
           read.pathSet === evidence.pathSet &&
-          read.recordedAt > earlierReview.completedAt!,
+          read.recordedAt > earlierReview.completedAt! &&
+          read.sessionId === evidence.branchOwnerSession,
       )
     : undefined
   const finalTierRaised = Boolean(

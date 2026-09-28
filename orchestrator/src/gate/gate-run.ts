@@ -75,6 +75,13 @@ export async function runArchitectGate(input: {
   commit?: string
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
+  if (process.env.ORCH_DEPTH !== undefined)
+    throw new Error('orch gate run is reserved for architect sessions; ORCH_DEPTH is set')
+  const caller = sessionId()
+  if (!caller)
+    throw new Error(
+      'orch gate run is reserved for architect sessions; CLAUDE_CODE_SESSION_ID is not set',
+    )
   const cwd = input.cwd ?? process.cwd()
   const project = projectAt(cwd, input.d ?? db())
   if (!project) throw new Error(`orch gate run: no registered project contains ${cwd}`)
@@ -109,7 +116,7 @@ export async function runArchitectGate(input: {
         tail,
         command,
         input.commit ?? headCommit(cwd),
-        sessionId(),
+        caller,
         cwd,
       )
     if (!row) throw new Error('gate_execution row was not inserted')

@@ -58,6 +58,22 @@ const changeGroupOperations: ChangeGroupOperations = {
 export const serializePathSet = (paths: readonly string[]): string =>
   JSON.stringify([...paths].sort())
 
+/** Session that owns the root run chain which minted or works on this branch. */
+export function branchRunOwnerSession(
+  database: Database,
+  project: string,
+  branch: string,
+): string | null {
+  const row = database
+    .query<{ session_id: string | null }, [string, string, string]>(
+      `SELECT session_id FROM run
+        WHERE parent_run_id IS NULL AND repo=? AND (branch=? OR minted_branch=?)
+        ORDER BY id DESC LIMIT 1`,
+    )
+    .get(project, branch, branch)
+  return row?.session_id ?? null
+}
+
 /** Measure the one review identity used at review recording and PR admission. */
 export function measureReviewChange(
   cwd: string,
@@ -104,58 +120,21 @@ export function measureChangeGroup(
 }
 
 export function reviewsForChangeGroup(database: Database, group: ChangeGroup): TriageReviewRow[] {
-  const rows = database
-    .query<
-      {
-        review_id: number
-        recorded_at: string
-        completed_at: string | null
-        tier: 0 | 1 | 2 | 3 | null
-        patch_id: string | null
-        path_set: string | null
-        lens_id: number
-        finding_id: number | null
-        ordinal: number | null
-        disposition: string | null
-      },
-      [string, string, string, string]
-    >(
-      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,rl.id lens_id,
-              rf.id finding_id,rf.ordinal,rf.disposition
-         FROM review r
-         JOIN review_lens rl ON rl.review_id=r.id
-         JOIN run ON run.id=rl.run_id
-         LEFT JOIN review_finding rf ON rf.review_id=r.id
-        WHERE run.repo=? AND run.branch=? AND r.patch_id=? AND r.path_set=?
-        ORDER BY r.id,rl.id,rf.id`,
-    )
-    .all(group.project, group.branch, group.patchId, serializePathSet(group.pathSet))
-  const reviews = new Map<number, TriageReviewRow>()
-  for (const row of rows) {
-    const review = reviews.get(row.review_id) ?? {
-      reviewId: row.review_id,
-      recordedAt: row.recorded_at,
-      completedAt: row.completed_at,
-      tier: row.tier,
-      patchId: row.patch_id,
-      pathSet: row.path_set,
-      lensIds: [],
-      findings: [],
-    }
-    if (!review.lensIds.includes(row.lens_id)) (review.lensIds as number[]).push(row.lens_id)
-    if (
-      row.finding_id !== null &&
-      !review.findings.some((finding) => finding.id === row.finding_id)
-    ) {
-      ;(review.findings as { id: number; ordinal: number; disposition: string | null }[]).push({
-        id: row.finding_id,
-        ordinal: row.ordinal!,
-        disposition: row.disposition,
-      })
-    }
-    reviews.set(row.review_id, review)
+  return reviewsForTriage(database, group).reviews
+}
+
+export function reviewsForTriage(
+  database: Database,
+  group: ChangeGroup,
+): { reviews: TriageReviewRow[]; branchReviews: TriageReviewRow[] } {
+  const branchReviews = reviewsForBranch(database, group.project, group.branch)
+  const pathSet = serializePathSet(group.pathSet)
+  return {
+    branchReviews,
+    reviews: branchReviews.filter(
+      (review) => review.patchId === group.patchId && review.pathSet === pathSet,
+    ),
   }
-  return [...reviews.values()]
 }
 
 /** All review rounds recorded by runs on a branch, newest first. */

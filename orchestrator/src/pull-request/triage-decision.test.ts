@@ -18,6 +18,7 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   pathSet: '["a.ts"]',
   tip: 'tip-a',
   tier: 1,
+  branchOwnerSession: 'owner-session',
   reviews: [review({ patchId: 'patch-a' })],
   branchReviews: [],
   reads: [],
@@ -59,6 +60,7 @@ describe('pull-request triage decision', () => {
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
             },
           ],
         }),
@@ -80,6 +82,7 @@ describe('pull-request triage decision', () => {
           patchId: 'other',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T02:00:00Z',
+          sessionId: 'owner-session',
         },
       ],
     ],
@@ -92,6 +95,7 @@ describe('pull-request triage decision', () => {
           patchId: 'patch-a',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T00:30:00Z',
+          sessionId: 'owner-session',
         },
       ],
     ],
@@ -117,11 +121,33 @@ describe('pull-request triage decision', () => {
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
             },
           ],
         }),
       ),
     ).toMatchObject({ complete: false, earlierReviewId: null })
+  })
+
+  test('path b refuses a read not recorded by the branch run owner', () => {
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          branchReviews: [review()],
+          reads: [
+            {
+              id: 9,
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'foreign-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ complete: false, architectReadRequired: true })
   })
 
   test('path b refuses when the final tier exceeds the credited round tier', () => {
@@ -138,6 +164,7 @@ describe('pull-request triage decision', () => {
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
             },
           ],
         }),

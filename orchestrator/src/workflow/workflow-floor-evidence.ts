@@ -474,22 +474,17 @@ function gatherTask(
   const task = readTask(key)
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null
-  if (number === null) {
-    throw new Error(
-      `--task ${key} has no pull request record${branch ? ` for ${branch}` : ''}; open one with orch pr create`,
-    )
-  }
-  const view = (ports.viewPullRequest ?? productionFloorPorts().viewPullRequest)?.(
-    identity.project,
-    number,
-  )
-  if (!view) throw new Error(`--task ${key} could not view pull request #${number}`)
-  const merged = view.state === 'MERGED' || view.mergedAt !== null
-  if (!merged) throw new Error(`--task ${key} pull request #${number} is ${view.state}, not MERGED`)
+  const view =
+    number === null
+      ? null
+      : (ports.viewPullRequest ?? productionFloorPorts().viewPullRequest)?.(
+          identity.project,
+          number,
+        )
   return {
     key: task.key,
     status: task.status,
-    mergedPullRequest: true,
+    mergedPullRequest: Boolean(view && (view.state === 'MERGED' || view.mergedAt !== null)),
   }
 }
 

@@ -346,20 +346,25 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   })
 })
 
-test('an open PR refuses tracker evidence', () => {
+test('an open PR is gathered as an unmerged tracker fact', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
       (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
-  expect(() =>
-    gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) }),
-  ).toThrow('--task DEV-977 pull request #12 is OPEN, not MERGED')
+  expect(
+    gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
+      .task,
+  ).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: false })
 })
 
-test('no pull request record refuses with orch pr create', () => {
-  expect(() => gather(database(), { task: 'DEV-977' })).toThrow('orch pr create')
+test('no pull request record is gathered as an unmerged tracker fact', () => {
+  expect(gather(database(), { task: 'DEV-977' }).task).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    mergedPullRequest: false,
+  })
 })
 
 test('a missing obligation is gathered as not-found without a floor', () => {

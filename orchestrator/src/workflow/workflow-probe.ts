@@ -6,8 +6,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
+import { type Project, projectAt } from '../project/projects.ts'
 import {
   probeSandboxProfile,
   resetSandbox,
@@ -37,6 +38,7 @@ function probeEnv(scratch: string): NodeJS.ProcessEnv {
 async function sandboxedRunner(
   command: string[],
   cwd: string,
+  project: Project,
 ): Promise<{
   exitCode: number
   output: string
@@ -50,7 +52,11 @@ async function sandboxedRunner(
   try {
     let launch: string[]
     try {
-      launch = await sandboxLaunchArgv(probeSandboxProfile(scratch), command[0]!, command.slice(1))
+      launch = await sandboxLaunchArgv(
+        probeSandboxProfile({ allowWriteDir: scratch, cwd, project }),
+        command[0]!,
+        command.slice(1),
+      )
     } catch (error) {
       throw new Error(
         `orch workflow probe could not establish a sandbox: ${
@@ -86,7 +92,11 @@ export async function recordWorkflowProbe(
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error('orch workflow probe needs a command after --')
   const cwd = input.cwd ?? process.cwd()
-  const ran = input.runner ? input.runner({ command, cwd }) : await sandboxedRunner(command, cwd)
+  const project = projectAt(cwd, input.d ?? db())
+  if (!project) throw new Error(`orch workflow probe: no registered project contains ${cwd}`)
+  const ran = input.runner
+    ? input.runner({ command, cwd })
+    : await sandboxedRunner(command, cwd, project)
   const commandJson = JSON.stringify(command)
   const withheld = containsSecretShaped(commandJson) || containsSecretShaped(ran.output)
   const storedCommand = containsSecretShaped(commandJson) ? PROBE_WITHHELD : commandJson

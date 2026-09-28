@@ -6,7 +6,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
-import { measureChangeGroup, serializePathSet } from './review-group.ts'
+import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
 
 type Flags = { flag(name: string): string | undefined }
@@ -24,6 +24,28 @@ const git: Git = (cwd, args) => {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString().trim()}`)
   }
   return result.stdout.toString().trim()
+}
+
+export function requireBranchRunOwner(
+  database: Database,
+  project: string,
+  branch: string,
+  caller: string | null,
+): string {
+  if (!caller)
+    throw new Error(
+      'orch review read is reserved for the branch run owner; CLAUDE_CODE_SESSION_ID is not set',
+    )
+  const owner = branchRunOwnerSession(database, project, branch)
+  if (!owner)
+    throw new Error(
+      `orch review read is reserved for the branch run owner; ${branch} has no owned root run`,
+    )
+  if (caller !== owner)
+    throw new Error(
+      `orch review read is reserved for the branch run owner; calling session does not own ${branch}`,
+    )
+  return caller
 }
 
 export function recordArchitectRead(
@@ -44,6 +66,7 @@ export function recordArchitectRead(
   if (!project) throw new Error(`cannot resolve a project for ${input.cwd}`)
   const branch = runGit(input.cwd, ['branch', '--show-current'])
   if (!branch) throw new Error('orch review read requires a checked-out branch, not detached HEAD')
+  const caller = requireBranchRunOwner(database, project.name, branch, sessionId())
   const tip = runGit(input.cwd, ['rev-parse', '--verify', `${input.sha ?? 'HEAD'}^{commit}`])
   const measured = measureChangeGroup(input.cwd, project, branch, tip)
   if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
@@ -79,7 +102,7 @@ export function recordArchitectRead(
         serializePathSet(measured.group.pathSet),
         measured.tier.tier,
         note,
-        sessionId(),
+        caller,
         recordedAt,
       )!
     enqueueReviewRead(database, row.id)

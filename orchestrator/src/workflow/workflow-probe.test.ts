@@ -1,8 +1,5 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { recordWorkflowProbe } from './workflow-probe.ts'
@@ -11,6 +8,9 @@ const database = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
+  d.query(
+    "INSERT INTO project (name,path,settings) VALUES ('probe-project','/tmp/probe','{}')",
+  ).run()
   return d
 }
 
@@ -85,17 +85,12 @@ test('refuses a missing command', async () => {
   ).rejects.toThrow('orch workflow probe needs a command after --')
 })
 
-test('a write-attempting probe fails and does not create the file', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'orch-probe-write-'))
-  const target = join(cwd, 'denied.txt')
-  try {
-    const d = database()
-    const result = await recordWorkflowProbe(['touch', target], { cwd, d, commit: 'abc' })
-    const row = d.query('SELECT exit_code FROM probe').get() as { exit_code: number }
-    expect(result.id).toBe(1)
-    expect(row.exit_code).not.toBe(0)
-    expect(existsSync(target)).toBe(false)
-  } finally {
-    rmSync(cwd, { recursive: true, force: true })
-  }
+test('refuses a probe outside a registered project', async () => {
+  expect(
+    recordWorkflowProbe(['printf', 'ok'], {
+      cwd: '/outside/project',
+      d: database(),
+      runner: () => ({ exitCode: 0, output: 'ok' }),
+    }),
+  ).rejects.toThrow('no registered project contains /outside/project')
 })
