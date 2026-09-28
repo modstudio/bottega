@@ -19,10 +19,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
-import {
-  type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
-  SandboxManager,
-} from '@anthropic-ai/sandbox-runtime'
+import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
@@ -32,6 +29,7 @@ import {
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
+import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -90,16 +88,6 @@ export function createSandboxRuntimeConfig(
     },
   }
 }
-
-export const SRT_LIBRARY = join(
-  ROOT,
-  'node_modules',
-  '@anthropic-ai',
-  'sandbox-runtime',
-  'dist',
-  'index.js',
-)
-let sandboxInitialized = false
 
 export function expandHome(path: string): string {
   if (path === '~') return homedir()
@@ -412,10 +400,6 @@ export function selectReadonlySandbox(input: {
   }
 }
 
-export function srtInstalled(): boolean {
-  return existsSync(SRT_LIBRARY)
-}
-
 /** Translate orch's policy vocabulary to the maintained runtime's configuration. */
 export function sandboxRuntimeConfig(profile: SandboxRuntimeConfig): LibrarySandboxRuntimeConfig {
   const { allowWithinDeny, ...filesystem } = profile.filesystem
@@ -449,19 +433,12 @@ export async function sandboxLaunchArgv(
 ): Promise<string[]> {
   ensureHubLoginTokenDirectory(process.env)
   const config = sandboxRuntimeConfig(profile)
-  if (sandboxInitialized) SandboxManager.updateConfig(config)
-  else {
-    await SandboxManager.initialize(config)
-    sandboxInitialized = true
-  }
-  return (await SandboxManager.wrapWithSandboxArgv(shellCommand([bin, ...argv]))).argv
+  return launchWithSandboxRuntime(config, shellCommand([bin, ...argv]))
 }
 
 /** Release the process-scoped runtime resources provisioned for this run. */
 export async function resetSandbox(): Promise<void> {
-  if (!sandboxInitialized) return
-  await SandboxManager.reset()
-  sandboxInitialized = false
+  await resetSandboxRuntime()
 }
 
 /**

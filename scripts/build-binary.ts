@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { registerEmbeddedAssets } from '../shared/embedded-assets.ts'
+import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
 import { distributionManifest, releaseVersion, run } from './build-release.ts'
 
 const repositoryRoot = resolve(import.meta.dir, '..')
@@ -84,7 +85,11 @@ export async function buildHostBinary(tag: string, outputDirectory: string): Pro
     const assets = join(generatedDirectory, 'embedded-assets.ts')
     writeFileSync(
       assets,
-      generatedAssetModule(await migrationAssetPaths(), await webAssetPaths(), manifest),
+      generatedAssetModule(
+        await migrationAssetPaths(),
+        [...(await webAssetPaths()), ...sandboxRuntimePayloadPaths(process.platform, process.arch)],
+        manifest,
+      ),
     )
     const wrapper = join(generatedDirectory, 'entry.ts')
     writeFileSync(

@@ -8,13 +8,8 @@ import { join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import {
-  probeSandboxProfileForCwd,
-  resetSandbox,
-  SRT_LIBRARY,
-  sandboxLaunchArgv,
-  srtInstalled,
-} from '../sandbox/sandbox.ts'
+import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 
 const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 
@@ -45,9 +40,10 @@ async function sandboxedRunner(
   output: string
   secretFound: boolean
 }> {
-  if (!srtInstalled()) {
+  const runtime = sandboxRuntimeAvailability()
+  if (!runtime.available) {
     throw new Error(
-      `orch workflow probe refuses to run unsandboxed; install the sandbox runtime at ${SRT_LIBRARY} with bun install, then retry`,
+      `orch workflow probe refuses to run unsandboxed; install the sandbox runtime at ${runtime.location} with bun install, then retry`,
     )
   }
   const scratch = mkdtempSync(join(tmpdir(), 'orch-probe-'))
@@ -63,7 +59,7 @@ async function sandboxedRunner(
       throw new Error(
         `orch workflow probe could not establish a sandbox: ${
           error instanceof Error ? error.message : String(error)
-        }; install the sandbox runtime at ${SRT_LIBRARY} with bun install, then retry`,
+        }; install the sandbox runtime at ${runtime.location} with bun install, then retry`,
       )
     }
     return await streamingRunner(launch, {

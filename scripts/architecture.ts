@@ -317,6 +317,7 @@ export const modules: ArchitectureModule[] = [
     './machine-key-id.ts',
   ]),
   module('shared/state-directory.ts', ['./brand.ts']),
+  module('shared/sandbox-runtime-assets.ts', []),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   module('orchestrator/src/config/config-service.ts', [
@@ -617,7 +618,9 @@ export const modules: ArchitectureModule[] = [
     'node:stream',
   ]),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/sandbox/sandbox.ts', ['../../../shared/self-spawn.ts', '../../../shared/config-directory.ts', '../../../shared/state-directory.ts', '../database/db.ts', '../mcp/mcp-probe.ts', '../project/projects.ts']),
+  module('orchestrator/src/sandbox/sandbox.ts', ['../../../shared/self-spawn.ts', '../../../shared/config-directory.ts', '../../../shared/state-directory.ts', '../database/db.ts', '../mcp/mcp-probe.ts', '../project/projects.ts', './sandbox-runtime.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/sandbox/sandbox-runtime.ts', ['node:fs', 'node:path', '@anthropic-ai/sandbox-runtime', '../../../shared/embedded-assets.ts', '../../../shared/sandbox-runtime-assets.ts', '../../../shared/state-directory.ts', '../database/db.ts']),
   module('orchestrator/src/runtime/standard-calibration.ts', [
     './calibration-port.ts',
     '../review/review-calibration.ts',

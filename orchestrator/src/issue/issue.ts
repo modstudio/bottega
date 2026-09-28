@@ -21,12 +21,8 @@ import { run } from '../run/run.ts'
 import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
-import {
-  resetSandbox,
-  resolveSecretPaths,
-  sandboxLaunchArgv,
-  srtInstalled,
-} from '../sandbox/sandbox.ts'
+import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { srtInstalled } from '../sandbox/sandbox-runtime.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'

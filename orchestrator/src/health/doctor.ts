@@ -139,9 +139,8 @@ export async function doctorCommand(
   const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
   const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('../canon/evals.ts')
   const latestEvals = latestCanonEvals()
-  const { isReadonlySandboxCandidate, srtInstalled, SRT_LIBRARY } = await import(
-    '../sandbox/sandbox.ts'
-  )
+  const { isReadonlySandboxCandidate } = await import('../sandbox/sandbox.ts')
+  const { sandboxRuntimeAvailability } = await import('../sandbox/sandbox-runtime.ts')
   log(
     `canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`,
   )
@@ -307,8 +306,9 @@ export async function doctorCommand(
       }),
     )
     .map((agent) => agent.name)
+  const sandboxRuntime = sandboxRuntimeAvailability()
   log(
-    `sandbox        srt library ${srtInstalled() ? 'installed' : 'NOT INSTALLED'} at ${SRT_LIBRARY}`,
+    `sandbox        runtime ${sandboxRuntime.available ? 'available' : 'NOT AVAILABLE'} at ${sandboxRuntime.location}`,
   )
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
