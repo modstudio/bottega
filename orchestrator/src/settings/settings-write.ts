@@ -216,13 +216,6 @@ export function restoreSettingsBackup(
   atomicWrite(target, text, mode)
 }
 
-export function restoreBackedUpSettingsWrite(
-  write: BackedUpSettingsWrite,
-  environment: StateEnvironment,
-): void {
-  restoreSettingsBackup(write.plan.path, write.backup, environment, true, write.plan.mode)
-}
-
 function changedAfterPlanning(path: string): never {
   throw new Error(
     `refusing settings write: ${path} changed after planning\n` +
