@@ -44,13 +44,9 @@ async function readHosted(
   clientFactory: (signal: AbortSignal) => ConfigClient,
   timeoutMs: number,
 ): Promise<HostedRead> {
+  let rows: HostedEntry[]
   try {
-    const rows = await clientFactory(AbortSignal.timeout(timeoutMs)).listEntries()
-    return {
-      status: 'available',
-      user: hostedSettings(rows, 'user'),
-      space: hostedSettings(rows, 'space'),
-    }
+    rows = await clientFactory(AbortSignal.timeout(timeoutMs)).listEntries()
   } catch (error) {
     if (error instanceof ConfigClientError && error.reason === 'not-configured')
       return { status: 'not-configured', user: {}, space: {}, reason: error.message }
@@ -61,6 +57,11 @@ async function readHosted(
           ? error.message
           : String(error)
     return { status: 'unavailable', user: {}, space: {}, reason }
+  }
+  return {
+    status: 'available',
+    user: hostedSettings(rows, 'user'),
+    space: hostedSettings(rows, 'space'),
   }
 }
 
@@ -123,24 +124,6 @@ export async function resolveProjectAutonomy(
     session,
   }
 }
-
-export const resolveProjectStageAutonomy = (
-  project: string,
-  steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
-  stages: readonly AutonomyStage[],
-) =>
-  resolveProjectAutonomy(
-    project,
-    undefined,
-    undefined,
-    steps,
-    {},
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    stages,
-  )
 
 function workflowRulingsSnapshot(
   project: string,
