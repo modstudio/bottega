@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  decideAbsentClaim,
   decideFilesystemOrphanAfterInventory,
   decideFilesystemOrphanAfterRemoval,
   decideFilesystemOrphanEligibility,
@@ -20,6 +21,62 @@ import {
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
+
+describe('absent claim reconciliation', () => {
+  const releasable = {
+    probe: 'absent' as const,
+    owningRepository: 'known' as const,
+    allTurnsTerminal: true,
+    liveLeaseOrPid: false,
+    landingInFlight: false,
+    branchKept: false,
+  }
+
+  test('settles an absent resource after every guard passes', () => {
+    expect(decideAbsentClaim(releasable)).toEqual({ action: 'settle-absent' })
+  })
+
+  test('keeps a claim when its absence probe failed', () => {
+    expect(decideAbsentClaim({ ...releasable, probe: 'failed' })).toEqual({
+      action: 'keep',
+      reason: 'absence probe failed',
+    })
+  })
+
+  test('keeps a claim while any turn is live', () => {
+    expect(decideAbsentClaim({ ...releasable, allTurnsTerminal: false })).toEqual({
+      action: 'keep',
+      reason: 'conversation has a live turn',
+    })
+  })
+
+  test('keeps a branch while its landing is in flight', () => {
+    expect(decideAbsentClaim({ ...releasable, landingInFlight: true })).toEqual({
+      action: 'keep',
+      reason: 'landing is in flight',
+    })
+  })
+
+  test('keeps the conversation branch as a restore case', () => {
+    expect(decideAbsentClaim({ ...releasable, branchKept: true })).toEqual({
+      action: 'keep',
+      reason: 'missing kept branch requires restore',
+    })
+  })
+
+  test('keeps a claim with no project while its repository remains', () => {
+    expect(decideAbsentClaim({ ...releasable, owningRepository: 'unknown-present' })).toEqual({
+      action: 'keep',
+      reason: 'owning repository unknown',
+    })
+  })
+
+  test('settles a claim with no project after its repository disappears', () => {
+    expect(decideAbsentClaim({ ...releasable, owningRepository: 'unknown-absent' })).toEqual({
+      action: 'settle-absent',
+    })
+  })
+})
 
 describe('unjudged owner expiry', () => {
   const now = Date.parse('2026-09-23T12:00:00.000Z')

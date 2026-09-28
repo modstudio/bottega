@@ -30,6 +30,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
 import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run/run-lease.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
+import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import {
   inspectTreeOwnership,
   isOrchWorktree,
@@ -39,6 +40,7 @@ import {
 } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { reconcileAbsentClaims } from './claim-reconciliation.ts'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -69,7 +71,7 @@ export type SweepOptions = {
   presentation: CleanupPresentation
 }
 export type SweepHelpers = {
-  grokTrustHeadings: () => string[]
+  observeGrokTrustHeadings: () => GrokTrustObservation
   grokTrustPathFromHeading: (heading: string) => string | null
 }
 
@@ -470,6 +472,13 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     throw new Error(`unknown project ${projectName}`)
   const sweepProjects = selectedProject ? [selectedProject] : projects()
   if (!dry) writableDb()
+  const trustObservation = helpers.observeGrokTrustHeadings()
+  reconcileAbsentClaims({
+    dryRun: dry,
+    project: projectName,
+    presentation: options.presentation,
+    trust: trustObservation,
+  })
   sweepUnjudgedRuns(dry, selectedProject, options.presentation)
   const rows = (
     db()
@@ -748,7 +757,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const trustCleanupFailed = reclaimAbsentTrustEntries({
     dryRun: dry,
     selectedProject,
-    headings: helpers.grokTrustHeadings(),
+    headings: trustObservation.headings,
     pathFromHeading: helpers.grokTrustPathFromHeading,
     presentation: options.presentation,
   })

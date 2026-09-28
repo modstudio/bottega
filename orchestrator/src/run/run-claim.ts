@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { Agent } from '../agent/agents.ts'
+import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import type { TaskBranchCandidate } from '../branch/task-branch.ts'
 import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import type { Pack } from '../canon/canon.ts'
@@ -711,6 +712,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           }
           if (current.status === 'stopped') {
             const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
+            settleCreateTimeBranchCleanup(restored, claim.id)
             if (cleanup.removed) {
               db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
             }
@@ -756,6 +758,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                 : { base: restored.base, tracked: [], untracked: [] }
           } catch (e) {
             const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
+            settleCreateTimeBranchCleanup(restored, claim.id)
             throw new Error(
               `${String((e as Error)?.message ?? e)}\n` +
                 `incomplete worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,

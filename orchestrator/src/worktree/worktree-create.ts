@@ -1,6 +1,7 @@
 // concern: worktree-create
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db } from '../database/db.ts'
 import { git, gitOk, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
@@ -82,6 +83,7 @@ function runRecordedRecipe(
     const cleanup = recipeStarted
       ? removeFor(worktree, worktree.repoRoot, false, false, runId)
       : removeWorktree(worktree)
+    settleCreateTimeBranchCleanup(worktree, runId)
     throw new Error(
       `${String((error as Error)?.message ?? error)}\n` +
         `unrecorded recipe resource cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
@@ -134,6 +136,7 @@ export function attributeWorktree(
   } | null
   if (recorded?.status === 'stopped') {
     const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
+    settleCreateTimeBranchCleanup(worktree, runId)
     if (cleanup.removed) {
       db().query('UPDATE run SET worktree=NULL WHERE id=?').run(runId)
     }
@@ -654,12 +657,14 @@ function createFromRecipe(
   const failed = steps.find((r) => !r.ok)
   if (failed) {
     removeFor(w, repoRoot, false, false, runId)
+    settleCreateTimeBranchCleanup(w, runId)
     throw new Error(`worktree setup failed at "${failed.step}":\n${failed.detail.slice(-1200)}`)
   }
   try {
     verifyFreshWorktree(w)
   } catch (e) {
     removeFor(w, repoRoot, false, false, runId)
+    settleCreateTimeBranchCleanup(w, runId)
     throw e
   }
   return w
