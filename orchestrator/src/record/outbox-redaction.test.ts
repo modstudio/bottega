@@ -159,6 +159,29 @@ test('a newer active row is skipped and reported without leaking planted text', 
   database.close()
 })
 
+test('newer-row eligibility lookup uses the record history index', () => {
+  const { database } = seeded()
+  const plan = database
+    .query<{ detail: string }, []>(
+      `EXPLAIN QUERY PLAN
+       SELECT id FROM outbox candidate
+        WHERE kind='run' AND record_id='record-42' AND id=1 AND synced_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM outbox newer
+             WHERE newer.kind=candidate.kind
+               AND newer.record_id=candidate.record_id
+               AND newer.id>candidate.id
+               AND (newer.synced_at IS NOT NULL OR newer.retired_at IS NULL)
+          )`,
+    )
+    .all()
+
+  expect(plan.map((row) => row.detail)).toContainEqual(
+    expect.stringContaining('SEARCH newer USING INDEX outbox_record_history'),
+  )
+  database.close()
+})
+
 test.each([
   ['authorization', 'Authorization: fixture-value'],
   ['bearer', 'Bearer fixture-value'],
