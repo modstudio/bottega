@@ -1,7 +1,11 @@
 // concern: workflows
 /** Owns the architect session autonomy slice. Must not own CLI grammar or hook assembly. */
 
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import type { ConfigClient } from '../../../shared/config-client.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   type AutonomyStage,
@@ -11,7 +15,12 @@ import {
   type ReleaseValue,
   type StageAutonomyValue,
 } from './autonomy.ts'
-import { resolveProjectStageAutonomy } from './autonomy-scopes.ts'
+import { resolveProjectAutonomy } from './autonomy-scopes.ts'
+import {
+  type CachedSessionContext,
+  readSessionContextCache,
+  writeSessionContextCache,
+} from './session-context-cache.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = 'orch config set'
@@ -25,6 +34,8 @@ type ArchitectSessionContext =
       stages: StageSlice[]
       release: ReleaseSlice
       warnings?: string[]
+      stale?: true
+      resolvedAt?: string
       text: string
     }
 
@@ -110,11 +121,81 @@ function renderSlice(
   ].join('\n')
 }
 
-async function architectSessionContext(cwd: string): Promise<ArchitectSessionContext> {
-  const project = projectAt(cwd)
+export function staleSessionContext(
+  cached: CachedSessionContext,
+  cause: string,
+): ArchitectSessionContext {
+  const stages = cached.stages.map((stage): StageSlice => {
+    if (stage.agreed)
+      return {
+        ...stage,
+        value: stage.value === 'auto' ? 'review' : stage.value,
+        scope: `${stage.scope} (stale)`,
+      }
+    return {
+      ...stage,
+      values: stage.values.map((item) => ({
+        ...item,
+        value: item.value === 'auto' ? 'review' : item.value,
+        scope: `${item.scope} (stale)`,
+      })),
+    }
+  })
+  const release = cached.release
+  const warnings = cached.warnings ?? []
+  const text = [
+    `autonomy is stale: last read ${cached.resolvedAt}; ${cause}; auto stages are shown as review until a fresh read succeeds`,
+    `rulings: ${cached.rulings.value} (${cached.rulings.scope})`,
+    ...stages.map(stageLine),
+    releaseLine(release),
+    ...warnings,
+  ].join('\n')
+  return {
+    registered: true,
+    project: cached.project,
+    rulings: cached.rulings,
+    stages,
+    release,
+    ...(warnings.length ? { warnings } : {}),
+    stale: true,
+    resolvedAt: cached.resolvedAt,
+    text,
+  }
+}
+
+type SessionContextDependencies = {
+  clientFactory?: (signal: AbortSignal) => ConfigClient
+  database?: Database
+  configEnvironment?: ConfigEnvironment
+  stateEnvironment?: StateEnvironment
+  now?: () => Date
+}
+
+async function architectSessionContext(
+  cwd: string,
+  dependencies: SessionContextDependencies = {},
+): Promise<ArchitectSessionContext> {
+  const project = projectAt(cwd, dependencies.database)
   if (!project) return { registered: false }
   const steps = catalogueStepsForAutonomy(productionStepCatalogue().definition.steps)
-  const resolution = await resolveProjectStageAutonomy(project.name, steps, autonomyStages)
+  const resolution = await resolveProjectAutonomy(
+    project.name,
+    undefined,
+    undefined,
+    steps,
+    {},
+    dependencies.clientFactory,
+    dependencies.database,
+    dependencies.configEnvironment,
+    undefined,
+    autonomyStages,
+  )
+  const stateEnvironment = dependencies.stateEnvironment ?? process.env
+  if (resolution.hosted?.status === 'unavailable') {
+    const cached = readSessionContextCache(project.name, stateEnvironment)
+    if (cached) return staleSessionContext(cached, resolution.hosted.reason ?? 'hosted read failed')
+    throw new Error(resolution.hosted.reason ?? 'hosted autonomy settings unavailable')
+  }
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {
     if (!step.stage) continue
@@ -137,7 +218,7 @@ async function architectSessionContext(cwd: string): Promise<ArchitectSessionCon
     production: project.settings.productionBranch ?? null,
   }
   const warnings = resolution.warnings ?? []
-  return {
+  const slice = {
     registered: true,
     project: project.name,
     rulings,
@@ -145,14 +226,28 @@ async function architectSessionContext(cwd: string): Promise<ArchitectSessionCon
     release,
     ...(warnings.length ? { warnings } : {}),
     text: renderSlice(project.name, rulings, stages, release, warnings),
-  }
+  } satisfies ArchitectSessionContext
+  writeSessionContextCache(
+    {
+      version: 1,
+      resolvedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
+      project: project.name,
+      rulings,
+      stages,
+      release,
+      ...(warnings.length ? { warnings } : {}),
+    },
+    stateEnvironment,
+  )
+  return slice
 }
 
 export async function sessionContextCommand(
   options: { cwd: string; json: boolean },
   presentation: Presentation,
+  dependencies: SessionContextDependencies = {},
 ): Promise<void> {
-  const slice = await architectSessionContext(options.cwd)
+  const slice = await architectSessionContext(options.cwd, dependencies)
   if (options.json) {
     presentation.log(JSON.stringify(slice))
     return

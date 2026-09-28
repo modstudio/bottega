@@ -60,6 +60,26 @@ test('hosted failures are visible and leave rulings incomplete without a higher 
   expect(result.rulings).toMatchObject({ complete: false, unavailableReason: 'offline' })
 })
 
+test('invalid hosted settings remain validation failures', async () => {
+  await expect(
+    resolveProjectAutonomy(
+      'fixture',
+      undefined,
+      'guided',
+      steps,
+      {},
+      () =>
+        ({
+          listEntries: async () => [
+            { scope: 'user', key: 'autonomy.stage.plan', value: 'unattended' },
+          ],
+        }) as never,
+      database(),
+      missingConfig,
+    ),
+  ).rejects.toThrow('invalid autonomy setting at hosted user key stages.plan: unattended')
+})
+
 test('a never-resolving hosted transport is bounded by the adapter timeout', async () => {
   expect(HOSTED_AUTONOMY_TIMEOUT_MS).toBe(2000)
   const result = await resolveProjectAutonomy(
