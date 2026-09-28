@@ -44,7 +44,9 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../canon/canon.ts',
+    '../doc/doc-canon-tree.ts',
     '../doc/docs.ts',
+    '../run/run-process.ts',
     './mcp-doc-write.ts',
   ]),
   module('orchestrator/src/mcp/mcp-search-tools.ts', [

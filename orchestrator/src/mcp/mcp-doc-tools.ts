@@ -1,15 +1,18 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
   consumeDoc,
   getDoc,
   getDocRevision,
   listDocMetadata,
   listDocRevisions,
+  removeDoc,
   setDoc,
   signedInDocOwner,
 } from '../doc/docs.ts'
+import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
 const text = (value: unknown) => ({
@@ -18,7 +21,10 @@ const text = (value: unknown) => ({
   ],
 })
 
-export function registerDocTools(server: McpServer): void {
+export function registerDocTools(
+  server: McpServer,
+  workerProcess: () => boolean = () => isOrchWorkerProcess(process.env, process.pid),
+): void {
   server.registerTool(
     'list_docs',
     {
@@ -109,11 +115,26 @@ export function registerDocTools(server: McpServer): void {
           .trim()
           .min(1, 'reason is required: explain why this operator doc is changing'),
         author: z.string().trim().min(1).optional(),
+        expected_revision: z.string().trim().min(1).optional(),
+        cwd: z.string().trim().min(1).optional(),
       },
     },
-    async ({ scope, subject, slug, title, body, delivery, force_inject, reason, author }) => {
-      const refusal = decideMcpDocWrite('set_doc', scope)
+    async ({
+      scope,
+      subject,
+      slug,
+      title,
+      body,
+      delivery,
+      force_inject,
+      reason,
+      author,
+      expected_revision,
+      cwd,
+    }) => {
+      const refusal = decideMcpDocWrite('set_doc', scope, workerProcess())
       if (refusal) throw new Error(refusal)
+      const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
       const doc = await setDoc({
         scope,
         subject: subject ?? null,
@@ -124,9 +145,46 @@ export function registerDocTools(server: McpServer): void {
         forceInject: force_inject,
         reason,
         author,
+        expectedRevision: expected_revision,
+        canonTree,
       })
-      const root = repoRootForDoc(doc)
-      return text({ ...doc, warnings: root ? checkDoc(body, { repoRoot: root }) : [] })
+      const root = repoRootForDoc(doc, canonTree?.root)
+      return text({
+        ...doc,
+        warnings: root ? checkDoc(body, { repoRoot: root }) : [],
+        tree: canonTree?.root,
+      })
+    },
+  )
+
+  server.registerTool(
+    'remove_doc',
+    {
+      description: 'Remove an operator document.',
+      inputSchema: {
+        scope: z.string(),
+        subject: z.string().nullable().optional(),
+        slug: z.string(),
+        reason: z
+          .string({ error: 'reason is required: explain why this operator doc is being removed' })
+          .trim()
+          .min(1, 'reason is required: explain why this operator doc is being removed'),
+        author: z.string().trim().min(1).optional(),
+        expected_revision: z.string().trim().min(1).optional(),
+        cwd: z.string().trim().min(1).optional(),
+      },
+    },
+    async ({ scope, subject, slug, reason, author, expected_revision, cwd }) => {
+      const refusal = decideMcpDocWrite('remove_doc', scope, workerProcess())
+      if (refusal) throw new Error(refusal)
+      const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
+      const removed = await removeDoc(scope, subject ?? null, slug, {
+        reason,
+        author,
+        expectedRevision: expected_revision,
+        canonTree,
+      })
+      return text({ removed, tree: canonTree?.root })
     },
   )
 
@@ -142,7 +200,7 @@ export function registerDocTools(server: McpServer): void {
       },
     },
     async ({ scope, subject, slug }) => {
-      const refusal = decideMcpDocWrite('consume_doc', scope)
+      const refusal = decideMcpDocWrite('consume_doc', scope, workerProcess())
       if (refusal) throw new Error(refusal)
       return text(await consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' }))
     },
