@@ -15,7 +15,7 @@ import { createPullRequest } from '../pull-request/pr-admission.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { resolveProjectStageAutonomy } from '../workflow/autonomy-scopes.ts'
+import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
@@ -353,9 +353,16 @@ async function mirrorProject(
       ? port.refreshPullRequest(path, existing.number, title, prBody)
       : port.openPullRequest(path, title, prBody)
     rmSync(prBody, { force: true })
-    const autonomy = await resolveProjectStageAutonomy(
+    const autonomy = await resolveProjectAutonomy(
       project.name,
+      undefined,
+      undefined,
       productionWorkflowTree().steps,
+      {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       ['ship'],
     )
     const decision = decideCanonMirrorMerge({
