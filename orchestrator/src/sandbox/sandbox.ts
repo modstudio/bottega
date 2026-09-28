@@ -616,6 +616,14 @@ export function prepareWorkerHomeMirror(runDir: string, operatorHome: string): s
   }
   ensurePrivateDirectory(runDir)
   ensurePrivateDirectory(targetHome)
+  const targetClaudeHome = join(targetHome, '.claude')
+  ensurePrivateDirectory(targetClaudeHome)
+  const sourceClaudeEnv = join(operatorHome, '.claude', '.env')
+  const sourceClaudeEnvEntry = lstatSync(sourceClaudeEnv, { throwIfNoEntry: false })
+  const targetClaudeEnv = join(targetClaudeHome, '.env')
+  if (sourceClaudeEnvEntry?.isFile() && !pathEntryExists(targetClaudeEnv)) {
+    symlinkSync(sourceClaudeEnv, targetClaudeEnv)
+  }
   for (const name of entries) {
     if (OMITTED_WORKER_HOME_ENTRIES.has(name)) continue
     if (exposesOmittedWorkerSource(join(operatorHome, name), operatorHome)) continue

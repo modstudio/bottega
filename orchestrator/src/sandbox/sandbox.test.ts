@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -187,8 +188,12 @@ test('mirrors operator tooling into a worker HOME without harness homes', () => 
     const operatorHome = join(fixture, 'operator')
     const runDir = join(fixture, 'sandbox-42')
     mkdirSync(operatorHome)
-    mkdirSync(join(operatorHome, '.claude'))
+    mkdirSync(join(operatorHome, '.claude', 'rules'), { recursive: true })
     mkdirSync(join(operatorHome, 'dotfiles', '.claude'), { recursive: true })
+    writeFileSync(join(operatorHome, '.claude', '.env'), 'MCP_TOKEN=secret\n')
+    writeFileSync(join(operatorHome, '.claude', 'CLAUDE.md'), 'Architect instructions.\n')
+    writeFileSync(join(operatorHome, '.claude', 'rules', 'canon.md'), 'Architect canon.\n')
+    writeFileSync(join(operatorHome, '.claude', 'settings.json'), '{}\n')
     writeFileSync(join(operatorHome, '.claude.json'), '{}')
     symlinkSync(join(operatorHome, '.claude'), join(operatorHome, 'linked-claude'))
     for (const name of ['.codex', '.grok', '.bun', '.gitconfig', '.ssh'])
@@ -198,8 +203,14 @@ test('mirrors operator tooling into a worker HOME without harness homes', () => 
       expect(lstatSync(join(workerHome, linked)).isSymbolicLink()).toBe(true)
       expect(readlinkSync(join(workerHome, linked))).toBe(join(operatorHome, linked))
     }
+    const workerClaudeHome = join(workerHome, '.claude')
+    expect(lstatSync(workerClaudeHome).isDirectory()).toBe(true)
+    expect(lstatSync(workerClaudeHome).isSymbolicLink()).toBe(false)
+    expect(statSync(workerClaudeHome).mode & 0o777).toBe(0o700)
+    expect(readdirSync(workerClaudeHome)).toEqual(['.env'])
+    expect(lstatSync(join(workerClaudeHome, '.env')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(workerClaudeHome, '.env'))).toBe(join(operatorHome, '.claude', '.env'))
     for (const omitted of [
-      '.claude',
       '.claude.json',
       '.codex',
       '.grok',
@@ -211,6 +222,24 @@ test('mirrors operator tooling into a worker HOME without harness homes', () => 
     expect(statSync(runDir).mode & 0o777).toBe(0o700)
     expect(statSync(workerHome).mode & 0o777).toBe(0o700)
     expect(prepareWorkerHomeMirror(runDir, operatorHome)).toBe(workerHome)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('worker HOME omits the Claude env link when its source is missing or non-regular', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-claude-env-'))
+  try {
+    const operatorHome = join(fixture, 'operator')
+    const operatorClaudeHome = join(operatorHome, '.claude')
+    mkdirSync(operatorClaudeHome, { recursive: true })
+
+    const missingHome = prepareWorkerHomeMirror(join(fixture, 'missing-run'), operatorHome)
+    expect(readdirSync(join(missingHome, '.claude'))).toEqual([])
+
+    mkdirSync(join(operatorClaudeHome, '.env'))
+    const nonRegularHome = prepareWorkerHomeMirror(join(fixture, 'non-regular-run'), operatorHome)
+    expect(readdirSync(join(nonRegularHome, '.claude'))).toEqual([])
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }
