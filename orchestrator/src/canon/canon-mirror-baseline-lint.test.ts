@@ -17,7 +17,7 @@ function repository(): string {
   spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
   spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
   writeFileSync(join(root, 'README.txt'), 'fixture\n')
-  writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n')
+  writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n\nOld managed context.\n')
   spawnFixtureGitSync(['add', '.'], { cwd: root })
   spawnFixtureGitSync(['commit', '-m', 'fixture'], { cwd: root })
   return root
@@ -39,17 +39,8 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
       subject: 'canon-mirror-baseline-lint',
       slug: 'AGENTS.md',
       title: 'AGENTS.md',
-      body: 'Keep 123 rules.\n',
-      reason: 'preserve baseline lint finding',
-      allowCanonBootstrap: true,
-    })
-    await setDoc({
-      scope: 'canon',
-      subject: 'canon-mirror-baseline-lint',
-      slug: '.agents/rules/new.md',
-      title: 'New rule',
-      body: '---\ndescription: Fixture managed-context rule\nalways: true\n---\n\nKeep managed context current.\n',
-      reason: 'fixture hydration change',
+      body: 'Keep 123 rules.\n\nNew managed context.\n',
+      reason: 'change context while preserving baseline lint finding',
       allowCanonBootstrap: true,
     })
     spawnFixtureGitSync(['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root })
