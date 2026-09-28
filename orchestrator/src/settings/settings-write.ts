@@ -100,6 +100,7 @@ export function backupSettingsWrites(
 export function applyBackedUpSettingsWrites(
   writes: BackedUpSettingsWrite[],
   environment: StateEnvironment,
+  options: { rollbackOnFailure?: boolean; installed?: (path: string) => void } = {},
 ): string[] {
   if (writes.length === 0) return []
   const written: BackedUpSettingsWrite[] = []
@@ -108,15 +109,18 @@ export function applyBackedUpSettingsWrites(
       assertUnchanged(write.plan)
       atomicWrite(write.plan.path, write.plan.renderedText, write.plan.mode, () => {
         written.push(write)
+        options.installed?.(write.plan.path)
       })
     }
   } catch (error) {
     const restoreErrors: string[] = []
-    for (const write of written.reverse()) {
-      try {
-        restoreSettingsBackup(write.plan.path, write.backup, environment, true)
-      } catch (restoreError) {
-        restoreErrors.push(`${write.plan.path}: ${String(restoreError)}`)
+    if (options.rollbackOnFailure !== false) {
+      for (const write of written.reverse()) {
+        try {
+          restoreSettingsBackup(write.plan.path, write.backup, environment, true)
+        } catch (restoreError) {
+          restoreErrors.push(`${write.plan.path}: ${String(restoreError)}`)
+        }
       }
     }
     const backups = writes.map((write) => `${write.plan.path}: ${write.backup}`).join('\n')
@@ -138,7 +142,7 @@ export function writeNewSettingsFileAtomically(
   mode = 0o644,
   installed?: () => void,
 ): void {
-  if (existsSync(path)) changedAfterPlanning(path)
+  if (pathExistsNoFollow(path)) changedAfterPlanning(path)
   const directory = dirname(path)
   const temporary = join(directory, `.${basename(path)}.tmp-${process.pid}-${randomUUID()}`)
   let fd: number | null = null
@@ -149,13 +153,23 @@ export function writeNewSettingsFileAtomically(
     fsyncSync(fd)
     closeSync(fd)
     fd = null
-    if (existsSync(path)) changedAfterPlanning(path)
+    if (pathExistsNoFollow(path)) changedAfterPlanning(path)
     renameSync(temporary, path)
     installed?.()
     fsyncDirectory(directory)
   } finally {
     if (fd !== null) closeSync(fd)
     rmSync(temporary, { force: true })
+  }
+}
+
+function pathExistsNoFollow(path: string): boolean {
+  try {
+    lstatSync(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
   }
 }
 

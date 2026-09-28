@@ -232,6 +232,96 @@ describe('Claude home canon files', () => {
     )
     expect(readFileSync(join(outside, 'secret.md'), 'utf8')).toBe('outside secret')
   })
+
+  test('refuses the whole batch when a target changes after collection', () => {
+    const claudeHome = temporaryClaudeHome()
+    const entry = join(claudeHome.path, 'CLAUDE.md')
+    writeFileSync(entry, `${USER_CANON_MANAGED_MARKER}collected`)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'rendered' }],
+      files: collectUserCanonHome(claudeHome),
+    })
+    writeFileSync(entry, `${USER_CANON_MANAGED_MARKER}later`)
+    const state = join(dirname(claudeHome.path), 'state')
+
+    expect(() => applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state })).toThrow(
+      /changed after collection/,
+    )
+    expect(readFileSync(entry, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}later`)
+    expect(existsSync(state)).toBe(false)
+  })
+
+  test('keeps a deletion target changed immediately before removal', () => {
+    const claudeHome = temporaryClaudeHome()
+    const rules = join(claudeHome.path, 'rules')
+    const stale = join(rules, 'stale.md')
+    mkdirSync(rules)
+    writeFileSync(stale, `${USER_CANON_MANAGED_MARKER}collected`)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [],
+      files: collectUserCanonHome(claudeHome),
+    })
+
+    expect(() =>
+      applyUserCanonHomePlans(
+        [plan],
+        { BOTTEGA_STATE_HOME: join(dirname(claudeHome.path), 'state') },
+        false,
+        { beforeDelete: () => writeFileSync(stale, `${USER_CANON_MANAGED_MARKER}later`) },
+      ),
+    ).toThrow(/changed after collection/)
+    expect(readFileSync(stale, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}later`)
+  })
+
+  test('rollback keeps an edit made after this batch installed a write', () => {
+    const claudeHome = temporaryClaudeHome()
+    const entry = join(claudeHome.path, 'CLAUDE.md')
+    writeFileSync(entry, `${USER_CANON_MANAGED_MARKER}collected`)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'rendered' }],
+      files: collectUserCanonHome(claudeHome),
+    })
+    let failure: unknown
+
+    try {
+      applyUserCanonHomePlans(
+        [plan],
+        { BOTTEGA_STATE_HOME: join(dirname(claudeHome.path), 'state') },
+        false,
+        {
+          afterMutation: (path) => {
+            if (path !== entry) return
+            writeFileSync(entry, 'concurrent edit')
+            throw new Error('forced failure')
+          },
+        },
+      )
+    } catch (error) {
+      failure = error
+    }
+
+    expect(readFileSync(entry, 'utf8')).toBe('concurrent edit')
+    expect(String(failure)).toContain(`${entry}: restoration conflict`)
+  })
+
+  test('refuses a dangling entry symlink with the link intact', () => {
+    const claudeHome = temporaryClaudeHome()
+    const entry = join(claudeHome.path, 'CLAUDE.md')
+    const missing = join(dirname(claudeHome.path), 'missing.md')
+    symlinkSync(missing, entry)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'rendered' }],
+      files: [],
+    })
+
+    expect(() => applyUserCanonHomePlans([plan])).toThrow(/symbolic link targets/)
+    expect(lstatSync(entry).isSymbolicLink()).toBe(true)
+    expect(() => readFileSync(entry, 'utf8')).toThrow()
+  })
 })
 
 describe('Codex and Grok home canon files', () => {
