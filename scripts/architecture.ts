@@ -335,7 +335,10 @@ export const modules: ArchitectureModule[] = [
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/commands/config.ts', ['node:readline/promises', 'commander', '../../../shared/config-client.ts', '../../../shared/release-autonomy.ts', '../config/config-service.ts', '../run/run-process.ts', './support.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/commands/settings.ts', ['commander', '../settings/settings-apply-commands.ts', '../settings/settings-commands.ts', './support.ts']),
+  module('orchestrator/src/commands/settings.ts', ['commander', '../settings/settings-apply-commands.ts', '../settings/settings-commands.ts', '../settings/settings-machine-apply.ts', './support.ts']),
+  module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/settings/settings-machine-apply.ts', ['bun:sqlite', '../../../shared/state-directory.ts', '../canon/user-canon-home-files.ts', '../database/db.ts', '../doc/docs.ts', '../record/record-cache.ts', '../run/run-process.ts', './settings.ts', './settings-env.ts', './settings-files.ts', './settings-render.ts', './settings-write.ts']),
   ...recordModules,
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/score/score-outbox.ts', ['../../../shared/record/schema.ts', '../record/outbox-sanitize.ts', '../verdict/verdict-payload.ts']),
