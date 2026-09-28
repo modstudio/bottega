@@ -22,6 +22,7 @@ export function register(program: Command): void {
     .option('--open')
     .option('--complete')
     .option('--json')
+    .option('--dry-run')
     .option('--prune')
     .option('--write')
     .option('--confirm-restore')

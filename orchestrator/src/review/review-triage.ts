@@ -24,7 +24,7 @@ export const MIN_REVIEW_TRIAGED = 10
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = (typeof DISPOSITIONS)[number]
 
-function triageValues(
+export function triageValues(
   disposition: Disposition,
   rejectionCategory?: string,
   triagedSeverity?: string,
@@ -218,6 +218,7 @@ export function amendFinding(
   rejectionCategory?: string,
   triagedSeverity?: string,
   database: Database = writableDb(),
+  triagedAt?: string,
 ): void {
   const values = triageValues(disposition, rejectionCategory, triagedSeverity)
   const amendmentReason = reason.trim()
@@ -274,7 +275,13 @@ export function amendFinding(
         `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
          WHERE id=?`,
       )
-      .run(disposition, values.rejectionCategory, values.triagedSeverity, at, finding.id)
+      .run(
+        disposition,
+        values.rejectionCategory,
+        values.triagedSeverity,
+        triagedAt ?? at,
+        finding.id,
+      )
     enqueueReviewFinding(database, finding.id)
     enqueueReview(database, reviewId)
   })
