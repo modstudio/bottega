@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import type { SQL } from 'bun'
+import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import { applyMigrations } from '../database/migrations.ts'
@@ -8,6 +8,7 @@ import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS } from './landing-outbox.ts'
+import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { outboxOrder, syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
@@ -157,7 +158,7 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
 }
 
 function fakePostgres(
-  failFirstRun: false | string = false,
+  failFirstRun: false | Error = false,
   principal: string = RECORD_ACTOR_ROLE,
   score?: {
     job: string
@@ -170,6 +171,7 @@ function fakePostgres(
     supersededAt: null,
     runReason: 'voided with orch score --void',
   },
+  onRunWrite?: (ordinal: number) => void | Promise<void>,
 ): {
   sql: SQL
   statements: string[]
@@ -181,6 +183,7 @@ function fakePostgres(
   let failed = false
   let transaction = -1
   let scoreWritten = false
+  let runWrites = 0
   const transactionSpaceIds: string[] = []
   const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const source = parts.join('?')
@@ -220,9 +223,13 @@ function fakePostgres(
   tx.unsafe = (async (source: string, values?: unknown[]) => {
     statements.push(source)
     parameters.push(values ?? [])
+    if (source.toLowerCase().includes('insert into "run"')) {
+      runWrites++
+      await onRunWrite?.(runWrites)
+    }
     if (failFirstRun && !failed && source.toLowerCase().includes('insert into "run"')) {
       failed = true
-      throw Object.assign(new Error('remote run refusal'), { code: failFirstRun })
+      throw failFirstRun
     }
     if (!scoreWritten && source.toLowerCase().includes('insert into "run_score"')) {
       scoreWritten = true
@@ -245,6 +252,12 @@ function fakePostgres(
   ) as unknown as SQL
   return { sql, statements, parameters, transactionSpaceIds }
 }
+
+const serverError = (message: string, errno: number) =>
+  new SQL.PostgresError(message, {
+    code: 'ERR_POSTGRES_SERVER_ERROR',
+    errno: errno as unknown as string,
+  })
 
 function localScoreOutbox(): Database {
   const local = new Database(':memory:')
@@ -288,6 +301,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     pending: 0,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   const firstRunWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run"'),
@@ -298,6 +312,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     pending: 0,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
@@ -426,6 +441,7 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     pending: 1,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   expect(
     local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!.synced_at,
@@ -440,6 +456,7 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     pending: 0,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   const scoreWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run_score"'),
@@ -559,7 +576,7 @@ test('sync refuses the migration owner before any record write', async () => {
 
 test('a row-fatal failure is quarantined and the next independent row is pushed', async () => {
   const local = localOutbox(2)
-  const remote = fakePostgres('23503')
+  const remote = fakePostgres(serverError('remote run refusal', 23503))
   expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 1,
     failed: 1,
@@ -585,13 +602,16 @@ test('a row-fatal failure is quarantined and the next independent row is pushed'
 
 test('a pass-fatal failure records its attempt and stops before the next row', async () => {
   const local = localOutbox(2)
-  const remote = fakePostgres('08006')
+  const remote = fakePostgres(
+    new SQL.PostgresError('connection refused', { code: 'ERR_POSTGRES_CONNECTION_REFUSED' }),
+  )
   expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 0,
     failed: 1,
     pending: 2,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   const rows = local
     .query<{ attempts: number; quarantined_at: string | null }, []>(
@@ -605,6 +625,131 @@ test('a pass-fatal failure records its attempt and stops before the next row', a
   local.close()
 })
 
+test('a revoked table grant is pass-fatal and stops before the next row', async () => {
+  const local = localOutbox(2)
+  const remote = fakePostgres(serverError('permission denied for table run', 42501))
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+    pending: 2,
+    quarantined: [],
+  })
+  expect(local.query('SELECT attempts FROM outbox ORDER BY id').all()).toEqual([
+    { attempts: 1 },
+    { attempts: 0 },
+  ])
+  local.close()
+})
+
+test('a quarantined parent defers its graph until retry delivers the parent', async () => {
+  const local = new Database(':memory:')
+  applyMigrations(local)
+  local
+    .query(
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+    )
+    .run(RECORD_ID)
+  local.query("INSERT INTO question (run_id,asked_at,question) VALUES (42,?,'Which?')").run(STAMP)
+  local
+    .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
+    .run(MACHINE_ID)
+  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
+  enqueueQuestionRecord(local, 1)
+  const remote = fakePostgres(
+    serverError('new row violates row-level security policy for table "run"', 42501),
+  )
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+    pending: 1,
+    quarantined: [{ id: 1, kind: 'run' }],
+  })
+  expect(local.query('SELECT attempts,quarantined_at FROM outbox WHERE id=2').get()).toEqual({
+    attempts: 0,
+    quarantined_at: null,
+  })
+
+  retryOutboxRow(1, local, STAMP, 'architect')
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 2,
+    failed: 0,
+    pending: 0,
+    quarantined: [],
+  })
+  local.close()
+})
+
+test('retiring a later row after the snapshot prevents its delivery', async () => {
+  const local = localOutbox(2)
+  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, undefined, (ordinal) => {
+    if (ordinal !== 1) return
+    local
+      .query(
+        `UPDATE outbox SET quarantined_at=?,quarantine_reason='operator review'
+         WHERE id=2`,
+      )
+      .run(STAMP)
+    retireOutboxRow(2, 'not deliverable', local, STAMP, 'architect')
+  })
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+  })
+  expect(
+    remote.statements.filter((statement) => statement.toLowerCase().includes('insert into "run"')),
+  ).toHaveLength(1)
+  expect(local.query('SELECT synced_at,retired_at FROM outbox WHERE id=2').get()).toEqual({
+    synced_at: null,
+    retired_at: STAMP,
+  })
+  local.close()
+})
+
+test('a dependent reports a retired parent without attempting delivery', async () => {
+  const local = new Database(':memory:')
+  applyMigrations(local)
+  local
+    .query(
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+    )
+    .run(RECORD_ID)
+  local.query("INSERT INTO question (run_id,asked_at,question) VALUES (42,?,'Which?')").run(STAMP)
+  local
+    .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
+    .run(MACHINE_ID)
+  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
+  enqueueQuestionRecord(local, 1)
+  local
+    .query(
+      `UPDATE outbox SET quarantined_at=?,quarantine_reason='operator review'
+       WHERE kind='run'`,
+    )
+    .run(STAMP)
+  retireOutboxRow(1, 'not deliverable', local, STAMP, 'architect')
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 0,
+    pending: 1,
+    blocked: [{ id: 2, kind: 'question', parentRecordId: RECORD_ID }],
+  })
+  expect(
+    remote.statements.some((statement) =>
+      statement.toLowerCase().includes('insert into "question"'),
+    ),
+  ).toBe(false)
+  local.close()
+})
+
 test('a projectless payload syncs without resolving a project', async () => {
   const local = localOutbox(1, null)
   const remote = fakePostgres()
@@ -614,6 +759,7 @@ test('a projectless payload syncs without resolving a project', async () => {
     pending: 0,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   expect(remote.statements.some((statement) => statement.includes('SELECT id FROM project'))).toBe(
     false,
@@ -658,6 +804,7 @@ test('every populated JSONB run value is bound as one JSON string', async () => 
     pending: 0,
     configured: true,
     quarantined: [],
+    blocked: [],
   })
   const bound = remote.parameters.flat()
   for (const value of Object.values(jsonValues)) expect(bound).toContain(JSON.stringify(value))
@@ -679,7 +826,14 @@ test('declared project spaces override the active space while an unset project f
       memberships: [{ spaceId: declaredSpace, slug: 'team' }],
       projectSpaces: { declared: 'team' },
     }),
-  ).toEqual({ pushed: 2, failed: 0, pending: 0, configured: true, quarantined: [] })
+  ).toEqual({
+    pushed: 2,
+    failed: 0,
+    pending: 0,
+    configured: true,
+    quarantined: [],
+    blocked: [],
+  })
   expect(remote.transactionSpaceIds).toContain(declaredSpace)
   expect(remote.transactionSpaceIds).toContain(options(local, remote).principal.spaceId)
   local.close()

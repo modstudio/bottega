@@ -711,7 +711,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
-      './outbox-failure.ts', './outbox-quarantine.ts',
+      './outbox-dependency.ts', './outbox-failure.ts', './outbox-quarantine.ts',
       './record-cache.ts',
       './record-review-read.ts',
       './record-review-values.ts',

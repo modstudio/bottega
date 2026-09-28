@@ -4,6 +4,7 @@ import { RecordVerdictError } from './record-verdicts.ts'
 
 export type OutboxFailureFacts = {
   sqlState: string | null
+  serverMessage: string | null
   errorClass:
     | 'declared-space'
     | 'migration-mismatch'
@@ -44,7 +45,12 @@ export function classifyOutboxFailure(facts: OutboxFailureFacts): OutboxFailureD
   if (MIGRATION_MISMATCH_STATES.has(sqlState) || SESSION_FAILURE_STATES.has(sqlState)) {
     return 'pass-fatal'
   }
-  if (sqlState.startsWith('22') || sqlState.startsWith('23') || sqlState === '42501') {
+  if (sqlState === '42501') {
+    return facts.serverMessage?.includes('violates row-level security policy')
+      ? 'row-fatal'
+      : 'pass-fatal'
+  }
+  if (sqlState.startsWith('22') || sqlState.startsWith('23')) {
     return 'row-fatal'
   }
   return 'pass-fatal'
@@ -66,47 +72,53 @@ export function outboxErrorDetail(error: unknown): string {
   const details: string[] = []
   for (const current of errorChain(error)) {
     const message = current instanceof Error ? current.message : String(current)
-    const candidate = current as { code?: unknown }
+    const candidate = current as { code?: unknown; errno?: unknown }
     const code = typeof candidate.code === 'string' ? candidate.code : null
-    const detail = code ? `[${code}] ${message}` : message
+    const errno =
+      typeof candidate.errno === 'string' || typeof candidate.errno === 'number'
+        ? String(candidate.errno)
+        : null
+    const label = errno ?? code
+    const detail = label ? `[${label}] ${message}` : message
     if (!details.includes(detail)) details.push(detail)
   }
   return details.join('\ncaused by: ')
 }
 
-export function outboxFailureDisposition(error: unknown): OutboxFailureDisposition {
-  const chain = errorChain(error)
-  const coded = chain.find(
-    (item): item is { code: string } =>
-      item !== null && typeof item === 'object' && 'code' in item && typeof item.code === 'string',
-  )
-  const sqlState = coded?.code ?? null
+function postgresFailureFacts(chain: readonly unknown[]) {
+  let sqlState: string | null = null
+  let serverMessage: string | null = null
   for (const item of chain) {
-    if (item instanceof OutboxRowError) {
-      return classifyOutboxFailure({
-        sqlState,
-        errorClass: item.errorClass,
-        responseReceived: sqlState !== null,
-      })
+    const candidate = item as { code?: unknown; errno?: unknown }
+    for (const value of [candidate.errno, candidate.code]) {
+      if (typeof value !== 'string' && typeof value !== 'number') continue
+      const normalized = String(value).toUpperCase()
+      if (/^[0-9A-Z]{5}$/.test(normalized)) sqlState ??= normalized
     }
-    if (item instanceof RecordVerdictError) {
-      return classifyOutboxFailure({ sqlState, errorClass: 'verdict-rule', responseReceived: true })
-    }
-    if (
-      item instanceof Error &&
-      (item instanceof SyntaxError || item instanceof RangeError || item.name === 'ZodError')
-    ) {
-      return classifyOutboxFailure({
-        sqlState,
-        errorClass: 'row-validation',
-        responseReceived: true,
-      })
+    if (candidate.code === 'ERR_POSTGRES_SERVER_ERROR') {
+      serverMessage ??= item instanceof Error ? item.message : String(item)
     }
   }
+  return { sqlState, serverMessage, responseReceived: serverMessage !== null || sqlState !== null }
+}
+
+function outboxErrorClass(chain: readonly unknown[]): OutboxFailureFacts['errorClass'] {
+  const rowError = chain.find((item) => item instanceof OutboxRowError)
+  if (rowError instanceof OutboxRowError) return rowError.errorClass
+  if (chain.some((item) => item instanceof RecordVerdictError)) return 'verdict-rule'
+  const validation = chain.some(
+    (item) =>
+      item instanceof Error &&
+      (item instanceof SyntaxError || item instanceof RangeError || item.name === 'ZodError'),
+  )
+  return validation ? 'row-validation' : 'unknown'
+}
+
+export function outboxFailureDisposition(error: unknown): OutboxFailureDisposition {
+  const chain = errorChain(error)
   return classifyOutboxFailure({
-    sqlState,
-    errorClass: 'unknown',
-    responseReceived: sqlState !== null,
+    ...postgresFailureFacts(chain),
+    errorClass: outboxErrorClass(chain),
   })
 }
 

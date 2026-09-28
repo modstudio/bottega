@@ -10,6 +10,12 @@ export function quarantinedOutboxLines(
   return rows.map((row) => `quarantined ${row.id}\t${row.kind}\t${row.error}`)
 }
 
+export function blockedOutboxLines(
+  rows: Awaited<ReturnType<typeof syncRecord>>['blocked'],
+): string[] {
+  return rows.map((row) => `blocked ${row.id}\t${row.kind}\tretired parent ${row.parentRecordId}`)
+}
+
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
@@ -42,4 +48,5 @@ export async function syncCommand(
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
+  for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
 }

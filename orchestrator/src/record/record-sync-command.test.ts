@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { quarantinedOutboxLines } from './record-sync-command.ts'
+import { blockedOutboxLines, quarantinedOutboxLines } from './record-sync-command.ts'
 
 test('sync presentation names each quarantined row with its kind and error', () => {
   expect(
@@ -14,4 +14,12 @@ test('sync presentation names each quarantined row with its kind and error', () 
       },
     ]),
   ).toEqual(["quarantined 28138\tscore\tfailure kind 'context' is not evidence"])
+})
+
+test('sync presentation names a row blocked by its retired parent', () => {
+  expect(
+    blockedOutboxLines([
+      { id: 29153, kind: 'question', parentRecordId: '01990000-0000-7000-8000-parent' },
+    ]),
+  ).toEqual(['blocked 29153\tquestion\tretired parent 01990000-0000-7000-8000-parent'])
 })

@@ -62,6 +62,7 @@ import {
   TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
+import { deferOutboxRow, markOutboxRowSynced, outboxRowIsEligible } from './outbox-dependency.ts'
 import {
   OutboxRowError,
   outboxErrorDetail,
@@ -74,6 +75,7 @@ import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
 import type {
+  BlockedOutboxRow,
   OutboxRow,
   Payload,
   RecordSyncOptions,
@@ -892,6 +894,7 @@ type OutboxAttempt = {
   blockedProjects: Set<string>
   projectSpaces?: Record<string, string>
   now: () => string
+  blocked: BlockedOutboxRow[]
 }
 
 /**
@@ -912,14 +915,8 @@ async function pushOutboxRow(
     }
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
-    if (kind === 'question' && parsed.runId) {
-      const runOutbox = local
-        .query<{ synced_at: string | null }, [string]>(
-          "SELECT synced_at FROM outbox WHERE kind='run' AND record_id=? ORDER BY id DESC LIMIT 1",
-        )
-        .get(String(parsed.runId))
-      if (!runOutbox?.synced_at) return 'deferred'
-    }
+    if (deferOutboxRow(local, row, parsed, attempt.blocked)) return 'deferred'
+    if (!outboxRowIsEligible(local, row)) return 'skipped'
     const projectName = outboxProjectName(row.kind, parsed, local)
     if (projectName && attempt.blockedProjects.has(projectName)) return 'skipped'
     const rowPrincipal = cachedProjectPrincipal(attempt.principals, projectName, () =>
@@ -939,9 +936,7 @@ async function pushOutboxRow(
       )
     }
     await recordKinds[kind].push(attempt.postgres, record, rowPrincipal)
-    local
-      .query('UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=? AND payload=?')
-      .run(attempt.now(), row.id, row.payload)
+    markOutboxRowSynced(local, row, attempt.now())
     return 'pushed'
   } catch (error) {
     const detail = outboxErrorDetail(error)
@@ -952,7 +947,10 @@ async function pushOutboxRow(
       return 'failed'
     }
     local
-      .query('UPDATE outbox SET attempts=attempts+1, last_error=? WHERE id=? AND payload=?')
+      .query(
+        `UPDATE outbox SET attempts=attempts+1,last_error=? WHERE id=? AND payload=?
+         AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+      )
       .run(detail, row.id, row.payload)
     return 'stop'
   }
@@ -978,6 +976,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       pending: 0,
       configured: false,
       quarantined: [],
+      blocked: [],
       ...(backfill ? { backfill } : {}),
     }
   }
@@ -1012,6 +1011,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     // rows. Halting the whole outbox would let one project's misconfiguration
     // stop every other project's evidence from ever reaching the record.
     const blockedProjects = new Set<string>()
+    const blocked: BlockedOutboxRow[] = []
     for (const row of rows) {
       const outcome = await pushOutboxRow({
         row,
@@ -1024,6 +1024,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         blockedProjects,
         projectSpaces: options.projectSpaces,
         now: options.now ?? nowIso,
+        blocked,
       })
       if (outcome === 'pushed') pushed++
       if (outcome === 'failed' || outcome === 'stop') failed++
@@ -1042,6 +1043,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       pending,
       configured: true,
       quarantined: quarantinedOutboxRows(writableLocal),
+      blocked,
       ...(backfill ? { backfill } : {}),
     }
   } finally {
