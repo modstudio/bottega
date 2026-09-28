@@ -7,6 +7,18 @@ const shellSets = (argv: string[]) =>
   )
 
 describe('codex worker shell environment', () => {
+  test('first turns and resumes disable native project docs', () => {
+    const first = BUILTIN_AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/out' })
+    const resumed = BUILTIN_AGENTS.codex!.resumeArgv!({
+      prompt: 'ruling',
+      out: '/tmp/out',
+      session: 'thread',
+    })
+    expect(first).toContain('project_doc_max_bytes=0')
+    expect(resumed).toContain('project_doc_max_bytes=0')
+    expect(resumed.indexOf('project_doc_max_bytes=0')).toBeLessThan(resumed.indexOf('resume'))
+  })
+
   test('a flagged read-only run opens workspace-write network access for Docker', () => {
     const argv = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
