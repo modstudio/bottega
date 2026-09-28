@@ -47,7 +47,7 @@ export const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = [
 ] as const
 export const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = {
   columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { patchId: null, pathSet: null },
 } as const
 export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = [
   'id',

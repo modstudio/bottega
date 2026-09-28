@@ -54,7 +54,7 @@ describe('pull-request admission decision', () => {
     ['another tree', { tree: 'tree-old' }],
     ['another patch', { patchId: 'patch-old' }],
     ['another path set', { pathSet: '["b.ts"]' }],
-    ['a legacy identity', { patchId: null, pathSet: null }],
+    ['a null change group from an old-shape payload', { patchId: null, pathSet: null }],
   ])('an override for %s does not admit', (_label, values) => {
     expect(decideAdmission(change, incomplete, [override(values)])).toEqual({
       complete: false,

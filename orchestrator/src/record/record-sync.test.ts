@@ -10,6 +10,7 @@ import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import {
   enqueueContention,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
@@ -162,6 +163,47 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
   local
     .query(
       "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'landing_triage_snapshot',?,?,?)",
+    )
+    .run(RECORD_ID, JSON.stringify(payload), STAMP)
+  return local
+}
+
+function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
+  const local = new Database(':memory:')
+  local.exec(`CREATE TABLE outbox (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
+    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
+  );
+  CREATE TABLE outbox_quarantine_audit (
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
+    at TEXT NOT NULL, reason TEXT
+  )`)
+  const payload = Object.fromEntries(
+    LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
+  )
+  Object.assign(payload, {
+    id: RECORD_ID,
+    spaceId: '01990000-0000-7000-8000-000000000001',
+    projectName: PLATFORM_SLUG,
+    machineId: MACHINE_ID,
+    localId: 42,
+    branch: 'DEV-977-old-shape',
+    tip: 'tip',
+    tree: 'tree',
+    patchId: 'patch',
+    pathSet: ['a.ts'],
+    reason: 'legacy override',
+    sessionId: 'session',
+    at: STAMP,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  })
+  mutate(payload)
+  local
+    .query(
+      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'landing_override',?,?,?)",
     )
     .run(RECORD_ID, JSON.stringify(payload), STAMP)
   return local
@@ -549,6 +591,19 @@ test('an old-shape triage snapshot syncs with declared fills and keeps its overr
   const values = remote.parameters.find((parameters) => parameters.includes('override-record'))
   expect(values).toContain('exact_review')
   expect(values).toContain(null)
+  local.close()
+})
+
+test('an old-shape landing override syncs with a null change group', async () => {
+  const local = localLandingOverrideOutbox((payload) => {
+    delete payload.patchId
+    delete payload.pathSet
+  })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
+  expect(values?.filter((value) => value === null)).toHaveLength(4)
   local.close()
 })
 
