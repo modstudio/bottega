@@ -49,9 +49,7 @@ export type ContinuationInstruction = {
   instructions: string
 }
 
-export function renderContinuationInstructions(
-  instructions: ContinuationInstruction[],
-): string | null {
+function renderContinuationInstructions(instructions: ContinuationInstruction[]): string | null {
   if (!instructions.length) return null
   return [
     'INSTRUCTIONS GIVEN SINCE THE ORIGINAL SPEC',
