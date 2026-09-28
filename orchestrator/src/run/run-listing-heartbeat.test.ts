@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test'
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -100,6 +108,7 @@ fi
   )
   chmodSync(orch, 0o755)
 
+  const startedAt = performance.now()
   const result = Bun.spawnSync(
     ['bash', join(hooks, 'orch-heartbeat.sh'), 'notice-session', '0', '1'],
     {
@@ -115,6 +124,7 @@ fi
       stderr: 'pipe',
     },
   )
+  expect(performance.now() - startedAt).toBeLessThan(2_000)
   expect(result.exitCode).toBe(0)
   const output = result.stdout.toString()
   expect(output.match(/STALLED/g)).toHaveLength(1)
@@ -178,6 +188,101 @@ fi
   expect(output.split('\n').slice(0, -1)).not.toContain('')
   expect(readFileSync(ack, 'utf8')).toBe('condition:9')
   rmSync(fixture, { recursive: true })
+})
+
+test('heartbeat termination reaps an active guarded call and its watchdog', async () => {
+  const fixture = join(dir, 'heartbeat-termination-fixture')
+  const hooks = join(fixture, 'orchestrator', 'hooks')
+  const bin = join(fixture, 'bin')
+  const targetPidPath = join(fixture, 'target.pid')
+  const watchdogPidPath = join(fixture, 'watchdog.pid')
+  const watchdogSleepPidPath = join(fixture, 'watchdog-sleep.pid')
+  mkdirSync(hooks, { recursive: true })
+  mkdirSync(bin)
+  copyFileSync(
+    fileURLToPath(new URL('../../hooks/orch-heartbeat.sh', import.meta.url)),
+    join(hooks, 'orch-heartbeat.sh'),
+  )
+  const orch = join(bin, 'orch')
+  writeFileSync(
+    orch,
+    `#!/bin/sh
+if [ "$1" = "inbox" ]; then
+  echo '[]'
+elif [ "$1" = "runs" ]; then
+  echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"termination-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
+elif [ "$1" = "monitor" ] && [ "$2" = "--notices" ]; then
+  echo "$$" > "$TARGET_PID_PATH"
+  exec /bin/sleep 30
+else
+  exit 2
+fi
+`,
+  )
+  chmodSync(orch, 0o755)
+  const sleep = join(bin, 'sleep')
+  writeFileSync(
+    sleep,
+    `#!/bin/sh
+echo "$PPID" > "$WATCHDOG_PID_PATH"
+echo "$$" > "$WATCHDOG_SLEEP_PID_PATH"
+exec /bin/sleep "$@"
+`,
+  )
+  chmodSync(sleep, 0o755)
+
+  const heartbeat = Bun.spawn(
+    ['bash', join(hooks, 'orch-heartbeat.sh'), 'termination-session', '0', '1'],
+    {
+      cwd: fixture,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        ORCH_DB: join(fixture, 'absent.db'),
+        KEEPALIVE_TICKS: '100',
+        NOTICE_TIMEOUT_SECONDS: '30',
+        TARGET_PID_PATH: targetPidPath,
+        WATCHDOG_PID_PATH: watchdogPidPath,
+        WATCHDOG_SLEEP_PID_PATH: watchdogSleepPidPath,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  try {
+    const recordedDeadline = performance.now() + 2_000
+    while (
+      ![targetPidPath, watchdogPidPath, watchdogSleepPidPath].every(existsSync) &&
+      performance.now() < recordedDeadline
+    ) {
+      await Bun.sleep(10)
+    }
+    expect([targetPidPath, watchdogPidPath, watchdogSleepPidPath].every(existsSync)).toBe(true)
+    const pids = [targetPidPath, watchdogPidPath, watchdogSleepPidPath].map((path) =>
+      Number(readFileSync(path, 'utf8')),
+    )
+
+    heartbeat.kill('SIGTERM')
+    await heartbeat.exited
+
+    const isAlive = (pid: number) => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    const reapedDeadline = performance.now() + 2_000
+    while (pids.some(isAlive) && performance.now() < reapedDeadline) {
+      await Bun.sleep(10)
+    }
+    expect(pids.map(isAlive)).toEqual([false, false, false])
+  } finally {
+    heartbeat.kill('SIGTERM')
+    await heartbeat.exited
+    rmSync(fixture, { recursive: true })
+  }
 })
 
 test('heartbeat reports a stalled run without BLOCKED or WAITING', async () => {

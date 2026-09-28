@@ -74,23 +74,71 @@ NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 prev_key=""
 since_emit=0
 reported_ids=""
+ACTIVE_GUARDED_PID=""
+ACTIVE_WATCHDOG_PID=""
+
+start_watchdog() {
+  local watchdog_target_pid="$1"
+  local watchdog_marker="$2"
+  (
+    watchdog_sleep_pid=""
+    trap '
+      if [ -n "$watchdog_sleep_pid" ]; then
+        kill "$watchdog_sleep_pid" 2>/dev/null || true
+        wait "$watchdog_sleep_pid" 2>/dev/null || true
+      fi
+      exit 0
+    ' TERM INT
+    sleep "$NOTICE_TIMEOUT_SECONDS" &
+    watchdog_sleep_pid=$!
+    wait "$watchdog_sleep_pid" 2>/dev/null || exit 0
+    if kill -0 "$watchdog_target_pid" 2>/dev/null; then
+      printf 'timed-out\n' >"$watchdog_marker"
+      kill "$watchdog_target_pid" 2>/dev/null || true
+    fi
+  ) >/dev/null 2>&1 &
+  WATCHDOG_PID=$!
+}
+
+cancel_watchdog() {
+  kill "$1" 2>/dev/null || true
+  wait "$1" 2>/dev/null || true
+}
+
+cleanup_active_guarded_call() {
+  if [ -n "$ACTIVE_WATCHDOG_PID" ]; then
+    cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+    ACTIVE_WATCHDOG_PID=""
+  fi
+  if [ -n "$ACTIVE_GUARDED_PID" ]; then
+    kill "$ACTIVE_GUARDED_PID" 2>/dev/null || true
+    wait "$ACTIVE_GUARDED_PID" 2>/dev/null || true
+    ACTIVE_GUARDED_PID=""
+  fi
+}
+
+exit_for_signal() {
+  local status="$1"
+  trap - TERM INT
+  cleanup_active_guarded_call
+  exit "$status"
+}
+
+trap 'exit_for_signal 143' TERM
+trap 'exit_for_signal 130' INT
+trap cleanup_active_guarded_call EXIT
 
 report_store_write_lock() {
   lock_out=$(mktemp)
   lock_timed_out=$(mktemp)
   CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --lock-holder --json >"$lock_out" 2>/dev/null &
-  lock_pid=$!
-  (
-    sleep "$NOTICE_TIMEOUT_SECONDS"
-    if kill -0 "$lock_pid" 2>/dev/null; then
-      printf 'timed-out\n' >"$lock_timed_out"
-      kill "$lock_pid" 2>/dev/null || true
-    fi
-  ) &
-  lock_watchdog=$!
-  wait "$lock_pid"; lock_rc=$?
-  kill "$lock_watchdog" 2>/dev/null || true
-  wait "$lock_watchdog" 2>/dev/null || true
+  ACTIVE_GUARDED_PID=$!
+  start_watchdog "$ACTIVE_GUARDED_PID" "$lock_timed_out"
+  ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
+  wait "$ACTIVE_GUARDED_PID"; lock_rc=$?
+  ACTIVE_GUARDED_PID=""
+  cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+  ACTIVE_WATCHDOG_PID=""
   if [ -s "$lock_timed_out" ]; then lock_rc=124; fi
   if [ "$lock_rc" -eq 0 ]; then
     python3 -c '
@@ -371,18 +419,13 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   monitor_out=$(mktemp)
   monitor_timed_out=$(mktemp)
   CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --notices --json >"$monitor_out" 2>"$monitor_err" &
-  monitor_pid=$!
-  (
-    sleep "$NOTICE_TIMEOUT_SECONDS"
-    if kill -0 "$monitor_pid" 2>/dev/null; then
-      printf 'timed-out\n' >"$monitor_timed_out"
-      kill "$monitor_pid" 2>/dev/null || true
-    fi
-  ) &
-  monitor_watchdog=$!
-  wait "$monitor_pid"; monitor_rc=$?
-  kill "$monitor_watchdog" 2>/dev/null || true
-  wait "$monitor_watchdog" 2>/dev/null || true
+  ACTIVE_GUARDED_PID=$!
+  start_watchdog "$ACTIVE_GUARDED_PID" "$monitor_timed_out"
+  ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
+  wait "$ACTIVE_GUARDED_PID"; monitor_rc=$?
+  ACTIVE_GUARDED_PID=""
+  cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+  ACTIVE_WATCHDOG_PID=""
   monitor_raw=$(<"$monitor_out")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
@@ -440,18 +483,13 @@ print(token)
       export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
       ack_timed_out=$(mktemp)
       CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
-      ack_pid=$!
-      (
-        sleep "$NOTICE_TIMEOUT_SECONDS"
-        if kill -0 "$ack_pid" 2>/dev/null; then
-          printf 'timed-out\n' >"$ack_timed_out"
-          kill "$ack_pid" 2>/dev/null || true
-        fi
-      ) &
-      ack_watchdog=$!
-      wait "$ack_pid"; ack_rc=$?
-      kill "$ack_watchdog" 2>/dev/null || true
-      wait "$ack_watchdog" 2>/dev/null || true
+      ACTIVE_GUARDED_PID=$!
+      start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
+      ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
+      wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
+      ACTIVE_GUARDED_PID=""
+      cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+      ACTIVE_WATCHDOG_PID=""
       if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
       rm -f "$ack_timed_out"
       rm -rf "$CAP_DIR"
