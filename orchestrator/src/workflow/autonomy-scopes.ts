@@ -125,24 +125,6 @@ export async function resolveProjectAutonomy(
   }
 }
 
-export const resolveProjectStageAutonomy = (
-  project: string,
-  steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[],
-  stages: readonly AutonomyStage[],
-) =>
-  resolveProjectAutonomy(
-    project,
-    undefined,
-    undefined,
-    steps,
-    {},
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    stages,
-  )
-
 function workflowRulingsSnapshot(
   project: string,
   launchKey: string | null,

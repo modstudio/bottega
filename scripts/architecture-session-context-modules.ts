@@ -17,10 +17,15 @@ export const sessionContextModules: SessionContextModule[] = [
     './support.ts',
   ]),
   module('orchestrator/src/workflow/session-context.ts', [
+    'bun:sqlite',
     '../../../shared/brand.ts',
+    '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/state-directory.ts',
     '../project/projects.ts',
     './autonomy.ts',
     './autonomy-scopes.ts',
+    './session-context-cache.ts',
     './step-catalogue.ts',
   ]),
 ]
