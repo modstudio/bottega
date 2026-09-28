@@ -17,6 +17,7 @@ export type { Project } from './projects.ts'
 
 const checkout = fileURLToPath(new URL('../..', import.meta.url))
 const mainCheckout = mainCheckoutOf(checkout)
+const linkedCheckout = Boolean(mainCheckout && resolve(mainCheckout) !== resolve(checkout))
 const livePath = resolveHubDatabase(process.env)
 const legacyPath = mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.hubDatabase) : null
 export const DB_PATH = livePath
@@ -54,18 +55,50 @@ export function decideHubDatabasePath(
   return liveStore
 }
 
+function authorizedHubInstallation(): boolean {
+  return isAuthorizedPlatformInstallation(
+    checkout,
+    process.env,
+    Boolean(mainCheckout && resolve(mainCheckout) === resolve(checkout)),
+  )
+}
+
+export function missingHubDatabaseMessage(path = DB_PATH): string {
+  return (
+    `hub database does not exist: ${path}\n` +
+    'invariant: An absent HUB_DB path is a mistake, not a request to create a store.\n' +
+    'cleared by: unset HUB_DB to use the installation store, or name an existing database'
+  )
+}
+
+export function implicitHubDatabaseCreationRefusal(
+  explicitPath: boolean,
+  authorized: boolean,
+  linked = linkedCheckout,
+  path = DB_PATH,
+): string | null {
+  if (explicitPath) return missingHubDatabaseMessage(path)
+  if (linked) {
+    return (
+      `refusing to initialize the hub store from a linked worktree: ${path}\n` +
+      'invariant: A linked-worktree binary does not create the shared hub store.\n' +
+      'cleared by: run the command from the main checkout'
+    )
+  }
+  return authorized ? null : unauthorizedHubMigrationMessage(path)
+}
+
 let handle: Database | null = null
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 const writeDepth = new WeakMap<Database, number>()
 
-/** Refuse a query when there is no store to query; never manufacture an empty finding. */
+/** Ensure an ordinary store-needing command has a current, authorized store. */
 export function requireDatabase(): void {
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
-  if (!existsSync(DB_PATH)) {
-    throw new Error(`hub database is absent at ${DB_PATH}; cannot answer from missing data`)
-  }
+  if (existsSync(DB_PATH)) return
+  migrateDatabase()
 }
 
 export function closeDatabaseForFixture(): void {
@@ -164,18 +197,16 @@ export function migrateDatabase(): {
 } {
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
-  if (
-    !process.env.HUB_DB &&
-    !isAuthorizedPlatformInstallation(
-      checkout,
-      process.env,
-      Boolean(mainCheckout && resolve(mainCheckout) === resolve(checkout)),
-    )
-  ) {
+  const create = !existsSync(DB_PATH)
+  const creationRefusal = create
+    ? implicitHubDatabaseCreationRefusal(Boolean(process.env.HUB_DB), authorizedHubInstallation())
+    : null
+  if (creationRefusal) throw new Error(creationRefusal)
+  if (!create && !process.env.HUB_DB && !authorizedHubInstallation()) {
     throw new Error(unauthorizedHubMigrationMessage())
   }
-  mkdirSync(dirname(DB_PATH), { recursive: true })
-  const d = new Database(DB_PATH, { create: true })
+  if (create) mkdirSync(dirname(DB_PATH), { recursive: true })
+  const d = new Database(DB_PATH, { readwrite: true, create })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const repairCounts = () => {
