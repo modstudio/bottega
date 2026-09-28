@@ -31,7 +31,7 @@ test('a foreign open pull request is refused after the pushed tip is recorded', 
       port,
       noteFailure: async () => {},
     })
-    expect(result[0]?.text).toContain('refusing unowned pull request 99')
+    expect(result[0]?.text).toContain('refusing foreign pull request 99')
     expect(pushed).toBe(true)
   } finally {
     rmSync(root, { recursive: true, force: true })

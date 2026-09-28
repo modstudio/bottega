@@ -111,7 +111,7 @@ test('the merge freshness decision reads the live remote trunk', async () => {
       noteFailure: async () => {},
     })
     expect(liveReads).toBeGreaterThan(0)
-    expect(result[0]?.text).toContain('landing branch changed')
+    expect(result[0]?.text).toContain('left open')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
