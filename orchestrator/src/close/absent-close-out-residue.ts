@@ -12,13 +12,6 @@ type AbsentCloseOutInput = {
   dryRun: boolean
 }
 
-export function markResourceTeardownDone(runId: number, completed: boolean): void {
-  if (!completed) return
-  db()
-    .query("UPDATE run SET resource_teardown='done' WHERE id=? AND resource_teardown='pending'")
-    .run(runId)
-}
-
 export function decideAbsentCloseOutResidue(input: {
   outcome: AbsentCloseOutInput['outcome']
   dryRun: boolean

@@ -42,10 +42,7 @@ import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-h
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import {
-  markResourceTeardownDone,
-  releaseAbsentCloseOutResidue,
-} from './absent-close-out-residue.ts'
+import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import {
   absentTreeCloseOut,
   dryRunReleaseResult,
@@ -978,7 +975,6 @@ export function closeOutRun(
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
   const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
-  const resourceTeardownCompleted = result.resourceTeardownCompleted === true
   result.detail = releaseAbsentCloseOutResidue({
     runId: result.runId,
     outcome: result.outcome,
@@ -999,7 +995,6 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
-      markResourceTeardownDone(result.runId, resourceTeardownCompleted)
       if (
         result.worktree &&
         pointerMustClear(result.outcome, result.worktree) &&

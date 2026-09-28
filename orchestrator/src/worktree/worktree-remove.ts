@@ -203,6 +203,7 @@ function removeWithTool(
   if (w.branch) vars.branch = w.branch
   const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
+    markRecordedResourceTeardownDone(runId)
     const branchAfter = branchTip(w.repoRoot, w.branch)
     if (
       branchAfter !== null &&
@@ -410,7 +411,20 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
-function recordedAbsentTreeFacts(runId: number | undefined): {
+function markRecordedResourceTeardownDone(runId: number | undefined): void {
+  if (runId === undefined) return
+  writeTransaction(() => {
+    db()
+      .query(
+        `UPDATE run SET resource_teardown='done'
+         WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+           AND resource_teardown='pending'`,
+      )
+      .run(runId)
+  })
+}
+
+function recordedTeardownFacts(runId: number | undefined): {
   recipeSnapshot: string | null
   worktreeSource: Worktree['source'] | null
   resourceTeardown: 'pending' | 'done' | null
@@ -436,7 +450,7 @@ function recordedAbsentTreeFacts(runId: number | undefined): {
 
 /** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
 export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): boolean {
-  const facts = recordedAbsentTreeFacts(runId)
+  const facts = recordedTeardownFacts(runId)
   return absentTreeTeardownPlan({
     ...facts,
     registeredRemoveCommand: Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove),
@@ -449,7 +463,7 @@ function absentLifecycleRemoval(input: {
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult | null {
   if (existsSync(input.worktree.path)) return null
-  const facts = recordedAbsentTreeFacts(input.runId)
+  const facts = recordedTeardownFacts(input.runId)
   if (facts.resourceTeardown !== 'pending') return input.removeTree()
   if (!facts.recipeSnapshot) return null
   let teardownCompleted = false
@@ -477,6 +491,7 @@ function removeByLifecycle(input: {
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult {
   const { worktree, tool, runId, removeTree } = input
+  if (recordedTeardownFacts(runId).resourceTeardown === 'done') return removeTree()
   const absentRemoval = absentLifecycleRemoval({ worktree, runId, removeTree })
   if (absentRemoval) return absentRemoval
   if (worktree.source === 'readonly_recipe' || worktree.source === 'clone') {

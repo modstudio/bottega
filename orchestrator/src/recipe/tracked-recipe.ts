@@ -806,6 +806,9 @@ export function teardownTrackedRecipe(
         settledAt: nowIso(),
         detail: 'tracked recipe teardown completed',
       })
+      db()
+        .query("UPDATE run SET resource_teardown='done' WHERE id=? AND resource_teardown='pending'")
+        .run(owner.root_run_id)
     }
   })
   return input.remove()
