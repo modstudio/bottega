@@ -56,6 +56,7 @@ import {
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
+import { outboxQuarantineConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import type {
   AddressedMonitorCondition,
@@ -424,6 +425,8 @@ export async function monitor(
       action: `run orch abandon ${run.id} to close it, or orch continue ${run.id} to resume it; an intent decision`,
       ownerSession: run.session_id,
     })
+
+  conditions.push(...outboxQuarantineConditions(database))
 
   conditions.push(...abandonedBootstrapConditions(clock))
   conditions.push(...deadRunningProcessConditions(clock))

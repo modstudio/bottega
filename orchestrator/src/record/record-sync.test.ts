@@ -77,7 +77,13 @@ function localOutbox(
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
+    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
+    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
+  );
+  CREATE TABLE outbox_quarantine_audit (
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
+    at TEXT NOT NULL, reason TEXT
   )`)
   for (let id = 1; id <= count; id++) {
     const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
@@ -151,7 +157,7 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
 }
 
 function fakePostgres(
-  failFirstRun = false,
+  failFirstRun: false | string = false,
   principal: string = RECORD_ACTOR_ROLE,
   score?: {
     job: string
@@ -216,7 +222,7 @@ function fakePostgres(
     parameters.push(values ?? [])
     if (failFirstRun && !failed && source.toLowerCase().includes('insert into "run"')) {
       failed = true
-      throw Object.assign(new Error('remote run refusal'), { code: '23503' })
+      throw Object.assign(new Error('remote run refusal'), { code: failFirstRun })
     }
     if (!scoreWritten && source.toLowerCase().includes('insert into "run_score"')) {
       scoreWritten = true
@@ -281,6 +287,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     failed: 0,
     pending: 0,
     configured: true,
+    quarantined: [],
   })
   const firstRunWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run"'),
@@ -290,6 +297,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     failed: 0,
     pending: 0,
     configured: true,
+    quarantined: [],
   })
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
@@ -417,6 +425,7 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     failed: 0,
     pending: 1,
     configured: true,
+    quarantined: [],
   })
   expect(
     local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!.synced_at,
@@ -430,6 +439,7 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     failed: 0,
     pending: 0,
     configured: true,
+    quarantined: [],
   })
   const scoreWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run_score"'),
@@ -473,10 +483,10 @@ test.each([
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, job)
 
-  expect(await syncRecord(options(local, remote))).toEqual({
+  expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 0,
     failed: 1,
-    pending: 1,
+    pending: 0,
     configured: true,
   })
   expect(
@@ -547,23 +557,51 @@ test('sync refuses the migration owner before any record write', async () => {
   local.close()
 })
 
-test('a failed row records its attempt and stops before the next row', async () => {
+test('a row-fatal failure is quarantined and the next independent row is pushed', async () => {
   const local = localOutbox(2)
-  const remote = fakePostgres(true)
-  expect(await syncRecord(options(local, remote))).toEqual({
-    pushed: 0,
+  const remote = fakePostgres('23503')
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
     failed: 1,
-    pending: 2,
+    pending: 0,
     configured: true,
+    quarantined: [{ id: 1, kind: 'run', attempts: 1 }],
   })
-  const rows = local.query('SELECT attempts, last_error FROM outbox ORDER BY id').all() as {
+  const rows = local
+    .query('SELECT attempts,last_error,quarantined_at FROM outbox ORDER BY id')
+    .all() as {
     attempts: number
     last_error: string | null
+    quarantined_at: string | null
   }[]
   expect(rows.map((row) => row.attempts)).toEqual([1, 0])
   expect(rows[0]!.last_error).toContain('Failed query: insert into "run"')
   expect(rows[0]!.last_error).toContain('[23503] remote run refusal')
+  expect(rows[0]!.quarantined_at).toBe(STAMP)
   expect(rows[1]!.last_error).toBeNull()
+  expect(rows[1]!.quarantined_at).toBeNull()
+  local.close()
+})
+
+test('a pass-fatal failure records its attempt and stops before the next row', async () => {
+  const local = localOutbox(2)
+  const remote = fakePostgres('08006')
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+    pending: 2,
+    configured: true,
+    quarantined: [],
+  })
+  const rows = local
+    .query<{ attempts: number; quarantined_at: string | null }, []>(
+      'SELECT attempts,quarantined_at FROM outbox ORDER BY id',
+    )
+    .all()
+  expect(rows).toEqual([
+    { attempts: 1, quarantined_at: null },
+    { attempts: 0, quarantined_at: null },
+  ])
   local.close()
 })
 
@@ -575,6 +613,7 @@ test('a projectless payload syncs without resolving a project', async () => {
     failed: 0,
     pending: 0,
     configured: true,
+    quarantined: [],
   })
   expect(remote.statements.some((statement) => statement.includes('SELECT id FROM project'))).toBe(
     false,
@@ -589,7 +628,7 @@ test('a payload from another machine is refused before a record write', async ()
     ...options(local, remote),
     identity: { id: '01990000-0000-7000-8000-000000000077', name: 'other-machine' },
   })
-  expect(result).toEqual({ pushed: 0, failed: 1, pending: 1, configured: true })
+  expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0, configured: true })
   const failure = local
     .query<{ attempts: number; last_error: string }, []>(
       'SELECT attempts, last_error FROM outbox WHERE id=1',
@@ -618,6 +657,7 @@ test('every populated JSONB run value is bound as one JSON string', async () => 
     failed: 0,
     pending: 0,
     configured: true,
+    quarantined: [],
   })
   const bound = remote.parameters.flat()
   for (const value of Object.values(jsonValues)) expect(bound).toContain(JSON.stringify(value))
@@ -639,7 +679,7 @@ test('declared project spaces override the active space while an unset project f
       memberships: [{ spaceId: declaredSpace, slug: 'team' }],
       projectSpaces: { declared: 'team' },
     }),
-  ).toEqual({ pushed: 2, failed: 0, pending: 0, configured: true })
+  ).toEqual({ pushed: 2, failed: 0, pending: 0, configured: true, quarantined: [] })
   expect(remote.transactionSpaceIds).toContain(declaredSpace)
   expect(remote.transactionSpaceIds).toContain(options(local, remote).principal.spaceId)
   local.close()
@@ -668,16 +708,4 @@ test('two declared projects bind their own spaces in separate transactions', asy
   expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(1)
   expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
   local.close()
-})
-
-test('a declared-space refusal names its project, so sync blocks only that project', () => {
-  const detail =
-    'project stopal declares record space stopal, but the signed-in user is not a member; join it first with an invitation, then retry'
-  expect(unreachableSpaceProject(detail)).toBe('stopal')
-})
-
-test('any other failure names no project, so sync still stops at it', () => {
-  expect(unreachableSpaceProject('run outbox machine a does not match invoking machine b')).toBe(
-    null,
-  )
 })

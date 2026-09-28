@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   localQuestionCountForSpace,
+  outboxQuarantineCheck,
   recordDoctorExitCode,
   redactRecordPasswords,
   unattributedShare,
@@ -29,6 +30,23 @@ describe('record doctor decisions', () => {
   test('reports unattributed rows rather than presenting a clean estate', () => {
     expect(unattributedShare(3, 4)).toBe('3/4 (75.0%) unattributed')
     expect(unattributedShare(0, 0)).toBe('0/0 (0.0%) unattributed')
+  })
+
+  test('fails while an outbox row is quarantined', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,quarantined_at,quarantine_reason)
+         VALUES (12,'score','record-12','{}','2026-09-28','2026-09-28','verdict refused')`,
+      )
+      .run()
+    const check = outboxQuarantineCheck(database)
+    expect(check).toMatchObject({ name: 'outbox quarantine is empty', status: 'fail' })
+    expect(check.detail).toContain('12 score')
+    expect(recordDoctorExitCode([check])).toBe(1)
+    database.close()
   })
 
   test('counts synced questions for projects whose effective space is active', () => {

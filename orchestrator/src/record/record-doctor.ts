@@ -11,6 +11,7 @@ import {
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { machineId } from './machine-identity.ts'
+import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
@@ -25,6 +26,17 @@ export type RecordDoctorCheck = {
 
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
+}
+
+export function outboxQuarantineCheck(database: Database): RecordDoctorCheck {
+  const rows = quarantinedOutboxRows(database)
+  return rows.length
+    ? {
+        name: 'outbox quarantine is empty',
+        status: 'fail',
+        detail: `${rows.length} quarantined: ${rows.map((row) => `${row.id} ${row.kind}`).join(', ')}; run \`orch record outbox retry <row-id>\` or \`orch record outbox retire <row-id> --reason <text>\``,
+      }
+    : { name: 'outbox quarantine is empty', status: 'pass' }
 }
 
 export function unattributedShare(missing: number, total: number): string {
@@ -144,6 +156,7 @@ export async function diagnoseRecord(
   const migrateUrl = input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL
   const urls = [recordUrl, migrateUrl].filter((url): url is string => Boolean(url))
   const checks: RecordDoctorCheck[] = []
+  checks.push(outboxQuarantineCheck(db()))
   const run = async <T>(name: string, action: () => Promise<T>): Promise<T | undefined> => {
     try {
       const result = await action()
