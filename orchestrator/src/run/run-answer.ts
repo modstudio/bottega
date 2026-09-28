@@ -43,6 +43,7 @@ import {
   runMutationActor,
 } from './run-authority.ts'
 import {
+  continuationInstructionsForFreshRetry,
   continueRun,
   follow,
   type RunControlPresentation,
@@ -52,7 +53,6 @@ import {
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
 import {
-  type ContinuationInstruction,
   decideRetryConversation,
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
@@ -210,85 +210,6 @@ function latestRetryTurn(
     `run ${id} is asking with open questions: ${questions.map((q) => `q${q.id}: ${q.question}`).join('; ')}. ` +
       `Answer them, or orch abandon ${id}`,
   )
-}
-
-export function continuationInstructionsForFreshRetry(
-  writesRepo: boolean,
-  requestedId: number,
-  rootId: number,
-): ContinuationInstruction[] {
-  if (!writesRepo || requestedId !== rootId) return []
-  const turns = db()
-    .query(
-      `SELECT id, started_at
-         FROM run
-        WHERE parent_run_id = ?
-        ORDER BY turn, id`,
-    )
-    .all(rootId) as { id: number; started_at: string }[]
-  const audits = db()
-    .query(
-      `SELECT rowid, turn_id, action, at, reason
-         FROM run_mutation_audit
-        WHERE root_id = ? AND action IN ('answer', 'continue', 'retry')
-        ORDER BY at, rowid`,
-    )
-    .all(rootId) as {
-    rowid: number
-    turn_id: number | null
-    action: 'answer' | 'continue' | 'retry'
-    at: string
-    reason: string | null
-  }[]
-  const claimed = new Set<number>()
-  const attributed: {
-    id: number
-    rowid: number
-    action: 'answer' | 'continue' | 'retry'
-    at: string
-    reason: string | null
-  }[] = []
-  const refuse = (turnId: number): never => {
-    throw new Error(
-      `run ${rootId} continuation turn ${turnId} has no recoverable continue instructions. ` +
-        `Re-send the instructions with orch continue ${rootId} --file <spec>, ` +
-        `or pass orch retry ${turnId} for that turn directly.`,
-    )
-  }
-  for (const turn of turns) {
-    const identified = audits.filter((audit) => audit.turn_id === turn.id)
-    const identifiedRetries = identified.filter((audit) => audit.action === 'retry')
-    const identifiedAnswers = identified.filter((audit) => audit.action === 'answer')
-    const identifiedContinues = identified.filter((audit) => audit.action === 'continue')
-    if (
-      identifiedRetries.length > 1 ||
-      (!identifiedRetries.length && identifiedAnswers.length > 1) ||
-      (!identifiedRetries.length && !identifiedAnswers.length && identifiedContinues.length > 1)
-    ) {
-      refuse(turn.id)
-    }
-    let audit = identifiedRetries[0] ?? identifiedAnswers[0] ?? identifiedContinues[0]
-    if (!audit) {
-      const startedAt = Date.parse(turn.started_at)
-      const candidates = audits.filter(
-        (candidate) =>
-          candidate.turn_id === null &&
-          !claimed.has(candidate.rowid) &&
-          Math.abs(Date.parse(candidate.at) - startedAt) <= 10_000,
-      )
-      if (candidates.length !== 1) refuse(turn.id)
-      audit = candidates[0]!
-    }
-    claimed.add(audit.rowid)
-    attributed.push({ id: turn.id, ...audit })
-  }
-  return attributed
-    .sort((left, right) => left.at.localeCompare(right.at) || left.rowid - right.rowid)
-    .flatMap((turn) => {
-      return turn.action === 'continue' && turn.reason
-        ? [{ turnId: turn.id, at: turn.at, instructions: turn.reason }]
-        : []
-    })
 }
 
 export async function retryRun(

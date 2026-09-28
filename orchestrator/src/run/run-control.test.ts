@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
@@ -173,5 +173,33 @@ describe('run continuation', () => {
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root)).toEqual({
       n: 0,
     })
+  })
+
+  test('vendor-session continuation does not recover prior instructions', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      session: 'orch-test-session',
+    })
+    const prior = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      parent: root,
+      turn: 2,
+      session: 'orch-test-session',
+    })
+    db()
+      .query('UPDATE run SET vendor_session=? WHERE id IN (?,?)')
+      .run('vendor-session', root, prior)
+
+    const resumed = await continueRun(root, 'vendor-session message', limit)
+    const artifact = db().query('SELECT prompt_path FROM run WHERE id=?').get(resumed.childId) as {
+      prompt_path: string
+    }
+
+    trackResidue(artifact.prompt_path)
+    expect(readFileSync(artifact.prompt_path, 'utf8')).toBe('vendor-session message')
   })
 })
