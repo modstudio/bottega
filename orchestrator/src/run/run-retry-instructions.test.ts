@@ -1,11 +1,99 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { continuationInstructionsForFreshRetry } from './run-answer.ts'
+import { continuationInstructionsForFreshRetry } from './run-control.ts'
+import { renderCheckpointContinuationPrompt } from './run-retry.ts'
 
 const failedRoot = () => addRun({ agent: 'grok', job: 'implement', status: 'failed' })
 
 describe('fresh retry continuation recovery', () => {
+  test('checkpoint continuation carries earlier instructions before the new message exactly once', () => {
+    const id = failedRoot()
+    const first = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 2,
+    })
+    const second = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 3,
+    })
+    const insertAudit = db().query(
+      `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    insertAudit.run(id, id, first, 'continue', '2026-09-25T10:00:00.000Z', 'first instruction')
+    insertAudit.run(id, id, second, 'continue', '2026-09-25T11:00:00.000Z', 'second instruction')
+
+    const prompt = renderCheckpointContinuationPrompt({
+      checkpointContext: 'CHECKPOINT RESUME\nResume at abc.',
+      originalSpec: 'ROOT SPEC',
+      continuationInstructions: continuationInstructionsForFreshRetry(true, id, id),
+      message: 'new instruction',
+    })
+
+    expect(prompt).toBe(
+      'CHECKPOINT RESUME\nResume at abc.\n\n' +
+        'ROOT SPEC\n\n' +
+        'INSTRUCTIONS GIVEN SINCE THE ORIGINAL SPEC\n\n' +
+        `Turn ${first} at 2026-09-25T10:00:00.000Z:\nfirst instruction\n\n` +
+        `Turn ${second} at 2026-09-25T11:00:00.000Z:\nsecond instruction\n\n` +
+        'new instruction',
+    )
+    expect(prompt.split('new instruction')).toHaveLength(2)
+  })
+
+  test('message-less same-agent retry carries earlier instructions', () => {
+    const id = failedRoot()
+    const first = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 2,
+    })
+    const second = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'failed',
+      parent: id,
+      turn: 3,
+    })
+    const insertAudit = db().query(
+      `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    insertAudit.run(id, id, first, 'continue', '2026-09-25T10:00:00.000Z', 'first instruction')
+    insertAudit.run(id, id, second, 'continue', '2026-09-25T11:00:00.000Z', 'second instruction')
+
+    const prompt = renderCheckpointContinuationPrompt({
+      checkpointContext: 'CHECKPOINT RESUME',
+      originalSpec: 'ROOT SPEC',
+      continuationInstructions: continuationInstructionsForFreshRetry(true, id, id),
+      message: undefined,
+    })
+
+    expect(prompt).toContain('first instruction')
+    expect(prompt).toContain('second instruction')
+    expect(prompt.endsWith('second instruction')).toBe(true)
+  })
+
+  test('checkpoint continuation without earlier instructions renders as before', () => {
+    expect(
+      renderCheckpointContinuationPrompt({
+        checkpointContext: 'CHECKPOINT RESUME',
+        originalSpec: 'ROOT SPEC',
+        continuationInstructions: [],
+        message: 'new instruction',
+      }),
+    ).toBe('CHECKPOINT RESUME\n\nROOT SPEC\n\nnew instruction')
+  })
+
   test('recovers the real 6442 chain with legacy audits on both sides of start', () => {
     const id = failedRoot()
     const turn6445 = addRun({

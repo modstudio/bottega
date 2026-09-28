@@ -49,6 +49,35 @@ export type ContinuationInstruction = {
   instructions: string
 }
 
+function renderContinuationInstructions(instructions: ContinuationInstruction[]): string | null {
+  if (!instructions.length) return null
+  return [
+    'INSTRUCTIONS GIVEN SINCE THE ORIGINAL SPEC',
+    '',
+    ...instructions.flatMap((instruction, index) => [
+      ...(index ? [''] : []),
+      `Turn ${instruction.turnId} at ${instruction.at}:`,
+      instruction.instructions,
+    ]),
+  ].join('\n')
+}
+
+export function renderCheckpointContinuationPrompt(input: {
+  checkpointContext: string
+  originalSpec: string
+  continuationInstructions: ContinuationInstruction[]
+  message: string | undefined
+}): string {
+  return [
+    input.checkpointContext,
+    input.originalSpec,
+    renderContinuationInstructions(input.continuationInstructions),
+    input.message,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('\n\n')
+}
+
 /** Pure post-lock decision: all facts must still describe the validated retained tree. */
 export function atomicRetryReuseDecision(input: {
   pathExists: boolean
@@ -78,17 +107,7 @@ export function renderWritingRetryPrompt(input: {
   commit: string
   taskPointer: string | null
 }): string {
-  const continuationInstructions = input.continuationInstructions.length
-    ? [
-        'INSTRUCTIONS GIVEN SINCE THE ORIGINAL SPEC',
-        '',
-        ...input.continuationInstructions.flatMap((instruction, index) => [
-          ...(index ? [''] : []),
-          `Turn ${instruction.turnId} at ${instruction.at}:`,
-          instruction.instructions,
-        ]),
-      ].join('\n')
-    : null
+  const continuationInstructions = renderContinuationInstructions(input.continuationInstructions)
   const previousAttempt = [
     'PREVIOUS ATTEMPT',
     '',
