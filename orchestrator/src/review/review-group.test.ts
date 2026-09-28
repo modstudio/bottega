@@ -1,10 +1,12 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { db } from '../database/db.ts'
-import { measureChangeGroup, reviewsForChangeGroup } from './review-group.ts'
+import { applyMigrations } from '../database/migrations.ts'
+import { measureChangeGroup, reviewsForTriage } from './review-group.ts'
 import type { ReviewTier } from './review-tier.ts'
 
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
-  const database = db()
+  const database = new Database(':memory:')
+  applyMigrations(database)
   const run = database
     .query<{ id: number }, []>(
       `INSERT INTO run
@@ -28,20 +30,20 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
     .run(review.id, run.id)
 
   expect(
-    reviewsForChangeGroup(database, {
+    reviewsForTriage(database, {
       project: 'fixture',
       branch: 'DEV-977',
       patchId: 'stable-patch',
       pathSet: ['a.ts'],
-    }),
+    }).reviews,
   ).toHaveLength(1)
   expect(
-    reviewsForChangeGroup(database, {
+    reviewsForTriage(database, {
       project: 'fixture',
       branch: 'DEV-977',
       patchId: 'changed-patch',
       pathSet: ['a.ts'],
-    }),
+    }).reviews,
   ).toEqual([])
 })
 

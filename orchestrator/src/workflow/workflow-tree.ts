@@ -115,6 +115,11 @@ function record(value: unknown, path: string): Record<string, unknown> {
   throw new Error(`${path}: YAML front matter must be an object`)
 }
 
+const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.expectedStatus === undefined
+    ? {}
+    : { expectedStatus: frontMatter.expectedStatus as string }
+
 export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   const steps: CatalogueStep[] = []
   const workflows: WorkflowTreeStore['workflows'] = []
@@ -132,9 +137,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         ...(frontMatter.deferrable === undefined
           ? {}
           : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
-        ...(frontMatter.expectedStatus === undefined
-          ? {}
-          : { expectedStatus: frontMatter.expectedStatus as string }),
+        ...expectedStatusFrom(frontMatter),
         ...(frontMatter.requirePullRequest === undefined
           ? {}
           : { requirePullRequest: frontMatter.requirePullRequest === true }),

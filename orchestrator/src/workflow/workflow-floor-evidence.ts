@@ -474,17 +474,22 @@ function gatherTask(
   const task = readTask(key)
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null
-  const view =
-    number === null
-      ? null
-      : (ports.viewPullRequest ?? productionFloorPorts().viewPullRequest)?.(
-          identity.project,
-          number,
-        )
+  let mergedPullRequest = false
+  if (number !== null) {
+    try {
+      const view = (ports.viewPullRequest ?? productionFloorPorts().viewPullRequest)?.(
+        identity.project,
+        number,
+      )
+      mergedPullRequest = view?.state === 'MERGED'
+    } catch {
+      mergedPullRequest = false
+    }
+  }
   return {
     key: task.key,
     status: task.status,
-    mergedPullRequest: Boolean(view && (view.state === 'MERGED' || view.mergedAt !== null)),
+    mergedPullRequest,
   }
 }
 

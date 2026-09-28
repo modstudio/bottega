@@ -119,8 +119,14 @@ export function measureChangeGroup(
   }
 }
 
-export function reviewsForChangeGroup(database: Database, group: ChangeGroup): TriageReviewRow[] {
-  return reviewsForTriage(database, group).reviews
+function reviewsForChangeGroup(
+  branchReviews: readonly TriageReviewRow[],
+  group: ChangeGroup,
+): TriageReviewRow[] {
+  const pathSet = serializePathSet(group.pathSet)
+  return branchReviews.filter(
+    (review) => review.patchId === group.patchId && review.pathSet === pathSet,
+  )
 }
 
 export function reviewsForTriage(
@@ -128,21 +134,14 @@ export function reviewsForTriage(
   group: ChangeGroup,
 ): { reviews: TriageReviewRow[]; branchReviews: TriageReviewRow[] } {
   const branchReviews = reviewsForBranch(database, group.project, group.branch)
-  const pathSet = serializePathSet(group.pathSet)
   return {
     branchReviews,
-    reviews: branchReviews.filter(
-      (review) => review.patchId === group.patchId && review.pathSet === pathSet,
-    ),
+    reviews: reviewsForChangeGroup(branchReviews, group),
   }
 }
 
 /** All review rounds recorded by runs on a branch, newest first. */
-export function reviewsForBranch(
-  database: Database,
-  project: string,
-  branch: string,
-): TriageReviewRow[] {
+function reviewsForBranch(database: Database, project: string, branch: string): TriageReviewRow[] {
   const rows = database
     .query<
       {

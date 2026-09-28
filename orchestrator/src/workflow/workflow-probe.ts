@@ -8,9 +8,8 @@ import { join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { type Project, projectAt } from '../project/projects.ts'
 import {
-  probeSandboxProfile,
+  probeSandboxProfileForCwd,
   resetSandbox,
   SRT_LIBRARY,
   sandboxLaunchArgv,
@@ -38,7 +37,7 @@ function probeEnv(scratch: string): NodeJS.ProcessEnv {
 async function sandboxedRunner(
   command: string[],
   cwd: string,
-  project: Project,
+  database: Database,
 ): Promise<{
   exitCode: number
   output: string
@@ -53,7 +52,7 @@ async function sandboxedRunner(
     let launch: string[]
     try {
       launch = await sandboxLaunchArgv(
-        probeSandboxProfile({ allowWriteDir: scratch, cwd, project }),
+        probeSandboxProfileForCwd({ allowWriteDir: scratch, cwd, database }),
         command[0]!,
         command.slice(1),
       )
@@ -92,11 +91,11 @@ export async function recordWorkflowProbe(
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error('orch workflow probe needs a command after --')
   const cwd = input.cwd ?? process.cwd()
-  const project = projectAt(cwd, input.d ?? db())
-  if (!project) throw new Error(`orch workflow probe: no registered project contains ${cwd}`)
+  const database = input.d ?? db()
+  probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
   const ran = input.runner
     ? input.runner({ command, cwd })
-    : await sandboxedRunner(command, cwd, project)
+    : await sandboxedRunner(command, cwd, database)
   const commandJson = JSON.stringify(command)
   const withheld = containsSecretShaped(commandJson) || containsSecretShaped(ran.output)
   const storedCommand = containsSecretShaped(commandJson) ? PROBE_WITHHELD : commandJson

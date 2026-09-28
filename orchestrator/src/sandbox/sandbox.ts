@@ -22,7 +22,7 @@ import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/con
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
-import type { Project } from '../project/projects.ts'
+import { type Project, projectAt } from '../project/projects.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -306,6 +306,20 @@ export function probeSandboxProfile(input: {
       denyWrite: [],
     },
   }
+}
+
+export function probeSandboxProfileForCwd(input: {
+  allowWriteDir: string
+  cwd: string
+  database: Parameters<typeof projectAt>[1]
+}): SandboxRuntimeConfig {
+  const project = projectAt(input.cwd, input.database)
+  if (!project) throw new Error(`orch workflow probe: no registered project contains ${input.cwd}`)
+  return probeSandboxProfile({
+    allowWriteDir: input.allowWriteDir,
+    cwd: input.cwd,
+    project,
+  })
 }
 
 export type SandboxSelection = {
