@@ -24,7 +24,7 @@ import {
   reviewRead as reviewReadRecord,
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
-import { run as runRecord, runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
+import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
@@ -44,7 +44,6 @@ import {
 } from '../run/question-outbox.ts'
 import { backfillRunRecords, RUN_RECORD_PAYLOAD_CONTRACT } from '../run/run-outbox.ts'
 import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_CONTRACT } from '../score/score-outbox.ts'
-import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import {
   backfillLandingEvidenceRecords,
@@ -75,7 +74,7 @@ import type {
   RecordSyncOptions,
   RecordSyncResult,
 } from './record-sync-types.ts'
-import { validateRecordVerdict } from './record-verdicts.ts'
+import { pushScore } from './score-sync.ts'
 
 export type { RecordSyncOptions, RecordSyncResult } from './record-sync-types.ts'
 
@@ -303,21 +302,6 @@ function runValues(row: Payload, projectId: string | null) {
     closeOutDetail: nullableString(row.closeOutDetail),
     withheldFields: jsonString(row.withheldFields),
     createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
-  }
-}
-
-function scoreValues(row: VerdictPayload) {
-  return {
-    runId: String(row.id),
-    spaceId: String(row.spaceId),
-    delivery: String(row.delivery),
-    quality: nullableString(row.quality),
-    fidelity: nullableString(row.fidelity),
-    note: nullableString(row.note),
-    scoredAt: date(row.scoredAt),
-    scoredBy: String(row.scoredBy),
-    withheldFields: jsonString(row.withheldFields),
     updatedAt: date(row.updatedAt),
   }
 }
@@ -707,14 +691,7 @@ const recordKinds = {
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const verdict = VERDICT_PAYLOAD_SCHEMA.parse(row)
-        await validateRecordVerdict(tx, verdict)
-        const values = scoreValues(verdict)
-        const { runId: _runId, ...updates } = values
-        await drizzle({ client: tx })
-          .insert(runScoreRecord)
-          .values(values)
-          .onConflictDoUpdate({ target: runScoreRecord.runId, set: updates })
+        await pushScore(tx, row)
       }),
   },
   question: {
