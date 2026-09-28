@@ -257,6 +257,29 @@ function setRunTerminal(runId: number, started: number, error?: string): void {
     .run(error ? 'failed' : 'ok', Date.now() - started, error ? 1 : 0, error ?? null, runId)
 }
 
+function releaseLifecycle(
+  port: CanonMirrorPort,
+  runId: number,
+  started: number,
+  outcome: MirrorResult | null,
+): void {
+  let cleanupFailure: string | null = null
+  try {
+    const closed = port.releaseRun(runId)
+    if (!['released', 'absent'].includes(closed.outcome)) {
+      cleanupFailure = `canon mirror cleanup ${closed.outcome}: ${closed.detail}`
+    }
+  } catch (cause) {
+    cleanupFailure = `canon mirror cleanup failed: ${cause instanceof Error ? cause.message : String(cause)}`
+  }
+  if (!cleanupFailure) return
+  setRunTerminal(runId, started, cleanupFailure)
+  if (outcome) {
+    outcome.failed = true
+    outcome.text = `failed, ${cleanupFailure}`
+  }
+}
+
 async function mirrorProject(
   project: Project,
   dryRun: boolean,
@@ -358,24 +381,7 @@ async function mirrorProject(
   } finally {
     lease.release()
     lease = null as never
-    let cleanupFailure: string | null = null
-    try {
-      const closed = port.releaseRun(runId)
-      if (!['released', 'absent'].includes(closed.outcome)) {
-        cleanupFailure = `canon mirror cleanup ${closed.outcome}: ${closed.detail}`
-      }
-    } catch (cause) {
-      cleanupFailure = `canon mirror cleanup failed: ${cause instanceof Error ? cause.message : String(cause)}`
-    }
-    if (cleanupFailure) {
-      const detail = cleanupFailure
-      setRunTerminal(runId, started, detail)
-      const reported = outcome as MirrorResult | null
-      if (reported) {
-        reported.failed = true
-        reported.text = `failed, ${detail}`
-      }
-    }
+    releaseLifecycle(port, runId, started, outcome)
   }
 }
 
