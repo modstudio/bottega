@@ -389,6 +389,28 @@ test('an absent attached tree does not run its registered remove command', () =>
   }
 })
 
+test('an absent recipe tree runs its registered remove command without Git removal', () => {
+  const fixture = absentRecipeFixture()
+  db().query('UPDATE run SET recipe_snapshot=NULL WHERE id=?').run(fixture.id)
+  upsertProject({
+    name: `absent-recipe-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },
+  })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(true)
+    expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
 test('a live sharer blocks absent-tree recipe teardown', () => {
   const fixture = absentRecipeFixture()
   const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
