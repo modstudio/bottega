@@ -44,6 +44,7 @@ export type VerdictPayload = VerdictInput & {
   projectName: string | null
   machineId: string
   localId: number
+  withheldFields?: string[] | null
   updatedAt: string
 }
 
@@ -66,6 +67,7 @@ export const VERDICT_PAYLOAD_SCHEMA = VERDICT_INPUT_SCHEMA.extend({
   projectName: z.string().nullable(),
   machineId: z.string(),
   localId: z.number().int(),
+  withheldFields: z.array(z.string()).nullable(),
   updatedAt: z.string().datetime({ offset: true }),
 }) satisfies z.ZodType<VerdictPayload>
 
@@ -85,5 +87,6 @@ export const VERDICT_PAYLOAD_COLUMNS = [
   'coverage',
   'limits',
   'overlap',
+  'withheldFields',
   'updatedAt',
 ] as const satisfies readonly (keyof VerdictPayload)[]

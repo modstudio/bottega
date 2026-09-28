@@ -2,6 +2,7 @@
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 
 export const RUN_RECORD_PAYLOAD_COLUMNS = [
@@ -66,12 +67,18 @@ export const RUN_RECORD_PAYLOAD_COLUMNS = [
   'workPreserved',
   'closeOutOutcome',
   'closeOutDetail',
+  'withheldFields',
   'createdAt',
   'updatedAt',
 ] as const
 export const RUN_RECORD_PAYLOAD_CONTRACT = {
   columns: RUN_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { startedByUserId: null, taskKey: null, evidenceUnvoid: null },
+  laterAdded: {
+    startedByUserId: null,
+    taskKey: null,
+    evidenceUnvoid: null,
+    withheldFields: null,
+  },
 } as const
 
 type LocalRun = Record<string, unknown> & {
@@ -201,18 +208,21 @@ export function enqueueRunRecord(
   if (row.parent_run_id !== null && row.parent_record_id === null) {
     throw new Error(`run ${runId} has parent_run_id ${row.parent_run_id} without a record id`)
   }
-  const payload = buildRunRecordPayload(
-    { ...row, record_id: row.record_id },
-    machineId,
-    finishedAt,
-    evidenceUnvoid,
+  const payload = stringifyOutboxPayload(
+    'run',
+    buildRunRecordPayload(
+      { ...row, record_id: row.record_id },
+      machineId,
+      finishedAt,
+      evidenceUnvoid,
+    ),
   )
   database
     .query(
       `INSERT INTO outbox (kind, record_id, payload, created_at)
        VALUES ('run', ?, ?, ?)`,
     )
-    .run(row.record_id, JSON.stringify(payload), finishedAt)
+    .run(row.record_id, payload, finishedAt)
 }
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
