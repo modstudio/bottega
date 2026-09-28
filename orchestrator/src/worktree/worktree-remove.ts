@@ -81,22 +81,20 @@ function teardownBuiltInRecipe(
     if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
   }
   const firstFailure = teardown.find((step) => !step.ok)
-  if (!recipe.database || recipe.database.kind === 'none') {
-    return firstFailure
-      ? { ok: false, step: firstFailure.step, detail: firstFailure.detail }
-      : { ok: true }
-  }
-  const provider = recipe.database.kind
-  const databaseDropped = databaseDroppedByTeardown(provider, teardown)
   writeTransaction(() => {
-    settleDatabaseClaim(db(), {
-      allocationKey: `${provider}:${dbName}`,
-      databaseDropped,
-      settledAt: nowIso(),
-      detail: databaseDropped
-        ? `${provider} teardown released ${dbName}`
-        : `${provider} teardown failed; ${dbName} retained`,
-    })
+    if (recipe.database && recipe.database.kind !== 'none') {
+      const provider = recipe.database.kind
+      const databaseDropped = databaseDroppedByTeardown(provider, teardown)
+      settleDatabaseClaim(db(), {
+        allocationKey: `${provider}:${dbName}`,
+        databaseDropped,
+        settledAt: nowIso(),
+        detail: databaseDropped
+          ? `${provider} teardown released ${dbName}`
+          : `${provider} teardown failed; ${dbName} retained`,
+      })
+    }
+    if (!firstFailure) setRecordedResourceTeardownDone(runId)
   })
   return firstFailure
     ? { ok: false, step: firstFailure.step, detail: firstFailure.detail }
@@ -411,17 +409,19 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
+function setRecordedResourceTeardownDone(runId: number): void {
+  db()
+    .query(
+      `UPDATE run SET resource_teardown='done'
+       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         AND resource_teardown='pending'`,
+    )
+    .run(runId)
+}
+
 function markRecordedResourceTeardownDone(runId: number | undefined): void {
   if (runId === undefined) return
-  writeTransaction(() => {
-    db()
-      .query(
-        `UPDATE run SET resource_teardown='done'
-         WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
-           AND resource_teardown='pending'`,
-      )
-      .run(runId)
-  })
+  writeTransaction(() => setRecordedResourceTeardownDone(runId))
 }
 
 function recordedTeardownFacts(runId: number | undefined): {

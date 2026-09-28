@@ -275,6 +275,55 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
   }
 })
 
+test('present-tree inline-recipe teardown stays done when Git removal fails and is not repeated', () => {
+  const fixture = closeOutFixture('owned')
+  upsertProject({
+    name: `close-out-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { recipe: { stop: 'inline-stop-marker' } } },
+  })
+  db()
+    .query("UPDATE run SET worktree_source='recipe',resource_teardown='pending' WHERE id=?")
+    .run(fixture.id)
+  const commands: string[] = []
+  const head = '1234567890abcdef1234567890abcdef12345678'
+  const branch = `DEV-647-orch-${fixture.id}`
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    const rawArgs = command[0] === 'git' ? command.slice(1) : command
+    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    commands.push(args.join(' '))
+    if (args.join(' ') === 'sh -c inline-stop-marker') return spawnResult()
+    if (args[0] === 'worktree' && args[1] === 'remove') return spawnResult('', 1)
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
+    if (args.includes('--is-inside-work-tree')) return spawnResult('true')
+    if (args[0] === 'worktree' && args[1] === 'list') {
+      return spawnResult(`worktree ${fixture.tree}\nbranch refs/heads/${branch}\n`)
+    }
+    if (args[0] === 'symbolic-ref') return spawnResult(branch)
+    if (args[0] === 'diff') return spawnResult()
+    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
+    if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
+      return spawnResult(head)
+    }
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect(commands.filter((command) => command === 'sh -c inline-stop-marker')).toHaveLength(1)
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
 test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
   const fixture = closeOutFixture('owned', false, 'becomes-dirty')
   try {
