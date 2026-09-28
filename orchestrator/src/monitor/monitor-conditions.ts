@@ -911,6 +911,27 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
   return { conditions, errors }
 }
 
+type TerminalConversationTurn = {
+  started_at: string
+  latency_ms: number | null
+  last_event_at: string | null
+}
+
+/** Last-turn terminal time: started_at plus latency_ms, else last_event_at, else started_at. */
+export function terminalConversationTime(turn: TerminalConversationTurn): string | null {
+  const startedAt = Date.parse(turn.started_at)
+  const startedValid = Number.isFinite(startedAt)
+  if (startedValid && turn.latency_ms !== null && Number.isFinite(turn.latency_ms)) {
+    return new Date(startedAt + turn.latency_ms).toISOString()
+  }
+  if (turn.last_event_at !== null) {
+    const lastEventAt = Date.parse(turn.last_event_at)
+    if (Number.isFinite(lastEventAt)) return new Date(lastEventAt).toISOString()
+  }
+  if (startedValid) return new Date(startedAt).toISOString()
+  return null
+}
+
 export type UnsettledClaimInventory =
   | {
       ascertainable: true
@@ -921,6 +942,7 @@ export type UnsettledClaimInventory =
         terminal: boolean
         terminalAt: string | null
       }[]
+      errors?: string[]
     }
   | { ascertainable: false; reason: string }
 
@@ -935,7 +957,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       .all() as { root_run_id: number; kind: ResourceClaimKind; allocation_key: string }[]
     const turns = database
       .query(
-        `SELECT id,parent_run_id,turn,status,started_at,latency_ms,job FROM run
+        `SELECT id,parent_run_id,turn,status,started_at,latency_ms,last_event_at,job FROM run
          ORDER BY COALESCE(parent_run_id,id),turn,id`,
       )
       .all() as {
@@ -945,6 +967,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       status: string
       started_at: string
       latency_ms: number | null
+      last_event_at: string | null
       job: string
     }[]
     const byRoot = new Map<number, typeof turns>()
@@ -962,6 +985,7 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
         terminalAt: string | null
       }
     >()
+    const unresolvable = new Set<number>()
     for (const claim of claims) {
       if (byRoot.get(claim.root_run_id)?.some((turn) => isSyntheticLifecycleJob(turn.job))) continue
       const key = `${claim.kind}:${claim.root_run_id}`
@@ -972,13 +996,8 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       const last = conversation.at(-1)
       let terminalAt: string | null = null
       if (terminal && last) {
-        if (last.latency_ms === null || !Number.isFinite(Date.parse(last.started_at))) {
-          return {
-            ascertainable: false,
-            reason: `unsettled claim inventory unavailable: terminal time for conversation ${claim.root_run_id} could not be established`,
-          }
-        }
-        terminalAt = new Date(Date.parse(last.started_at) + last.latency_ms).toISOString()
+        terminalAt = terminalConversationTime(last)
+        if (terminalAt === null) unresolvable.add(claim.root_run_id)
       }
       const current = grouped.get(key) ?? {
         kind: claim.kind,
@@ -990,7 +1009,13 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       current.allocationKeys.push(claim.allocation_key)
       grouped.set(key, current)
     }
-    return { ascertainable: true, claims: [...grouped.values()] }
+    return {
+      ascertainable: true,
+      claims: [...grouped.values()],
+      errors: [...unresolvable].map(
+        (rootId) => `terminal time for conversation ${rootId} could not be established`,
+      ),
+    }
   } catch (error) {
     return {
       ascertainable: false,
@@ -1021,5 +1046,5 @@ export function unsettledClaimConditions(
       },
     ]
   })
-  return { conditions, errors: [] }
+  return { conditions, errors: inventory.errors ?? [] }
 }
