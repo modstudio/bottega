@@ -12,7 +12,7 @@ const DEFAULT_SYNCED_REDACTION_RULES = [
   'assignment',
 ] as const
 
-const REDACTION_RULES = new Set(DEFAULT_SYNCED_REDACTION_RULES)
+const REDACTION_RULES = new Set<string>(DEFAULT_SYNCED_REDACTION_RULES)
 
 type SyncedOutboxRow = {
   id: number
