@@ -34,6 +34,7 @@ function repository(): string {
 
 test('a pre-existing canon lint finding does not stop publication', async () => {
   const root = repository()
+  const head = spawnFixtureGitSync(['rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim()
   let pushed = false
   try {
     installRecordApiClient(createMemoryRecordApiClient())
@@ -59,8 +60,9 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
         ...systemCanonMirrorPort,
         fetch: () => {},
         localBranch: () => false,
-        refTip: () => 'HEAD',
+        refTip: () => head,
         remoteBranchTip: () => null,
+        remoteTrunkTip: () => head,
         push: () => {
           pushed = true
         },
