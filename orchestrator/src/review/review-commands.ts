@@ -13,7 +13,7 @@ import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { reviewPins } from './review-pins.ts'
-import { reviewTrunkRef } from './review-target.ts'
+import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import {
   classifyReviewTier,
   diffNumstat,
@@ -134,7 +134,20 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
         }).exitCode === 0
       const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-      return { repo: project.path, from: row.base_commit, to: reviewed }
+      if (!branchLive) return { repo: project.path, from: row.base_commit, to: reviewed }
+      const trunk = project.settings.trunk?.trim()
+      if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+      const from = (() => {
+        try {
+          return resolveReviewMergeBase(project.path, reviewed, trunk)
+        } catch {
+          return null
+        }
+      })()
+      if (!from) {
+        throw new Error(`cannot find merge-base between branch ${row.branch} and trunk ${trunk}`)
+      }
+      return { repo: project.path, from, to: reviewed }
     })()
   }
 
