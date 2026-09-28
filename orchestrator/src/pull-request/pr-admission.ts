@@ -14,6 +14,11 @@ import {
   reviewsForTriage,
   serializePathSet,
 } from '../review/review-group.ts'
+import {
+  type AdmissionDecision,
+  type AdmissionOverride,
+  decideAdmission,
+} from './admission-decision.ts'
 import { validateTriageOverride } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
 import { decideTriage, type TriageDecision } from './triage-decision.ts'
@@ -109,6 +114,42 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
   })
 }
 
+function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
+  return database
+    .query<
+      {
+        id: number
+        project: string
+        branch: string
+        tip: string
+        tree: string
+        patchId: string | null
+        pathSet: string | null
+      },
+      [string, string]
+    >(
+      `SELECT id,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
+       FROM landing_override
+       WHERE project=? AND branch=? ORDER BY id DESC`,
+    )
+    .all(change.project.name, change.branch)
+}
+
+function admissionDecision(change: PullRequestChange, database: Database): AdmissionDecision {
+  return decideAdmission(
+    {
+      project: change.project.name,
+      branch: change.branch,
+      tip: change.tip,
+      tree: change.tree,
+      patchId: change.group.patchId,
+      pathSet: serializePathSet(change.group.pathSet),
+    },
+    triageDecision(change, database),
+    overridesForChange(change, database),
+  )
+}
+
 function refusal(
   change: PullRequestChange,
   decision: Exclude<TriageDecision, { complete: true }>,
@@ -156,11 +197,23 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
   const row = database
     .query<
       { id: number },
-      [string, string, number, string, string, string, string, string | null, string]
+      [
+        string,
+        string,
+        number,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string | null,
+        string,
+      ]
     >(
       `INSERT INTO landing_override
-         (record_id,project,project_id,branch,tip,tree,reason,session_id,at)
-       VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+         (record_id,project,project_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
       newRecordId(),
@@ -169,12 +222,42 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       change.branch,
       change.tip,
       change.tree,
+      change.group.patchId,
+      serializePathSet(change.group.pathSet),
       reason,
       sessionId(),
       nowIso(),
     )!
   enqueueLandingOverride(database, row.id)
   return row.id
+}
+
+function validatedOverrideReason(
+  reason: string | undefined,
+  fromOperator: boolean,
+  reasonOption = '--override-triage',
+): string | null {
+  const validated = validateTriageOverride(reason, fromOperator, reasonOption)
+  if (validated === null) return null
+  if (containsSecretShaped(validated)) {
+    throw new Error('refusing triage override because its reason resembles a secret')
+  }
+  if (process.env.ORCH_DEPTH !== undefined) {
+    throw new Error('triage overrides are reserved for architect sessions; ORCH_DEPTH is set')
+  }
+  return validated
+}
+
+export function recordTriageOverride(
+  reason: string | undefined,
+  fromOperator: boolean,
+  cwd = process.cwd(),
+): number {
+  const validated = validatedOverrideReason(reason, fromOperator, '--reason')
+  if (validated === null) throw new Error('orch pr override requires --reason "<reason>"')
+  const change = resolvePullRequestChange(cwd)
+  const database = writableDb()
+  return writeTransaction(() => insertOverride(change, validated, database), database)
 }
 
 export function recordTriageIntent(
@@ -280,21 +363,20 @@ export function createPullRequest(
   args: string[],
   options: { overrideReason?: string; fromOperator?: boolean },
   cwd = process.cwd(),
-): { output: string; overridden: boolean } {
-  const reason = validateTriageOverride(options.overrideReason, Boolean(options.fromOperator))
-  if (reason !== null && containsSecretShaped(reason)) {
-    throw new Error('refusing triage override because its reason resembles a secret')
-  }
+): { output: string; overrideId: number | null } {
+  const reason = validatedOverrideReason(options.overrideReason, Boolean(options.fromOperator))
   const change = resolvePullRequestChange(cwd)
   const existing = pullRequestForBranch(cwd, change.branch)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
   const checked = writeTransaction(() => {
-    const decision = triageDecision(change, database)
-    if (!decision.complete && reason === null) throw new Error(refusal(change, decision))
-    const overrideId = reason === null ? null : insertOverride(change, reason, database)
-    recordTriageIntent(change, decision, overrideId, database)
-    return { decision, overrideId }
+    if (reason !== null) insertOverride(change, reason, database)
+    const decision = admissionDecision(change, database)
+    if (!decision.complete && !decision.triage.complete) {
+      throw new Error(refusal(change, decision.triage))
+    }
+    recordTriageIntent(change, decision.triage, decision.overrideId, database)
+    return decision
   }, database)
 
   const trunk = change.project.settings.trunk!.trim()
@@ -321,7 +403,10 @@ export function createPullRequest(
       `gh pr create succeeded but gh pr view ${change.branch} could not resolve its number; the triage intent remains pending`,
     )
   }
-  return { output: output || created.url, overridden: checked.overrideId !== null }
+  return {
+    output: output || created.url,
+    overrideId: checked.overrideId,
+  }
 }
 
 function recordedRunBranches(database: Database, project: Project): string[] {
@@ -342,6 +427,7 @@ export type PushedTipCheck = {
   infrastructureError: string | null
   refusal: string | null
   pendingIntent: boolean
+  overrideId: number | null
 }
 
 export function checkPushedTip(cwd: string, sha: string, remoteRef: string): PushedTipCheck {
@@ -359,18 +445,20 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
         infrastructureError: null,
         refusal: null,
         pendingIntent: false,
+        overrideId: null,
       }
     }
     const tip = git(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
     const change = resolvePullRequestChange(cwd, tip, database, git, branch)
-    const decision = triageDecision(change, database)
+    const decision = admissionDecision(change, database)
     const policy = decidePrePush({ remoteRef, recordedBranches, triageComplete: decision.complete })
     return {
       known: true,
       complete: policy.admit,
       infrastructureError: null,
-      refusal: !policy.admit && !decision.complete ? refusal(change, decision) : null,
+      refusal: !policy.admit && !decision.triage.complete ? refusal(change, decision.triage) : null,
       pendingIntent: pendingIntent(database, project.name, branch),
+      overrideId: decision.overrideId,
     }
   } catch (cause) {
     return {
@@ -379,6 +467,7 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       infrastructureError: String((cause as Error)?.message ?? cause),
       refusal: null,
       pendingIntent: false,
+      overrideId: null,
     }
   }
 }

@@ -6,6 +6,10 @@ export const pullRequestModuleSpecs = [
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   { file: 'orchestrator/src/pull-request/override-decision.ts', allowed: [] },
   {
+    file: 'orchestrator/src/pull-request/admission-decision.ts',
+    allowed: ['./triage-decision.ts'],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-admission.ts',
     allowed: [
       'bun:sqlite',
@@ -16,6 +20,7 @@ export const pullRequestModuleSpecs = [
       '../project/projects.ts',
       '../record/landing-outbox.ts',
       '../review/review-group.ts',
+      './admission-decision.ts',
       './override-decision.ts',
       './pre-push-decision.ts',
       './triage-decision.ts',

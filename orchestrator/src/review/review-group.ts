@@ -20,7 +20,7 @@ export type TriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   patchId: string | null
   pathSet: string | null
-  lensIds: readonly number[]
+  lensIdentities: readonly string[]
   findings: readonly { id: number; ordinal: number; disposition: string | null }[]
 }
 
@@ -151,14 +151,14 @@ function reviewsForBranch(database: Database, project: string, branch: string): 
         tier: 0 | 1 | 2 | 3 | null
         patch_id: string | null
         path_set: string | null
-        lens_id: number
+        lens: string
         finding_id: number | null
         ordinal: number | null
         disposition: string | null
       },
       [string, string]
     >(
-      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,rl.id lens_id,
+      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,rl.lens,
               rf.id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_id=r.id
          JOIN run ON run.id=rl.run_id
@@ -175,10 +175,12 @@ function reviewsForBranch(database: Database, project: string, branch: string): 
       tier: row.tier,
       patchId: row.patch_id,
       pathSet: row.path_set,
-      lensIds: [],
+      lensIdentities: [],
       findings: [],
     }
-    if (!review.lensIds.includes(row.lens_id)) (review.lensIds as number[]).push(row.lens_id)
+    if (!review.lensIdentities.includes(row.lens)) {
+      ;(review.lensIdentities as string[]).push(row.lens)
+    }
     if (
       row.finding_id !== null &&
       !review.findings.some((finding) => finding.id === row.finding_id)

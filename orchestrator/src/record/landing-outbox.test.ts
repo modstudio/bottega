@@ -39,8 +39,9 @@ test('landing evidence backfill mints references in order, maps every column, an
     .run()
   database
     .query(`INSERT INTO landing_override
-      (id,project,branch,tip,tree,reason,session_id,at)
-      VALUES (1,'fixture','DEV-1','tip','tree','reason','session','2026-09-15T00:06:00Z')`)
+      (id,project,branch,tip,tree,patch_id,path_set,reason,session_id,at)
+      VALUES (1,'fixture','DEV-1','tip','tree','patch','["a.ts"]','reason','session',
+       '2026-09-15T00:06:00Z')`)
     .run()
   database
     .query(`INSERT INTO landing_review_carry
@@ -101,6 +102,7 @@ test('landing evidence backfill mints references in order, maps every column, an
   expect(firstLanding).not.toHaveProperty('claimSession')
   expect(firstLanding).not.toHaveProperty('heartbeatDeliveredAt')
   expect(JSON.parse(rows[1]!.payload).causingLandingId).toBe(firstLanding.id)
+  expect(JSON.parse(rows[2]!.payload).pathSet).toEqual(['a.ts'])
   expect(JSON.parse(rows[3]!.payload).reviewId).toBe('review-record')
   expect(JSON.parse(rows[4]!.payload)).toMatchObject({
     runId: 'run-record',

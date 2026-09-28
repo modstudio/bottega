@@ -46,10 +46,45 @@ export type TriageDecision =
       finalTierRaised: boolean
     }
 
+type CompleteReviewRound = {
+  reviews: TriageReviewRow[]
+  tier: 0 | 1 | 2 | 3
+  completedAt: string
+}
+
+function mostRecentCompleteRound(
+  branchReviews: readonly TriageReviewRow[],
+): CompleteReviewRound | null {
+  const groups = new Map<string, TriageReviewRow[]>()
+  for (const review of branchReviews) {
+    if (review.patchId === null || review.pathSet === null) continue
+    const key = JSON.stringify([review.patchId, review.pathSet])
+    const group = groups.get(key) ?? []
+    group.push(review)
+    groups.set(key, group)
+  }
+  for (const reviews of groups.values()) {
+    if (reviews.some((review) => review.completedAt === null || review.tier === null)) continue
+    if (reviews.some((review) => review.findings.some((finding) => finding.disposition === null))) {
+      continue
+    }
+    const tier = Math.max(...reviews.map((review) => review.tier!)) as 0 | 1 | 2 | 3
+    if (new Set(reviews.flatMap((review) => review.lensIdentities)).size < tier) continue
+    return {
+      reviews,
+      tier,
+      completedAt: reviews
+        .map((review) => review.completedAt!)
+        .sort((left, right) => right.localeCompare(left))[0]!,
+    }
+  }
+  return null
+}
+
 /** One pure decision over the already-selected rows for a patch/path change group. */
 export function decideTriage(evidence: TriageEvidence): TriageDecision {
   const reviewIds = [...new Set(evidence.reviews.map((row) => row.reviewId))].sort((a, b) => a - b)
-  const lensRounds = new Set(evidence.reviews.flatMap((row) => row.lensIds)).size
+  const lensRounds = new Set(evidence.reviews.flatMap((row) => row.lensIdentities)).size
   const findings = evidence.reviews.flatMap((review) =>
     review.findings.map((finding) => ({ ...finding, reviewId: review.reviewId })),
   )
@@ -75,37 +110,27 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   if (!missingReview && !unfinishedReviewIds.length && !undisposedFindings.length && !roundsOwed) {
     return { complete: true, snapshot }
   }
-  const earlierReview = evidence.branchReviews.find((review) => {
-    const lensRounds = new Set(review.lensIds).size
-    return (
-      review.completedAt !== null &&
-      review.tier !== null &&
-      lensRounds >= review.tier &&
-      review.findings.every((finding) => finding.disposition !== null)
-    )
-  })
-  const exactRead = earlierReview
+  const earlierRound = mostRecentCompleteRound(evidence.branchReviews)
+  const exactRead = earlierRound
     ? evidence.reads.find(
         (read) =>
           read.tip === evidence.tip &&
           read.patchId === evidence.patchId &&
           read.pathSet === evidence.pathSet &&
-          read.recordedAt > earlierReview.completedAt! &&
+          read.recordedAt > earlierRound.completedAt &&
           read.sessionId === evidence.branchOwnerSession,
       )
     : undefined
-  const finalTierRaised = Boolean(
-    earlierReview?.tier !== null && earlierReview && evidence.tier > earlierReview.tier!,
-  )
-  if (earlierReview && !finalTierRaised && exactRead) {
+  const finalTierRaised = Boolean(earlierRound && evidence.tier > earlierRound.tier)
+  if (earlierRound && !finalTierRaised && exactRead) {
     return {
       complete: true,
       snapshot: {
-        reviewIds: [earlierReview.reviewId],
+        reviewIds: earlierRound.reviews.map((review) => review.reviewId).sort((a, b) => a - b),
         patchId: evidence.patchId,
         tier: evidence.tier,
-        lensRounds: new Set(earlierReview.lensIds).size,
-        findingCount: earlierReview.findings.length,
+        lensRounds: new Set(earlierRound.reviews.flatMap((review) => review.lensIdentities)).size,
+        findingCount: earlierRound.reviews.flatMap((review) => review.findings).length,
         admissionPath: 'architect_read',
         readId: exactRead.id,
       },
@@ -118,9 +143,9 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     unfinishedReviewIds,
     undisposedFindings,
     roundsOwed,
-    architectReadRequired: Boolean(earlierReview && !finalTierRaised && !exactRead),
-    earlierReviewId: earlierReview?.reviewId ?? null,
-    earlierReviewTier: earlierReview?.tier ?? null,
+    architectReadRequired: Boolean(earlierRound && !finalTierRaised && !exactRead),
+    earlierReviewId: earlierRound?.reviews[0]?.reviewId ?? null,
+    earlierReviewTier: earlierRound?.tier ?? null,
     finalTierRaised,
   }
 }

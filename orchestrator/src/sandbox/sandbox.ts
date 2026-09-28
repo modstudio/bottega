@@ -19,7 +19,10 @@ import {
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
-import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
+import {
+  ensureHubLoginTokenDirectory,
+  hubLoginTokenDirectory,
+} from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
@@ -60,10 +63,9 @@ export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.
 
 /** Reads denied by every SRT profile, including profiles outside normal runs. */
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
-  const loginTokenDirectory = ensureHubLoginTokenDirectory(environment)
   return [
     ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-    loginTokenDirectory,
+    hubLoginTokenDirectory(environment),
   ]
 }
 
@@ -439,6 +441,7 @@ export async function sandboxLaunchArgv(
   bin: string,
   argv: string[],
 ): Promise<string[]> {
+  ensureHubLoginTokenDirectory(process.env)
   const config = sandboxRuntimeConfig(profile)
   if (sandboxInitialized) SandboxManager.updateConfig(config)
   else {
