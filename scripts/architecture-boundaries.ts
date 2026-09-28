@@ -9,6 +9,7 @@ import {
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
+import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
@@ -45,6 +46,9 @@ const boundary = (
 export const importBoundaries: ImportBoundary[] = [
   // biome-ignore format: compact extracted boundary registration keeps this frozen manifest from growing.
   ...runRetryBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
+  ...runModuleBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
+  ),
   ...branchStoreModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -848,18 +852,6 @@ export const importBoundaries: ImportBoundary[] = [
       './resume-tree.ts', './run.ts', './run-authority.ts', './run-dispatch.ts', './run-liveness.ts', './run-resume-kind.ts', './run-retry.ts', './checkpoint.ts',
     ],
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
-  ),
-  boundary(
-    'run-coordinator-log-boundary',
-    'orchestrator/src/run/run-coordinator-log.ts',
-    ['node:fs', 'node:path', '../../../shared/secret-shaped.ts', './run-artifacts.ts'],
-    'Keep coordinator diagnostics independent of run lifecycle policy and database state.',
-  ),
-  boundary(
-    'run-diff-boundary',
-    'orchestrator/src/run/run-diff.ts',
-    ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../project/projects.ts'],
-    'Keep run diff independent of run control, transports, routing, the CLI, and worktrees by value.',
   ),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   boundary(
