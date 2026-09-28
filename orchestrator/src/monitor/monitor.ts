@@ -56,7 +56,7 @@ import {
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
-import { outboxQuarantineConditions } from './monitor-outbox.ts'
+import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import type {
   AddressedMonitorCondition,
@@ -427,6 +427,7 @@ export async function monitor(
     })
 
   conditions.push(...outboxQuarantineConditions(database))
+  conditions.push(...outboxRetiredParentConditions(database))
 
   conditions.push(...abandonedBootstrapConditions(clock))
   conditions.push(...deadRunningProcessConditions(clock))

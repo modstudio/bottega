@@ -43,6 +43,11 @@ function lensRunId(database: Database, lensRecordId: string): string | null {
 
 function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Database): ParentRef[] {
   switch (row.kind) {
+    case 'run':
+      return [
+        { kind: 'run', recordId: nullableString(payload.parentRunId) },
+        { kind: 'run', recordId: nullableString(payload.retryOf) },
+      ].filter((value): value is ParentRef => value.recordId !== null)
     case 'score':
       return [{ kind: 'run', recordId: row.record_id }]
     case 'question':
@@ -68,11 +73,36 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
   }
 }
 
+export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow[] {
+  const rows = database
+    .query<OutboxRow, []>(
+      `SELECT id,kind,record_id,payload FROM outbox
+       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
+    )
+    .all()
+  const blocked: BlockedOutboxRow[] = []
+  for (const row of rows) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(row.payload)
+    } catch {
+      continue
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+    const dependency = outboxDependency(row, parsed as Payload, database)
+    if (dependency.disposition === 'blocked') {
+      blocked.push({ id: row.id, kind: row.kind, parentRecordId: dependency.parentRecordId! })
+    }
+  }
+  return blocked
+}
+
 function outboxDependencyState(
   database: Database,
   parents: readonly ParentRef[],
 ): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string } {
   const unique = new Map(parents.map((parent) => [`${parent.kind}:${parent.recordId}`, parent]))
+  let deferred = false
   for (const { kind, recordId: parentRecordId } of unique.values()) {
     const rows = database
       .query<ParentState, [string, string]>(
@@ -82,10 +112,13 @@ function outboxDependencyState(
       .all(kind, parentRecordId)
     const latest = rows[0]
     if (!latest || latest.synced_at !== null) continue
-    if (latest.retired_at === null) return { disposition: 'deferred' }
+    if (latest.retired_at === null) {
+      deferred = true
+      continue
+    }
     return { disposition: 'blocked', parentRecordId }
   }
-  return { disposition: 'ready' }
+  return { disposition: deferred ? 'deferred' : 'ready' }
 }
 
 function outboxDependency(row: OutboxRow, payload: Payload, database: Database) {

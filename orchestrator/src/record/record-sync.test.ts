@@ -724,6 +724,46 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   local.close()
 })
 
+test('a quarantined run defers its continuation and retry until the parent syncs', async () => {
+  const local = localOutbox(3)
+  const parent = local
+    .query<{ record_id: string }, []>('SELECT record_id FROM outbox WHERE id=1')
+    .get()!
+  const updatePayload = (id: number, references: Record<string, string>) => {
+    const row = local
+      .query<{ payload: string }, [number]>('SELECT payload FROM outbox WHERE id=?')
+      .get(id)!
+    local
+      .query('UPDATE outbox SET payload=? WHERE id=?')
+      .run(JSON.stringify({ ...JSON.parse(row.payload), ...references }), id)
+  }
+  updatePayload(2, { parentRunId: parent.record_id })
+  updatePayload(3, { retryOf: parent.record_id })
+  const remote = fakePostgres(
+    serverError('new row violates row-level security policy for table "run"', 42501),
+  )
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+    pending: 2,
+    quarantined: [{ id: 1, kind: 'run' }],
+  })
+  expect(local.query('SELECT attempts,quarantined_at FROM outbox WHERE id>1').all()).toEqual([
+    { attempts: 0, quarantined_at: null },
+    { attempts: 0, quarantined_at: null },
+  ])
+
+  retryOutboxRow(1, local, STAMP, 'architect')
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 3,
+    failed: 0,
+    pending: 0,
+    quarantined: [],
+  })
+  local.close()
+})
+
 test('retiring a later row after the snapshot prevents its delivery', async () => {
   const local = localOutbox(2)
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, undefined, (ordinal) => {

@@ -4,6 +4,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import {
   localQuestionCountForSpace,
   outboxQuarantineCheck,
+  outboxRetiredParentCheck,
   recordDoctorExitCode,
   redactRecordPasswords,
   unattributedShare,
@@ -45,6 +46,27 @@ describe('record doctor decisions', () => {
     const check = outboxQuarantineCheck(database)
     expect(check).toMatchObject({ name: 'outbox quarantine is empty', status: 'fail' })
     expect(check.detail).toContain('12 score')
+    expect(recordDoctorExitCode([check])).toBe(1)
+    database.close()
+  })
+
+  test('fails while an active outbox row is blocked by a retired parent', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO outbox
+         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
+         VALUES (11,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
+                (12,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
+      )
+      .run()
+    const check = outboxRetiredParentCheck(database)
+    expect(check).toMatchObject({
+      name: 'outbox has no rows blocked by a retired parent',
+      status: 'fail',
+    })
+    expect(check.detail).toContain('12 run (parent parent)')
     expect(recordDoctorExitCode([check])).toBe(1)
     database.close()
   })

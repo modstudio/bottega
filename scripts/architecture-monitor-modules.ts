@@ -59,6 +59,7 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-outbox.ts', [
     'bun:sqlite',
+    '../record/outbox-dependency.ts',
     '../record/outbox-quarantine.ts',
     './monitor-types.ts',
   ]),

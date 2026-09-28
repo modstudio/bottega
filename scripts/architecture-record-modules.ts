@@ -47,6 +47,7 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
     './record-sync.ts',
     './machine-identity.ts',
+    './outbox-dependency.ts',
     './outbox-quarantine.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', ['./record-verdicts.ts']),

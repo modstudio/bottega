@@ -11,6 +11,7 @@ import {
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { machineId } from './machine-identity.ts'
+import { blockedByRetiredParentRows } from './outbox-dependency.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
@@ -37,6 +38,17 @@ export function outboxQuarantineCheck(database: Database): RecordDoctorCheck {
         detail: `${rows.length} quarantined: ${rows.map((row) => `${row.id} ${row.kind}`).join(', ')}; run \`orch record outbox retry <row-id>\` or \`orch record outbox retire <row-id> --reason <text>\``,
       }
     : { name: 'outbox quarantine is empty', status: 'pass' }
+}
+
+export function outboxRetiredParentCheck(database: Database): RecordDoctorCheck {
+  const rows = blockedByRetiredParentRows(database)
+  return rows.length
+    ? {
+        name: 'outbox has no rows blocked by a retired parent',
+        status: 'fail',
+        detail: `${rows.length} blocked: ${rows.map((row) => `${row.id} ${row.kind} (parent ${row.parentRecordId})`).join(', ')}; retry the retired parent is unavailable, so inspect the parent retirement and explicitly retire or replace each dependent row`,
+      }
+    : { name: 'outbox has no rows blocked by a retired parent', status: 'pass' }
 }
 
 export function unattributedShare(missing: number, total: number): string {
@@ -157,6 +169,7 @@ export async function diagnoseRecord(
   const urls = [recordUrl, migrateUrl].filter((url): url is string => Boolean(url))
   const checks: RecordDoctorCheck[] = []
   checks.push(outboxQuarantineCheck(db()))
+  checks.push(outboxRetiredParentCheck(db()))
   const run = async <T>(name: string, action: () => Promise<T>): Promise<T | undefined> => {
     try {
       const result = await action()
