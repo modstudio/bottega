@@ -711,6 +711,7 @@ export const importBoundaries: ImportBoundary[] = [
       './machine-identity.ts',
       './record-cache.ts',
       './record-review-read.ts',
+      './record-review-values.ts',
       './record-session.ts',
       '../review/review-outbox.ts',
       '../run/run-outbox.ts',
@@ -734,6 +735,12 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-review-read.ts',
     [],
     'Keep hosted review-read value mapping independent of record delivery.',
+  ),
+  boundary(
+    'record-review-values-boundary',
+    'orchestrator/src/record/record-review-values.ts',
+    [],
+    'Keep hosted review value mapping independent of record delivery.',
   ),
   boundary(
     'resource-ownership-boundary',

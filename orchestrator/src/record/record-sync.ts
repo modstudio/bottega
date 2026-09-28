@@ -65,6 +65,7 @@ import {
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
+import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
 import { validateRecordVerdict } from './record-verdicts.ts'
 
@@ -560,18 +561,9 @@ function questionAudits(row: Payload): QuestionAuditPayload[] {
   return row.audits as QuestionAuditPayload[]
 }
 
-const commonReviewValues = (row: Payload) => ({
-  id: String(row.id),
-  spaceId: String(row.spaceId),
-  machineId: String(row.machineId),
-  localId: bigint(row.localId),
-  createdAt: date(row.createdAt),
-  updatedAt: date(row.updatedAt),
-})
-
 function reviewLensValues(row: Payload) {
   return {
-    ...commonReviewValues(row),
+    ...commonReviewRecordValues(row),
     reviewId: String(row.reviewId),
     runId: String(row.runId),
     lens: String(row.lens),
@@ -595,7 +587,7 @@ function reviewLensValues(row: Payload) {
 
 function reviewFindingValues(row: Payload) {
   return {
-    ...commonReviewValues(row),
+    ...commonReviewRecordValues(row),
     reviewId: String(row.reviewId),
     reviewLensId: String(row.reviewLensId),
     ordinal: Number(row.ordinal),
@@ -825,7 +817,7 @@ const recordKinds = {
         const values = reviewReadRecordValues(
           row,
           await projectRecordId(tx, row, principal),
-          commonReviewValues(row),
+          commonReviewRecordValues(row),
         )
         const { id: _id, createdAt: _createdAt, ...updates } = values
         await drizzle({ client: tx })

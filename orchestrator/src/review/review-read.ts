@@ -28,7 +28,7 @@ const git: Git = (cwd, args) => {
 
 export function recordArchitectRead(
   input: { cwd: string; sha?: string; note: string },
-  database: Database = writableDb(),
+  suppliedDatabase?: Database,
   runGit: Git = git,
   recordedAt = nowIso(),
 ): number {
@@ -39,6 +39,7 @@ export function recordArchitectRead(
   if (!note) throw new Error('orch review read requires a non-blank --note')
   if (containsSecretShaped(note))
     throw new Error('refusing review read because its note resembles a secret')
+  const database = suppliedDatabase ?? writableDb()
   const project = projectAt(input.cwd, database)
   if (!project) throw new Error(`cannot resolve a project for ${input.cwd}`)
   const branch = runGit(input.cwd, ['branch', '--show-current'])

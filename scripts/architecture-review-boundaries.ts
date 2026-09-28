@@ -14,6 +14,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-commands.ts',
       './review-finding-amend-command.ts',
       './review-finding-restore.ts',
+      './review-read.ts',
     ],
     reason:
       'Keep review verb routing beside the review commands and independent of CLI registration.',
