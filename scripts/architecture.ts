@@ -63,6 +63,12 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/orch-contract.ts',
   ]),
+  module('orchestrator/src/doc/doc-canon-tree.ts', [
+    'node:fs',
+    '../../../shared/git.ts',
+    '../project/projects.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/canon-removal.ts', [
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',

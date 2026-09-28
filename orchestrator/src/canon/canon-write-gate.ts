@@ -173,18 +173,32 @@ export function decideCanonRemoval(input: {
   current: Row[]
   next: Row[]
   workflowSteps?: WorkflowStepBody[]
+  trackedPaths?: string[]
+  packageScripts?: string[]
+  sourceTexts?: CanonSourceText[]
 }): CanonFinding[] {
-  const lint = (rows: Row[]) =>
-    lintCanon({
+  const knownCanonPaths = new Set([...input.current, ...input.next].map(({ slug }) => slug))
+  const facts = {
+    trackedPaths: input.trackedPaths ?? [],
+    packageScripts: input.packageScripts ?? [],
+    sourceTexts: (input.sourceTexts ?? []).filter(({ path }) => !knownCanonPaths.has(path)),
+  }
+  const lint = (rows: Row[]) => {
+    const rowPaths = new Set(rows.map(({ slug }) => slug))
+    return lintCanon({
       files: rows.map(({ slug, body }) => ({ path: slug, text: body })),
       referenceFiles: (input.workflowSteps ?? []).map(({ slug, body }) => ({
         path: `workflow step ${slug}`,
         text: body,
       })),
-      trackedPaths: rows.map(({ slug }) => slug),
-      packageScripts: [],
-      sourceTexts: [],
+      trackedPaths: [
+        ...facts.trackedPaths.filter((path) => !knownCanonPaths.has(path)),
+        ...rowPaths,
+      ],
+      packageScripts: facts.packageScripts,
+      sourceTexts: facts.sourceTexts,
     }).findings
+  }
   return introducedCanonFindings(lint(input.current), lint(input.next)).filter(({ rule }) =>
     rule.startsWith('canon/reference-'),
   )

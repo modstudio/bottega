@@ -24,6 +24,7 @@ export type DocRevisionOp =
   | 'backfill'
 
 export type CanonRow = { slug: string; body: string }
+export type CanonWriteTree = { project: { name: string }; root: string }
 export { composeCanonRows }
 
 /** Owned rows are visible only to their signed-in owner; unowned rows remain shared. */

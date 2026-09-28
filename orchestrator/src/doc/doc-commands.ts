@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
 import {
   collectDocReferenceProjects,
@@ -178,9 +179,11 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || title === undefined || !reason?.trim()) {
       throw new Error(
-        'orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
+        'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
       )
     }
+    const canonTree = selectCanonWriteTree({ scope, subject, cwd: flag('cwd') })
+    if (canonTree && !has('json')) presentation.log(`tree: ${canonTree.root}`)
     const body = flag('file')
       ? readFileSync(flag('file')!, 'utf8')
       : !presentation.stdinIsTTY
@@ -204,10 +207,11 @@ export async function docCommand(
       forceInject,
       delivery,
       expectedRevision: flag('expect'),
+      canonTree: canonTree ?? undefined,
     })
-    const root = repoRootForDoc(doc)
+    const root = repoRootForDoc(doc, canonTree?.root)
     const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-    if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings }))
+    if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
     else {
       presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
       for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
@@ -239,8 +243,10 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || !reason?.trim())
       throw new Error(
-        'orch doc rm <slug> --scope S [--subject X] --reason TEXT [--expect REVISION]',
+        'orch doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]',
       )
+    const canonTree = selectCanonWriteTree({ scope, subject, cwd: flag('cwd') })
+    if (canonTree && !has('json')) presentation.log(`tree: ${canonTree.root}`)
     const removed = await removeDoc(
       scope,
       subject,
@@ -249,11 +255,12 @@ export async function docCommand(
         reason,
         author: flag('author'),
         expectedRevision: flag('expect'),
+        canonTree: canonTree ?? undefined,
       },
       owner,
     )
     if (has('json')) {
-      presentation.log(JSON.stringify({ removed }))
+      presentation.log(JSON.stringify({ removed, tree: canonTree?.root }))
       return
     }
     presentation.log(

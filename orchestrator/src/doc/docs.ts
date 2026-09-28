@@ -52,6 +52,7 @@ import {
   insertLocalRevision,
 } from './doc-revision-store.ts'
 import {
+  type CanonWriteTree,
   canonFindingsRefusal,
   consumeDocBody,
   docWriteProjectName,
@@ -78,6 +79,8 @@ export type DocWriteContext = {
   /** The caller already decided the complete next canon set as one set. */
   canonRemovalDecision?: 'already-decided-next-set'
   expectedRevision?: string
+  /** A CLI-selected worktree for project-subject canon validation. */
+  canonTree?: CanonWriteTree
 }
 
 function assertInjectSize(input: {
@@ -340,7 +343,8 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
           [],
           targetProjectRows,
         ).map(({ slug, body }) => ({ slug, body }))
-    const collected = collectCanonLintInput(target.path)
+    const root = input.canonTree?.project.name === target.name ? input.canonTree.root : target.path
+    const collected = collectCanonLintInput(root)
     return refuseCanonWrite({
       current: targetCurrent,
       next: targetNext,
@@ -353,9 +357,9 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
 }
 
-function assertCanonRemovalAllowed(doc: Doc): void {
+function assertCanonRemovalAllowed(doc: Doc, tree?: CanonWriteTree): void {
   if (doc.scope !== 'canon') return
-  const refusal = storedCanonRemovalRefusal(doc)
+  const refusal = storedCanonRemovalRefusal(doc, tree)
   if (refusal) throw new Error(refusal)
 }
 
@@ -516,7 +520,7 @@ export async function removeDoc(
     false,
   )
   if (context.canonRemovalDecision !== 'already-decided-next-set') {
-    assertCanonRemovalAllowed(doc)
+    assertCanonRemovalAllowed(doc, context.canonTree)
   }
   let recordId = doc.record_id
   let hostedExpected = context.expectedRevision
