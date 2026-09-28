@@ -615,7 +615,7 @@ test('an old-shape landing override syncs with a null change group', async () =>
 
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
-  expect(values?.filter((value) => value === null)).toHaveLength(4)
+  expect(values?.filter((value) => value === null)).toHaveLength(6)
   local.close()
 })
 
