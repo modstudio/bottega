@@ -9,6 +9,11 @@ import {
   recordMigrationCount,
 } from '../postgres/postgres-migrate.ts'
 import { projectByName, setProjectRecordSpace } from '../project/projects.ts'
+import {
+  redactSyncedOutbox,
+  renderSyncedRedaction,
+  syncedRedactionRules,
+} from './outbox-redaction.ts'
 import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
@@ -175,6 +180,18 @@ export function recordAuditSecretsCommand(
   } finally {
     if (owned) conn.close()
   }
+}
+
+export function recordRedactSyncedCommand(
+  options: { rules?: string; dryRun: boolean },
+  presentation: Presentation,
+  database?: Parameters<typeof redactSyncedOutbox>[1],
+): void {
+  const result = redactSyncedOutbox(
+    { rules: syncedRedactionRules(options.rules), dryRun: options.dryRun },
+    database,
+  )
+  presentation.log(renderSyncedRedaction(result))
 }
 
 export async function recordDoctorCommand(

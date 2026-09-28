@@ -28,14 +28,15 @@ const RULES: Array<{ name: string; matches: (text: string) => boolean }> = [
 ]
 
 export function secretShapedRule(text: string): string | null {
-  for (const rule of RULES) {
-    if (rule.matches(text)) return rule.name
-  }
-  return null
+  return secretShapedRules(text)[0] ?? null
 }
 
-export function evidenceSecretShapedRule(text: string): string | null {
-  return secretShapedRule(text.replace(EXEMPT_EVIDENCE_TOKEN, '_'))
+function secretShapedRules(text: string): string[] {
+  return RULES.filter((rule) => rule.matches(text)).map((rule) => rule.name)
+}
+
+export function evidenceSecretShapedRules(text: string): string[] {
+  return secretShapedRules(text.replace(EXEMPT_EVIDENCE_TOKEN, '_'))
 }
 
 export function containsSecretShaped(text: string): boolean {

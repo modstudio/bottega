@@ -10,6 +10,7 @@ import {
   recordAuditSecretsCommand,
   recordDoctorCommand,
   recordMigrateCommand,
+  recordRedactSyncedCommand,
   recordSpaceAcceptCommand,
   recordSpaceCreateCommand,
   recordSpaceInvitationsCommand,
@@ -54,6 +55,19 @@ export function register(program: Command): void {
     .action((options) =>
       recordAuditSecretsCommand(
         { json: Boolean(options.json), ids: Boolean(options.ids) },
+        presentation,
+      ),
+    )
+  record
+    .command('redact-synced')
+    .option('--rules <comma-list>')
+    .option('--dry-run')
+    .action((options) =>
+      recordRedactSyncedCommand(
+        {
+          ...(options.rules === undefined ? {} : { rules: String(options.rules) }),
+          dryRun: Boolean(options.dryRun),
+        },
         presentation,
       ),
     )

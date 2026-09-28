@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
+import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
@@ -14,6 +15,7 @@ import {
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
 } from './landing-outbox.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
+import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { outboxOrder, syncRecord } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
@@ -369,6 +371,16 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
+  local.close()
+})
+
+test('a quarantined newer row blocks redaction and becomes final after retry and sync', async () => {
+  const remote = fakePostgres(),
+    local = localOutbox(1)
+  const sync = () => syncRecord(options(local, remote))
+  await exerciseQuarantinedRedactionSync(local, sync)
+  expect(remote.parameters.flat()).toContain('newer operator-approved value')
+  expect(remote.parameters.flat()).not.toContain(WITHHELD_SECRET_SHAPED)
   local.close()
 })
 
