@@ -1,4 +1,13 @@
 export const branchModuleSpecs = [
+  {
+    file: 'orchestrator/src/branch/create-time-settlement.ts',
+    allowed: [
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../resources/resource-claims.ts',
+      '../worktree/worktree-types.ts',
+    ],
+  },
   { file: 'orchestrator/src/branch/branch-landing-record.ts', allowed: ['./branch-state.ts'] },
   {
     file: 'orchestrator/src/branch/task-key-pull-request.ts',
