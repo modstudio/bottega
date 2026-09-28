@@ -4,10 +4,14 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
-import { LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS } from './landing-outbox.ts'
+import {
+  enqueueContention,
+  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
+} from './landing-outbox.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { outboxOrder, syncRecord, unreachableSpaceProject } from './record-sync.ts'
 
@@ -658,6 +662,38 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
     .run(MACHINE_ID)
   enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
   enqueueQuestionRecord(local, 1)
+  local
+    .query(
+      `INSERT INTO score
+       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES (42,'full','right',NULL,'complete',?,'architect')`,
+    )
+    .run(STAMP)
+  enqueueScoreRecord(local, 42, MACHINE_ID)
+  local.query('INSERT INTO review (id,recorded_at) VALUES (1,?)').run(STAMP)
+  local
+    .query(
+      `INSERT INTO review_lens
+       (id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (1,1,42,'craft','codex','[]','[]','[]','[]')`,
+    )
+    .run()
+  local
+    .query(
+      `INSERT INTO review_finding
+       (id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
+       VALUES (1,1,1,1,'major','a.ts:1','evidence','correct it')`,
+    )
+    .run()
+  backfillReviewRecords(local)
+  local
+    .query(
+      `INSERT INTO contention
+       (id,record_id,at,resource_kind,resource_key,event_kind,run_id)
+       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
+    )
+    .run(STAMP)
+  enqueueContention(local, 1, STAMP)
   const remote = fakePostgres(
     serverError('new row violates row-level security policy for table "run"', 42501),
   )
@@ -665,17 +701,16 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 0,
     failed: 1,
-    pending: 1,
+    pending: 6,
     quarantined: [{ id: 1, kind: 'run' }],
   })
-  expect(local.query('SELECT attempts,quarantined_at FROM outbox WHERE id=2').get()).toEqual({
-    attempts: 0,
-    quarantined_at: null,
-  })
+  expect(local.query('SELECT attempts,quarantined_at FROM outbox WHERE id>1').all()).toEqual(
+    Array.from({ length: 6 }, () => ({ attempts: 0, quarantined_at: null })),
+  )
 
   retryOutboxRow(1, local, STAMP, 'architect')
   expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 2,
+    pushed: 7,
     failed: 0,
     pending: 0,
     quarantined: [],
