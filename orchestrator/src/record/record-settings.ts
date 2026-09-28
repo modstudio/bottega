@@ -2,8 +2,8 @@
 /** Applies tenant-bound settings edits through the hosted document service. Must not know HTTP or local stores. */
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import {
-  parseStoredOwnedSettings,
   type PermissionList,
+  parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,

@@ -44,8 +44,8 @@ import {
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
-import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
+import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
 import {
   countRecordScores,
   listRecordScores,

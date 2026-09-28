@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import type { OwnedSettings } from '../settings/settings.ts'
+import { editSettingsPermission } from '../settings/settings-permission.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -8,8 +10,6 @@ import {
 import type { RecordIdentity } from './record-auth.ts'
 import { RecordDocError } from './record-docs.ts'
 import type { RecordSettingsPermissionInput } from './record-settings.ts'
-import { editSettingsPermission } from '../settings/settings-permission.ts'
-import type { OwnedSettings } from '../settings/settings.ts'
 
 const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },

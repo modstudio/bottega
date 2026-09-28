@@ -7,11 +7,11 @@ import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
-import type { SnapshotKind } from './record-snapshots.ts'
 import type {
   RecordSettingsPermissionInput,
   RecordSettingsPermissionResult,
 } from './record-settings.ts'
+import type { SnapshotKind } from './record-snapshots.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
