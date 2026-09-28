@@ -12,15 +12,33 @@ export function grokTrustStorePath(env: NodeJS.ProcessEnv = process.env): string
  * terminator, so every other byte in the vendor store remains irrelevant.
  */
 export function grokTrustHeadings(env: NodeJS.ProcessEnv = process.env): string[] {
+  return observeGrokTrustHeadings(env).headings
+}
+
+export type GrokTrustObservation =
+  | { succeeded: true; headings: string[] }
+  | { succeeded: false; headings: []; detail: string }
+
+/** Read the vendor trust headings while preserving whether the observation succeeded. */
+export function observeGrokTrustHeadings(
+  env: NodeJS.ProcessEnv = process.env,
+): GrokTrustObservation {
   const path = grokTrustStorePath(env)
-  if (!existsSync(path)) return []
+  if (!existsSync(path)) return { succeeded: true, headings: [] }
   try {
-    return readFileSync(path, 'utf8')
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith('[folders.'))
-  } catch {
+    return {
+      succeeded: true,
+      headings: readFileSync(path, 'utf8')
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('[folders.')),
+    }
+  } catch (error) {
     // Trust-store observation must never turn a vendor grant into a run failure.
-    return []
+    return {
+      succeeded: false,
+      headings: [],
+      detail: String((error as Error)?.message ?? error),
+    }
   }
 }
 

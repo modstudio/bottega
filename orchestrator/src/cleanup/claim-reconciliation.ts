@@ -1,0 +1,204 @@
+// concern: cleanup sweep claim reconciliation
+/** Observes claimed resources and settles only rows whose absence passes every lifecycle guard. */
+
+import type { Database } from 'bun:sqlite'
+import { lstatSync } from 'node:fs'
+import { pidAlive } from '../../../shared/process-identity.ts'
+import { db, nowIso } from '../database/db.ts'
+import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
+import { runLeaseState } from '../run/run-lease.ts'
+import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
+import type { CleanupPresentation } from './cleanup.ts'
+import { decideAbsentClaim } from './cleanup-sweep-decisions.ts'
+
+const RECONCILED_KINDS = [
+  'branch',
+  'retained_ref',
+  'worktree',
+  'sandbox_dir',
+  'trust_entry',
+] as const
+type ReconciledKind = (typeof RECONCILED_KINDS)[number]
+
+type ClaimedRow = {
+  id: number
+  root_run_id: number
+  project_id: number | null
+  kind: ReconciledKind
+  allocation_key: string
+  project_name: string | null
+  project_path: string | null
+  repository_path: string | null
+}
+
+export type ClaimReconciliationObservers = {
+  path: (path: string) => { outcome: 'present' | 'absent' | 'failed'; detail?: string }
+  ref: (repository: string, ref: string) => GitRefObservation
+  trust: GrokTrustObservation
+  leaseState: typeof runLeaseState
+  pidAlive: typeof pidAlive
+}
+
+function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; detail?: string } {
+  try {
+    lstatSync(path)
+    return { outcome: 'present' }
+  } catch (error) {
+    const detail = String((error as Error)?.message ?? error)
+    return (error as NodeJS.ErrnoException)?.code === 'ENOENT'
+      ? { outcome: 'absent' }
+      : { outcome: 'failed', detail }
+  }
+}
+
+const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObservers => ({
+  path: observePath,
+  ref: observeGitRef,
+  trust,
+  leaseState: runLeaseState,
+  pidAlive,
+})
+
+function claimedRows(database: Database, projectName: string | undefined): ClaimedRow[] {
+  return database
+    .query(
+      `SELECT claim.id,claim.root_run_id,claim.project_id,claim.kind,claim.allocation_key,
+              project.name project_name,project.path project_path,root.cwd repository_path
+       FROM resource_claim claim
+       JOIN run root ON root.id=claim.root_run_id
+       LEFT JOIN project ON project.id=claim.project_id
+       WHERE claim.state='claimed'
+         AND claim.kind IN ('branch','retained_ref','worktree','sandbox_dir','trust_entry')
+         AND (? IS NULL OR project.name=?)
+       ORDER BY claim.id`,
+    )
+    .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
+}
+
+function resourceObservation(
+  row: ClaimedRow,
+  repositoryState: 'known' | 'unknown-present' | 'unknown-absent',
+  observers: ClaimReconciliationObservers,
+): { probe: 'present' | 'absent' | 'failed'; detail: string } {
+  if (
+    repositoryState === 'unknown-absent' &&
+    (row.kind === 'branch' || row.kind === 'retained_ref')
+  ) {
+    return { probe: 'absent', detail: `observed absent repository ${row.repository_path}` }
+  }
+  if (row.kind === 'branch' || row.kind === 'retained_ref') {
+    if (!row.project_path) return { probe: 'failed', detail: 'owning repository unknown' }
+    const observation = observers.ref(row.project_path, row.allocation_key)
+    return observation.outcome === 'failed'
+      ? { probe: 'failed', detail: observation.detail }
+      : {
+          probe: observation.outcome,
+          detail: `observed absent ref ${row.allocation_key} in ${row.project_path}`,
+        }
+  }
+  if (row.kind === 'trust_entry') {
+    if (!observers.trust.succeeded) return { probe: 'failed', detail: observers.trust.detail }
+    return observers.trust.headings.includes(row.allocation_key)
+      ? { probe: 'present', detail: 'trust heading is present' }
+      : { probe: 'absent', detail: `observed absent trust heading ${row.allocation_key}` }
+  }
+  const observation = observers.path(row.allocation_key)
+  if (observation.outcome === 'failed')
+    return { probe: 'failed', detail: observation.detail ?? 'path observation failed' }
+  return observation.outcome === 'present'
+    ? { probe: 'present', detail: 'path is present' }
+    : { probe: 'absent', detail: `observed absent path ${row.allocation_key}` }
+}
+
+function conversationFacts(
+  database: Database,
+  row: ClaimedRow,
+  observers: ClaimReconciliationObservers,
+) {
+  const turns = database
+    .query(
+      `SELECT id,status,pid,agent_pid,branch_kept FROM run
+       WHERE id=? OR parent_run_id=? ORDER BY id`,
+    )
+    .all(row.root_run_id, row.root_run_id) as {
+    id: number
+    status: string
+    pid: number | null
+    agent_pid: number | null
+    branch_kept: string | null
+  }[]
+  const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
+  return {
+    allTurnsTerminal: turns.every((turn) => terminal.has(turn.status)),
+    liveLeaseOrPid: turns.some(
+      (turn) =>
+        observers.leaseState(turn.id) === 'held' ||
+        Boolean(turn.pid && observers.pidAlive(turn.pid)) ||
+        Boolean(turn.agent_pid && observers.pidAlive(turn.agent_pid)),
+    ),
+    branchKept:
+      row.kind === 'branch' &&
+      turns.some((turn) =>
+        turn.branch_kept ? `refs/heads/${turn.branch_kept}` === row.allocation_key : false,
+      ),
+  }
+}
+
+function landingInFlight(database: Database, row: ClaimedRow): boolean {
+  if (row.kind !== 'branch' || !row.project_name) return false
+  const branch = row.allocation_key.replace(/^refs\/heads\//, '')
+  return Boolean(
+    database
+      .query(
+        `SELECT 1 FROM landing
+         WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
+      )
+      .get(row.project_name, branch),
+  )
+}
+
+export function reconcileAbsentClaims(input: {
+  dryRun: boolean
+  project?: string
+  presentation: CleanupPresentation
+  trust: GrokTrustObservation
+  database?: Database
+  observers?: ClaimReconciliationObservers
+}): void {
+  const database = input.database ?? db()
+  const observers = input.observers ?? defaultObservers(input.trust)
+  for (const row of claimedRows(database, input.project)) {
+    const repositoryObservation = row.repository_path
+      ? observers.path(row.repository_path)
+      : { outcome: 'failed' as const }
+    const repositoryState = row.project_id
+      ? ('known' as const)
+      : repositoryObservation.outcome === 'absent'
+        ? ('unknown-absent' as const)
+        : ('unknown-present' as const)
+    const observation = resourceObservation(row, repositoryState, observers)
+    const conversation = conversationFacts(database, row, observers)
+    const ruling = decideAbsentClaim({
+      probe: observation.probe,
+      owningRepository: repositoryState,
+      ...conversation,
+      landingInFlight: landingInFlight(database, row),
+    })
+    const label = `claim ${row.id} ${row.kind} ${row.allocation_key}`
+    if (ruling.action === 'keep') {
+      if (input.dryRun) input.presentation.log(`kept: ${label}: ${ruling.reason}`)
+      continue
+    }
+    if (input.dryRun) {
+      input.presentation.log(`would settle absent ${label}`)
+      continue
+    }
+    database
+      .query(
+        `UPDATE resource_claim SET state='absent',settled_at=?,settled_detail=?
+         WHERE id=? AND state='claimed'`,
+      )
+      .run(nowIso(), observation.detail, row.id)
+    input.presentation.log(`settled absent ${label}`)
+  }
+}

@@ -7,7 +7,7 @@ import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
 import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun, stopRun } from '../run/run-stop.ts'
-import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
+import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { log, optionFlags } from './support.ts'
 
 function keptBranchLine(
@@ -64,7 +64,7 @@ export function register(program: Command): void {
           force: flags.has('force'),
           presentation,
         },
-        { grokTrustHeadings, grokTrustPathFromHeading },
+        { observeGrokTrustHeadings, grokTrustPathFromHeading },
       )
     })
 

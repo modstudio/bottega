@@ -82,6 +82,27 @@ export function targetGitEnvironment(_cwd: string): NodeJS.ProcessEnv {
   return env
 }
 
+export type GitRefObservation =
+  | { outcome: 'present' | 'absent' }
+  | { outcome: 'failed'; detail: string }
+
+/** Observe one exact ref without treating an unusable repository as an absent ref. */
+export function observeGitRef(cwd: string, ref: string): GitRefObservation {
+  if (cwdMissing(cwd)) return { outcome: 'failed', detail: `${cwd} does not exist` }
+  const result = Bun.spawnSync(['git', 'rev-parse', '--verify', '--quiet', ref], {
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (result.exitCode === 0) return { outcome: 'present' }
+  if (result.exitCode === 1) return { outcome: 'absent' }
+  return {
+    outcome: 'failed',
+    detail: result.stderr.toString().trim() || `git exited ${result.exitCode ?? 'without status'}`,
+  }
+}
+
 /** A git invocation that throws with git's own words rather than a bare code. */
 function git(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)

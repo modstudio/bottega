@@ -2,6 +2,31 @@
 
 export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
+export type AbsentClaimFacts = {
+  probe: 'present' | 'absent' | 'failed'
+  owningRepository: 'known' | 'unknown-present' | 'unknown-absent'
+  allTurnsTerminal: boolean
+  liveLeaseOrPid: boolean
+  landingInFlight: boolean
+  branchKept: boolean
+}
+
+export type AbsentClaimRuling = { action: 'settle-absent' } | { action: 'keep'; reason: string }
+
+/** Decide whether one claimed resource is known to have disappeared after its conversation ended. */
+export function decideAbsentClaim(facts: AbsentClaimFacts): AbsentClaimRuling {
+  if (facts.owningRepository === 'unknown-present')
+    return { action: 'keep', reason: 'owning repository unknown' }
+  if (facts.probe === 'failed') return { action: 'keep', reason: 'absence probe failed' }
+  if (facts.probe === 'present') return { action: 'keep', reason: 'resource is present' }
+  if (!facts.allTurnsTerminal) return { action: 'keep', reason: 'conversation has a live turn' }
+  if (facts.liveLeaseOrPid)
+    return { action: 'keep', reason: 'conversation has a live lease or pid' }
+  if (facts.landingInFlight) return { action: 'keep', reason: 'landing is in flight' }
+  if (facts.branchKept) return { action: 'keep', reason: 'missing kept branch requires restore' }
+  return { action: 'settle-absent' }
+}
+
 export type UnjudgedOwnerFacts = {
   ownerSessionId: string | null
   ownerLastSeenAt: number | null
