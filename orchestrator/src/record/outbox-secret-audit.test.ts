@@ -70,3 +70,58 @@ test('audit --ids is the only way outbox ids appear', () => {
   expect(renderOutboxSecretAudit(withIds)).toContain('\t1')
   database.close()
 })
+
+function plantedOutbox(payloads: string[]): Database {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const insert = database.query(
+    `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,?,?,?,?)`,
+  )
+  for (const [index, payload] of payloads.entries()) {
+    insert.run(index + 1, 'run', `r${index + 1}`, payload, STAMP)
+  }
+  return database
+}
+
+function refusedAudit(database: Database, ids = false): string {
+  try {
+    auditOutboxSecrets(database, { ids })
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+  throw new Error('expected the audit to refuse unreadable payloads')
+}
+
+test('malformed JSON payload fails the audit and never prints payload text', () => {
+  const broken = `{not-json ${SECRET}`
+  const database = plantedOutbox([runPayload(SECRET), broken])
+  const message = refusedAudit(database)
+  expect(message).toContain('refusing outbox secret audit: 1 rows were unreadable')
+  expect(message).toContain('cleared by: rerun with --ids')
+  expect(message).not.toContain('outbox ids')
+  expect(message).not.toContain(SECRET)
+  expect(message).not.toContain(broken)
+  expect(message).not.toContain('counts')
+  const named = refusedAudit(database, true)
+  expect(named).toContain('outbox ids 2')
+  expect(named).not.toContain(SECRET)
+  expect(named).not.toContain(broken)
+  database.close()
+})
+
+test('non-object payload fails the audit and never prints payload text', () => {
+  const arrayPayload = JSON.stringify([SECRET])
+  const scalarPayload = JSON.stringify(SECRET)
+  const database = plantedOutbox([arrayPayload, 'null', scalarPayload])
+  const message = refusedAudit(database)
+  expect(message).toContain('refusing outbox secret audit: 3 rows were unreadable')
+  expect(message).toContain('cleared by: rerun with --ids')
+  expect(message).not.toContain('outbox ids')
+  expect(message).not.toContain(SECRET)
+  expect(message).not.toContain(arrayPayload)
+  expect(message).not.toContain(scalarPayload)
+  const named = refusedAudit(database, true)
+  expect(named).toContain('outbox ids 1,2,3')
+  expect(named).not.toContain(SECRET)
+  database.close()
+})

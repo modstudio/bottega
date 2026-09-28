@@ -2,7 +2,7 @@
 /** Presents record migration, space, invitation, and doctor operations. */
 
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { db } from '../database/db.ts'
+import { openReadOnlyDatabase } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
   migratePostgres,
@@ -160,15 +160,21 @@ export async function recordSpaceMoveProjectCommand(
 export function recordAuditSecretsCommand(
   options: { json: boolean; ids: boolean },
   presentation: Presentation,
-  database = db(),
+  database?: Parameters<typeof auditOutboxSecrets>[0],
 ): void {
-  const report = auditOutboxSecrets(database, { ids: options.ids })
-  if (options.json) {
-    presentation.log(JSON.stringify(report))
-    return
+  const owned = database === undefined
+  const conn = database ?? openReadOnlyDatabase()
+  try {
+    const report = auditOutboxSecrets(conn, { ids: options.ids })
+    if (options.json) {
+      presentation.log(JSON.stringify(report))
+      return
+    }
+    const text = renderOutboxSecretAudit(report)
+    if (text) presentation.log(text)
+  } finally {
+    if (owned) conn.close()
   }
-  const text = renderOutboxSecretAudit(report)
-  if (text) presentation.log(text)
 }
 
 export async function recordDoctorCommand(

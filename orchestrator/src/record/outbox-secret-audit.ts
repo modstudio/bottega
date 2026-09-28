@@ -29,6 +29,28 @@ function outboxStatus(row: OutboxAuditRow): OutboxSecretAuditStatus {
   return 'pending'
 }
 
+function parseOutboxObject(payload: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(payload)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function unreadableOutboxAuditMessage(ids: number[], includeIds: boolean): string {
+  const named = includeIds ? ` (outbox ids ${ids.join(',')})` : ''
+  const clear = includeIds
+    ? 'repair the stored JSON or retire those rows with orch record outbox retire'
+    : 'rerun with --ids to name the unreadable rows, then repair their stored JSON or retire them with orch record outbox retire'
+  return (
+    `refusing outbox secret audit: ${ids.length} rows were unreadable${named}\n` +
+    'invariant: An audit never reports emptiness for rows it could not read.\n' +
+    `cleared by: ${clear}`
+  )
+}
+
 export function auditOutboxSecrets(
   database: Database,
   options: { ids: boolean } = { ids: false },
@@ -39,15 +61,14 @@ export function auditOutboxSecrets(
     )
     .all()
   const grouped = new Map<string, OutboxSecretAuditCount>()
+  const unreadable: number[] = []
   for (const row of rows) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(row.payload)
-    } catch {
+    const parsed = parseOutboxObject(row.payload)
+    if (parsed === null) {
+      unreadable.push(row.id)
       continue
     }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-    const rule = firstOutboxEvidenceRule(row.kind, parsed as Record<string, unknown>)
+    const rule = firstOutboxEvidenceRule(row.kind, parsed)
     if (!rule) continue
     const status = outboxStatus(row)
     const key = `${row.kind}\0${rule}\0${status}`
@@ -65,6 +86,7 @@ export function auditOutboxSecrets(
       ...(options.ids ? { ids: [row.id] } : {}),
     })
   }
+  if (unreadable.length > 0) throw new Error(unreadableOutboxAuditMessage(unreadable, options.ids))
   return {
     counts: [...grouped.values()].toSorted(
       (left, right) =>
