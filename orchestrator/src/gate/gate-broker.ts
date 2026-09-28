@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
+import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import {
   boundedGateOutputTail,
@@ -38,7 +39,12 @@ function claimPendingGate(runId: number): PendingGate | null {
   })
 }
 
-function gatePlan(runId: number): { command: string; worktree: string; baseCommit: string } {
+function gatePlan(runId: number): {
+  command: string
+  worktree: string
+  baseCommit: string
+  trunk: string | null
+} {
   const row = db()
     .query(
       `SELECT r.worktree,r.base_commit,p.settings
@@ -51,11 +57,17 @@ function gatePlan(runId: number): { command: string; worktree: string; baseCommi
   } | null
   if (!row?.worktree) throw new Error(`run ${runId} has no recorded worktree`)
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-  const settings = JSON.parse(row.settings ?? '{}') as { gate?: unknown }
+  const settings = JSON.parse(row.settings ?? '{}') as { gate?: unknown; trunk?: unknown }
   if (typeof settings.gate !== 'string' || !settings.gate.trim()) {
     throw new Error(`run ${runId}'s project has no registered gate`)
   }
-  return { command: settings.gate.trim(), worktree: row.worktree, baseCommit: row.base_commit }
+  return {
+    command: settings.gate.trim(),
+    worktree: row.worktree,
+    baseCommit: row.base_commit,
+    trunk:
+      typeof settings.trunk === 'string' && settings.trunk.trim() ? settings.trunk.trim() : null,
+  }
 }
 
 function gitPaths(worktree: string, args: string[]): string[] {
@@ -66,9 +78,22 @@ function gitPaths(worktree: string, args: string[]): string[] {
   return result.stdout.toString().split('\0').filter(Boolean)
 }
 
-function changedGateTooling(plan: ReturnType<typeof gatePlan>): string[] {
+function changedGateTooling(
+  plan: ReturnType<typeof gatePlan>,
+  log: (line: string) => void,
+): string[] {
+  let base = plan.baseCommit
+  try {
+    if (!plan.trunk) throw new Error('the project has no registered trunk')
+    const mergeBase = resolveReviewMergeBase(plan.worktree, 'HEAD', plan.trunk)
+    if (!mergeBase) throw new Error(`no merge-base with trunk ${plan.trunk}`)
+    base = mergeBase
+  } catch (error) {
+    const reason = (error instanceof Error ? error.message : String(error)).replaceAll('\n', ' ')
+    log(`gate tooling diff fell back to recorded base ${plan.baseCommit}: ${reason}\n`)
+  }
   const changed = new Set([
-    ...gitPaths(plan.worktree, ['diff', '--name-only', '-z', plan.baseCommit, '--']),
+    ...gitPaths(plan.worktree, ['diff', '--name-only', '-z', base, '--']),
     ...gitPaths(plan.worktree, ['ls-files', '--others', '--exclude-standard', '-z']),
   ])
   return [...changed].filter((path) => isGateToolingPath(path, plan.command)).sort()
@@ -113,12 +138,17 @@ function startGateExecution(
     let timedOut = false
     let exitCode = -1
     let command: string | null = null
+    const record = (chunk: Buffer | string) => {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      writeSync(fd, bytes)
+      tail = boundedGateOutputTail(tail + bytes.toString())
+    }
     try {
       const plan = gatePlan(request.run_id)
       const mainCheckout = environment.ORCH_MAIN_CHECKOUT
       if (!mainCheckout) throw new Error(`run ${request.run_id} has no recorded main checkout`)
       command = resolveGateCommand(plan.command, mainCheckout)
-      const toolingPaths = changedGateTooling(plan)
+      const toolingPaths = changedGateTooling(plan, record)
       db()
         .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE id=?')
         .run(JSON.stringify(toolingPaths), command, request.id)
@@ -128,11 +158,6 @@ function startGateExecution(
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      const record = (chunk: Buffer | string) => {
-        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-        writeSync(fd, bytes)
-        tail = boundedGateOutputTail(tail + bytes.toString())
-      }
       child.stdout?.on('data', record)
       child.stderr?.on('data', record)
       child.once('error', (error) => record(`gate could not start: ${String(error)}\n`))

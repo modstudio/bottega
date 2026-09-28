@@ -20,6 +20,7 @@ export const gateModules: GateModule[] = [
     '../database/db.ts',
     '../idle-kill.ts',
     '../issue/issue-shell.ts',
+    '../review/review-target.ts',
     '../run/run-artifacts.ts',
     './gate-decision.ts',
   ]),
