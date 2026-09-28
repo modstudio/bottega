@@ -76,12 +76,16 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * first turn that a stale child row must never overwrite (lens run 2277).
  *
  * The terminal turn's error and failure_kind are part of that state and travel
- * with its status. The deliberate kind exception is a stale or abandoned child:
- * stranding or abandoning a chain inserts a judgment on the root, while copying
- * the child's NOT_EVIDENCE kind would erase that judgment
- * from routing. Those lifecycle outcomes therefore retain the root's kind.
+ * with its status. The deliberate kind exceptions are lifecycle outcomes that
+ * would erase the root's judgment from routing: stale and abandoned children
+ * always retain the root's kind, and the reaper identifies coordinator setup
+ * deaths that do too.
  */
-export function resolveRootFromLastTurn(database: Database, rootId: number): number {
+function resolveRootFromLastTurnPreserving(
+  database: Database,
+  rootId: number,
+  preserveFailureKindForTurnId: number | null,
+): number {
   return database
     .query(
       `UPDATE run AS root
@@ -99,7 +103,7 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
         ),
             failure_kind = (
           SELECT CASE
-                   WHEN last.status = 'stale' OR last.failure_kind = 'abandoned'
+                   WHEN last.id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
                      THEN root.failure_kind
                    ELSE last.failure_kind
                  END
@@ -135,7 +139,11 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
            LIMIT 1
         ) IN ('ok', 'failed', 'stale')`,
     )
-    .run(rootId).changes
+    .run(preserveFailureKindForTurnId, rootId).changes
+}
+
+export function resolveRootFromLastTurn(database: Database, rootId: number): number {
+  return resolveRootFromLastTurnPreserving(database, rootId, null)
 }
 
 /**
@@ -303,11 +311,18 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   if (ended.length) {
     const roots = d
       .query(
-        `SELECT DISTINCT COALESCE(parent_run_id, id) AS id FROM run
-        WHERE id IN (${ended.map(() => '?').join(',')})`,
+        `SELECT DISTINCT COALESCE(ended.parent_run_id, ended.id) AS id,
+          (SELECT last.id FROM run last
+            WHERE last.id = COALESCE(ended.parent_run_id, ended.id)
+               OR last.parent_run_id = COALESCE(ended.parent_run_id, ended.id)
+            ORDER BY last.turn DESC, last.id DESC LIMIT 1) AS last_id
+        FROM run ended WHERE ended.id IN (${ended.map(() => '?').join(',')})`,
       )
-      .all(...ended) as { id: number }[]
-    for (const { id } of roots) resolveRootFromLastTurn(d, id)
+      .all(...ended) as { id: number; last_id: number }[]
+    const setupDeathIds = new Set(setupDeaths)
+    for (const { id, last_id } of roots) {
+      resolveRootFromLastTurnPreserving(d, id, setupDeathIds.has(last_id) ? last_id : null)
+    }
     for (const id of ended) teardownTerminalRunResources(d, id)
   }
   return dead.length + abandonedBootstraps.length + setupDeaths.length

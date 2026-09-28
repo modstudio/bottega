@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
@@ -174,6 +174,34 @@ describe('reapStale', () => {
       status: 'failed',
       failure_kind: 'harness',
       error: 'coordinator exited during setup before the agent started; last output: (no output)',
+    })
+  })
+
+  test('a setup death continuation preserves the scored root as routing evidence', () => {
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+    score(root, 'full', 'right')
+    const child = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'running',
+      parent: root,
+      turn: 2,
+    })
+    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, child)
+
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child)).toEqual({
+      status: 'failed',
+      failure_kind: 'harness',
+    })
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root)).toEqual({
+      status: 'failed',
+      failure_kind: null,
+    })
+    expect(candidates('craft').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      evidence: 1,
+      scored: 1,
+      failures: 0,
     })
   })
 })
