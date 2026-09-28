@@ -24,6 +24,7 @@ test('a foreign open pull request is refused after the pushed tip is recorded', 
         baseRef: 'main',
         checks: 'passed',
       }),
+      releaseBranch: () => {},
     })
     const result = await mirrorRepositoryCanon({
       project: 'cm-foreign-pr',
