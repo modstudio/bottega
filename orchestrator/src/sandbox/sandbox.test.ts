@@ -210,13 +210,7 @@ test('mirrors operator tooling into a worker HOME without harness homes', () => 
     expect(readdirSync(workerClaudeHome)).toEqual(['.env'])
     expect(lstatSync(join(workerClaudeHome, '.env')).isSymbolicLink()).toBe(true)
     expect(readlinkSync(join(workerClaudeHome, '.env'))).toBe(join(operatorHome, '.claude', '.env'))
-    for (const omitted of [
-      '.claude.json',
-      '.codex',
-      '.grok',
-      'dotfiles',
-      'linked-claude',
-    ]) {
+    for (const omitted of ['.claude.json', '.codex', '.grok', 'dotfiles', 'linked-claude']) {
       expect(existsSync(join(workerHome, omitted))).toBe(false)
     }
     expect(statSync(runDir).mode & 0o777).toBe(0o700)
