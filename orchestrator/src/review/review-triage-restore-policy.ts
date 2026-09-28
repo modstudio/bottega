@@ -8,6 +8,7 @@ export const TRIAGE_RESTORE_SKIP_REASONS = {
   identityMismatch: 'identity mismatch',
   openReview: 'review is not completed',
   hostedDivergence: 'hosted identity already diverged',
+  missingRecordId: 'review has a finding with no record id',
 } as const
 
 export type TriageRestoreFinding = {
@@ -48,7 +49,10 @@ export type TriageRestoreFacts = {
   liveRecordIdReferenced: boolean
 }
 
-function identityMatches(finding: TriageRestoreFinding, source: TriageRestoreSource): boolean {
+export function matchesTriageRestoreIdentity(
+  finding: TriageRestoreFinding,
+  source: TriageRestoreSource,
+): boolean {
   const withheld = new Set(source.withheldFields)
   return (
     source.localId === finding.id &&
@@ -69,7 +73,7 @@ export function decideTriageRestore(facts: TriageRestoreFacts): TriageRestoreDec
   if (source.disposition === null) {
     return { action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.nullDisposition }
   }
-  if (!identityMatches(finding, source)) {
+  if (!matchesTriageRestoreIdentity(finding, source)) {
     return { action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.identityMismatch }
   }
   if (finding.completedAt === null) {

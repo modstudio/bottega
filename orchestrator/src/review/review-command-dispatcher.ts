@@ -18,6 +18,9 @@ export async function dispatchReviewCommand(
   flags: ReviewFlags,
   presentation: ReviewPresentation,
 ): Promise<void> {
+  if (flags.has('dry-run') && sub !== 'restore-triage') {
+    throw new Error('--dry-run is only valid for orch review restore-triage')
+  }
   if (sub === 'read') {
     recordArchitectReadCommand(argv, flags, presentation)
     return
