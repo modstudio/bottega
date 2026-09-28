@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { rmSync } from 'node:fs'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { db } from '../database/db.ts'
 import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 import {
@@ -7,18 +8,19 @@ import {
   mirrorRepository,
   registerManagedMirror,
 } from './canon-mirror-ownership.fixture.ts'
-import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 
 test('a foreign snapshot at a matching remote tip does not establish ownership', async () => {
   const root = mirrorRepository('cm-foreign-snapshot')
   const tip = '0123456789abcdef0123456789abcdef01234567'
   try {
     await registerManagedMirror(root, 'cm-foreign-snapshot')
-    db().query(
-      `INSERT INTO landing_triage_snapshot
+    db()
+      .query(
+        `INSERT INTO landing_triage_snapshot
        (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
        VALUES ('foreign-snapshot','cm-foreign-snapshot','DEV-1002-canon-mirror',?, 'tree',9,'[]','patch',0,0,0,'2026-09-28')`,
-    ).run(tip)
+      )
+      .run(tip)
     const result = await mirrorRepositoryCanon({
       project: 'cm-foreign-snapshot',
       dryRun: false,
@@ -118,7 +120,9 @@ test('the merge freshness decision reads the live remote trunk', async () => {
 test('update-ref branch release refuses a branch that moved', () => {
   const root = mirrorRepository('cm-update-ref')
   try {
-    const original = spawnFixtureGitSync(['rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim()
+    const original = spawnFixtureGitSync(['rev-parse', 'HEAD'], { cwd: root })
+      .stdout.toString()
+      .trim()
     spawnFixtureGitSync(['branch', 'DEV-1002-canon-mirror', original], { cwd: root })
     spawnFixtureGitSync(['commit', '--allow-empty', '-m', 'foreign move'], { cwd: root })
     const moved = spawnFixtureGitSync(['rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim()
@@ -128,8 +132,8 @@ test('update-ref branch release refuses a branch that moved', () => {
       systemCanonMirrorPort.releaseBranch(project, 'DEV-1002-canon-mirror', original),
     ).toThrow()
     expect(
-      spawnFixtureGitSync(['rev-parse', 'DEV-1002-canon-mirror'], { cwd: root }).stdout
-        .toString()
+      spawnFixtureGitSync(['rev-parse', 'DEV-1002-canon-mirror'], { cwd: root })
+        .stdout.toString()
         .trim(),
     ).toBe(moved)
   } finally {

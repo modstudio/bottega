@@ -99,7 +99,10 @@ export type CanonMirrorPort = {
 const WITHHELD = 'command failed: output withheld because it resembles a secret'
 export function screenCanonMirrorError(value: unknown): string {
   const text = value instanceof Error ? value.message : String(value)
-  const masked = text.replace(/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])|(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/g, '[git-object-id]')
+  const masked = text.replace(
+    /(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])|(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/g,
+    '[git-object-id]',
+  )
   return containsSecretShaped(masked) ? WITHHELD : text
 }
 function spawn(cwd: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
@@ -418,7 +421,12 @@ function settleReleasedBranch(runId: number, branch: string): void {
   })
 }
 
-type MirrorExecution = { treeCreated: boolean; pushed: boolean; base: string | null; commit: string | null }
+type MirrorExecution = {
+  treeCreated: boolean
+  pushed: boolean
+  base: string | null
+  commit: string | null
+}
 
 function recordPushedTip(runId: number, commit: string): void {
   db().query('UPDATE run SET head_commit=? WHERE id=?').run(commit, runId)
