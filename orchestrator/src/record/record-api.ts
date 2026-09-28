@@ -9,6 +9,7 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
+import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   ConfigEntry,
@@ -45,6 +46,10 @@ import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
+import type {
+  RecordSettingsPermissionInput,
+  RecordSettingsPermissionResult,
+} from './record-settings.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
@@ -122,6 +127,9 @@ type Deps = {
     input: Tenant & { from: string; to: string; count: number },
   ): Promise<{ docs: number; revisions: number }>
   countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
+  applySettingsPermission(
+    input: RecordSettingsPermissionInput,
+  ): Promise<RecordSettingsPermissionResult>
   upsertScore(
     input: Tenant &
       Omit<VerdictInput, 'scoredBy'> & {
@@ -413,6 +421,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     throw error
   }
   registerRecordProjectRoutes(app, deps, { scope, noSpace, writeError })
+  registerRecordSettingsRoutes(app, deps, { scope, noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({

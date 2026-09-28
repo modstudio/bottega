@@ -17,6 +17,10 @@ import {
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
+import {
+  editSettingsPermission,
+  type SettingsPermissionOperation,
+} from './settings-permission.ts'
 import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
 import {
   claudeHomeFromEnvironment,
@@ -50,8 +54,6 @@ type SettingsPresentation = {
 
 type SettingsTargetKind = { kind: 'user' } | { kind: 'project'; name: string }
 
-export type SettingsPermissionOperation = 'add' | 'remove'
-
 export async function settingsPermissionCommand(
   flags: SettingsFlags,
   operation: SettingsPermissionOperation,
@@ -74,26 +76,16 @@ export async function settingsPermissionCommand(
     }
     throw new Error(`refusing settings permission add: no settings row for ${targetLabel(target)}`)
   }
-  const owned = parseStoredOwnedSettings(row.body)
-  const permissionList = list as PermissionList
-  const current = permissionLists(owned.permissions)[permissionList]
-  const present = current.includes(rule)
-  if ((operation === 'add' && present) || (operation === 'remove' && !present)) {
+  const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), { list, rule, operation })
+  if (!edit.changed) {
     return {
       revision: row.revision!,
-      counts: permissionCounts(owned),
+      counts: permissionCounts(edit.settings),
       changed: false,
-      message: operation === 'add' ? 'already present' : 'rule is absent',
+      message: edit.message,
     }
   }
-  const next = operation === 'add' ? [...current, rule] : current.filter((item) => item !== rule)
-  const body = serializeOwnedSettings({
-    ...owned,
-    permissions: {
-      ...(isPlainObject(owned.permissions) ? owned.permissions : {}),
-      [permissionList]: next,
-    },
-  })
+  const body = serializeOwnedSettings(edit.settings)
   const refusal = refuseSettingsBody(SETTINGS_SCOPE, body)
   if (refusal) throw new Error(refusal)
   const written = await setDoc({

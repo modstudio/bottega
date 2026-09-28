@@ -132,6 +132,17 @@ describe('decideDocRevisionWrite', () => {
     ).toEqual({ allow: true })
   })
 
+  test('requires the current revision for an existing settings doc', () => {
+    expect(
+      decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'settings' }),
+    ).toEqual({
+      allow: false,
+      reason:
+        'refusing settings update at current revision revision-2; pass --expect revision-2\n' +
+        're-read with orch doc get and re-apply the edit',
+    })
+  })
+
   test('refuses stale optional tokens in other scopes and tokens for a create', () => {
     expect(
       decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'global' }),

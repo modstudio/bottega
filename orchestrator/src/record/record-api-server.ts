@@ -45,6 +45,7 @@ import { listRecordProjects, retireRecordProject, upsertRecordProject } from './
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
+import { applyRecordSettingsPermission } from './record-settings.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -123,6 +124,7 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     restoreDoc: restoreRecordDoc,
     renameDocSubject: renameRecordDocSubject,
     countDocs: countRecordDocs,
+    applySettingsPermission: applyRecordSettingsPermission,
     upsertScore: async (input) =>
       upsertRecordScore({
         ...input,
