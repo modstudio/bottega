@@ -14,6 +14,12 @@ const row = {
   updatedAt: '2026-09-25T12:00:00.000Z',
 }
 
+const operatorPid = 400
+const operatorInventory = {
+  ascertainable: true as const,
+  rows: [{ pid: operatorPid, ppid: 1, pgid: operatorPid, command: 'orch config set' }],
+}
+
 test('config get --json presents the structured row', () => {
   expect(JSON.parse(configGetPresentation(row, true))).toEqual(row)
 })
@@ -35,7 +41,9 @@ test('an orch worker run cannot write autonomy while an operator process can', (
   ).toThrow(
     'refusing autonomy config write from an orch worker run; an operator must run orch config set autonomy.release promote',
   )
-  expect(() => assertConfigWriteAllowed('autonomy.release', 'promote', {})).not.toThrow()
+  expect(() =>
+    assertConfigWriteAllowed('autonomy.release', 'promote', {}, operatorPid, operatorInventory),
+  ).not.toThrow()
 })
 
 test('a descendant of an orch run executor cannot write autonomy after unsetting its run id', () => {
@@ -56,7 +64,7 @@ test('a descendant of an orch run executor cannot write autonomy after unsetting
 })
 
 test('an explicit invalid release write is refused with the shared allowed list', () => {
-  expect(() => assertConfigWriteAllowed('autonomy.release', 'automatic', {})).toThrow(
-    'expected one of push, land, promote',
-  )
+  expect(() =>
+    assertConfigWriteAllowed('autonomy.release', 'automatic', {}, operatorPid, operatorInventory),
+  ).toThrow('expected one of push, land, promote')
 })
