@@ -1,51 +1,52 @@
 import { Database } from 'bun:sqlite'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
 
-const argv = process.argv.slice(2)
-
-if (argv.length === 1 && argv[0] === '--version') {
+function versionCommand(): number {
   try {
     console.log(installationVersionText(import.meta.dir, process.env))
-    process.exit(0)
+    return 0
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
-    process.exit(1)
+    return 1
   }
 }
 
-if (argv[0] === 'init-db') {
+async function initDatabaseCommand(argv: string[]): Promise<number> {
   if (argv.length !== 1) {
     console.error('unrecognized argument\nworking form: orch init-db')
-    process.exit(1)
+    return 1
   }
   try {
     const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
     registerStandardRuntime()
     const { initializeDatabase } = await import('../database/db.ts')
     console.log(`created orchestrator database: ${initializeDatabase()}`)
+    return 0
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
-    process.exit(1)
+    return 1
   }
-  process.exit(0)
 }
 
-try {
+async function fullCli(argv: string[]): Promise<number> {
   const { DB_PATH, legacyDatabaseRefusal, missingDatabaseMessage } = await import(
     '../database/database-location.ts'
   )
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   const { existsSync } = await import('node:fs')
-  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  if (!existsSync(DB_PATH) && !(argv[0] === 'migrate' && embeddedDistributionManifest())) {
+    throw new Error(missingDatabaseMessage())
+  }
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
   registerStandardRuntime()
   const { run } = await import('./program.ts')
-  process.exitCode = await run(argv)
-} catch (error) {
-  if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
+  return run(argv)
+}
 
+async function degradedCollection(argv: string[], error: unknown): Promise<number> {
   const reason = error instanceof Error ? error.message : String(error)
   console.error(`orch: degraded collection mode because the full CLI could not load: ${reason}`)
   try {
@@ -57,10 +58,24 @@ try {
     // The degraded path is deliberately only collection: output and status,
     // not scoring advice that would require loading the job/router graph.
     await collect(database, argv[0] === 'result' ? [...argv, '--quiet'] : argv)
+    return 0
   } catch (collectionError) {
     console.error(
       collectionError instanceof Error ? collectionError.message : String(collectionError),
     )
-    process.exit(1)
+    return 1
   }
 }
+
+export async function main(argv: string[]): Promise<number> {
+  if (argv.length === 1 && argv[0] === '--version') return versionCommand()
+  if (argv[0] === 'init-db') return initDatabaseCommand(argv)
+  try {
+    return await fullCli(argv)
+  } catch (error) {
+    if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
+    return degradedCollection(argv, error)
+  }
+}
+
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

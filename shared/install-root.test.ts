@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
+import { registerEmbeddedAssets } from './embedded-assets.ts'
 import {
   assetPath,
   DIST_MANIFEST,
@@ -18,6 +19,7 @@ import {
 const scratchRoots: string[] = []
 
 afterEach(() => {
+  registerEmbeddedAssets(null)
   for (const root of scratchRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -145,5 +147,16 @@ describe('installation identity', () => {
     expect(installationVersionText(checkout, {})).toBe(
       `${PLATFORM_NAME} 0.1.0 (development checkout)`,
     )
+  })
+
+  test('an embedded manifest renders the same identity without an installation on disk', () => {
+    const release = scratch()
+    writeFileSync(join(release, DIST_MANIFEST), JSON.stringify(manifest))
+    const diskVersion = installationVersionText(release, {})
+
+    registerEmbeddedAssets({ assets: {}, manifest })
+    expect(installationVersionText('/$bunfs/root', {})).toBe(diskVersion)
+    expect(isAuthorizedPlatformInstallation('/$bunfs/root', {}, false)).toBeTrue()
+    expect(installRoot()).toBe(dirname(process.execPath))
   })
 })

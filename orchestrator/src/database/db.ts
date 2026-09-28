@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
 import {
   DATABASE_RESOLUTION,
@@ -360,9 +361,11 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
-  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  const create = !existsSync(DB_PATH) && embeddedDistributionManifest() !== null
+  if (!existsSync(DB_PATH) && !create) throw new Error(missingDatabaseMessage())
   registeredOpenHooks()
-  const d = new Database(DB_PATH, { readwrite: true, create: false })
+  if (create) mkdirSync(dirname(DB_PATH), { recursive: true })
+  const d = new Database(DB_PATH, { readwrite: true, create })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const versions = applyMigrations(d)

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/brand.ts',
+  '../../../shared/embedded-assets.ts',
   '../../../shared/install-root.ts',
   '../../../shared/state-directory.ts',
   '../artifact-paths.ts',

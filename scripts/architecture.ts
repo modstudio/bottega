@@ -9,6 +9,7 @@ import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { recordModules } from './architecture-record-modules.ts'
+import { releaseModules } from './architecture-release.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
@@ -54,6 +55,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  ...releaseModules,
   ...retrievalModules,
   ...operatorWaitingModules,
   ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
@@ -835,6 +837,12 @@ export function architectureRules() {
       comment: concerns.shared.reason,
       from: { path: '^shared/' },
       to: { path: `^(${concerns.roots.join('|')})/` },
+    },
+    {
+      name: 'concerns-do-not-import-release',
+      severity: 'error',
+      from: { path: `^(${concerns.roots.join('|')})/` },
+      to: { path: '^release/' },
     },
     {
       name: 'hub-web-imports-only-router-type',

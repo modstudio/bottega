@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
@@ -54,7 +54,12 @@ type SchemaInventory = {
 }
 
 export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
-  const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as {
+  const journal = JSON.parse(
+    readInstallAsset(
+      join('orchestrator', 'migrations', 'meta', '_journal.json'),
+      join(folder, 'meta', '_journal.json'),
+    ),
+  ) as {
     entries: JournalEntry[]
   }
   const entries = journal.entries
@@ -73,7 +78,10 @@ export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
 }
 
 function migrationSource(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
-  return readFileSync(join(folder, `${entry.tag}.sql`), 'utf8')
+  return readInstallAsset(
+    join('orchestrator', 'migrations', `${entry.tag}.sql`),
+    join(folder, `${entry.tag}.sql`),
+  )
 }
 
 /** DDL for hashing and one-time apply; backfill blocks are excluded so they can evolve. */
