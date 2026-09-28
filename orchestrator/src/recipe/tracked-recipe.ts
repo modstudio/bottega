@@ -18,6 +18,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { git, gitOk } from '../git/git-environment.ts'
 import type { WorktreeTool } from '../project/projects.ts'
@@ -597,6 +598,7 @@ function failTrackedCreation(input: {
   const setup = `worktree setup failed at "${result.name}" (${result.phase}): ${result.detail}`
   if (!undoFailure) {
     const removal = input.createInput.remove(input.worktree)
+    settleCreateTimeBranchCleanup(input.worktree, input.createInput.runId)
     if (removal.removed) {
       input.allocator.release(input.allocationAttempt, setup)
       throw new Error(setup)
@@ -725,6 +727,7 @@ export function createTrackedRecipe(
     input.verify(worktree)
   } catch (error) {
     input.removeProvisioned(worktree)
+    settleCreateTimeBranchCleanup(worktree, input.runId)
     throw error
   }
   return worktree

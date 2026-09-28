@@ -83,7 +83,7 @@ function runRecordedRecipe(
     const cleanup = recipeStarted
       ? removeFor(worktree, worktree.repoRoot, false, false, runId)
       : removeWorktree(worktree)
-    if (recipeStarted) settleCreateTimeBranchCleanup(worktree, runId)
+    settleCreateTimeBranchCleanup(worktree, runId)
     throw new Error(
       `${String((error as Error)?.message ?? error)}\n` +
         `unrecorded recipe resource cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
@@ -136,6 +136,7 @@ export function attributeWorktree(
   } | null
   if (recorded?.status === 'stopped') {
     const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
+    settleCreateTimeBranchCleanup(worktree, runId)
     if (cleanup.removed) {
       db().query('UPDATE run SET worktree=NULL WHERE id=?').run(runId)
     }

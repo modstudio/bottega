@@ -30,7 +30,10 @@ type ClaimedRow = {
   allocation_key: string
   project_name: string | null
   project_path: string | null
-  repository_path: string | null
+  run_repo: string | null
+  run_cwd: string | null
+  launch_cwd: string | null
+  recorded_worktree: string | null
   worktree_path: string | null
 }
 
@@ -71,7 +74,8 @@ function claimedRows(database: Database, projectName: string | undefined): Claim
   return database
     .query(
       `SELECT claim.id,claim.root_run_id,claim.project_id,claim.kind,claim.allocation_key,
-              project.name project_name,project.path project_path,root.cwd repository_path,
+              project.name project_name,project.path project_path,root.repo run_repo,
+              root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
                 (SELECT tree.allocation_key FROM resource_claim tree
                  WHERE tree.root_run_id=claim.root_run_id AND tree.kind='worktree'
@@ -88,6 +92,37 @@ function claimedRows(database: Database, projectName: string | undefined): Claim
     .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
 }
 
+function unregisteredRepositoryPath(row: ClaimedRow): string | null {
+  const marker = '/.claude/worktrees/'
+  for (const path of [row.recorded_worktree, row.run_cwd]) {
+    const index = path?.indexOf(marker) ?? -1
+    if (path && index > 0) return path.slice(0, index)
+  }
+  if (row.run_repo?.startsWith('/')) return row.run_repo
+  return row.launch_cwd
+}
+
+function owningRepository(
+  row: ClaimedRow,
+  observers: ClaimReconciliationObservers,
+): {
+  path: string | null
+  state: 'known' | 'unknown-present' | 'unknown-absent'
+} {
+  if (row.project_path) return { path: row.project_path, state: 'known' }
+  const path = unregisteredRepositoryPath(row)
+  if (!path) return { path: null, state: 'unknown-present' }
+  const observation = observers.path(path)
+  if (observation.outcome === 'absent') return { path, state: 'unknown-absent' }
+  if (observation.outcome === 'present') {
+    return {
+      path,
+      state: row.kind === 'branch' || row.kind === 'retained_ref' ? 'known' : 'unknown-present',
+    }
+  }
+  return { path: null, state: 'unknown-present' }
+}
+
 function claimedRow(database: Database, claimId: number): ClaimedRow | null {
   return claimedRows(database, undefined).find((row) => row.id === claimId) ?? null
 }
@@ -102,6 +137,7 @@ const synchronizeClaim: ClaimSynchronizer = (row, reconcile) => {
 
 function resourceObservation(
   row: ClaimedRow,
+  repositoryPath: string | null,
   repositoryState: 'known' | 'unknown-present' | 'unknown-absent',
   observers: ClaimReconciliationObservers,
 ): { probe: 'present' | 'absent' | 'failed'; detail: string } {
@@ -109,16 +145,16 @@ function resourceObservation(
     repositoryState === 'unknown-absent' &&
     (row.kind === 'branch' || row.kind === 'retained_ref')
   ) {
-    return { probe: 'absent', detail: `observed absent repository ${row.repository_path}` }
+    return { probe: 'absent', detail: `observed absent repository ${repositoryPath}` }
   }
   if (row.kind === 'branch' || row.kind === 'retained_ref') {
-    if (!row.project_path) return { probe: 'failed', detail: 'owning repository unknown' }
-    const observation = observers.ref(row.project_path, row.allocation_key)
+    if (!repositoryPath) return { probe: 'failed', detail: 'owning repository unknown' }
+    const observation = observers.ref(repositoryPath, row.allocation_key)
     return observation.outcome === 'failed'
       ? { probe: 'failed', detail: observation.detail }
       : {
           probe: observation.outcome,
-          detail: `observed absent ref ${row.allocation_key} in ${row.project_path}`,
+          detail: `observed absent ref ${row.allocation_key} in ${repositoryPath}`,
         }
   }
   if (row.kind === 'trust_entry') {
@@ -183,21 +219,14 @@ function landingInFlight(database: Database, row: ClaimedRow): boolean {
 }
 
 function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconciliationObservers) {
-  const repositoryObservation = row.repository_path
-    ? observers.path(row.repository_path)
-    : { outcome: 'failed' as const }
-  const repositoryState = row.project_id
-    ? ('known' as const)
-    : repositoryObservation.outcome === 'absent'
-      ? ('unknown-absent' as const)
-      : ('unknown-present' as const)
-  const observation = resourceObservation(row, repositoryState, observers)
+  const repository = owningRepository(row, observers)
+  const observation = resourceObservation(row, repository.path, repository.state, observers)
   const conversation = conversationFacts(database, row, observers)
   return {
     observation,
     ruling: decideAbsentClaim({
       probe: observation.probe,
-      owningRepository: repositoryState,
+      owningRepository: repository.state,
       ...conversation,
       landingInFlight: landingInFlight(database, row),
     }),

@@ -140,3 +140,83 @@ test('a guard that changes before locked settlement leaves the claim claimed', (
     state: 'claimed',
   })
 })
+
+test('an unregistered missing worktree probes a present ref in its owning repository', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const repository = `/scratch/repository-${runId}`
+  const worktree = `${repository}/.claude/worktrees/orch-${runId}`
+  db()
+    .query('UPDATE run SET repo=NULL,project_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?')
+    .run(worktree, worktree, repository, runId)
+  const claimId = Number(
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?, NULL, 'branch', ?, 'claimed', ?)`,
+      )
+      .run(runId, runId, `refs/heads/DEV-991-${runId}`, nowIso()).lastInsertRowid,
+  )
+  const refRepositories: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    presentation: { log: () => {}, error: () => {}, setExitCode: () => {}, keptBranchLine: String },
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      path: (path) => ({ outcome: path === repository ? 'present' : 'absent' }),
+      ref: (path) => {
+        refRepositories.push(path)
+        return { outcome: 'present' }
+      },
+      trust: { succeeded: true, headings: [] },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+  })
+
+  expect(refRepositories).toEqual([repository])
+  expect(db().query('SELECT state FROM resource_claim WHERE id=?').get(claimId)).toEqual({
+    state: 'claimed',
+  })
+})
+
+test('an unregistered claim settles absent when its owning repository root is gone', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const repository = `/scratch/gone-repository-${runId}`
+  const worktree = `${repository}/.claude/worktrees/orch-${runId}`
+  db()
+    .query('UPDATE run SET repo=NULL,project_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?')
+    .run(worktree, worktree, repository, runId)
+  const claimId = Number(
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?, NULL, 'retained_ref', ?, 'claimed', ?)`,
+      )
+      .run(runId, runId, `refs/orch/retained/${runId}`, nowIso()).lastInsertRowid,
+  )
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    presentation: { log: () => {}, error: () => {}, setExitCode: () => {}, keptBranchLine: String },
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      path: () => ({ outcome: 'absent' }),
+      ref: () => ({ outcome: 'failed', detail: 'repository is gone' }),
+      trust: { succeeded: true, headings: [] },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+  })
+
+  expect(
+    db().query('SELECT state,settled_detail FROM resource_claim WHERE id=?').get(claimId),
+  ).toEqual({
+    state: 'absent',
+    settled_detail: `observed absent repository ${repository}`,
+  })
+})
