@@ -856,8 +856,9 @@ test('a synced parent lets its child flow after a later re-enqueue is retired', 
     pending: 0,
     blocked: [],
   })
-  expect(local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox WHERE id=3').get())
-    .toEqual({ synced_at: STAMP })
+  expect(
+    local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox WHERE id=3').get(),
+  ).toEqual({ synced_at: STAMP })
   local.close()
 })
 
