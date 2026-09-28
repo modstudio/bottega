@@ -19,20 +19,20 @@ test('tRPC mutation requests require browser same-origin proof', () => {
   expect(trpcMutationRequestAllowed(request(undefined, 'GET'))).toBe(true)
 })
 
-test('a forged same-origin context mutation without a login cookie never reaches orch', async () => {
+test('setRelease without a login cookie gets 401 and never reaches orch', async () => {
   stopDashboardCapability()
   const spawn = spyOn(Bun, 'spawn')
   try {
     const origin = 'http://127.0.0.1:4567'
     const response = await handleTrpcRequest(
-      new Request(`${origin}/trpc/context.autonomy.set`, {
+      new Request(`${origin}/trpc/context.autonomy.setRelease`, {
         method: 'POST',
         headers: {
           Origin: origin,
           'Sec-Fetch-Site': 'same-origin',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ json: { project: 'alpha', stage: 'review', value: 'auto' } }),
+        body: JSON.stringify({ json: { project: 'alpha', value: 'promote' } }),
       }),
     )
     expect(response.status).toBe(401)

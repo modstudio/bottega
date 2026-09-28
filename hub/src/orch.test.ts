@@ -19,6 +19,7 @@ import {
   answerWaitingArgv,
   configArgv,
   contextArgv,
+  contextGet,
   decodeRunsJson,
   docArgv,
   fileRulingArgv,
@@ -86,6 +87,28 @@ test('managed context wrappers build exact argv', () => {
     'needed',
     '--json',
   ])
+})
+
+test('context accepts a null landing branch', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'hub-context-null-landing-'))
+  const executable = join(root, 'orch-context')
+  writeFileSync(
+    executable,
+    `#!/bin/sh
+printf '%s\\n' '{"registered":true,"project":"fixture","rulings":{"value":"agent","scope":"built-in"},"release":{"value":"land","scope":"built-in","landing":null,"production":null},"stages":[],"text":"release: land (no landing branch declared) (built-in)"}'
+`,
+  )
+  chmodSync(executable, 0o755)
+  const prior = process.env.HUB_ORCH
+  try {
+    process.env.HUB_ORCH = executable
+    const result = await contextGet('/fixture')
+    expect(result.registered && result.release.landing).toBeNull()
+  } finally {
+    if (prior === undefined) delete process.env.HUB_ORCH
+    else process.env.HUB_ORCH = prior
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('settings check preserves an exit-one refusal with empty stdout', async () => {

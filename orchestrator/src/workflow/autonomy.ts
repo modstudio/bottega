@@ -1,14 +1,21 @@
 // concern: workflows
 /** Owns the pure workflow-autonomy vocabulary, parsing, resolution, and decisions. */
 
+import {
+  RELEASE_AUTONOMY_VALUES,
+  type ReleaseAutonomyValue,
+} from '../../../shared/release-autonomy.ts'
+
 export const autonomyStages = ['plan', 'implement', 'review', 'docs', 'canon', 'ship'] as const
 export const autonomyValues = ['ask', 'review', 'auto'] as const
 export const autonomyPresets = ['manual', 'guided', 'autonomous'] as const
 export const builtInAutonomyPreset: AutonomyPreset = 'guided'
+const builtInRelease: ReleaseValue = 'land'
 export type AutonomyStage = (typeof autonomyStages)[number]
 export type AutonomyValue = (typeof autonomyValues)[number]
 export type StageAutonomyValue = AutonomyValue | 'per step'
 export type AutonomyPreset = (typeof autonomyPresets)[number]
+export type ReleaseValue = ReleaseAutonomyValue
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {
   preset?: AutonomyPreset
@@ -17,14 +24,17 @@ type WorkflowAutonomySettings = {
   rulings?: 'agent' | 'user'
 }
 export type AutonomySettings = WorkflowAutonomySettings & {
+  release?: ReleaseValue
   workflows?: Record<string, WorkflowAutonomySettings>
 }
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
   stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>
   rulings: RulingsResolution
+  release: { value: ReleaseValue; scope: string }
   hosted?: { status: 'available' | 'not-configured' | 'unavailable'; reason?: string }
   note?: string
+  warnings?: string[]
   session?: AutonomySettings
 }
 export type RulingsResolution = {
@@ -129,7 +139,16 @@ function validateWorkflows(value: unknown, scope: string): Pick<AutonomySettings
 
 export function validateAutonomySettings(value: unknown, scope: string): AutonomySettings {
   const settings = validateWorkflowSettings(value, scope)
-  return object(value) ? { ...settings, ...validateWorkflows(value.workflows, scope) } : settings
+  if (!object(value)) return settings
+  if (value.release !== undefined && !allowed(value.release, RELEASE_AUTONOMY_VALUES))
+    throw new Error(
+      `invalid autonomy setting at ${scope} key release: ${String(value.release)}; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
+    )
+  return {
+    ...settings,
+    ...(value.release === undefined ? {} : { release: value.release as ReleaseValue }),
+    ...validateWorkflows(value.workflows, scope),
+  }
 }
 
 function resolvedAutonomyValue(
@@ -176,10 +195,22 @@ export function resolveAutonomy(
   workflow?: string,
   stages: readonly AutonomyStage[] = [],
 ): AutonomyResolution {
-  const checked = scopes.map((scope) => ({
-    name: scope.name,
-    settings: validateAutonomySettings(scope.settings, scope.name),
-  }))
+  const warnings: string[] = []
+  const checked = scopes.map((scope) => {
+    if (
+      object(scope.settings) &&
+      scope.settings.release !== undefined &&
+      !allowed(scope.settings.release, RELEASE_AUTONOMY_VALUES)
+    ) {
+      const { release, ...rest } = scope.settings
+      const settings = validateAutonomySettings(rest, scope.name)
+      warnings.push(
+        `warning: ignored invalid autonomy setting at ${scope.name} key release: ${String(release)}; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
+      )
+      return { name: scope.name, settings }
+    }
+    return { name: scope.name, settings: validateAutonomySettings(scope.settings, scope.name) }
+  })
   const resolved: AutonomyResolution['steps'] = {}
   for (const step of steps) {
     resolved[step.slug] = resolveSubject(step, checked, workflow)
@@ -199,6 +230,9 @@ export function resolveAutonomy(
         resolvedRuling(scope.settings),
     }))
     .find(({ value }) => value !== undefined)
+  const release = checked
+    .map((scope) => ({ name: scope.name, value: scope.settings.release }))
+    .find(({ value }) => value !== undefined)
   return {
     steps: resolved,
     ...(stages.length ? { stages: resolvedStages } : {}),
@@ -208,6 +242,10 @@ export function resolveAutonomy(
           scope: ruling.name,
         }
       : { value: 'agent', scope: 'built-in' },
+    release: release
+      ? { value: release.value!, scope: release.name }
+      : { value: builtInRelease, scope: 'built-in' },
+    ...(warnings.length ? { warnings } : {}),
   }
 }
 
@@ -218,7 +256,7 @@ export const catalogueStepsForAutonomy = (
 
 export const builtInAutonomyScope = (defaultPreset?: AutonomyPreset) => ({
   name: 'built-in',
-  settings: { preset: defaultPreset ?? builtInAutonomyPreset },
+  settings: { preset: defaultPreset ?? builtInAutonomyPreset, release: builtInRelease },
 })
 
 export function combineRulingsSnapshots(snapshots: RulingsResolution[]): RulingsResolution | null {
@@ -262,7 +300,7 @@ function parseWorkflowAutonomySetting(
   return true
 }
 
-export function parseAutonomy(text: string | undefined, source: string): AutonomySettings {
+function parseAutonomyInput(text: string | undefined, source: string): AutonomySettings {
   if (!text?.trim()) return {}
   const result: AutonomySettings = {}
   for (const item of text.split(',')) {
@@ -270,7 +308,8 @@ export function parseAutonomy(text: string | undefined, source: string): Autonom
     if (at < 1) throw new Error(`invalid ${source} autonomy ${JSON.stringify(item)}; use key=value`)
     const key = item.slice(0, at).trim()
     const value = item.slice(at + 1).trim()
-    if (key === 'preset' || key === 'rulings') (result as Record<string, unknown>)[key] = value
+    if (key === 'preset' || key === 'rulings' || key === 'release')
+      (result as Record<string, unknown>)[key] = value
     else if (key.startsWith('stage.')) {
       result.stages ??= {}
       result.stages[key.slice(6) as AutonomyStage] = value as AutonomyValue
@@ -280,7 +319,16 @@ export function parseAutonomy(text: string | undefined, source: string): Autonom
     } else if (!parseWorkflowAutonomySetting(result, key, value, source))
       throw new Error(`invalid ${source} autonomy key ${JSON.stringify(key)}`)
   }
-  return validateAutonomySettings(result, source)
+  return result
+}
+
+export function parseAutonomy(text: string | undefined, source: string): AutonomySettings {
+  return validateAutonomySettings(parseAutonomyInput(text, source), source)
+}
+
+/** Stored settings are validated scope-by-scope so one bad release value can be ignored. */
+export function parseStoredAutonomy(text: string | undefined, source: string): AutonomySettings {
+  return parseAutonomyInput(text, source)
 }
 
 export function answerRulingRefusal(

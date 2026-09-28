@@ -64,6 +64,12 @@ const contextGet = mock(async (_cwd: string) => ({
   registered: true as const,
   project: 'alpha',
   rulings: { value: 'user' as const, scope: 'built-in' },
+  release: {
+    value: 'land' as const,
+    scope: 'built-in',
+    landing: 'main',
+    production: null,
+  },
   stages: [
     {
       stage: 'review' as const,
@@ -578,6 +584,7 @@ describe('managed context', () => {
       registered: true,
       project: 'alpha',
       rulings: { value: 'user', scope: 'built-in' },
+      release: { value: 'land', scope: 'built-in', landing: 'main', production: null },
       stages: [{ stage: 'review', agreed: true, value: 'review', scope: 'built-in', steps: 1 }],
       text: 'before',
     })
@@ -585,6 +592,7 @@ describe('managed context', () => {
       registered: true,
       project: 'alpha',
       rulings: { value: 'user', scope: 'hosted user' },
+      release: { value: 'land', scope: 'built-in', landing: 'main', production: null },
       stages: [{ stage: 'review', agreed: true, value: 'auto', scope: 'hosted user', steps: 1 }],
       text: 'after',
     })
@@ -598,6 +606,13 @@ describe('managed context', () => {
     expect(result.registered && result.stages[0]?.agreed && result.stages[0].scope).toBe(
       'hosted user',
     )
+  })
+
+  test('sets the exact hosted user release key', async () => {
+    const result = await caller.context.autonomy.setRelease({ project: 'alpha', value: 'promote' })
+    expect(configSet).toHaveBeenLastCalledWith('autonomy.release', 'promote')
+    expect(contextGet).toHaveBeenLastCalledWith('/fixtures/repos/alpha')
+    expect(result.registered && result.release.value).toBe('land')
   })
 
   test('validates permission edits before calling orch', async () => {

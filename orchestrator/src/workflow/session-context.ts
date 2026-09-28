@@ -8,6 +8,7 @@ import {
   type AutonomyValue,
   autonomyStages,
   catalogueStepsForAutonomy,
+  type ReleaseValue,
   type StageAutonomyValue,
 } from './autonomy.ts'
 import { resolveProjectStageAutonomy } from './autonomy-scopes.ts'
@@ -22,8 +23,17 @@ type ArchitectSessionContext =
       project: string
       rulings: { value: 'agent' | 'user'; scope: string }
       stages: StageSlice[]
+      release: ReleaseSlice
+      warnings?: string[]
       text: string
     }
+
+type ReleaseSlice = {
+  value: ReleaseValue
+  scope: string
+  landing: string | null
+  production: string | null
+}
 
 type DistinctAutonomy = { value: AutonomyValue; scope: string; steps: number }
 type StageSlice =
@@ -68,15 +78,35 @@ function stageLine(slice: StageSlice): string {
     .join('; ')}`
 }
 
+function releaseLine(release: ReleaseSlice): string {
+  const phrase =
+    release.value === 'push'
+      ? 'push the branch only'
+      : release.value === 'land'
+        ? release.landing
+          ? `land to ${release.landing}`
+          : 'no landing branch declared'
+        : !release.landing
+          ? 'no landing branch declared'
+          : release.production
+            ? `land to ${release.landing}, then promote to ${release.production}`
+            : `no production branch declared; lands to ${release.landing}`
+  return `release: ${release.value} (${phrase}) (${release.scope})`
+}
+
 function renderSlice(
   project: string,
   rulings: { value: 'agent' | 'user'; scope: string },
   stages: StageSlice[],
+  release: ReleaseSlice,
+  warnings: string[],
 ): string {
   return [
     `Autonomy for ${project}, resolved now from ${PLATFORM_NAME}; change it with ${AUTONOMY_SETTER}`,
     `rulings: ${rulings.value} (${rulings.scope})`,
     ...stages.map(stageLine),
+    releaseLine(release),
+    ...warnings,
   ].join('\n')
 }
 
@@ -101,12 +131,20 @@ async function architectSessionContext(cwd: string): Promise<ArchitectSessionCon
     return resolved ? [{ stage, agreed: true as const, ...resolved, steps: 0 }] : []
   })
   const rulings = { value: resolution.rulings.value, scope: resolution.rulings.scope }
+  const release: ReleaseSlice = {
+    ...resolution.release,
+    landing: project.settings.trunk ?? null,
+    production: project.settings.productionBranch ?? null,
+  }
+  const warnings = resolution.warnings ?? []
   return {
     registered: true,
     project: project.name,
     rulings,
     stages,
-    text: renderSlice(project.name, rulings, stages),
+    release,
+    ...(warnings.length ? { warnings } : {}),
+    text: renderSlice(project.name, rulings, stages, release, warnings),
   }
 }
 

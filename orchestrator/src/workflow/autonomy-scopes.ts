@@ -19,7 +19,7 @@ import {
   builtInAutonomyPreset,
   builtInAutonomyScope,
   combineRulingsSnapshots,
-  parseAutonomy,
+  parseStoredAutonomy,
   resolveAutonomy,
 } from './autonomy.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
@@ -27,7 +27,7 @@ import type { CatalogueStep } from './step-catalogue.ts'
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
 type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
 const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
-  parseAutonomy(
+  parseStoredAutonomy(
     rows
       .filter((row) => row.scope === scope && row.key.startsWith('autonomy.'))
       .map((row) => `${row.key.slice(9)}=${row.value}`)
@@ -77,6 +77,11 @@ export async function resolveProjectAutonomy(
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
   stages: readonly AutonomyStage[] = [],
 ): Promise<AutonomyResolution> {
+  if (session.release !== undefined) {
+    throw new Error(
+      'release autonomy is operator-owned and cannot be set at session scope; use orch config set autonomy.release <value>',
+    )
+  }
   const registered = projectByName(project, d)
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)

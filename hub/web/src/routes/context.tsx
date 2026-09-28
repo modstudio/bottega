@@ -11,6 +11,7 @@ import { Textarea } from '@/ui/field/textarea'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
+import { RELEASE_AUTONOMY_VALUES } from '../../../../shared/release-autonomy'
 
 export const Route = createFileRoute('/context')({
   component: () => (isHostedMode() ? <Navigate to="/" /> : <ManagedContextPage />),
@@ -21,6 +22,11 @@ const stageValues = [
   { value: 'review', label: 'Review' },
   { value: 'auto', label: 'Auto' },
 ] as const
+
+const releaseValues = RELEASE_AUTONOMY_VALUES.map((value) => ({
+  value,
+  label: `${value[0]!.toUpperCase()}${value.slice(1)}`,
+}))
 
 function ErrorText({ message }: { message: string }) {
   return (
@@ -268,6 +274,18 @@ function AutonomySection({
         ),
     }),
   )
+  const updateRelease = useMutation(
+    trpc.context.autonomy.setRelease.mutationOptions({
+      onSuccess: (data) =>
+        queryClient.setQueryData(
+          trpc.context.autonomy.get.queryOptions({ project }).queryKey,
+          data,
+        ),
+    }),
+  )
+  const releaseLine = autonomy.data?.registered
+    ? autonomy.data.text.split('\n').find((line) => line.startsWith('release: '))
+    : undefined
   return (
     <FieldSection
       title="Autonomy"
@@ -276,11 +294,29 @@ function AutonomySection({
       <Select label="Project" value={project} options={options} onChange={onProject} />
       {autonomy.error ? <ErrorText message={autonomy.error.message} /> : null}
       {update.error ? <ErrorText message={update.error.message} /> : null}
+      {updateRelease.error ? <ErrorText message={updateRelease.error.message} /> : null}
       {autonomy.data?.registered ? (
         <div className="space-y-3">
           <DisplayRow
             label="Rulings"
             value={`${autonomy.data.rulings.value} · ${autonomy.data.rulings.scope}`}
+          />
+          <SettingBlock
+            label="release"
+            hint={releaseLine ?? `release: ${autonomy.data.release.value}`}
+            control={
+              <Select
+                label="release autonomy"
+                value={autonomy.data.release.value}
+                options={releaseValues}
+                onChange={(next) =>
+                  updateRelease.mutate({
+                    project,
+                    value: next as 'push' | 'land' | 'promote',
+                  })
+                }
+              />
+            }
           />
           {autonomy.data.stages.map((stage) => {
             const value = stage.agreed ? stage.value : (stage.values[0]?.value ?? 'ask')

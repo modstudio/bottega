@@ -4,6 +4,10 @@ import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import type { ConfigScope } from '../../../shared/config-client.ts'
 import {
+  isReleaseAutonomyValue,
+  RELEASE_AUTONOMY_VALUES,
+} from '../../../shared/release-autonomy.ts'
+import {
   deleteEntry,
   deleteSecret,
   getEntry,
@@ -16,11 +20,29 @@ import {
   setEntry,
   setSecret,
 } from '../config/config-service.ts'
+import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { log } from './support.ts'
 
 const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
-
 type ConfigRow = Awaited<ReturnType<typeof getEntry>>
+
+export function assertConfigWriteAllowed(
+  key: string,
+  value: string,
+  env: Record<string, string | undefined> = process.env,
+  pid = process.pid,
+  inventory?: ProcessInventory,
+): void {
+  if (key.startsWith('autonomy.') && isOrchWorkerProcess(env, pid, inventory)) {
+    throw new Error(
+      `refusing autonomy config write from an orch worker run; an operator must run orch config set ${key} ${value}`,
+    )
+  }
+  if (key === 'autonomy.release' && !isReleaseAutonomyValue(value))
+    throw new Error(
+      `invalid autonomy.release; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
+    )
+}
 
 export const configGetPresentation = (row: ConfigRow, json: boolean) =>
   json ? JSON.stringify(row) : row.value
@@ -77,6 +99,7 @@ export function register(program: Command): void {
     .option('--space')
     .option('--json')
     .action(async (key, value, options) => {
+      assertConfigWriteAllowed(key, value)
       const row = await setEntry(key, value, scope(options))
       if (options.json) log(configGetPresentation(row, true))
     })
