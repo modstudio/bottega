@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { Command } from 'commander'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
 import { recordReview } from './review-triage.ts'
 import { restoreReviewTriage } from './review-triage-restore.ts'
@@ -140,4 +142,16 @@ test('dry-run reports the amendment but writes nothing', () => {
     amendments: db().query('SELECT COUNT(*) AS count FROM review_finding_amendment').get(),
     outbox: db().query('SELECT COUNT(*) AS count FROM outbox').get(),
   }).toEqual(before)
+})
+
+test('review command dispatches restore-triage with --dry-run in process', async () => {
+  const seed = seedFinding('restore-triage-command-dry-run')
+  appendSource(seed)
+  const before = db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)
+  const program = new Command().exitOverride()
+  registerReviewCommand(program)
+
+  await program.parseAsync(['node', 'orch', 'review', 'restore-triage', '--dry-run'])
+
+  expect(db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)).toEqual(before)
 })

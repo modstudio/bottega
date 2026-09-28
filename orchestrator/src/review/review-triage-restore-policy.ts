@@ -34,6 +34,7 @@ export type TriageRestoreSource = {
   rejectionCategory: string | null
   triagedSeverity: string | null
   triagedAt: string | null
+  withheldFields: string[]
 }
 
 export type TriageRestoreDecision =
@@ -48,13 +49,14 @@ export type TriageRestoreFacts = {
 }
 
 function identityMatches(finding: TriageRestoreFinding, source: TriageRestoreSource): boolean {
+  const withheld = new Set(source.withheldFields)
   return (
     source.localId === finding.id &&
     source.reviewRecordId === finding.reviewRecordId &&
     source.ordinal === finding.ordinal &&
-    source.severity === finding.severity &&
-    source.location === finding.location &&
-    source.evidence === finding.evidence
+    (withheld.has('severity') || source.severity === finding.severity) &&
+    (withheld.has('location') || source.location === finding.location) &&
+    (withheld.has('evidence') || source.evidence === finding.evidence)
   )
 }
 

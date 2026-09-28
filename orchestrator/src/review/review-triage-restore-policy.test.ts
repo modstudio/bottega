@@ -19,6 +19,7 @@ const source: TriageRestoreSource = {
   rejectionCategory: null,
   triagedSeverity: 'high',
   triagedAt: '2026-09-20T12:00:00.000Z',
+  withheldFields: [],
 }
 
 function facts(overrides: Partial<TriageRestoreFacts> = {}): TriageRestoreFacts {
@@ -46,6 +47,24 @@ test('restores matching completed triage and its original record identity', () =
     restoreRecordId: true,
     source,
   })
+})
+
+test('ignores withheld identity fields but still requires structural identity', () => {
+  const withheldSource = {
+    ...source,
+    severity: '[withheld]',
+    location: '[withheld]',
+    evidence: '[withheld]',
+    withheldFields: ['severity', 'location', 'evidence'],
+  }
+  expect(decideTriageRestore(facts({ source: withheldSource }))).toEqual({
+    action: 'apply',
+    restoreRecordId: true,
+    source: withheldSource,
+  })
+  expect(
+    decideTriageRestore(facts({ source: { ...withheldSource, localId: source.localId + 1 } })),
+  ).toEqual({ action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.identityMismatch })
 })
 
 test('skips each unsafe source class with its stable reason', () => {

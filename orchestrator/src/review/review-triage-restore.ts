@@ -51,6 +51,7 @@ const sourcePayloadSchema = z.object({
   rejectionCategory: z.string().nullable().optional(),
   triagedSeverity: z.string().nullable().optional(),
   triagedAt: z.string().nullable().optional(),
+  withheldFields: z.array(z.string()).nullable().optional(),
 })
 
 function candidate(database: Database, findingId: number): Candidate | null {
@@ -75,24 +76,14 @@ function candidateIds(database: Database): number[] {
     .map((row) => row.id)
 }
 
-function localId(payload: string): number | null {
-  try {
-    const value: unknown = JSON.parse(payload)
-    if (typeof value !== 'object' || value === null) return null
-    const id = Reflect.get(value, 'localId')
-    return Number.isInteger(id) && Number(id) > 0 ? Number(id) : null
-  } catch {
-    return null
-  }
-}
-
 function latestSource(database: Database, findingId: number): SourceLookup {
-  const rows = database
-    .query<OutboxRow, []>(
-      "SELECT id, record_id, payload FROM outbox WHERE kind='review_finding' ORDER BY id DESC",
+  const row = database
+    .query<OutboxRow, [number]>(
+      `SELECT id, record_id, payload FROM outbox
+        WHERE kind='review_finding' AND json_extract(payload,'$.localId')=?
+        ORDER BY id DESC LIMIT 1`,
     )
-    .all()
-  const row = rows.find((item) => localId(item.payload) === findingId) ?? null
+    .get(findingId)
   if (!row) return { row: null, source: null, status: 'missing' }
   let value: unknown
   try {
@@ -118,6 +109,7 @@ function latestSource(database: Database, findingId: number): SourceLookup {
       rejectionCategory: parsed.data.rejectionCategory ?? null,
       triagedSeverity: parsed.data.triagedSeverity ?? null,
       triagedAt: parsed.data.triagedAt ?? null,
+      withheldFields: parsed.data.withheldFields ?? [],
     },
   }
 }
