@@ -2,12 +2,14 @@
 /** Presents record migration, space, invitation, and doctor operations. */
 
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { db } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
   migratePostgres,
   recordMigrationCount,
 } from '../postgres/postgres-migrate.ts'
 import { projectByName, setProjectRecordSpace } from '../project/projects.ts'
+import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
   acceptRecordInvitation,
@@ -153,6 +155,20 @@ export async function recordSpaceMoveProjectCommand(
     `moved ${result.total} rows; project ${projectName} now declares record space ${result.destinationSlug}`,
   )
   presentation.log('local hosted-row caches were not rewritten; the next pull reconciles them')
+}
+
+export function recordAuditSecretsCommand(
+  options: { json: boolean; ids: boolean },
+  presentation: Presentation,
+  database = db(),
+): void {
+  const report = auditOutboxSecrets(database, { ids: options.ids })
+  if (options.json) {
+    presentation.log(JSON.stringify(report))
+    return
+  }
+  const text = renderOutboxSecretAudit(report)
+  if (text) presentation.log(text)
 }
 
 export async function recordDoctorCommand(

@@ -84,8 +84,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 function clonePayload(payload: Record<string, unknown>): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>
+  return { ...payload }
 }
 
 function getAt(root: Record<string, unknown>, path: string): unknown {
@@ -151,22 +155,31 @@ function walkStrings(
   }
 }
 
+function detachAt(payload: Record<string, unknown>, path: string): unknown {
+  const current = getAt(payload, path)
+  if (current == null || typeof current !== 'object') return current
+  const cloned = cloneJson(current)
+  setAt(payload, path, cloned)
+  return cloned
+}
+
 function applyValueLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
 ): void {
   const recorded = leaf.recordedAs ?? leaf.at
-  if (leaf.each) {
-    const list = getAt(payload, leaf.at)
+  const field = leaf.each
+  if (field) {
+    const list = detachAt(payload, leaf.at)
     if (!Array.isArray(list)) return
     for (const item of list) {
       if (!isPlainObject(item)) continue
-      const current = item[leaf.each]
+      const current = item[field]
       const rule = firstRuleInTexts(wholeFieldTexts(current))
       if (!rule) continue
       onMatch(recorded, rule, () => {
-        item[leaf.each] = WITHHELD_SECRET_SHAPED
+        item[field] = WITHHELD_SECRET_SHAPED
       })
     }
     return
@@ -174,7 +187,11 @@ function applyValueLeaf(
   const current = getAt(payload, leaf.at)
   const rule = firstRuleInTexts(wholeFieldTexts(current))
   if (!rule) return
-  onMatch(recorded, rule, () => setAt(payload, leaf.at, WITHHELD_SECRET_SHAPED))
+  onMatch(recorded, rule, () => {
+    const nested = leaf.at.lastIndexOf('.')
+    if (nested > 0) detachAt(payload, leaf.at.slice(0, nested))
+    setAt(payload, leaf.at, WITHHELD_SECRET_SHAPED)
+  })
 }
 
 function applyElementsLeaf(
@@ -182,7 +199,7 @@ function applyElementsLeaf(
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
 ): void {
-  const current = getAt(payload, leaf.at)
+  const current = detachAt(payload, leaf.at)
   if (!Array.isArray(current)) return
   for (const [index, item] of current.entries()) {
     if (typeof item !== 'string') continue
@@ -199,7 +216,7 @@ function applyWalkLeaf(
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
 ): void {
-  walkStrings(getAt(payload, leaf.at), leaf.at, (path, text, replace) => {
+  walkStrings(detachAt(payload, leaf.at), leaf.at, (path, text, replace) => {
     const rule = evidenceSecretShapedRule(text)
     if (rule) onMatch(path, rule, () => replace(WITHHELD_SECRET_SHAPED))
   })
@@ -243,9 +260,10 @@ export function firstOutboxEvidenceRule(
   payload: Record<string, unknown>,
 ): string | null {
   if (!(kind in LEAVES)) return null
+  const copy = clonePayload(payload)
   for (const leaf of LEAVES[kind as OutboxSanitizeKind]) {
     let found: string | null = null
-    applyLeaf(payload, leaf, (_path, rule) => {
+    applyLeaf(copy, leaf, (_path, rule) => {
       found ??= rule
     })
     if (found) return found

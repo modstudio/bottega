@@ -338,6 +338,7 @@ export const modules: ArchitectureModule[] = [
   ...recordModules,
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record/schema.ts',
+    '../record/outbox-sanitize.ts',
     '../verdict/verdict-payload.ts',
   ]),
   module('orchestrator/src/project/project-lock.ts', [

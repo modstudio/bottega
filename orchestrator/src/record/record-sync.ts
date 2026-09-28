@@ -301,6 +301,7 @@ function runValues(row: Payload, projectId: string | null) {
     workPreserved: Boolean(row.workPreserved),
     closeOutOutcome: nullableString(row.closeOutOutcome),
     closeOutDetail: nullableString(row.closeOutDetail),
+    withheldFields: jsonString(row.withheldFields),
     createdAt: date(row.createdAt),
     updatedAt: date(row.updatedAt),
   }
@@ -316,6 +317,7 @@ function scoreValues(row: VerdictPayload) {
     note: nullableString(row.note),
     scoredAt: date(row.scoredAt),
     scoredBy: String(row.scoredBy),
+    withheldFields: jsonString(row.withheldFields),
     updatedAt: date(row.updatedAt),
   }
 }
@@ -467,6 +469,7 @@ function reviewValues(row: Payload, projectId: string | null) {
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
+    withheldFields: jsonString(row.withheldFields),
     createdAt: date(row.createdAt),
     updatedAt: date(row.updatedAt),
   }
@@ -591,6 +594,7 @@ function landingValues(row: Payload, projectId: string | null) {
     requestedAt: nullableDate(row.requestedAt),
     steps: jsonString(row.steps),
     causingLandingId: nullableString(row.causingLandingId),
+    withheldFields: jsonString(row.withheldFields),
   }
 }
 
@@ -606,6 +610,7 @@ function landingOverrideValues(row: Payload, projectId: string | null) {
     reason: String(row.reason),
     sessionId: nullableString(row.sessionId),
     at: date(row.at),
+    withheldFields: jsonString(row.withheldFields),
   }
 }
 
@@ -660,6 +665,7 @@ function contentionValues(row: Payload) {
     cause: nullableString(row.cause),
     runId: nullableString(row.runId),
     landingId: nullableString(row.landingId),
+    withheldFields: jsonString(row.withheldFields),
   }
 }
 
@@ -672,6 +678,7 @@ function testFlakeValues(row: Payload) {
     loadAtFailure: jsonString(row.loadAtFailure)!,
     signal: nullableString(row.signal),
     at: date(row.at),
+    withheldFields: jsonString(row.withheldFields),
   }
 }
 

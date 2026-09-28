@@ -567,6 +567,18 @@ test.each([
   local.close()
 })
 
+test('an old-shape run payload without withheldFields still syncs', async () => {
+  const local = localOutbox(1)
+  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const payload = JSON.parse(row.payload) as Record<string, unknown>
+  delete payload.withheldFields
+  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(remote.parameters.flat()).toContain(null)
+  local.close()
+})
+
 test('a pre-attribution run payload stays null instead of borrowing the pushing user', async () => {
   const local = localOutbox(1)
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!

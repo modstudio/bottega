@@ -5,16 +5,13 @@ import { enqueueReview, enqueueReviewFinding, enqueueReviewRead } from '../revie
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
-import {
-  enqueueContention,
-  enqueueLandingOverride,
-} from './landing-outbox.ts'
+import { enqueueContention, enqueueLandingOverride } from './landing-outbox.ts'
 import { outboxRowIsEligible } from './outbox-dependency.ts'
 import {
   firstOutboxEvidenceRule,
+  type OutboxSanitizeKind,
   sanitizeOutboxPayload,
   WITHHELD_SECRET_SHAPED,
-  type OutboxSanitizeKind,
 } from './outbox-sanitize.ts'
 
 const SECRET = 'ghp_123456789012345678901234567890123456'
@@ -126,16 +123,19 @@ const kinds: KindCase[] = [
   },
 ]
 
-test.each(kinds)('$kind withholds one planted leaf and leaves the rest', ({ kind, payload, path, plant }) => {
-  const planted = structuredClone(payload)
-  plant(planted)
-  const sanitized = sanitizeOutboxPayload(kind, planted)
-  expect(sanitized.withheldFields).toEqual([path])
-  const serialized = JSON.stringify(sanitized)
-  expect(serialized).not.toContain(SECRET)
-  expect(serialized).toContain(WITHHELD_SECRET_SHAPED)
-  expect(firstOutboxEvidenceRule(kind, planted)).toBe('provider-prefix')
-})
+test.each(kinds)(
+  '$kind withholds one planted leaf and leaves the rest',
+  ({ kind, payload, path, plant }) => {
+    const planted = structuredClone(payload)
+    plant(planted)
+    const sanitized = sanitizeOutboxPayload(kind, planted)
+    expect(sanitized.withheldFields).toEqual([path])
+    const serialized = JSON.stringify(sanitized)
+    expect(serialized).not.toContain(SECRET)
+    expect(serialized).toContain(WITHHELD_SECRET_SHAPED)
+    expect(firstOutboxEvidenceRule(kind, planted)).toBe('provider-prefix')
+  },
+)
 
 test('run reviewProvenance withholds a nested string leaf in place', () => {
   const sanitized = sanitizeOutboxPayload('run', {
@@ -155,10 +155,7 @@ test('question withholds options as a unit and audit reasons as audit_reason', (
     audits: [{ reason: SECRET }, { reason: SAFE }],
   })
   expect(sanitized.options).toBe(WITHHELD_SECRET_SHAPED)
-  expect(sanitized.audits).toEqual([
-    { reason: WITHHELD_SECRET_SHAPED },
-    { reason: SAFE },
-  ])
+  expect(sanitized.audits).toEqual([{ reason: WITHHELD_SECRET_SHAPED }, { reason: SAFE }])
   expect(sanitized.withheldFields).toEqual(['options', 'audit_reason'])
 })
 
@@ -202,7 +199,11 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
 test('enqueue withholds a planted leaf for score, question, review, override, and contention', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
-  database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','01990000-0000-7000-8000-000000000099')").run()
+  database
+    .query(
+      "INSERT INTO schema_meta (key,value) VALUES ('machine_id','01990000-0000-7000-8000-000000000099')",
+    )
+    .run()
   database
     .query(
       `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
@@ -223,7 +224,9 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
     .get(SECRET) as { id: number }
   enqueueQuestionRecord(database, question.id)
   database
-    .query("INSERT INTO review (id,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)")
+    .query(
+      "INSERT INTO review (id,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",
+    )
     .run(SECRET)
   enqueueReview(database, 1)
   database
@@ -267,7 +270,11 @@ test('review finding and read enqueue withhold planted leaves', () => {
        VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','review-lens','sha',1,'head','ok')`,
     )
     .run()
-  database.query("INSERT INTO review (id,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T01:00:00Z')").run()
+  database
+    .query(
+      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T01:00:00Z')",
+    )
+    .run()
   database
     .query(
       `INSERT INTO review_lens
@@ -286,8 +293,8 @@ test('review finding and read enqueue withhold planted leaves', () => {
   database
     .query(
       `INSERT INTO review_read
-       (id,record_id,branch,tip,patch_id,path_set,tier,note,recorded_at)
-       VALUES (1,'read-record','DEV-1','tip','patch','[]',1,?,'2026-09-15T01:02:00Z')`,
+       (id,record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+       VALUES (1,'read-record','fixture','DEV-1','tip','patch','[]',1,?,'2026-09-15T01:02:00Z')`,
     )
     .run(SECRET)
   enqueueReviewRead(database, 1)
