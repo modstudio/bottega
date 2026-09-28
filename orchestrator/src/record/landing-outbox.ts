@@ -24,6 +24,10 @@ export const LANDING_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const LANDING_RECORD_PAYLOAD_CONTRACT = {
+  columns: LANDING_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: {},
+} as const
 export const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
@@ -41,6 +45,10 @@ export const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = {
+  columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: {},
+} as const
 export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
@@ -61,6 +69,10 @@ export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT = {
+  columns: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: {},
+} as const
 export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
@@ -84,6 +96,10 @@ export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT = {
+  columns: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: { admissionPath: 'exact_review', readId: null },
+} as const
 export const CONTENTION_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
@@ -101,6 +117,10 @@ export const CONTENTION_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const CONTENTION_RECORD_PAYLOAD_CONTRACT = {
+  columns: CONTENTION_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: {},
+} as const
 export const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
@@ -115,6 +135,10 @@ export const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const TEST_FLAKE_RECORD_PAYLOAD_CONTRACT = {
+  columns: TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: {},
+} as const
 
 export type LandingEvidenceBackfillResult = {
   mintedLandings: number

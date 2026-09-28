@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 
-export const REVIEW_RECORD_PAYLOAD_COLUMNS = [
+const REVIEW_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
   'projectName',
@@ -25,7 +25,11 @@ export const REVIEW_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
-export const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
+export const REVIEW_RECORD_PAYLOAD_CONTRACT = {
+  columns: REVIEW_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: {},
+} as const
+const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
   'projectName',
@@ -52,7 +56,11 @@ export const REVIEW_LENS_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
-export const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
+export const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = {
+  columns: REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: { projectName: null },
+} as const
+const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
   'projectName',
@@ -72,7 +80,11 @@ export const REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
-export const REVIEW_READ_RECORD_PAYLOAD_COLUMNS = [
+export const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = {
+  columns: REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: { projectName: null },
+} as const
+const REVIEW_READ_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
   'projectName',
@@ -89,6 +101,10 @@ export const REVIEW_READ_RECORD_PAYLOAD_COLUMNS = [
   'createdAt',
   'updatedAt',
 ] as const
+export const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = {
+  columns: REVIEW_READ_RECORD_PAYLOAD_COLUMNS,
+  laterAdded: { projectName: null },
+} as const
 
 export type ReviewRecordBackfillResult = {
   mintedReviews: number
