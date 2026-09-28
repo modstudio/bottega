@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { RELEASE_AUTONOMY_VALUES } from '../../../../shared/release-autonomy.ts'
 import {
   configSet,
   contextGet,
@@ -30,6 +31,7 @@ const reason = z.string().trim().min(1, 'Reason is required')
 const slug = z.string().trim().min(1, 'Slug is required')
 const permissionList = z.enum(['allow', 'ask', 'deny'])
 const autonomyValue = z.enum(['ask', 'review', 'auto'])
+const releaseValue = z.enum(RELEASE_AUTONOMY_VALUES)
 const target = z.union([
   z.object({ user: z.literal(true) }),
   z.object({ project: z.string().min(1) }),
@@ -96,6 +98,13 @@ export const contextRouter = t.router({
           })
         }
         await fromOrch(() => configSet(`autonomy.stage.${input.stage}`, input.value))
+        return fromOrch(() => contextGet(cwd))
+      }),
+    setRelease: mutation
+      .input(z.object({ project: z.string().min(1), value: releaseValue }))
+      .mutation(async ({ input }) => {
+        const cwd = projectPath(input.project)
+        await fromOrch(() => configSet('autonomy.release', input.value))
         return fromOrch(() => contextGet(cwd))
       }),
   }),

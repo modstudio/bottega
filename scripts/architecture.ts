@@ -161,7 +161,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
-  module('orchestrator/src/workflow/autonomy.ts', []),
+  module('orchestrator/src/workflow/autonomy.ts', ['../../../shared/release-autonomy.ts']),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
     '../../../shared/config-client.ts',
@@ -338,13 +338,8 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/machine-key-store.ts',
     '../../../shared/trust-list.ts',
   ]),
-  module('orchestrator/src/commands/config.ts', [
-    'node:readline/promises',
-    'commander',
-    '../../../shared/config-client.ts',
-    '../config/config-service.ts',
-    './support.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/commands/config.ts', ['node:readline/promises', 'commander', '../../../shared/config-client.ts', '../../../shared/release-autonomy.ts', '../config/config-service.ts', '../run/run-process.ts', './support.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/commands/settings.ts', ['commander', '../settings/settings-apply-commands.ts', '../settings/settings-commands.ts', './support.ts']),
   ...recordModules,

@@ -95,7 +95,7 @@ export function registerLiveGate(terminate: () => Promise<void>): () => void {
 }
 
 type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
-type ProcessInventory =
+export type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
 
@@ -163,6 +163,38 @@ export function processTable(): ProcessInventory {
           : []
       }),
   }
+}
+
+function commandIsRunExecutor(command: string): boolean {
+  return /(?:^|[/\s])exec\.ts\s+\d+(?:\s|$)/.test(command)
+}
+
+/**
+ * Whether this process is running inside an orch worker executor.
+ *
+ * This guards operator-only actions against confused workers. It is not a
+ * security boundary against a same-uid process that detaches itself: that
+ * process already has the operator's full user power.
+ */
+export function isOrchWorkerProcess(
+  env: Record<string, string | undefined> = process.env,
+  pid = process.pid,
+  inventory: ProcessInventory = processTable(),
+): boolean {
+  if (env.ORCH_RUN_ID) return true
+  if (!inventory.ascertainable) return false
+
+  const byPid = new Map(inventory.rows.map((row) => [row.pid, row]))
+  const seen = new Set<number>()
+  let current = byPid.get(pid)
+  while (current && !seen.has(current.pid)) {
+    seen.add(current.pid)
+    const parent = byPid.get(current.ppid)
+    if (!parent) return false
+    if (commandIsRunExecutor(parent.command)) return true
+    current = parent
+  }
+  return false
 }
 
 const MAX_FAILOVER_CONVERSATIONS = 100

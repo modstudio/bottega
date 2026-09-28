@@ -704,7 +704,8 @@ describe('workflow cursor adapter', () => {
         ]),
       ),
       rulings: { value: 'agent' as const, scope: 'built-in' },
-      session: { steps: { rebase: 'review' as const } },
+      release: { value: 'land' as const, scope: 'built-in' },
+      session: { steps: { rebase: 'review' as const }, release: 'promote' as const },
     }
     const composition = composeWorkflowWithCursor(
       'ship',
@@ -716,6 +717,10 @@ describe('workflow cursor adapter', () => {
       {},
       resolution,
     )
+    const snapshot = JSON.parse(
+      (d.query('SELECT autonomy FROM workflow_cursor').get() as { autonomy: string }).autonomy,
+    ) as { session: Record<string, unknown> }
+    expect(snapshot.session.release).toBeUndefined()
     getWorkflowStepWithCursor(
       'ship',
       'fixture',
@@ -745,6 +750,7 @@ describe('workflow cursor adapter', () => {
     const resolution = {
       steps: { rebase: { value: 'review' as const, scope: 'session' } },
       rulings: { value: 'agent' as const, scope: 'built-in' },
+      release: { value: 'land' as const, scope: 'built-in' },
     }
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d, {}, resolution)
     d.query('UPDATE workflow_cursor SET autonomy=NULL').run()

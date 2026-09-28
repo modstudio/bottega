@@ -47,6 +47,7 @@ import {
   type RulingListRow,
   RulingListSchema,
 } from '../../shared/orch-contract.ts'
+import { RELEASE_AUTONOMY_VALUES } from '../../shared/release-autonomy.ts'
 
 export type {
   OperatorWaitingItem,
@@ -539,6 +540,12 @@ const ContextSchema = z.discriminatedUnion('registered', [
     registered: z.literal(true),
     project: z.string(),
     rulings: z.object({ value: z.enum(['agent', 'user']), scope: z.string() }),
+    release: z.object({
+      value: z.enum(RELEASE_AUTONOMY_VALUES),
+      scope: z.string(),
+      landing: z.string().nullable(),
+      production: z.string().nullable(),
+    }),
     stages: z.array(
       z.union([
         z.object({

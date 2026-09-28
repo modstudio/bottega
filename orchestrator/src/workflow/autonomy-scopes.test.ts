@@ -119,6 +119,43 @@ test('workflow built-in defaults and local workflow overrides resolve every step
   })
 })
 
+test('session release is refused instead of overriding an operator-owned scope', async () => {
+  await expect(
+    resolveProjectAutonomy(
+      'fixture',
+      'fix-defect',
+      'guided',
+      steps,
+      { release: 'promote' },
+      () => {
+        throw new ConfigClientError('not-configured', '/v1/config')
+      },
+      database(JSON.stringify({ autonomy: { release: 'push' } })),
+      missingConfig,
+    ),
+  ).rejects.toThrow('use orch config set autonomy.release <value>')
+})
+
+test('an invalid project release falls through without discarding its stage setting', async () => {
+  const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
+  writeFileSync(join(config, 'machine.toml'), '[autonomy]\nrelease = "push"\n')
+  const result = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
+    },
+    database(JSON.stringify({ autonomy: { release: 'automatic', stages: { plan: 'auto' } } })),
+    { BOTTEGA_CONFIG_HOME: config },
+  )
+  expect(result.steps.design).toEqual({ value: 'auto', scope: 'project' })
+  expect(result.release).toEqual({ value: 'push', scope: 'local user' })
+  expect(result.warnings?.[0]).toContain('project key release: automatic')
+})
+
 test('answer proceeds when hosted is not configured', async () => {
   const rulings = await resolveAnswerRulings(
     'fixture',

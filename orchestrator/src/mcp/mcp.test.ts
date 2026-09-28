@@ -7,11 +7,60 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
+import { removeProject, upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('orch MCP', () => {
+  test('worker-facing workflow tools refuse a session release override', async () => {
+    const project = 'mcp-release-autonomy'
+    upsertProject({
+      name: project,
+      path: '/mcp-release-autonomy',
+      stack: 'bun',
+      settings: {
+        gate: 'bun run check',
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        autonomy: { release: 'push' },
+      },
+    })
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      for (const request of [
+        {
+          name: 'compose_workflow',
+          arguments: { slug: 'ship', project, mode: 'default', autonomy: 'release=promote' },
+        },
+        {
+          name: 'get_workflow_step',
+          arguments: {
+            slug: 'ship',
+            project,
+            step: 'rebase',
+            mode: 'default',
+            autonomy: 'release=promote',
+          },
+        },
+      ]) {
+        const result = await client.callTool(request)
+        expect(result.isError).toBe(true)
+        expect((result.content as { text: string }[])[0]!.text).toContain(
+          'use orch config set autonomy.release <value>',
+        )
+      }
+    } finally {
+      await client.close()
+      await server.close()
+      removeProject(project)
+    }
+  })
+
   test('next_workflow_step names the MCP mode remedy when no default exists', async () => {
     const slug = 'mcp-no-default-mode'
     const step = productionStepCatalogue().definition.steps[0]!

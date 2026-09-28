@@ -287,6 +287,18 @@ function insertCursor(
       existing!.id,
     )
   }
+  const autonomySnapshot = autonomy
+    ? {
+        ...autonomy,
+        ...(autonomy.session
+          ? {
+              session: Object.fromEntries(
+                Object.entries(autonomy.session).filter(([key]) => key !== 'release'),
+              ),
+            }
+          : {}),
+      }
+    : undefined
   d.query(
     `INSERT INTO workflow_cursor
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
@@ -307,7 +319,7 @@ function insertCursor(
     composition.catalogue.version,
     JSON.stringify(composition.arguments),
     JSON.stringify(
-      autonomy ?? {
+      autonomySnapshot ?? {
         steps: Object.fromEntries(
           composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
         ),

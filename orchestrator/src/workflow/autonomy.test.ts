@@ -12,6 +12,41 @@ const steps = [
 ]
 
 describe('autonomy resolution', () => {
+  test('release parses its three values and refuses every other value with the allowed list', () => {
+    for (const release of ['push', 'land', 'promote'] as const) {
+      expect(parseAutonomy(`release=${release}`, 'session')).toEqual({ release })
+    }
+    expect(() => parseAutonomy('release=automatic', 'session')).toThrow(
+      'expected one of push, land, promote',
+    )
+  })
+
+  test('release follows the stage scope order and defaults to land', () => {
+    expect(
+      resolveAutonomy(steps, [
+        { name: 'session', settings: {} },
+        { name: 'local project', settings: { release: 'push' } },
+        { name: 'project', settings: { release: 'promote' } },
+      ]).release,
+    ).toEqual({ value: 'push', scope: 'local project' })
+    expect(resolveAutonomy(steps, []).release).toEqual({ value: 'land', scope: 'built-in' })
+  })
+
+  test('an invalid stored release keeps the rest of its scope and falls through for release', () => {
+    const result = resolveAutonomy(steps, [
+      {
+        name: 'project',
+        settings: { stages: { plan: 'auto' }, release: 'automatic' },
+      },
+      { name: 'local user', settings: { release: 'push' } },
+    ])
+    expect(result.steps.design).toEqual({ value: 'auto', scope: 'project' })
+    expect(result.release).toEqual({ value: 'push', scope: 'local user' })
+    expect(result.warnings).toEqual([
+      'warning: ignored invalid autonomy setting at project key release: automatic; expected one of push, land, promote',
+    ])
+  })
+
   test('scope order and within-scope precedence resolve each step independently', () => {
     const result = resolveAutonomy(steps, [
       { name: 'session', settings: { stages: { implement: 'review' } } },

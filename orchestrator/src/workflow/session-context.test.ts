@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { sessionContextCommand } from './session-context.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -37,6 +38,12 @@ test('a registered project reports rulings and one value when a stage agrees', a
   expect(slice.registered).toBe(true)
   expect(slice.project).toBe('session-context-agree')
   expect(slice.rulings).toEqual({ value: 'user', scope: 'project' })
+  expect(slice.release).toEqual({
+    value: 'land',
+    scope: 'built-in',
+    landing: 'main',
+    production: null,
+  })
   const plan = (
     slice.stages as { stage: string; agreed: boolean; value?: string; scope?: string }[]
   ).find((row) => row.stage === 'plan')
@@ -47,8 +54,119 @@ test('a registered project reports rulings and one value when a stage agrees', a
   )
   expect(text).toContain('rulings: user (project)')
   expect(text).toContain('plan: review (project)')
+  expect(text).toContain('release: land (land to main) (built-in)')
+  expect(text.split('\n').at(-1)).toBe('release: land (land to main) (built-in)')
   expect(text.split('\n').filter((line) => line.startsWith('plan:'))).toHaveLength(1)
   expect(await contextText('/session-context-agree/tree')).toBe(text)
+})
+
+test('release renders every register branch phrase', async () => {
+  const cases = [
+    {
+      name: 'session-context-push',
+      autonomy: { release: 'push' as const },
+      productionBranch: 'production',
+      line: 'release: push (push the branch only) (project)',
+    },
+    {
+      name: 'session-context-land',
+      autonomy: { release: 'land' as const },
+      productionBranch: 'production',
+      line: 'release: land (land to develop) (project)',
+    },
+    {
+      name: 'session-context-promote',
+      autonomy: { release: 'promote' as const },
+      productionBranch: 'production',
+      line: 'release: promote (land to develop, then promote to production) (project)',
+    },
+    {
+      name: 'session-context-promote-missing',
+      autonomy: { release: 'promote' as const },
+      productionBranch: undefined,
+      line: 'release: promote (no production branch declared; lands to develop) (project)',
+    },
+  ]
+  for (const item of cases) {
+    upsertProject({
+      name: item.name,
+      path: `/${item.name}`,
+      stack: 'bun',
+      settings: {
+        gate: 'bun run check',
+        trunk: 'develop',
+        ...(item.productionBranch ? { productionBranch: item.productionBranch } : {}),
+        docs: { protocol: 'orch-docs' },
+        autonomy: item.autonomy,
+      },
+    })
+    const slice = await contextJson(`/${item.name}`)
+    expect(slice.release).toEqual({
+      value: item.autonomy.release,
+      scope: 'project',
+      landing: 'develop',
+      production: item.productionBranch ?? null,
+    })
+    expect((slice.text as string).split('\n').at(-1)).toBe(item.line)
+  }
+})
+
+test('a missing landing branch is nullable and never renders undefined', async () => {
+  for (const release of ['land', 'promote'] as const) {
+    const name = `session-context-${release}-missing-landing`
+    upsertProject({
+      name,
+      path: `/${name}`,
+      stack: 'bun',
+      settings: {
+        gate: 'bun run check',
+        productionBranch: 'production',
+        docs: { protocol: 'orch-docs' },
+        autonomy: { release },
+      },
+    })
+    const slice = await contextJson(`/${name}`)
+    expect(slice.release).toEqual({
+      value: release,
+      scope: 'project',
+      landing: null,
+      production: 'production',
+    })
+    expect(slice.text).toContain(`release: ${release} (no landing branch declared) (project)`)
+    expect(slice.text).not.toContain('undefined')
+  }
+})
+
+test('context warns about an ignored invalid release and keeps the scope stage', async () => {
+  const name = 'session-context-invalid-release'
+  upsertProject({
+    name,
+    path: `/${name}`,
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      autonomy: { stages: { plan: 'auto' } },
+    },
+  })
+  db(true)
+    .query('UPDATE project SET settings=? WHERE name=?')
+    .run(
+      JSON.stringify({
+        gate: 'bun run check',
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        autonomy: { stages: { plan: 'auto' }, release: 'automatic' },
+      }),
+      name,
+    )
+  const slice = await contextJson(`/${name}`)
+  expect(slice.release).toMatchObject({ value: 'land', scope: 'built-in' })
+  expect(slice.text).toContain('plan: auto (project)')
+  expect(slice.text).toContain(
+    'warning: ignored invalid autonomy setting at project key release: automatic',
+  )
 })
 
 test('a mixed stage lists each distinct value with its step count and scope', async () => {

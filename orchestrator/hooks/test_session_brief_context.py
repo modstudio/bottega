@@ -6,6 +6,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location(
@@ -132,6 +133,14 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertNotIn("Dropped", text)
         self.assertTrue(text.startswith("a" * 60))
         self.assertTrue(text.endswith(session_brief.HOOK_CONTEXT_TRUNCATION_MARKER))
+
+    def test_autonomy_slice_keeps_the_release_line(self):
+        text = "plan: review (project)\nrelease: promote (land to main, then promote to production) (user)"
+        rendered, notice = session_brief._autonomy_slice(
+            SimpleNamespace(returncode=0, stdout=json.dumps({"registered": True, "text": text}))
+        )
+        self.assertEqual(rendered, text)
+        self.assertIsNone(notice)
 
     def test_truncates_drop_note_when_protected_plus_note_exceed_budget(self):
         text = self.assemble(
