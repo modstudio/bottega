@@ -25,10 +25,10 @@ export function selectCanonWriteTree(input: {
   scope: string
   subject: string | null
   cwd?: string
-}): SelectedCanonWriteTree | null {
-  if (input.scope !== 'canon' || !input.subject) return null
+}): SelectedCanonWriteTree | undefined {
+  if (input.scope !== 'canon' || !input.subject) return undefined
   const subjectProject = projectByName(input.subject)
-  if (!subjectProject) return null
+  if (!subjectProject) return undefined
   if (!input.cwd || !existsSync(input.cwd))
     return { project: subjectProject, root: subjectProject.path }
 

@@ -14,6 +14,31 @@ const withoutSlug = (rows: Doc[], slug: string) => rows.filter((row) => row.slug
 const canonRows = (global: Doc[], project: Doc[]) =>
   composeCanonRows(global, [], project).map(({ slug, body }) => ({ slug, body }))
 
+function removalRefusalForView(input: {
+  subject: string | null
+  current: { slug: string; body: string }[]
+  next: { slug: string; body: string }[]
+  workflowSteps: { slug: string; body: string }[]
+  selectedTree?: CanonWriteTree
+}): string | null {
+  const project = input.subject ? projectByName(input.subject) : null
+  const root =
+    project && input.selectedTree?.project.name === project.name
+      ? input.selectedTree.root
+      : project?.path
+  const tree = root ? collectCanonLintInput(root) : undefined
+  return canonRemovalRefusal(
+    decideCanonRemoval({
+      current: input.current,
+      next: input.next,
+      workflowSteps: input.workflowSteps,
+      trackedPaths: tree?.trackedPaths,
+      packageScripts: tree?.packageScripts,
+      sourceTexts: tree?.sourceTexts,
+    }),
+  )
+}
+
 /** Checks one removal against every stored canon view that can see the removed row. */
 export function storedCanonRemovalRefusal(doc: Doc, selectedTree?: CanonWriteTree): string | null {
   const workflowSteps = productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body }))
@@ -39,22 +64,13 @@ export function storedCanonRemovalRefusal(doc: Doc, selectedTree?: CanonWriteTre
       doc.subject === null ? withoutSlug(global, doc.slug) : global,
       doc.subject === null ? project : withoutSlug(project, doc.slug),
     )
-    const projectRecord = subject ? projectByName(subject) : null
-    const root =
-      projectRecord && selectedTree?.project.name === projectRecord.name
-        ? selectedTree.root
-        : projectRecord?.path
-    const tree = root ? collectCanonLintInput(root) : undefined
-    const refusal = canonRemovalRefusal(
-      decideCanonRemoval({
-        current,
-        next,
-        workflowSteps,
-        trackedPaths: tree?.trackedPaths,
-        packageScripts: tree?.packageScripts,
-        sourceTexts: tree?.sourceTexts,
-      }),
-    )
+    const refusal = removalRefusalForView({
+      subject,
+      current,
+      next,
+      workflowSteps,
+      selectedTree,
+    })
     if (refusal) return refusal
   }
   return null

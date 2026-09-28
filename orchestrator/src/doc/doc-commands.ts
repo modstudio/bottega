@@ -77,6 +77,17 @@ function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined
   throw new Error('--delivery must be inject or demand')
 }
 
+function commandCanonTree(
+  scope: string,
+  subject: string | null,
+  flags: DocFlags,
+  presentation: DocPresentation,
+): ReturnType<typeof selectCanonWriteTree> {
+  const tree = selectCanonWriteTree({ scope, subject, cwd: flags.flag('cwd') })
+  if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
+  return tree
+}
+
 export function formatDocSearchRefresh(refresh: {
   embedded: number
   deleted: number
@@ -182,8 +193,7 @@ export async function docCommand(
         'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
       )
     }
-    const canonTree = selectCanonWriteTree({ scope, subject, cwd: flag('cwd') })
-    if (canonTree && !has('json')) presentation.log(`tree: ${canonTree.root}`)
+    const canonTree = commandCanonTree(scope, subject, flags, presentation)
     const body = flag('file')
       ? readFileSync(flag('file')!, 'utf8')
       : !presentation.stdinIsTTY
@@ -207,7 +217,7 @@ export async function docCommand(
       forceInject,
       delivery,
       expectedRevision: flag('expect'),
-      canonTree: canonTree ?? undefined,
+      canonTree,
     })
     const root = repoRootForDoc(doc, canonTree?.root)
     const warnings = root ? checkDoc(body, { repoRoot: root }) : []
@@ -245,8 +255,7 @@ export async function docCommand(
       throw new Error(
         'orch doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]',
       )
-    const canonTree = selectCanonWriteTree({ scope, subject, cwd: flag('cwd') })
-    if (canonTree && !has('json')) presentation.log(`tree: ${canonTree.root}`)
+    const canonTree = commandCanonTree(scope, subject, flags, presentation)
     const removed = await removeDoc(
       scope,
       subject,
@@ -255,7 +264,7 @@ export async function docCommand(
         reason,
         author: flag('author'),
         expectedRevision: flag('expect'),
-        canonTree: canonTree ?? undefined,
+        canonTree,
       },
       owner,
     )
