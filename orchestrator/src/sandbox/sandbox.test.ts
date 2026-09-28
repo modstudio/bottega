@@ -22,6 +22,7 @@ import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
+  disableCodexProjectDocs,
   grokSandboxConfig,
   prepareCodexHome,
   prepareGrokMcpHome,
@@ -126,7 +127,9 @@ test('prepares one persistent Codex home per chain without operator canon or ses
     expect(first).toEqual({ CODEX_HOME: join(runDir, 'codex') })
     expect(lstatSync(join(first.CODEX_HOME!, 'auth.json')).isSymbolicLink()).toBe(true)
     expect(readlinkSync(join(first.CODEX_HOME!, 'auth.json'))).toBe(join(source, 'auth.json'))
-    expect(readFileSync(join(first.CODEX_HOME!, 'config.toml'), 'utf8')).toBe('model = "fixture"\n')
+    expect(readFileSync(join(first.CODEX_HOME!, 'config.toml'), 'utf8')).toBe(
+      'project_doc_max_bytes = 0\nmodel = "fixture"\n',
+    )
     expect(statSync(runDir).mode & 0o777).toBe(0o700)
     expect(statSync(first.CODEX_HOME!).mode & 0o777).toBe(0o700)
     expect(statSync(join(first.CODEX_HOME!, 'config.toml')).mode & 0o777).toBe(0o600)
@@ -140,13 +143,24 @@ test('prepares one persistent Codex home per chain without operator canon or ses
     const resumed = prepareSandboxHome('codex', runDir, { HOME: fixture, CODEX_HOME: source })
     expect(resumed).toEqual(first)
     expect(readFileSync(join(resumed.CODEX_HOME!, 'config.toml'), 'utf8')).toBe(
-      'model = "fixture"\n',
+      'project_doc_max_bytes = 0\nmodel = "fixture"\n',
     )
     expect(statSync(runDir).mode & 0o777).toBe(0o700)
     expect(statSync(resumed.CODEX_HOME!).mode & 0o777).toBe(0o700)
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }
+})
+
+test('disables Codex project docs while preserving the rest of either config shape', () => {
+  expect(disableCodexProjectDocs('model = "fixture"\n[features]\nsearch = true\n')).toBe(
+    'project_doc_max_bytes = 0\nmodel = "fixture"\n[features]\nsearch = true\n',
+  )
+  expect(
+    disableCodexProjectDocs(
+      'model = "fixture"\nproject_doc_max_bytes = 4096\n[features]\nsearch = true\n',
+    ),
+  ).toBe('project_doc_max_bytes = 0\nmodel = "fixture"\n[features]\nsearch = true\n')
 })
 
 test('Codex home refuses a missing credential with a login remedy', () => {

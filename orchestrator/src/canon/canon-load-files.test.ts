@@ -83,7 +83,7 @@ test('grok worker facts exclude the home Claude file', () => {
   expect(plan.files.map(({ path }) => path)).not.toContain(`${facts.home.claude}/CLAUDE.md`)
 })
 
-test('codex worker facts exclude operator Codex canon and keep project canon', () => {
+test('codex worker facts report no Codex project doc', () => {
   const root = mkdtempSync(join(tmpdir(), 'canon-load-codex-worker-'))
   roots.push(root)
   gitInit(root)
@@ -96,6 +96,7 @@ test('codex worker facts exclude operator Codex canon and keep project canon', (
   const facts = gatherWorkerHarnessLoadFacts(root, 'codex', { HOME: home })
   const plan = planHarnessLoad(facts, 'codex')
 
-  expect(plan.files.map(({ path }) => path)).toContain(`${facts.directoryChain[0]}/AGENTS.md`)
-  expect(plan.files.map(({ path }) => path)).not.toContain(join(codexHome, 'AGENTS.md'))
+  expect(plan.files).toEqual([])
+  expect(plan.total).toBe(0)
+  expect(plan.cut).toEqual([])
 })

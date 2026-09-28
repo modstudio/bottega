@@ -628,6 +628,16 @@ export function prepareWorkerHomeMirror(runDir: string, operatorHome: string): s
   return targetHome
 }
 
+export function disableCodexProjectDocs(config: string): string {
+  const firstTable = config.search(/^\s*\[/m)
+  const rootEnd = firstTable === -1 ? config.length : firstTable
+  const root = config.slice(0, rootEnd)
+  const rest = config.slice(rootEnd)
+  const assignment = /^\s*(?:project_doc_max_bytes|["']project_doc_max_bytes["'])\s*=.*(?:\r?\n|$)/m
+  const withoutExisting = root.replace(assignment, '')
+  return `project_doc_max_bytes = 0\n${withoutExisting}${rest}`
+}
+
 /** Prepare one persistent Codex home for every turn in a conversation chain. */
 export function prepareCodexHome(
   runDir: string,
@@ -666,6 +676,9 @@ export function prepareCodexHome(
   if (!existsSync(configTarget)) {
     copyFileSync(configSource, configTarget)
   }
+  const config = readFileSync(configTarget, 'utf8')
+  const workerConfig = disableCodexProjectDocs(config)
+  if (workerConfig !== config) writeFileSync(configTarget, workerConfig)
   chmodSync(configTarget, 0o600)
   return { CODEX_HOME: targetHome }
 }

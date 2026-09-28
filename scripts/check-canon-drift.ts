@@ -7,6 +7,7 @@ import {
   planHydration,
 } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../orchestrator/src/canon/canon-stored-rows.ts'
+import { CODEX_PROJECT_DOC_PATH } from '../orchestrator/src/canon/codex-project-doc.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
@@ -48,12 +49,23 @@ export function branchChangedPaths(checkout: string, base: string): string[] {
   return diff.stdout.split('\0').filter(Boolean)
 }
 
+export function branchHydrationPaths(paths: Iterable<string>): string[] {
+  const changed = [...paths].filter(isHydrationPath)
+  if (
+    changed.some((path) => path === 'AGENTS.md' || /^\.agents\/rules\/[^/]+\.md$/.test(path)) &&
+    !changed.includes(CODEX_PROJECT_DOC_PATH)
+  ) {
+    changed.push(CODEX_PROJECT_DOC_PATH)
+  }
+  return changed
+}
+
 export function canonBranchFindings(input: {
   checkout: string
   base: string
   rows: ReturnType<typeof storedRepositoryCanonRows>
 }): HydrationDrift[] {
-  const changed = branchChangedPaths(input.checkout, input.base).filter(isHydrationPath)
+  const changed = branchHydrationPaths(branchChangedPaths(input.checkout, input.base))
   if (changed.length === 0) return []
   const head = collectCanonTreeAtRef(input.checkout, 'HEAD')
   return hydrationDrift(planHydration({ rows: input.rows, tree: head.tree }), changed)

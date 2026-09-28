@@ -260,7 +260,13 @@ export function gatherWorkerHarnessLoadFacts(
 ): HarnessLoadFacts {
   const runHome = resolve(cwd, '.orch-worker-home')
   if (harness === 'codex') {
-    return gatherHarnessLoadFacts(cwd, { ...env, CODEX_HOME: join(runHome, 'codex') })
+    const facts = gatherHarnessLoadFacts(cwd, { ...env, CODEX_HOME: join(runHome, 'codex') })
+    const projectDocs = new Set(
+      facts.directoryChain.flatMap((dir) =>
+        CODEX_PROJECT_BASENAMES.map((name) => resolve(dir, name)),
+      ),
+    )
+    return { ...facts, files: facts.files.filter((file) => !projectDocs.has(file.path)) }
   }
   if (harness === 'grok') {
     return gatherHarnessLoadFacts(cwd, {
