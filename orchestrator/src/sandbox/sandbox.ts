@@ -11,6 +11,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -621,8 +622,17 @@ export function prepareWorkerHomeMirror(runDir: string, operatorHome: string): s
   const sourceClaudeEnv = join(operatorHome, '.claude', '.env')
   const sourceClaudeEnvEntry = lstatSync(sourceClaudeEnv, { throwIfNoEntry: false })
   const targetClaudeEnv = join(targetClaudeHome, '.env')
-  if (sourceClaudeEnvEntry?.isFile() && !pathEntryExists(targetClaudeEnv)) {
-    symlinkSync(sourceClaudeEnv, targetClaudeEnv)
+  const targetClaudeEnvEntry = lstatSync(targetClaudeEnv, { throwIfNoEntry: false })
+  if (sourceClaudeEnvEntry?.isFile()) {
+    if (
+      !targetClaudeEnvEntry?.isSymbolicLink() ||
+      readlinkSync(targetClaudeEnv) !== sourceClaudeEnv
+    ) {
+      if (targetClaudeEnvEntry) rmSync(targetClaudeEnv, { recursive: true, force: true })
+      symlinkSync(sourceClaudeEnv, targetClaudeEnv)
+    }
+  } else if (targetClaudeEnvEntry) {
+    rmSync(targetClaudeEnv, { recursive: true, force: true })
   }
   for (const name of entries) {
     if (OMITTED_WORKER_HOME_ENTRIES.has(name)) continue
