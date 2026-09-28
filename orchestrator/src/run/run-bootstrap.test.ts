@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import {
+  abandonedBootstrap,
+  coordinatorErrorTail,
+  coordinatorSetupDeath,
+  PENDING_BOOTSTRAP_MS,
+} from './run-bootstrap.ts'
 
 describe('abandonedBootstrap', () => {
   const now = Date.parse('2026-09-25T12:00:00Z')
@@ -37,5 +42,43 @@ describe('abandonedBootstrap', () => {
         now,
       }),
     ).toBe(false)
+  })
+})
+
+describe('coordinatorSetupDeath', () => {
+  const deadDuringSetup = {
+    agent: 'codex',
+    agentPidPresent: false,
+    leaseState: 'missing' as const,
+    pidAlive: false,
+  }
+
+  test.each([
+    ['claimed agent before start', deadDuringSetup, true],
+    ['pending claim', { ...deadDuringSetup, agent: '(pending)' }, false],
+    ['agent started', { ...deadDuringSetup, agentPidPresent: true }, false],
+    ['held lease', { ...deadDuringSetup, leaseState: 'held' as const }, false],
+    ['live coordinator', { ...deadDuringSetup, pidAlive: true }, false],
+  ])('%s => %s', (_label, facts, expected) => {
+    expect(coordinatorSetupDeath(facts)).toBe(expected)
+  })
+})
+
+describe('coordinatorErrorTail', () => {
+  test('keeps the bounded end of coordinator output', () => {
+    const tail = coordinatorErrorTail(`first line\n${'x'.repeat(100)}\nlast line`, 64)
+    expect(tail.length).toBe(64)
+    expect(tail).toEndWith('last line')
+    expect(tail).not.toContain('first line')
+  })
+
+  test('withholds secret-shaped coordinator output before bounding it', () => {
+    expect(coordinatorErrorTail(`failure: token=${'s'.repeat(100)}`, 24)).toBe(
+      '[withheld: secret-shaped content]',
+    )
+  })
+
+  test('names an empty coordinator log', () => {
+    expect(coordinatorErrorTail(' \n ')).toBe('(no output)')
   })
 })

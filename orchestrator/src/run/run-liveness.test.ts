@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
+import { runCoordinatorLogPath } from './run-artifacts.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
@@ -25,7 +27,7 @@ describe('reapStale', () => {
   test('a recent run whose process is gone is swept at once, not in thirty minutes', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // Nothing owns pid 2^22; it is above every configured pid_max.
-    db().query('UPDATE run SET pid=? WHERE id=?').run(4194304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, id)
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
     try {
@@ -49,14 +51,16 @@ describe('reapStale', () => {
     // Without the kind these rows are indistinguishable from an agent that
     // simply failed, and the router charges them accordingly.
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(4194304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, id)
     reapStale(db())
-    const r = db().query('SELECT status, failure_kind FROM run WHERE id=?').get(id) as {
+    const r = db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id) as {
       status: string
       failure_kind: 'interrupted'
+      error: string
     }
     expect(r.status).toBe('stale')
     expect(r.failure_kind).toBe('interrupted')
+    expect(r.error).toBe('abandoned: process gone, no terminal state recorded')
     expect(NOT_EVIDENCE).toContain(r.failure_kind)
   })
 
@@ -87,7 +91,7 @@ describe('reapStale', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(4194304, child)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, child)
 
     expect(reapStale(db())).toBe(1)
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child)).toEqual({
@@ -140,6 +144,36 @@ describe('reapStale', () => {
       status: 'failed',
       failure_kind: 'harness',
       error: 'the worker process never started',
+    })
+  })
+
+  test('a claimed coordinator that died before starting an agent is failed/harness with its log tail', () => {
+    const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
+    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, id)
+    writeFileSync(runCoordinatorLogPath(id), 'setup began\nmodule import failed\n')
+
+    expect(reapStale(db())).toBe(1)
+    const error =
+      'coordinator exited during setup before the agent started; last output: setup began\nmodule import failed'
+    expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
+      status: 'failed',
+      failure_kind: 'harness',
+      error,
+    })
+    expect(
+      db().query('SELECT action, reason FROM run_mutation_audit WHERE run_id=?').get(id),
+    ).toEqual({ action: 'reap', reason: error })
+  })
+
+  test('a claimed setup death with no coordinator output says so', () => {
+    const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
+    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, id)
+
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
+      status: 'failed',
+      failure_kind: 'harness',
+      error: 'coordinator exited during setup before the agent started; last output: (no output)',
     })
   })
 })
