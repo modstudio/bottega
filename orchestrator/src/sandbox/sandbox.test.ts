@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -187,8 +188,12 @@ test('mirrors operator tooling into a worker HOME without harness homes', () => 
     const operatorHome = join(fixture, 'operator')
     const runDir = join(fixture, 'sandbox-42')
     mkdirSync(operatorHome)
-    mkdirSync(join(operatorHome, '.claude'))
+    mkdirSync(join(operatorHome, '.claude', 'rules'), { recursive: true })
     mkdirSync(join(operatorHome, 'dotfiles', '.claude'), { recursive: true })
+    writeFileSync(join(operatorHome, '.claude', '.env'), 'MCP_TOKEN=secret\n')
+    writeFileSync(join(operatorHome, '.claude', 'CLAUDE.md'), 'Architect instructions.\n')
+    writeFileSync(join(operatorHome, '.claude', 'rules', 'canon.md'), 'Architect canon.\n')
+    writeFileSync(join(operatorHome, '.claude', 'settings.json'), '{}\n')
     writeFileSync(join(operatorHome, '.claude.json'), '{}')
     symlinkSync(join(operatorHome, '.claude'), join(operatorHome, 'linked-claude'))
     for (const name of ['.codex', '.grok', '.bun', '.gitconfig', '.ssh'])
@@ -198,19 +203,86 @@ test('mirrors operator tooling into a worker HOME without harness homes', () => 
       expect(lstatSync(join(workerHome, linked)).isSymbolicLink()).toBe(true)
       expect(readlinkSync(join(workerHome, linked))).toBe(join(operatorHome, linked))
     }
-    for (const omitted of [
-      '.claude',
-      '.claude.json',
-      '.codex',
-      '.grok',
-      'dotfiles',
-      'linked-claude',
-    ]) {
+    const workerClaudeHome = join(workerHome, '.claude')
+    expect(lstatSync(workerClaudeHome).isDirectory()).toBe(true)
+    expect(lstatSync(workerClaudeHome).isSymbolicLink()).toBe(false)
+    expect(statSync(workerClaudeHome).mode & 0o777).toBe(0o700)
+    expect(readdirSync(workerClaudeHome)).toEqual(['.env'])
+    expect(lstatSync(join(workerClaudeHome, '.env')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(workerClaudeHome, '.env'))).toBe(join(operatorHome, '.claude', '.env'))
+    for (const omitted of ['.claude.json', '.codex', '.grok', 'dotfiles', 'linked-claude']) {
       expect(existsSync(join(workerHome, omitted))).toBe(false)
     }
     expect(statSync(runDir).mode & 0o777).toBe(0o700)
     expect(statSync(workerHome).mode & 0o777).toBe(0o700)
     expect(prepareWorkerHomeMirror(runDir, operatorHome)).toBe(workerHome)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('worker HOME omits the Claude env link when its source is missing or non-regular', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-claude-env-'))
+  try {
+    const operatorHome = join(fixture, 'operator')
+    const operatorClaudeHome = join(operatorHome, '.claude')
+    mkdirSync(operatorClaudeHome, { recursive: true })
+
+    const missingHome = prepareWorkerHomeMirror(join(fixture, 'missing-run'), operatorHome)
+    expect(readdirSync(join(missingHome, '.claude'))).toEqual([])
+
+    mkdirSync(join(operatorClaudeHome, '.env'))
+    const nonRegularHome = prepareWorkerHomeMirror(join(fixture, 'non-regular-run'), operatorHome)
+    expect(readdirSync(join(nonRegularHome, '.claude'))).toEqual([])
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('worker HOME removes a resumed Claude env link when its source becomes non-regular', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-claude-env-resume-'))
+  try {
+    const operatorHome = join(fixture, 'operator')
+    const operatorClaudeHome = join(operatorHome, '.claude')
+    const sourceClaudeEnv = join(operatorClaudeHome, '.env')
+    const runDir = join(fixture, 'run')
+    const replacement = join(fixture, 'replacement.env')
+    mkdirSync(operatorClaudeHome, { recursive: true })
+    writeFileSync(sourceClaudeEnv, 'MCP_TOKEN=original\n')
+    writeFileSync(replacement, 'MCP_TOKEN=replacement\n')
+
+    const workerHome = prepareWorkerHomeMirror(runDir, operatorHome)
+    rmSync(sourceClaudeEnv)
+    symlinkSync(replacement, sourceClaudeEnv)
+
+    prepareWorkerHomeMirror(runDir, operatorHome)
+    expect(
+      lstatSync(join(workerHome, '.claude', '.env'), { throwIfNoEntry: false }),
+    ).toBeUndefined()
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test('worker HOME repairs a resumed Claude env target replaced by a worker', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-worker-home-claude-env-repair-'))
+  try {
+    const operatorHome = join(fixture, 'operator')
+    const sourceClaudeEnv = join(operatorHome, '.claude', '.env')
+    const runDir = join(fixture, 'run')
+    const replacement = join(fixture, 'replacement.env')
+    mkdirSync(join(operatorHome, '.claude'), { recursive: true })
+    writeFileSync(sourceClaudeEnv, 'MCP_TOKEN=original\n')
+    writeFileSync(replacement, 'MCP_TOKEN=replacement\n')
+
+    const workerHome = prepareWorkerHomeMirror(runDir, operatorHome)
+    const targetClaudeEnv = join(workerHome, '.claude', '.env')
+    rmSync(targetClaudeEnv)
+    symlinkSync(replacement, targetClaudeEnv)
+
+    prepareWorkerHomeMirror(runDir, operatorHome)
+    expect(lstatSync(targetClaudeEnv).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(targetClaudeEnv)).toBe(sourceClaudeEnv)
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }
