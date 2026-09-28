@@ -3,19 +3,22 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { categorizeFile } from '../../../shared/file-kind.ts'
-import { createMemoryRecordApiClient, installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { classifyReviewTier } from '../review/review-tier.ts'
 import { applyHydration } from './canon-apply.ts'
+import { planHydration } from './canon-hydrate.ts'
 import {
   canonMirrorCommitBody,
   decideCanonMirrorMerge,
   mirrorRepositoryCanon,
   systemCanonMirrorPort,
 } from './canon-mirror.ts'
-import { planHydration } from './canon-hydrate.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 
 describe('canon mirror commit body', () => {
@@ -55,19 +58,25 @@ describe('canon mirror merge decision', () => {
     ['auto', true, false, 'passed', 'landing branch changed'],
     ['auto', true, true, 'pending', 'GitHub checks are pending'],
     ['auto', true, true, 'failed', 'GitHub checks are failed'],
-  ] as const)('leaves open when a merge predicate fails', (shipLevel, headMatches, baseUnchanged, checks, reason) => {
-    expect(
-      decideCanonMirrorMerge({ shipLevel, headMatches, baseUnchanged, checks }),
-    ).toEqual({ merge: false, reason: expect.stringContaining(reason) })
-  })
+  ] as const)(
+    'leaves open when a merge predicate fails',
+    (shipLevel, headMatches, baseUnchanged, checks, reason) => {
+      expect(decideCanonMirrorMerge({ shipLevel, headMatches, baseUnchanged, checks })).toEqual({
+        merge: false,
+        reason: expect.stringContaining(reason),
+      })
+    },
+  )
 })
 
 test('generated canon directory links classify as tier-zero docs', () => {
   for (const path of ['.claude/rules', '.agents/rules/contexts']) {
     expect(categorizeFile(path)).toBe('docs')
-    expect(
-      classifyReviewTier({ files: [{ path, insertions: 1, deletions: 1 }] }),
-    ).toMatchObject({ tier: 0, risk: 0, size: 0 })
+    expect(classifyReviewTier({ files: [{ path, insertions: 1, deletions: 1 }] })).toMatchObject({
+      tier: 0,
+      risk: 0,
+      size: 0,
+    })
   }
 })
 
@@ -168,7 +177,8 @@ test('a canon lint finding stops publication before push', async () => {
         },
         releaseRun: () => {
           const tree = join(root, '.claude/worktrees/canon-mirror')
-          if (existsSync(tree)) spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
+          if (existsSync(tree))
+            spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
           return { outcome: 'released', detail: 'fixture release' }
         },
       },

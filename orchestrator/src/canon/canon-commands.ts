@@ -19,8 +19,8 @@ import {
   diffPack,
   findingsForPack,
 } from './canon.ts'
-import { auditRepositoryCanon, type CanonAuditResult } from './canon-audit.ts'
 import { applyHydration } from './canon-apply.ts'
+import { auditRepositoryCanon, type CanonAuditResult } from './canon-audit.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
 import {
   composeCanonRows,
@@ -451,7 +451,7 @@ async function canonCommand(
     return
   }
   throw new Error(
-    'unknown: orch canon. Try audit | import | hydrate | list | check | diff | eval | evals | lint | load',
+    'unknown: orch canon. Try audit | mirror | import | hydrate | list | check | diff | eval | evals | lint | load',
   )
 }
 

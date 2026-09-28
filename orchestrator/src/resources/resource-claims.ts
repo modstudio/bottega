@@ -4,7 +4,11 @@
  * Must not know resource creation, Git operations, close-out policy, or the CLI.
  */
 import type { Database } from 'bun:sqlite'
-import { CANON_MIRROR_JOB, HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
+import {
+  CANON_MIRROR_JOB,
+  HOOK_TREE_JOB,
+  LANDING_TREE_JOB,
+} from '../run/synthetic-lifecycle-job.ts'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
@@ -650,9 +654,9 @@ function claimedClaimsOnTerminalConversations(
        GROUP BY resource_claim.kind ORDER BY resource_claim.kind`,
     )
     .all(HOOK_TREE_JOB, LANDING_TREE_JOB, CANON_MIRROR_JOB) as {
-      kind: ResourceClaimKind
-      count: number
-    }[]
+    kind: ResourceClaimKind
+    count: number
+  }[]
 }
 
 export function claimCounts(database: Database): {

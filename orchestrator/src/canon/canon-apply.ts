@@ -1,5 +1,5 @@
 // concern: canon-hydrate
-/** Applies a previously validated canon hydration plan to one repository tree. */
+/** Applies a validated canon hydration plan to one repository tree. */
 import { lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import type { HydrationPlan } from './canon-hydrate.ts'
