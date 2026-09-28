@@ -14,7 +14,19 @@ import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 function repository(): string {
   const root = mkdtempSync(join(tmpdir(), 'canon-mirror-lint-'))
   spawnFixtureGitSync(['init'], { cwd: root })
-  spawnFixtureGitSync(['-c', 'user.email=mirror@example.test', '-c', 'user.name=Mirror Test', 'commit', '--allow-empty', '-m', 'fixture'], { cwd: root })
+  spawnFixtureGitSync(
+    [
+      '-c',
+      'user.email=mirror@example.test',
+      '-c',
+      'user.name=Mirror Test',
+      'commit',
+      '--allow-empty',
+      '-m',
+      'fixture',
+    ],
+    { cwd: root },
+  )
   return root
 }
 

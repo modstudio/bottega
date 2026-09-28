@@ -336,6 +336,16 @@ function releaseLifecycle(port: CanonMirrorPort, runId: number): string | null {
 }
 
 type Publication = { tip: string; prNumber: number }
+function remoteOwnershipRefusal(
+  branch: string,
+  remoteTip: string | null,
+  previous: Publication | null,
+): string | null {
+  if (remoteTip === (previous?.tip ?? null)) return null
+  return previous
+    ? `refusing remote branch ${branch}: expected recorded tip ${previous.tip}, found ${remoteTip ?? 'absent'}`
+    : `refusing unowned remote branch ${branch} at ${remoteTip}; no prior canon-mirror publication recorded it`
+}
 function previousPublication(project: Project, branch: string, runId: number): Publication | null {
   return db()
     .query<Publication, [string, string, number, string, number]>(
@@ -446,13 +456,8 @@ function performMirrorPublication(input: {
   proveLocalBranchOwnership(project, branch, runId, port)
   const previous = previousPublication(project, branch, runId)
   const remoteTip = port.remoteBranchTip(project, branch)
-  if (remoteTip !== (previous?.tip ?? null)) {
-    throw new Error(
-      previous
-        ? `refusing remote branch ${branch}: expected recorded tip ${previous.tip}, found ${remoteTip ?? 'absent'}`
-        : `refusing unowned remote branch ${branch} at ${remoteTip}; no prior canon-mirror publication recorded it`,
-    )
-  }
+  const remoteRefusal = remoteOwnershipRefusal(branch, remoteTip, previous)
+  if (remoteRefusal) throw new Error(remoteRefusal)
   port.createTree({
     project,
     path,
@@ -461,7 +466,14 @@ function performMirrorPublication(input: {
     runId,
     record: (createdBase) => {
       attributeWorktree(
-        { path, branch, base: createdBase, repoRoot: project.path, source: 'git', mintedBranch: branch },
+        {
+          path,
+          branch,
+          base: createdBase,
+          repoRoot: project.path,
+          source: 'git',
+          mintedBranch: branch,
+        },
         runId,
         () => recordTree(runId, project, path, branch, createdBase),
       )
@@ -471,7 +483,10 @@ function performMirrorPublication(input: {
   const baseline = lintCanon(collectCanonLintInput(path)).findings
   applyHydration(path, plan)
   port.stage(path)
-  const findings = introducedCanonFindings(baseline, lintCanon(collectCanonLintInput(path)).findings)
+  const findings = introducedCanonFindings(
+    baseline,
+    lintCanon(collectCanonLintInput(path)).findings,
+  )
   if (findings.length) {
     throw new Error(
       `canon lint found ${findings.length} findings: ${findings.map((f) => `${f.file}:${f.line} ${f.message}`).join('; ')}`,
@@ -500,10 +515,14 @@ function performMirrorPublication(input: {
   chmodSync(bodyDir, 0o700)
   const bodyFile = join(bodyDir, 'body.md')
   try {
-    writeFileSync(bodyFile, `Automated canon hydration from the managed store.\n\nCommit: ${commit}\n`, {
-      flag: 'wx',
-      mode: 0o600,
-    })
+    writeFileSync(
+      bodyFile,
+      `Automated canon hydration from the managed store.\n\nCommit: ${commit}\n`,
+      {
+        flag: 'wx',
+        mode: 0o600,
+      },
+    )
     const title = `${key} sync canon from the store`
     if (existing) port.recordPullRequest(path, existing.number)
     const pr = existing

@@ -17,7 +17,18 @@ function repository(): string {
   writeFileSync(join(root, 'README.txt'), 'fixture\n')
   writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n\nOld managed context.\n')
   spawnFixtureGitSync(['add', '.'], { cwd: root })
-  spawnFixtureGitSync(['-c', 'user.email=mirror@example.test', '-c', 'user.name=Mirror Test', 'commit', '-m', 'fixture'], { cwd: root })
+  spawnFixtureGitSync(
+    [
+      '-c',
+      'user.email=mirror@example.test',
+      '-c',
+      'user.name=Mirror Test',
+      'commit',
+      '-m',
+      'fixture',
+    ],
+    { cwd: root },
+  )
   return root
 }
 
@@ -47,6 +58,7 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
       port: {
         ...systemCanonMirrorPort,
         fetch: () => {},
+        localBranch: () => false,
         refTip: () => 'HEAD',
         remoteBranchTip: () => null,
         push: () => {
