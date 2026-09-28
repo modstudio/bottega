@@ -8,9 +8,15 @@ export function decideMcpDocWrite(
   isOrchWorker: boolean,
 ): string | null {
   if (scope !== 'canon') return null
-  if (tool !== 'consume_doc' && !isOrchWorker) return null
+  if (tool === 'consume_doc') {
+    return 'refusing MCP consume_doc for canon: canon rows cannot be consumed'
+  }
+  if (!isOrchWorker) return null
+
+  const command = tool === 'set_doc' ? 'set' : 'rm'
   return (
-    `refusing MCP ${tool} for canon: canon is edited with ` +
-    '`orch doc set --scope canon` from an architect session, then hydrated with `orch canon hydrate`'
+    `refusing MCP ${tool} for canon: this process is an orch worker; change canon from an ` +
+    `architect session with ${tool} (or \`orch doc ${command} --scope canon\`) with ` +
+    'expected_revision, then run `orch canon hydrate`'
   )
 }

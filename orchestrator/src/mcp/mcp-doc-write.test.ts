@@ -6,8 +6,11 @@ describe('MCP document writes', () => {
     test(`${tool} worker refuses canon and names the architect workflow`, () => {
       const refusal = decideMcpDocWrite(tool, 'canon', true)
       expect(refusal).toContain(`refusing MCP ${tool} for canon`)
-      expect(refusal).toContain('orch doc set --scope canon')
+      expect(refusal).toContain('this process is an orch worker')
+      expect(refusal).toContain(tool)
+      expect(refusal).toContain(`orch doc ${tool === 'set_doc' ? 'set' : 'rm'} --scope canon`)
       expect(refusal).toContain('architect session')
+      expect(refusal).toContain('expected_revision')
       expect(refusal).toContain('orch canon hydrate')
     })
 
@@ -22,8 +25,8 @@ describe('MCP document writes', () => {
   }
 
   test.each([true, false])('consume_doc refuses canon when worker is %s', (worker) => {
-    expect(decideMcpDocWrite('consume_doc', 'canon', worker)).toContain(
-      'refusing MCP consume_doc for canon',
+    expect(decideMcpDocWrite('consume_doc', 'canon', worker)).toBe(
+      'refusing MCP consume_doc for canon: canon rows cannot be consumed',
     )
   })
 

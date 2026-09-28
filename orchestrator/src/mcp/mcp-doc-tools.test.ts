@@ -85,7 +85,34 @@ test('set_doc refuses an existing canon row without expected_revision', async ()
 
     expect(result.isError).toBe(true)
     expect((result.content as { text: string }[])[0]!.text).toContain(
-      `current revision ${current.revision}; pass --expect ${current.revision}`,
+      `current revision ${current.revision}; pass expected_revision ${current.revision}; ` +
+        're-read with get_doc and re-apply the edit',
+    )
+  })
+})
+
+test('set_doc reports a stale canon revision with the MCP remedy', async () => {
+  const current = await canonFixture()
+
+  await withDocClient(async (client) => {
+    const result = await client.callTool({
+      name: 'set_doc',
+      arguments: {
+        scope: 'canon',
+        subject: project,
+        slug,
+        title: 'MCP canon write',
+        body: `${initialBody}\nChanged with a stale revision.\n`,
+        reason: 'exercise the stale revision refusal',
+        expected_revision: 'stale-revision',
+        cwd: process.cwd(),
+      },
+    })
+
+    expect(result.isError).toBe(true)
+    expect((result.content as { text: string }[])[0]!.text).toContain(
+      `current revision ${current.revision}; pass expected_revision ${current.revision}; ` +
+        're-read with get_doc and re-apply the edit',
     )
   })
 })
@@ -111,5 +138,28 @@ test('remove_doc passes the expected revision and selected canon tree to removeD
       removed: true,
       tree: selectedTree,
     })
+  })
+})
+
+test('remove_doc refuses an existing canon row without expected_revision', async () => {
+  const current = await canonFixture()
+
+  await withDocClient(async (client) => {
+    const result = await client.callTool({
+      name: 'remove_doc',
+      arguments: {
+        scope: 'canon',
+        subject: project,
+        slug,
+        reason: 'exercise the missing revision refusal',
+        cwd: process.cwd(),
+      },
+    })
+
+    expect(result.isError).toBe(true)
+    expect((result.content as { text: string }[])[0]!.text).toContain(
+      `current revision ${current.revision}; pass expected_revision ${current.revision}; ` +
+        're-read with get_doc and re-apply the edit',
+    )
   })
 })

@@ -21,6 +21,30 @@ const text = (value: unknown) => ({
   ],
 })
 
+function rethrowMcpDocWriteError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error)
+  const currentRevision = message.match(/current revision ([^;,\s]+)/)?.[1]
+  if (!currentRevision || !message.includes('re-read with orch doc get and re-apply the edit')) {
+    throw error
+  }
+
+  const withoutCliRemedy = message
+    .replace(/; pass --expect [^\s]+/, '')
+    .replace(/\nre-read with orch doc get and re-apply the edit/, '')
+  throw new Error(
+    `${withoutCliRemedy}; pass expected_revision ${currentRevision}; ` +
+      're-read with get_doc and re-apply the edit',
+  )
+}
+
+async function withMcpDocWriteRemedy<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write()
+  } catch (error) {
+    rethrowMcpDocWriteError(error)
+  }
+}
+
 export function registerDocTools(
   server: McpServer,
   workerProcess: () => boolean = () => isOrchWorkerProcess(process.env, process.pid),
@@ -135,19 +159,21 @@ export function registerDocTools(
       const refusal = decideMcpDocWrite('set_doc', scope, workerProcess())
       if (refusal) throw new Error(refusal)
       const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
-      const doc = await setDoc({
-        scope,
-        subject: subject ?? null,
-        slug,
-        title,
-        body,
-        delivery,
-        forceInject: force_inject,
-        reason,
-        author,
-        expectedRevision: expected_revision,
-        canonTree,
-      })
+      const doc = await withMcpDocWriteRemedy(() =>
+        setDoc({
+          scope,
+          subject: subject ?? null,
+          slug,
+          title,
+          body,
+          delivery,
+          forceInject: force_inject,
+          reason,
+          author,
+          expectedRevision: expected_revision,
+          canonTree,
+        }),
+      )
       const root = repoRootForDoc(doc, canonTree?.root)
       return text({
         ...doc,
@@ -178,12 +204,14 @@ export function registerDocTools(
       const refusal = decideMcpDocWrite('remove_doc', scope, workerProcess())
       if (refusal) throw new Error(refusal)
       const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
-      const removed = await removeDoc(scope, subject ?? null, slug, {
-        reason,
-        author,
-        expectedRevision: expected_revision,
-        canonTree,
-      })
+      const removed = await withMcpDocWriteRemedy(() =>
+        removeDoc(scope, subject ?? null, slug, {
+          reason,
+          author,
+          expectedRevision: expected_revision,
+          canonTree,
+        }),
+      )
       return text({ removed, tree: canonTree?.root })
     },
   )
