@@ -710,6 +710,8 @@ export const importBoundaries: ImportBoundary[] = [
       './landing-outbox.ts',
       './machine-identity.ts',
       './record-cache.ts',
+      './record-review-read.ts',
+      './record-review-values.ts',
       './record-session.ts',
       '../review/review-outbox.ts',
       '../run/run-outbox.ts',
@@ -727,6 +729,18 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-sync-command.ts',
     ['../../../shared/machine-config.ts', './record-sync.ts', './record-tunnel-error.ts'],
     'Enforce the record-sync-command concern boundary.',
+  ),
+  boundary(
+    'record-review-read-boundary',
+    'orchestrator/src/record/record-review-read.ts',
+    [],
+    'Keep hosted review-read value mapping independent of record delivery.',
+  ),
+  boundary(
+    'record-review-values-boundary',
+    'orchestrator/src/record/record-review-values.ts',
+    [],
+    'Keep hosted review value mapping independent of record delivery.',
   ),
   boundary(
     'resource-ownership-boundary',

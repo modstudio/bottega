@@ -15,7 +15,11 @@ export type ChangeGroup = {
 
 export type TriageReviewRow = {
   reviewId: number
+  recordedAt: string
   completedAt: string | null
+  tier: 0 | 1 | 2 | 3 | null
+  patchId: string | null
+  pathSet: string | null
   lensIds: readonly number[]
   findings: readonly { id: number; ordinal: number; disposition: string | null }[]
 }
@@ -53,6 +57,22 @@ const changeGroupOperations: ChangeGroupOperations = {
 
 export const serializePathSet = (paths: readonly string[]): string =>
   JSON.stringify([...paths].sort())
+
+/** Session that owns the root run chain which minted or works on this branch. */
+export function branchRunOwnerSession(
+  database: Database,
+  project: string,
+  branch: string,
+): string | null {
+  const row = database
+    .query<{ session_id: string | null }, [string, string, string]>(
+      `SELECT session_id FROM run
+        WHERE parent_run_id IS NULL AND repo=? AND (branch=? OR minted_branch=?)
+        ORDER BY id DESC LIMIT 1`,
+    )
+    .get(project, branch, branch)
+  return row?.session_id ?? null
+}
 
 /** Measure the one review identity used at review recording and PR admission. */
 export function measureReviewChange(
@@ -99,34 +119,62 @@ export function measureChangeGroup(
   }
 }
 
-export function reviewsForChangeGroup(database: Database, group: ChangeGroup): TriageReviewRow[] {
+function reviewsForChangeGroup(
+  branchReviews: readonly TriageReviewRow[],
+  group: ChangeGroup,
+): TriageReviewRow[] {
+  const pathSet = serializePathSet(group.pathSet)
+  return branchReviews.filter(
+    (review) => review.patchId === group.patchId && review.pathSet === pathSet,
+  )
+}
+
+export function reviewsForTriage(
+  database: Database,
+  group: ChangeGroup,
+): { reviews: TriageReviewRow[]; branchReviews: TriageReviewRow[] } {
+  const branchReviews = reviewsForBranch(database, group.project, group.branch)
+  return {
+    branchReviews,
+    reviews: reviewsForChangeGroup(branchReviews, group),
+  }
+}
+
+/** All review rounds recorded by runs on a branch, newest first. */
+function reviewsForBranch(database: Database, project: string, branch: string): TriageReviewRow[] {
   const rows = database
     .query<
       {
         review_id: number
+        recorded_at: string
         completed_at: string | null
+        tier: 0 | 1 | 2 | 3 | null
+        patch_id: string | null
+        path_set: string | null
         lens_id: number
         finding_id: number | null
         ordinal: number | null
         disposition: string | null
       },
-      [string, string, string, string]
+      [string, string]
     >(
-      `SELECT r.id review_id,r.completed_at,rl.id lens_id,
+      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,rl.id lens_id,
               rf.id finding_id,rf.ordinal,rf.disposition
-         FROM review r
-         JOIN review_lens rl ON rl.review_id=r.id
+         FROM review r JOIN review_lens rl ON rl.review_id=r.id
          JOIN run ON run.id=rl.run_id
          LEFT JOIN review_finding rf ON rf.review_id=r.id
-        WHERE run.repo=? AND run.branch=? AND r.patch_id=? AND r.path_set=?
-        ORDER BY r.id,rl.id,rf.id`,
+        WHERE run.repo=? AND run.branch=? ORDER BY r.id DESC,rl.id,rf.id`,
     )
-    .all(group.project, group.branch, group.patchId, serializePathSet(group.pathSet))
+    .all(project, branch)
   const reviews = new Map<number, TriageReviewRow>()
   for (const row of rows) {
     const review = reviews.get(row.review_id) ?? {
       reviewId: row.review_id,
+      recordedAt: row.recorded_at,
       completedAt: row.completed_at,
+      tier: row.tier,
+      patchId: row.patch_id,
+      pathSet: row.path_set,
       lensIds: [],
       findings: [],
     }

@@ -45,6 +45,9 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         title: step.title,
         ...(step.stage === undefined ? {} : { stage: step.stage }),
         floor: step.floor,
+        ...(step.deferrable?.length ? { deferrable: step.deferrable } : {}),
+        ...(step.expectedStatus ? { expectedStatus: step.expectedStatus } : {}),
+        ...(step.requirePullRequest ? { requirePullRequest: true } : {}),
         job: step.job,
         autonomy: step.autonomy,
         needs: step.needs,
@@ -112,6 +115,11 @@ function record(value: unknown, path: string): Record<string, unknown> {
   throw new Error(`${path}: YAML front matter must be an object`)
 }
 
+const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.expectedStatus === undefined
+    ? {}
+    : { expectedStatus: frontMatter.expectedStatus as string }
+
 export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   const steps: CatalogueStep[] = []
   const workflows: WorkflowTreeStore['workflows'] = []
@@ -126,6 +134,13 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         title: frontMatter.title as string,
         stage: frontMatter.stage as CatalogueStep['stage'],
         floor: frontMatter.floor as CatalogueStep['floor'],
+        ...(frontMatter.deferrable === undefined
+          ? {}
+          : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
+        ...expectedStatusFrom(frontMatter),
+        ...(frontMatter.requirePullRequest === undefined
+          ? {}
+          : { requirePullRequest: frontMatter.requirePullRequest === true }),
         job: frontMatter.job as string | null,
         autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
         needs: frontMatter.needs as CatalogueStep['needs'],

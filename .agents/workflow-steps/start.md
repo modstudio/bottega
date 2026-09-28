@@ -3,6 +3,7 @@ title: Start the task
 stage: plan
 floor:
   - tracker-transition
+expectedStatus: "{{tracker.states.active}}"
 job: null
 autonomy: auto
 needs:

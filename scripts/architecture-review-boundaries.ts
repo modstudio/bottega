@@ -14,6 +14,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-commands.ts',
       './review-finding-amend-command.ts',
       './review-finding-restore.ts',
+      './review-read.ts',
     ],
     reason:
       'Keep review verb routing beside the review commands and independent of CLI registration.',
@@ -92,6 +93,21 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review/review-outbox.ts',
     allowed: ['../../../shared/record/schema.ts', '../database/db.ts', 'bun:sqlite'],
     reason: 'Enforce the review-outbox concern boundary.',
+  },
+  {
+    name: 'review-read-boundary',
+    file: 'orchestrator/src/review/review-read.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/record/schema.ts',
+      '../../../shared/secret-shaped.ts',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      './review-group.ts',
+      './review-outbox.ts',
+    ],
+    reason: 'Keep architect review reads inside the review evidence concern.',
   },
   {
     name: 'review-target-boundary',

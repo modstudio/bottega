@@ -110,6 +110,8 @@ export const landingTriageSnapshot = pgTable.withRLS(
     tier: integer().notNull(),
     lensRounds: integer('lens_rounds').notNull(),
     findingCount: integer('finding_count').notNull(),
+    admissionPath: text('admission_path').notNull().default('exact_review'),
+    readId: uuid('read_id'),
     overrideId: uuid('override_id'),
     sessionId: text('session_id'),
     at: recordedAt('at'),

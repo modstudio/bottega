@@ -23,6 +23,7 @@ describe('orch MCP', () => {
         gate: 'bun run check',
         trunk: 'main',
         docs: { protocol: 'orch-docs' },
+        tracker: { kind: 'hub', protocol: 'hub' },
         autonomy: { release: 'push' },
       },
     })

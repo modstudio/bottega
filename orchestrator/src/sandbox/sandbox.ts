@@ -22,7 +22,7 @@ import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/con
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
-import type { Project } from '../project/projects.ts'
+import { type Project, projectAt } from '../project/projects.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -105,6 +105,46 @@ export function resolveSecretPaths(project: Project | null): string[] {
     const expanded = expandHome(entry)
     return isAbsolute(expanded) ? resolve(expanded) : resolve(project.path, expanded)
   })
+}
+
+const isAtOrBelow = (path: string, parent: string) => {
+  const fromParent = relative(parent, path)
+  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
+}
+
+function protectedDenyPaths(project: Project | null, environment: ConfigEnvironment): string[] {
+  return [
+    ...new Set([
+      ...mandatorySrtDenyRead(environment),
+      ...resolveEnvFilePaths(environment).map((path) => resolve(path)),
+      ...resolveSecretPaths(project),
+    ]),
+  ]
+}
+
+function refuseProtectedOverlap(
+  label: string,
+  protectedDenies: readonly string[],
+  worktree: string,
+  runsDir: string,
+): void {
+  for (const denied of protectedDenies) {
+    if (isAtOrBelow(denied, worktree) || isAtOrBelow(worktree, denied)) {
+      throw new Error(
+        `${label} sandbox refusal: a registered secret path cannot be inside the worktree (${denied})`,
+      )
+    }
+    if (isAtOrBelow(denied, runsDir)) {
+      throw new Error(
+        `${label} sandbox refusal: a registered secret path cannot be inside the run directory (${denied})`,
+      )
+    }
+    if (isAtOrBelow(runsDir, denied)) {
+      throw new Error(
+        `${label} sandbox refusal: a registered secret path cannot contain the run directory (${denied})`,
+      )
+    }
+  }
 }
 
 function dockerSocketPaths(environment: ConfigEnvironment): string[] {
@@ -190,34 +230,8 @@ export function readonlyLensProfile(input: {
   const worktree = resolve(input.worktree)
   const runsDir = resolve(input.runsDir)
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
-  const protectedDenies = [
-    ...new Set([
-      ...mandatorySrtDenyRead(environment),
-      ...resolveEnvFilePaths(environment).map((path) => resolve(path)),
-      ...resolveSecretPaths(input.project),
-    ]),
-  ]
-  const isAtOrBelow = (path: string, parent: string) => {
-    const fromParent = relative(parent, path)
-    return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
-  }
-  for (const denied of protectedDenies) {
-    if (isAtOrBelow(denied, worktree) || isAtOrBelow(worktree, denied)) {
-      throw new Error(
-        `readonly-lens sandbox refusal: a registered secret path cannot be inside the worktree (${denied})`,
-      )
-    }
-    if (isAtOrBelow(denied, runsDir)) {
-      throw new Error(
-        `readonly-lens sandbox refusal: a registered secret path cannot be inside the run directory (${denied})`,
-      )
-    }
-    if (isAtOrBelow(runsDir, denied)) {
-      throw new Error(
-        `readonly-lens sandbox refusal: a registered secret path cannot contain the run directory (${denied})`,
-      )
-    }
-  }
+  const protectedDenies = protectedDenyPaths(input.project, environment)
+  refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runsDir)
   const candidateAllows = [
     ...new Set([
       worktree,
@@ -265,6 +279,47 @@ export function readonlyLensProfile(input: {
     },
     environment,
   )
+}
+
+/** Write-deny everywhere except a throwaway directory; no network; no secret paths. */
+export function probeSandboxProfile(input: {
+  allowWriteDir: string
+  cwd: string
+  project: Project
+  environment?: ConfigEnvironment
+}): SandboxRuntimeConfig {
+  const allowWrite = resolve(input.allowWriteDir)
+  const cwd = resolve(input.cwd)
+  const protectedDenies = protectedDenyPaths(input.project, input.environment ?? process.env)
+  refuseProtectedOverlap('probe', protectedDenies, cwd, allowWrite)
+  return {
+    network: {
+      allowedDomains: [],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: [...new Set([...protectedDenies, ...READONLY_LENS_DENY_SOCKETS])],
+      allowWithinDeny: [],
+      allowWrite: [allowWrite],
+      denyWrite: [],
+    },
+  }
+}
+
+export function probeSandboxProfileForCwd(input: {
+  allowWriteDir: string
+  cwd: string
+  database: Parameters<typeof projectAt>[1]
+}): SandboxRuntimeConfig {
+  const project = projectAt(input.cwd, input.database)
+  if (!project) throw new Error(`orch workflow probe: no registered project contains ${input.cwd}`)
+  return probeSandboxProfile({
+    allowWriteDir: input.allowWriteDir,
+    cwd: input.cwd,
+    project,
+  })
 }
 
 export type SandboxSelection = {

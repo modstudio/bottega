@@ -28,7 +28,9 @@ test('review backfill mints parent rows before children, enqueues the graph, and
     mintedReviews: 1,
     mintedLenses: 1,
     mintedFindings: 1,
+    mintedReads: 0,
     enqueuedReviews: 1,
+    enqueuedReads: 0,
   })
   const records = database
     .query<{ kind: string; record_id: string }, []>(
@@ -43,7 +45,9 @@ test('review backfill mints parent rows before children, enqueues the graph, and
     mintedReviews: 0,
     mintedLenses: 0,
     mintedFindings: 0,
+    mintedReads: 0,
     enqueuedReviews: 0,
+    enqueuedReads: 0,
   })
   expect(
     database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,

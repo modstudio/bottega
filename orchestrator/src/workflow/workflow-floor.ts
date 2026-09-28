@@ -1,0 +1,307 @@
+// concern: workflows
+/** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
+
+export const floorKinds = [
+  'ruling',
+  'command-exit',
+  'recorded-artifact',
+  'tracker-transition',
+] as const
+export type FloorKind = (typeof floorKinds)[number]
+export type EnforcementMode = 'note-only' | 'floors'
+
+export const DEFAULT_EXPECTED_EXIT_CODE = 0
+export const DEFAULT_EXPECTED_STATUS = 'done'
+
+export function isFloorKind(value: string): value is FloorKind {
+  for (const kind of floorKinds) if (kind === value) return true
+  return false
+}
+
+export type Floor = {
+  kind: FloorKind
+  deferrable: boolean
+  expectedExitCode: number
+  expectedStatus: string
+  requirePullRequest: boolean
+}
+
+export type ArtifactRef =
+  | { kind: 'comment'; key: string; id: number }
+  | { kind: 'probe'; id: number }
+  | { kind: 'doc'; id: number }
+  | { kind: 'run'; id: number }
+  | { kind: 'id'; id: number }
+
+type ValidatedSatisfy =
+  | { id: number; found: false }
+  | {
+      id: number
+      found: true
+      open: boolean
+      abandoned: boolean
+      cursorMatches: boolean
+      floor: Floor
+    }
+
+export type ValidatedEvidence = {
+  ruling?: {
+    id: number
+    answered: boolean
+    boundToCursor: boolean
+    boundToStep: boolean
+  }
+  review?: { id: number; allFindingsDisposed: boolean; allLensesGraded: boolean }
+  gate?: { id: number; finished: boolean; exitCode: number | null }
+  run?: { id: number; terminal: boolean; exitCode: number | null }
+  artifact?: { ref: string; exists: boolean }
+  task?: { key: string; status: string | null; mergedPullRequest: boolean }
+  deferReason?: string
+  satisfy?: ValidatedSatisfy
+}
+
+export type OpenObligation = {
+  id: number
+  stepOrdinal: number
+  stepSlug: string
+  floor: FloorKind
+}
+
+type EvidenceRef = { flag: string; value: string }
+
+export type FloorDecision =
+  | {
+      action: 'allow'
+      enforcement: EnforcementMode
+      refs: EvidenceRef[]
+      defer?: { floor: FloorKind; reason: string }
+      satisfyId?: number
+    }
+  | { action: 'refuse'; message: string }
+
+export type FloorSatisfactionInput = {
+  floors: Floor[]
+  evidence: ValidatedEvidence
+  enforcement: EnforcementMode
+  finishing: boolean
+  openObligations: OpenObligation[]
+}
+
+function flagForFloor(kind: FloorKind): string {
+  if (kind === 'ruling') return '--ruling <question id> or --review <review id>'
+  if (kind === 'command-exit') return '--gate <gate execution id> or --run <run id>'
+  if (kind === 'recorded-artifact')
+    return '--artifact <doc id | task:<KEY>#comment:<id> | run id | probe:<id>>'
+  if (kind === 'tracker-transition') return '--task <KEY>'
+  throw new Error(`unknown floor kind "${String(kind)}"`)
+}
+
+export function parseArtifactRef(value: string): ArtifactRef | { error: string } {
+  const trimmed = value.trim()
+  const comment = /^task:([^#]+)#comment:(\d+)$/i.exec(trimmed)
+  if (comment) return { kind: 'comment', key: comment[1]!.toUpperCase(), id: Number(comment[2]) }
+  const probe = /^probe:(\d+)$/i.exec(trimmed)
+  if (probe) return { kind: 'probe', id: Number(probe[1]) }
+  const doc = /^doc:(\d+)$/i.exec(trimmed)
+  if (doc) return { kind: 'doc', id: Number(doc[1]) }
+  const run = /^run:(\d+)$/i.exec(trimmed)
+  if (run) return { kind: 'run', id: Number(run[1]) }
+  if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
+  return {
+    error: `--artifact ${trimmed} is not a doc id, task:<KEY>#comment:<id>, run id, or probe:<id>`,
+  }
+}
+
+export function catalogueFloors(
+  kinds: readonly string[],
+  deferrable: readonly string[] = [],
+  expectedStatus = DEFAULT_EXPECTED_STATUS,
+  requirePullRequest = false,
+): Floor[] {
+  return kinds.map((kind) => {
+    if (!isFloorKind(kind)) throw new Error(`unknown floor kind "${kind}"`)
+    return {
+      kind,
+      deferrable: deferrable.includes(kind),
+      expectedExitCode: DEFAULT_EXPECTED_EXIT_CODE,
+      expectedStatus,
+      requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
+    }
+  })
+}
+
+function rulingMet(evidence: ValidatedEvidence): boolean {
+  const ruling = evidence.ruling
+  const review = evidence.review
+  const question = Boolean(ruling?.answered && ruling.boundToCursor && ruling.boundToStep)
+  const triaged = Boolean(review?.allFindingsDisposed && review.allLensesGraded)
+  return question || triaged
+}
+
+function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
+  const gate = evidence.gate
+  const run = evidence.run
+  const gateOk = Boolean(gate?.finished && gate.exitCode === floor.expectedExitCode)
+  const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)
+  return gateOk || runOk
+}
+
+function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
+  const task = evidence.task
+  if (!task || task.status !== floor.expectedStatus) return false
+  return !floor.requirePullRequest || task.mergedPullRequest
+}
+
+function floorIsMet(floor: Floor, evidence: ValidatedEvidence): boolean {
+  if (floor.kind === 'ruling') return rulingMet(evidence)
+  if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
+  if (floor.kind === 'recorded-artifact') return evidence.artifact?.exists === true
+  if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
+  throw new Error(`unknown floor kind "${String(floor.kind)}"`)
+}
+
+function unmetMessage(floors: Floor[]): string {
+  return floors
+    .map(
+      (floor) =>
+        `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
+        (floor.kind === 'command-exit'
+          ? ` with exit code ${floor.expectedExitCode}`
+          : floor.kind === 'tracker-transition'
+            ? ` reading back as ${floor.expectedStatus}` +
+              (floor.requirePullRequest ? ' with a merged pull request for the task key' : '')
+            : ''),
+    )
+    .join('; ')
+}
+
+function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
+  const refs: EvidenceRef[] = []
+  if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
+  if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.id) })
+  if (evidence.gate) refs.push({ flag: '--gate', value: String(evidence.gate.id) })
+  if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
+  if (evidence.artifact) refs.push({ flag: '--artifact', value: evidence.artifact.ref })
+  if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
+  return refs
+}
+
+function refuseDefer(floors: Floor[]): FloorDecision {
+  return {
+    action: 'refuse',
+    message:
+      `this step's floors are not deferrable (${floors.map((floor) => floor.kind).join('|')}); ` +
+      `pass evidence instead: ${unmetMessage(floors)}`,
+  }
+}
+
+function refuseSatisfy(satisfy: ValidatedSatisfy): FloorDecision {
+  if (!satisfy.found)
+    return {
+      action: 'refuse',
+      message: `obligation ${satisfy.id} does not exist; pass --satisfies <obligation id> from orch workflow listing`,
+    }
+  if (!satisfy.cursorMatches)
+    return {
+      action: 'refuse',
+      message: `obligation ${satisfy.id} belongs to another cursor`,
+    }
+  if (satisfy.abandoned)
+    return {
+      action: 'refuse',
+      message: `obligation ${satisfy.id} is abandoned`,
+    }
+  if (!satisfy.open)
+    return {
+      action: 'refuse',
+      message: `obligation ${satisfy.id} is already satisfied`,
+    }
+  return {
+    action: 'refuse',
+    message: `obligation ${satisfy.id} is unmet; pass ${flagForFloor(satisfy.floor.kind)} as evidence for that floor`,
+  }
+}
+
+function refuseOpen(open: OpenObligation[]): FloorDecision {
+  return {
+    action: 'refuse',
+    message:
+      'workflow cannot finish while obligations are open: ' +
+      open
+        .map(
+          (row) =>
+            `obligation ${row.id} (step ${row.stepOrdinal} ${row.stepSlug} ${row.floor}) — pass --satisfies ${row.id} with ${flagForFloor(row.floor)}`,
+        )
+        .join('; '),
+  }
+}
+
+function firstDeferrable(floors: Floor[]): Floor | undefined {
+  return floors.find((floor) => floor.deferrable)
+}
+
+function deferralOf(
+  floors: Floor[],
+  evidence: ValidatedEvidence,
+  alreadyMet: boolean,
+): FloorDecision | { defer?: { floor: FloorKind; reason: string } } {
+  const deferReason = evidence.deferReason?.trim()
+  if (!deferReason) return {}
+  const deferrable = firstDeferrable(floors)
+  if (!deferrable) return refuseDefer(floors)
+  if (alreadyMet) return {}
+  return { defer: { floor: deferrable.kind, reason: deferReason } }
+}
+
+function satisfyOf(evidence: ValidatedEvidence): FloorDecision | { satisfyId?: number } {
+  const satisfy = evidence.satisfy
+  if (!satisfy) return {}
+  if (
+    !(
+      satisfy.found &&
+      satisfy.open &&
+      !satisfy.abandoned &&
+      satisfy.cursorMatches &&
+      floorIsMet(satisfy.floor, evidence)
+    )
+  )
+    return refuseSatisfy(satisfy)
+  return { satisfyId: satisfy.id }
+}
+
+function finishOf(
+  finishing: boolean,
+  remaining: OpenObligation[],
+  deferred: { floor: FloorKind; reason: string } | undefined,
+): FloorDecision | null {
+  if (!finishing) return null
+  if (deferred)
+    return {
+      action: 'refuse',
+      message: `workflow cannot finish while deferring floor ${deferred.floor}; pass ${flagForFloor(deferred.floor)} instead of --defer`,
+    }
+  if (remaining.length) return refuseOpen(remaining)
+  return null
+}
+
+export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDecision {
+  if (input.enforcement === 'note-only')
+    return { action: 'allow', enforcement: 'note-only', refs: [] }
+  const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
+  const deferred = deferralOf(input.floors, input.evidence, met.length > 0)
+  if ('action' in deferred) return deferred
+  if (met.length === 0 && !deferred.defer)
+    return { action: 'refuse', message: unmetMessage(input.floors) }
+  const satisfied = satisfyOf(input.evidence)
+  if ('action' in satisfied) return satisfied
+  const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)
+  const finishing = finishOf(input.finishing, remaining, deferred.defer)
+  if (finishing) return finishing
+  return {
+    action: 'allow',
+    enforcement: 'floors',
+    refs: evidenceRefs(input.evidence),
+    ...deferred,
+    ...satisfied,
+  }
+}

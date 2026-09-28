@@ -74,6 +74,8 @@ export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = [
   'tier',
   'lensRounds',
   'findingCount',
+  'admissionPath',
+  'readId',
   'overrideId',
   'sessionId',
   'at',
@@ -232,6 +234,8 @@ function buildLandingTriageSnapshotRecordPayload(row: LocalRow, machineId: strin
     tier: row.tier,
     lensRounds: row.lens_rounds,
     findingCount: row.finding_count,
+    admissionPath: row.admission_path,
+    readId: row.read_record_id,
     overrideId: row.override_record_id,
     sessionId: row.session_id,
     at: row.at,
@@ -308,16 +312,21 @@ export function enqueueLandingOverride(database: Database, id: number, at = nowI
 export function enqueueLandingTriageSnapshot(database: Database, id: number, at = nowIso()): void {
   const row = database
     .query<LocalRow, [number]>(
-      `SELECT snapshot.*, project.name AS project_name, override.record_id AS override_record_id
+      `SELECT snapshot.*, project.name AS project_name, override.record_id AS override_record_id,
+              review_read.record_id AS read_record_id
        FROM landing_triage_snapshot snapshot
        LEFT JOIN project ON project.id=snapshot.project_id
        LEFT JOIN landing_override override ON override.id=snapshot.override_id
+       LEFT JOIN review_read ON review_read.id=snapshot.read_id
        WHERE snapshot.id=?`,
     )
     .get(id)
   if (!row?.record_id) throw new Error(`landing triage snapshot ${id} has no record id`)
   if (row.override_id != null && row.override_record_id == null) {
     throw new Error(`landing triage snapshot ${id} has an override without a record id`)
+  }
+  if (row.read_id != null && row.read_record_id == null) {
+    throw new Error(`landing triage snapshot ${id} has a read without a record id`)
   }
   enqueue(
     database,

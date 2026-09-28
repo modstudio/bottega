@@ -54,7 +54,7 @@ test('new catalogue versions require a stage and reject legacy proof names', () 
   )
   expect(
     validateStepCatalogue({ steps: [{ ...step, stage: 'plan', floor: ['human-ruling'] }] }),
-  ).toContain('step "design" has invalid proof kind "human-ruling"')
+  ).toContain('step "design" has invalid floor kind "human-ruling"')
 })
 
 test('stored legacy steps normalize without revalidation', () => {

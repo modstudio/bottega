@@ -139,7 +139,7 @@ describe('importWorkflowTree', () => {
 
     expect(() =>
       importWorkflowTree(parseWorkflowTree(tree), 'invalid import', 'worker', d),
-    ).toThrow('invalid proof kind "not-a-proof"')
+    ).toThrow('invalid floor kind "not-a-proof"')
     expect(
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
         .count,

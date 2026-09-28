@@ -16,6 +16,21 @@ import {
   decideCursorStart,
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
+import {
+  catalogueFloors,
+  DEFAULT_EXPECTED_EXIT_CODE,
+  DEFAULT_EXPECTED_STATUS,
+  decideFloorSatisfaction,
+  type EnforcementMode,
+  type FloorDecision,
+  type OpenObligation,
+} from './workflow-floor.ts'
+import {
+  type FloorEvidencePorts,
+  gatherValidatedEvidence,
+  productionFloorPorts,
+  type WorkflowEvidenceInput,
+} from './workflow-floor-evidence.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import {
@@ -32,7 +47,16 @@ export type WorkflowCursorContext = {
   instance?: string
 }
 
-type ClosedStep = { n: number; slug: string; note: string; at: string; review?: true }
+type ClosedStep = {
+  n: number
+  slug: string
+  note: string
+  at: string
+  review?: true
+  evidence?: Array<{ flag: string; value: string }>
+  deferred?: { id: number; floor: string; reason: string }
+  satisfied?: number
+}
 type ArgumentReboundEvent = {
   event: 'argument-rebound'
   name: string
@@ -61,6 +85,7 @@ type CursorRow = {
   total_steps: number
   created_at: string
   updated_at: string
+  enforcement: EnforcementMode
 }
 
 const MCP_INSTANCE = randomUUID()
@@ -303,8 +328,8 @@ function insertCursor(
     `INSERT INTO workflow_cursor
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,
-       total_steps,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?)
+       total_steps,created_at,updated_at,enforcement)
+     VALUES (?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
      ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
@@ -529,6 +554,108 @@ export function getWorkflowStepWithCursor(
   )
 }
 
+function openObligations(cursorId: number, d: Database): OpenObligation[] {
+  return d
+    .query<OpenObligation, [number]>(
+      `SELECT id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
+         FROM workflow_obligation
+        WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY id`,
+    )
+    .all(cursorId)
+}
+
+function applyFloorDecision(
+  row: CursorRow,
+  composition: ReturnType<typeof composeWorkflow>,
+  evidence: WorkflowEvidenceInput,
+  ports: FloorEvidencePorts,
+  finishing: boolean,
+  d: Database,
+): FloorDecision {
+  const step = composition.steps[row.ordinal]!
+  const args = JSON.parse(row.args) as Record<string, string>
+  const gathered = gatherValidatedEvidence({
+    cursorId: row.id,
+    identity: {
+      project: row.project,
+      workflowKey: row.workflow_key,
+      branch: args.branch?.trim() || null,
+      worktree: args.worktree?.trim() || null,
+    },
+    stepOrdinal: row.ordinal + 1,
+    stepSlug: row.step_slug,
+    evidence,
+    ports,
+    d,
+  })
+  return decideFloorSatisfaction({
+    floors: catalogueFloors(
+      step.floor,
+      step.deferrable ?? [],
+      step.expectedStatus,
+      Boolean(step.requirePullRequest),
+    ),
+    evidence: gathered,
+    enforcement: row.enforcement ?? 'note-only',
+    finishing,
+    openObligations: openObligations(row.id, d),
+  })
+}
+
+function persistFloorClose(
+  row: CursorRow,
+  decision: Extract<FloorDecision, { action: 'allow' }>,
+  floors: ReturnType<typeof catalogueFloors>,
+  at: string,
+  d: Database,
+): Pick<ClosedStep, 'evidence' | 'deferred' | 'satisfied'> {
+  let deferred: ClosedStep['deferred']
+  if (decision.defer) {
+    const floor = floors.find((item) => item.kind === decision.defer?.floor)
+    const inserted = d
+      .query<{ id: number }, (string | number | null)[]>(
+        `INSERT INTO workflow_obligation
+          (cursor_id,step_ordinal,step_slug,floor,require_pull_request,expected_exit_code,
+           expected_status,floor_deferrable,reason,session_id,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      )
+      .get(
+        row.id,
+        row.ordinal + 1,
+        row.step_slug,
+        decision.defer.floor,
+        floor?.requirePullRequest ? 1 : 0,
+        floor?.expectedExitCode ?? DEFAULT_EXPECTED_EXIT_CODE,
+        floor?.expectedStatus ?? DEFAULT_EXPECTED_STATUS,
+        floor?.deferrable ? 1 : 0,
+        decision.defer.reason,
+        row.session_id,
+        at,
+      )
+    if (!inserted) throw new Error('obligation was not recorded')
+    deferred = { id: inserted.id, floor: decision.defer.floor, reason: decision.defer.reason }
+  }
+  if (decision.satisfyId) {
+    d.query(
+      `UPDATE workflow_obligation
+          SET satisfied_at=?,satisfied_step_ordinal=?,satisfied_step_slug=?,satisfied_evidence=?
+        WHERE id=? AND cursor_id=? AND satisfied_at IS NULL`,
+    ).run(
+      at,
+      row.ordinal + 1,
+      row.step_slug,
+      JSON.stringify(decision.refs),
+      decision.satisfyId,
+      row.id,
+    )
+  }
+  return {
+    ...(decision.refs.length ? { evidence: decision.refs } : {}),
+    ...(deferred ? { deferred } : {}),
+    ...(decision.satisfyId ? { satisfied: decision.satisfyId } : {}),
+  }
+}
+
 function nextWorkflowStepImpl(
   slug: string,
   project: string,
@@ -536,6 +663,8 @@ function nextWorkflowStepImpl(
   args: Record<string, string>,
   note: string | undefined,
   context: WorkflowCursorContext,
+  evidence: WorkflowEvidenceInput,
+  ports: FloorEvidencePorts,
   d: Database = writableDb(),
 ): string {
   const row = findCursor(project, slug, mode, args, context, d)
@@ -564,6 +693,15 @@ function nextWorkflowStepImpl(
     if (decision.reason === 'not-started') throw new Error(remedy(row, composition))
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   }
+  const floor = applyFloorDecision(
+    row,
+    composition,
+    evidence,
+    ports,
+    decision.action === 'finish',
+    d,
+  )
+  if (floor.action === 'refuse') throw new Error(floor.message)
   const at = nowIso()
   if (row.state === 'awaiting-ruling')
     closeOpenWorkflowQuestion(row.id, 'advanced-without-ruling', at, d)
@@ -575,6 +713,18 @@ function nextWorkflowStepImpl(
     note: note.trim(),
     at,
     ...(review ? { review: true as const } : {}),
+    ...persistFloorClose(
+      row,
+      floor,
+      catalogueFloors(
+        composition.steps[row.ordinal]!.floor,
+        composition.steps[row.ordinal]!.deferrable ?? [],
+        composition.steps[row.ordinal]!.expectedStatus,
+        Boolean(composition.steps[row.ordinal]!.requirePullRequest),
+      ),
+      at,
+      d,
+    ),
   })
   if (decision.action === 'finish') {
     d.query(
@@ -626,9 +776,11 @@ export function nextWorkflowStep(
   note: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  evidence: WorkflowEvidenceInput = {},
+  ports: FloorEvidencePorts = productionFloorPorts(),
 ): string {
   return writeTransaction(
-    () => nextWorkflowStepImpl(slug, project, mode, args, note, context, d),
+    () => nextWorkflowStepImpl(slug, project, mode, args, note, context, evidence, ports, d),
     d,
   )
 }
@@ -659,6 +811,11 @@ function abandonWorkflowCursorImpl(
     note: `abandoned: ${reason.trim()}`,
     at,
   })
+  d.query(
+    `UPDATE workflow_obligation
+        SET abandoned_at=?, abandoned_reason=?
+      WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
+  ).run(at, reason.trim(), row.id)
   d.query(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
@@ -711,20 +868,28 @@ function awaitWorkflowRulingImpl(
     )
     .get(row.id) as { id: number } | null
   if (open) {
-    d.query('UPDATE question SET question=?,workflow_key=?,revision=revision+1 WHERE id=?').run(
-      question.trim(),
-      row.workflow_key || null,
-      open.id,
-    )
+    d.query(
+      `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
+       revision=revision+1 WHERE id=?`,
+    ).run(question.trim(), row.workflow_key || null, row.ordinal + 1, row.step_slug, open.id)
     enqueueQuestionRecord(d, open.id)
   } else {
     const inserted = d
       .query(
         `INSERT INTO question
-        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-       VALUES (?,?,?,?, 'workflow', ?) RETURNING id`,
+        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+         workflow_step_ordinal,workflow_step_slug)
+       VALUES (?,?,?,?, 'workflow', ?,?,?) RETURNING id`,
       )
-      .get(row.id, row.workflow_key || null, at, question.trim(), at) as { id: number }
+      .get(
+        row.id,
+        row.workflow_key || null,
+        at,
+        question.trim(),
+        at,
+        row.ordinal + 1,
+        row.step_slug,
+      ) as { id: number }
     enqueueQuestionRecord(d, inserted.id)
   }
   return {
@@ -846,14 +1011,20 @@ export function listWorkflowCursors(
     .query(`SELECT * FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)
     .all(...values) as CursorRow[]
   return rows.map((row) => {
+    const open = openObligations(row.id, d)
     const listed = {
       ...row,
       next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',
+      obligations: open.map((item) => `${item.id}(${item.stepSlug}:${item.floor})`).join(','),
     }
     return { ...listed, line: renderWorkflowCursorLine(listed) }
   })
 }
 
-export function renderWorkflowCursorLine(row: CursorRow & { next_slug: string }): string {
-  return `${row.workflow_slug} ${row.workflow_key} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${row.question ? ` question: ${row.question}` : ''}`
+export function renderWorkflowCursorLine(
+  row: CursorRow & { next_slug: string; obligations?: string },
+): string {
+  const question = row.question ? ` question: ${row.question}` : ''
+  const obligations = row.obligations ? ` obligations: ${row.obligations}` : ''
+  return `${row.workflow_slug} ${row.workflow_key} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${question}${obligations}`
 }

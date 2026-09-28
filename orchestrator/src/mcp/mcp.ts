@@ -454,16 +454,38 @@ export function createDocsMcpServer(): McpServer {
     'next_workflow_step',
     {
       description:
-        'Close the current step with a one-line note of how its floor was met and fetch the next; the cursor is the record.',
+        'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: {
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         note: z.string().trim().min(1),
+        ruling: z.number().int().positive().optional(),
+        review: z.number().int().positive().optional(),
+        gate: z.number().int().positive().optional(),
+        run: z.number().int().positive().optional(),
+        artifact: z.string().trim().min(1).optional(),
+        task: z.string().trim().min(1).optional(),
+        defer: z.string().trim().min(1).optional(),
+        satisfies: z.number().int().positive().optional(),
       },
     },
-    async ({ slug, project, mode, args, note }) => {
+    async ({
+      slug,
+      project,
+      mode,
+      args,
+      note,
+      ruling,
+      review,
+      gate,
+      run,
+      artifact,
+      task,
+      defer,
+      satisfies,
+    }) => {
       const workflowArgs = args ?? {}
       const context = mcpWorkflowCursorContext()
       return text(
@@ -482,6 +504,8 @@ export function createDocsMcpServer(): McpServer {
           workflowArgs,
           note,
           context,
+          undefined,
+          { ruling, review, gate, run, artifact, task, defer, satisfies },
         ),
       )
     },

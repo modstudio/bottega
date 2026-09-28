@@ -84,7 +84,7 @@ export function workerGateToolingConditions(database = db()): MonitorCondition[]
     .query(
       `SELECT g.run_id,g.tooling_paths,g.resolved_command,r.started_at,r.session_id
        FROM gate_execution g JOIN run r ON r.id=g.run_id
-       WHERE g.tooling_paths <> '[]' ORDER BY g.run_id,g.id`,
+       WHERE g.run_id IS NOT NULL AND g.tooling_paths <> '[]' ORDER BY g.run_id,g.id`,
     )
     .all() as {
     run_id: number

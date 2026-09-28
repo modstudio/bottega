@@ -21,6 +21,7 @@ import {
 import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
+  reviewRead as reviewReadRecord,
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord, runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
@@ -34,6 +35,7 @@ import {
   backfillReviewRecords,
   REVIEW_FINDING_RECORD_PAYLOAD_COLUMNS,
   REVIEW_LENS_RECORD_PAYLOAD_COLUMNS,
+  REVIEW_READ_RECORD_PAYLOAD_COLUMNS,
   REVIEW_RECORD_PAYLOAD_COLUMNS,
   type ReviewRecordBackfillResult,
 } from '../review/review-outbox.ts'
@@ -62,6 +64,8 @@ import {
 } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { reviewReadRecordValues } from './record-review-read.ts'
+import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
 import { validateRecordVerdict } from './record-verdicts.ts'
 
@@ -76,6 +80,7 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
     case 'review':
     case 'review_lens':
     case 'review_finding':
+    case 'review_read':
     case 'contention':
       return [2, id]
     default:
@@ -199,7 +204,7 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('outbox payload must be a JSON object')
   }
-  const compatibleProjectKinds = new Set(['score', 'review_lens', 'review_finding'])
+  const compatibleProjectKinds = new Set(['score', 'review_lens', 'review_finding', 'review_read'])
   if (compatibleProjectKinds.has(kind) && !Object.hasOwn(parsed, 'projectName')) {
     Object.assign(parsed, { projectName: null })
   }
@@ -556,18 +561,9 @@ function questionAudits(row: Payload): QuestionAuditPayload[] {
   return row.audits as QuestionAuditPayload[]
 }
 
-const commonReviewValues = (row: Payload) => ({
-  id: String(row.id),
-  spaceId: String(row.spaceId),
-  machineId: String(row.machineId),
-  localId: bigint(row.localId),
-  createdAt: date(row.createdAt),
-  updatedAt: date(row.updatedAt),
-})
-
 function reviewLensValues(row: Payload) {
   return {
-    ...commonReviewValues(row),
+    ...commonReviewRecordValues(row),
     reviewId: String(row.reviewId),
     runId: String(row.runId),
     lens: String(row.lens),
@@ -591,7 +587,7 @@ function reviewLensValues(row: Payload) {
 
 function reviewFindingValues(row: Payload) {
   return {
-    ...commonReviewValues(row),
+    ...commonReviewRecordValues(row),
     reviewId: String(row.reviewId),
     reviewLensId: String(row.reviewLensId),
     ordinal: Number(row.ordinal),
@@ -678,6 +674,8 @@ function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
     tier: Number(row.tier),
     lensRounds: Number(row.lensRounds),
     findingCount: Number(row.findingCount),
+    admissionPath: String(row.admissionPath),
+    readId: nullableString(row.readId),
     overrideId: nullableString(row.overrideId),
     sessionId: nullableString(row.sessionId),
     at: date(row.at),
@@ -809,6 +807,23 @@ const recordKinds = {
           .insert(reviewFindingRecord)
           .values(values)
           .onConflictDoUpdate({ target: reviewFindingRecord.id, set: updates })
+      }),
+  },
+  review_read: {
+    columns: REVIEW_READ_RECORD_PAYLOAD_COLUMNS,
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      postgres.begin(async (tx) => {
+        await bindPrincipal(tx, principal)
+        const values = reviewReadRecordValues(
+          row,
+          await projectRecordId(tx, row, principal),
+          commonReviewRecordValues(row),
+        )
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(reviewReadRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: reviewReadRecord.id, set: updates })
       }),
   },
   landing: {

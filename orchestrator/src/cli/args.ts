@@ -338,6 +338,7 @@ export const CLI_COMMANDS = new Set([
   'inbox',
   'init-db',
   'fix-defect',
+  'gate',
   'jobs',
   'judge',
   'lens',

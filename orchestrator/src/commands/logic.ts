@@ -16,6 +16,7 @@ import { db } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
+import { runArchitectGate } from '../gate/gate-run.ts'
 import { spawnsCommand } from '../health/spawn-commands.ts'
 import {
   treeCreateCommand,
@@ -164,6 +165,13 @@ export function register(program: Command): void {
     .option('--note <value>')
     .option('--question <value>')
     .option('--ruling <value>')
+    .option('--review <value>')
+    .option('--gate <value>')
+    .option('--run <value>')
+    .option('--artifact <value>')
+    .option('--task <value>')
+    .option('--defer <value>')
+    .option('--satisfies <value>')
     .option('--from-operator')
     .option('--cwd <value>')
     .option('--check')
@@ -348,6 +356,16 @@ export function register(program: Command): void {
       cwd: process.cwd,
     }),
   )
+  program
+    .command('gate')
+    .description('run a project gate as the architect and record the execution')
+    .command('run')
+    .description('run the registered project gate in this checkout and record a gate_execution row')
+    .allowExcessArguments(false)
+    .action(async () => {
+      const result = await runArchitectGate({ write: (chunk) => write(chunk) })
+      log(String(result.id))
+    })
   program
     .command('probe <agent>')
     .description('clear a vendor-quota exclusion once the agent answers')

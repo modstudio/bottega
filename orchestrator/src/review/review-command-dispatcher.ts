@@ -3,6 +3,7 @@
 import { reviewCommand } from './review-commands.ts'
 import { amendReviewFindingCommand } from './review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from './review-finding-restore.ts'
+import { recordArchitectReadCommand } from './review-read.ts'
 
 type ReviewFlags = {
   has(name: string): boolean
@@ -16,6 +17,10 @@ export async function dispatchReviewCommand(
   flags: ReviewFlags,
   presentation: ReviewPresentation,
 ): Promise<void> {
+  if (sub === 'read') {
+    recordArchitectReadCommand(argv, flags, presentation)
+    return
+  }
   if (sub === 'amend') {
     amendReviewFindingCommand(argv, flags, presentation)
     return

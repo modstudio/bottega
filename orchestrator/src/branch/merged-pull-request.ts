@@ -171,6 +171,34 @@ export function targetedTaskBranchPullRequests(
   )
 }
 
+type PullRequestMergeView = { state: string; mergedAt: string | null }
+
+/** Confirm a numbered pull request's merge state through gh. */
+export function viewPullRequest(project: Project, number: number): PullRequestMergeView {
+  const output = command(
+    project.path,
+    ['gh', 'pr', 'view', String(number), '--json', 'state,mergedAt'],
+    `gh pr view ${number}`,
+  )
+  let value: unknown
+  try {
+    value = JSON.parse(output || '{}')
+  } catch (error) {
+    throw new Error(
+      `gh pr view ${number} returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  if (!value || typeof value !== 'object')
+    throw new Error(`gh pr view ${number} returned an unexpected JSON shape`)
+  const row = value as Record<string, unknown>
+  if (typeof row.state !== 'string')
+    throw new Error(`gh pr view ${number} returned an unexpected JSON shape`)
+  if (typeof row.mergedAt === 'string') return { state: row.state, mergedAt: row.mergedAt }
+  if (row.mergedAt === null || row.mergedAt === undefined)
+    return { state: row.state, mergedAt: null }
+  throw new Error(`gh pr view ${number} returned an unexpected JSON shape`)
+}
+
 function fetchPullRequest(project: Project, pullRequest: PullRequestHead): string | null {
   try {
     git(
