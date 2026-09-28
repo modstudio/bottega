@@ -352,3 +352,68 @@ test('a hosted-read failure serves the cached successful resolution', async () =
     'release: promote (land to main, then promote to production) (project)',
   )
 })
+
+test('a hosted-read failure without a cache serves the local-scope resolution', async () => {
+  const name = 'session-context-degraded-without-cache'
+  upsertProject({
+    name,
+    path: `/${name}`,
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      autonomy: { stages: { plan: 'auto', review: 'ask' } },
+    },
+  })
+
+  const degraded = await contextJson(`/${name}`, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => {
+          throw new Error('record is offline')
+        },
+      }) as never,
+  })
+
+  expect(degraded.stale).toBeUndefined()
+  expect(degraded.resolvedAt).toBeUndefined()
+  expect(degraded.text).toContain('plan: auto (project)')
+  expect(degraded.text).toContain('review: ask (project)')
+  expect(degraded.text).toStartWith(`Autonomy for ${name}, resolved now from ${PLATFORM_NAME}`)
+})
+
+test('a degraded resolution does not overwrite the successful cache', async () => {
+  const name = 'session-context-degraded-preserves-cache'
+  upsertProject({
+    name,
+    path: `/${name}`,
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      autonomy: { stages: { plan: 'auto' } },
+    },
+  })
+  const resolvedAt = new Date('2026-09-28T19:00:00.000Z')
+  await contextJson(`/${name}`, {
+    clientFactory: () => ({ listEntries: async () => [] }) as never,
+    now: () => resolvedAt,
+  })
+
+  const degradedAt = new Date('2026-09-28T20:00:00.000Z')
+  const stale = await contextJson(`/${name}`, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => {
+          throw new Error('record is offline')
+        },
+      }) as never,
+    now: () => degradedAt,
+  })
+
+  expect(stale.stale).toBe(true)
+  expect(stale.resolvedAt).toBe(resolvedAt.toISOString())
+  expect(stale.resolvedAt).not.toBe(degradedAt.toISOString())
+})

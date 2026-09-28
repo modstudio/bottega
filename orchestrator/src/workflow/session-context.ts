@@ -194,7 +194,6 @@ async function architectSessionContext(
   if (resolution.hosted?.status === 'unavailable') {
     const cached = readSessionContextCache(project.name, stateEnvironment)
     if (cached) return staleSessionContext(cached, resolution.hosted.reason ?? 'hosted read failed')
-    throw new Error(resolution.hosted.reason ?? 'hosted autonomy settings unavailable')
   }
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {
@@ -227,18 +226,19 @@ async function architectSessionContext(
     ...(warnings.length ? { warnings } : {}),
     text: renderSlice(project.name, rulings, stages, release, warnings),
   } satisfies ArchitectSessionContext
-  writeSessionContextCache(
-    {
-      version: 1,
-      resolvedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
-      project: project.name,
-      rulings,
-      stages,
-      release,
-      ...(warnings.length ? { warnings } : {}),
-    },
-    stateEnvironment,
-  )
+  if (resolution.hosted?.status !== 'unavailable')
+    writeSessionContextCache(
+      {
+        version: 1,
+        resolvedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
+        project: project.name,
+        rulings,
+        stages,
+        release,
+        ...(warnings.length ? { warnings } : {}),
+      },
+      stateEnvironment,
+    )
   return slice
 }
 
