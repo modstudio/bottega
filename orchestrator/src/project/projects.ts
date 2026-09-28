@@ -94,6 +94,20 @@ export function resolveBranchRef(value: string): { branch: string; runId: number
   return { branch: row.branch, runId }
 }
 
+/** Whether recorded facts prove that an absent tree has run-owned teardown. */
+export function absentTreeTeardownPlan(input: {
+  recipeSnapshot: string | null
+  worktreeSource: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null | undefined
+  resourceTeardown: 'pending' | 'done' | null | undefined
+  registeredRemoveCommand: boolean
+}): boolean {
+  return (
+    input.resourceTeardown === 'pending' &&
+    (Boolean(input.recipeSnapshot) ||
+      (input.worktreeSource === 'recipe' && input.registeredRemoveCommand))
+  )
+}
+
 /** Apply the repository-local default without persisting derived config into the register. */
 export function resolvedWorktreeTool(
   project: Pick<Project, 'path' | 'settings'> | null | undefined,

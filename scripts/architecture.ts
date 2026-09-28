@@ -83,6 +83,8 @@ export const modules: ArchitectureModule[] = [
     '../reclaim/reclaim-residue.ts',
   ]),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/close/absent-tree-close-out.ts', ['../git/git-environment.ts', '../project/projects.ts', '../reclaim/reclaim.ts', '../worktree/worktree.ts', '../worktree/worktree-remove.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', ['node:fs', '../branch/branches.ts', '../database/db.ts', '../project/projects.ts', '../reclaim/reclaim-residue.ts', './cleanup.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/evidence/unjudged-expiry.ts', ['../../../shared/record/schema.ts', '../database/db.ts', '../record/machine-identity.ts', '../run/run-outbox.ts', './evidence-query.ts']),

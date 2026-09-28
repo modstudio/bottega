@@ -9,7 +9,13 @@ import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
-import { projectAt, projects } from '../project/projects.ts'
+import {
+  absentTreeTeardownPlan,
+  projectAt,
+  projectByName,
+  projects,
+  resolvedWorktreeTool,
+} from '../project/projects.ts'
 import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import {
   classifiedDockerResources,
@@ -66,6 +72,32 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
+
+function retainedDockerResourceAction(
+  owner: {
+    id: number
+    repo: string | null
+    status: string
+    worktree: string | null
+    worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+    recipe_snapshot: string | null
+    resource_teardown: 'pending' | 'done' | null
+  } | null,
+): string {
+  const terminal = owner && TERMINAL_STATUSES.has(owner.status)
+  const project = owner?.repo ? projectByName(owner.repo) : null
+  const teardownPlan = owner
+    ? absentTreeTeardownPlan({
+        recipeSnapshot: owner.recipe_snapshot,
+        worktreeSource: owner.worktree_source,
+        resourceTeardown: owner.resource_teardown,
+        registeredRemoveCommand: Boolean(resolvedWorktreeTool(project)?.remove),
+      })
+    : false
+  return terminal && owner.worktree && !existsSync(owner.worktree) && teardownPlan
+    ? `run orch close-out ${owner.id}`
+    : 'informational; retained resources require review before any removal'
+}
 
 export class MonitorStoreBusyError extends Error {
   constructor(cause: unknown) {
@@ -418,20 +450,42 @@ export async function monitor(
   const runDockerResources = runDocker.ascertainable ? runDocker.resources : []
   const dockerOwnerIds = new Set(runDockerResources.map(({ runId }) => runId))
   const dockerOwners = (
-    database.query('SELECT id, repo, worktree, status FROM run').all() as {
+    database
+      .query(
+        `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+                COALESCE(root.worktree_source,r.worktree_source) worktree_source,
+                COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
+                COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
+         FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+      )
+      .all() as {
       id: number
       repo: string | null
       worktree: string | null
       status: string
+      worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+      recipe_snapshot: string | null
+      resource_teardown: 'pending' | 'done' | null
     }[]
   ).map((owner) => ({
     ...owner,
+    absentTreeTeardown:
+      Boolean(owner.worktree && !existsSync(owner.worktree)) &&
+      absentTreeTeardownPlan({
+        recipeSnapshot: owner.recipe_snapshot,
+        worktreeSource: owner.worktree_source,
+        resourceTeardown: owner.resource_teardown,
+        registeredRemoveCommand: Boolean(
+          resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
+        ),
+      }),
     retentionReason: dockerOwnerIds.has(owner.id)
       ? terminalDockerRetentionReasonForRun(database, owner.id)
       : null,
   }))
   for (const item of classifiedDockerResources(runDockerResources, dockerOwners)) {
     if (item.condition !== 'retained-worktree-resources') continue
+    const owner = dockerOwners.find(({ id }) => id === item.resource.runId)
     add({
       kind: 'retained-worktree-docker-resource',
       subject: item.resource.name,
@@ -442,7 +496,7 @@ export async function monitor(
         (item.reason
           ? `removal could not be ascertained: ${item.reason}`
           : 'its worktree is retained'),
-      action: 'informational; retained resources require review before any removal',
+      action: retainedDockerResourceAction(owner ?? null),
       affectedProject: item.project,
     })
   }

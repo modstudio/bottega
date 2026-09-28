@@ -176,9 +176,19 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
     writeTransaction(() => {
       db()
         .query(
-          `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=NULL,base_commit=?,worktree_source=? WHERE id=?`,
+          `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=NULL,base_commit=?,worktree_source=?,
+                  resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
+           WHERE id=?`,
         )
-        .run(created.path, created.path, branch, plan.tip, created.source ?? null, inserted.id)
+        .run(
+          created.path,
+          created.path,
+          branch,
+          plan.tip,
+          created.source ?? null,
+          created.source ?? null,
+          inserted.id,
+        )
       recordCreatedWorktreeClaims(db(), {
         rootRunId: inserted.id,
         runId: inserted.id,

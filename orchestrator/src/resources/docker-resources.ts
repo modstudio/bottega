@@ -314,6 +314,7 @@ export type RunResourceOwner = {
   worktree: string | null
   status: string
   retentionReason?: string | null
+  absentTreeTeardown?: boolean
 }
 
 export type DockerResourceCondition = 'leaked' | 'retained-worktree-resources'
@@ -341,7 +342,9 @@ export function classifiedDockerResources(
         resource,
         project: owner?.repo ?? 'unknown',
         condition:
-          owner?.retentionReason || (owner?.worktree && existsSync(owner.worktree))
+          owner?.retentionReason ||
+          owner?.absentTreeTeardown ||
+          (owner?.worktree && existsSync(owner.worktree))
             ? ('retained-worktree-resources' as const)
             : ('leaked' as const),
         reason: owner?.retentionReason ?? null,

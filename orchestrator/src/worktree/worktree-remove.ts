@@ -10,7 +10,12 @@ import {
   gitRaw,
   targetGitEnvironment,
 } from '../git/git-environment.ts'
-import { projectAt, resolvedWorktreeTool, type WorktreeTool } from '../project/projects.ts'
+import {
+  absentTreeTeardownPlan,
+  projectAt,
+  resolvedWorktreeTool,
+  type WorktreeTool,
+} from '../project/projects.ts'
 import {
   databaseDroppedByTeardown,
   dbNameFor,
@@ -25,6 +30,14 @@ import { snapshotlessTrackedRecipeRefusal } from './snapshotless-tracked-recipe.
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { runShellTool } from './worktree-tool.ts'
 import type { Worktree } from './worktree-types.ts'
+
+export type WorktreeRemovalResult = {
+  removed: boolean
+  detail: string
+  output?: string
+  resourceTeardownCompleted?: true
+  resourceTeardownFailed?: true
+}
 
 function portFor(runId: number): number {
   return 21000 + (runId % 4000)
@@ -68,22 +81,20 @@ function teardownBuiltInRecipe(
     if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
   }
   const firstFailure = teardown.find((step) => !step.ok)
-  if (!recipe.database || recipe.database.kind === 'none') {
-    return firstFailure
-      ? { ok: false, step: firstFailure.step, detail: firstFailure.detail }
-      : { ok: true }
-  }
-  const provider = recipe.database.kind
-  const databaseDropped = databaseDroppedByTeardown(provider, teardown)
   writeTransaction(() => {
-    settleDatabaseClaim(db(), {
-      allocationKey: `${provider}:${dbName}`,
-      databaseDropped,
-      settledAt: nowIso(),
-      detail: databaseDropped
-        ? `${provider} teardown released ${dbName}`
-        : `${provider} teardown failed; ${dbName} retained`,
-    })
+    if (recipe.database && recipe.database.kind !== 'none') {
+      const provider = recipe.database.kind
+      const databaseDropped = databaseDroppedByTeardown(provider, teardown)
+      settleDatabaseClaim(db(), {
+        allocationKey: `${provider}:${dbName}`,
+        databaseDropped,
+        settledAt: nowIso(),
+        detail: databaseDropped
+          ? `${provider} teardown released ${dbName}`
+          : `${provider} teardown failed; ${dbName} retained`,
+      })
+    }
+    if (!firstFailure) setRecordedResourceTeardownDone(runId)
   })
   return firstFailure
     ? { ok: false, step: firstFailure.step, detail: firstFailure.detail }
@@ -172,7 +183,8 @@ function removeWithTool(
   forceOrchTree = false,
   keepBranch = false,
   runId?: number,
-): { removed: boolean; detail: string; output?: string } {
+  removeTree: () => { removed: boolean; detail: string } = () => removeWorktree(w, keepBranch),
+): WorktreeRemovalResult {
   const name = w.path.split('/').pop() ?? w.path
   const branchBefore = branchTip(w.repoRoot, w.branch)
   const uniqueBefore = unmergedBranch(w.repoRoot, w.branch, null)
@@ -189,6 +201,7 @@ function removeWithTool(
   if (w.branch) vars.branch = w.branch
   const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
+    markRecordedResourceTeardownDone(runId)
     const branchAfter = branchTip(w.repoRoot, w.branch)
     if (
       branchAfter !== null &&
@@ -206,8 +219,12 @@ function removeWithTool(
         ...(r.out ? { output: r.out } : {}),
       }
     }
-    const reconciled = removeWorktree(w, keepBranch)
-    return { ...reconciled, ...(r.out ? { output: r.out } : {}) }
+    const reconciled = removeTree()
+    return {
+      ...reconciled,
+      ...(r.out ? { output: r.out } : {}),
+      resourceTeardownCompleted: true,
+    }
   }
 
   // The marker is the proof that orch made and owns this disposable checkout.
@@ -241,6 +258,7 @@ function removeWithTool(
    */
   return {
     removed: false,
+    resourceTeardownFailed: true,
     detail:
       `${w.path} was NOT removed — the project's own tool refused, and orch will not ` +
       `force past that:\n${r.out.slice(-600) || `exit code from ${tool.remove}`}\n\n` +
@@ -256,26 +274,34 @@ function removeWithoutCommand(
   w: Worktree,
   keepBranch: boolean,
   runId?: number,
-): { removed: boolean; detail: string } {
+): WorktreeRemovalResult {
   const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: runId !== undefined,
     trackedRecipe: Boolean(tool.recipePath),
   })
   if (snapshotRefusal) return { removed: false, detail: snapshotRefusal }
   if (tool.recipePath) {
-    return teardownTrackedRecipe({
+    let teardownCompleted = false
+    const removed = teardownTrackedRecipe({
       runId: runId as number,
       worktree: w,
-      remove: () => removeWorktree(w, keepBranch),
+      remove: () => {
+        teardownCompleted = true
+        return removeWorktree(w, keepBranch)
+      },
     })
+    return teardownCompleted
+      ? { ...removed, resourceTeardownCompleted: true }
+      : { ...removed, resourceTeardownFailed: true }
   }
   if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch)
   const teardown = teardownBuiltInRecipe(tool.recipe, w, runId)
   return teardown.ok
-    ? removeWorktree(w, keepBranch)
+    ? { ...removeWorktree(w, keepBranch), resourceTeardownCompleted: true }
     : {
         removed: false,
         detail: `recipe teardown failed at "${teardown.step}": ${teardown.detail.slice(-200)}`,
+        resourceTeardownFailed: true,
       }
 }
 
@@ -383,6 +409,112 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
+function setRecordedResourceTeardownDone(runId: number): void {
+  db()
+    .query(
+      `UPDATE run SET resource_teardown='done'
+       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         AND resource_teardown='pending'`,
+    )
+    .run(runId)
+}
+
+function markRecordedResourceTeardownDone(runId: number | undefined): void {
+  if (runId === undefined) return
+  writeTransaction(() => setRecordedResourceTeardownDone(runId))
+}
+
+function recordedTeardownFacts(runId: number | undefined): {
+  recipeSnapshot: string | null
+  worktreeSource: Worktree['source'] | null
+  resourceTeardown: 'pending' | 'done' | null
+} {
+  if (runId === undefined)
+    return { recipeSnapshot: null, worktreeSource: null, resourceTeardown: null }
+  const row = db()
+    .query(
+      `SELECT recipe_snapshot,worktree_source,resource_teardown FROM run
+       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+    )
+    .get(runId) as {
+    recipe_snapshot: string | null
+    worktree_source: Worktree['source'] | null
+    resource_teardown: 'pending' | 'done' | null
+  } | null
+  return {
+    recipeSnapshot: row?.recipe_snapshot ?? null,
+    worktreeSource: row?.worktree_source ?? null,
+    resourceTeardown: row?.resource_teardown ?? null,
+  }
+}
+
+/** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
+export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): boolean {
+  const facts = recordedTeardownFacts(runId)
+  return absentTreeTeardownPlan({
+    ...facts,
+    registeredRemoveCommand: Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove),
+  })
+}
+
+function absentLifecycleRemoval(input: {
+  worktree: Worktree
+  runId?: number
+  removeTree(): { removed: boolean; detail: string }
+}): WorktreeRemovalResult | null {
+  if (existsSync(input.worktree.path)) return null
+  const facts = recordedTeardownFacts(input.runId)
+  if (facts.resourceTeardown !== 'pending') return input.removeTree()
+  if (!facts.recipeSnapshot) return null
+  let teardownCompleted = false
+  const removed = teardownTrackedRecipe({
+    runId: input.runId as number,
+    worktree: input.worktree,
+    remove: () => {
+      teardownCompleted = true
+      return input.removeTree()
+    },
+    treeExists: false,
+  })
+  return teardownCompleted
+    ? { ...removed, resourceTeardownCompleted: true }
+    : { ...removed, resourceTeardownFailed: true }
+}
+
+function removeByLifecycle(input: {
+  worktree: Worktree
+  tool: WorktreeTool | null
+  projectName: string | null
+  forceOrchTree: boolean
+  retainBranch: boolean
+  runId?: number
+  removeTree(): { removed: boolean; detail: string }
+}): WorktreeRemovalResult {
+  const { worktree, tool, runId, removeTree } = input
+  if (recordedTeardownFacts(runId).resourceTeardown === 'done') return removeTree()
+  const absentRemoval = absentLifecycleRemoval({ worktree, runId, removeTree })
+  if (absentRemoval) return absentRemoval
+  if (worktree.source === 'readonly_recipe' || worktree.source === 'clone') {
+    const removed: { removed: boolean; detail: string; output?: string } = removeReadOnlyTree(
+      tool ?? {},
+      worktree,
+      input.retainBranch,
+    )
+    return removed.output && input.projectName
+      ? { ...removed, output: `${input.projectName} readonly remove:\n${removed.output}` }
+      : removed
+  }
+  const projectOwned =
+    worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
+  const removed: WorktreeRemovalResult =
+    tool && projectOwned
+      ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
+      : removeWorktree(worktree, input.retainBranch)
+  return removed.output && input.projectName
+    ? { ...removed, output: `${input.projectName} remove:\n${removed.output}` }
+    : removed
+}
+
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
   w: Worktree,
@@ -391,7 +523,8 @@ export function removeFor(
   keepBranch = false,
   runId?: number,
   forceUnmerged = false,
-): { removed: boolean; detail: string; output?: string } {
+  skipGitRemoval = false,
+): WorktreeRemovalResult {
   // The marker identifies who created a tree; it does not transfer that run's
   // branch ownership to a later attacher. Cleanup names only the discarding
   // run's minted branch.
@@ -408,22 +541,19 @@ export function removeFor(
   const tool = resolvedWorktreeTool(project)
   const retainBranch =
     keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
-  let result: { removed: boolean; detail: string; output?: string }
-  if (w.source === 'readonly_recipe' || w.source === 'clone') {
-    const removed = removeReadOnlyTree(tool ?? {}, owned, retainBranch)
-    result = removed.output
-      ? { ...removed, output: `${project!.name} readonly remove:\n${removed.output}` }
-      : removed
-  } else {
-    const projectOwned = w.source === 'recipe' || (w.source === undefined && Boolean(tool))
-    const removed: { removed: boolean; detail: string; output?: string } =
-      tool && projectOwned
-        ? removeWithTool(tool, owned, forceOrchTree, retainBranch, runId)
-        : removeWorktree(owned, retainBranch)
-    result = removed.output
-      ? { ...removed, output: `${project!.name} remove:\n${removed.output}` }
-      : removed
-  }
+  const removeTree = () =>
+    skipGitRemoval
+      ? { removed: true, detail: `${w.path} was already gone` }
+      : removeWorktree(owned, retainBranch)
+  const result = removeByLifecycle({
+    worktree: owned,
+    tool,
+    projectName: project?.name ?? null,
+    forceOrchTree,
+    retainBranch,
+    runId,
+    removeTree,
+  })
   if (result.removed && owningRunId !== undefined && owningRunId !== null) {
     removeSharedRefGuard(repoRoot, owningRunId)
   }

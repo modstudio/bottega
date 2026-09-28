@@ -122,8 +122,9 @@ export function worktreePathSpellings(database: Database, worktree: string): str
 
 function terminalWorktreeSafety(
   database: Database,
-  worktree: string | null,
+  row: { worktree: string | null; repo: string | null; cwd: string | null },
 ): TerminalWorktreeSafety {
+  const { worktree } = row
   if (!worktree) return { safe: false, reason: 'no recorded worktree' }
   let identity: string
   try {
@@ -133,7 +134,12 @@ function terminalWorktreeSafety(
   }
   let repoRoot: string | null
   try {
-    repoRoot = repoRootOf(worktree)
+    const registered = row.repo
+      ? (database.query('SELECT path FROM project WHERE name=?').get(row.repo) as {
+          path: string
+        } | null)
+      : null
+    repoRoot = registered?.path ?? repoRootOf(worktree) ?? row.cwd
   } catch {
     return { safe: false, reason: 'unresolvable repository root' }
   }
@@ -150,9 +156,9 @@ function terminalWorktreeSafety(
 
 function terminalDockerRetentionReason(
   database: Database,
-  worktree: string | null,
+  row: { worktree: string | null; repo: string | null; cwd: string | null },
 ): TerminalDockerRetentionReason | null {
-  const safety = terminalWorktreeSafety(database, worktree)
+  const safety = terminalWorktreeSafety(database, row)
   return safety.safe ? null : safety.reason
 }
 
@@ -163,15 +169,15 @@ export function terminalDockerRetentionReasonForRun(
 ): TerminalDockerRetentionReason | null {
   const rows = database
     .query(
-      `SELECT worktree FROM run
+      `SELECT worktree,repo,cwd FROM run
       WHERE COALESCE(parent_run_id, id) =
         (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)
         AND status IN ('ok','failed','stale','stopped')
       ORDER BY id DESC`,
     )
-    .all(runId) as { worktree: string | null }[]
+    .all(runId) as { worktree: string | null; repo: string | null; cwd: string | null }[]
   for (const row of rows) {
-    const reason = terminalDockerRetentionReason(database, row.worktree)
+    const reason = terminalDockerRetentionReason(database, row)
     if (reason) return reason
   }
   return null
@@ -212,12 +218,14 @@ export function teardownTerminalRunResources(
     outcome: 'nothing',
     reason: null,
   })
-  const row = database.query('SELECT status, worktree FROM run WHERE id=?').get(runId) as {
+  const row = database.query('SELECT status, worktree,repo,cwd FROM run WHERE id=?').get(runId) as {
     status: string
     worktree: string | null
+    repo: string | null
+    cwd: string | null
   } | null
   if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return nothing()
-  const initialSafety = terminalWorktreeSafety(database, row.worktree)
+  const initialSafety = terminalWorktreeSafety(database, row)
   if (!initialSafety.safe)
     return {
       ...nothing(),
@@ -249,13 +257,12 @@ export function teardownTerminalRunResources(
       const result = teardownRunResources(
         id,
         inventory,
-        () => terminalWorktreeSafety(database, row.worktree).safe,
+        () => terminalWorktreeSafety(database, row).safe,
       )
       removed += result.removed
       skipped ||= result.skipped
       if (result.skipped) {
-        retainedReason =
-          terminalDockerRetentionReason(database, row.worktree) ?? 'normalization failed'
+        retainedReason = terminalDockerRetentionReason(database, row) ?? 'normalization failed'
       }
       for (const error of result.errors) failures.add(error)
       if (skipped) break
@@ -293,9 +300,7 @@ export function teardownTerminalRunResources(
     }
   }
   const finalRetentionReason: TerminalDockerRetentionReason | null = skipped
-    ? (retainedReason ??
-      terminalDockerRetentionReason(database, row.worktree) ??
-      'normalization failed')
+    ? (retainedReason ?? terminalDockerRetentionReason(database, row) ?? 'normalization failed')
     : null
   return {
     complete: failures.size === 0,

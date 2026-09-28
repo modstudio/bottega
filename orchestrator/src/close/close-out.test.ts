@@ -182,6 +182,148 @@ test('a close-out that fails after removing the tree still clears its pointer', 
   }
 })
 
+test('present-tree recipe teardown becomes done with successful close-out', () => {
+  const fixture = closeOutFixture('owned')
+  upsertProject({
+    name: `close-out-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
+  })
+  const snapshot = JSON.stringify({
+    source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+    recipe: {
+      create: [],
+      destroy: [{ name: 'release resources', run: { command: 'teardown-marker', args: [] } }],
+    },
+  })
+  db()
+    .query(
+      `UPDATE run SET worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending'
+       WHERE id=?`,
+    )
+    .run(snapshot, fixture.id)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('present-tree recipe teardown stays done when Git removal fails and is not repeated', () => {
+  const fixture = closeOutFixture('owned')
+  upsertProject({
+    name: `close-out-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
+  })
+  const snapshot = JSON.stringify({
+    source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+    recipe: {
+      create: [],
+      destroy: [{ name: 'release resources', run: { command: 'teardown-marker', args: [] } }],
+    },
+  })
+  db()
+    .query(
+      `UPDATE run SET worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending'
+       WHERE id=?`,
+    )
+    .run(snapshot, fixture.id)
+  const commands: string[] = []
+  const head = '1234567890abcdef1234567890abcdef12345678'
+  const branch = `DEV-647-orch-${fixture.id}`
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    const rawArgs = command[0] === 'git' ? command.slice(1) : command
+    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    commands.push(args.join(' '))
+    if (args.join(' ') === 'teardown-marker') return spawnResult()
+    if (args[0] === 'worktree' && args[1] === 'remove') return spawnResult('', 1)
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
+    if (args.includes('--is-inside-work-tree')) return spawnResult('true')
+    if (args[0] === 'worktree' && args[1] === 'list') {
+      return spawnResult(`worktree ${fixture.tree}\nbranch refs/heads/${branch}\n`)
+    }
+    if (args[0] === 'symbolic-ref') return spawnResult(branch)
+    if (args[0] === 'diff') return spawnResult()
+    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
+    if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
+      return spawnResult(head)
+    }
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('present-tree inline-recipe teardown stays done when Git removal fails and is not repeated', () => {
+  const fixture = closeOutFixture('owned')
+  upsertProject({
+    name: `close-out-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { recipe: { stop: 'inline-stop-marker' } } },
+  })
+  db()
+    .query("UPDATE run SET worktree_source='recipe',resource_teardown='pending' WHERE id=?")
+    .run(fixture.id)
+  const commands: string[] = []
+  const head = '1234567890abcdef1234567890abcdef12345678'
+  const branch = `DEV-647-orch-${fixture.id}`
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    const rawArgs = command[0] === 'git' ? command.slice(1) : command
+    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    commands.push(args.join(' '))
+    if (args.join(' ') === 'sh -c inline-stop-marker') return spawnResult()
+    if (args[0] === 'worktree' && args[1] === 'remove') return spawnResult('', 1)
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
+    if (args.includes('--is-inside-work-tree')) return spawnResult('true')
+    if (args[0] === 'worktree' && args[1] === 'list') {
+      return spawnResult(`worktree ${fixture.tree}\nbranch refs/heads/${branch}\n`)
+    }
+    if (args[0] === 'symbolic-ref') return spawnResult(branch)
+    if (args[0] === 'diff') return spawnResult()
+    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
+    if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
+      return spawnResult(head)
+    }
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect(commands.filter((command) => command === 'sh -c inline-stop-marker')).toHaveLength(1)
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
 test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
   const fixture = closeOutFixture('owned', false, 'becomes-dirty')
   try {
@@ -227,6 +369,233 @@ test('clearing a keep-tree hold lets terminal close-out proceed', () => {
   expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('held')
   clearConversationKeepTreeHold(id)
   expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('absent')
+})
+
+function absentRecipeFixture() {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const project = `absent-recipe-${id}`
+  const repo = join(dir, project)
+  const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  const snapshot = JSON.stringify({
+    source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+    recipe: {
+      create: [],
+      destroy: [{ name: 'release resources', run: { command: 'teardown-marker', args: [] } }],
+    },
+  })
+  db()
+    .query(
+      `UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,
+       worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending' WHERE id=?`,
+    )
+    .run(project, tree, tree, `DEV-979-orch-${id}`, `DEV-979-orch-${id}`, 'abc', snapshot, id)
+  return { id, repo, tree }
+}
+
+test('an absent tracked-recipe tree tears resources down without Git worktree removal', () => {
+  const fixture = absentRecipeFixture()
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    expect(result.outcome).toBe('absent')
+    expect(result.detail).toContain('worktree was already absent; resources torn down')
+    expect(commands).toContain('teardown-marker')
+    expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('absent-tree recipe teardown stays done when retained-ref unpin fails', () => {
+  const fixture = absentRecipeFixture()
+  const commands: string[] = []
+  const head = '1234567890abcdef1234567890abcdef12345678'
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    const rawArgs = command[0] === 'git' ? command.slice(1) : command
+    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    commands.push(args.join(' '))
+    if (args.join(' ') === 'teardown-marker') return spawnResult()
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
+    if (args.includes('--is-inside-work-tree')) return spawnResult('true')
+    if (args[0] === 'update-ref' && args[1] === '-d') return spawnResult('', 1)
+    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('1')
+    if (args[0] === 'rev-parse' || args[0] === 'show-ref' || args[0] === 'update-ref') {
+      return spawnResult(head)
+    }
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'explicit' }).outcome).toBe('failed')
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+    expect(closeOutRun(fixture.id, { intent: 'explicit' }).outcome).toBe('absent')
+    expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a failed absent-tree teardown stays pending and retries', () => {
+  const fixture = absentRecipeFixture()
+  let attempts = 0
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.join(' ') === 'teardown-marker') {
+      attempts++
+      return spawnResult('', attempts === 1 ? 1 : 0)
+    }
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    const first = closeOutRun(fixture.id, { intent: 'terminal' })
+    expect(first).toMatchObject({ outcome: 'failed' })
+    expect(first.detail).toContain('recipe teardown failed at "release resources"')
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('pending')
+
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(attempts).toBe(2)
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a legacy absent tracked-recipe tree with null teardown state is not torn down', () => {
+  const fixture = absentRecipeFixture()
+  db().query('UPDATE run SET resource_teardown=NULL WHERE id=?').run(fixture.id)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(commands).not.toContain('teardown-marker')
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('an absent attached tree does not run its registered remove command', () => {
+  const fixture = absentRecipeFixture()
+  db()
+    .query('UPDATE run SET recipe_snapshot=NULL,worktree_source=? WHERE id=?')
+    .run('git', fixture.id)
+  upsertProject({
+    name: `absent-recipe-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },
+  })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(false)
+    expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('an absent recipe tree runs its registered remove command without Git removal', () => {
+  const fixture = absentRecipeFixture()
+  db().query('UPDATE run SET recipe_snapshot=NULL WHERE id=?').run(fixture.id)
+  upsertProject({
+    name: `absent-recipe-${fixture.id}`,
+    path: fixture.repo,
+    settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },
+  })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(true)
+    expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
+    expect(
+      (
+        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+          resource_teardown: string | null
+        }
+      ).resource_teardown,
+    ).toBe('done')
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect(commands.filter((command) => command.includes('registered-remove-marker'))).toHaveLength(
+      1,
+    )
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a live sharer blocks absent-tree recipe teardown', () => {
+  const fixture = absentRecipeFixture()
+  const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  db().query('UPDATE run SET worktree=?,pid=? WHERE id=?').run(fixture.tree, process.pid, sharer)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('live')
+    expect(commands).not.toContain('teardown-marker')
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('absent-tree dry run reports teardown without executing it', () => {
+  const fixture = absentRecipeFixture()
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'explicit', dryRun: true })
+    expect(result).toMatchObject({ outcome: 'absent' })
+    expect(result.detail).toContain('would run its recorded resource teardown')
+    expect(commands).not.toContain('teardown-marker')
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
 })
 
 test('releasing a failover successor releases every held attempt oldest first', () => {

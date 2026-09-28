@@ -469,7 +469,8 @@ export function executeTrackedPreSteps(
 function writeSnapshot(runId: number, snapshot: RecipeSnapshot): void {
   db()
     .query(
-      `UPDATE run SET recipe_snapshot=? WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+      `UPDATE run SET recipe_snapshot=?, resource_teardown='pending'
+       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
     )
     .run(JSON.stringify(snapshot), runId)
 }
@@ -805,6 +806,9 @@ export function teardownTrackedRecipe(
         settledAt: nowIso(),
         detail: 'tracked recipe teardown completed',
       })
+      db()
+        .query("UPDATE run SET resource_teardown='done' WHERE id=? AND resource_teardown='pending'")
+        .run(owner.root_run_id)
     }
   })
   return input.remove()

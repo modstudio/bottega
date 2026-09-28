@@ -8,7 +8,7 @@ import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { gitContext, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
+import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
@@ -21,7 +21,6 @@ import {
   worktreeLeaseName,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -40,11 +39,18 @@ import { removeFreeRunLease, runLeaseState } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-hold.ts'
-import { worktreeExists } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
+import {
+  absentTreeCloseOut,
+  dryRunReleaseResult,
+  failedResourceRemovalResult,
+  type ResourceTeardownResult,
+  reconstructibilityHold,
+  successfulReleaseResult,
+} from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { retainedBranchForCloseOut } from './retained-branch.ts'
 
@@ -54,6 +60,8 @@ export type CloseOutResult = {
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
 }
+
+type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
@@ -428,29 +436,6 @@ function lockedLiveOrForgottenHold(
   })
 }
 
-function absentCloseOutResult(input: {
-  runId: number
-  treePath: string
-  repo: string | null
-  cwd: string | null
-  retainedBranch: string | null
-  dryRun?: boolean
-  recordRetainedBranch: (tip: string | null) => void
-}): CloseOutResult | null {
-  if (worktreeExists(input.treePath)) return null
-  const repoRoot =
-    (input.repo ? projectByName(input.repo)?.path : null) ?? repoRootOf(input.treePath) ?? input.cwd
-  if (!input.dryRun && repoRoot && input.retainedBranch) {
-    input.recordRetainedBranch(branchTip(repoRoot, input.retainedBranch))
-  }
-  return {
-    runId: input.runId,
-    worktree: input.treePath,
-    outcome: 'absent',
-    detail: 'worktree was already absent; recorded identity retained',
-  }
-}
-
 function turnHeadForCloseOut(
   row: { branch: string | null; minted_branch: string | null },
   treePath: string,
@@ -510,6 +495,32 @@ function protectRetainedBranch(input: {
       }
 }
 
+function presentTreeOwnershipResult(input: {
+  treeAbsent: boolean
+  treePath: string
+  repoRoot: string
+  conversationIds: number[]
+  repo: string | null
+  runId: number
+  dryRun?: boolean
+}): CloseOutResult | null {
+  if (input.treeAbsent) return null
+  const branchTemplate = (input.repo ? projectByName(input.repo) : projectAt(input.treePath))
+    ?.settings.worktree?.branch
+  const ownership = inspectTreeOwnership(
+    input.treePath,
+    input.repoRoot,
+    input.conversationIds,
+    branchTemplate,
+  )
+  return ownershipCloseOutResult({
+    runId: input.runId,
+    treePath: input.treePath,
+    decision: adoptedTreeCloseOutDecision(ownership),
+    dryRun: input.dryRun,
+  })
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
   runId: number,
@@ -521,7 +532,7 @@ function attemptCloseOutRun(
     pgid?: number | null
     keepTreeDecision: ConversationKeepTreeHold
   },
-): CloseOutResult {
+): CloseOutAttemptResult {
   const row = db()
     .query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
@@ -615,7 +626,7 @@ function attemptCloseOutRun(
       }
     })
   }
-  const absentResult = absentCloseOutResult({
+  const absentTree = absentTreeCloseOut({
     runId: row.root_id,
     treePath,
     repo: effective.repo,
@@ -624,11 +635,8 @@ function attemptCloseOutRun(
     dryRun: options.dryRun,
     recordRetainedBranch,
   })
-  if (absentResult) return absentResult
-  const repoRoot =
-    (effective.repo ? projectByName(effective.repo)?.path : null) ??
-    repoRootOf(treePath) ??
-    effective.cwd
+  if (absentTree.result) return absentTree.result
+  const { absent: treeAbsent, repoRoot } = absentTree
   if (!repoRoot)
     return {
       runId: row.root_id,
@@ -642,14 +650,13 @@ function attemptCloseOutRun(
       .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
       .all(row.root_id, row.root_id) as { id: number }[]
   ).map((turn) => turn.id)
-  const branchTemplate = (effective.repo ? projectByName(effective.repo) : projectAt(treePath))
-    ?.settings.worktree?.branch
-  const ownership = inspectTreeOwnership(treePath, repoRoot, conversationIds, branchTemplate)
-  const adoptionDecision = adoptedTreeCloseOutDecision(ownership)
-  const ownershipResult = ownershipCloseOutResult({
-    runId: row.root_id,
+  const ownershipResult = presentTreeOwnershipResult({
+    treeAbsent,
     treePath,
-    decision: adoptionDecision,
+    repoRoot,
+    conversationIds,
+    repo: effective.repo,
+    runId: row.root_id,
     dryRun: options.dryRun,
   })
   if (ownershipResult) return ownershipResult
@@ -776,21 +783,10 @@ function attemptCloseOutRun(
               sessionId: effective.session_id,
               launchKey: effective.launch_key,
             }
-            const reclaimProof = proveWorktreeReconstructible(treePath)
-            if (!reclaimProof.ok)
-              return {
-                runId: row.root_id,
-                worktree: treePath,
-                outcome: 'held' as const,
-                detail: reclaimProof.action,
-              }
+            const reconstructibility = reconstructibilityHold(row.root_id, treePath, treeAbsent)
+            if (reconstructibility) return reconstructibility
             if (options.dryRun) {
-              return {
-                runId: row.root_id,
-                worktree: treePath,
-                outcome: 'released' as const,
-                detail: 'would release clean terminal worktree and keep its branch',
-              }
+              return dryRunReleaseResult(row.root_id, treePath, treeAbsent)
             }
             // The coordinator proves its own identity before descendants are signaled.
             const liveCoordinator = aliveConversationTurns(row.root_id).find(
@@ -834,6 +830,7 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
+              treeAbsent,
             )
             if (retainedBranch && branchSnapshot) {
               const branchAfter = branchTip(repoRoot, retainedBranch)
@@ -892,12 +889,13 @@ function attemptCloseOutRun(
               })
             }
             if (!result.removed)
-              return {
+              return failedResourceRemovalResult({
                 runId: row.root_id,
-                worktree: treePath,
-                outcome: 'failed' as const,
+                treePath,
+                treeAbsent,
+                teardown: result,
                 detail: result.detail,
-              }
+              })
             const acquired = liveRows()
             if (acquired.length) {
               return {
@@ -909,12 +907,7 @@ function attemptCloseOutRun(
                   acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
               }
             }
-            return {
-              runId: row.root_id,
-              worktree: treePath,
-              outcome: 'released' as const,
-              detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
-            }
+            return successfulReleaseResult(row.root_id, treePath, treeAbsent, result)
           },
           options.lockTimeoutMs,
         ),
@@ -1002,7 +995,11 @@ export function closeOutRun(
           WHERE id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
-      if (result.worktree && pointerMustClear(result.outcome, result.worktree)) {
+      if (
+        result.worktree &&
+        pointerMustClear(result.outcome, result.worktree) &&
+        !result.resourceTeardownFailed
+      ) {
         const spellings = spellingsBefore.get(result.worktree) ?? [result.worktree]
         db()
           .query(
@@ -1023,6 +1020,8 @@ export function closeOutRun(
       }
     })
   }
+  delete result.resourceTeardownCompleted
+  delete result.resourceTeardownFailed
   if (options.intent !== 'sweep' && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const sandbox = releaseSandboxDirectoryForConversation(result.runId, {
       dryRun: options.dryRun,
