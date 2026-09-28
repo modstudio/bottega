@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  effectiveHostedExclusion,
   type JobFacts,
   refuseChildTurnVoid,
   refuseHostedUnvoid,
@@ -38,12 +37,6 @@ describe('verdict rules', () => {
   test('allows a root void and a child-turn non-void score', () => {
     expect(refuseChildTurnVoid(5931, 5931, true)).toBeNull()
     expect(refuseChildTurnVoid(5988, 5931, false)).toBeNull()
-  })
-
-  test('uses the active hosted exclusion before the run-row fallback', () => {
-    expect(effectiveHostedExclusion('active reason', 'run reason')).toBe('active reason')
-    expect(effectiveHostedExclusion(null, 'run reason')).toBe('run reason')
-    expect(effectiveHostedExclusion(null, null)).toBeNull()
   })
 
   test('unvoid allows only the orch score --void exclusion reason', () => {

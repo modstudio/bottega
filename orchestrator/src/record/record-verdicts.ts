@@ -4,8 +4,7 @@ import { SQL } from 'bun'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import {
-  effectiveHostedExclusion,
-  refuseUnvoid,
+  refuseHostedUnvoid,
   refuseVerdict,
   VOID_EXCLUSION_REASON,
 } from '../verdict/verdict-rules.ts'
@@ -148,7 +147,7 @@ export async function voidRecordRun(input: Tenant & { id: string; reason: string
 const UNVOID_MIGRATION_REMEDY =
   'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying'
 
-async function supersedeRecordVoid(
+export async function supersedeRecordVoid(
   tx: SQL,
   input: Pick<Tenant, 'spaceId' | 'userId'> & { id: string; note: string },
 ): Promise<void> {
@@ -169,13 +168,11 @@ async function supersedeRecordVoid(
   `
   const exclusionReason = exclusions[0]?.reason
   const runReason = runs[0]?.evidence_excluded
-  const reason = effectiveHostedExclusion(
-    exclusionReason == null ? null : String(exclusionReason),
-    runReason == null ? null : String(runReason),
-  )
-  if (reason === null) return
-  const refusal = refuseUnvoid(reason)
+  const activeExclusionReason = exclusionReason == null ? null : String(exclusionReason)
+  const runEvidenceExcluded = runReason == null ? null : String(runReason)
+  const refusal = refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)
   if (refusal) throw new RecordVerdictError(`refused: ${refusal}`, 409)
+  if (activeExclusionReason === null && runEvidenceExcluded === null) return
   const now = new Date().toISOString()
   await tx`
     UPDATE run_exclusion
