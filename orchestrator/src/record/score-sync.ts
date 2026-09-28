@@ -37,6 +37,7 @@ async function hostedScoreMatches(tx: SQL, verdict: VerdictPayload): Promise<boo
   const scores = await tx`
     SELECT delivery, quality, fidelity FROM run_score
     WHERE run_id=${verdict.id}::uuid AND space_id=${verdict.spaceId}::uuid
+    FOR UPDATE
   `
   const score = scores[0] as Record<string, unknown> | undefined
   return (
