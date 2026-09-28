@@ -58,6 +58,7 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
     { rules: syncedRedactionRules('url-userinfo'), dryRun: false },
     database,
     NEXT_STAMP,
+    'operator-session',
   )
   expect(result).toEqual({
     counts: [{ kind: 'run', rule: 'url-userinfo', count: 1 }],
@@ -83,12 +84,15 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
     label: base64,
   })
   expect(
-    database.query('SELECT kind,record_id,rules,withheld_paths FROM outbox_redaction_audit').get(),
+    database
+      .query('SELECT kind,record_id,rules,withheld_paths,actor_session FROM outbox_redaction_audit')
+      .get(),
   ).toEqual({
     kind: 'run',
     record_id: 'record-42',
     rules: '["url-userinfo"]',
     withheld_paths: '["error"]',
+    actor_session: 'operator-session',
   })
   database.close()
 })
@@ -152,6 +156,33 @@ test('a newer active row is skipped and reported without leaking planted text', 
   expect(JSON.stringify(result)).not.toContain(urlUserinfo)
   expect(renderSyncedRedaction(result)).not.toContain(urlUserinfo)
   expect(renderSyncedRedaction(result)).toContain('skipped\trun\trecord-42')
+  database.close()
+})
+
+test.each([
+  ['authorization', 'Authorization: fixture-value'],
+  ['bearer', 'Bearer fixture-value'],
+  ['assignment', 'token=fixture-value'],
+  ['provider-prefix', ['ghp_', 'x'.repeat(36)].join('')],
+  ['url-userinfo', ['https://fixture-user', ':fixture-pass@', 'example.test'].join('')],
+])('an excluded earlier match does not mask chosen rule %s', (rule, chosenText) => {
+  const { database } = seeded()
+  const combined = `${'c'.repeat(32)} ${chosenText}`
+  database.query('UPDATE outbox SET payload=?').run(runPayload(combined, 'ordinary label'))
+
+  const result = redactSyncedOutbox(
+    { rules: syncedRedactionRules(rule), dryRun: false },
+    database,
+    NEXT_STAMP,
+  )
+
+  expect(result.counts).toEqual([{ kind: 'run', rule, count: 1 }])
+  const replacement = JSON.parse(
+    database.query<{ payload: string }, []>('SELECT payload FROM outbox ORDER BY id DESC').get()!
+      .payload,
+  ) as Record<string, unknown>
+  expect(replacement.error).toBe(WITHHELD_SECRET_SHAPED)
+  expect(replacement.withheldFields).toEqual(['error'])
   database.close()
 })
 

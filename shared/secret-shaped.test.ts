@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   containsSecretShaped,
-  evidenceSecretShapedRule,
+  evidenceSecretShapedRules,
   secretShapedRule,
 } from './secret-shaped.ts'
 
@@ -40,12 +40,18 @@ test.each(named)('secretShapedRule names $name', ({ name, text }) => {
 test('evidence variant exempts whole 40-hex, 64-hex, and UUID tokens', () => {
   expect(secretShapedRule(hex40)).toBe('hex-run')
   expect(secretShapedRule(hex64)).toBe('hex-run')
-  expect(evidenceSecretShapedRule(hex40)).toBeNull()
-  expect(evidenceSecretShapedRule(hex64)).toBeNull()
-  expect(evidenceSecretShapedRule(uuid)).toBeNull()
+  expect(evidenceSecretShapedRules(hex40)).toEqual([])
+  expect(evidenceSecretShapedRules(hex64)).toEqual([])
+  expect(evidenceSecretShapedRules(uuid)).toEqual([])
   expect(containsSecretShaped(hex40)).toBe(true)
 })
 
 test('a token assignment that contains a hash-shaped value still matches', () => {
-  expect(evidenceSecretShapedRule(`token=${hex40}`)).toBe('assignment')
+  expect(evidenceSecretShapedRules(`token=${hex40}`)[0]).toBe('assignment')
+})
+
+test('the evidence detector can report every matching rule', () => {
+  expect(
+    evidenceSecretShapedRules(`Bearer fixture ${'c'.repeat(32)} https://user:pass@host.example`),
+  ).toEqual(['bearer', 'hex-run', 'url-userinfo'])
 })

@@ -1,6 +1,6 @@
 // concern: outbox-sanitize
 /** Withholds secret-shaped free-text leaves from hosted outbox payloads. Must not know Postgres. */
-import { evidenceSecretShapedRule } from '../../../shared/secret-shaped.ts'
+import { evidenceSecretShapedRules } from '../../../shared/secret-shaped.ts'
 
 export const WITHHELD_SECRET_SHAPED = '[withheld: secret-shaped content]'
 
@@ -124,8 +124,8 @@ function firstRuleInTexts(
   acceptsRule: (rule: string) => boolean = () => true,
 ): string | null {
   for (const text of texts) {
-    const rule = evidenceSecretShapedRule(text)
-    if (rule && acceptsRule(rule)) return rule
+    const rule = evidenceSecretShapedRules(text).find(acceptsRule)
+    if (rule) return rule
   }
   return null
 }
@@ -208,8 +208,8 @@ function applyElementsLeaf(
   if (!Array.isArray(current)) return
   for (const [index, item] of current.entries()) {
     if (typeof item !== 'string') continue
-    const rule = evidenceSecretShapedRule(item)
-    if (!rule || !acceptsRule(rule)) continue
+    const rule = evidenceSecretShapedRules(item).find(acceptsRule)
+    if (!rule) continue
     onMatch(`${leaf.at}[${index}]`, rule, () => {
       current[index] = WITHHELD_SECRET_SHAPED
     })
@@ -223,8 +223,8 @@ function applyWalkLeaf(
   acceptsRule: (rule: string) => boolean,
 ): void {
   walkStrings(detachAt(payload, leaf.at), leaf.at, (path, text, replace) => {
-    const rule = evidenceSecretShapedRule(text)
-    if (rule && acceptsRule(rule)) onMatch(path, rule, () => replace(WITHHELD_SECRET_SHAPED))
+    const rule = evidenceSecretShapedRules(text).find(acceptsRule)
+    if (rule) onMatch(path, rule, () => replace(WITHHELD_SECRET_SHAPED))
   })
 }
 

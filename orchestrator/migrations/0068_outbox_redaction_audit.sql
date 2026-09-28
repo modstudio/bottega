@@ -5,10 +5,13 @@ CREATE TABLE outbox_redaction_audit (
   record_id TEXT NOT NULL,
   rules TEXT NOT NULL,
   withheld_paths TEXT NOT NULL,
+  actor_session TEXT,
   at TEXT NOT NULL
 );
 
 CREATE INDEX outbox_redaction_audit_row ON outbox_redaction_audit(outbox_id, id);
+CREATE INDEX outbox_latest_synced_record
+  ON outbox(kind, record_id, id DESC) WHERE synced_at IS NOT NULL;
 
 CREATE TRIGGER outbox_redaction_audit_no_update
 BEFORE UPDATE ON outbox_redaction_audit

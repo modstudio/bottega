@@ -1,7 +1,7 @@
 // concern: outbox-redaction
 /** Re-enqueues sanitized copies of already-synced record payloads. Must not know hosted storage. */
 import type { Database } from 'bun:sqlite'
-import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { sanitizeOutboxPayloadForRules } from './outbox-sanitize.ts'
 
 const DEFAULT_SYNCED_REDACTION_RULES = [
@@ -68,58 +68,76 @@ function latestSyncedRows(database: Database): SyncedOutboxRow[] {
     .query<SyncedOutboxRow, []>(
       `SELECT current.id,current.kind,current.record_id,current.payload
          FROM outbox current
-        WHERE current.synced_at IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM outbox newer
-             WHERE newer.kind=current.kind
-               AND newer.record_id=current.record_id
-               AND newer.synced_at IS NOT NULL
-               AND newer.id>current.id
-          )
+         JOIN (
+           SELECT kind,record_id,max(id) AS id
+             FROM outbox INDEXED BY outbox_latest_synced_record
+            WHERE synced_at IS NOT NULL
+            GROUP BY kind,record_id
+         ) latest
+           ON latest.id=current.id
+          AND latest.kind=current.kind
+          AND latest.record_id=current.record_id
         ORDER BY current.kind,current.record_id`,
     )
     .all()
 }
 
-function hasNewerActiveRow(database: Database, row: SyncedOutboxRow): boolean {
+function remainsEligible(database: Database, row: SyncedOutboxRow): boolean {
   return Boolean(
     database
       .query<{ id: number }, [string, string, number]>(
-        `SELECT id FROM outbox
-          WHERE kind=? AND record_id=? AND id>?
-            AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
-          ORDER BY id LIMIT 1`,
+        `SELECT id FROM outbox candidate
+          WHERE kind=? AND record_id=? AND id=? AND synced_at IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM outbox newer
+               WHERE newer.kind=candidate.kind
+                 AND newer.record_id=candidate.record_id
+                 AND newer.id>candidate.id
+                 AND (newer.synced_at IS NOT NULL OR newer.retired_at IS NULL)
+            )`,
       )
       .get(row.kind, row.record_id, row.id),
   )
+}
+
+function countRecordRules(
+  counts: Map<string, SyncedRedactionCount>,
+  kind: string,
+  rules: readonly string[],
+): void {
+  for (const rule of rules) {
+    const key = `${kind}\0${rule}`
+    const count = counts.get(key)
+    if (count) count.count += 1
+    else counts.set(key, { kind, rule, count: 1 })
+  }
 }
 
 export function redactSyncedOutbox(
   options: { rules: ReadonlySet<string>; dryRun: boolean },
   database: Database = writableDb(),
   at = nowIso(),
+  actorSession = sessionId(),
 ): SyncedRedactionResult {
-  return writeTransaction(() => {
-    const counts = new Map<string, SyncedRedactionCount>()
-    const skipped: SyncedRedactionSkip[] = []
-    let enqueued = 0
-    let wouldEnqueue = 0
-    for (const row of latestSyncedRows(database)) {
-      const sanitized = sanitizeOutboxPayloadForRules(row.kind, parsePayload(row), options.rules)
-      if (sanitized.matches.length === 0) continue
-      const recordRules = [...new Set(sanitized.matches.map((match) => match.rule))].toSorted()
-      for (const rule of recordRules) {
-        const key = `${row.kind}\0${rule}`
-        const count = counts.get(key)
-        if (count) count.count += 1
-        else counts.set(key, { kind: row.kind, rule, count: 1 })
-      }
-      if (hasNewerActiveRow(database, row)) {
+  const counts = new Map<string, SyncedRedactionCount>()
+  const skipped: SyncedRedactionSkip[] = []
+  let enqueued = 0
+  let wouldEnqueue = 0
+  for (const row of latestSyncedRows(database)) {
+    const sanitized = sanitizeOutboxPayloadForRules(row.kind, parsePayload(row), options.rules)
+    if (sanitized.matches.length === 0) continue
+    const recordRules = [...new Set(sanitized.matches.map((match) => match.rule))].toSorted()
+    countRecordRules(counts, row.kind, recordRules)
+    if (options.dryRun) {
+      if (!remainsEligible(database, row)) {
         skipped.push({ kind: row.kind, recordId: row.record_id })
         continue
       }
       wouldEnqueue += 1
-      if (options.dryRun) continue
+      continue
+    }
+    const inserted = writeTransaction(() => {
+      if (!remainsEligible(database, row)) return false
       const inserted = database
         .query<{ id: number }, [string, string, string, string]>(
           `INSERT INTO outbox (kind,record_id,payload,created_at)
@@ -130,7 +148,8 @@ export function redactSyncedOutbox(
       database
         .query(
           `INSERT INTO outbox_redaction_audit
-           (outbox_id,kind,record_id,rules,withheld_paths,at) VALUES (?,?,?,?,?,?)`,
+           (outbox_id,kind,record_id,rules,withheld_paths,actor_session,at)
+           VALUES (?,?,?,?,?,?,?)`,
         )
         .run(
           inserted.id,
@@ -138,20 +157,27 @@ export function redactSyncedOutbox(
           row.record_id,
           JSON.stringify(recordRules),
           JSON.stringify(paths),
+          actorSession,
           at,
         )
-      enqueued += 1
+      return true
+    }, database)
+    if (!inserted) {
+      skipped.push({ kind: row.kind, recordId: row.record_id })
+      continue
     }
-    return {
-      counts: [...counts.values()].toSorted(
-        (left, right) => left.kind.localeCompare(right.kind) || left.rule.localeCompare(right.rule),
-      ),
-      enqueued,
-      wouldEnqueue,
-      skipped,
-      dryRun: options.dryRun,
-    }
-  }, database)
+    wouldEnqueue += 1
+    enqueued += 1
+  }
+  return {
+    counts: [...counts.values()].toSorted(
+      (left, right) => left.kind.localeCompare(right.kind) || left.rule.localeCompare(right.rule),
+    ),
+    enqueued,
+    wouldEnqueue,
+    skipped,
+    dryRun: options.dryRun,
+  }
 }
 
 export function renderSyncedRedaction(result: SyncedRedactionResult): string {
