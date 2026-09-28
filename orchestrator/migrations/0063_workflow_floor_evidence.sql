@@ -26,13 +26,16 @@ CREATE TABLE workflow_obligation (
   require_pull_request INTEGER NOT NULL DEFAULT 0 CHECK (require_pull_request IN (0,1)),
   expected_exit_code INTEGER NOT NULL DEFAULT 0,
   expected_status TEXT NOT NULL DEFAULT 'done',
+  floor_deferrable INTEGER NOT NULL DEFAULT 1 CHECK (floor_deferrable IN (0,1)),
   reason TEXT NOT NULL,
   session_id TEXT,
   created_at TEXT NOT NULL,
   satisfied_at TEXT,
   satisfied_step_ordinal INTEGER,
   satisfied_step_slug TEXT,
-  satisfied_evidence TEXT
+  satisfied_evidence TEXT,
+  abandoned_at TEXT,
+  abandoned_reason TEXT
 );
 --> statement-breakpoint
 CREATE INDEX workflow_obligation_open ON workflow_obligation(cursor_id, satisfied_at);
