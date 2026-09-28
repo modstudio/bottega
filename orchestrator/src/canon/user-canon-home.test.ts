@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideUserCanonHydration,
+  mapUserCanonHomePath,
   mapUserCanonPath,
   stripUserCanonManagedMarker,
+  USER_CANON_HOME_MAPPINGS,
   USER_CANON_MANAGED_MARKER,
   userCanonHomeImportDeletionSlugs,
 } from './user-canon-home.ts'
@@ -28,6 +30,14 @@ describe('mapUserCanonPath', () => {
     expect(stripUserCanonManagedMarker(`before\n${USER_CANON_MANAGED_MARKER}body`)).toBe(
       `before\n${USER_CANON_MANAGED_MARKER}body`,
     )
+  })
+
+  test('maps rules only into the Claude home', () => {
+    expect(
+      USER_CANON_HOME_MAPPINGS.map((mapping) =>
+        mapUserCanonHomePath(mapping, '.agents/rules/style.md'),
+      ),
+    ).toEqual(['rules/style.md', null, null])
   })
 
   test('an import deletes only absent rows that map to the Claude home', () => {

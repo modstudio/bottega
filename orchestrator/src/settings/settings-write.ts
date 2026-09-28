@@ -5,6 +5,7 @@ import {
   chmodSync,
   closeSync,
   constants,
+  existsSync,
   fchmodSync,
   fstatSync,
   fsyncSync,
@@ -129,6 +130,27 @@ export function applyBackedUpSettingsWrites(
   const directory = prepareBackupDirectory(environment)
   for (const write of writes) pruneBackups(directory, resolve(write.plan.path))
   return writes.map((write) => write.backup)
+}
+
+export function writeNewSettingsFileAtomically(path: string, text: string, mode = 0o644): void {
+  if (existsSync(path)) changedAfterPlanning(path)
+  const directory = dirname(path)
+  const temporary = join(directory, `.${basename(path)}.tmp-${process.pid}-${randomUUID()}`)
+  let fd: number | null = null
+  try {
+    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
+    writeFileSync(fd, text)
+    fchmodSync(fd, mode)
+    fsyncSync(fd)
+    closeSync(fd)
+    fd = null
+    if (existsSync(path)) changedAfterPlanning(path)
+    renameSync(temporary, path)
+    fsyncDirectory(directory)
+  } finally {
+    if (fd !== null) closeSync(fd)
+    rmSync(temporary, { force: true })
+  }
 }
 
 export function restoreSettingsBackup(
