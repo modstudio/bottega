@@ -3,7 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { z } from 'zod'
 import { DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
-import { amendFinding, DISPOSITIONS, type Disposition } from './review-triage.ts'
+import { amendFinding, DISPOSITIONS, type Disposition, triageValues } from './review-triage.ts'
 import {
   decideTriageRestore,
   matchesTriageRestoreIdentity,
@@ -70,10 +70,25 @@ function candidate(database: Database, findingId: number): Candidate | null {
     .get(findingId)
 }
 
-function candidateIds(database: Database): number[] {
+function openCandidateIds(database: Database): number[] {
   return database
     .query<{ id: number }, []>(
-      'SELECT id FROM review_finding WHERE disposition IS NULL ORDER BY id',
+      `SELECT finding.id FROM review_finding finding
+         JOIN review ON review.id=finding.review_id
+        WHERE finding.disposition IS NULL AND review.completed_at IS NULL
+        ORDER BY finding.id`,
+    )
+    .all()
+    .map((row) => row.id)
+}
+
+function completedReviewIds(database: Database): number[] {
+  return database
+    .query<{ id: number }, []>(
+      `SELECT DISTINCT review.id
+         FROM review JOIN review_finding finding ON finding.review_id=review.id
+        WHERE finding.disposition IS NULL AND review.completed_at IS NOT NULL
+        ORDER BY review.id`,
     )
     .all()
     .map((row) => row.id)
@@ -168,71 +183,91 @@ type ReviewSnapshot = {
   candidates: Array<NonNullable<ReturnType<typeof assess>>>
 }
 
-function snapshotReview(
-  database: Database,
-  reviewId: number,
-  candidateIdSet: Set<number>,
-): ReviewSnapshot {
+function invalidTriageReason(source: TriageRestoreSource): string | null {
+  try {
+    triageValues(
+      source.disposition!,
+      source.rejectionCategory ?? undefined,
+      source.triagedSeverity ?? undefined,
+    )
+    return null
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return (
+      `source triage refused: disposition=${source.disposition}, ` +
+      `rejectionCategory=${JSON.stringify(source.rejectionCategory)}, ` +
+      `triagedSeverity=${JSON.stringify(source.triagedSeverity)}: ${detail}`
+    )
+  }
+}
+
+function snapshotReview(database: Database, reviewId: number): ReviewSnapshot {
   const findings = reviewFindings(database, reviewId).map((finding) => ({
     finding,
     lookup: latestSource(database, finding.id),
     recordIdReferenced: recordIdReferenced(database, finding.recordId),
   }))
   const candidates = findings
-    .filter(({ finding }) => candidateIdSet.has(finding.id))
+    .filter(({ finding }) => finding.disposition === null)
     .map(({ finding, lookup, recordIdReferenced: referenced }) => ({
       finding,
-      decision: decideTriageRestore({
-        finding,
-        source: lookup.source,
-        sourceStatus: lookup.status,
-        liveRecordIdReferenced: referenced,
-      }),
+      decision: (() => {
+        const decision = decideTriageRestore({
+          finding,
+          source: lookup.source,
+          sourceStatus: lookup.status,
+          liveRecordIdReferenced: referenced,
+        })
+        if (decision.action === 'skip') return decision
+        const reason = invalidTriageReason(decision.source)
+        return reason === null ? decision : ({ action: 'skip', reason } as const)
+      })(),
       outboxId: lookup.row?.id ?? null,
     }))
   return { reviewId, findings, candidates }
 }
 
-function applyReview(
+function restoreReview(
   database: Database,
-  snapshot: ReviewSnapshot,
+  reviewId: number,
   dryRun: boolean,
 ): TriageRestoreResult[] {
-  const restorations = snapshot.findings.filter(({ finding, lookup, recordIdReferenced }) => {
-    const source = lookup.source
-    return (
-      source !== null &&
-      matchesTriageRestoreIdentity(finding, source) &&
-      finding.recordId !== source.recordId &&
-      !recordIdReferenced
+  const run = (): TriageRestoreResult[] => {
+    const snapshot = snapshotReview(database, reviewId)
+    const restorations = snapshot.findings.filter(({ finding, lookup, recordIdReferenced }) => {
+      const source = lookup.source
+      return (
+        source !== null &&
+        matchesTriageRestoreIdentity(finding, source) &&
+        finding.recordId !== source.recordId &&
+        !recordIdReferenced
+      )
+    })
+    const restoredIds = new Set(restorations.map(({ finding }) => finding.id))
+    const hasMissingRecordId = snapshot.findings.some(
+      ({ finding }) => finding.recordId === null && !restoredIds.has(finding.id),
     )
-  })
-  const restoredIds = new Set(restorations.map(({ finding }) => finding.id))
-  const hasMissingRecordId = snapshot.findings.some(
-    ({ finding }) => finding.recordId === null && !restoredIds.has(finding.id),
-  )
-  if (hasMissingRecordId) {
-    return snapshot.candidates.map(({ finding, outboxId }) => ({
-      findingId: finding.id,
-      outboxId,
-      action: 'skip',
-      reason: TRIAGE_RESTORE_SKIP_REASONS.missingRecordId,
-    }))
-  }
+    if (hasMissingRecordId) {
+      return snapshot.candidates.map(({ finding, outboxId }) => ({
+        findingId: finding.id,
+        outboxId,
+        action: 'skip',
+        reason: TRIAGE_RESTORE_SKIP_REASONS.missingRecordId,
+      }))
+    }
 
-  const results = snapshot.candidates.map(({ finding, decision, outboxId }) =>
-    decision.action === 'skip'
-      ? ({ findingId: finding.id, outboxId, action: 'skip', reason: decision.reason } as const)
-      : ({
-          findingId: finding.id,
-          outboxId: decision.source.outboxId,
-          action: 'apply',
-          disposition: decision.source.disposition!,
-        } as const),
-  )
-  if (dryRun) return results
+    const results = snapshot.candidates.map(({ finding, decision, outboxId }) =>
+      decision.action === 'skip'
+        ? ({ findingId: finding.id, outboxId, action: 'skip', reason: decision.reason } as const)
+        : ({
+            findingId: finding.id,
+            outboxId: decision.source.outboxId,
+            action: 'apply',
+            disposition: decision.source.disposition!,
+          } as const),
+    )
+    if (dryRun) return results
 
-  writeTransaction(() => {
     for (const { finding, lookup } of restorations) {
       database
         .query('UPDATE review_finding SET record_id=? WHERE id=?')
@@ -253,8 +288,9 @@ function applyReview(
         )
       }
     }
-  }, database)
-  return results
+    return results
+  }
+  return dryRun ? run() : writeTransaction(run, database)
 }
 
 function reportFor(results: TriageRestoreResult[], dryRun: boolean): TriageRestoreReport {
@@ -279,32 +315,26 @@ function reportFor(results: TriageRestoreResult[], dryRun: boolean): TriageResto
 
 export function restoreReviewTriage(
   database: Database,
-  options: { dryRun: boolean },
+  options: { dryRun: boolean; beforeReview?: (reviewId: number) => void },
 ): TriageRestoreReport {
-  const ids = candidateIds(database)
-  const candidateIdSet = new Set(ids)
-  const snapshots = new Map<number, ReviewSnapshot>()
   const openResults: TriageRestoreResult[] = []
-  for (const findingId of ids) {
-    const finding = candidate(database, findingId)
-    if (!finding) continue
-    if (finding.completedAt === null) {
-      const assessed = assess(database, findingId)!
-      openResults.push({
-        findingId,
-        outboxId: assessed.outboxId,
-        action: 'skip',
-        reason: TRIAGE_RESTORE_SKIP_REASONS.openReview,
-      })
-    } else if (!snapshots.has(finding.reviewId)) {
-      snapshots.set(finding.reviewId, snapshotReview(database, finding.reviewId, candidateIdSet))
-    }
+  for (const findingId of openCandidateIds(database)) {
+    const assessed = assess(database, findingId)
+    if (!assessed) continue
+    openResults.push({
+      findingId,
+      outboxId: assessed.outboxId,
+      action: 'skip',
+      reason: TRIAGE_RESTORE_SKIP_REASONS.openReview,
+    })
   }
+  const reviewIds = completedReviewIds(database)
   const results = [
     ...openResults,
-    ...[...snapshots.values()].flatMap((snapshot) =>
-      applyReview(database, snapshot, options.dryRun),
-    ),
+    ...reviewIds.flatMap((reviewId) => {
+      options.beforeReview?.(reviewId)
+      return restoreReview(database, reviewId, options.dryRun)
+    }),
   ].sort((a, b) => a.findingId - b.findingId)
   return reportFor(results, options.dryRun)
 }

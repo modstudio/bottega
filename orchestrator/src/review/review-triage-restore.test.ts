@@ -4,7 +4,7 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
-import { recordReview } from './review-triage.ts'
+import { amendFinding, recordReview } from './review-triage.ts'
 import { restoreReviewTriage } from './review-triage-restore.ts'
 
 type FindingSeed = {
@@ -254,6 +254,63 @@ test('skips a whole review when a sibling would retain a null record id', () => 
     amendments: db().query('SELECT COUNT(*) AS count FROM review_finding_amendment').get(),
     outbox: db().query('SELECT COUNT(*) AS count FROM outbox').get(),
   }).toEqual(before)
+})
+
+test('does not overwrite triage that lands after review ids are listed', () => {
+  const seed = seedFinding('restore-triage-stale-snapshot')
+  appendSource(seed, { disposition: 'rejected', rejectionCategory: 'incorrect' })
+
+  const report = restoreReviewTriage(db(), {
+    dryRun: false,
+    beforeReview(reviewId) {
+      if (reviewId !== seed.reviewId) return
+      amendFinding(
+        reviewId,
+        Number(seed.payload.ordinal),
+        'modified',
+        'landed during restore',
+        undefined,
+        'medium',
+        db(),
+      )
+    },
+  })
+
+  expect(report.applied).toBe(0)
+  expect(
+    db()
+      .query(
+        'SELECT disposition,rejection_category,triaged_severity FROM review_finding WHERE id=?',
+      )
+      .get(seed.findingId),
+  ).toEqual({ disposition: 'modified', rejection_category: null, triaged_severity: 'medium' })
+})
+
+test('skips refused source triage while applying a sibling', () => {
+  const [refused, applicable] = seedReview('restore-triage-invalid-values', 2)
+  appendSource(refused!, { disposition: 'rejected', rejectionCategory: null })
+  appendSource(applicable!)
+
+  const report = restoreReviewTriage(db(), { dryRun: false })
+
+  expect(report.applied).toBe(1)
+  expect(report.byReason).toEqual({
+    'source triage refused: disposition=rejected, rejectionCategory=null, triagedSeverity="high": a rejected finding requires --category': 1,
+  })
+  expect(
+    db()
+      .query<{ disposition: string | null }, [number]>(
+        'SELECT disposition FROM review_finding WHERE id=?',
+      )
+      .get(refused!.findingId)!.disposition,
+  ).toBeNull()
+  expect(
+    db()
+      .query<{ disposition: string | null }, [number]>(
+        'SELECT disposition FROM review_finding WHERE id=?',
+      )
+      .get(applicable!.findingId)!.disposition,
+  ).toBe('accepted')
 })
 
 test('review command dispatches restore-triage with --dry-run in process', async () => {

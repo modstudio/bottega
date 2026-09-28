@@ -24,7 +24,7 @@ export const MIN_REVIEW_TRIAGED = 10
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = (typeof DISPOSITIONS)[number]
 
-function triageValues(
+export function triageValues(
   disposition: Disposition,
   rejectionCategory?: string,
   triagedSeverity?: string,
