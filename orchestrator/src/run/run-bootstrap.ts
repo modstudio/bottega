@@ -23,9 +23,26 @@ type BootstrapFacts = {
   now: number
 }
 
+type CoordinatorSetupFacts = {
+  agent: string
+  agentPidPresent: boolean
+  leaseState: RunLeaseState
+  pidAlive: boolean
+}
+
 /** Decide whether a reserved run was abandoned before its coordinator claimed it. */
 export function abandonedBootstrap(facts: BootstrapFacts): boolean {
   if (facts.agent !== '(pending)') return false
   if (Date.parse(facts.startedAt) >= facts.now - PENDING_BOOTSTRAP_MS) return false
   return facts.pid === null || !facts.pidAlive || facts.leaseState === 'free'
+}
+
+/** Decide whether a claimed coordinator died before it started the agent. */
+export function coordinatorSetupDeath(facts: CoordinatorSetupFacts): boolean {
+  return (
+    facts.agent !== '(pending)' &&
+    !facts.agentPidPresent &&
+    facts.leaseState !== 'held' &&
+    !facts.pidAlive
+  )
 }

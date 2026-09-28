@@ -5,7 +5,7 @@
  */
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { assetPath } from '../../../shared/install-root.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -18,6 +18,7 @@ import type { DetachSpec } from '../route/failover.ts'
 import { repoOf } from './run.ts'
 import { runAlive } from './run-alive.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
+import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 
@@ -29,8 +30,9 @@ import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
  * in once it has routed. Until then the row reads agent `(pending)`, which is
  * true: nothing has been chosen yet.
  *
- * The child is spawned with no stdio and unref'd, so this process's event loop
- * can drain and exit while the child keeps going. That is the part every
+ * The child writes stdout and stderr to its per-run coordinator log and is
+ * unref'd, so this process's event loop can drain and exit while the child keeps
+ * going. That is the part every
  * caller-side workaround got wrong — a shell wrapper dies and takes the agent
  * with it, and `setsid` does not exist on macOS.
  */
@@ -39,6 +41,7 @@ export async function detach(
   prompt: string,
   spec: DetachSpec,
   selectedAgent?: string,
+  spawnCoordinator: typeof spawn = spawn,
 ): Promise<number> {
   writableDb()
   /**
@@ -230,6 +233,7 @@ export async function detach(
     )
   }
   const { id } = claimed
+  let coordinatorLogFd: number | null = null
   let handoffStep = 'write prompt artifact'
   try {
     // The row now exists, so its id replaces that temporary random name and is
@@ -278,6 +282,8 @@ export async function detach(
     ]
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)
+    handoffStep = 'open coordinator log'
+    coordinatorLogFd = openSync(runCoordinatorLogPath(id, runsDir), 'a', 0o600)
     const spawnOpts = {
       cwd: spawnCwd(
         cwd,
@@ -290,12 +296,12 @@ export async function detach(
       // already records the session that ASKED for the work, and run() would
       // otherwise re-stamp it from the child's environment.
       env: { ...process.env, ORCH_DETACHED: '1' },
-      stdio: 'ignore' as const,
+      stdio: ['ignore', coordinatorLogFd, coordinatorLogFd] as ['ignore', number, number],
       detached: true,
     }
 
     handoffStep = 'spawn coordinator'
-    const child: ChildProcess = spawn(execPath, spawnArgs, spawnOpts)
+    const child: ChildProcess = spawnCoordinator(execPath, spawnArgs, spawnOpts)
     handoffStep = 'await coordinator spawn'
     await new Promise<void>((resolve, reject) => {
       let onError: (err: Error) => void
@@ -332,6 +338,8 @@ export async function detach(
       .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
       .run(`detach handoff failed during ${handoffStep}: ${message}`, id)
     throw error
+  } finally {
+    if (coordinatorLogFd !== null) closeSync(coordinatorLogFd)
   }
 }
 

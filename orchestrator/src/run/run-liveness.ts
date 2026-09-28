@@ -9,7 +9,8 @@ import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
-import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { coordinatorSetupError } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 
 /**
@@ -75,12 +76,16 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * first turn that a stale child row must never overwrite (lens run 2277).
  *
  * The terminal turn's error and failure_kind are part of that state and travel
- * with its status. The deliberate kind exception is a stale or abandoned child:
- * stranding or abandoning a chain inserts a judgment on the root, while copying
- * the child's NOT_EVIDENCE kind would erase that judgment
- * from routing. Those lifecycle outcomes therefore retain the root's kind.
+ * with its status. The deliberate kind exceptions are lifecycle outcomes that
+ * would erase the root's judgment from routing: stale and abandoned children
+ * always retain the root's kind, and the reaper identifies coordinator setup
+ * deaths that do too.
  */
-export function resolveRootFromLastTurn(database: Database, rootId: number): number {
+function resolveRootFromLastTurnPreserving(
+  database: Database,
+  rootId: number,
+  preserveFailureKindForTurnId: number | null,
+): number {
   return database
     .query(
       `UPDATE run AS root
@@ -98,7 +103,7 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
         ),
             failure_kind = (
           SELECT CASE
-                   WHEN last.status = 'stale' OR last.failure_kind = 'abandoned'
+                   WHEN last.id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
                      THEN root.failure_kind
                    ELSE last.failure_kind
                  END
@@ -134,7 +139,11 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
            LIMIT 1
         ) IN ('ok', 'failed', 'stale')`,
     )
-    .run(rootId).changes
+    .run(preserveFailureKindForTurnId, rootId).changes
+}
+
+export function resolveRootFromLastTurn(database: Database, rootId: number): number {
+  return resolveRootFromLastTurnPreserving(database, rootId, null)
 }
 
 /**
@@ -160,18 +169,46 @@ type RunningRow = {
   started_at: string
 }
 
-function runningRowAlive(row: RunningRow): boolean {
-  return runAlive({
-    status: 'running',
-    lease: runLeaseState(row.id),
-    pidAlive: Boolean(row.pid && pidAlive(row.pid)),
-  })
-}
-
 function deadRunReason(row: RunningRow): string {
   if (runLeaseState(row.id) === 'free') return `run lease ${row.id} is free`
   if (row.pid) return `pid ${row.pid} is not alive`
   return 'legacy run has no live pid'
+}
+
+type RunningDisposition = 'alive' | 'dead' | 'abandoned-bootstrap' | 'setup-death'
+
+function preservedFailureKindTurnId(setupDeathIds: Set<number>, lastTurnId: number): number | null {
+  return setupDeathIds.has(lastTurnId) ? lastTurnId : null
+}
+
+function runningDisposition(row: RunningRow, now: number): RunningDisposition {
+  const leaseState = runLeaseState(row.id)
+  const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
+  if (row.agent === '(pending)') {
+    return abandonedBootstrap({
+      agent: row.agent,
+      pid: row.pid,
+      pidAlive: coordinatorPidAlive,
+      leaseState,
+      startedAt: row.started_at,
+      now,
+    })
+      ? 'abandoned-bootstrap'
+      : 'alive'
+  }
+  if (
+    coordinatorSetupDeath({
+      agent: row.agent,
+      agentPidPresent: row.agent_pid !== null,
+      leaseState,
+      pidAlive: coordinatorPidAlive,
+    })
+  ) {
+    return 'setup-death'
+  }
+  return runAlive({ status: 'running', lease: leaseState, pidAlive: coordinatorPidAlive })
+    ? 'alive'
+    : 'dead'
 }
 
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
@@ -182,26 +219,21 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
 
   const dead: number[] = []
   const abandonedBootstraps: number[] = []
+  const setupDeaths: number[] = []
   for (const r of rows) {
-    // An abandoned `(pending)` row is bootstrap residue, not an agent run.
-    // Checked before the hour cutoff so these are failed/harness rather than
-    // waiting for stale/interrupted.
-    if (r.agent === '(pending)') {
-      if (
-        abandonedBootstrap({
-          agent: r.agent,
-          pid: r.pid,
-          pidAlive: Boolean(r.pid && pidAlive(r.pid)),
-          leaseState: runLeaseState(r.id),
-          startedAt: r.started_at,
-          now,
-        })
-      ) {
+    switch (runningDisposition(r, now)) {
+      case 'dead':
+        dead.push(r.id)
+        break
+      case 'abandoned-bootstrap':
         abandonedBootstraps.push(r.id)
-      }
-      continue
+        break
+      case 'setup-death':
+        setupDeaths.push(r.id)
+        break
+      case 'alive':
+        break
     }
-    if (!runningRowAlive(r)) dead.push(r.id)
   }
   if (linkedWorktreeReadOnly) {
     return [
@@ -216,6 +248,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         id,
         reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
+      ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupError(id) })),
     ]
   }
   if (abandonedBootstraps.length) {
@@ -233,6 +266,20 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
           `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
           d,
         )
+      }, d)
+    }
+  }
+  if (setupDeaths.length) {
+    const update = d.query(
+      `UPDATE run SET status='failed', failure_kind='harness', error=?
+        WHERE id=? AND status='running'`,
+    )
+    for (const id of setupDeaths) {
+      const error = coordinatorSetupError(id)
+      writeTransaction(() => {
+        if (update.run(error, id).changes !== 1) return
+        const authority = runMutationAuthority(d, id)
+        auditRunMutation(authority, 'reap', error, d)
       }, d)
     }
   }
@@ -264,16 +311,23 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       }, d)
     }
   }
-  const ended = [...dead, ...abandonedBootstraps]
+  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
   if (ended.length) {
     const roots = d
       .query(
-        `SELECT DISTINCT COALESCE(parent_run_id, id) AS id FROM run
-        WHERE id IN (${ended.map(() => '?').join(',')})`,
+        `SELECT DISTINCT COALESCE(ended.parent_run_id, ended.id) AS id,
+          (SELECT last.id FROM run last
+            WHERE last.id = COALESCE(ended.parent_run_id, ended.id)
+               OR last.parent_run_id = COALESCE(ended.parent_run_id, ended.id)
+            ORDER BY last.turn DESC, last.id DESC LIMIT 1) AS last_id
+        FROM run ended WHERE ended.id IN (${ended.map(() => '?').join(',')})`,
       )
-      .all(...ended) as { id: number }[]
-    for (const { id } of roots) resolveRootFromLastTurn(d, id)
+      .all(...ended) as { id: number; last_id: number }[]
+    const setupDeathIds = new Set(setupDeaths)
+    for (const { id, last_id } of roots) {
+      resolveRootFromLastTurnPreserving(d, id, preservedFailureKindTurnId(setupDeathIds, last_id))
+    }
     for (const id of ended) teardownTerminalRunResources(d, id)
   }
-  return dead.length + abandonedBootstraps.length
+  return dead.length + abandonedBootstraps.length + setupDeaths.length
 }

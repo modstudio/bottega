@@ -9,6 +9,7 @@ import {
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
+import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
@@ -45,6 +46,9 @@ const boundary = (
 export const importBoundaries: ImportBoundary[] = [
   // biome-ignore format: compact extracted boundary registration keeps this frozen manifest from growing.
   ...runRetryBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
+  ...runModuleBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
+  ),
   ...branchStoreModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -849,12 +853,6 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
   ),
-  boundary(
-    'run-diff-boundary',
-    'orchestrator/src/run/run-diff.ts',
-    ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../project/projects.ts'],
-    'Keep run diff independent of run control, transports, routing, the CLI, and worktrees by value.',
-  ),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   boundary(
     'run-dispatch-boundary',
@@ -871,7 +869,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../project/projects.ts',
       '../record/record-attribution.ts',
-      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
+      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-coordinator-log.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
     ],
     'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
   ),
@@ -907,7 +905,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['./question-vocabulary.ts'],
   ),
   // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
-  boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-lease.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
+  boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-coordinator-log.ts', './run-lease.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
   boundary(
     'run-outbox-boundary',
     'orchestrator/src/run/run-outbox.ts',
