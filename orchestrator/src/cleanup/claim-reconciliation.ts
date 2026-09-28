@@ -7,7 +7,6 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
-import { settleClaims } from '../resources/resource-claims.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import type { CleanupPresentation } from './cleanup.ts'
@@ -263,16 +262,13 @@ export function reconcileAbsentClaims(input: {
         if (!lockedRow) return
         const locked = rulingFor(database, lockedRow, observers)
         if (locked.ruling.action === 'keep') return
-        settleClaims(database, {
-          rootRunId: lockedRow.root_run_id,
-          kind: lockedRow.kind,
-          state: 'absent',
-          settledAt: nowIso(),
-          detail: locked.observation.detail,
-          allocationKey: lockedRow.allocation_key,
-          claimId: lockedRow.id,
-        })
-        settled = true
+        const result = database
+          .query(
+            `UPDATE resource_claim SET state='absent',settled_at=?,settled_detail=?
+             WHERE id=? AND state='claimed'`,
+          )
+          .run(nowIso(), locked.observation.detail, lockedRow.id)
+        settled = result.changes === 1
       }, database)
     })
     if (settled) input.presentation.log(`settled absent ${label}`)

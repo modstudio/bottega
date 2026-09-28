@@ -59,7 +59,7 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
   ])
 })
 
-test('reconciling an absent worktree also settles its dependent port claim', () => {
+test('reconciling an absent worktree leaves its dependent port claimed', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-cascade-${runId}`
   upsertProject({ name: project, path: `/repo/${project}` })
@@ -95,7 +95,55 @@ test('reconciling an absent worktree also settles its dependent port claim', () 
     db().query('SELECT kind,state FROM resource_claim WHERE root_run_id=? ORDER BY id').all(runId),
   ).toEqual([
     { kind: 'worktree', state: 'absent' },
-    { kind: 'port', state: 'released' },
+    { kind: 'port', state: 'claimed' },
+  ])
+})
+
+test('an absent worktree does not release allocations shared with a present worktree', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const project = `claim-multiple-trees-${runId}`
+  upsertProject({ name: project, path: `/repo/${project}` })
+  const projectId = (
+    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+  ).id
+  db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
+  const insert = db().query(
+    `INSERT INTO resource_claim
+     (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     VALUES (?,?,?,?,?,'claimed',?)`,
+  )
+  insert.run(runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
+  insert.run(runId, runId, projectId, 'worktree', '/present-tree', nowIso())
+  insert.run(runId, runId, projectId, 'port', '21992', nowIso())
+  insert.run(runId, runId, projectId, 'index', '7', nowIso())
+  insert.run(runId, runId, projectId, 'string', 'shared-value', nowIso())
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project,
+    presentation: { log: () => {}, error: () => {}, setExitCode: () => {}, keptBranchLine: String },
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      path: (path) => ({ outcome: path === '/present-tree' ? 'present' : 'absent' }),
+      ref: () => ({ outcome: 'failed', detail: 'unused' }),
+      trust: { succeeded: true, headings: [] },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(
+    db()
+      .query('SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_id=? ORDER BY id')
+      .all(runId),
+  ).toEqual([
+    { kind: 'worktree', allocation_key: '/absent-tree', state: 'absent' },
+    { kind: 'worktree', allocation_key: '/present-tree', state: 'claimed' },
+    { kind: 'port', allocation_key: '21992', state: 'claimed' },
+    { kind: 'index', allocation_key: '7', state: 'claimed' },
+    { kind: 'string', allocation_key: 'shared-value', state: 'claimed' },
   ])
 })
 
