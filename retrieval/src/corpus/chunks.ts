@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 export type Chunk = {
   id: string
@@ -209,11 +210,14 @@ function isDocRow(value: unknown): value is DocRow {
 }
 
 export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
-  const child = Bun.spawn([resolve(repositoryRoot, 'bin/orch'), 'doc', 'list', '--json'], {
-    cwd: repositoryRoot,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const child = Bun.spawn(
+    [...bottegaEntryArgv('orch', resolve(repositoryRoot, 'bin/orch')), 'doc', 'list', '--json'],
+    {
+      cwd: repositoryRoot,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),

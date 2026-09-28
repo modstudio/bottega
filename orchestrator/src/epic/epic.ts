@@ -1,11 +1,9 @@
 import type { Database } from 'bun:sqlite'
-import { assetPath } from '../../../shared/install-root.ts'
 import { engagedMs } from '../../../shared/interval.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
-
-const HUB = assetPath('bin', 'hub')
 
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }
@@ -424,7 +422,16 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
 
 export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
   const child = Bun.spawn(
-    [HUB, 'task', 'list', '--project', project, '--parent', epicKey, '--json'],
+    [
+      ...bottegaEntryArgv('hub'),
+      'task',
+      'list',
+      '--project',
+      project,
+      '--parent',
+      epicKey,
+      '--json',
+    ],
     {
       stdout: 'pipe',
       stderr: 'pipe',

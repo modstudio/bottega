@@ -19,7 +19,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:child_process',
     'node:fs',
     'node:path',
-    '../../../shared/install-root.ts',
+    '../../../shared/self-spawn.ts',
     '../artifact-paths.ts',
     '../branch/merged-pull-request.ts',
     '../branch/task-key-pull-request.ts',

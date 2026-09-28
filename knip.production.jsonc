@@ -39,6 +39,7 @@
         "scripts/{build-binary,smoke-binary}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "!scripts/**/*.fixtures.ts",
         "!scripts/**/*.test.ts",
         "!scripts/check-runtime.ts",
         "scripts/generate-recipe-schema.ts!",
@@ -46,6 +47,7 @@
       ],
       "project": [
         "scripts/**/*.ts!",
+        "!scripts/**/*.fixtures.ts",
         "!scripts/**/*.test.ts",
         "!scripts/test-preload.ts",
         "!scripts/quality/test-timing-decision.ts",

@@ -14,7 +14,7 @@ const module = (file: string, allowed: string[]): McpModule => ({
 export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/hub-notes.ts', [
     'zod',
-    '../../../shared/install-root.ts',
+    '../../../shared/self-spawn.ts',
     '../ask/ask.ts',
     '../database/db.ts',
     '../project/projects.ts',

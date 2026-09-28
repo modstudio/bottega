@@ -3,6 +3,7 @@
 
 import type { Command, OptionValues } from 'commander'
 import { assetPath } from '../../../shared/install-root.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -394,17 +395,7 @@ export function register(program: Command): void {
   program
     .command('setup-ask')
     .allowExcessArguments(false)
-    .action(() =>
-      setupAskCommand(
-        [
-          process.execPath,
-          '--no-env-file',
-          assetPath('orchestrator', 'src', 'cli', 'orch.ts'),
-          'ask-server',
-        ],
-        presentation,
-      ),
-    )
+    .action(() => setupAskCommand(bottegaEntryArgv('ask-server'), presentation))
   program
     .command('monitor')
     .option('--limit <value>')

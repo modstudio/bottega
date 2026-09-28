@@ -860,7 +860,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:child_process',
       'node:crypto',
       'node:fs',
-      '../../../shared/install-root.ts',
+      '../../../shared/self-spawn.ts',
       '../../../shared/process-identity.ts',
       '../database/db.ts',
       '../dispatch/dispatch-preflight.ts',

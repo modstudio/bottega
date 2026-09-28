@@ -1,16 +1,14 @@
 // concern: code-search-adapter
 /** Applies project policy, spawns retrieval code search, and validates its JSON contract. */
 
-import { assetPath } from '../../../shared/install-root.ts'
 import { CodeSearchOutputSchema } from '../../../shared/orch-contract.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { Project } from '../project/projects.ts'
 
 type Runner = (argv: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 
-const RETRIEVAL_SEARCH = assetPath('bin', 'retrieval-search')
-
 async function runRetrieval(argv: string[]) {
-  const child = Bun.spawn([RETRIEVAL_SEARCH, ...argv], {
+  const child = Bun.spawn([...bottegaEntryArgv('retrieval-search'), ...argv], {
     cwd: process.cwd(),
     env: { ...process.env },
     stdin: 'ignore',

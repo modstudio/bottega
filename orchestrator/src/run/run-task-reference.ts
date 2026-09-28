@@ -1,16 +1,17 @@
 // concern: run task reference
 /** Resolves an optional durable hub task identity without making hub availability a dispatch prerequisite. */
-import { fileURLToPath } from 'node:url'
-
-const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 export async function resolveTaskRecordId(project: string, key: string): Promise<string | null> {
   try {
-    const child = Bun.spawn([HUB, 'task', 'show', key, '--project', project, '--json'], {
-      stdout: 'pipe',
-      stderr: 'ignore',
-      env: { ...process.env },
-    })
+    const child = Bun.spawn(
+      [...bottegaEntryArgv('hub'), 'task', 'show', key, '--project', project, '--json'],
+      {
+        stdout: 'pipe',
+        stderr: 'ignore',
+        env: { ...process.env },
+      },
+    )
     const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
     if (code !== 0) return null
     const shown: unknown = JSON.parse(stdout)

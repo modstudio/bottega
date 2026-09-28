@@ -3,8 +3,8 @@
  * Knows the fixed Codex CLI configuration pins and the MCP servers granted to
  * one run. Must not know dispatch, project lookup, transports, or credentials.
  */
-import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { ROOT } from '../database/database-location.ts'
+import { isAbsolute, join, resolve } from 'node:path'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
 
@@ -147,12 +147,14 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   ]
   if (!opts.mcp) return args
 
+  const [askCommand, ...askArgs] = bottegaEntryArgv('ask-server')
   const askServer = {
-    command: process.execPath,
-    args: ['--no-env-file', join(dirname(import.meta.path), '..', 'cli', 'orch.ts'), 'ask-server'],
+    command: askCommand,
+    args: askArgs,
     env_vars: CODEX_ASK_ENV_VARS,
   }
-  const orchServer = { command: join(ROOT, '..', 'bin', 'orch'), args: ['mcp'] }
+  const [orchCommand, ...orchArgs] = bottegaEntryArgv('orch')
+  const orchServer = { command: orchCommand, args: [...orchArgs, 'mcp'] }
   args.push('-c', serverOverlay('orch-ask', askServer), '-c', serverOverlay('orch', orchServer))
   for (const [name, server] of Object.entries(opts.projectServers ?? {})) {
     if (name !== 'orch-ask' && name !== 'orch') args.push('-c', serverOverlay(name, server))

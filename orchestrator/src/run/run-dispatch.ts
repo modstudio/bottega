@@ -6,8 +6,8 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
-import { assetPath } from '../../../shared/install-root.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
@@ -258,9 +258,8 @@ export async function detach(
      * session, a new process group, out of reach of the group kill.
      */
     handoffStep = 'resolve coordinator executable'
-    const execPath = process.env.ORCH_EXEC_PATH ?? process.execPath
-    const spawnArgs = [
-      '--no-env-file',
+    const [execPath, ...spawnArgs] = [
+      ...bottegaEntryArgv('run-exec'),
       /**
        * `exec.ts`, not the `orch.ts` process entry point, and that is the whole point of it.
        *
@@ -274,7 +273,6 @@ export async function detach(
        * that. `exec.ts` imports almost nothing and pulls the rest in inside a
        * catch, turning a broken sibling into a recorded failure with a reason.
        */
-      assetPath('orchestrator', 'src', 'run', 'exec.ts'),
       String(id),
       promptPath,
       jobName,

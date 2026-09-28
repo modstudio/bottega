@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { assetPath } from '../../../shared/install-root.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
@@ -65,8 +65,8 @@ export type FloorEvidencePorts = {
 }
 
 function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
-  const hub = assetPath('bin', 'hub')
-  const result = spawnSync(hub, ['task', 'show', key, '--json'], {
+  const [hub, ...prefix] = bottegaEntryArgv('hub')
+  const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json'], {
     cwd,
     encoding: 'utf8',
     env: process.env,
