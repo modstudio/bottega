@@ -119,10 +119,13 @@ function wholeFieldTexts(value: unknown): string[] {
   return [String(value)]
 }
 
-function firstRuleInTexts(texts: string[]): string | null {
+function firstRuleInTexts(
+  texts: string[],
+  acceptsRule: (rule: string) => boolean = () => true,
+): string | null {
   for (const text of texts) {
     const rule = evidenceSecretShapedRule(text)
-    if (rule) return rule
+    if (rule && acceptsRule(rule)) return rule
   }
   return null
 }
@@ -167,6 +170,7 @@ function applyValueLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
+  acceptsRule: (rule: string) => boolean,
 ): void {
   const recorded = leaf.recordedAs ?? leaf.at
   const field = leaf.each
@@ -176,7 +180,7 @@ function applyValueLeaf(
     for (const item of list) {
       if (!isPlainObject(item)) continue
       const current = item[field]
-      const rule = firstRuleInTexts(wholeFieldTexts(current))
+      const rule = firstRuleInTexts(wholeFieldTexts(current), acceptsRule)
       if (!rule) continue
       onMatch(recorded, rule, () => {
         item[field] = WITHHELD_SECRET_SHAPED
@@ -185,7 +189,7 @@ function applyValueLeaf(
     return
   }
   const current = getAt(payload, leaf.at)
-  const rule = firstRuleInTexts(wholeFieldTexts(current))
+  const rule = firstRuleInTexts(wholeFieldTexts(current), acceptsRule)
   if (!rule) return
   onMatch(recorded, rule, () => {
     const nested = leaf.at.lastIndexOf('.')
@@ -198,13 +202,14 @@ function applyElementsLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
+  acceptsRule: (rule: string) => boolean,
 ): void {
   const current = detachAt(payload, leaf.at)
   if (!Array.isArray(current)) return
   for (const [index, item] of current.entries()) {
     if (typeof item !== 'string') continue
     const rule = evidenceSecretShapedRule(item)
-    if (!rule) continue
+    if (!rule || !acceptsRule(rule)) continue
     onMatch(`${leaf.at}[${index}]`, rule, () => {
       current[index] = WITHHELD_SECRET_SHAPED
     })
@@ -215,10 +220,11 @@ function applyWalkLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
+  acceptsRule: (rule: string) => boolean,
 ): void {
   walkStrings(detachAt(payload, leaf.at), leaf.at, (path, text, replace) => {
     const rule = evidenceSecretShapedRule(text)
-    if (rule) onMatch(path, rule, () => replace(WITHHELD_SECRET_SHAPED))
+    if (rule && acceptsRule(rule)) onMatch(path, rule, () => replace(WITHHELD_SECRET_SHAPED))
   })
 }
 
@@ -226,10 +232,39 @@ function applyLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
   onMatch: (path: string, rule: string, replace: () => void) => void,
+  acceptsRule: (rule: string) => boolean = () => true,
 ): void {
-  if (leaf.style === 'value') applyValueLeaf(payload, leaf, onMatch)
-  else if (leaf.style === 'elements') applyElementsLeaf(payload, leaf, onMatch)
-  else applyWalkLeaf(payload, leaf, onMatch)
+  if (leaf.style === 'value') applyValueLeaf(payload, leaf, onMatch, acceptsRule)
+  else if (leaf.style === 'elements') applyElementsLeaf(payload, leaf, onMatch, acceptsRule)
+  else applyWalkLeaf(payload, leaf, onMatch, acceptsRule)
+}
+
+export type OutboxSanitizeMatch = { path: string; rule: string }
+
+export function sanitizeOutboxPayloadForRules(
+  kind: string,
+  payload: Record<string, unknown>,
+  rules: ReadonlySet<string>,
+): { payload: Record<string, unknown>; matches: OutboxSanitizeMatch[] } {
+  const next = clonePayload(payload)
+  if (!(kind in LEAVES)) return { payload: next, matches: [] }
+  const matches: OutboxSanitizeMatch[] = []
+  for (const leaf of LEAVES[kind as OutboxSanitizeKind]) {
+    applyLeaf(
+      next,
+      leaf,
+      (path, rule, replace) => {
+        replace()
+        matches.push({ path, rule })
+      },
+      (rule) => rules.has(rule),
+    )
+  }
+  const existing = Array.isArray(next.withheldFields)
+    ? next.withheldFields.filter((path): path is string => typeof path === 'string')
+    : []
+  next.withheldFields = [...new Set([...existing, ...matches.map((match) => match.path)])]
+  return { payload: next, matches }
 }
 
 export function sanitizeOutboxPayload(

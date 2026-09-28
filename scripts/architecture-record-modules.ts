@@ -24,12 +24,18 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/outbox-sanitize.ts', ['../../../shared/secret-shaped.ts']),
   module('orchestrator/src/record/outbox-secret-audit.ts', ['bun:sqlite', './outbox-sanitize.ts']),
+  module('orchestrator/src/record/outbox-redaction.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './outbox-sanitize.ts',
+  ]),
   module('orchestrator/src/record/record-command.ts', [
     '../../../shared/machine-config.ts',
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',
     './outbox-secret-audit.ts',
+    './outbox-redaction.ts',
     './record-doctor.ts',
     './record-space-move.ts',
     './record-space.ts',
