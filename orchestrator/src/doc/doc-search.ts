@@ -1,18 +1,17 @@
 // concern: doc-search-adapter
 /** Spawns retrieval semantic search and validates its stable JSON contract. */
-import { assetPath } from '../../../shared/install-root.ts'
+
 import { DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 type Runner = (argv: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>
-
-const RETRIEVAL_SEARCH = assetPath('bin', 'retrieval-search')
 
 async function runRetrieval(argv: string[]): Promise<{
   stdout: string
   stderr: string
   exitCode: number
 }> {
-  const child = Bun.spawn([RETRIEVAL_SEARCH, ...argv], {
+  const child = Bun.spawn([...bottegaEntryArgv('retrieval-search'), ...argv], {
     cwd: process.cwd(),
     env: { ...process.env },
     stdin: 'ignore',

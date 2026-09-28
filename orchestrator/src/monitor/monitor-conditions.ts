@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url'
 // concern: monitor-conditions
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
 
@@ -10,6 +9,7 @@ import {
   pidRecordIdentity,
   processStartTime,
 } from '../../../shared/process-identity.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -34,8 +34,6 @@ import {
 } from '../run/synthetic-lifecycle-job.ts'
 import { idleStallMs } from '../stalled-run.ts'
 import type { MonitorCondition } from './monitor-types.ts'
-
-const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 const ASKING_RUN_WHERE = `parent_run_id IS NULL
    AND (
@@ -535,7 +533,10 @@ export function rulingConditions(clock = Date.now()): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const p = Bun.spawnSync([HUB, 'rulings', '--json'], { stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync([...bottegaEntryArgv('hub'), 'rulings', '--json'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
   if (p.exitCode !== 0) {
     return {
       conditions: [],
@@ -582,7 +583,10 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  const p = Bun.spawnSync([HUB, 'reconcile'], { stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync([...bottegaEntryArgv('hub'), 'reconcile'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
   if (p.exitCode !== 0) {
     return {
       conditions: [],

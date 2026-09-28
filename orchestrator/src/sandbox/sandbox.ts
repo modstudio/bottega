@@ -23,6 +23,7 @@ import {
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
   hubLoginTokenDirectory,
@@ -467,7 +468,7 @@ export async function resetSandbox(): Promise<void> {
  * from the running binary. Grok reads orch-ask only from its config file, and a
  * one-time registration goes stale when the entrypoint moves or bun is upgraded.
  */
-function withLiveGrokAskServer(config: string, entrypoint: string, command: string): string {
+function withLiveGrokAskServer(config: string, command: string[]): string {
   const kept: string[] = []
   let inAskTable = false
   for (const line of config.split('\n')) {
@@ -477,8 +478,8 @@ function withLiveGrokAskServer(config: string, entrypoint: string, command: stri
   }
   const section = [
     '[mcp_servers.orch-ask]',
-    `command = ${JSON.stringify(command)}`,
-    `args = ${JSON.stringify(['--no-env-file', entrypoint, 'ask-server'])}`,
+    `command = ${JSON.stringify(command[0])}`,
+    `args = ${JSON.stringify(command.slice(1))}`,
     'enabled = true',
   ].join('\n')
   return `${kept.join('\n').trimEnd()}\n\n${section}\n`
@@ -486,11 +487,7 @@ function withLiveGrokAskServer(config: string, entrypoint: string, command: stri
 
 /** Point a sandboxed Grok run's orch-ask at this checkout's proxy. */
 export function grokSandboxConfig(config: string): string {
-  return withLiveGrokAskServer(
-    config,
-    join(ROOT, 'src', 'ask', 'ask-proxy.ts'),
-    Bun.which('bun') ?? process.execPath,
-  )
+  return withLiveGrokAskServer(config, bottegaEntryArgv('ask-proxy'))
 }
 
 /** Prepare the MCP home and visible scope line only for Grok. */
@@ -531,11 +528,7 @@ export function prepareGrokMcpHome(
     if (/^\s*disabled_mcp_servers\s*=/m.test(topLevel)) {
       throw new Error(`disabled_mcp_servers is already declared in ${configSource}`)
     }
-    const live = withLiveGrokAskServer(
-      config,
-      join(ROOT, 'src', 'cli', 'orch.ts'),
-      process.execPath,
-    )
+    const live = withLiveGrokAskServer(config, bottegaEntryArgv('ask-server'))
     writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${live}`, {
       mode: 0o600,
     })

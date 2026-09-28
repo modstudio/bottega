@@ -1,10 +1,10 @@
-import { fileURLToPath } from 'node:url'
 // concern: filed-issue dispatch
 /** Claims and bounds filed-issue coordinator passes. Does not diagnose or fix issues. */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
@@ -22,8 +22,6 @@ import {
   MAX_ISSUES_PER_PASS,
 } from './issue-queue.ts'
 import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
-
-const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 type HeldIssueTree = { runId: number; path: string; why: string }
 
@@ -69,7 +67,7 @@ function acquireIssueLease(key: string): KernelLease | null {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([HUB, ...args], {
+  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env },

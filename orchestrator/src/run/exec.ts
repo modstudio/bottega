@@ -29,11 +29,8 @@
  */
 import { Database } from 'bun:sqlite'
 
-const [idArg, promptPath, jobName, specJson] = process.argv.slice(2)
-const id = Number(idArg)
-
 /** Record why this run never started, using as little of the codebase as possible. */
-function recordStartupFailure(reason: string): void {
+function recordStartupFailure(id: number, reason: string): void {
   if (!id) return
   try {
     // The dispatcher always exports the already-resolved store to detached
@@ -61,27 +58,35 @@ function recordStartupFailure(reason: string): void {
   }
 }
 
-try {
-  if (!id || !promptPath || !jobName) throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
-  const { readFileSync } = await import('node:fs')
-  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-  registerStandardRuntime()
-  const { run } = await import('./run.ts')
-  const { detachedRunOptions } = await import('../route/failover.ts')
-  const spec = JSON.parse(specJson ?? '{}') as import('../route/failover.ts').DetachSpec
-  await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))
-} catch (e) {
-  const why = String((e as Error)?.stack ?? e)
-  /**
-   * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
-   *
-   * `run()` records its own outcome for anything that happens once it is
-   * running, so reaching here means the run never really started — a broken
-   * import, an unreadable prompt file, a malformed spec. `harness` is the kind
-   * this codebase already reserves for "orch was wrong", and like `unreachable`
-   * and `interrupted` it is never counted as evidence about an agent.
-   */
-  recordStartupFailure(`the worker process could not start:\n${why}`)
-  console.error(`orch: run ${id} could not start: ${why}`)
-  process.exit(1)
+export async function main(argv: string[]): Promise<number> {
+  const [idArg, promptPath, jobName, specJson] = argv
+  const id = Number(idArg)
+  try {
+    if (!id || !promptPath || !jobName)
+      throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
+    const { readFileSync } = await import('node:fs')
+    const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
+    registerStandardRuntime()
+    const { run } = await import('./run.ts')
+    const { detachedRunOptions } = await import('../route/failover.ts')
+    const spec = JSON.parse(specJson ?? '{}') as import('../route/failover.ts').DetachSpec
+    await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))
+    return 0
+  } catch (e) {
+    const why = String((e as Error)?.stack ?? e)
+    /**
+     * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
+     *
+     * `run()` records its own outcome for anything that happens once it is
+     * running, so reaching here means the run never really started — a broken
+     * import, an unreadable prompt file, a malformed spec. `harness` is the kind
+     * this codebase already reserves for "orch was wrong", and like `unreachable`
+     * and `interrupted` it is never counted as evidence about an agent.
+     */
+    recordStartupFailure(id, `the worker process could not start:\n${why}`)
+    console.error(`orch: run ${id} could not start: ${why}`)
+    return 1
+  }
 }
+
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

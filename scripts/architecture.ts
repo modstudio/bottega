@@ -65,7 +65,7 @@ export const modules: ArchitectureModule[] = [
   ...runResumeModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/doc/doc-search.ts', ['../../../shared/install-root.ts', '../../../shared/orch-contract.ts']),
+  module('orchestrator/src/doc/doc-search.ts', ['../../../shared/self-spawn.ts', '../../../shared/orch-contract.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/doc/doc-canon-tree.ts', ['node:fs', '../../../shared/git.ts', '../project/projects.ts', './doc-write-allowed.ts']),
   module('orchestrator/src/doc/canon-removal.ts', [
@@ -78,7 +78,7 @@ export const modules: ArchitectureModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/code/code-search.ts', [
-    '../../../shared/install-root.ts',
+    '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
   ]),
@@ -141,7 +141,7 @@ export const modules: ArchitectureModule[] = [
     './codex-mcp-scope.ts',
   ]),
   module('orchestrator/src/sandbox/codex-mcp-scope.ts', [
-    '../database/database-location.ts',
+    '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
     '../mcp/mcp-tool-list.ts',
   ]),
@@ -185,6 +185,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/monitor/monitor-conditions.ts', [
     'node:fs',
     'node:path',
+    '../../../shared/self-spawn.ts',
     '../database/db.ts',
     '../events.ts',
     '../evidence/evidence-query.ts',
@@ -501,7 +502,7 @@ export const modules: ArchitectureModule[] = [
     './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
-  module('orchestrator/src/run/run-task-reference.ts', []),
+  module('orchestrator/src/run/run-task-reference.ts', ['../../../shared/self-spawn.ts']),
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
   module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
   module('orchestrator/src/run/run-close.ts', [
@@ -617,13 +618,8 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     'node:stream',
   ]),
-  module('orchestrator/src/sandbox/sandbox.ts', [
-    '../../../shared/config-directory.ts',
-    '../../../shared/state-directory.ts',
-    '../database/db.ts',
-    '../mcp/mcp-probe.ts',
-    '../project/projects.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/sandbox/sandbox.ts', ['../../../shared/self-spawn.ts', '../../../shared/config-directory.ts', '../../../shared/state-directory.ts', '../database/db.ts', '../mcp/mcp-probe.ts', '../project/projects.ts']),
   module('orchestrator/src/runtime/standard-calibration.ts', [
     './calibration-port.ts',
     '../review/review-calibration.ts',

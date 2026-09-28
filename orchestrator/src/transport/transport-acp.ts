@@ -3,6 +3,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
@@ -630,12 +631,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         ? [
             {
               name: 'orch-ask',
-              command: process.execPath,
-              args: [
-                '--no-env-file',
-                join(dirname(import.meta.path), '..', 'cli', 'orch.ts'),
-                'ask-server',
-              ],
+              command: bottegaEntryArgv('ask-server')[0]!,
+              args: bottegaEntryArgv('ask-server').slice(1),
               env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
                 opts.env[name] ? [{ name, value: opts.env[name]! }] : [],
               ),

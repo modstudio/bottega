@@ -1,9 +1,9 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
 import {
   ISSUE_WORKER_SCHEMA,
@@ -45,8 +45,6 @@ import {
   runFiledIssueCommand,
   workerGateEnvironment,
 } from './issue-shell.ts'
-
-const HUB = fileURLToPath(new URL('../../../bin/hub', import.meta.url))
 
 export type Diagnosis = {
   status: 'done' | 'asking' | 'refused'
@@ -181,7 +179,7 @@ export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([HUB, ...args], {
+  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env },
@@ -783,7 +781,7 @@ export async function workIssue(key: string): Promise<void> {
           : { ok: false, text: 'no reproduction command', exitCode: -1 }
       const applied = argv(
         [
-          fileURLToPath(new URL('../../../bin/orch', import.meta.url)),
+          ...bottegaEntryArgv('orch'),
           'project',
           'set',
           change.project,

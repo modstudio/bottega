@@ -12,7 +12,12 @@ const module = (file: string, allowed: string[]): RetrievalModule => ({
 })
 
 export const retrievalModules: RetrievalModule[] = [
-  module('retrieval/src/corpus/chunks.ts', ['node:fs/promises', 'node:path', 'bun']),
+  module('retrieval/src/corpus/chunks.ts', [
+    'node:fs/promises',
+    'node:path',
+    'bun',
+    '../../../shared/self-spawn.ts',
+  ]),
   module('retrieval/src/contract.ts', []),
   module('retrieval/src/services/endpoints.ts', ['../contract.ts']),
   module('retrieval/src/refresh-plan.ts', ['./contract.ts', './corpus/chunks.ts']),
@@ -51,6 +56,7 @@ export const retrievalModules: RetrievalModule[] = [
   ]),
   module('retrieval/src/search-cli.ts', [
     'node:path',
+    '../../shared/self-spawn.ts',
     '../../shared/orch-contract.ts',
     './code-search.ts',
     './search.ts',

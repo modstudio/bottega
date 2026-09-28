@@ -1,10 +1,8 @@
 import { z } from 'zod'
-import { assetPath } from '../../../shared/install-root.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { strictlyAuthenticatedWorkerRun } from '../ask/ask.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-
-const HUB = assetPath('bin', 'hub')
 
 const noteRowsSchema = z.array(
   z.object({
@@ -20,7 +18,7 @@ const noteRowsSchema = z.array(
 export type HubNote = z.infer<typeof noteRowsSchema>[number]
 
 export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
-  const child = Bun.spawn([HUB, ...args], {
+  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
     cwd,
     env: { ...process.env },
     stdin: 'ignore',

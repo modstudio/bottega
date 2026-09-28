@@ -7,6 +7,7 @@ import {
   DocSearchOutputSchema,
   OrchProjectListSchema,
 } from '../../shared/orch-contract.ts'
+import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import { searchCode } from './code-search.ts'
 import { search } from './search.ts'
 import { endpointsFromEnvironment, probeEndpointStatuses } from './services/endpoints.ts'
@@ -18,10 +19,10 @@ function usage(): never {
 }
 
 async function registeredCodeProject(path: string): Promise<{ name: string; path: string }> {
-  const child = Bun.spawn(
-    [resolve(import.meta.dir, '../../bin/orch'), 'project', 'list', '--json'],
-    { stdout: 'pipe', stderr: 'pipe' },
-  )
+  const child = Bun.spawn([...bottegaEntryArgv('orch'), 'project', 'list', '--json'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -105,7 +106,7 @@ export function formatRefreshSummary(refresh: {
   )
 }
 
-async function main(argv: string[]): Promise<void> {
+export async function main(argv: string[]): Promise<void> {
   if (argv.length === 1 && argv[0] === '--check') {
     const statuses = await probeEndpointStatuses(endpointsFromEnvironment(process.env))
     for (const status of statuses) {

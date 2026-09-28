@@ -48,6 +48,7 @@ import {
   RulingListSchema,
 } from '../../shared/orch-contract.ts'
 import { RELEASE_AUTONOMY_VALUES } from '../../shared/release-autonomy.ts'
+import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 
 export type {
   OperatorWaitingItem,
@@ -146,8 +147,8 @@ async function orchProcess(
     acceptedOutput?: (output: string) => boolean
   } = {},
 ): Promise<string> {
-  const path = resolveOrchExecutable()
-  const proc = Bun.spawn([path, ...args], {
+  const command = bottegaEntryArgv('orch', resolveOrchExecutable)
+  const proc = Bun.spawn([...command, ...args], {
     env: { ...process.env, ...opts.env },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -340,8 +341,8 @@ export const blockers = (days: number): Promise<OrchBlockers> =>
   json(['blockers', '--days', String(days), '--json'], OrchBlockersSchema)
 
 export function projectList(): OrchProject[] {
-  const path = resolveOrchExecutable()
-  const proc = Bun.spawnSync([path, 'project', 'list', '--json'], {
+  const command = bottegaEntryArgv('orch', resolveOrchExecutable)
+  const proc = Bun.spawnSync([...command, 'project', 'list', '--json'], {
     env: { ...process.env },
     stdout: 'pipe',
     stderr: 'pipe',
