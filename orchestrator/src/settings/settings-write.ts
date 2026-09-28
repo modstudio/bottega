@@ -132,7 +132,12 @@ export function applyBackedUpSettingsWrites(
   return writes.map((write) => write.backup)
 }
 
-export function writeNewSettingsFileAtomically(path: string, text: string, mode = 0o644): void {
+export function writeNewSettingsFileAtomically(
+  path: string,
+  text: string,
+  mode = 0o644,
+  installed?: () => void,
+): void {
   if (existsSync(path)) changedAfterPlanning(path)
   const directory = dirname(path)
   const temporary = join(directory, `.${basename(path)}.tmp-${process.pid}-${randomUUID()}`)
@@ -146,6 +151,7 @@ export function writeNewSettingsFileAtomically(path: string, text: string, mode 
     fd = null
     if (existsSync(path)) changedAfterPlanning(path)
     renameSync(temporary, path)
+    installed?.()
     fsyncDirectory(directory)
   } finally {
     if (fd !== null) closeSync(fd)
@@ -158,6 +164,7 @@ export function restoreSettingsBackup(
   backup: string,
   environment: StateEnvironment,
   force = false,
+  missingMode?: number,
 ): void {
   const directory = prepareBackupDirectory(environment)
   const resolvedBackup = resolve(backup)
@@ -177,6 +184,13 @@ export function restoreSettingsBackup(
   if (hash(text) !== metadata.backupHash) {
     throw new Error(`refusing settings restore: ${backup} does not match its metadata`)
   }
+  if (!existsSync(target)) {
+    if (!force || missingMode === undefined) {
+      throw new Error(`refusing settings restore: ${target} no longer exists`)
+    }
+    writeNewSettingsFileAtomically(target, text, missingMode)
+    return
+  }
   const current = readRegularNoFollow(target)
   if (!force && hash(current) !== metadata.installedHash) {
     throw new Error(
@@ -186,6 +200,13 @@ export function restoreSettingsBackup(
   }
   const mode = lstatRegular(target).mode & 0o777
   atomicWrite(target, text, mode)
+}
+
+export function restoreBackedUpSettingsWrite(
+  write: BackedUpSettingsWrite,
+  environment: StateEnvironment,
+): void {
+  restoreSettingsBackup(write.plan.path, write.backup, environment, true, write.plan.mode)
 }
 
 function changedAfterPlanning(path: string): never {

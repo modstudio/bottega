@@ -1,6 +1,7 @@
 // concern: user-canon-commands
 /** Knows user canon import and hydration command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
+import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
@@ -8,10 +9,11 @@ import { projects } from '../project/projects.ts'
 import { planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
-  applyUserCanonHomePlan,
+  applyUserCanonHomePlans,
   collectUserCanonHome,
   planUserCanonHome,
   userCanonHomeInstallationStatus,
+  userCanonHomeOverridesStatus,
   userCanonHomePlanDrift,
   userCanonHomesFromEnvironment,
 } from './user-canon-home-files.ts'
@@ -40,7 +42,10 @@ export async function userCanonImportCommand(
   presentation: UserCanonPresentation,
 ): Promise<void> {
   const owner = await signedInDocOwner()
-  const claudeHome = userCanonHomesFromEnvironment(process.env)[0]!
+  const claudeHome = userCanonHomesFromEnvironment(
+    process.env,
+    resolveRunsDirectory(process.env),
+  )[0]!
   const files = collectUserCanonHome(claudeHome)
   if (files.length === 0) {
     throw new Error(`refusing user canon import: no canon files found under ${claudeHome.path}`)
@@ -120,7 +125,9 @@ export async function userCanonHydrateCommand(
     throw new Error('unknown flag for orch canon hydrate --user: --force')
   }
   const owner = await signedInDocOwner()
-  const homes = userCanonHomesFromEnvironment(process.env)
+  const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
+  const overrideStatus = userCanonHomeOverridesStatus(homes)
+  if (overrideStatus) presentation.log(overrideStatus)
   const rows = listDocs({ scope: 'canon', subject: null, owner })
   const plans = homes
     .filter((home) => {
@@ -147,7 +154,7 @@ export async function userCanonHydrateCommand(
     return
   }
   const dryRun = flags.has('dry-run')
-  const backups = plans.flatMap((plan) => applyUserCanonHomePlan(plan, process.env, dryRun))
+  const backups = applyUserCanonHomePlans(plans, process.env, dryRun)
   for (const path of backups) presentation.log(`backup ${path}`)
   presentation.log(`${dryRun ? 'would hydrate' : 'hydrated'} ${count} paths`)
 }

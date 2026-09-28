@@ -16,19 +16,27 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { USER_CANON_MANAGED_MARKER } from './user-canon-home.ts'
 import {
-  applyUserCanonHomePlan,
+  applyUserCanonHomePlans,
   collectUserCanonHome,
   planUserCanonHome,
+  userCanonHomesFromEnvironment as resolveUserCanonHomesFromEnvironment,
   type UserCanonHomeTarget,
   userCanonHomeInstallationStatus,
+  userCanonHomeOverridesStatus,
   userCanonHomePlanDrift,
-  userCanonHomesFromEnvironment,
 } from './user-canon-home-files.ts'
 
 const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
+
+function userCanonHomesFromEnvironment(env: NodeJS.ProcessEnv): UserCanonHomeTarget[] {
+  return resolveUserCanonHomesFromEnvironment(
+    env,
+    env.ORCH_RUNS ?? join(env.HOME!, 'orchestrator-runs'),
+  )
+}
 
 function temporaryClaudeHome(): UserCanonHomeTarget {
   const home = mkdtempSync(join(tmpdir(), 'user-canon-home-'))
@@ -62,7 +70,9 @@ describe('Claude home canon files', () => {
       rows: [{ slug: 'AGENTS.md', body: 'entry' }],
       files: collectUserCanonHome(claudeHome),
     })
-    applyUserCanonHomePlan(plan)
+    applyUserCanonHomePlans([plan], {
+      BOTTEGA_STATE_HOME: join(dirname(claudeHome.path), 'state'),
+    })
 
     expect(readFileSync(join(claudeHome.path, 'CLAUDE.md'), 'utf8')).toBe(
       `${USER_CANON_MANAGED_MARKER}entry`,
@@ -96,7 +106,7 @@ describe('Claude home canon files', () => {
       adopt: true,
     })
 
-    const backups = applyUserCanonHomePlan(plan, { BOTTEGA_STATE_HOME: state })
+    const backups = applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state })
 
     expect(plan.adopts.map(({ path: adoptedPath }) => adoptedPath)).toEqual([path])
     expect(backups).toHaveLength(1)
@@ -118,7 +128,7 @@ describe('Claude home canon files', () => {
     })
 
     const state = join(dirname(claudeHome.path), 'state')
-    expect(applyUserCanonHomePlan(plan, { BOTTEGA_STATE_HOME: state }, true)).toEqual([])
+    expect(applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state }, true)).toEqual([])
     expect(plan.adopts.map(({ path: adoptedPath }) => adoptedPath)).toEqual([path])
     expect(readFileSync(path, 'utf8')).toBe('local')
     expect(() => lstatSync(state)).toThrow()
@@ -173,7 +183,7 @@ describe('Claude home canon files', () => {
     chmodSync(rules, 0o500)
     let failure: unknown
     try {
-      applyUserCanonHomePlan(plan, { BOTTEGA_STATE_HOME: state })
+      applyUserCanonHomePlans([plan], { BOTTEGA_STATE_HOME: state })
     } catch (error) {
       failure = error
     } finally {
@@ -206,7 +216,7 @@ describe('Claude home canon files', () => {
       rows: [{ slug: 'AGENTS.md', body: 'replacement' }],
       files: [],
     })
-    expect(() => applyUserCanonHomePlan(plan)).toThrow(/CLAUDE\.md: symbolic link targets/)
+    expect(() => applyUserCanonHomePlans([plan])).toThrow(/CLAUDE\.md: symbolic link targets/)
     expect(readFileSync(outside, 'utf8')).toBe('outside secret')
   })
 
@@ -237,7 +247,7 @@ describe('Codex and Grok home canon files', () => {
         rows: [{ slug: 'AGENTS.md', body: 'operator canon' }],
         files: collectUserCanonHome(installed),
       })
-      applyUserCanonHomePlan(plan)
+      applyUserCanonHomePlans([plan])
       expect(readFileSync(join(home.path, 'AGENTS.md'), 'utf8')).toBe(
         `${USER_CANON_MANAGED_MARKER}operator canon`,
       )
@@ -297,5 +307,75 @@ describe('Codex and Grok home canon files', () => {
 
     expect(homes[1]).toMatchObject({ path: codex, installed: true })
     expect(homes[2]).toMatchObject({ path: grok, installed: true })
+  })
+
+  test('ignores run-state overrides with one status line and uses operator defaults', () => {
+    const root = mkdtempSync(join(tmpdir(), 'user-canon-run-overrides-'))
+    roots.push(root)
+    const runs = join(root, 'orchestrator-runs')
+    const homes = userCanonHomesFromEnvironment({
+      HOME: root,
+      ORCH_RUNS: runs,
+      CODEX_HOME: join(runs, '41', 'codex'),
+      GROK_HOME: join(runs, '41', 'grok'),
+    })
+
+    expect(homes[1]).toMatchObject({
+      path: join(root, '.codex'),
+      ignoredRunOverride: true,
+    })
+    expect(homes[2]).toMatchObject({ path: join(root, '.grok'), ignoredRunOverride: true })
+    expect(userCanonHomeOverridesStatus(homes)).toBe(
+      'ignored harness home overrides inside the orchestrator run-state directory: CODEX_HOME, GROK_HOME; using operator defaults',
+    )
+  })
+
+  test('a Grok failure rolls back every home mutation and removes created paths', () => {
+    const root = mkdtempSync(join(tmpdir(), 'user-canon-batch-'))
+    roots.push(root)
+    const homes = userCanonHomesFromEnvironment({ HOME: root }).map((home) => ({
+      ...home,
+      installed: true,
+    }))
+    for (const home of homes) mkdirSync(home.path)
+    const claudeEntry = join(homes[0]!.path, 'CLAUDE.md')
+    const claudeRules = join(homes[0]!.path, 'rules')
+    const staleRule = join(claudeRules, 'stale.md')
+    const codexEntry = join(homes[1]!.path, 'AGENTS.md')
+    const grokEntry = join(homes[2]!.path, 'AGENTS.md')
+    mkdirSync(claudeRules)
+    writeFileSync(claudeEntry, `${USER_CANON_MANAGED_MARKER}old entry`)
+    writeFileSync(staleRule, `${USER_CANON_MANAGED_MARKER}old rule`)
+    const plans = homes.map((home) =>
+      planUserCanonHome({
+        home,
+        rows: [{ slug: 'AGENTS.md', body: 'new entry' }],
+        files: collectUserCanonHome(home),
+      }),
+    )
+    const state = join(root, 'state')
+
+    chmodSync(homes[2]!.path, 0o500)
+    let failure: unknown
+    try {
+      applyUserCanonHomePlans(plans, { BOTTEGA_STATE_HOME: state })
+    } catch (error) {
+      failure = error
+    } finally {
+      chmodSync(homes[2]!.path, 0o700)
+    }
+
+    expect(String(failure)).toContain('user canon batch hydrate failed')
+    expect(String(failure)).toContain(claudeEntry)
+    expect(String(failure)).toContain(staleRule)
+    expect(readFileSync(claudeEntry, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}old entry`)
+    expect(readFileSync(staleRule, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}old rule`)
+    expect(existsSync(codexEntry)).toBe(false)
+    expect(existsSync(grokEntry)).toBe(false)
+    const backups = readdirSync(join(state, 'orchestrator', 'settings-backups')).filter((name) =>
+      name.endsWith('.bak'),
+    )
+    expect(backups).toHaveLength(2)
+    for (const backup of backups) expect(String(failure)).toContain(backup)
   })
 })

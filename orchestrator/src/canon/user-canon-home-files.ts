@@ -16,6 +16,7 @@ import {
   applyBackedUpSettingsWrites,
   backupSettingsWrites,
   planSettingsWrite,
+  restoreBackedUpSettingsWrite,
   writeNewSettingsFileAtomically,
 } from '../settings/settings-write.ts'
 import {
@@ -31,6 +32,7 @@ export type UserCanonHomeTarget = {
   mapping: UserCanonHomeMapping
   path: string
   installed: boolean
+  ignoredRunOverride: boolean
 }
 export type UserCanonHomePlan = {
   home: UserCanonHomeTarget
@@ -39,16 +41,32 @@ export type UserCanonHomePlan = {
   deletes: { slug: string; path: string }[]
 }
 
-export function userCanonHomesFromEnvironment(env: NodeJS.ProcessEnv): UserCanonHomeTarget[] {
+export function userCanonHomesFromEnvironment(
+  env: NodeJS.ProcessEnv,
+  orchestratorRuns: string,
+): UserCanonHomeTarget[] {
   const home = env.HOME
   if (!home) throw new Error('HOME is required to locate user canon homes')
+  const runs = resolve(orchestratorRuns)
   return USER_CANON_HOME_MAPPINGS.map((mapping) => {
     const override = mapping.environment ? env[mapping.environment] : undefined
-    const path = resolve(
-      override && override.length > 0 ? override : join(home, mapping.defaultDirectory),
-    )
-    return { mapping, path, installed: existsSync(path) }
+    const resolvedOverride = override && override.length > 0 ? resolve(override) : null
+    const ignoredRunOverride = resolvedOverride !== null && pathIsWithin(runs, resolvedOverride)
+    const path =
+      resolvedOverride && !ignoredRunOverride
+        ? resolvedOverride
+        : resolve(join(home, mapping.defaultDirectory))
+    return { mapping, path, installed: existsSync(path), ignoredRunOverride }
   })
+}
+
+export function userCanonHomeOverridesStatus(targets: UserCanonHomeTarget[]): string | null {
+  const ignored = targets.flatMap((target) =>
+    target.ignoredRunOverride && target.mapping.environment ? [target.mapping.environment] : [],
+  )
+  return ignored.length
+    ? `ignored harness home overrides inside the orchestrator run-state directory: ${ignored.join(', ')}; using operator defaults`
+    : null
 }
 
 export function userCanonHomeInstallationStatus(target: UserCanonHomeTarget): string | null {
@@ -136,38 +154,142 @@ export function planUserCanonHome(input: {
   return { home: input.home, writes, adopts, deletes }
 }
 
-export function applyUserCanonHomePlan(
-  plan: UserCanonHomePlan,
+export function applyUserCanonHomePlans(
+  plans: UserCanonHomePlan[],
   environment: StateEnvironment = process.env,
   dryRun = false,
 ): string[] {
   if (dryRun) return []
-  if (plan.writes.length === 0 && plan.adopts.length === 0 && plan.deletes.length === 0) return []
-  for (const row of [...plan.deletes, ...plan.writes, ...plan.adopts]) {
-    preflightMutation(plan.home, row.path)
-  }
-  const existingWrites = [...plan.writes.filter((row) => row.existing), ...plan.adopts].map((row) =>
-    planSettingsWrite(row.path, row.body),
+  const changedPlans = plans.filter(
+    (plan) => plan.writes.length > 0 || plan.adopts.length > 0 || plan.deletes.length > 0,
   )
-  const backedUpWrites = backupSettingsWrites(existingWrites, environment)
-  for (const row of plan.deletes) rmSync(row.path)
-  for (const row of plan.writes.filter((row) => !row.existing)) {
-    const parent = dirname(row.path)
-    if (!existsSync(parent)) {
-      const rules = plan.home.mapping.rules
-      if (!rules || parent !== join(plan.home.path, rules.homeDirectory)) {
-        throw new Error(
-          `refusing ${plan.home.mapping.harness} home path ${row.path}: parent directory does not exist`,
-        )
-      }
-      mkdirSync(parent)
-      assertRegularPath(parent, 'directory', plan.home)
-      assertResolvedUnderHome(plan.home, parent)
-    }
-    writeNewSettingsFileAtomically(row.path, row.body)
-    assertResolvedUnderHome(plan.home, row.path)
+  if (changedPlans.length === 0) return []
+  preflightUserCanonHomePlans(changedPlans)
+  const existingMutations = existingUserCanonMutations(changedPlans)
+  const backedUpMutations = backupSettingsWrites(
+    existingMutations.map((row) => planSettingsWrite(row.path, row.body)),
+    environment,
+  )
+  const writePaths = new Set(
+    changedPlans.flatMap((plan) =>
+      [...plan.writes.filter((row) => row.existing), ...plan.adopts].map((row) => row.path),
+    ),
+  )
+  const backedUpWrites = backedUpMutations.filter((write) => writePaths.has(write.plan.path))
+  const createdFiles: string[] = []
+  const createdDirectories: string[] = []
+  try {
+    applyUserCanonCreatesAndDeletes(changedPlans, createdFiles, createdDirectories)
+    applyBackedUpSettingsWrites(backedUpWrites, environment)
+  } catch (error) {
+    throw rollbackUserCanonHomeBatch(
+      error,
+      backedUpMutations,
+      createdFiles,
+      createdDirectories,
+      environment,
+    )
   }
-  return applyBackedUpSettingsWrites(backedUpWrites, environment)
+  return backedUpMutations.map((write) => write.backup)
+}
+
+function preflightUserCanonHomePlans(plans: UserCanonHomePlan[]): void {
+  for (const plan of plans) {
+    for (const row of [...plan.deletes, ...plan.writes, ...plan.adopts]) {
+      preflightMutation(plan.home, row.path)
+    }
+  }
+}
+
+function existingUserCanonMutations(plans: UserCanonHomePlan[]) {
+  return plans.flatMap((plan) => [
+    ...plan.deletes.map((row) => ({ ...row, body: '' })),
+    ...plan.writes.filter((row) => row.existing),
+    ...plan.adopts,
+  ])
+}
+
+function applyUserCanonCreatesAndDeletes(
+  plans: UserCanonHomePlan[],
+  createdFiles: string[],
+  createdDirectories: string[],
+): void {
+  for (const plan of plans) {
+    for (const row of plan.deletes) rmSync(row.path)
+    for (const row of plan.writes.filter((write) => !write.existing)) {
+      createUserCanonFile(plan.home, row, createdFiles, createdDirectories)
+    }
+  }
+}
+
+function createUserCanonFile(
+  home: UserCanonHomeTarget,
+  row: { path: string; body: string },
+  createdFiles: string[],
+  createdDirectories: string[],
+): void {
+  const parent = dirname(row.path)
+  if (!existsSync(parent)) {
+    const rules = home.mapping.rules
+    if (!rules || parent !== join(home.path, rules.homeDirectory)) {
+      throw new Error(
+        `refusing ${home.mapping.harness} home path ${row.path}: parent directory does not exist`,
+      )
+    }
+    mkdirSync(parent)
+    createdDirectories.push(parent)
+    assertRegularPath(parent, 'directory', home)
+    assertResolvedUnderHome(home, parent)
+  }
+  writeNewSettingsFileAtomically(row.path, row.body, 0o644, () => {
+    createdFiles.push(row.path)
+  })
+  assertResolvedUnderHome(home, row.path)
+}
+
+function rollbackUserCanonHomeBatch(
+  cause: unknown,
+  backups: ReturnType<typeof backupSettingsWrites>,
+  createdFiles: string[],
+  createdDirectories: string[],
+  environment: StateEnvironment,
+): Error {
+  const restorationErrors: string[] = []
+  removeCreatedPaths(createdFiles, restorationErrors)
+  restoreUserCanonBackups(backups, environment, restorationErrors)
+  removeCreatedPaths(createdDirectories, restorationErrors)
+  const backupLines = backups.map((write) => `${write.plan.path}: ${write.backup}`).join('\n')
+  const restoration = restorationErrors.length
+    ? `\nrestore failures:\n${restorationErrors.join('\n')}`
+    : ''
+  return new Error(
+    `user canon batch hydrate failed; backups retained:\n${backupLines}${restoration}`,
+    { cause },
+  )
+}
+
+function removeCreatedPaths(paths: string[], errors: string[]): void {
+  for (const path of [...paths].reverse()) {
+    try {
+      rmSync(path)
+    } catch (error) {
+      errors.push(`${path}: ${String(error)}`)
+    }
+  }
+}
+
+function restoreUserCanonBackups(
+  backups: ReturnType<typeof backupSettingsWrites>,
+  environment: StateEnvironment,
+  errors: string[],
+): void {
+  for (const write of [...backups].reverse()) {
+    try {
+      restoreBackedUpSettingsWrite(write, environment)
+    } catch (error) {
+      errors.push(`${write.plan.path}: ${String(error)}`)
+    }
+  }
 }
 
 function assertSingleLinkAdoptPath(target: UserCanonHomeTarget, path: string): void {
@@ -246,4 +368,14 @@ function mapHomePathToSlug(mapping: UserCanonHomeMapping, path: string): string 
   if (!path.startsWith(prefix)) return null
   const name = path.slice(prefix.length)
   return /^[^/]+\.md$/.test(name) ? `${mapping.rules.canonPrefix}${name}` : null
+}
+
+function pathIsWithin(parent: string, path: string): boolean {
+  const fromParent = relative(parent, path)
+  return (
+    fromParent === '' ||
+    (fromParent !== '..' &&
+      !fromParent.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) &&
+      !isAbsolute(fromParent))
+  )
 }
