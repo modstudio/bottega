@@ -70,7 +70,8 @@ test('canon import can drop a citer and its target after deciding the complete n
     })
     spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Current guidance.\n')
-    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
+    writeFileSync(join(root, 'AGENTS.override.md'), 'Generated output must not become a row.\n')
+    spawnFixtureGitSync(['add', 'AGENTS.md', 'AGENTS.override.md'], { cwd: root })
     upsertProject({ name: 'canon-import-removal', path: root, canon: true, settings: {} })
     const target = '.agents/reference/old-target.md'
     await setDoc({
@@ -113,6 +114,7 @@ test('canon import can drop a citer and its target after deciding the complete n
         rows: [expect.objectContaining({ slug: 'AGENTS.md' })],
       }),
     )
+    expect(getDoc('canon', 'canon-import-removal', 'AGENTS.override.md')).toBeNull()
     expect(output).toContain('delete .agents/reference/old-target.md')
     expect(output).toContain('delete .agents/reference/old-citer.md')
   } finally {

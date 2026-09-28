@@ -10,7 +10,7 @@ export const CANON_COMPACT_MATCHER = 'compact'
 export type EnforcedContext = { path: string; description: string; globs: string[] }
 export type CanonEditDecision = { allow: true } | { allow: false; reason: string }
 
-const CANON_PATH = /(?:^|\/)\.agents(?:\/|$)|(?:^|\/)(?:AGENTS|CLAUDE)\.md$/
+const CANON_PATH = /(?:^|\/)\.agents(?:\/|$)|(?:^|\/)(?:AGENTS(?:\.override)?|CLAUDE)\.md$/
 
 export function failOpenCanonEdit(reason: string): { allow: true; warning: string } {
   return { allow: true, warning: `canon-edit-guard: allowed unchecked — ${reason}` }

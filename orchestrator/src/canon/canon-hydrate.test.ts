@@ -5,6 +5,12 @@ import {
   mainCheckoutHydrationRefusal,
   planHydration,
 } from './canon-hydrate.ts'
+import { CODEX_PROJECT_DOC_MAX_BYTES } from './canon-load.ts'
+import {
+  CODEX_PROJECT_DOC_HEADER,
+  CODEX_PROJECT_DOC_PATH,
+  composeCodexProjectDoc,
+} from './codex-project-doc.ts'
 
 describe('hydration drift decisions', () => {
   const plan = {
@@ -39,6 +45,31 @@ describe('hydration drift decisions', () => {
 })
 
 describe('planHydration', () => {
+  test('Codex project doc has the generated header, entry, then path-ordered always-on rules', () => {
+    const doc = composeCodexProjectDoc([
+      { slug: '.agents/contexts/scoped.md', body: 'context' },
+      { slug: '.agents/rules/z-last.md', body: 'last\n' },
+      { slug: 'AGENTS.md', body: 'entry\n' },
+      { slug: '.agents/reference/on-demand.md', body: 'reference' },
+      { slug: '.agents/rules/a-first.md', body: 'first\n' },
+    ])
+
+    expect(doc?.body).toBe(`${CODEX_PROJECT_DOC_HEADER}\n\nentry\n\nfirst\n\nlast\n`)
+  })
+
+  test('an over-limit Codex project doc refuses before returning any writes', () => {
+    expect(() =>
+      planHydration({
+        rows: [{ slug: 'AGENTS.md', body: 'x'.repeat(CODEX_PROJECT_DOC_MAX_BYTES) }],
+        tree: [],
+      }),
+    ).toThrow(
+      new RegExp(
+        `${CODEX_PROJECT_DOC_PATH} measures \\d+ bytes; limit ${CODEX_PROJECT_DOC_MAX_BYTES} bytes; largest contributing rows: AGENTS.md`,
+      ),
+    )
+  })
+
   test('three levels compose in order and user paths do not collide with repository paths', () => {
     const global = [{ subject: null, owner: null, slug: 'AGENTS.md', body: 'global' }]
     const user = [{ subject: null, owner: 'user-1', slug: '.agents/rules/user.md', body: 'user' }]
@@ -88,10 +119,12 @@ describe('planHydration', () => {
   })
 
   test('an identical tree has an empty plan', () => {
+    const generated = composeCodexProjectDoc([{ slug: 'AGENTS.md', body: 'same' }])!
     expect(
       planHydration({
         rows: [{ slug: 'AGENTS.md', body: 'same' }],
         tree: [
+          { path: CODEX_PROJECT_DOC_PATH, text: generated.body },
           { path: 'AGENTS.md', text: 'same' },
           { path: 'CLAUDE.md', text: 'same', symlinkTarget: 'AGENTS.md' },
         ],
@@ -100,21 +133,45 @@ describe('planHydration', () => {
   })
 
   test('changed and missing rows become writes', () => {
-    expect(
-      planHydration({
-        rows: [
-          { slug: 'AGENTS.md', body: 'next' },
-          { slug: '.agents/rules/style.md', body: 'new' },
-        ],
-        tree: [
-          { path: 'AGENTS.md', text: 'old' },
-          { path: 'CLAUDE.md', text: 'old', symlinkTarget: 'AGENTS.md' },
-          { path: '.claude/rules', text: '', symlinkTarget: '../.agents/rules' },
-        ],
-      }).writes,
-    ).toEqual([
+    const plan = planHydration({
+      rows: [
+        { slug: 'AGENTS.md', body: 'next' },
+        { slug: '.agents/rules/style.md', body: 'new' },
+      ],
+      tree: [
+        { path: 'AGENTS.md', text: 'old' },
+        { path: 'CLAUDE.md', text: 'old', symlinkTarget: 'AGENTS.md' },
+        { path: '.claude/rules', text: '', symlinkTarget: '../.agents/rules' },
+      ],
+    })
+    expect(plan.writes).toEqual([
       { path: '.agents/rules/style.md', body: 'new' },
       { path: 'AGENTS.md', body: 'next' },
+      expect.objectContaining({ path: CODEX_PROJECT_DOC_PATH }),
+    ])
+  })
+
+  test('--check drift includes the generated file when an always-on rule changes', () => {
+    const currentRows = [
+      { slug: 'AGENTS.md', body: 'entry' },
+      { slug: '.agents/rules/style.md', body: 'old' },
+    ]
+    const nextRows = [currentRows[0]!, { slug: '.agents/rules/style.md', body: 'new' }]
+    const currentDoc = composeCodexProjectDoc(currentRows)!
+    const plan = planHydration({
+      rows: nextRows,
+      tree: [
+        { path: 'AGENTS.md', text: 'entry' },
+        { path: '.agents/rules/style.md', text: 'old' },
+        { path: CODEX_PROJECT_DOC_PATH, text: currentDoc.body },
+      ],
+    })
+
+    expect(hydrationDrift(plan)).toEqual([
+      { path: '.agents/rules/style.md', operation: 'write' },
+      { path: '.claude/rules', operation: 'link' },
+      { path: CODEX_PROJECT_DOC_PATH, operation: 'write' },
+      { path: 'CLAUDE.md', operation: 'link' },
     ])
   })
 

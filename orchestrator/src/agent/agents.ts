@@ -279,6 +279,8 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
     '--strict-config',
     '--skip-git-repo-check',
     '--json',
+    '-c',
+    'project_doc_max_bytes=0',
     '-o',
     o.out,
     '-m',

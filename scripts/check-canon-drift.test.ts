@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
@@ -13,6 +14,7 @@ const originalOrchDatabase = process.env.ORCH_DB
 let databaseScratch = ''
 let openReadOnlyDatabase: typeof import('../orchestrator/src/database/db.ts').openReadOnlyDatabase
 let branchChangedPaths: typeof import('./check-canon-drift.ts').branchChangedPaths
+let branchHydrationPaths: typeof import('./check-canon-drift.ts').branchHydrationPaths
 let canonBranchFindings: typeof import('./check-canon-drift.ts').canonBranchFindings
 let readCanonGateInput: typeof import('./check-canon-drift.ts').readCanonGateInput
 
@@ -20,9 +22,8 @@ beforeAll(async () => {
   databaseScratch = mkdtempSync(join(tmpdir(), 'canon-drift-database-'))
   process.env.ORCH_DB = join(databaseScratch, 'orch.db')
   ;({ openReadOnlyDatabase } = await import('../orchestrator/src/database/db.ts'))
-  ;({ branchChangedPaths, canonBranchFindings, readCanonGateInput } = await import(
-    './check-canon-drift.ts'
-  ))
+  ;({ branchChangedPaths, branchHydrationPaths, canonBranchFindings, readCanonGateInput } =
+    await import('./check-canon-drift.ts'))
 })
 
 afterAll(() => {
@@ -53,6 +54,24 @@ afterEach(() => {
 })
 
 describe('canon drift branch gate', () => {
+  test('checks the Codex project doc when one of its hydrated sources changes', () => {
+    const plan = planHydration({
+      rows: [
+        { slug: 'AGENTS.md', body: 'Entry.\n' },
+        { slug: '.agents/rules/example.md', body: 'Rule.\n' },
+      ],
+      tree: [
+        { path: 'AGENTS.md', text: 'Entry.\n' },
+        { path: '.agents/rules/example.md', text: 'Rule.\n' },
+        { path: 'AGENTS.override.md', text: 'stale\n' },
+      ],
+    })
+
+    expect(hydrationDrift(plan, branchHydrationPaths(['.agents/rules/example.md']))).toEqual([
+      { path: 'AGENTS.override.md', operation: 'write' },
+    ])
+  })
+
   test('compares committed HEAD even when the working copy matches stored canon', () => {
     const root = repository()
     writeFileSync(join(root, 'AGENTS.md'), 'stored\n')
@@ -67,7 +86,10 @@ describe('canon drift branch gate', () => {
         base,
         rows: [{ slug: 'AGENTS.md', body: 'stored\n' }],
       }),
-    ).toEqual([{ path: 'AGENTS.md', operation: 'write' }])
+    ).toEqual([
+      { path: 'AGENTS.md', operation: 'write' },
+      { path: 'AGENTS.override.md', operation: 'write' },
+    ])
   })
 
   test('treats moves out of both canon namespaces as removals', () => {
@@ -96,6 +118,7 @@ describe('canon drift branch gate', () => {
       }),
     ).toEqual([
       { path: '.agents/rules/example.md', operation: 'write' },
+      { path: 'AGENTS.override.md', operation: 'write' },
       { path: 'CLAUDE.md', operation: 'link' },
     ])
   })

@@ -118,6 +118,7 @@ describe('canon pre-edit decision', () => {
     for (const filePath of [
       '.agents/contexts/guarded.md',
       'nested/AGENTS.md',
+      'AGENTS.override.md',
       'CLAUDE.md',
       '/outside/src/guarded/a.ts',
     ]) {

@@ -1,10 +1,14 @@
 // concern: readonly sandbox policy and its sandbox-runtime adapter; must not know run control, worktrees, or CLI grammar.
 import {
   chmodSync,
-  copyFileSync,
+  closeSync,
   existsSync,
+  fchmodSync,
+  constants as fsConstants,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -628,6 +632,65 @@ export function prepareWorkerHomeMirror(runDir: string, operatorHome: string): s
   return targetHome
 }
 
+function codexConfigRefusal(path: string): Error {
+  return new Error(
+    `Codex worker home refusal: ${path} is not a regular non-symlink file owned by this user; remove the run's Codex home and retry`,
+  )
+}
+
+function secureCodexConfig(configSource: string, configTarget: string): void {
+  const expected = lstatSync(configTarget, { throwIfNoEntry: false })
+  if (!expected) {
+    const config = readFileSync(configSource)
+    let descriptor: number
+    try {
+      descriptor = openSync(
+        configTarget,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+        0o600,
+      )
+    } catch {
+      throw codexConfigRefusal(configTarget)
+    }
+    try {
+      writeFileSync(descriptor, config)
+      fchmodSync(descriptor, 0o600)
+    } finally {
+      closeSync(descriptor)
+    }
+    return
+  }
+
+  const userId = process.getuid?.()
+  if (
+    expected.isSymbolicLink() ||
+    !expected.isFile() ||
+    userId === undefined ||
+    expected.uid !== userId
+  )
+    throw codexConfigRefusal(configTarget)
+
+  let descriptor: number
+  try {
+    descriptor = openSync(configTarget, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+  } catch {
+    throw codexConfigRefusal(configTarget)
+  }
+  try {
+    const opened = fstatSync(descriptor)
+    if (
+      !opened.isFile() ||
+      opened.uid !== userId ||
+      opened.dev !== expected.dev ||
+      opened.ino !== expected.ino
+    )
+      throw codexConfigRefusal(configTarget)
+    fchmodSync(descriptor, 0o600)
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
 /** Prepare one persistent Codex home for every turn in a conversation chain. */
 export function prepareCodexHome(
   runDir: string,
@@ -663,10 +726,7 @@ export function prepareCodexHome(
   // Codex rotates refresh tokens, so the chain must share the operator credential file.
   if (!existsSync(authTarget)) symlinkSync(authSource, authTarget)
   const configTarget = join(targetHome, 'config.toml')
-  if (!existsSync(configTarget)) {
-    copyFileSync(configSource, configTarget)
-  }
-  chmodSync(configTarget, 0o600)
+  secureCodexConfig(configSource, configTarget)
   return { CODEX_HOME: targetHome }
 }
 

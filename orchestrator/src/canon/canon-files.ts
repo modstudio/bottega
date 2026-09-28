@@ -9,6 +9,7 @@ import {
   type CanonSourceText,
   isCanonCodeSourcePath,
 } from './canon-lint.ts'
+import { CODEX_PROJECT_DOC_PATH } from './codex-project-doc.ts'
 
 function git(cwd: string, args: string[]): string {
   const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -32,7 +33,12 @@ export function isCanonPath(path: string): boolean {
 }
 
 export function isHydrationPath(path: string): boolean {
-  return isCanonPath(path) || path === '.claude/rules' || path === '.agents/rules/contexts'
+  return (
+    isCanonPath(path) ||
+    path === CODEX_PROJECT_DOC_PATH ||
+    path === '.claude/rules' ||
+    path === '.agents/rules/contexts'
+  )
 }
 
 export function canonGitRoot(cwd: string): string {
@@ -121,6 +127,7 @@ export function collectCanonLintInput(root: string): CanonLintInput {
   const entries = trackedEntries(root)
   return {
     files: readCanonFiles(root, entries),
+    codexProjectDoc: true,
     trackedPaths: entries.map(({ path }) => path),
     packageScripts: readPackageScripts(root, entries),
     sourceTexts: readSourceTexts(root, entries),
