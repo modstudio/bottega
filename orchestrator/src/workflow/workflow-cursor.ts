@@ -955,7 +955,7 @@ export function ruleWorkflow(
     d.query(
       `UPDATE workflow_cursor SET state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(context.session ?? null, at, row.id)
+    ).run(adoptionReason ? null : (context.session ?? null), at, row.id)
     return `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`
   }, d)
 }

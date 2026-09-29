@@ -6,6 +6,8 @@ import { db } from '../database/db.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
+  type RunMutationOwnerFacts,
+  reauthorizeAdoptedMutation,
   runMutationOwnerDecision,
 } from './run-mutation-owner.ts'
 
@@ -22,27 +24,35 @@ export function authorizeWorkflowQuestionMutation(input: {
   database?: Database
 }): string | null {
   const database = input.database ?? db()
-  const seen =
-    input.owner === null
-      ? null
-      : (database
-          .query('SELECT last_seen FROM session_seen WHERE session_id=?')
-          .get(input.owner) as { last_seen: string } | null)
-  const decision = runMutationOwnerDecision({
-    owner: input.owner,
-    actor: input.actor,
-    ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
-    chainLastActivityAt: input.chainLastActivityAt,
-    now: input.now ?? Date.now(),
-    windowMs: RUN_MUTATION_WINDOW_MS,
-  })
+  const readFacts = (): RunMutationOwnerFacts => {
+    const seen =
+      input.owner === null
+        ? null
+        : (database
+            .query('SELECT last_seen FROM session_seen WHERE session_id=?')
+            .get(input.owner) as { last_seen: string } | null)
+    return {
+      owner: input.owner,
+      actor: input.actor,
+      ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
+      chainLastActivityAt: input.chainLastActivityAt,
+      now: input.now ?? Date.now(),
+      windowMs: RUN_MUTATION_WINDOW_MS,
+    }
+  }
+  const initial = readFacts()
+  const refusal = () => {
+    const actor = input.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'
+    throw new Error(
+      `${input.subject} is owned by session ${input.owner}; ` +
+        `current session ${actor} cannot ${input.action} it (owner active within the window)`,
+    )
+  }
+  const current = reauthorizeAdoptedMutation(initial, readFacts, refusal)
+  const decision = runMutationOwnerDecision(current)
   if (input.fromOperator || decision === 'owner') return null
   if (decision === 'adopt') return `adopted from gone owner ${input.owner} by ${input.actor}`
-  throw new Error(
-    `${input.subject} is owned by session ${input.owner}; ` +
-      `current session ${input.actor ?? 'no session identity is present'} cannot ${input.action} it ` +
-      '(owner active within the window)',
-  )
+  return refusal()
 }
 
 export function auditQuestionMutation(

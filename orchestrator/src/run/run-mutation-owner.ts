@@ -19,6 +19,7 @@ export function runMutationOwnerDecision(
 ): 'owner' | 'adopt' | 'refuse' {
   if (input.owner === null || input.actor === input.owner) return 'owner'
   if (
+    input.actor !== null &&
     ownerIsGone({
       ownerSessionId: input.owner,
       ownerLastSeenAt: input.ownerLastSeenAt,
@@ -29,6 +30,18 @@ export function runMutationOwnerDecision(
   )
     return 'adopt'
   return 'refuse'
+}
+
+/** Re-read and re-check an adopted mutation immediately before its write. */
+export function reauthorizeAdoptedMutation<T extends RunMutationOwnerFacts>(
+  initial: T,
+  readCurrent: () => T,
+  refuse: (current: T) => never,
+): T {
+  if (runMutationOwnerDecision(initial) !== 'adopt') return initial
+  const current = readCurrent()
+  if (runMutationOwnerDecision(current) === 'refuse') return refuse(current)
+  return current
 }
 
 export function joinMutationReason(reason: string | null, adoption: string | null): string | null {

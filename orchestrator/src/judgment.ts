@@ -34,6 +34,7 @@ import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
+  reauthorizeRunMutation,
   runMutationActor,
 } from './run/run-authority.ts'
 import { enqueueRunRecord } from './run/run-outbox.ts'
@@ -300,6 +301,7 @@ function recordEvidenceExclusion(
   const recordedBy = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
   writeTransaction(() => {
     persistHostedRunId(id, recordId)
+    authority = reauthorizeRunMutation(authority, 'void')
     authority = adoptRunMutation(authority, 'void')
     db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excludedReason, id)
     if (!blocked && !cannotRecord && delivery) {

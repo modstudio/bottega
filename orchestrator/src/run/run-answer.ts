@@ -42,6 +42,7 @@ import {
   auditRunMutation,
   authorizeRunMutation,
   type RootAuthority,
+  reauthorizeRunMutation,
   runMutationActor,
 } from './run-authority.ts'
 import {
@@ -120,7 +121,7 @@ function requireAnswerAuthority(
     'operator-attribution': '--channel ui requires --from-operator',
     'dashboard-capability': '--channel ui requires the hub dashboard capability',
     'session-marker': `--channel ui is refused when ${decision.actor} is set`,
-    'owner-mismatch': `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor ?? 'no session identity is present'} cannot answer it (owner active within the window)`,
+    'owner-mismatch': `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'} cannot answer it (owner active within the window)`,
   }[decision.code]
   throw new Error(refusal)
 }
@@ -328,7 +329,10 @@ export async function retryRun(
       (row.failure_kind ? `, ${row.failure_kind}` : '') +
       `) on ${agent}`,
   )
-  retryAuthority = writeTransaction(() => adoptRunMutation(retryAuthority, 'retry'))
+  retryAuthority = writeTransaction(() => {
+    retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
+    return adoptRunMutation(retryAuthority, 'retry')
+  })
   // Detached and followed, exactly like `do`. A retry is usually started
   // BECAUSE the first attempt died; running it as a child of this process
   // would leave it dying the same way.
@@ -722,8 +726,10 @@ export async function answerRun(
     callerSession,
   )
   writeTransaction(() => {
-    if (authorityDecision.kind === 'allow-as-owner')
+    if (authorityDecision.kind === 'allow-as-owner') {
+      answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
+    }
     open.forEach((q, i) => {
       upd.run(
         answers[i]!.answer,

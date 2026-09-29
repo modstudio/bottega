@@ -28,6 +28,15 @@ describe('answer authority decision', () => {
     })
   })
 
+  test('refuses a session-less CLI caller when the owner is gone', () => {
+    expect(decide({ actor: null, ownerLastSeenAt: 700, chainLastActivityAt: 700 })).toEqual({
+      kind: 'refuse',
+      code: 'owner-mismatch',
+      owner: 'owner-session',
+      actor: undefined,
+    })
+  })
+
   test('requires operator attribution for UI answers', () => {
     expect(
       decide({

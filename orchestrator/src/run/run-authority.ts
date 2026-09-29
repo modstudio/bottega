@@ -7,6 +7,7 @@ import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
+  reauthorizeAdoptedMutation,
   runMutationOwnerDecision,
 } from './run-mutation-owner.ts'
 
@@ -85,20 +86,35 @@ export function runMutationActor(runId: number): RootAuthority {
   return runMutationAuthority(db(), runId)
 }
 
+function refuseRunMutation(authority: RootAuthority, action: RunMutationAction | 'receipt'): never {
+  const actor =
+    authority.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'
+  throw new Error(
+    `run ${authority.runId} is owned by session ${authority.owner}; ` +
+      `current session ${actor} cannot ${action} it (owner active within the window)`,
+  )
+}
+
 export function authorizeRunMutation(
   runId: number,
   action: RunMutationAction | 'receipt',
 ): RootAuthority {
   writableDb()
   const authority = runMutationActor(runId)
-  if (runMutationOwnerDecision(authority) === 'refuse') {
-    throw new Error(
-      `run ${runId} is owned by session ${authority.owner}; ` +
-        `current session ${authority.actor ?? 'no session identity is present'} cannot ${action} it ` +
-        '(owner active within the window)',
-    )
-  }
+  if (runMutationOwnerDecision(authority) === 'refuse') refuseRunMutation(authority, action)
   return authority
+}
+
+export function reauthorizeRunMutation(
+  authority: RootAuthority,
+  action: RunMutationAction | 'receipt',
+  database: Database = db(),
+): RootAuthority {
+  return reauthorizeAdoptedMutation(
+    authority,
+    () => runMutationAuthority(database, authority.runId),
+    (current) => refuseRunMutation(current, action),
+  )
 }
 
 export function auditRunMutation(
