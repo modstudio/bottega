@@ -603,8 +603,7 @@ describe('managed context', () => {
 
     const result = await caller.context.autonomy.get({ project: 'alpha' })
 
-    expect(result.userPreset).toBeNull()
-    expect(result.configKnown).toBe(false)
+    expect(result.userPreset).toBeUndefined()
     expect(result.warnings).toContain(
       'warning: hosted autonomy preset and overrides are unavailable until you sign in',
     )
@@ -680,7 +679,6 @@ describe('managed context', () => {
     expect(configDelete).toHaveBeenCalledWith('autonomy.stage.review', 2)
     expect(configSet).toHaveBeenCalledWith('autonomy.preset', 'manual', undefined)
     expect(result.userPreset).toBe('manual')
-    expect(result.configKnown).toBe(true)
     expect(result.registered && result.stages[0]?.overridden).toBe(false)
   })
 

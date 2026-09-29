@@ -67,16 +67,16 @@ async function localAutonomy(project: string) {
   const preset = user.find((entry) => entry.key === 'autonomy.preset')?.value
   const userPreset = AUTONOMY_PRESETS.includes(preset as AutonomyPreset)
     ? (preset as AutonomyPreset)
-    : null
+    : configWarning
+      ? undefined
+      : null
   if (!resolved.registered) {
     return {
       ...resolved,
       userPreset,
-      configKnown: configWarning === null,
       ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
     } as typeof resolved & {
       userPreset?: AutonomyPreset | null
-      configKnown: boolean
     }
   }
   const stages: Array<(typeof resolved.stages)[number] & { overridden?: boolean | null }> =
@@ -89,12 +89,10 @@ async function localAutonomy(project: string) {
   return {
     ...resolved,
     userPreset,
-    configKnown: configWarning === null,
     stages,
     ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
   } as Omit<typeof resolved, 'stages'> & {
     userPreset?: AutonomyPreset | null
-    configKnown: boolean
     stages: typeof stages
   }
 }
