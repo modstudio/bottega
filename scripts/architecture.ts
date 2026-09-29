@@ -526,6 +526,7 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../review/review-calibration.ts',
     '../route/route.ts',
+    './question-close.ts',
     './run-process.ts',
     './run-types.ts',
     '../transport/transport.ts',

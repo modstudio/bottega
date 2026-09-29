@@ -294,6 +294,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0066_landing_override_change_group',
       '0067_outbox_quarantine',
       '0068_outbox_redaction_audit',
+      '0069_question_close_audit',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -398,6 +399,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0066_landing_override_change_group',
       '0067_outbox_quarantine',
       '0068_outbox_redaction_audit',
+      '0069_question_close_audit',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -484,6 +486,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0066_landing_override_change_group',
       '0067_outbox_quarantine',
       '0068_outbox_redaction_audit',
+      '0069_question_close_audit',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -551,6 +554,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0066_landing_override_change_group',
       '0067_outbox_quarantine',
       '0068_outbox_redaction_audit',
+      '0069_question_close_audit',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',

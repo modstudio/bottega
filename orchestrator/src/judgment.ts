@@ -316,7 +316,7 @@ function recordEvidenceExclusion(
     }
     enqueueTerminalRunRecord(id)
     auditRunMutation(authority, 'void', options.auditReason)
-    closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
+    if (!blocked) closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
   })
   if (blocked) {
     presentation.log(

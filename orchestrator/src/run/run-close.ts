@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
-import { db } from '../database/db.ts'
+import { db, writeTransaction } from '../database/db.ts'
 import {
   type classify,
   FAILS_OVER,
@@ -31,6 +31,7 @@ import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
 import { terminateRunProcesses } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
 
@@ -292,6 +293,13 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         )
       }
     }
+
+    // A successor claim closes the retired attempt with the failover reason.
+    // Reaching here means no successor was created, so the failed chain itself
+    // is terminal and needs the ordinary terminal close instead.
+    writeTransaction(() => {
+      closeRunChainQuestions(db(), claim.id, QUESTION_CLOSE_CHAIN_TERMINAL)
+    })
   }
 
   if (

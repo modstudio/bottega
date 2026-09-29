@@ -704,18 +704,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         }
         resolveRootFromLastTurn(db(), identity.parent_run_id)
       }
-      if (
-        status !== 'asking' &&
-        status !== 'running' &&
-        !(failureKind && FAILS_OVER.includes(failureKind))
-      ) {
-        closeRunChainQuestions(
-          db(),
-          identity.parent_run_id ?? claim.id,
-          QUESTION_CLOSE_CHAIN_TERMINAL,
-        )
-      }
-
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
       // between "ran" and "recorded". Probe traffic is calibration and is not
@@ -728,6 +716,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         failureKind,
       })
       enqueueRunRecord(db(), claim.id, localMachineId, finishedAt)
+      if (
+        status !== 'asking' &&
+        status !== 'running' &&
+        !(failureKind && FAILS_OVER.includes(failureKind))
+      ) {
+        closeRunChainQuestions(
+          db(),
+          identity.parent_run_id ?? claim.id,
+          QUESTION_CLOSE_CHAIN_TERMINAL,
+        )
+      }
     })
   try {
     writeTerminalRow()
