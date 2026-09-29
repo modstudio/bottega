@@ -222,6 +222,8 @@ const OrchQuestionSchema = z
     answerer_kind: z.enum(ANSWERER_KIND_VALUES).nullable(),
     answer_channel: z.enum(ANSWER_CHANNEL_VALUES).nullable(),
     overturned_at: z.iso.datetime().nullable(),
+    closed_at: z.iso.datetime().nullable().default(null),
+    close_reason: nullableString.default(null),
     deliveries: z.array(
       z
         .object({
