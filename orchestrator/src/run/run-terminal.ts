@@ -25,7 +25,7 @@ import {
 } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import type { classify } from '../failure/failure.ts'
+import { type classify, FAILS_OVER } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -39,6 +39,7 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -64,6 +65,40 @@ type TerminalOptions = {
     parent: number
     turn: number
   }
+}
+
+function closeTerminalQuestions(
+  database: Database,
+  rootId: number,
+  status: string,
+  failureKind: ReturnType<typeof classify> | null,
+): void {
+  if (status === 'asking' || status === 'running') return
+  if (failureKind && FAILS_OVER.includes(failureKind)) return
+  closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
+}
+
+export function finalizeTerminalChain(
+  database: Database,
+  input: {
+    runId: number
+    parentRunId: number | null
+    status: string
+    failureKind: ReturnType<typeof classify> | null
+    error: string | null
+  },
+): void {
+  const rootId = input.parentRunId ?? input.runId
+  if (input.parentRunId !== null && input.status === 'asking') {
+    database
+      .query(
+        `UPDATE run SET status='asking', error=?, failure_kind=NULL
+        WHERE id=? AND parent_run_id IS NULL AND status NOT IN ('stopped', 'stale')`,
+      )
+      .run(input.error, input.parentRunId)
+  }
+  closeTerminalQuestions(database, rootId, input.status, input.failureKind)
+  if (input.parentRunId !== null) resolveRootFromLastTurn(database, input.parentRunId)
 }
 
 type TerminalMcpRuling = {
@@ -687,23 +722,18 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
        * what each turn cost.
        */
       const identity = claimIdentity(opts.resume)
-      if (identity.parent_run_id !== null) {
-        // A resumed turn that stopped to ask reopens the conversation: the root
-        // goes back to asking with no failure kind, because the chain has not
-        // ended. The resolver below only writes terminal outcomes, so an asking
-        // turn must be rolled here or an ok/failed root would keep looking
-        // finished while a question waits (lens run 2277).
-        if (status === 'asking') {
-          db()
-            .query(
-              `UPDATE run SET status='asking', error=?, failure_kind=NULL
-              WHERE id=? AND parent_run_id IS NULL AND status NOT IN ('stopped', 'stale')`,
-            )
-            .run(error, identity.parent_run_id)
-        }
-        resolveRootFromLastTurn(db(), identity.parent_run_id)
-      }
-
+      // A resumed turn that stopped to ask reopens the conversation: the root
+      // goes back to asking with no failure kind, because the chain has not
+      // ended. Terminal questions close before resolution so a non-failover
+      // failure can roll up instead of leaving an asking root with nothing to
+      // answer.
+      finalizeTerminalChain(db(), {
+        runId: claim.id,
+        parentRunId: identity.parent_run_id,
+        status,
+        failureKind,
+        error,
+      })
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
       // between "ran" and "recorded". Probe traffic is calibration and is not

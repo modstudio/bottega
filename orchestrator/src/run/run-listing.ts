@@ -7,6 +7,7 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type ProcessSample, sampleProcesses } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
+import { questionOpenSql } from './question-open.ts'
 import type {
   AnswerChannel,
   AnswererKind,
@@ -141,7 +142,7 @@ export async function runListingCommand(
       ) OR EXISTS (
         SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
          WHERE (owner.id = r.id OR owner.parent_run_id = r.id)
-           AND (q.answered_at IS NULL OR q.asked_at >= ? OR q.answered_at >= ?)
+           AND (${questionOpenSql('q')} OR q.asked_at >= ? OR q.answered_at >= ?)
       )
     )`)
     args.push(sinceFlag, sinceFlag, sinceFlag)

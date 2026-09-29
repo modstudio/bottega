@@ -84,6 +84,16 @@ test('inbox names the canonical root in its answer footer', async () => {
   expect(await inbox()).toContain(`orch answer ${root}`)
 })
 
+test('inbox does not list a closed question', async () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
+  const inserted = question(run, 'obsolete question')
+  db()
+    .query("UPDATE question SET closed_at='2026-09-29',close_reason='chain-stopped' WHERE id=?")
+    .run(inserted.id)
+  expect(await inbox({ all: true })).not.toContain('obsolete question')
+  expect(JSON.parse(await inbox({ all: true, json: true }))).toEqual([])
+})
+
 test('inbox shows an overturned ruling and its reason', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()

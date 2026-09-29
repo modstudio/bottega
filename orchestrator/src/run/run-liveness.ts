@@ -7,6 +7,8 @@ import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_STALE } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
@@ -130,7 +132,7 @@ function resolveRootFromLastTurnPreserving(
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
-             AND q.answered_at IS NULL
+             AND ${questionOpenSql('q')}
         )
         AND (
           SELECT last.status FROM run last
@@ -266,6 +268,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
           `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
           d,
         )
+        closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
       }, d)
     }
   }
@@ -280,6 +283,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
+        closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
       }, d)
     }
   }
@@ -308,6 +312,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', reason, d)
+        closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
       }, d)
     }
   }

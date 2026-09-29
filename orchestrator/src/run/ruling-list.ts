@@ -3,6 +3,7 @@
 
 import { type RulingListRow, RulingListSchema } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
+import { questionOpenSql } from './question-open.ts'
 
 export function listRulings(options: {
   since?: string
@@ -15,7 +16,7 @@ export function listRulings(options: {
   if (options.since) {
     if (!Number.isFinite(Date.parse(options.since))) throw new Error('--since must be an ISO date')
     clauses.push(
-      '(q.answered_at IS NULL AND q.closed_at IS NULL OR q.asked_at>=? OR q.answered_at>=? OR q.closed_at>=? OR q.overturned_at>=? OR q.filed_at>=?)',
+      `(${questionOpenSql('q')} OR q.asked_at>=? OR q.answered_at>=? OR q.closed_at>=? OR q.overturned_at>=? OR q.filed_at>=?)`,
     )
     values.push(options.since, options.since, options.since, options.since, options.since)
   }

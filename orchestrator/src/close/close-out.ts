@@ -52,6 +52,7 @@ import {
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
+import { closeTerminalChainQuestions } from './close-out-questions.ts'
 import { retainedBranchForCloseOut } from './retained-branch.ts'
 
 export type CloseOutResult = {
@@ -970,6 +971,7 @@ export function closeOutRun(
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
   if (!root) throw new Error(`no run ${runId}`)
+  closeTerminalChainQuestions(root.root_id, Boolean(options.dryRun))
   const keepTreeDecision = closeOutKeepTreeDecision(root.root_id, options.intent)
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.

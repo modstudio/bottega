@@ -52,6 +52,20 @@ const rulingFileStores: RulingFileStores = {
 }
 
 export function register(program: Command): void {
+  const question = program.command('question')
+  question
+    .command('close <id>')
+    .requiredOption('--reason <text>')
+    .allowExcessArguments(false)
+    .action(async (id, options) => {
+      const questionId = Number(id)
+      if (!Number.isSafeInteger(questionId) || questionId <= 0) {
+        throw new Error('question id must be a positive integer')
+      }
+      const { closeQuestionByOperator } = await import('../run/question-close.ts')
+      closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
+      log(`closed question ${questionId}`)
+    })
   const ruling = program.command('ruling')
   ruling
     .command('list')

@@ -21,6 +21,7 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
@@ -525,7 +526,7 @@ function terminaliseJudgedProbe(runId: number): void {
   const answeredAt = nowIso()
   const questions = db()
     .query<{ id: number }, [number]>(
-      'SELECT id FROM question WHERE run_id=? AND answered_at IS NULL',
+      `SELECT id FROM question WHERE run_id=? AND ${questionOpenSql('question')}`,
     )
     .all(runId)
   const answered = db()
@@ -533,7 +534,7 @@ function terminaliseJudgedProbe(runId: number): void {
       `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
             answerer_kind=?, answer_channel=?, awaiting_operator_at=NULL, revision=revision+1
-      WHERE run_id=? AND answered_at IS NULL`,
+      WHERE run_id=? AND ${questionOpenSql('question')}`,
     )
     .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)
   const terminalised = db()

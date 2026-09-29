@@ -6,6 +6,7 @@ import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 
@@ -76,7 +77,7 @@ function resolveAsking(database: Database, runId: number): AskingResolution {
   const open = database
     .query(
       `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
+      WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}`,
     )
     .get(rootId, rootId) as { n: number }
   if (open.n) return { state: 'open', rootId }

@@ -24,6 +24,7 @@ import {
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -45,7 +46,7 @@ const ASKING_RUN_WHERE = `parent_run_id IS NULL
    AND NOT EXISTS (
      SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
       WHERE (owner.id = run.id OR owner.parent_run_id = run.id)
-        AND q.answered_at IS NULL
+        AND ${questionOpenSql('q')}
    )`
 
 type AddressedRun = { id: number; started_at: string; session_id: string | null }

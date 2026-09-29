@@ -354,6 +354,7 @@ export const CLI_COMMANDS = new Set([
   'pr',
   'probe',
   'project',
+  'question',
   'record',
   'recalibrate',
   'reclaim',

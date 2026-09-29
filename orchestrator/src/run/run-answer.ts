@@ -20,6 +20,7 @@ import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
+import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
@@ -125,7 +126,7 @@ function readOpenQuestions(id: number, status: string): OpenQuestion[] {
       `SELECT q.id, q.question, q.awaiting_operator_at,
               r.id owner_id, r.status owner_status, r.pid owner_pid
      FROM question q JOIN run r ON r.id = q.run_id
-    WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
+    WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}
     ORDER BY q.id`,
     )
     .all(id, id) as OpenQuestion[]
@@ -203,7 +204,7 @@ function latestRetryTurn(
   const questions = db()
     .query(
       `SELECT q.id,q.question FROM question q JOIN run r ON r.id=q.run_id
-       WHERE (r.id=? OR r.parent_run_id=?) AND q.answered_at IS NULL ORDER BY q.id`,
+       WHERE (r.id=? OR r.parent_run_id=?) AND ${questionOpenSql('q')} ORDER BY q.id`,
     )
     .all(rootId, rootId) as { id: number; question: string }[]
   throw new Error(

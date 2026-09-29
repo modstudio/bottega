@@ -13,6 +13,7 @@ import type {
   OperatorWaitingItem,
 } from '../../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
@@ -89,10 +90,14 @@ function openQuestions(runId: number, d: Database) {
   const authority = authorizeRunMutation(runId, 'relay')
   const rows = d
     .query(
-      `SELECT q.id, q.answered_at FROM question q JOIN run owner ON owner.id=q.run_id
+      `SELECT q.id, q.answered_at, q.closed_at FROM question q JOIN run owner ON owner.id=q.run_id
        WHERE (owner.id=? OR owner.parent_run_id=?) ORDER BY q.id`,
     )
-    .all(authority.rootId, authority.rootId) as { id: number; answered_at: string | null }[]
+    .all(authority.rootId, authority.rootId) as {
+    id: number
+    answered_at: string | null
+    closed_at: string | null
+  }[]
   return { authority, rows }
 }
 
@@ -108,9 +113,10 @@ export function relayQuestion(
     const named = rows.find((row) => row.id === questionId)
     if (!named) throw new Error(`question ${questionId} does not belong to run ${authority.rootId}`)
     if (named.answered_at) throw new Error(`question ${questionId} is already answered`)
+    if (named.closed_at) throw new Error(`question ${questionId} is already closed`)
     rows = [named]
   } else {
-    rows = rows.filter((row) => !row.answered_at)
+    rows = rows.filter((row) => !row.answered_at && !row.closed_at)
     if (!rows.length) throw new Error(`run ${authority.rootId} has no open question`)
     if (rows.length > 1)
       throw new Error(
@@ -125,7 +131,7 @@ export function relayQuestion(
       .query(
         `UPDATE question SET awaiting_operator_at=COALESCE(awaiting_operator_at,?), relayed_by=?,
           revision=revision+1
-         WHERE id=? AND answered_at IS NULL`,
+         WHERE id=? AND ${questionOpenSql('question')}`,
       )
       .run(at, authority.actor, id)
     if (changed.changes !== 1) throw new Error(`question ${id} is already answered`)
@@ -147,7 +153,7 @@ function operatorWaitingWithEpisodes(
       `SELECT q.id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
               r.repo project,r.launch_key task_key,COALESCE(r.parent_run_id,r.id) root_id
        FROM question q JOIN run r ON r.id=q.run_id
-       WHERE q.awaiting_operator_at IS NOT NULL AND q.answered_at IS NULL`,
+       WHERE q.awaiting_operator_at IS NOT NULL AND ${questionOpenSql('q')}`,
     )
     .all() as Array<{
     id: number
@@ -165,7 +171,7 @@ function operatorWaitingWithEpisodes(
       `SELECT c.id,c.project,q.workflow_key task_key,q.question,q.asked_at waiting_since,
               c.workflow_slug,c.mode_slug,c.args,c.session_id
          FROM workflow_cursor c JOIN question q ON q.workflow_cursor_id=c.id
-        WHERE c.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+        WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}`,
     )
     .all() as Array<{
     id: number

@@ -4,10 +4,42 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   artifactPersistenceOutcome,
+  finalizeTerminalChain,
   questionsToInsert,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
 } from './run-terminal.ts'
+
+test('a failed non-failover child closes its question before the root inherits failure', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    kind: 'interrupted',
+    parent: root,
+    turn: 2,
+  })
+  db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .run(child, '2026-09-29', 'What should happen?')
+
+  finalizeTerminalChain(db(), {
+    runId: child,
+    parentRunId: root,
+    status: 'failed',
+    failureKind: 'interrupted',
+    error: 'worker interrupted',
+  })
+
+  expect(db().query('SELECT status,failure_kind FROM run WHERE id=?').get(root)).toEqual({
+    status: 'failed',
+    failure_kind: 'interrupted',
+  })
+  expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(child)).toEqual({
+    close_reason: 'chain-terminal',
+  })
+})
 
 test('artifact persistence failure retains a completed worker outcome', () => {
   expect(

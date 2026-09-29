@@ -695,6 +695,23 @@ describe('judge ruling', () => {
 })
 
 describe('voided output evidence', () => {
+  test('score --void leaves an asking chain and its question open', async () => {
+    const id = insert('asking', 'review-lens')
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(id, '2026-09-29', 'Which behavior is correct?')
+
+    await score(id, [], { void: true })
+
+    expect(db().query('SELECT status,evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+      status: 'asking',
+      evidence_excluded: 'voided with orch score --void',
+    })
+    expect(
+      db().query('SELECT answered_at,closed_at,close_reason FROM question WHERE run_id=?').get(id),
+    ).toEqual({ answered_at: null, closed_at: null, close_reason: null })
+  })
+
   test('score --unvoid resolves a turn to its root, keeps the score, audits, and enqueues', async () => {
     const root = insert('ok', 'review-lens')
     const turn = addRun({
@@ -770,6 +787,9 @@ describe('voided output evidence', () => {
     const outputPath = trackResidue(join(dir, 'voided-output.txt'))
     writeFileSync(outputPath, 'the retained answer')
     const id = insert('ok', 'review-lens')
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(id, '2026-09-29', 'still relevant?')
     const partner = addRun({
       agent: 'grok',
       job: 'review-lens',
@@ -787,6 +807,9 @@ describe('voided output evidence', () => {
     expect(readFileSync(outputPath, 'utf8')).toBe('the retained answer')
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
       evidence_excluded: 'voided with orch score --void',
+    })
+    expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(id)).toEqual({
+      close_reason: 'chain-voided',
     })
     expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
       delivery: 'none',

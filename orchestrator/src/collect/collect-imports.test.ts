@@ -14,6 +14,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../mcp/mcp-probe.ts',
   'orch.ts',
   '../outcome.ts',
+  '../run/question-open.ts',
   '../collect/result-output.ts',
 ] as const
 const DEGRADED_HEAVY_MODULES = [

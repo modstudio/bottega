@@ -74,16 +74,16 @@ export const modules: ArchitectureModule[] = [
     './doc-read-store.ts',
     './doc-write-allowed.ts',
   ]),
-  module('orchestrator/src/code/code-search.ts', [
-    '../../../shared/self-spawn.ts',
-    '../../../shared/orch-contract.ts',
-    '../project/projects.ts',
-  ]),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/code/code-search.ts', ['../../../shared/self-spawn.ts', '../../../shared/orch-contract.ts', '../project/projects.ts']),
   module('orchestrator/src/run/run-answer-liveness.ts', []),
-  module('orchestrator/src/close/absent-close-out-residue.ts', [
-    '../database/db.ts',
-    '../reclaim/reclaim-residue.ts',
-  ]),
+  module('orchestrator/src/run/question-open.ts', []),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/run/question-close.ts', ['../database/db.ts', './question-mutation.ts', './question-open.ts', './question-outbox.ts']),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/close/close-out-questions.ts', ['../database/db.ts', '../run/question-close.ts']),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/close/absent-close-out-residue.ts', ['../database/db.ts', '../reclaim/reclaim-residue.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/close/absent-tree-close-out.ts', ['../git/git-environment.ts', '../project/projects.ts', '../reclaim/reclaim.ts', '../worktree/worktree.ts', '../worktree/worktree-remove.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
@@ -202,6 +202,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-bootstrap.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
+    '../run/question-open.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
   module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
@@ -483,6 +484,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-ownership.ts',
     '../review/review-target.ts',
     './run-artifacts.ts',
+    './question-close.ts',
     './branch-owner-guard.ts',
     './run-process.ts',
     './resume-tree.ts',
@@ -519,6 +521,7 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../review/review-calibration.ts',
     '../route/route.ts',
+    './question-close.ts',
     './run-process.ts',
     './run-types.ts',
     '../transport/transport.ts',
@@ -534,6 +537,7 @@ export const modules: ArchitectureModule[] = [
     '../agent/agents.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
+    './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',
     '../confinement/confinement.ts',
     '../contract/contract.ts',
@@ -596,6 +600,7 @@ export const modules: ArchitectureModule[] = [
     './run-process.ts',
     './run-resume-kind.ts',
     './question-vocabulary.ts',
+    './question-close.ts',
     './question-outbox.ts',
     './run-terminal-blockers.ts', './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
