@@ -35,7 +35,7 @@ export type UnjudgedOwnerFacts = {
   windowMs: number
 }
 
-function ownerIsGone(facts: UnjudgedOwnerFacts): boolean {
+export function ownerIsGone(facts: UnjudgedOwnerFacts): boolean {
   if (facts.ownerSessionId === null) return true
   const ownerLastActivity = Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
   return facts.now - ownerLastActivity > facts.windowMs

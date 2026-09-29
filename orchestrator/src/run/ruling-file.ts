@@ -28,6 +28,7 @@ import {
   type RootAuthority,
   runMutationActor,
 } from './run-authority.ts'
+import { RUN_MUTATION_WINDOW_MS } from './run-mutation-owner.ts'
 
 type RulingFileAs = 'doc' | 'canon'
 
@@ -68,6 +69,7 @@ type QuestionRow = {
   workflow_slug: string | null
   mode_slug: string | null
   workflow_owner: string | null
+  workflow_updated_at: string | null
   question: string
   answer: string | null
   answered_at: string | null
@@ -98,7 +100,7 @@ function filingScope(scope: string | undefined): FilingDocScope {
 
 function decideFiling(
   row: QuestionRow,
-  authority: Pick<RootAuthority, 'owner' | 'actor'>,
+  authority: RootAuthority,
   input: FileRulingInput,
   requested: FiledRulingKind,
 ) {
@@ -111,6 +113,10 @@ function decideFiling(
     scope: input.scope,
     owner: authority.owner,
     actor: authority.actor,
+    ownerLastSeenAt: authority.ownerLastSeenAt,
+    chainLastActivityAt: authority.chainLastActivityAt,
+    now: authority.now,
+    windowMs: authority.windowMs,
     fromOperator: input.fromOperator,
     channel: input.channel,
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
@@ -125,7 +131,7 @@ function decideFiling(
 
 function refusal(
   row: QuestionRow,
-  authority: Pick<RootAuthority, 'owner' | 'actor'>,
+  authority: RootAuthority,
   decision: ReturnType<typeof fileRulingDecision>,
 ): string | null {
   if (decision.kind === 'allow') return null
@@ -166,7 +172,8 @@ function refusal(
   }
   return (
     `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
-    `current session ${decision.actor ?? authority.actor ?? 'no session identity is present'} cannot file its ruling`
+    `current session ${decision.actor ?? authority.actor ?? 'no session identity is present'} cannot file its ruling ` +
+    '(owner active within the window)'
   )
 }
 
@@ -175,6 +182,7 @@ function loadQuestion(questionId: number): QuestionRow {
     .query(
       `SELECT q.id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id,
               q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
+              c.updated_at workflow_updated_at,
               q.question, q.answer,
               q.answered_at, q.answered_by, q.answerer_kind, q.overturned_at, q.overturned_by,
               q.replacement, q.filed_as, q.filed_ref, q.filed_at,
@@ -270,14 +278,26 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   if (requested === 'doc' && (input.scope ?? 'project') !== 'canon') filingScope(input.scope)
   const actor = sessionId()
   let authority: RootAuthority | null = row.run_id === null ? null : runMutationActor(row.run_id)
-  const questionAuthority = authority ?? { owner: row.workflow_owner, actor }
+  const workflowActivity = Date.parse(row.workflow_updated_at ?? new Date().toISOString())
+  const questionAuthority = authority ?? {
+    runId: 0,
+    rootId: 0,
+    owner: row.workflow_owner,
+    actor,
+    ownerLastSeenAt: null,
+    chainLastActivityAt: workflowActivity,
+    now: Date.now(),
+    windowMs: RUN_MUTATION_WINDOW_MS,
+  }
+  let adoptionReason: string | null = null
   if (row.run_id === null)
-    authorizeWorkflowQuestionMutation({
+    adoptionReason = authorizeWorkflowQuestionMutation({
       owner: row.workflow_owner,
       actor,
       fromOperator: input.fromOperator,
       subject: `workflow cursor ${row.workflow_cursor_id}`,
       action: 'file',
+      chainLastActivityAt: workflowActivity,
     })
   const decision = decideFiling(row, questionAuthority, input, requested)
   const denied = refusal(row, questionAuthority, decision)
@@ -329,6 +349,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
         actor,
         at,
         reason: `as ${requested}`,
+        adoptionReason,
       })
     enqueueQuestionRecord(db(), row.id)
   })

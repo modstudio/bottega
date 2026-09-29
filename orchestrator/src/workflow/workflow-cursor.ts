@@ -923,12 +923,14 @@ export function ruleWorkflow(
     if (row.state !== 'awaiting-ruling')
       throw new Error(`${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling`)
     const actor = sessionId()
-    authorizeWorkflowQuestionMutation({
+    const adoptionReason = authorizeWorkflowQuestionMutation({
       owner: row.session_id,
       actor,
       fromOperator,
       subject: cursorName(slug, mode, row.workflow_key),
       action: 'rule',
+      chainLastActivityAt: Date.parse(row.updated_at),
+      database: d,
     })
     const at = nowIso()
     const answeredBy = rulingActor(fromOperator, actor)
@@ -944,8 +946,9 @@ export function ruleWorkflow(
     const question = d
       .query('SELECT id FROM question WHERE workflow_cursor_id=? AND answered_at=?')
       .get(row.id, at) as { id: number }
+    // biome-ignore format: keep the frozen workflow adapter below its file ceiling.
     auditQuestionMutation(
-      { questionId: question.id, action: 'rule', actor, at, reason: ruling.trim() },
+      { questionId: question.id, action: 'rule', actor, at, reason: ruling.trim(), adoptionReason },
       d,
     )
     enqueueQuestionRecord(d, question.id)

@@ -3,6 +3,7 @@
 
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
+import type { RunMutationOwnerFacts } from './run-mutation-owner.ts'
 
 export type FiledRulingKind = 'doc' | 'canon-proposal'
 
@@ -43,24 +44,24 @@ function ownerAddress(input: {
   return 'foreign-project'
 }
 
-export function fileRulingDecision(input: {
-  answeredAt: string | null
-  overturnedAt: string | null
-  replacement: string | null
-  filedAs: string | null
-  requested: FiledRulingKind
-  scope?: string
-  owner: string | null
-  actor: string | null
-  fromOperator: boolean
-  channel: AnswerChannel
-  sessionIdPresent: boolean
-  depthPresent: boolean
-  dashboardAuthorized: boolean
-  runProject: string | null
-  subject?: string
-  workflowAuthority?: { operator: boolean }
-}): FileRulingDecision {
+export function fileRulingDecision(
+  input: RunMutationOwnerFacts & {
+    answeredAt: string | null
+    overturnedAt: string | null
+    replacement: string | null
+    filedAs: string | null
+    requested: FiledRulingKind
+    scope?: string
+    fromOperator: boolean
+    channel: AnswerChannel
+    sessionIdPresent: boolean
+    depthPresent: boolean
+    dashboardAuthorized: boolean
+    runProject: string | null
+    subject?: string
+    workflowAuthority?: { operator: boolean }
+  },
+): FileRulingDecision {
   if (input.answeredAt === null) return { kind: 'refuse', code: 'unanswered' }
   if (input.overturnedAt !== null && !input.replacement) {
     return { kind: 'refuse', code: 'overturned-without-replacement' }
@@ -82,6 +83,10 @@ export function fileRulingDecision(input: {
           dashboardAuthorized: input.dashboardAuthorized,
           owner: input.owner,
           actor: input.actor,
+          ownerLastSeenAt: input.ownerLastSeenAt,
+          chainLastActivityAt: input.chainLastActivityAt,
+          now: input.now,
+          windowMs: input.windowMs,
         })
   if (authority.kind === 'refuse') {
     return {

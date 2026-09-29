@@ -234,6 +234,34 @@ describe('score ruling', () => {
     })
   })
 
+  test("a session voids a gone owner's run and records the adoption in the audit reason", async () => {
+    const id = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'ok',
+      session: 'gone-owner',
+      startedAt: '2020-01-01T00:00:00.000Z',
+    })
+    process.env.CLAUDE_CODE_SESSION_ID = 'adopting-session'
+
+    await score(id, [], { void: true }, { auditReason: 'operator cleanup' })
+
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+      evidence_excluded: 'voided with orch score --void',
+    })
+    expect(
+      db()
+        .query("SELECT action,reason FROM run_mutation_audit WHERE run_id=? AND action='void'")
+        .get(id),
+    ).toEqual({
+      action: 'void',
+      reason: 'adopted from gone owner gone-owner by adopting-session; operator cleanup',
+    })
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+      session_id: 'gone-owner',
+    })
+  })
+
   test('score refuses review grades on a job that does not produce findings', async () => {
     const id = insert()
     await expect(

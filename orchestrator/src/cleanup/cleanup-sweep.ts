@@ -231,7 +231,16 @@ function reportClosedSweepRow(
   if (outcome === 'released' && !dry) {
     writeTransaction(() => {
       auditRunMutation(
-        { runId: row.id, rootId: row.root_id, owner: null, actor: sessionId() },
+        {
+          runId: row.id,
+          rootId: row.root_id,
+          owner: null,
+          actor: sessionId(),
+          ownerLastSeenAt: null,
+          chainLastActivityAt: Date.now(),
+          now: Date.now(),
+          windowMs: UNJUDGED_OWNER_WINDOW_MS,
+        },
         'sweep',
       )
     })

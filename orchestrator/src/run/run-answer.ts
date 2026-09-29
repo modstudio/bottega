@@ -41,6 +41,7 @@ import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
+  type RootAuthority,
   runMutationActor,
 } from './run-authority.ts'
 import {
@@ -99,7 +100,7 @@ function requireAnswerAuthority(
   channel: AnswerChannel,
   fromOperator: boolean,
   dashboardAuthorized: boolean,
-  authority: { owner: string | null; actor: string | null },
+  authority: RootAuthority,
 ) {
   const decision = answerAuthorityDecision({
     channel,
@@ -109,13 +110,17 @@ function requireAnswerAuthority(
     dashboardAuthorized,
     owner: authority.owner,
     actor: authority.actor,
+    ownerLastSeenAt: authority.ownerLastSeenAt,
+    chainLastActivityAt: authority.chainLastActivityAt,
+    now: authority.now,
+    windowMs: authority.windowMs,
   })
   if (decision.kind !== 'refuse') return decision
   const refusal = {
     'operator-attribution': '--channel ui requires --from-operator',
     'dashboard-capability': '--channel ui requires the hub dashboard capability',
     'session-marker': `--channel ui is refused when ${decision.actor} is set`,
-    'owner-mismatch': `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor ?? 'no session identity is present'} cannot answer it`,
+    'owner-mismatch': `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor ?? 'no session identity is present'} cannot answer it (owner active within the window)`,
   }[decision.code]
   throw new Error(refusal)
 }
