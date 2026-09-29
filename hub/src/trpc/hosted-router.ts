@@ -9,3 +9,5 @@ export const hostedRouter = t.router({
   context: hostedContextRouter,
   record: recordRouter,
 })
+
+export type HostedRouter = typeof hostedRouter

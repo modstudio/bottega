@@ -109,7 +109,6 @@ test('managed settings shows the apply command without a write control', () => {
   seedBase()
   const html = render()
   expect(html).toContain('orch settings render --write --user --yes')
-  expect(html).toContain('This page does not write the real settings file.')
   expect(html).not.toContain('>Write settings<')
 })
 
