@@ -13,8 +13,16 @@ import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layo
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
-import { AUTONOMY_PRESETS } from '../../../../shared/autonomy'
-import { RELEASE_AUTONOMY_VALUES } from '../../../../shared/release-autonomy'
+import {
+  AUTONOMY_PRESETS,
+  AUTONOMY_VALUES,
+  type AutonomyPreset,
+  type AutonomyValue,
+} from '../../../../shared/autonomy'
+import {
+  RELEASE_AUTONOMY_VALUES,
+  type ReleaseAutonomyValue,
+} from '../../../../shared/release-autonomy'
 
 export const Route = createFileRoute('/context')({ component: ManagedContextPage })
 
@@ -23,30 +31,26 @@ export const Route = createFileRoute('/context')({ component: ManagedContextPage
  * reaches them through the proxy for the server it is talking to. Autonomy and settings reads
  * differ by mode and use the typed proxy directly.
  */
-function sharedContext() {
-  return (isHostedMode() ? hostedTrpc.context : trpc.context) as unknown as typeof trpc.context
+type SharedContext = Pick<typeof trpc.context, 'projects' | 'userCanon'> & {
+  settings: Pick<typeof trpc.context.settings, 'permission' | 'pathKey'>
+}
+
+function sharedContext(): SharedContext {
+  return (isHostedMode() ? hostedTrpc.context : trpc.context) as unknown as SharedContext
 }
 
 const APPLY_NOTE =
   'Each machine applies these at session start and every 15 minutes (orch settings apply).'
 
-const presetOptions = AUTONOMY_PRESETS.map((value) => ({
-  value,
-  label: `${value[0]!.toUpperCase()}${value.slice(1)}`,
-}))
+const capitalized = (value: string) => `${value[0]!.toUpperCase()}${value.slice(1)}`
 
-const stageValues = [
-  { value: 'ask', label: 'Ask' },
-  { value: 'review', label: 'Review' },
-  { value: 'auto', label: 'Auto' },
-] as const
+const presetOptions = AUTONOMY_PRESETS.map((value) => ({ value, label: capitalized(value) }))
+
+const stageValues = AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(value) }))
 
 const FROM_PRESET = { value: '', label: 'From preset', disabled: true }
 
-const releaseValues = RELEASE_AUTONOMY_VALUES.map((value) => ({
-  value,
-  label: `${value[0]!.toUpperCase()}${value.slice(1)}`,
-}))
+const releaseValues = RELEASE_AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(value) }))
 
 function ErrorText({ message }: { message: string }) {
   return (
@@ -355,7 +359,7 @@ function AutonomySection({
                 onChange={(next) =>
                   updatePreset.mutate({
                     project,
-                    value: next as (typeof AUTONOMY_PRESETS)[number],
+                    value: next as AutonomyPreset,
                   })
                 }
               />
@@ -376,7 +380,7 @@ function AutonomySection({
                 onChange={(next) =>
                   updateRelease.mutate({
                     project,
-                    value: next as 'push' | 'land' | 'promote',
+                    value: next as ReleaseAutonomyValue,
                   })
                 }
               />
@@ -408,7 +412,7 @@ function AutonomySection({
                       update.mutate({
                         project,
                         stage: stage.stage,
-                        value: next as 'ask' | 'review' | 'auto',
+                        value: next as AutonomyValue,
                       })
                     }
                   />
@@ -464,7 +468,7 @@ function HostedAutonomySection({
                 onChange={(next) =>
                   updatePreset.mutate({
                     project,
-                    value: next as (typeof AUTONOMY_PRESETS)[number],
+                    value: next as AutonomyPreset,
                     expectedRowVersion: user.preset?.rowVersion ?? null,
                   })
                 }
@@ -486,7 +490,7 @@ function HostedAutonomySection({
                 onChange={(next) =>
                   updateRelease.mutate({
                     project,
-                    value: next as 'push' | 'land' | 'promote',
+                    value: next as ReleaseAutonomyValue,
                     expectedRowVersion: user.release?.rowVersion ?? null,
                   })
                 }
@@ -515,7 +519,7 @@ function HostedAutonomySection({
                       update.mutate({
                         project,
                         stage,
-                        value: next as 'ask' | 'review' | 'auto',
+                        value: next as AutonomyValue,
                         expectedRowVersion: leaf?.rowVersion ?? null,
                       })
                     }
