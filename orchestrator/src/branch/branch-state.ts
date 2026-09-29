@@ -12,7 +12,7 @@ export function pullRequestCarriesKey(
   return token.test(pullRequest.headRefName) || token.test(pullRequest.title)
 }
 
-export type PatchEquivalentForm = 'commits' | 'squash'
+export type PatchEquivalentForm = 'commits' | 'individual' | 'squash'
 
 type RecordedBranchLanding = {
   number: number

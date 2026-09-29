@@ -12,7 +12,6 @@ import {
   findRecordedBranchLanding,
   type PatchEquivalentForm,
 } from './branch-state.ts'
-import { taskBranchPatchEquivalent } from './task-branch.ts'
 
 export type OfflineBranchLandingCandidate = {
   projectId: number
@@ -83,13 +82,8 @@ function classifyExistingBranch(input: {
   }
   let patchEquivalent: PatchEquivalentForm | null = null
   if (commitsNotOnTrunk > 0 && recordedLanding?.tip !== tip) {
-    patchEquivalent = taskBranchPatchEquivalent({
-      cwd: project.path,
-      trunkTip,
-      branchTip: tip,
-      mergeBase: git(project.path, 'merge-base', trunkTip, tip),
-      commitMessage: `orch branch report ${candidate.branch}`,
-    })
+    const cherry = git(project.path, 'cherry', trunkTip, tip)
+    patchEquivalent = cherry.split('\n').some((line) => line.startsWith('+ ')) ? null : 'individual'
   }
   const state = decideBranchState({
     branch: candidate.branch,
@@ -103,7 +97,11 @@ function classifyExistingBranch(input: {
     laterTurnBranches: [],
     superseded: false,
   })
-  return { ...candidate, branchExists: true, landed: state.state === 'landed' }
+  return {
+    ...candidate,
+    branchExists: true,
+    landed: state.state === 'landed' || state.state === 'empty',
+  }
 }
 
 function observeProject(
@@ -121,11 +119,14 @@ function observeProject(
     '--end-of-options',
     `${trunk}^{commit}`,
   )
-  return candidates.map((candidate) => {
+  return candidates.flatMap((candidate) => {
     const tip = branches.get(candidate.branch)
-    return tip
-      ? classifyExistingBranch({ candidate, project, tip, trunkTip, records })
-      : { ...candidate, branchExists: false, landed: false }
+    if (!tip) return [{ ...candidate, branchExists: false, landed: false }]
+    try {
+      return [classifyExistingBranch({ candidate, project, tip, trunkTip, records })]
+    } catch {
+      return []
+    }
   })
 }
 
