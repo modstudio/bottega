@@ -2,7 +2,7 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client'
 import type { inferRouterOutputs } from '@trpc/server'
 import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
-import type { AppRouter } from '../../../src/trpc/router.ts'
+import type { AppRouter, HostedRouter } from '../../../src/trpc/router.ts'
 import { isHostedMode } from '../lib/hub-mode.ts'
 import { toast } from '../ui/toast/toast.tsx'
 import { fetchWithHubCredentials } from './transport.ts'
@@ -41,24 +41,30 @@ export const queryClient = new QueryClient({
   }),
 })
 
-const client = createTRPCClient<AppRouter>({
-  links: [
-    httpBatchLink({
-      url: '/trpc',
-      fetch(url, options) {
-        return fetchWithHubCredentials(
-          fetch,
-          isHostedMode(),
-          () => toast.error(LOCAL_LOGIN_MESSAGE),
-          url,
-          (options ?? {}) as RequestInit,
-        )
-      },
-    }),
-  ],
-})
+const links = [
+  httpBatchLink({
+    url: '/trpc',
+    fetch(url, options) {
+      return fetchWithHubCredentials(
+        fetch,
+        isHostedMode(),
+        () => toast.error(LOCAL_LOGIN_MESSAGE),
+        url,
+        (options ?? {}) as RequestInit,
+      )
+    },
+  }),
+]
+
+const client = createTRPCClient<AppRouter>({ links })
 
 export const trpc = createTRPCOptionsProxy<AppRouter>({ client, queryClient })
+
+/** The hosted server mounts a different router; use this proxy only in hosted mode. */
+export const hostedTrpc = createTRPCOptionsProxy<HostedRouter>({
+  client: createTRPCClient<HostedRouter>({ links }),
+  queryClient,
+})
 
 export type ProjectRow = inferRouterOutputs<AppRouter>['project']['list'][number]
 export type HostedProjectRow = inferRouterOutputs<AppRouter>['record']['projects'][number]

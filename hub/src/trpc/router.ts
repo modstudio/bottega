@@ -27,3 +27,4 @@ export const appRouter = t.router({
 })
 
 export type AppRouter = typeof appRouter
+export type { HostedRouter } from './hosted-router.ts'

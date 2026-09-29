@@ -1,27 +1,47 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { createFileRoute, Navigate } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { isHostedMode } from '@/lib/hub-mode'
-import { queryClient, trpc } from '@/trpc/client'
+import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
+import { Segmented } from '@/ui/segmented/segmented'
+import { AUTONOMY_PRESETS } from '../../../../shared/autonomy'
 import { RELEASE_AUTONOMY_VALUES } from '../../../../shared/release-autonomy'
 
-export const Route = createFileRoute('/context')({
-  component: () => (isHostedMode() ? <Navigate to="/" /> : <ManagedContextPage />),
-})
+export const Route = createFileRoute('/context')({ component: ManagedContextPage })
+
+/**
+ * Projects, user canon and permission edits keep one contract in both modes, so the page
+ * reaches them through the proxy for the server it is talking to. Autonomy and settings reads
+ * differ by mode and use the typed proxy directly.
+ */
+function sharedContext() {
+  return (isHostedMode() ? hostedTrpc.context : trpc.context) as unknown as typeof trpc.context
+}
+
+const APPLY_NOTE =
+  'Each machine applies these at session start and every 15 minutes (orch settings apply).'
+
+const presetOptions = AUTONOMY_PRESETS.map((value) => ({
+  value,
+  label: `${value[0]!.toUpperCase()}${value.slice(1)}`,
+}))
 
 const stageValues = [
   { value: 'ask', label: 'Ask' },
   { value: 'review', label: 'Review' },
   { value: 'auto', label: 'Auto' },
 ] as const
+
+const FROM_PRESET = { value: '', label: 'From preset', disabled: true }
 
 const releaseValues = RELEASE_AUTONOMY_VALUES.map((value) => ({
   value,
@@ -58,8 +78,8 @@ function RemoveCanonButton({
 }
 
 export function ManagedContextPage() {
-  const projects = useQuery(trpc.context.projects.queryOptions())
-  const canon = useQuery(trpc.context.userCanon.list.queryOptions())
+  const projects = useQuery(sharedContext().projects.queryOptions())
+  const canon = useQuery(sharedContext().userCanon.list.queryOptions())
   const [projectChoice, setProjectChoice] = useState('')
   const [settingsChoice, setSettingsChoice] = useState('user')
   const selectedProject = projectChoice || projects.data?.[0]?.name || ''
@@ -75,13 +95,24 @@ export function ManagedContextPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-5 pb-12">
-      <PageHeader title="Managed context" subtitle="User canon, autonomy, and managed settings" />
-      <UserCanonSection rows={canon.data} pending={canon.isPending} error={canon.error?.message} />
-      <AutonomySection
-        project={selectedProject}
-        options={projectOptions}
-        onProject={setProjectChoice}
+      <PageHeader
+        title="Agent settings"
+        subtitle="Autonomy, user canon and permissions, the same on every machine"
       />
+      {isHostedMode() ? (
+        <HostedAutonomySection
+          project={selectedProject}
+          options={projectOptions}
+          onProject={setProjectChoice}
+        />
+      ) : (
+        <AutonomySection
+          project={selectedProject}
+          options={projectOptions}
+          onProject={setProjectChoice}
+        />
+      )}
+      <UserCanonSection rows={canon.data} pending={canon.isPending} error={canon.error?.message} />
       <ManagedSettingsSection
         target={settingsChoice}
         options={settingsOptions}
@@ -109,11 +140,12 @@ export function UserCanonSection({
   pending: boolean
   error?: string
 }) {
+  const api = sharedContext()
   const [choice, setChoice] = useState('')
   const [creating, setCreating] = useState(false)
   const selected = choice || rows?.[0]?.slug || ''
   const detail = useQuery({
-    ...trpc.context.userCanon.get.queryOptions({ slug: selected || '_' }),
+    ...api.userCanon.get.queryOptions({ slug: selected || '_' }),
     enabled: Boolean(selected),
   })
   const [slug, setSlug] = useState('')
@@ -129,9 +161,9 @@ export function UserCanonSection({
   }, [detail.data, creating])
 
   const save = useMutation(
-    trpc.context.userCanon.set.mutationOptions({
+    api.userCanon.set.mutationOptions({
       onSuccess: async (row) => {
-        await queryClient.invalidateQueries({ queryKey: trpc.context.userCanon.pathKey() })
+        await queryClient.invalidateQueries({ queryKey: api.userCanon.pathKey() })
         setChoice(row.slug)
         setCreating(false)
         setReason('')
@@ -139,11 +171,11 @@ export function UserCanonSection({
     }),
   )
   const remove = useMutation(
-    trpc.context.userCanon.remove.mutationOptions({
+    api.userCanon.remove.mutationOptions({
       onSuccess: async () => {
         setChoice('')
         setReason('')
-        await queryClient.invalidateQueries({ queryKey: trpc.context.userCanon.pathKey() })
+        await queryClient.invalidateQueries({ queryKey: api.userCanon.pathKey() })
       },
     }),
   )
@@ -200,11 +232,11 @@ export function UserCanonSection({
                   aria-label="Canon markdown"
                   code
                   bare
-                  className="min-h-80"
+                  className="h-[32rem]"
                   value={body}
                   onChange={(event) => setBody(event.target.value)}
                 />
-                <div className="min-h-80 overflow-auto p-3">
+                <div className="h-[32rem] overflow-auto p-3">
                   <Markdown content={body} />
                 </div>
               </div>
@@ -283,20 +315,52 @@ function AutonomySection({
         ),
     }),
   )
+  const updatePreset = useMutation(
+    trpc.context.autonomy.setPreset.mutationOptions({
+      onSettled: () =>
+        queryClient.invalidateQueries({ queryKey: trpc.context.autonomy.get.pathKey() }),
+    }),
+  )
   const releaseLine = autonomy.data?.registered
     ? autonomy.data.text.split('\n').find((line) => line.startsWith('release: '))
     : undefined
+  const userPreset = autonomy.data?.registered ? autonomy.data.userPreset : undefined
   return (
     <FieldSection
       title="Autonomy"
-      description="Resolved workflow stage values and the scope that set each one."
+      description="How much each workflow stage runs on its own, resolved for this machine. Your preset and overrides live in your hosted profile."
     >
       <Select label="Project" value={project} options={options} onChange={onProject} />
       {autonomy.error ? <ErrorText message={autonomy.error.message} /> : null}
       {update.error ? <ErrorText message={update.error.message} /> : null}
       {updateRelease.error ? <ErrorText message={updateRelease.error.message} /> : null}
+      {updatePreset.error ? <ErrorText message={updatePreset.error.message} /> : null}
+      {autonomy.data?.registered
+        ? autonomy.data.warnings?.map((warning) => <ErrorText key={warning} message={warning} />)
+        : null}
       {autonomy.data?.registered ? (
         <div className="space-y-3">
+          <SettingBlock
+            label="Preset"
+            hint={
+              userPreset === undefined
+                ? 'Unknown until you sign in.'
+                : 'Choosing a preset clears your stage overrides, so every stage follows it.'
+            }
+            control={
+              <Segmented
+                label="Autonomy preset"
+                value={userPreset ?? ''}
+                options={presetOptions}
+                onChange={(next) =>
+                  updatePreset.mutate({
+                    project,
+                    value: next as (typeof AUTONOMY_PRESETS)[number],
+                  })
+                }
+              />
+            }
+          />
           <DisplayRow
             label="Rulings"
             value={`${autonomy.data.rulings.value} · ${autonomy.data.rulings.scope}`}
@@ -329,7 +393,12 @@ function AutonomySection({
               <SettingBlock
                 key={stage.stage}
                 label={stage.stage}
-                hint={`Resolved: ${resolved}`}
+                hint={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span>Resolved: {resolved}</span>
+                    {stage.overridden ? <Badge tone="warning">overridden</Badge> : null}
+                  </span>
+                }
                 control={
                   <Select
                     label={`${stage.stage} autonomy`}
@@ -340,6 +409,114 @@ function AutonomySection({
                         project,
                         stage: stage.stage,
                         value: next as 'ask' | 'review' | 'auto',
+                      })
+                    }
+                  />
+                }
+              />
+            )
+          })}
+        </div>
+      ) : null}
+    </FieldSection>
+  )
+}
+
+/** Your hosted profile's autonomy; every signed-in machine resolves it below its own overrides. */
+function HostedAutonomySection({
+  project,
+  options,
+  onProject,
+}: {
+  project: string
+  options: { value: string; label: string }[]
+  onProject(value: string): void
+}) {
+  const api = hostedTrpc.context.autonomy
+  const autonomy = useQuery({
+    ...api.get.queryOptions({ project: project || '_' }),
+    enabled: Boolean(project),
+  })
+  const refresh = { onSettled: () => queryClient.invalidateQueries({ queryKey: api.pathKey() }) }
+  const update = useMutation(api.set.mutationOptions(refresh))
+  const updateRelease = useMutation(api.setRelease.mutationOptions(refresh))
+  const updatePreset = useMutation(api.setPreset.mutationOptions(refresh))
+  const user = autonomy.data?.user
+  const space = autonomy.data?.space
+  const error = autonomy.error ?? update.error ?? updateRelease.error ?? updatePreset.error
+  return (
+    <FieldSection
+      title="Autonomy"
+      description="How much each workflow stage runs on its own. These values are your profile and apply on every machine you sign in from."
+    >
+      <Select label="Project" value={project} options={options} onChange={onProject} />
+      {error ? <ErrorText message={error.message} /> : null}
+      {user ? (
+        <div className="space-y-3">
+          <SettingBlock
+            label="Preset"
+            hint="Choosing a preset clears your stage overrides, so every stage follows it."
+            control={
+              <Segmented
+                label="Autonomy preset"
+                value={user.preset?.value ?? ''}
+                options={presetOptions}
+                onChange={(next) =>
+                  updatePreset.mutate({
+                    project,
+                    value: next as (typeof AUTONOMY_PRESETS)[number],
+                    expectedRowVersion: user.preset?.rowVersion ?? null,
+                  })
+                }
+              />
+            }
+          />
+          <DisplayRow
+            label="Rulings"
+            value={user.rulings?.value ?? space?.rulings?.value ?? 'not set'}
+          />
+          <SettingBlock
+            label="release"
+            hint={user.release ? 'Set in your profile.' : 'Not set; each machine uses its default.'}
+            control={
+              <Select
+                label="release autonomy"
+                value={user.release?.value ?? ''}
+                options={releaseValues}
+                onChange={(next) =>
+                  updateRelease.mutate({
+                    project,
+                    value: next as 'push' | 'land' | 'promote',
+                    expectedRowVersion: user.release?.rowVersion ?? null,
+                  })
+                }
+              />
+            }
+          />
+          {autonomy.data?.stages.map((stage) => {
+            const leaf = user.stages[stage]
+            return (
+              <SettingBlock
+                key={stage}
+                label={stage}
+                hint={
+                  leaf ? (
+                    <Badge tone="warning">overridden</Badge>
+                  ) : (
+                    `Follows the ${user.preset?.value ?? 'default'} preset`
+                  )
+                }
+                control={
+                  <Select
+                    label={`${stage} autonomy`}
+                    value={leaf?.value ?? ''}
+                    options={leaf ? stageValues : [FROM_PRESET, ...stageValues]}
+                    onChange={(next) =>
+                      update.mutate({
+                        project,
+                        stage,
+                        value: next as 'ask' | 'review' | 'auto',
+                        expectedRowVersion: leaf?.rowVersion ?? null,
                       })
                     }
                   />
@@ -367,16 +544,26 @@ function ManagedSettingsSection({
   onTarget(value: string): void
 }) {
   const address = target === 'user' ? ({ user: true } as const) : { project: target }
-  const settings = useQuery(trpc.context.settings.get.queryOptions(address))
+  const hosted = isHostedMode()
+  const api = sharedContext()
+  const localSettings = useQuery({
+    ...trpc.context.settings.get.queryOptions(address),
+    enabled: !hosted,
+  })
+  const hostedSettings = useQuery({
+    ...hostedTrpc.context.settings.get.queryOptions(address),
+    enabled: hosted,
+  })
+  const settings = hosted ? hostedSettings : localSettings
   const [list, setList] = useState<'allow' | 'ask' | 'deny'>('allow')
   const [rule, setRule] = useState('')
   const [reason, setReason] = useState('')
   const change = useMutation(
-    trpc.context.settings.permission.mutationOptions({
+    api.settings.permission.mutationOptions({
       onSuccess: async () => {
         setRule('')
         setReason('')
-        await queryClient.invalidateQueries({ queryKey: trpc.context.settings.pathKey() })
+        await queryClient.invalidateQueries({ queryKey: api.settings.pathKey() })
       },
     }),
   )
@@ -389,16 +576,18 @@ function ManagedSettingsSection({
   return (
     <FieldSection
       title="Managed settings"
-      description="Stored permissions, hook fingerprints, environment names, and drift."
+      description={`Stored permissions, hook fingerprints and environment names. ${APPLY_NOTE}`}
     >
       <Select label="Settings target" value={target} options={options} onChange={onTarget} />
       {settings.error ? <ErrorText message={settings.error.message} /> : null}
       {settings.data ? (
         <div className="space-y-5">
-          <DisplayRow
-            label="File"
-            value={`${settings.data.file.exists ? 'exists' : 'missing'} · ${settings.data.file.path}`}
-          />
+          {hosted ? null : (
+            <DisplayRow
+              label="File"
+              value={`${settings.data.file.exists ? 'exists' : 'missing'} · ${settings.data.file.path}`}
+            />
+          )}
           {(['allow', 'ask', 'deny'] as const).map((name) => (
             <DisplayRow
               key={name}
@@ -420,8 +609,10 @@ function ManagedSettingsSection({
             label={`Environment keys (${settings.data.settings.envKeys.length})`}
             value={settings.data.settings.envKeys.join(', ') || '—'}
           />
-          <DisplayRow label="Drift" value={<Lines>{driftText(settings.data.drift)}</Lines>} />
-          {settings.data.findings.map((finding) => (
+          {settings.data.drift ? (
+            <DisplayRow label="Drift" value={<Lines>{driftText(settings.data.drift)}</Lines>} />
+          ) : null}
+          {settings.data.findings?.map((finding) => (
             <ErrorText
               key={`${finding.rule}-${finding.message}`}
               message={`${finding.rule}: ${finding.message}`}
@@ -490,11 +681,13 @@ function ManagedSettingsSection({
               Remove rule
             </Button>
           </div>
-          <SettingBlock
-            label="Apply from a terminal"
-            control={<Copyable value={apply} />}
-            hint="This page does not write the real settings file."
-          />
+          {hosted ? null : (
+            <SettingBlock
+              label="Apply now from a terminal"
+              control={<Copyable value={apply} />}
+              hint="This page stores the settings; the machine writes its settings file when it applies them."
+            />
+          )}
         </div>
       ) : null}
     </FieldSection>

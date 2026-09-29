@@ -77,7 +77,7 @@ const LOCAL_NAV: NavSection[] = [
         label: 'Settings',
         icon: Settings,
         items: [
-          { to: '/context', label: 'Managed context', icon: SlidersHorizontal },
+          { to: '/context', label: 'Agent settings', icon: SlidersHorizontal },
           { to: '/settings', label: 'Hub settings', icon: Settings },
           { to: '/design', label: 'Design system', icon: Palette },
         ],
@@ -126,6 +126,7 @@ const HOSTED_NAV: NavSection[] = [
         label: 'Settings',
         icon: Settings,
         items: [
+          { to: '/context', label: 'Agent settings', icon: SlidersHorizontal },
           { to: '/settings', label: 'Hub settings', icon: Settings },
           { to: '/members', label: 'Members', icon: Users },
         ],
@@ -152,6 +153,7 @@ export function isHostedPath(pathname: string) {
     path === '/reports' ||
     path === '/projects' ||
     path === '/docs' ||
+    path === '/context' ||
     path === '/jobs' ||
     path === '/agents' ||
     path === '/routing' ||
