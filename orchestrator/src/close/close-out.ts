@@ -456,9 +456,10 @@ function landingTreeSweepHold(input: {
   branch: string | null
   sessionId: string | null
   launchKey: string | null
+  status: string
 }): CloseOutResult | null {
   if (input.intent !== 'sweep' || input.job !== LANDING_TREE_JOB) return null
-  const decision = observeLandingTreeRelease(input)
+  const decision = observeLandingTreeRelease({ ...input, treeExists: existsSync(input.worktree) })
   return decision.action === 'keep'
     ? {
         runId: input.runId,
@@ -587,6 +588,17 @@ function attemptCloseOutRun(
     session_id: root?.session_id ?? row.session_id,
     launch_key: root?.launch_key ?? row.launch_key,
   }
+  const landingSweepInput = {
+    intent: options.intent,
+    runId: row.root_id,
+    job: effective.job,
+    repo: effective.repo,
+    worktree: treePath,
+    branch: effective.branch,
+    sessionId: effective.session_id,
+    launchKey: effective.launch_key,
+    status: effective.status,
+  }
   const terminalHold = terminalHoldResult(
     row.root_id,
     treePath,
@@ -636,7 +648,10 @@ function attemptCloseOutRun(
     dryRun: options.dryRun,
     recordRetainedBranch,
   })
-  if (absentTree.result) return absentTree.result
+  if (absentTree.result) {
+    const landingHold = landingTreeSweepHold(landingSweepInput)
+    return landingHold ?? absentTree.result
+  }
   const { absent: treeAbsent, repoRoot } = absentTree
   if (!repoRoot)
     return {
@@ -774,16 +789,6 @@ function attemptCloseOutRun(
               options.dryRun,
             )
             if (lockedHold) return lockedHold
-            const landingSweepInput = {
-              intent: options.intent,
-              runId: row.root_id,
-              job: effective.job,
-              repo: effective.repo,
-              worktree: treePath,
-              branch: effective.branch,
-              sessionId: effective.session_id,
-              launchKey: effective.launch_key,
-            }
             const reconstructibility = reconstructibilityHold(row.root_id, treePath, treeAbsent)
             if (reconstructibility) return reconstructibility
             if (options.dryRun) {
@@ -952,7 +957,7 @@ function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
  * be taken for this run's.
  */
 function pointerMustClear(outcome: CloseOutResult['outcome'], worktree: string): boolean {
-  if (outcome === 'released' || outcome === 'forgotten') return true
+  if (outcome === 'released' || outcome === 'forgotten' || outcome === 'absent') return true
   return outcome === 'failed' && !existsSync(worktree)
 }
 

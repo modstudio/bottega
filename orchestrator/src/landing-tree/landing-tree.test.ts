@@ -56,13 +56,52 @@ describe('landing-tree decisions', () => {
     ],
   ] as const)('decides release from clean=%s landed=%s', (clean, landed, expected) => {
     expect(
-      landingTreeReleaseDecision({ job: LANDING_TREE_JOB, sessionId: 'owner' }, clean, landed),
+      landingTreeReleaseDecision(
+        {
+          job: LANDING_TREE_JOB,
+          sessionId: 'owner',
+          treeExists: true,
+          status: 'ok',
+          landingInFlight: false,
+        },
+        clean,
+        landed,
+      ),
     ).toEqual(expected)
+  })
+
+  test('releases an absent terminal tree only when no landing is in flight', () => {
+    const facts = {
+      job: LANDING_TREE_JOB,
+      sessionId: 'owner',
+      treeExists: false,
+      status: 'ok',
+      landingInFlight: false,
+    }
+    expect(landingTreeReleaseDecision(facts, false, false)).toEqual({ action: 'release' })
+    expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, false, false)).toEqual({
+      action: 'keep',
+      reason: 'landing tree held by session owner: landing is in flight',
+    })
+    expect(landingTreeReleaseDecision({ ...facts, status: 'running' }, false, false)).toEqual({
+      action: 'keep',
+      reason: 'landing tree held by session owner: conversation is running',
+    })
   })
 
   test('does not change ordinary or hook-tree sweep policy', () => {
     expect(
-      landingTreeReleaseDecision({ job: 'hook-tree', sessionId: 'owner' }, false, false),
+      landingTreeReleaseDecision(
+        {
+          job: 'hook-tree',
+          sessionId: 'owner',
+          treeExists: true,
+          status: 'ok',
+          landingInFlight: false,
+        },
+        false,
+        false,
+      ),
     ).toEqual({ action: 'release' })
   })
 })

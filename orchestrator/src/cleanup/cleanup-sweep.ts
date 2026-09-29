@@ -388,6 +388,8 @@ function landingTreeSweepDecision(r: SweepCandidate) {
     branch: r.branch,
     sessionId: r.session_id,
     launchKey: r.launch_key,
+    status: r.status,
+    treeExists: existsSync(r.worktree),
   })
 }
 

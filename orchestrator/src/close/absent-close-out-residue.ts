@@ -31,7 +31,7 @@ export function releaseAbsentCloseOutResidueKinds(input: {
   const reclaim = input.reclaim ?? reclaimResidue
   const details = input.kinds.map((kind) => {
     try {
-      return reclaim(kind, input.subject).action
+      return reclaim(kind, input.subject, { absentSatisfies: true }).action
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return `${kind} not released: ${message}`

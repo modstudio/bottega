@@ -52,14 +52,32 @@ export function landingTreeCommandBase(trunk: string | undefined): string {
 
 export type LandingTreeReleaseDecision = { action: 'release' } | { action: 'keep'; reason: string }
 
-/** Sweep releases only a clean landing tree whose branch is known to have landed. */
+/** Sweep releases an absent terminal landing tree, or a clean present tree whose branch landed. */
 export function landingTreeReleaseDecision(
-  row: { job: string; sessionId: string | null },
+  row: {
+    job: string
+    sessionId: string | null
+    treeExists: boolean
+    status: string
+    landingInFlight: boolean
+  },
   clean: boolean,
   landed: boolean,
 ): LandingTreeReleaseDecision {
   if (row.job !== LANDING_TREE_JOB) return { action: 'release' }
   const owner = row.sessionId ? `session ${row.sessionId}` : 'its invoking session'
+  if (!row.treeExists) {
+    if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+      return {
+        action: 'keep',
+        reason: `landing tree held by ${owner}: conversation is ${row.status}`,
+      }
+    }
+    if (row.landingInFlight) {
+      return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+    }
+    return { action: 'release' }
+  }
   if (!clean) return { action: 'keep', reason: `landing tree held by ${owner}: tree is dirty` }
   if (!landed)
     return { action: 'keep', reason: `landing tree held by ${owner}: branch has not landed` }

@@ -6,6 +6,7 @@ import { lstatSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
+import { landingInFlight } from '../landing-tree/release-observation.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
@@ -204,17 +205,10 @@ function conversationFacts(
   }
 }
 
-function landingInFlight(database: Database, row: ClaimedRow): boolean {
+function claimLandingInFlight(database: Database, row: ClaimedRow): boolean {
   if (row.kind !== 'branch' || !row.project_name) return false
   const branch = row.allocation_key.replace(/^refs\/heads\//, '')
-  return Boolean(
-    database
-      .query(
-        `SELECT 1 FROM landing
-         WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
-      )
-      .get(row.project_name, branch),
-  )
+  return landingInFlight(database, row.project_name, branch)
 }
 
 function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconciliationObservers) {
@@ -227,7 +221,7 @@ function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconcil
       probe: observation.probe,
       owningRepository: repository.state,
       ...conversation,
-      landingInFlight: landingInFlight(database, row),
+      landingInFlight: claimLandingInFlight(database, row),
     }),
   }
 }
