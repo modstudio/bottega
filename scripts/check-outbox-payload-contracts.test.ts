@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { outboxPayloadContractFailures } from './check-outbox-payload-contracts.ts'
+import { outboxPayloadContractFailures } from './outbox-payload-contracts.ts'
 
 test('accepts the base columns plus laterAdded columns', () => {
   expect(
