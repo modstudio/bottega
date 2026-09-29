@@ -67,6 +67,17 @@ type TerminalOptions = {
   }
 }
 
+function closeTerminalQuestions(
+  database: Database,
+  rootId: number,
+  status: string,
+  failureKind: ReturnType<typeof classify> | null,
+): void {
+  if (status === 'asking' || status === 'running') return
+  if (failureKind && FAILS_OVER.includes(failureKind)) return
+  closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
+}
+
 type TerminalMcpRuling = {
   connected: 0 | 1 | null
   error: string | null
@@ -716,17 +727,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         failureKind,
       })
       enqueueRunRecord(db(), claim.id, localMachineId, finishedAt)
-      if (
-        status !== 'asking' &&
-        status !== 'running' &&
-        !(failureKind && FAILS_OVER.includes(failureKind))
-      ) {
-        closeRunChainQuestions(
-          db(),
-          identity.parent_run_id ?? claim.id,
-          QUESTION_CLOSE_CHAIN_TERMINAL,
-        )
-      }
+      closeTerminalQuestions(db(), identity.parent_run_id ?? claim.id, status, failureKind)
     })
   try {
     writeTerminalRow()

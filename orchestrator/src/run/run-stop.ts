@@ -15,11 +15,8 @@ import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import {
-  closeRunChainQuestions,
-  QUESTION_CLOSE_CHAIN_STOPPED,
-  questionOpenSql,
-} from './question-close.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_STOPPED } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'

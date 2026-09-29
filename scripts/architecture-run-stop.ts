@@ -13,6 +13,7 @@ export const runStopBoundarySpecs = [
       './question-vocabulary.ts',
       './question-outbox.ts',
       './question-close.ts',
+      './question-open.ts',
       '../worktree/worktree-remove.ts',
       '../worktree/worktree-types.ts',
     ],

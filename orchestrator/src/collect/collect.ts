@@ -6,7 +6,7 @@ import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
-import { questionOpenSql } from '../run/question-close.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 

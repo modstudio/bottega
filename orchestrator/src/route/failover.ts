@@ -8,7 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
-import { questionOpenSql } from '../run/question-close.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 

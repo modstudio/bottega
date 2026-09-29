@@ -3,11 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
-import { closeQuestions, questionOpenSql } from '../run/question-close.ts'
+import { closeQuestions } from '../run/question-close.ts'
 import {
   auditQuestionMutation,
   authorizeWorkflowQuestionMutation,
 } from '../run/question-mutation.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'

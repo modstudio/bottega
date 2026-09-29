@@ -19,7 +19,7 @@ import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
-import { questionOpenSql } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {

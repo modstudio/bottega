@@ -7,7 +7,7 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type ProcessSample, sampleProcesses } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
-import { questionOpenSql } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import type {
   AnswerChannel,
   AnswererKind,

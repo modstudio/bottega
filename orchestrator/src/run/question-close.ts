@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { auditQuestionMutation } from './question-mutation.ts'
+import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 
 export const QUESTION_CLOSE_CHAIN_STOPPED = 'chain-stopped'
@@ -11,10 +12,7 @@ export const QUESTION_CLOSE_CHAIN_VOIDED = 'chain-voided'
 export const QUESTION_CLOSE_CHAIN_STALE = 'chain-stale'
 export const QUESTION_CLOSE_ATTEMPT_FAILED_OVER = 'attempt-failed-over'
 export const QUESTION_CLOSE_CHAIN_TERMINAL = 'chain-terminal'
-export const QUESTION_CLOSE_OPERATOR = 'operator-closed'
-
-export const questionOpenSql = (alias: string): string =>
-  `${alias}.answered_at IS NULL AND ${alias}.closed_at IS NULL`
+const QUESTION_CLOSE_OPERATOR = 'operator-closed'
 
 export type QuestionCloseReason =
   | typeof QUESTION_CLOSE_CHAIN_STOPPED
@@ -26,7 +24,7 @@ export type QuestionCloseReason =
   | 'advanced-without-ruling'
   | 'abandoned'
 
-export function questionIdsForRunChain(database: Database, rootId: number): number[] {
+function questionIdsForRunChain(database: Database, rootId: number): number[] {
   return database
     .query<{ id: number }, [number, number]>(
       `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id

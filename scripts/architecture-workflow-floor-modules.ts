@@ -50,6 +50,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-vocabulary.ts',
     '../run/question-mutation.ts',
     '../run/question-close.ts',
+    '../run/question-open.ts',
     '../run/question-outbox.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',

@@ -4,7 +4,7 @@ import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { questionOpenSql } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 

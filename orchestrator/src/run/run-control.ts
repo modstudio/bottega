@@ -17,7 +17,7 @@ import { outcomeOf } from '../outcome.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
-import { questionOpenSql } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,

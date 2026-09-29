@@ -13,7 +13,7 @@ import type {
   OperatorWaitingItem,
 } from '../../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { questionOpenSql } from '../run/question-close.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'

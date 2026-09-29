@@ -74,21 +74,16 @@ export const modules: ArchitectureModule[] = [
     './doc-read-store.ts',
     './doc-write-allowed.ts',
   ]),
-  module('orchestrator/src/code/code-search.ts', [
-    '../../../shared/self-spawn.ts',
-    '../../../shared/orch-contract.ts',
-    '../project/projects.ts',
-  ]),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/code/code-search.ts', ['../../../shared/self-spawn.ts', '../../../shared/orch-contract.ts', '../project/projects.ts']),
   module('orchestrator/src/run/run-answer-liveness.ts', []),
-  module('orchestrator/src/run/question-close.ts', [
-    '../database/db.ts',
-    './question-mutation.ts',
-    './question-outbox.ts',
-  ]),
-  module('orchestrator/src/close/absent-close-out-residue.ts', [
-    '../database/db.ts',
-    '../reclaim/reclaim-residue.ts',
-  ]),
+  module('orchestrator/src/run/question-open.ts', []),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/run/question-close.ts', ['../database/db.ts', './question-mutation.ts', './question-open.ts', './question-outbox.ts']),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/close/close-out-questions.ts', ['../database/db.ts', '../run/question-close.ts']),
+  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
+  module('orchestrator/src/close/absent-close-out-residue.ts', ['../database/db.ts', '../reclaim/reclaim-residue.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/close/absent-tree-close-out.ts', ['../git/git-environment.ts', '../project/projects.ts', '../reclaim/reclaim.ts', '../worktree/worktree.ts', '../worktree/worktree-remove.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
@@ -207,7 +202,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-bootstrap.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
-    '../run/question-close.ts',
+    '../run/question-open.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
   module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
@@ -542,7 +537,7 @@ export const modules: ArchitectureModule[] = [
     '../agent/agents.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
-    './question-close.ts',
+    './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',
     '../confinement/confinement.ts',
     '../contract/contract.ts',

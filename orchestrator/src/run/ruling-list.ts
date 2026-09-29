@@ -3,7 +3,7 @@
 
 import { type RulingListRow, RulingListSchema } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { questionOpenSql } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 
 export function listRulings(options: {
   since?: string

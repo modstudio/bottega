@@ -52,7 +52,7 @@ import {
   latestCheckpoint,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
-import { questionOpenSql } from './question-close.ts'
+import { questionOpenSql } from './question-open.ts'
 import { childEnv, errorTail, live, liveCheckpoints, registerLiveGate } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'

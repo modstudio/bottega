@@ -11,7 +11,6 @@ import {
 } from '../../../shared/question-vocabulary.ts'
 import { setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
-import { closeQuestionByOperator } from '../run/question-close.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
 import { listRulings } from '../run/ruling-list.ts'
@@ -58,11 +57,12 @@ export function register(program: Command): void {
     .command('close <id>')
     .requiredOption('--reason <text>')
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const questionId = Number(id)
       if (!Number.isSafeInteger(questionId) || questionId <= 0) {
         throw new Error('question id must be a positive integer')
       }
+      const { closeQuestionByOperator } = await import('../run/question-close.ts')
       closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
       log(`closed question ${questionId}`)
     })

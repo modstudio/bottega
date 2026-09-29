@@ -24,7 +24,7 @@ import {
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
-import { questionOpenSql } from '../run/question-close.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { runLeaseState } from '../run/run-lease.ts'
