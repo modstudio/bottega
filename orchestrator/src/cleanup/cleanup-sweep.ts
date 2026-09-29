@@ -64,6 +64,7 @@ import {
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
+import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -522,6 +523,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     forgotten: 0,
   }
   let cleanupFailed = false
+  const unattended = sweepUnattendedResidue({
+    dryRun: dry,
+    selectedProject: selectedProject?.name ?? null,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= unattended.failed
   const inventoryErrors = new Set<string>()
   const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
   const kept: { line: string; reason: string }[] = []
@@ -537,7 +544,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   }
   sweepTerminalRunLeases(dry)
   for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
-  cleanupFailed = recordedState.cleanupFailed
+  cleanupFailed ||= recordedState.cleanupFailed
 
   /**
    * DATABASE ROWS ARE NOT AN INVENTORY OF WHAT IS ON DISK.

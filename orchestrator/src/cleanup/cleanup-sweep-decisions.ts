@@ -35,11 +35,45 @@ export type UnjudgedOwnerFacts = {
   windowMs: number
 }
 
-/** Decide whether an owed judgment still has a live-enough owner to provide it. */
-export function shouldExpireUnjudgedOwner(facts: UnjudgedOwnerFacts): boolean {
+function ownerIsGone(facts: UnjudgedOwnerFacts): boolean {
   if (facts.ownerSessionId === null) return true
   const ownerLastActivity = Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
   return facts.now - ownerLastActivity > facts.windowMs
+}
+
+/** Decide whether an owed judgment still has a live-enough owner to provide it. */
+export function shouldExpireUnjudgedOwner(facts: UnjudgedOwnerFacts): boolean {
+  return ownerIsGone(facts)
+}
+
+export const UNATTENDED_RECLAIM_KINDS = [
+  'stale-run',
+  'process',
+  'ref-guard',
+  'retained-ref',
+  'sandbox',
+] as const
+
+export type UnattendedReclaimKind = (typeof UNATTENDED_RECLAIM_KINDS)[number]
+export type UnattendedReclaimFacts = UnjudgedOwnerFacts & {
+  kind: string
+  liveness: 'dead' | 'live' | 'unknown'
+  uncommittedWork: boolean | 'unknown'
+  runRecordExists: boolean
+}
+export type UnattendedReclaimRuling = { action: 'allow' } | { action: 'keep'; reason: string }
+
+/** Decide whether residue is safe for the scheduled, non-interactive reclaim pass. */
+export function decideUnattendedReclaim(facts: UnattendedReclaimFacts): UnattendedReclaimRuling {
+  if (!UNATTENDED_RECLAIM_KINDS.some((kind) => kind === facts.kind))
+    return { action: 'keep', reason: 'residue kind is not allowed for unattended reclaim' }
+  if (!facts.runRecordExists) return { action: 'keep', reason: 'run record is absent' }
+  if (!ownerIsGone(facts)) return { action: 'keep', reason: 'owner session is not gone' }
+  if (facts.liveness !== 'dead')
+    return { action: 'keep', reason: `${facts.liveness} liveness is not dead` }
+  if (facts.uncommittedWork !== false)
+    return { action: 'keep', reason: 'uncommitted work is present or could not be inspected' }
+  return { action: 'allow' }
 }
 
 export function isSweepCandidate(input: {

@@ -3,10 +3,12 @@
  * shared ref-guard metadata. The monitor reports what it finds; nothing here
  * drops a database or deletes a ref.
  */
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import type { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
 
 const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 
@@ -37,6 +39,60 @@ export type RefGuard = {
 export type GitResourceInventory<T> =
   | { ascertainable: true; items: T[] }
   | { ascertainable: false; reason: string }
+
+export type SandboxDirectoryInventory =
+  | {
+      ascertainable: true
+      directories: { rootId: number; path: string; sizeBytes: number }[]
+      conversations: { rootId: number; terminal: boolean }[]
+    }
+  | { ascertainable: false; reason: string }
+
+function directorySize(path: string): number {
+  const entry = lstatSync(path)
+  if (!entry.isDirectory()) return entry.size
+  return readdirSync(path).reduce((total, name) => total + directorySize(join(path, name)), 0)
+}
+
+/** Inventory sandbox homes and their recorded conversation state. Never removes them. */
+export function sandboxDirectoryInventory(
+  database: ReturnType<typeof db>,
+): SandboxDirectoryInventory {
+  try {
+    const directories = existsSync(RUNS_DIR)
+      ? readdirSync(RUNS_DIR, { withFileTypes: true }).flatMap((entry) => {
+          const match = entry.isDirectory() ? /^sandbox-([1-9]\d*)$/.exec(entry.name) : null
+          if (!match) return []
+          const path = join(RUNS_DIR, entry.name)
+          return [{ rootId: Number(match[1]), path, sizeBytes: directorySize(path) }]
+        })
+      : []
+    const rows = database.query('SELECT id, parent_run_id, status FROM run').all() as {
+      id: number
+      parent_run_id: number | null
+      status: string
+    }[]
+    const statuses = new Map<number, string[]>()
+    for (const row of rows) {
+      const rootId = row.parent_run_id ?? row.id
+      statuses.set(rootId, [...(statuses.get(rootId) ?? []), row.status])
+    }
+    const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
+    return {
+      ascertainable: true,
+      directories,
+      conversations: [...statuses].map(([rootId, values]) => ({
+        rootId,
+        terminal: values.length > 0 && values.every((status) => terminal.has(status)),
+      })),
+    }
+  } catch (error) {
+    return {
+      ascertainable: false,
+      reason: `sandbox directory inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+}
 
 /** Names bottega derives for recipe databases end in `_wt_<runId>`. */
 function parseWorktreeDatabaseName(name: string): number | null {

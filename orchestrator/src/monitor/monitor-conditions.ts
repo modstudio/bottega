@@ -21,8 +21,12 @@ import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
+  type SandboxDirectoryInventory,
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
+
+export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
+
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
@@ -765,14 +769,6 @@ export function orphanDockerNetworkConditions(
   })
   return { conditions, errors: [] }
 }
-
-export type SandboxDirectoryInventory =
-  | {
-      ascertainable: true
-      directories: { rootId: number; path: string; sizeBytes: number }[]
-      conversations: { rootId: number; terminal: boolean }[]
-    }
-  | { ascertainable: false; reason: string }
 
 /** Report sandbox homes only after every turn in their conversation is terminal. */
 export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInventory): {

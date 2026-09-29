@@ -37,7 +37,7 @@ export type ResidueKind =
   | 'process'
   | 'stale-run'
 
-type Options = { dryRun?: boolean }
+type Options = { dryRun?: boolean; allowSignal?: boolean }
 const terminal = (status: string) => ['ok', 'failed', 'stale', 'stopped'].includes(status)
 const denied = (decision: Extract<ReleaseDecision, { allowed: false }>) => ({
   ok: false,
@@ -243,6 +243,15 @@ function reclaimTrust(subject: string, options: Options) {
   }
 }
 
+function unattendedSignalRefusal(
+  decision: ReturnType<typeof processReleaseDecision>,
+  allowSignal: boolean | undefined,
+): string | null {
+  return decision.allowed && decision.action === 'signal' && allowSignal === false
+    ? 'refused; invariant: unattended reclaim never signals a live process; fix: reclaim this process manually'
+    : null
+}
+
 function reclaimProcess(subject: string, options: Options) {
   const runId = numericSubject(subject)
   const row = db()
@@ -277,6 +286,8 @@ function reclaimProcess(subject: string, options: Options) {
     ),
   })
   if (!decision.allowed) return { ok: false, action: decision.refusal }
+  const signalRefusal = unattendedSignalRefusal(decision, options.allowSignal)
+  if (signalRefusal) return { ok: false, action: signalRefusal }
   if (!options.dryRun) {
     if (decision.action === 'signal' && row?.agent_pid) process.kill(row.agent_pid, 'SIGTERM')
     writableDb()

@@ -1,7 +1,7 @@
 // concern: monitor
 /** Owns monitor pass composition, persistence, history, and human-readable reporting. */
 
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
@@ -26,7 +26,6 @@ import {
 import { gitLocks } from '../resources/git-locks.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
-import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
@@ -46,6 +45,7 @@ import {
   refGuardConditions,
   retainedRefConditions,
   rulingConditions,
+  sandboxDirectoryInventory,
   staleTrustEntryConditions,
   stalledRunConditions,
   terminalCloseOutRuns,
@@ -123,48 +123,6 @@ function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: stri
   } catch (error) {
     if (databaseBusy(error)) throw new MonitorStoreBusyError(error)
     throw error
-  }
-}
-
-function directorySize(path: string): number {
-  const entry = lstatSync(path)
-  if (!entry.isDirectory()) return entry.size
-  return readdirSync(path).reduce((total, name) => total + directorySize(join(path, name)), 0)
-}
-
-function sandboxDirectoryInventory(database: ReturnType<typeof db>) {
-  try {
-    const directories = existsSync(RUNS_DIR)
-      ? readdirSync(RUNS_DIR, { withFileTypes: true }).flatMap((entry) => {
-          const match = entry.isDirectory() ? /^sandbox-([1-9]\d*)$/.exec(entry.name) : null
-          if (!match) return []
-          const path = join(RUNS_DIR, entry.name)
-          return [{ rootId: Number(match[1]), path, sizeBytes: directorySize(path) }]
-        })
-      : []
-    const rows = database.query('SELECT id, parent_run_id, status FROM run').all() as {
-      id: number
-      parent_run_id: number | null
-      status: string
-    }[]
-    const statuses = new Map<number, string[]>()
-    for (const row of rows) {
-      const rootId = row.parent_run_id ?? row.id
-      statuses.set(rootId, [...(statuses.get(rootId) ?? []), row.status])
-    }
-    return {
-      ascertainable: true as const,
-      directories,
-      conversations: [...statuses].map(([rootId, values]) => ({
-        rootId,
-        terminal: values.length > 0 && values.every((status) => TERMINAL_STATUSES.has(status)),
-      })),
-    }
-  } catch (error) {
-    return {
-      ascertainable: false as const,
-      reason: `sandbox directory inventory unavailable: ${(error as Error).message}`,
-    }
   }
 }
 
