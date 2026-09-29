@@ -608,7 +608,9 @@ describe('managed context', () => {
     expect(result.warnings).toContain(
       'warning: hosted autonomy preset and overrides are unavailable until you sign in',
     )
-    expect(result.registered && result.stages.every((stage) => stage.overridden === null)).toBe(true)
+    expect(result.registered && result.stages.every((stage) => stage.overridden === null)).toBe(
+      true,
+    )
   })
 
   test('sets the exact hosted user autonomy key and returns a fresh resolution', async () => {
