@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
+import { questionOpenSql } from '../run/question-close.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 
@@ -211,7 +212,7 @@ export function resolveSupersededTurn(database: Database, rootId: number, turn: 
         )
         AND NOT EXISTS (
           SELECT 1 FROM question q
-           WHERE q.run_id=prior.id AND q.answered_at IS NULL
+           WHERE q.run_id=prior.id AND ${questionOpenSql('q')}
         )
         AND EXISTS (
           SELECT 1 FROM run later

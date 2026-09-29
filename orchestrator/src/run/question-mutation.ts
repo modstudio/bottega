@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { runMutationOwnerDecision } from './run-mutation-owner.ts'
 
-export type QuestionMutationAction = 'rule' | 'overturn' | 'file'
+export type QuestionMutationAction = 'rule' | 'overturn' | 'file' | 'close'
 
 export function authorizeWorkflowQuestionMutation(input: {
   owner: string | null

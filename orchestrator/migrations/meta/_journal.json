@@ -484,6 +484,13 @@
       "when": 1790272800021,
       "tag": "0068_outbox_redaction_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1790272800022,
+      "tag": "0069_question_close_audit",
+      "breakpoints": true
     }
   ]
 }

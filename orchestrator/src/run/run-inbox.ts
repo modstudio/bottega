@@ -4,6 +4,7 @@ import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { questionOpenSql } from './question-close.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 
@@ -76,6 +77,7 @@ export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQ
        FROM question q JOIN run r ON r.id = q.run_id
        JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
        ${seenJoin}
+      WHERE q.closed_at IS NULL
       ORDER BY q.run_id, q.id`,
     )
     .all(...(hasSessionSeen ? [cutoff] : [])) as Array<{
@@ -281,6 +283,7 @@ export async function runInboxCommand(
        FROM question q JOIN run r ON r.id = q.run_id
        JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
        ${seenJoin}
+      WHERE q.closed_at IS NULL
       ORDER BY q.run_id, q.id`,
     )
     .all(...(hasSessionSeen ? [cutoff] : [])) as {
@@ -352,7 +355,7 @@ export async function runInboxCommand(
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
-             AND q.answered_at IS NULL
+             AND ${questionOpenSql('q')}
         )
         AND NOT EXISTS (
           SELECT 1 FROM run active

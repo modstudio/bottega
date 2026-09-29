@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
+import { closeQuestions, questionOpenSql } from '../run/question-close.ts'
 import {
   auditQuestionMutation,
   authorizeWorkflowQuestionMutation,
@@ -125,14 +126,16 @@ function closeOpenWorkflowQuestion(
   const questions = d
     .query<{ id: number }, [number]>(
       `SELECT id FROM question
-       WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+       WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .all(cursorId)
-  d.query(
-    `UPDATE question SET closed_at=?,close_reason=?,revision=revision+1
-     WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
-  ).run(at, reason, cursorId)
-  for (const question of questions) enqueueQuestionRecord(d, question.id)
+  closeQuestions(
+    d,
+    questions.map((question) => question.id),
+    reason,
+    sessionId(),
+    at,
+  )
 }
 
 function findCursor(
@@ -864,7 +867,7 @@ function awaitWorkflowRulingImpl(
   const open = d
     .query(
       `SELECT id FROM question
-       WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+       WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .get(row.id) as { id: number } | null
   if (open) {
@@ -932,7 +935,7 @@ export function ruleWorkflow(
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
           revision=revision+1
-         WHERE workflow_cursor_id=? AND answered_at IS NULL AND closed_at IS NULL`,
+         WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
       )
       .run(ruling.trim(), at, answeredBy, fromOperator ? 'operator' : 'agent', channel, row.id)
     if (changed.changes !== 1)

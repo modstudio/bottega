@@ -52,6 +52,7 @@ import {
   latestCheckpoint,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
+import { questionOpenSql } from './question-close.ts'
 import { childEnv, errorTail, live, liveCheckpoints, registerLiveGate } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
@@ -468,7 +469,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       } | null
       if (!row) return
       const openQuestion = db()
-        .query('SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1')
+        .query(`SELECT 1 n FROM question WHERE run_id=? AND ${questionOpenSql('question')} LIMIT 1`)
         .get(claim.id) as { n: number } | null
       const idleThresholdMs = jobIdleKillMs(opts.job, process.env, boundMs)
       const decision = shouldIdleKill({
@@ -497,7 +498,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         afterCheckpoint?.status === 'asking' ||
         Boolean(
           db()
-            .query('SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1')
+            .query(
+              `SELECT 1 n FROM question WHERE run_id=? AND ${questionOpenSql('question')} LIMIT 1`,
+            )
             .get(claim.id),
         )
       if (askedDuringCheckpoint) {

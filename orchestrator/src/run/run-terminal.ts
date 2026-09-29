@@ -25,7 +25,7 @@ import {
 } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import type { classify } from '../failure/failure.ts'
+import { type classify, FAILS_OVER } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -39,6 +39,7 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -702,6 +703,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
             .run(error, identity.parent_run_id)
         }
         resolveRootFromLastTurn(db(), identity.parent_run_id)
+      }
+      if (
+        status !== 'asking' &&
+        status !== 'running' &&
+        !(failureKind && FAILS_OVER.includes(failureKind))
+      ) {
+        closeRunChainQuestions(
+          db(),
+          identity.parent_run_id ?? claim.id,
+          QUESTION_CLOSE_CHAIN_TERMINAL,
+        )
       }
 
       // A parsed findings reply is the review event. Capture it in the same

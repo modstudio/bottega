@@ -18,6 +18,7 @@ import { summary as metricSummary } from '../metric/metric.ts'
 import { projectAt } from '../project/projects.ts'
 import { reviewCalibration } from '../review/review-calibration.ts'
 import { candidates, scoreboard } from '../route/route.ts'
+import { questionOpenSql } from '../run/question-close.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
@@ -188,9 +189,9 @@ export function state(sinceDays: number | null = null) {
     .query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, repo, cwd, started_at, COALESCE(label, prompt_head) AS prompt_head, status,
             (SELECT COUNT(*) FROM question q
-              WHERE q.run_id = run.id AND q.answered_at IS NULL) AS open_questions,
+              WHERE q.run_id = run.id AND ${questionOpenSql('q')}) AS open_questions,
             (status = 'asking' AND (SELECT COUNT(*) FROM question q
-              WHERE q.run_id = run.id AND q.answered_at IS NULL) > 0) AS waiting
+              WHERE q.run_id = run.id AND ${questionOpenSql('q')}) > 0) AS waiting
        FROM run WHERE status IN ('running','asking') ORDER BY waiting DESC, id DESC`,
     )
     .all()

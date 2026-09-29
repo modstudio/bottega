@@ -28,6 +28,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/ruling-list.ts', [
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
+    './question-close.ts',
   ]),
   module('orchestrator/src/run/ruling-overturn-authority.ts', []),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
@@ -54,6 +55,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../database/db.ts',
     '../run/run-authority.ts',
     '../run/question-outbox.ts',
+    '../run/question-close.ts',
     '../workflow/autonomy-scopes.ts',
   ]),
   module('orchestrator/src/operator/operator-commands.ts', [

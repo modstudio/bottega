@@ -64,6 +64,7 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
@@ -452,6 +453,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
      */
     if (identity.resolveSupersededTurn) {
       resolveSupersededTurn(db(), opts.resume!.parent, opts.resume!.turn - 1)
+    }
+    if (opts.automaticFailover && opts.retryOf !== undefined) {
+      closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
     }
     const recordCarry = db().query(
       'INSERT INTO run_carried_ruling (run_id,question_id) VALUES (?,?)',

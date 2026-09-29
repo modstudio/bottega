@@ -20,6 +20,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { questionOpenSql } from './question-close.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
@@ -123,7 +124,7 @@ function answeredQuestionIds(runId: number, rulings: AnswerRunInput['rulings']):
     db()
       .query(
         `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id
-          WHERE (owner.id=? OR owner.parent_run_id=?) AND q.answered_at IS NULL
+          WHERE (owner.id=? OR owner.parent_run_id=?) AND ${questionOpenSql('q')}
           ORDER BY q.id`,
       )
       .all(runId, runId) as { id: number }[]

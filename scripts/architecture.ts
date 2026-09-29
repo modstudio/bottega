@@ -80,6 +80,11 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
   ]),
   module('orchestrator/src/run/run-answer-liveness.ts', []),
+  module('orchestrator/src/run/question-close.ts', [
+    '../database/db.ts',
+    './question-mutation.ts',
+    './question-outbox.ts',
+  ]),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
     '../database/db.ts',
     '../reclaim/reclaim-residue.ts',
@@ -202,6 +207,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-bootstrap.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
+    '../run/question-close.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
   module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
@@ -483,6 +489,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-ownership.ts',
     '../review/review-target.ts',
     './run-artifacts.ts',
+    './question-close.ts',
     './branch-owner-guard.ts',
     './run-process.ts',
     './resume-tree.ts',
@@ -534,6 +541,7 @@ export const modules: ArchitectureModule[] = [
     '../agent/agents.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
+    './question-close.ts',
     '../sandbox/codex-mcp-scope.ts',
     '../confinement/confinement.ts',
     '../contract/contract.ts',
@@ -596,6 +604,7 @@ export const modules: ArchitectureModule[] = [
     './run-process.ts',
     './run-resume-kind.ts',
     './question-vocabulary.ts',
+    './question-close.ts',
     './question-outbox.ts',
     './run-terminal-blockers.ts', './run-terminal-premature.ts',
     './run-terminal-precedence.ts',

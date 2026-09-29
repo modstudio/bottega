@@ -15,6 +15,11 @@ import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import {
+  closeRunChainQuestions,
+  QUESTION_CLOSE_CHAIN_STOPPED,
+  questionOpenSql,
+} from './question-close.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
@@ -136,6 +141,7 @@ export async function stopRun(
       )
       .run(authority.rootId, authority.rootId)
     auditRunMutation(authority, 'stop', options.auditReason)
+    closeRunChainQuestions(db(), authority.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
     return { row, cleanupRow }
   })
   const { row, cleanupRow } = stopped
@@ -249,7 +255,7 @@ export async function abandonRun(
     authority = adoptRunMutation(authority, 'abandon')
     const openQuestions = db()
       .query<{ id: number }, [number, number]>(
-        `SELECT id FROM question WHERE answered_at IS NULL AND run_id IN
+        `SELECT id FROM question WHERE ${questionOpenSql('question')} AND run_id IN
           (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
       )
       .all(authority.rootId, authority.rootId)
@@ -269,7 +275,7 @@ export async function abandonRun(
         `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', revision=revision+1,
             answerer_kind=?, answer_channel=?, delivery_pending_at=NULL,
             awaiting_operator_at=NULL
-          WHERE answered_at IS NULL AND run_id IN
+          WHERE ${questionOpenSql('question')} AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
       )
       .run(

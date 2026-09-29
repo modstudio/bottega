@@ -29,6 +29,7 @@ import {
   type ReviewReproduced,
   type ReviewSeverity,
 } from './review/review-vocabulary.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_VOIDED } from './run/question-close.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -315,6 +316,7 @@ function recordEvidenceExclusion(
     }
     enqueueTerminalRunRecord(id)
     auditRunMutation(authority, 'void', options.auditReason)
+    closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
   })
   if (blocked) {
     presentation.log(

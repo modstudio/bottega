@@ -17,6 +17,7 @@ import { outcomeOf } from '../outcome.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import { questionOpenSql } from './question-close.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,
@@ -177,7 +178,7 @@ export async function follow(
         const open = db()
           .query(
             `SELECT q.question FROM question q JOIN run r ON r.id = q.run_id
-            WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
+            WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}
             ORDER BY q.id`,
           )
           .all(row.parent_run_id ?? chain.finalId, row.parent_run_id ?? chain.finalId) as {
@@ -550,7 +551,7 @@ export async function continueRun(
   const open = db()
     .query(
       `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
+      WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}`,
     )
     .get(id, id) as { n: number }
   // A worker waiting on a ruling must be RULED ON, not talked past. Continuing

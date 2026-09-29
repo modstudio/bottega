@@ -133,6 +133,17 @@ test('stopping a running turn records the conversation root as stopped', async (
   ])
 })
 
+test('stop closes an unanswered question on the chain', async () => {
+  const id = insert('running')
+  db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .run(id, new Date().toISOString(), 'which design?')
+  expect((await invoke('stop', id)).code).toBe(0)
+  expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(id)).toEqual({
+    close_reason: 'chain-stopped',
+  })
+})
+
 test('stop by a chain root stops its running child turn', async () => {
   const root = insert('ok')
   const turn = insert('running')

@@ -33,6 +33,7 @@ import {
   otherConversationWorktreeSharers,
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from '../run/question-close.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunLease, runLeaseState } from '../run/run-lease.ts'
@@ -970,6 +971,18 @@ export function closeOutRun(
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
   if (!root) throw new Error(`no run ${runId}`)
+  if (!options.dryRun) {
+    const turns = db()
+      .query<{ status: string }, [number, number]>(
+        'SELECT status FROM run WHERE id=? OR parent_run_id=?',
+      )
+      .all(root.root_id, root.root_id)
+    if (turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status))) {
+      writeTransaction(() => {
+        closeRunChainQuestions(db(), root.root_id, QUESTION_CLOSE_CHAIN_TERMINAL)
+      })
+    }
+  }
   const keepTreeDecision = closeOutKeepTreeDecision(root.root_id, options.intent)
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.
