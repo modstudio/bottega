@@ -27,17 +27,10 @@ import {
 export const Route = createFileRoute('/context')({ component: ManagedContextPage })
 
 /**
- * Projects, user canon and permission edits keep one contract in both modes, so the page
- * reaches them through the proxy for the server it is talking to. Autonomy and settings reads
- * differ by mode and use the typed proxy directly.
+ * The local and hosted servers mount different routers, so every read and write names the
+ * proxy for its mode and the page uses only fields both shapes carry.
  */
-type SharedContext = Pick<typeof trpc.context, 'projects' | 'userCanon'> & {
-  settings: Pick<typeof trpc.context.settings, 'permission' | 'pathKey'>
-}
-
-function sharedContext(): SharedContext {
-  return (isHostedMode() ? hostedTrpc.context : trpc.context) as unknown as SharedContext
-}
+const hosted = isHostedMode()
 
 const APPLY_NOTE =
   'Each machine applies these at session start and every 15 minutes (orch settings apply).'
@@ -82,8 +75,18 @@ function RemoveCanonButton({
 }
 
 export function ManagedContextPage() {
-  const projects = useQuery(sharedContext().projects.queryOptions())
-  const canon = useQuery(sharedContext().userCanon.list.queryOptions())
+  const localProjects = useQuery({ ...trpc.context.projects.queryOptions(), enabled: !hosted })
+  const hostedProjects = useQuery({
+    ...hostedTrpc.context.projects.queryOptions(),
+    enabled: hosted,
+  })
+  const projects = hosted ? hostedProjects : localProjects
+  const localCanon = useQuery({ ...trpc.context.userCanon.list.queryOptions(), enabled: !hosted })
+  const hostedCanon = useQuery({
+    ...hostedTrpc.context.userCanon.list.queryOptions(),
+    enabled: hosted,
+  })
+  const canon = hosted ? hostedCanon : localCanon
   const [projectChoice, setProjectChoice] = useState('')
   const [settingsChoice, setSettingsChoice] = useState('user')
   const selectedProject = projectChoice || projects.data?.[0]?.name || ''
@@ -103,7 +106,7 @@ export function ManagedContextPage() {
         title="Agent settings"
         subtitle="Autonomy, user canon and permissions, the same on every machine"
       />
-      {isHostedMode() ? (
+      {hosted ? (
         <HostedAutonomySection
           project={selectedProject}
           options={projectOptions}
@@ -135,6 +138,47 @@ type CanonRows = Array<{
   updated_at: string
 }>
 
+/** User canon reads and writes against the server this page is talking to. */
+function useUserCanonApi(
+  selected: string,
+  on: { saved(row: { slug: string }): void; removed(): void },
+) {
+  const input = { slug: selected || '_' }
+  const localDetail = useQuery({
+    ...trpc.context.userCanon.get.queryOptions(input),
+    enabled: !hosted && Boolean(selected),
+  })
+  const hostedDetail = useQuery({
+    ...hostedTrpc.context.userCanon.get.queryOptions(input),
+    enabled: hosted && Boolean(selected),
+  })
+  const detail = hosted ? hostedDetail : localDetail
+  const canonKey = hosted
+    ? hostedTrpc.context.userCanon.pathKey()
+    : trpc.context.userCanon.pathKey()
+  const saved = async (row: { slug: string }) => {
+    await queryClient.invalidateQueries({ queryKey: canonKey })
+    on.saved(row)
+  }
+  const removed = async () => {
+    on.removed()
+    await queryClient.invalidateQueries({ queryKey: canonKey })
+  }
+  const localSave = useMutation(trpc.context.userCanon.set.mutationOptions({ onSuccess: saved }))
+  const hostedSave = useMutation(
+    hostedTrpc.context.userCanon.set.mutationOptions({ onSuccess: saved }),
+  )
+  const save = hosted ? hostedSave : localSave
+  const localRemove = useMutation(
+    trpc.context.userCanon.remove.mutationOptions({ onSuccess: removed }),
+  )
+  const hostedRemove = useMutation(
+    hostedTrpc.context.userCanon.remove.mutationOptions({ onSuccess: removed }),
+  )
+  const remove = hosted ? hostedRemove : localRemove
+  return { detail, save, remove }
+}
+
 export function UserCanonSection({
   rows,
   pending,
@@ -144,18 +188,24 @@ export function UserCanonSection({
   pending: boolean
   error?: string
 }) {
-  const api = sharedContext()
   const [choice, setChoice] = useState('')
   const [creating, setCreating] = useState(false)
   const selected = choice || rows?.[0]?.slug || ''
-  const detail = useQuery({
-    ...api.userCanon.get.queryOptions({ slug: selected || '_' }),
-    enabled: Boolean(selected),
-  })
   const [slug, setSlug] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [reason, setReason] = useState('')
+  const { detail, save, remove } = useUserCanonApi(selected, {
+    saved: (row) => {
+      setChoice(row.slug)
+      setCreating(false)
+      setReason('')
+    },
+    removed: () => {
+      setChoice('')
+      setReason('')
+    },
+  })
 
   useEffect(() => {
     if (!detail.data || creating) return
@@ -163,26 +213,6 @@ export function UserCanonSection({
     setTitle(detail.data.title)
     setBody(detail.data.body)
   }, [detail.data, creating])
-
-  const save = useMutation(
-    api.userCanon.set.mutationOptions({
-      onSuccess: async (row) => {
-        await queryClient.invalidateQueries({ queryKey: api.userCanon.pathKey() })
-        setChoice(row.slug)
-        setCreating(false)
-        setReason('')
-      },
-    }),
-  )
-  const remove = useMutation(
-    api.userCanon.remove.mutationOptions({
-      onSuccess: async () => {
-        setChoice('')
-        setReason('')
-        await queryClient.invalidateQueries({ queryKey: api.userCanon.pathKey() })
-      },
-    }),
-  )
 
   const beginCreate = () => {
     setCreating(true)
@@ -548,7 +578,6 @@ function ManagedSettingsSection({
   onTarget(value: string): void
 }) {
   const address = target === 'user' ? ({ user: true } as const) : { project: target }
-  const hosted = isHostedMode()
   const localSettings = useQuery({
     ...trpc.context.settings.get.queryOptions(address),
     enabled: !hosted,
@@ -631,19 +660,24 @@ function PermissionEditor({
   address: { user: true } | { project: string }
   revision: string | null
 }) {
-  const api = sharedContext()
   const [list, setList] = useState<'allow' | 'ask' | 'deny'>('allow')
   const [rule, setRule] = useState('')
   const [reason, setReason] = useState('')
-  const change = useMutation(
-    api.settings.permission.mutationOptions({
-      onSuccess: async () => {
-        setRule('')
-        setReason('')
-        await queryClient.invalidateQueries({ queryKey: api.settings.pathKey() })
-      },
-    }),
+  const settingsKey = hosted
+    ? hostedTrpc.context.settings.pathKey()
+    : trpc.context.settings.pathKey()
+  const changed = async () => {
+    setRule('')
+    setReason('')
+    await queryClient.invalidateQueries({ queryKey: settingsKey })
+  }
+  const localChange = useMutation(
+    trpc.context.settings.permission.mutationOptions({ onSuccess: changed }),
   )
+  const hostedChange = useMutation(
+    hostedTrpc.context.settings.permission.mutationOptions({ onSuccess: changed }),
+  )
+  const change = hosted ? hostedChange : localChange
   return (
     <>
       <div className="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)]">
