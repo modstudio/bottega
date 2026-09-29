@@ -132,8 +132,8 @@ export async function runListingCommand(
   }
   if (sinceFlag) {
     // A chain belongs in the window when any turn started there, any
-    // question was asked or answered there, or any question is still
-    // unanswered — an open ruling is current whatever its age.
+    // question was asked, answered, or closed there, or any question is
+    // still unanswered — an open ruling is current whatever its age.
     where.push(`(
       EXISTS (
         SELECT 1 FROM run turn
@@ -142,10 +142,10 @@ export async function runListingCommand(
       ) OR EXISTS (
         SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
          WHERE (owner.id = r.id OR owner.parent_run_id = r.id)
-           AND (${questionOpenSql('q')} OR q.asked_at >= ? OR q.answered_at >= ?)
+           AND (${questionOpenSql('q')} OR q.asked_at >= ? OR q.answered_at >= ? OR q.closed_at >= ?)
       )
     )`)
-    args.push(sinceFlag, sinceFlag, sinceFlag)
+    args.push(sinceFlag, sinceFlag, sinceFlag, sinceFlag)
   }
   const limit = Number(flag('limit') ?? (json ? 100000 : 20))
   let rows = db()

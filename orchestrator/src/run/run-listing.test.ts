@@ -225,6 +225,34 @@ describe('run listing', () => {
     expect(question?.answered_at).toBe('2026-09-04T19:55:00.000Z')
   })
 
+  test('runs --json --since republishes a question closed with no new turn', async () => {
+    const id = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      startedAt: '2026-09-04T15:00:00.000Z',
+    })
+    db()
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,closed_at,close_reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        '2026-09-04T16:00:00.000Z',
+        'obsolete question',
+        '2026-09-04T19:55:00.000Z',
+        'run closed',
+      )
+    const question = runJson(
+      (await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!,
+    ).questions[0]
+    expect(question).toMatchObject({
+      closed_at: '2026-09-04T19:55:00.000Z',
+      close_reason: 'run closed',
+    })
+  })
+
   test('runs --json publishes question closure', async () => {
     const id = insert('ok')
     db()
