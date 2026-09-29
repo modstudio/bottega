@@ -3,6 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import type { Command } from 'commander'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
@@ -26,7 +27,12 @@ async function setupPlan(inputs: string[]) {
     Promise.resolve(readSetupProjects()),
   ])
   const repositories = gatherRepositoryFactsReport(inputs)
-  return proposeSetup(machine, repositories.repositories, register, repositories.notices)
+  const orch = bottegaEntryArgv('orch')
+  const ask = bottegaEntryArgv('ask-server')
+  return proposeSetup(machine, repositories.repositories, register, repositories.notices, [
+    { name: 'orch', command: orch[0]!, args: [...orch.slice(1), 'mcp'] },
+    { name: 'orch-ask', command: ask[0]!, args: ask.slice(1) },
+  ])
 }
 
 function readSetupProjects() {
@@ -87,6 +93,7 @@ export function register(program: Command): void {
         add: (input) => addProject(input, requireRecordSpaceMembership),
         fillAbsent: fillAbsentProjectSettings,
       })
+      if (results.some((result) => result.status === 'refused')) process.exitCode = 1
       log(
         JSON.stringify(
           { ...plan, diff: actions, actions: results },

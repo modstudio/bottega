@@ -10,10 +10,21 @@ import {
 } from '../agent/cli-version.ts'
 import { localReachable } from '../agent/model-host.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import {
+  captureHarnessMcpFacts,
+  HARNESS_MCP_CATALOGUE,
+  type HarnessMcpFacts,
+  type HarnessName,
+  harnessMcpServers,
+  type McpServerName,
+  type SetupCommandRunner,
+} from './setup-mcp.ts'
 
 const COMMAND_TIMEOUT_MS = 3_000
-export const KNOWN_HARNESSES = ['codex', 'grok', 'claude', 'opencode', 'goose'] as const
-export type HarnessName = (typeof KNOWN_HARNESSES)[number]
+
+export type { HarnessName } from './setup-mcp.ts'
+export const KNOWN_HARNESSES = Object.keys(HARNESS_MCP_CATALOGUE) as HarnessName[]
+
 type SetupAuthState = 'signed-in' | 'signed-out' | 'unknown'
 
 export type CommandCapture = CliVersionCapture
@@ -27,7 +38,12 @@ export type SetupFactsCapture = {
   gh: { path: string | null; version: CommandCapture | null; auth: CommandCapture | null }
   harnesses: Record<
     HarnessName,
-    { path: string | null; version: CommandCapture | null; auth: SetupAuthState }
+    {
+      path: string | null
+      version: CommandCapture | null
+      auth: SetupAuthState
+      mcp?: HarnessMcpFacts
+    }
   >
   localModelHost: Awaited<ReturnType<typeof localReachable>>
   sandboxRuntime: ReturnType<typeof sandboxRuntimeAvailability>
@@ -40,7 +56,12 @@ export type SetupFacts = {
   gh: { path: string | null; version: string | null; loggedIn: boolean }
   harnesses: Record<
     HarnessName,
-    { path: string | null; version: string | null; auth: SetupAuthState }
+    {
+      path: string | null
+      version: string | null
+      auth: SetupAuthState
+      mcp: HarnessMcpFacts | null
+    }
   >
   localModelHost: Awaited<ReturnType<typeof localReachable>>
   sandboxRuntime: ReturnType<typeof sandboxRuntimeAvailability>
@@ -67,6 +88,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
           path: capture.harnesses[name].path,
           version: capturedCliVersion(capture.harnesses[name].version),
           auth: capture.harnesses[name].auth,
+          mcp: capture.harnesses[name].mcp ?? null,
         },
       ]),
     ) as SetupFacts['harnesses'],
@@ -114,7 +136,13 @@ function procVersion(): string | null {
 }
 
 /** Gather bounded, read-only observations without consulting agent registration rows. */
-export async function gatherSetupFacts(): Promise<SetupFacts> {
+function desiredServerNames(harness: HarnessName): McpServerName[] {
+  return [...harnessMcpServers(harness)]
+}
+
+export async function gatherSetupFacts(
+  registrationRunner?: SetupCommandRunner,
+): Promise<SetupFacts> {
   const gitPath = which('git', { PATH: process.env.PATH })
   const ghPath = which('gh', { PATH: process.env.PATH })
   const harnesses = Object.fromEntries(
@@ -128,6 +156,9 @@ export async function gatherSetupFacts(): Promise<SetupFacts> {
           path,
           version: versionCapture(path),
           auth: auth?.status === 'ready' ? 'signed-in' : (auth?.status ?? 'unknown'),
+          mcp: path
+            ? captureHarnessMcpFacts(name, path, desiredServerNames(name), registrationRunner)
+            : undefined,
         },
       ]
     }),

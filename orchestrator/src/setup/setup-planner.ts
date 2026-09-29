@@ -2,6 +2,7 @@
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
 import type { ProjectSettings } from '../project/projects.ts'
 import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
+import type { HarnessName, McpServer } from './setup-mcp.ts'
 
 export type SetupAnswers = Record<string, string>
 type SettingsDiff = Record<string, { from: unknown; to: unknown }>
@@ -25,6 +26,19 @@ export type SetupAction =
       kind: 'unchanged'
       name: string
     })
+  | {
+      kind: 'register-mcp'
+      harness: HarnessName
+      bin: string
+      server: McpServer
+      replace: boolean
+    }
+  | {
+      kind: 'mcp-unchanged' | 'mcp-skipped'
+      harness: HarnessName
+      bin: string
+      server: McpServer
+    }
 
 export function validateSetupAnswers(questions: SetupQuestion[], value: unknown): SetupAnswers {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -82,7 +96,14 @@ function diffSettings(current: ProjectSettings | null, proposed: ProjectSettings
 }
 
 export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
-  return plan.proposals.map((proposal) => {
+  const registrations: SetupAction[] = plan.registrations.map((proposal) => {
+    if (proposal.state === 'same') return { ...proposal, kind: 'mcp-unchanged' }
+    const answer = proposal.questionId ? answers[proposal.questionId] : undefined
+    const apply = proposal.state === 'absent' ? answer === 'register' : answer === 'replace'
+    if (!apply) return { ...proposal, kind: 'mcp-skipped' }
+    return { ...proposal, kind: 'register-mcp', replace: proposal.state !== 'absent' }
+  })
+  const projects: SetupAction[] = plan.proposals.map((proposal) => {
     const settings = resolvedSettings(proposal, answers, plan.questions)
     const settingsDiff = diffSettings(proposal.current?.settings ?? null, settings)
     const metadataDiffers = Boolean(
@@ -119,6 +140,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       settingsDiff,
     }
   })
+  return [...registrations, ...projects]
 }
 
 export function recommendedAnswers(plan: SetupPlan): SetupAnswers {

@@ -10,6 +10,29 @@ const machine = {
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
 
+function machineWithMcp(
+  harness: 'claude' | 'codex' | 'grok' | 'opencode' | 'goose',
+  mcp: NonNullable<SetupFacts['harnesses']['codex']['mcp']>,
+  auth: SetupFacts['harnesses']['codex']['auth'] = 'signed-in',
+): SetupFacts {
+  return {
+    ...machine,
+    harnesses: Object.fromEntries(
+      ['claude', 'codex', 'grok', 'opencode', 'goose'].map((name) => [
+        name,
+        {
+          path: name === harness ? `/bin/${name}` : null,
+          version: name === harness ? '1' : null,
+          auth,
+          mcp: name === harness ? mcp : null,
+        },
+      ]),
+    ) as SetupFacts['harnesses'],
+  }
+}
+
+const orchServer = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
+
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
   return {
     name: 'alpha-project',
@@ -99,7 +122,9 @@ test('fills only a missing prefix without changing the registered name', () => {
     currentName: 'registered-name',
     fill: { settings: { keyPrefixes: ['ALPHA'] } },
   })
-  expect(action?.settingsDiff).toEqual({ keyPrefixes: { from: null, to: ['ALPHA'] } })
+  expect(action?.kind).toBe('set')
+  if (action?.kind === 'set')
+    expect(action.settingsDiff).toEqual({ keyPrefixes: { from: null, to: ['ALPHA'] } })
 })
 
 test('asks about trunk only when known branches disagree', () => {
@@ -151,4 +176,82 @@ test('answers validation refuses unknown, missing, and invalid options', () => {
       [plan.questions[0]!.id]: 'invalid',
     }),
   ).toThrow('invalid option')
+})
+
+test('plans absent, same, and different MCP registration read-backs', () => {
+  const absent = proposeSetup(
+    machineWithMcp('codex', {
+      support: 'automatic',
+      registrations: { orch: { status: 'absent' } },
+    }),
+    [],
+    [],
+    [],
+    [orchServer],
+  )
+  expect(absent.questions).toHaveLength(1)
+  expect(planSetupActions(absent, recommendedAnswers(absent))[0]).toMatchObject({
+    kind: 'register-mcp',
+    replace: false,
+  })
+
+  const same = proposeSetup(
+    machineWithMcp('codex', {
+      support: 'automatic',
+      registrations: { orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] } },
+    }),
+    [],
+    [],
+    [],
+    [orchServer],
+  )
+  expect(same.questions).toEqual([])
+  expect(planSetupActions(same, recommendedAnswers(same))[0]?.kind).toBe('mcp-unchanged')
+
+  const different = proposeSetup(
+    machineWithMcp('codex', {
+      support: 'automatic',
+      registrations: { orch: { status: 'registered', command: '/old/orch', args: ['mcp'] } },
+    }),
+    [],
+    [],
+    [],
+    [orchServer],
+  )
+  expect(different.questions[0]).toMatchObject({ recommendation: 'keep' })
+  expect(planSetupActions(different, recommendedAnswers(different))[0]?.kind).toBe('mcp-skipped')
+  expect(planSetupActions(different, { [different.questions[0]!.id]: 'replace' })[0]).toMatchObject(
+    { kind: 'register-mcp', replace: true },
+  )
+})
+
+test('recommends skipping an absent registration when the harness is signed out', () => {
+  const plan = proposeSetup(
+    machineWithMcp(
+      'codex',
+      { support: 'automatic', registrations: { orch: { status: 'absent' } } },
+      'signed-out',
+    ),
+    [],
+    [],
+    [],
+    [orchServer],
+  )
+  expect(plan.questions[0]?.recommendation).toBe('skip')
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]?.kind).toBe('mcp-skipped')
+})
+
+test('emits manual MCP instructions for an installed harness without CLI support', () => {
+  const plan = proposeSetup(
+    machineWithMcp('goose', { support: 'manual', registrations: {} }),
+    [],
+    [],
+    [],
+    [orchServer],
+  )
+  expect(plan.questions).toEqual([])
+  expect(plan.notices[0]).toMatchObject({
+    message: expect.stringContaining('goose'),
+    fix: expect.stringContaining('orch mcp --config'),
+  })
 })
