@@ -30,7 +30,11 @@ export function terminalPrematureFinalRefusal(input: {
     replyShape = 'all-blocked-reader'
   } else if (input.parsedReview && input.parsedReview.findings.length === 0) {
     replyShape = 'empty-review'
-  } else if (input.contract?.status === 'done' && (input.measuredFiles?.length ?? 0) === 0) {
+  } else if (
+    input.contract?.status === 'done' &&
+    Array.isArray(input.measuredFiles) &&
+    input.measuredFiles.length === 0
+  ) {
     replyShape = 'done-writer-no-files'
   }
 
@@ -67,5 +71,8 @@ export function applyPrematureFinalFailure<FailureKind extends string>(
   outcome: { status: string; error: string | null; failureKind: FailureKind | null },
   refusal: PrematureFinalRefusal | null,
 ): { status: string; error: string | null; failureKind: FailureKind | 'unevidenced' | null } {
-  return refusal ? { status: 'failed', ...refusal } : outcome
+  if (!refusal) return outcome
+  if (outcome.status === 'ok') return { status: 'failed', ...refusal }
+  if (outcome.failureKind === 'unevidenced') return { ...outcome, error: refusal.error }
+  return outcome
 }
