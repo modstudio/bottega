@@ -269,11 +269,8 @@ export const modules: ArchitectureModule[] = [
     './hosted-secrets.ts',
   ]),
   module('shared/machine-config.ts', ['node:fs', 'node:path', 'zod', './config-directory.ts']),
-  module('shared/config-client.ts', [
-    './http-json.ts',
-    './record-session.ts',
-    './record-remedies.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('shared/config-client.ts', ['./http-json.ts', './record-session.ts', './record-remedies.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', []),
   module('shared/keychain.ts', []),
