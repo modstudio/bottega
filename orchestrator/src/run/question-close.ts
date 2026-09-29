@@ -61,7 +61,52 @@ export function closeRunChainQuestions(
   rootId: number,
   reason: QuestionCloseReason,
 ): number {
-  return closeQuestions(database, questionIdsForRunChain(database, rootId), reason)
+  const closed = closeQuestions(database, questionIdsForRunChain(database, rootId), reason)
+  retireRunChainQuestionDeliveries(database, rootId, reason)
+  return closed
+}
+
+/** Retires rulings that can no longer be delivered because their chain has ended. */
+export function retireRunChainQuestionDeliveries(
+  database: Database,
+  rootId: number,
+  reason: QuestionCloseReason,
+  at: string = nowIso(),
+): number {
+  const live = database
+    .query(
+      `SELECT 1 FROM run
+       WHERE (id=? OR parent_run_id=?) AND status IN ('running','asking')
+       LIMIT 1`,
+    )
+    .get(rootId, rootId)
+  if (live) return 0
+  const questionIds = database
+    .query<{ id: number }, [number, number]>(
+      `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id
+       WHERE (owner.id=? OR owner.parent_run_id=?)
+         AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL
+       ORDER BY q.id`,
+    )
+    .all(rootId, rootId)
+    .map((row) => row.id)
+  const update = database.query(
+    `UPDATE question SET delivery_pending_at=NULL,revision=revision+1
+     WHERE id=? AND answered_at IS NOT NULL AND delivery_pending_at IS NOT NULL`,
+  )
+  let retired = 0
+  for (const questionId of questionIds) {
+    if (update.run(questionId).changes !== 1) continue
+    database
+      .query(
+        `INSERT INTO question_delivery (question_id,run_id,mode,outcome,at,error)
+         VALUES (?,NULL,'record-only','retired',?,?)`,
+      )
+      .run(questionId, at, reason)
+    enqueueQuestionRecord(database, questionId)
+    retired += 1
+  }
+  return retired
 }
 
 export function closeQuestionByOperator(

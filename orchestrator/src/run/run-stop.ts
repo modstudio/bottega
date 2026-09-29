@@ -131,12 +131,6 @@ export async function stopRun(
         )
         .run(authority.rootId)
     }
-    db()
-      .query(
-        `UPDATE question SET delivery_pending_at=NULL
-          WHERE run_id IN (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      )
-      .run(authority.rootId, authority.rootId)
     auditRunMutation(authority, 'stop', options.auditReason)
     closeRunChainQuestions(db(), authority.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
     return { row, cleanupRow }

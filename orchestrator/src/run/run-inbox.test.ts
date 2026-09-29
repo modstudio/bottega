@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { addRun } from '../../test/fixtures/store.ts'
+import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
 import { db } from '../database/db.ts'
 import { VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -319,6 +320,38 @@ test('inbox marks an answered-but-undelivered chain stranded', async () => {
       new Date().toISOString(),
     )
   expect(await inbox()).toContain(`stranded — orch retry ${id} --agent`)
+})
+test('close-out retires a stale chain pending delivery from the inbox', async () => {
+  const id = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'stale',
+    session: 'orch-test-session',
+  })
+  db()
+    .query(
+      'INSERT INTO question (run_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES (?,?,?,?,?,?)',
+    )
+    .run(
+      id,
+      new Date().toISOString(),
+      'which?',
+      'ruled',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
+  expect(await inbox()).toContain(`stranded — orch retry ${id} --agent`)
+
+  closeTerminalChainQuestions(id, false)
+
+  expect(await inbox()).not.toContain(`run ${id}`)
+  expect(
+    db()
+      .query(
+        'SELECT outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_id=?)',
+      )
+      .get(id),
+  ).toEqual({ outcome: 'retired', error: 'chain-terminal' })
 })
 test('inbox and continue refuse recovery while a later chain turn is running', async () => {
   const root = addRun({

@@ -5,6 +5,7 @@ import {
   closeQuestionByOperator,
   closeQuestions,
   QUESTION_CLOSE_CHAIN_TERMINAL,
+  retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 
 let priorSession: string | undefined
@@ -90,4 +91,70 @@ test('operator close refuses live, answered and blank questions', () => {
   expect(() => closeQuestionByOperator(answered.questionId, '   ', answered.database)).toThrow(
     '--reason must not be empty',
   )
+})
+
+test('terminal delivery retirement clears only pending state, records history and enqueues', () => {
+  const { database, questionId } = fixture('stale')
+  database
+    .query(
+      `UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z',
+        answered_by='architect',delivery_pending_at='2026-09-29T10:02:00.000Z'
+       WHERE id=?`,
+    )
+    .run(questionId)
+
+  expect(
+    retireRunChainQuestionDeliveries(
+      database,
+      42,
+      QUESTION_CLOSE_CHAIN_TERMINAL,
+      '2026-09-29T10:03:00.000Z',
+    ),
+  ).toBe(1)
+  expect(
+    database
+      .query(
+        'SELECT answer,answered_at,answered_by,delivery_pending_at,revision FROM question WHERE id=?',
+      )
+      .get(questionId),
+  ).toEqual({
+    answer: 'yes',
+    answered_at: '2026-09-29T10:02:00.000Z',
+    answered_by: 'architect',
+    delivery_pending_at: null,
+    revision: 2,
+  })
+  expect(
+    database
+      .query('SELECT run_id,mode,outcome,at,error FROM question_delivery WHERE question_id=?')
+      .get(questionId),
+  ).toEqual({
+    run_id: null,
+    mode: 'record-only',
+    outcome: 'retired',
+    at: '2026-09-29T10:03:00.000Z',
+    error: 'chain-terminal',
+  })
+  expect(database.query("SELECT kind FROM outbox WHERE kind='question'").all()).toEqual([
+    { kind: 'question' },
+  ])
+})
+
+test('delivery retirement leaves an asking chain untouched', () => {
+  const { database, questionId } = fixture('asking')
+  database
+    .query(
+      `UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z',
+        delivery_pending_at='2026-09-29T10:02:00.000Z' WHERE id=?`,
+    )
+    .run(questionId)
+
+  expect(retireRunChainQuestionDeliveries(database, 42, QUESTION_CLOSE_CHAIN_TERMINAL)).toBe(0)
+  expect(
+    database.query('SELECT delivery_pending_at,revision FROM question WHERE id=?').get(questionId),
+  ).toEqual({
+    delivery_pending_at: '2026-09-29T10:02:00.000Z',
+    revision: 1,
+  })
+  expect(database.query('SELECT * FROM question_delivery').all()).toEqual([])
 })
