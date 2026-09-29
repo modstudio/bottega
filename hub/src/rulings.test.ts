@@ -91,6 +91,43 @@ describe('run ingest', () => {
     expect(listOpenRulings().filter((item) => item.session_id === 'sess-c')).toEqual([])
   })
 
+  test('closed run questions are stored as closed and excluded from open rulings', async () => {
+    await ingestRunFixtures(
+      runFixture({
+        id: 9451,
+        session_id: 'sess-closed',
+        questions: [
+          {
+            id: 35,
+            run_id: 9451,
+            asked_at: '2026-09-04T19:00:00.000Z',
+            answered_at: null,
+            closed_at: '2026-09-04T19:20:00.000Z',
+            close_reason: 'run closed',
+          },
+          {
+            id: 36,
+            run_id: 9451,
+            asked_at: '2026-09-04T19:05:00.000Z',
+            answered_at: null,
+          },
+        ],
+      }),
+    )
+
+    expect(
+      db().query(`SELECT closed_at, close_reason FROM question WHERE question_id = 35`).get(),
+    ).toEqual({
+      closed_at: '2026-09-04T19:20:00.000Z',
+      close_reason: 'run closed',
+    })
+    expect(
+      listOpenRulings()
+        .filter((item) => item.session_id === 'sess-closed')
+        .map((item) => item.question_id),
+    ).toEqual([36])
+  })
+
   test('rulings payload defaults stale_after to 1h', () => {
     expect(rulingsStaleAfter()).toBe('1h')
     expect(rulingsPayload(Date.parse('2026-09-04T20:00:00.000Z')).stale_after).toBe('1h')

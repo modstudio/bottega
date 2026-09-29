@@ -225,6 +225,27 @@ describe('run listing', () => {
     expect(question?.answered_at).toBe('2026-09-04T19:55:00.000Z')
   })
 
+  test('runs --json publishes question closure', async () => {
+    const id = insert('ok')
+    db()
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,closed_at,close_reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        '2026-09-04T16:00:00.000Z',
+        'obsolete question',
+        '2026-09-04T19:55:00.000Z',
+        'run closed',
+      )
+    const question = runJson((await command({ json: true, id: [String(id)] }))[0]!).questions[0]
+    expect(question).toMatchObject({
+      closed_at: '2026-09-04T19:55:00.000Z',
+      close_reason: 'run closed',
+    })
+  })
+
   test('runs --json --since still publishes an unanswered question older than the cutoff', async () => {
     const id = addRun({
       agent: 'codex',
@@ -362,7 +383,7 @@ describe('run listing', () => {
       row.questions.every(
         (question: object) =>
           Object.keys(question).sort().join() ===
-          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,deliveries,id,overturned_at,run_id',
+          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,close_reason,closed_at,deliveries,id,overturned_at,run_id',
       ),
     ).toBe(true)
   })

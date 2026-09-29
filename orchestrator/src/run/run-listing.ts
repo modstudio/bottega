@@ -206,7 +206,8 @@ export async function runListingCommand(
           db()
             .query(
               `SELECT q.id, q.run_id, q.asked_at, q.answered_at, q.asked_via,
-                      q.answerer_kind, q.answer_channel, q.overturned_at
+                      q.answerer_kind, q.answer_channel, q.overturned_at,
+                      q.closed_at, q.close_reason
          FROM question q JOIN run owner ON owner.id = q.run_id
         WHERE owner.id = ? OR owner.parent_run_id = ?
         ORDER BY q.id`,
@@ -220,6 +221,8 @@ export async function runListingCommand(
             answerer_kind: AnswererKind | null
             answer_channel: AnswerChannel | null
             overturned_at: string | null
+            closed_at: string | null
+            close_reason: string | null
           }[]
         ).map((q) => ({
           id: q.id,
@@ -230,6 +233,8 @@ export async function runListingCommand(
           answerer_kind: q.answerer_kind ?? null,
           answer_channel: q.answer_channel ?? null,
           overturned_at: q.overturned_at ?? null,
+          closed_at: q.closed_at ?? null,
+          close_reason: q.close_reason ?? null,
           deliveries: db()
             .query(
               `SELECT id, question_id, run_id, mode, outcome, at, error

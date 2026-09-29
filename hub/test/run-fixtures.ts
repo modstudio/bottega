@@ -44,6 +44,8 @@ export const questionFixture = (overrides: Record<string, unknown> = {}) => ({
   answerer_kind: null,
   answer_channel: null,
   overturned_at: null,
+  closed_at: null,
+  close_reason: null,
   deliveries: [],
   ...overrides,
 })
@@ -76,6 +78,8 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
       answerer_kind: null,
       answer_channel: null,
       overturned_at: null,
+      closed_at: null,
+      close_reason: null,
       deliveries: [],
       ...(question as Record<string, unknown>),
     }))
