@@ -549,7 +549,6 @@ function ManagedSettingsSection({
 }) {
   const address = target === 'user' ? ({ user: true } as const) : { project: target }
   const hosted = isHostedMode()
-  const api = sharedContext()
   const localSettings = useQuery({
     ...trpc.context.settings.get.queryOptions(address),
     enabled: !hosted,
@@ -559,24 +558,6 @@ function ManagedSettingsSection({
     enabled: hosted,
   })
   const settings = hosted ? hostedSettings : localSettings
-  const [list, setList] = useState<'allow' | 'ask' | 'deny'>('allow')
-  const [rule, setRule] = useState('')
-  const [reason, setReason] = useState('')
-  const change = useMutation(
-    api.settings.permission.mutationOptions({
-      onSuccess: async () => {
-        setRule('')
-        setReason('')
-        await queryClient.invalidateQueries({ queryKey: api.settings.pathKey() })
-      },
-    }),
-  )
-  const project = projects.find((row) => row.name === target)
-  const apply =
-    target === 'user'
-      ? 'orch settings render --write --user --yes'
-      : `orch settings render --write --project ${target} --yes${project?.worktreeNote ? `\n\nWorktree note:\n${project.worktreeNote}` : ''}`
-
   return (
     <FieldSection
       title="Managed settings"
@@ -622,79 +603,109 @@ function ManagedSettingsSection({
               message={`${finding.rule}: ${finding.message}`}
             />
           ))}
-          <div className="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)]">
-            <Select
-              label="Permission list"
-              value={list}
-              options={[
-                { value: 'allow', label: 'Allow' },
-                { value: 'ask', label: 'Ask' },
-                { value: 'deny', label: 'Deny' },
-              ]}
-              onChange={(value) => setList(value as typeof list)}
-            />
-            <Input
-              aria-label="Permission rule"
-              placeholder="Permission rule"
-              value={rule}
-              onChange={(event) => setRule(event.target.value)}
-            />
-          </div>
-          <Input
-            aria-label="Settings reason"
-            placeholder="Reason (required)"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-          {change.error ? <ErrorText message={change.error.message} /> : null}
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              disabled={
-                !settings.data.revision || !rule.trim() || !reason.trim() || change.isPending
-              }
-              onClick={() =>
-                change.mutate({
-                  target: address,
-                  list,
-                  rule,
-                  operation: 'add',
-                  reason,
-                  expectedRevision: settings.data.revision ?? '',
-                })
-              }
-            >
-              Add rule
-            </Button>
-            <Button
-              variant="danger"
-              disabled={
-                !settings.data.revision || !rule.trim() || !reason.trim() || change.isPending
-              }
-              onClick={() =>
-                change.mutate({
-                  target: address,
-                  list,
-                  rule,
-                  operation: 'remove',
-                  reason,
-                  expectedRevision: settings.data.revision ?? '',
-                })
-              }
-            >
-              Remove rule
-            </Button>
-          </div>
+          <PermissionEditor address={address} revision={settings.data.revision} />
           {hosted ? null : (
             <SettingBlock
               label="Apply now from a terminal"
-              control={<Copyable value={apply} />}
+              control={<Copyable value={applyCommand(target, projects)} />}
               hint="This page stores the settings; the machine writes its settings file when it applies them."
             />
           )}
         </div>
       ) : null}
     </FieldSection>
+  )
+}
+
+function applyCommand(target: string, projects: ManagedProject[]) {
+  if (target === 'user') return 'orch settings render --write --user --yes'
+  const note = projects.find((row) => row.name === target)?.worktreeNote
+  const command = `orch settings render --write --project ${target} --yes`
+  return note ? `${command}\n\nWorktree note:\n${note}` : command
+}
+
+function PermissionEditor({
+  address,
+  revision,
+}: {
+  address: { user: true } | { project: string }
+  revision: string | null
+}) {
+  const api = sharedContext()
+  const [list, setList] = useState<'allow' | 'ask' | 'deny'>('allow')
+  const [rule, setRule] = useState('')
+  const [reason, setReason] = useState('')
+  const change = useMutation(
+    api.settings.permission.mutationOptions({
+      onSuccess: async () => {
+        setRule('')
+        setReason('')
+        await queryClient.invalidateQueries({ queryKey: api.settings.pathKey() })
+      },
+    }),
+  )
+  return (
+    <>
+      <div className="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)]">
+        <Select
+          label="Permission list"
+          value={list}
+          options={[
+            { value: 'allow', label: 'Allow' },
+            { value: 'ask', label: 'Ask' },
+            { value: 'deny', label: 'Deny' },
+          ]}
+          onChange={(value) => setList(value as typeof list)}
+        />
+        <Input
+          aria-label="Permission rule"
+          placeholder="Permission rule"
+          value={rule}
+          onChange={(event) => setRule(event.target.value)}
+        />
+      </div>
+      <Input
+        aria-label="Settings reason"
+        placeholder="Reason (required)"
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+      />
+      {change.error ? <ErrorText message={change.error.message} /> : null}
+      <div className="flex gap-2">
+        <Button
+          variant="primary"
+          disabled={!revision || !rule.trim() || !reason.trim() || change.isPending}
+          onClick={() =>
+            change.mutate({
+              target: address,
+              list,
+              rule,
+              operation: 'add',
+              reason,
+              expectedRevision: revision ?? '',
+            })
+          }
+        >
+          Add rule
+        </Button>
+        <Button
+          variant="danger"
+          disabled={!revision || !rule.trim() || !reason.trim() || change.isPending}
+          onClick={() =>
+            change.mutate({
+              target: address,
+              list,
+              rule,
+              operation: 'remove',
+              reason,
+              expectedRevision: revision ?? '',
+            })
+          }
+        >
+          Remove rule
+        </Button>
+      </div>
+    </>
   )
 }
 
