@@ -238,6 +238,95 @@ class SettingsApplyNotice(unittest.TestCase):
         self.assertEqual(kwargs["stdin"], session_brief.subprocess.DEVNULL)
         self.assertEqual(kwargs["stderr"], session_brief.subprocess.STDOUT)
 
+    def test_state_root_resolution_matches_the_shared_resolver(self):
+        state_slug = "BOTTEGA_STATE_HOME".removesuffix("_STATE_HOME").lower()
+        cases = (
+            (
+                {
+                    "BOTTEGA_STATE_HOME": "/override/state",
+                    "XDG_STATE_HOME": "/xdg/state",
+                    "HOME": "/home/person",
+                },
+                "/override/state",
+            ),
+            (
+                {"XDG_STATE_HOME": "/xdg/state", "HOME": "/home/person"},
+                f"/xdg/state/{state_slug}",
+            ),
+            (
+                {"XDG_STATE_HOME": "relative", "HOME": "/home/person"},
+                f"/home/person/.local/state/{state_slug}",
+            ),
+            ({"HOME": "/home/person"}, f"/home/person/.local/state/{state_slug}"),
+        )
+        for environment, expected in cases:
+            with self.subTest(environment=environment):
+                self.assertEqual(session_brief._state_root(environment), expected)
+
+    def test_relative_state_override_is_refused_instead_of_falling_back(self):
+        environment = {
+            "BOTTEGA_STATE_HOME": "relative/state",
+            "XDG_STATE_HOME": "/xdg/state",
+            "HOME": "/home/person",
+        }
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "BOTTEGA_STATE_HOME must be an absolute state root; set it to an absolute path",
+        ) as raised:
+            session_brief._start_settings_apply("/bin/orch", environment)
+        notice = session_brief._settings_apply_start_failure(raised.exception)
+        self.assertEqual(
+            notice,
+            "Settings apply was not started: BOTTEGA_STATE_HOME must be an absolute "
+            "state root; set it to an absolute path.",
+        )
+
+    def test_symlinked_settings_log_is_refused_without_changing_its_target(self):
+        with tempfile.TemporaryDirectory() as state:
+            log_directory = Path(state, "orchestrator")
+            log_directory.mkdir()
+            target = Path(state, "target.log")
+            target.write_text("unchanged\n", encoding="utf-8")
+            log_path = log_directory / "settings-apply.log"
+            log_path.symlink_to(target)
+
+            with self.assertRaises(OSError) as raised:
+                session_brief._start_settings_apply(
+                    "/bin/orch", {"BOTTEGA_STATE_HOME": state}
+                )
+
+            self.assertIn(str(log_path), str(raised.exception))
+            self.assertIn(
+                str(log_path),
+                session_brief._settings_apply_start_failure(raised.exception),
+            )
+            self.assertEqual(target.read_text(encoding="utf-8"), "unchanged\n")
+
+    def test_symlinked_settings_log_is_refused_when_reading_the_result(self):
+        process = mock.Mock()
+        process.poll.return_value = 0
+        process.returncode = 0
+        process.args = ["/bin/orch", "settings", "apply"]
+        with tempfile.TemporaryDirectory() as state:
+            target = Path(state, "target.log")
+            target.write_text("settings target: applied; backup elsewhere\n", encoding="utf-8")
+            log_path = Path(state, "settings-apply.log")
+            log_path.symlink_to(target)
+
+            with self.assertRaises(OSError) as raised:
+                session_brief._wait_settings_apply(
+                    process, float("inf"), str(log_path), 0
+                )
+
+            notice = session_brief._settings_apply_read_failure(
+                str(log_path), raised.exception
+            )
+            self.assertIn(str(log_path), notice)
+            self.assertEqual(
+                target.read_text(encoding="utf-8"),
+                "settings target: applied; backup elsewhere\n",
+            )
+
 
 if __name__ == "__main__":
     result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(

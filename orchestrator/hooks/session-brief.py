@@ -25,7 +25,12 @@ def _state_root(env=None):
     environment = env if env is not None else os.environ
     override = environment.get("BOTTEGA_STATE_HOME")
     state_slug = "BOTTEGA_STATE_HOME".removesuffix("_STATE_HOME").lower()
-    if override and os.path.isabs(override):
+    if override:
+        if not os.path.isabs(override):
+            raise RuntimeError(
+                "BOTTEGA_STATE_HOME must be an absolute state root; "
+                "set it to an absolute path"
+            )
         return override
     xdg = environment.get("XDG_STATE_HOME")
     if xdg and os.path.isabs(xdg):
@@ -39,8 +44,13 @@ def _state_root(env=None):
 def _start_settings_apply(orch, env=None):
     log_path = os.path.join(_state_root(env), "orchestrator", "settings-apply.log")
     os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
-    log = open(log_path, "a+", encoding="utf-8")
-    offset = log.seek(0, os.SEEK_END)
+    descriptor = os.open(
+        log_path,
+        os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW,
+        0o600,
+    )
+    log = os.fdopen(descriptor, "a", encoding="utf-8")
+    offset = os.lseek(descriptor, 0, os.SEEK_END)
     try:
         proc = subprocess.Popen(
             [orch, "settings", "apply"],
@@ -62,10 +72,19 @@ def _wait_settings_apply(proc, deadline, log_path, offset):
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         return None
-    with open(log_path, "r", encoding="utf-8", errors="replace") as log:
+    descriptor = os.open(log_path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "r", encoding="utf-8", errors="replace") as log:
         log.seek(offset)
         output = log.read()
     return subprocess.CompletedProcess(proc.args, proc.returncode, output, "")
+
+
+def _settings_apply_start_failure(error):
+    return f"Settings apply was not started: {error}."
+
+
+def _settings_apply_read_failure(log_path, error):
+    return f"Settings apply result at {log_path} could not be read: {error}."
 
 
 def _kill(proc):
@@ -235,6 +254,9 @@ def main() -> int:
     if orch_worker_session():
         return 0
     resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = None
+    settings_log_path = settings_log_offset = None
+    settings_start_failure = None
+    settings_read_failure = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -268,7 +290,10 @@ def main() -> int:
         )
         waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
         context_p = _start(orch, "context", "--cwd", cwd, "--json")
-        settings_p, settings_log_path, settings_log_offset = _start_settings_apply(orch)
+        try:
+            settings_p, settings_log_path, settings_log_offset = _start_settings_apply(orch)
+        except Exception as error:
+            settings_start_failure = _settings_apply_start_failure(error)
         monitor_failure = None
         if sid:
             try:
@@ -289,9 +314,16 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
-        settings_apply = _wait_settings_apply(
-            settings_p, deadline, settings_log_path, settings_log_offset
-        )
+        settings_apply = None
+        if settings_p is not None:
+            try:
+                settings_apply = _wait_settings_apply(
+                    settings_p, deadline, settings_log_path, settings_log_offset
+                )
+            except Exception as error:
+                settings_read_failure = _settings_apply_read_failure(
+                    settings_log_path, error
+                )
 
         resume_table = ""
         resume_offer = ""
@@ -486,7 +518,11 @@ def main() -> int:
             notices.append(waiting_failure)
         if autonomy_failure:
             notices.append(autonomy_failure)
-        settings_notice = _settings_apply_notice(settings_apply, settings_log_path)
+        settings_notice = (
+            settings_start_failure
+            or settings_read_failure
+            or _settings_apply_notice(settings_apply, settings_log_path)
+        )
         if settings_notice:
             notices.append(settings_notice)
         if answerable_count:
