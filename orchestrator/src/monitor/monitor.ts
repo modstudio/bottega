@@ -52,9 +52,9 @@ import {
   unscoredRuns,
   unsettledClaimConditions,
   unsettledClaimInventory,
-  workerGateToolingConditions,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'

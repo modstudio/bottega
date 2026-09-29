@@ -15,6 +15,17 @@ export const branchModuleSpecs = [
   },
   { file: 'orchestrator/src/branch/branch-state.ts', allowed: ['./merged-pull-request.ts'] },
   {
+    file: 'orchestrator/src/branch/offline-branch-landing.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      './branch-state.ts',
+      './task-branch.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/branch/task-branch-reuse.ts',
     allowed: ['../git/git-environment.ts', './task-branch.ts'],
   },

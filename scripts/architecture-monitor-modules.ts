@@ -12,6 +12,12 @@ const module = (file: string, allowed: string[]): MonitorModule => ({
 })
 
 export const monitorModules: MonitorModule[] = [
+  module('orchestrator/src/monitor/monitor-gate-tooling.ts', [
+    'bun:sqlite',
+    '../branch/offline-branch-landing.ts',
+    '../database/db.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
     'node:path',
@@ -23,6 +29,7 @@ export const monitorModules: MonitorModule[] = [
     '../worktree/keep-tree-hold.ts',
     '../mcp/mcp.ts',
     './monitor-conditions.ts',
+    './monitor-gate-tooling.ts',
     './monitor-record-tunnel.ts',
     './monitor-harness-load.ts',
     './monitor-canon-drift.ts',
