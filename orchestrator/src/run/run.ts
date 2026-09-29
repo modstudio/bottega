@@ -1161,6 +1161,7 @@ export async function run(opts: {
         name,
         artifactsPersisted,
         mcpRuling,
+        workerEvents,
       }))
     } finally {
       runLease?.release()
