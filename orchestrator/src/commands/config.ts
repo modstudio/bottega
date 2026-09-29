@@ -26,6 +26,16 @@ import { log } from './support.ts'
 const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
 type ConfigRow = Awaited<ReturnType<typeof getEntry>>
 
+function expectedRowVersion(value: string | undefined): number | null | undefined {
+  if (value === undefined) return undefined
+  if (value === 'null') return null
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error('expected row version must be a positive integer or null')
+  }
+  return parsed
+}
+
 export function assertConfigWriteAllowed(
   key: string,
   value: string,
@@ -97,10 +107,11 @@ export function register(program: Command): void {
   config
     .command('set <key> <value>')
     .option('--space')
+    .option('--expect <rowVersion>')
     .option('--json')
     .action(async (key, value, options) => {
       assertConfigWriteAllowed(key, value)
-      const row = await setEntry(key, value, scope(options))
+      const row = await setEntry(key, value, scope(options), expectedRowVersion(options.expect))
       if (options.json) log(configGetPresentation(row, true))
     })
   config
@@ -113,8 +124,12 @@ export function register(program: Command): void {
   config
     .command('delete <key>')
     .option('--space')
+    .option('--expect <rowVersion>')
     .action(async (key, options) => {
-      await deleteEntry(key, scope(options))
+      const expected = expectedRowVersion(options.expect)
+      if (expected === null)
+        throw new Error('delete expected row version must be a positive integer')
+      await deleteEntry(key, scope(options), expected)
     })
 
   const secret = config.command('secret')

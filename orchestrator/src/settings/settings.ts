@@ -151,25 +151,25 @@ function permissionSecretPaths(permissions: unknown): string[] {
 
 function hookSecretPaths(hooks: unknown): string[] {
   const paths: string[] = []
-  walkHookCommands(hooks, 'hooks', paths)
+  walkHookText(hooks, 'hooks', paths)
   return paths
 }
 
-function walkHookCommands(value: unknown, path: string, paths: string[]): void {
+function walkHookText(value: unknown, path: string, paths: string[]): void {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      walkHookCommands(item, `${path}[${index}]`, paths)
+      walkHookText(item, `${path}[${index}]`, paths)
     }
     return
   }
   if (!isPlainObject(value)) return
   for (const [key, child] of Object.entries(value)) {
     const next = `${path}.${key}`
-    if (key === 'command' && typeof child === 'string') {
+    if ((key === 'command' || key === 'matcher') && typeof child === 'string') {
       if (containsSecretShaped(child)) paths.push(next)
       continue
     }
-    walkHookCommands(child, next, paths)
+    walkHookText(child, next, paths)
   }
 }
 

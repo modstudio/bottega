@@ -236,6 +236,69 @@ describe('hosted context router', () => {
     })
   })
 
+  test('autonomy.setPreset retries a conflict and reports overrides still left', async () => {
+    let lists = 0
+    const configEntries = mock(async () => {
+      lists += 1
+      if (lists === 1) {
+        return [
+          {
+            key: 'autonomy.stage.review',
+            environment: 'default',
+            scope: 'user' as const,
+            value: 'auto',
+            rowVersion: 3,
+            updatedAt: at,
+          },
+          {
+            key: 'autonomy.stage.ship',
+            environment: 'default',
+            scope: 'user' as const,
+            value: 'auto',
+            rowVersion: 8,
+            updatedAt: at,
+          },
+        ]
+      }
+      return [
+        {
+          key: 'autonomy.stage.review',
+          environment: 'default',
+          scope: 'user' as const,
+          value: 'auto',
+          rowVersion: 4,
+          updatedAt: at,
+        },
+      ]
+    })
+    const deleteConfigEntry = mock(async (key: string) => {
+      if (key.endsWith('review')) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'current rowVersion changed' })
+      }
+      return { deleted: true as const }
+    })
+    const client = fakeClient({ configEntries, deleteConfigEntry: deleteConfigEntry as never })
+
+    await expect(
+      caller(client).autonomy.setPreset({
+        project: 'alpha',
+        value: 'manual',
+        expectedRowVersion: null,
+      }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('review'),
+    })
+    expect(deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.review', {
+      scope: 'user',
+      expectedRowVersion: 4,
+    })
+    expect(deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.ship', {
+      scope: 'user',
+      expectedRowVersion: 8,
+    })
+  })
+
   test('settings.get returns shared summaries without hook commands or secret material', async () => {
     const result = await caller(fakeClient()).settings.get({ user: true })
     const serialized = JSON.stringify(result)
@@ -250,6 +313,29 @@ describe('hosted context router', () => {
     expect(serialized).not.toContain('super-secret')
     expect(serialized).not.toContain('command')
     expect(result.settings.hooks[0]?.matcher).toBe('secret-shaped')
+  })
+
+  test('settings.get withholds a secret-shaped hook matcher from stored rows', async () => {
+    const secret = 'Authorization: Bearer sk-proj-stored-before-screening'
+    const client = fakeClient({
+      docs: mock(async () => ({
+        items: [
+          {
+            ...settingsDoc,
+            body: JSON.stringify({
+              permissions: {},
+              hooks: { PreToolUse: [{ matcher: secret }] },
+              envKeys: [],
+            }),
+          },
+        ],
+        nextCursor: null,
+      })) as never,
+    })
+
+    const result = await caller(client).settings.get({ user: true })
+    expect(result.settings.hooks[0]?.matcher).toBe('[withheld: secret-shaped]')
+    expect(JSON.stringify(result)).not.toContain(secret)
   })
 
   test('settings.permission posts the hosted address unchanged', async () => {

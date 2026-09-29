@@ -54,17 +54,26 @@ function projectPath(name: string): string {
 
 async function localAutonomy(project: string) {
   const cwd = projectPath(project)
-  const [resolved, entries] = await Promise.all([
-    fromOrch(() => contextGet(cwd)),
-    fromOrch(configList),
-  ])
+  const resolved = await fromOrch(() => contextGet(cwd))
+  let entries: Awaited<ReturnType<typeof configList>> = []
+  let configWarning: string | null = null
+  try {
+    entries = await fromOrch(configList)
+  } catch {
+    configWarning =
+      'warning: hosted autonomy preset and overrides are unavailable until you sign in'
+  }
   const user = entries.filter((entry) => entry.scope === 'user')
   const preset = user.find((entry) => entry.key === 'autonomy.preset')?.value
   const userPreset = AUTONOMY_PRESETS.includes(preset as AutonomyPreset)
     ? (preset as AutonomyPreset)
     : null
   if (!resolved.registered) {
-    return { ...resolved, userPreset } as typeof resolved & {
+    return {
+      ...resolved,
+      userPreset,
+      ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
+    } as typeof resolved & {
       userPreset?: AutonomyPreset | null
     }
   }
@@ -77,9 +86,49 @@ async function localAutonomy(project: string) {
     ...resolved,
     userPreset,
     stages,
+    ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
   } as Omit<typeof resolved, 'stages'> & {
     userPreset?: AutonomyPreset | null
     stages: typeof stages
+  }
+}
+
+function configConflict(error: unknown): error is TRPCError {
+  return error instanceof TRPCError && error.code === 'CONFLICT'
+}
+
+async function localOverrideRemains(key: string, rowVersion: number): Promise<boolean> {
+  try {
+    await fromOrch(() => configDelete(key, rowVersion))
+    return false
+  } catch (error) {
+    if (!configConflict(error)) throw error
+  }
+  const fresh = (await fromOrch(configList)).find(
+    (candidate) => candidate.scope === 'user' && candidate.key === key,
+  )
+  if (!fresh) return false
+  try {
+    await fromOrch(() => configDelete(key, fresh.rowVersion))
+    return false
+  } catch (error) {
+    if (!configConflict(error)) throw error
+    return true
+  }
+}
+
+async function clearLocalStageOverrides(entries: Awaited<ReturnType<typeof configList>>) {
+  const remaining: string[] = []
+  for (const stage of AUTONOMY_STAGES) {
+    const key = `autonomy.stage.${stage}`
+    const entry = entries.find((candidate) => candidate.scope === 'user' && candidate.key === key)
+    if (entry && (await localOverrideRemains(key, entry.rowVersion))) remaining.push(stage)
+  }
+  if (remaining.length) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: `Preset was saved, but these stage overrides remain: ${remaining.join(', ')}`,
+    })
   }
 }
 
@@ -167,17 +216,9 @@ export const contextRouter = t.router({
       )
       .mutation(async ({ input }) => {
         projectPath(input.project)
+        await fromOrch(() => configSet('autonomy.preset', input.value, input.expectedRowVersion))
         const entries = await fromOrch(configList)
-        for (const stage of AUTONOMY_STAGES) {
-          if (
-            entries.some(
-              (entry) => entry.scope === 'user' && entry.key === `autonomy.stage.${stage}`,
-            )
-          ) {
-            await fromOrch(() => configDelete(`autonomy.stage.${stage}`))
-          }
-        }
-        await fromOrch(() => configSet('autonomy.preset', input.value))
+        await clearLocalStageOverrides(entries)
         return localAutonomy(input.project)
       }),
   }),

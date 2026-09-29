@@ -108,6 +108,52 @@ async function hostedAutonomy(client: RecordClient, project: string) {
   }
 }
 
+function hostedConfigConflict(error: unknown): error is TRPCError {
+  return error instanceof TRPCError && error.code === 'CONFLICT'
+}
+
+async function hostedOverrideRemains(
+  client: RecordClient,
+  key: string,
+  rowVersion: number,
+): Promise<boolean> {
+  try {
+    await client.deleteConfigEntry(key, { scope: 'user', expectedRowVersion: rowVersion })
+    return false
+  } catch (error) {
+    if (!hostedConfigConflict(error)) throw error
+  }
+  const fresh = (await client.configEntries()).find(
+    (candidate) => candidate.scope === 'user' && candidate.key === key,
+  )
+  if (!fresh) return false
+  try {
+    await client.deleteConfigEntry(key, {
+      scope: 'user',
+      expectedRowVersion: fresh.rowVersion,
+    })
+    return false
+  } catch (error) {
+    if (!hostedConfigConflict(error)) throw error
+    return true
+  }
+}
+
+async function clearHostedStageOverrides(client: RecordClient, entries: RecordConfigEntry[]) {
+  const remaining: string[] = []
+  for (const stage of AUTONOMY_STAGES) {
+    const key = `autonomy.stage.${stage}`
+    const entry = entries.find((candidate) => candidate.scope === 'user' && candidate.key === key)
+    if (entry && (await hostedOverrideRemains(client, key, entry.rowVersion))) remaining.push(stage)
+  }
+  if (remaining.length) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: `Preset was saved, but these stage overrides remain: ${remaining.join(', ')}`,
+    })
+  }
+}
+
 function parseStoredSettings(body: string): StoredSettings {
   let value: unknown
   try {
@@ -264,18 +310,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             expectedRowVersion: input.expectedRowVersion,
           })
           const entries = await client.configEntries()
-          for (const stage of AUTONOMY_STAGES) {
-            const entry = entries.find(
-              (candidate) =>
-                candidate.scope === 'user' && candidate.key === `autonomy.stage.${stage}`,
-            )
-            if (entry) {
-              await client.deleteConfigEntry(entry.key, {
-                scope: 'user',
-                expectedRowVersion: entry.rowVersion,
-              })
-            }
-          }
+          await clearHostedStageOverrides(client, entries)
           return hostedAutonomy(client, input.project)
         }),
     }),

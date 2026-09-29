@@ -48,10 +48,26 @@ test('managed context wrappers build exact argv', () => {
     'auto',
     '--json',
   ])
+  expect(configArgv('set', 'autonomy.preset', 'manual', 4)).toEqual([
+    'config',
+    'set',
+    'autonomy.preset',
+    'manual',
+    '--expect',
+    '4',
+    '--json',
+  ])
   expect(configDeleteArgv('autonomy.stage.review')).toEqual([
     'config',
     'delete',
     'autonomy.stage.review',
+  ])
+  expect(configDeleteArgv('autonomy.stage.review', 3)).toEqual([
+    'config',
+    'delete',
+    'autonomy.stage.review',
+    '--expect',
+    '3',
   ])
   expect(settingsCheckArgv({ user: true })).toEqual([
     'settings',
