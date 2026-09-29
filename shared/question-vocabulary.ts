@@ -22,4 +22,3 @@ export const QUESTION_DELIVERY_MODE_RETRY = 'retry' satisfies QuestionDeliveryMo
 export const QUESTION_DELIVERY_MODE_RECORD_ONLY = 'record-only' satisfies QuestionDeliveryMode
 export const QUESTION_DELIVERY_OUTCOME_DELIVERED = 'delivered' satisfies QuestionDeliveryOutcome
 export const QUESTION_DELIVERY_OUTCOME_FAILED = 'failed' satisfies QuestionDeliveryOutcome
-export const QUESTION_DELIVERY_OUTCOME_RETIRED = 'retired' satisfies QuestionDeliveryOutcome
