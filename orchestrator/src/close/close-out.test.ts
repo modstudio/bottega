@@ -399,6 +399,20 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
     db().query("UPDATE landing SET status='landed',finished_at='2026-09-29T00:01:00.000Z'").run()
 
+    const child = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      parent: id,
+    })
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, child)
+    expect(closeOutRun(id, { intent: 'sweep', landingInFlight: false })).toMatchObject({
+      outcome: 'live',
+      detail: `live run(s): ${child} (running)`,
+    })
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
+    db().query("UPDATE run SET status='ok',pid=NULL WHERE id=?").run(child)
+
     const result = closeOutRun(id, { intent: 'sweep', landingInFlight: false })
 
     expect(result).toMatchObject({ outcome: 'absent' })
