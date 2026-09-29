@@ -1,9 +1,7 @@
 // concern: landing-tree
 /** Observes the repository facts used to decide whether sweep may release a landing tree. */
 
-import type { Database } from 'bun:sqlite'
 import { taskBranchAlreadyLanded, taskBranchPatchEquivalent } from '../branch/task-branch.ts'
-import { db } from '../database/db.ts'
 import { git, gitContext } from '../git/git-environment.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -18,6 +16,7 @@ export type LandingTreeReleaseRow = {
   launchKey: string | null
   status: string
   treeExists: boolean
+  landingInFlight: boolean
 }
 
 function unavailable(row: LandingTreeReleaseRow, detail: string): LandingTreeReleaseDecision {
@@ -38,7 +37,7 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
       sessionId: row.sessionId,
       treeExists: row.treeExists,
       status: row.status,
-      landingInFlight: landingInFlight(db(), project.name, row.branch),
+      landingInFlight: row.landingInFlight,
     }
     if (!row.treeExists) return landingTreeReleaseDecision(decisionFacts, false, false)
     const trunk = project.settings.trunk?.trim()
@@ -82,15 +81,4 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
   } catch (error) {
     return unavailable(row, String((error as Error)?.message ?? error))
   }
-}
-
-export function landingInFlight(database: Database, project: string, branch: string): boolean {
-  return Boolean(
-    database
-      .query(
-        `SELECT 1 FROM landing
-         WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
-      )
-      .get(project, branch),
-  )
 }

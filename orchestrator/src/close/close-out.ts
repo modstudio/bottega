@@ -47,6 +47,7 @@ import {
   absentTreeCloseOut,
   dryRunReleaseResult,
   failedResourceRemovalResult,
+  pointerMustClear,
   type ResourceTeardownResult,
   reconstructibilityHold,
   successfulReleaseResult,
@@ -457,6 +458,7 @@ function landingTreeSweepHold(input: {
   sessionId: string | null
   launchKey: string | null
   status: string
+  landingInFlight: boolean
 }): CloseOutResult | null {
   if (input.intent !== 'sweep' || input.job !== LANDING_TREE_JOB) return null
   const decision = observeLandingTreeRelease({ ...input, treeExists: existsSync(input.worktree) })
@@ -532,6 +534,7 @@ function attemptCloseOutRun(
     lockTimeoutMs?: number
     extraPids?: number[]
     pgid?: number | null
+    landingInFlight?: boolean
     keepTreeDecision: ConversationKeepTreeHold
   },
 ): CloseOutAttemptResult {
@@ -598,6 +601,7 @@ function attemptCloseOutRun(
     sessionId: effective.session_id,
     launchKey: effective.launch_key,
     status: effective.status,
+    landingInFlight: options.landingInFlight ?? false,
   }
   const terminalHold = terminalHoldResult(
     row.root_id,
@@ -648,10 +652,7 @@ function attemptCloseOutRun(
     dryRun: options.dryRun,
     recordRetainedBranch,
   })
-  if (absentTree.result) {
-    const landingHold = landingTreeSweepHold(landingSweepInput)
-    return landingHold ?? absentTree.result
-  }
+  if (absentTree.result) return landingTreeSweepHold(landingSweepInput) ?? absentTree.result
   const { absent: treeAbsent, repoRoot } = absentTree
   if (!repoRoot)
     return {
@@ -950,17 +951,6 @@ function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
   return byPath
 }
 
-/**
- * A pointer outlives its tree only while something may still use that tree. A
- * failed close-out can fail after the removal itself, so a vanished directory
- * clears the pointer too; otherwise a tree later created at the same path would
- * be taken for this run's.
- */
-function pointerMustClear(outcome: CloseOutResult['outcome'], worktree: string): boolean {
-  if (outcome === 'released' || outcome === 'forgotten' || outcome === 'absent') return true
-  return outcome === 'failed' && !existsSync(worktree)
-}
-
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
   runId: number,
@@ -970,6 +960,7 @@ export function closeOutRun(
     lockTimeoutMs?: number
     extraPids?: number[]
     pgid?: number | null
+    landingInFlight?: boolean
   },
 ): CloseOutResult {
   const root = db()

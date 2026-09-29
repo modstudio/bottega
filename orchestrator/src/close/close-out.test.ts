@@ -392,14 +392,14 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
          VALUES (?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
       .run(project, `DEV-1023-orch-${id}`)
-    expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
+    expect(closeOutRun(id, { intent: 'sweep', landingInFlight: true })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
     })
     expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
     db().query("UPDATE landing SET status='landed',finished_at='2026-09-29T00:01:00.000Z'").run()
 
-    const result = closeOutRun(id, { intent: 'sweep' })
+    const result = closeOutRun(id, { intent: 'sweep', landingInFlight: false })
 
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain(`ref-guard ${project}:${id} was already absent`)

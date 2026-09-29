@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
-import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { observeLandingTreeRelease } from './release-observation.ts'
@@ -20,16 +19,11 @@ test('an absent terminal landing tree is releasable unless its branch is landing
     launchKey: 'DEV-1023',
     status: 'ok',
     treeExists: false,
+    landingInFlight: false,
   }
 
   expect(observeLandingTreeRelease(row)).toEqual({ action: 'release' })
-  db()
-    .query(
-      `INSERT INTO landing (project,branch,status,started_at)
-       VALUES (?,?,'running','2026-09-29T00:00:00.000Z')`,
-    )
-    .run(project, branch)
-  expect(observeLandingTreeRelease(row)).toEqual({
+  expect(observeLandingTreeRelease({ ...row, landingInFlight: true })).toEqual({
     action: 'keep',
     reason: 'landing tree held by session owner: landing is in flight',
   })
