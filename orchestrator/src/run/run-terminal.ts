@@ -39,7 +39,11 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
-import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
+import {
+  closeRunChainQuestions,
+  QUESTION_CLOSE_CHAIN_TERMINAL,
+  retireRunChainQuestionDeliveries,
+} from './question-close.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -99,6 +103,13 @@ export function finalizeTerminalChain(
   }
   closeTerminalQuestions(database, rootId, input.status, input.failureKind)
   if (input.parentRunId !== null) resolveRootFromLastTurn(database, input.parentRunId)
+  if (
+    input.status !== 'asking' &&
+    input.status !== 'running' &&
+    !(input.failureKind && FAILS_OVER.includes(input.failureKind))
+  ) {
+    retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
+  }
 }
 
 type TerminalMcpRuling = {

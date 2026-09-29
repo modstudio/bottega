@@ -99,6 +99,37 @@ test('abandon retires an asking run from the live inbox and keeps it in all as t
   })
 })
 
+test('abandon retires an older answered pending delivery through the chain service', async () => {
+  const id = insert('asking')
+  db()
+    .query(
+      `INSERT INTO question
+        (run_id,asked_at,question,answer,answered_at,delivery_pending_at)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    .run(
+      id,
+      new Date().toISOString(),
+      'earlier question?',
+      'earlier ruling',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
+
+  expect((await invoke('abandon', id)).code).toBe(0)
+  expect(
+    db().query('SELECT answer,delivery_pending_at FROM question WHERE run_id=?').get(id),
+  ).toEqual({ answer: 'earlier ruling', delivery_pending_at: null })
+  expect(
+    db()
+      .query(
+        `SELECT mode,outcome,error FROM question_delivery
+         WHERE question_id=(SELECT id FROM question WHERE run_id=?)`,
+      )
+      .get(id),
+  ).toEqual({ mode: 'record-only', outcome: 'retired', error: 'abandoned' })
+})
+
 test('a foreign session can neither stop nor abandon an owned run', async () => {
   const running = insert('running')
   const asking = insert('asking')

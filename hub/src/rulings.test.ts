@@ -315,10 +315,10 @@ describe('ruling-loop measures', () => {
       },
       delivery: {
         by_mode_and_outcome: {
-          live: { delivered: 1, failed: 0 },
-          resume: { delivered: 1, failed: 1 },
-          retry: { delivered: 2, failed: 1 },
-          'record-only': { delivered: 1, failed: 0 },
+          live: { delivered: 1, failed: 0, retired: 0 },
+          resume: { delivered: 1, failed: 1, retired: 0 },
+          retry: { delivered: 2, failed: 1, retired: 0 },
+          'record-only': { delivered: 1, failed: 0, retired: 0 },
         },
         stopped_turn: {
           delivered: 2,

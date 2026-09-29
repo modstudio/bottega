@@ -7,7 +7,11 @@ import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
-import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_STALE } from './question-close.ts'
+import {
+  closeRunChainQuestions,
+  QUESTION_CLOSE_CHAIN_STALE,
+  retireRunChainQuestionDeliveries,
+} from './question-close.ts'
 import { questionOpenSql } from './question-open.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
@@ -331,6 +335,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     const setupDeathIds = new Set(setupDeaths)
     for (const { id, last_id } of roots) {
       resolveRootFromLastTurnPreserving(d, id, preservedFailureKindTurnId(setupDeathIds, last_id))
+      retireRunChainQuestionDeliveries(d, id, QUESTION_CLOSE_CHAIN_STALE)
     }
     for (const id of ended) teardownTerminalRunResources(d, id)
   }

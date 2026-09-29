@@ -15,7 +15,11 @@ import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_STOPPED } from './question-close.ts'
+import {
+  closeRunChainQuestions,
+  QUESTION_CLOSE_CHAIN_STOPPED,
+  retireRunChainQuestionDeliveries,
+} from './question-close.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
@@ -131,12 +135,6 @@ export async function stopRun(
         )
         .run(authority.rootId)
     }
-    db()
-      .query(
-        `UPDATE question SET delivery_pending_at=NULL
-          WHERE run_id IN (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      )
-      .run(authority.rootId, authority.rootId)
     auditRunMutation(authority, 'stop', options.auditReason)
     closeRunChainQuestions(db(), authority.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
     return { row, cleanupRow }
@@ -285,13 +283,8 @@ export async function abandonRun(
       )
     enqueueRunRecord(db(), row.id, machineId(), at)
     for (const question of openQuestions) enqueueQuestionRecord(db(), question.id)
-    db()
-      .query(
-        `UPDATE question SET delivery_pending_at=NULL
-          WHERE run_id IN (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      )
-      .run(authority.rootId, authority.rootId)
     resolveRootFromLastTurn(db(), authority.rootId)
+    retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })

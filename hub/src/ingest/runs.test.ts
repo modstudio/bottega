@@ -420,6 +420,70 @@ describe('run ingest', () => {
     ])
   })
 
+  test('stores a retired record-only delivery alongside other rows in one batch', async () => {
+    await ingestRunFixtures(
+      runFixture({
+        id: 9270,
+        questions: [
+          questionFixture({
+            id: 61,
+            run_id: 9270,
+            deliveries: [
+              {
+                id: 1,
+                question_id: 61,
+                run_id: null,
+                mode: 'record-only',
+                outcome: 'retired',
+                at: '2026-09-04T19:04:00.000Z',
+                error: 'chain-terminal',
+              },
+            ],
+          }),
+          questionFixture({
+            id: 62,
+            run_id: 9270,
+            deliveries: [
+              {
+                id: 2,
+                question_id: 62,
+                run_id: 9270,
+                mode: 'live',
+                outcome: 'delivered',
+                at: '2026-09-04T19:05:00.000Z',
+                error: null,
+              },
+            ],
+          }),
+        ],
+      }),
+    )
+
+    expect(
+      db()
+        .query(
+          `SELECT question_id,run_ref,mode,outcome,error FROM question_delivery
+           WHERE question_id IN (61,62) ORDER BY question_id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        question_id: 61,
+        run_ref: null,
+        mode: 'record-only',
+        outcome: 'retired',
+        error: 'chain-terminal',
+      },
+      {
+        question_id: 62,
+        run_ref: 'orch:9270',
+        mode: 'live',
+        outcome: 'delivered',
+        error: null,
+      },
+    ])
+  })
+
   test('a bare probe object is a contract violation, not a skipped probe', async () => {
     const prior = '"2026-09-04T00:00:00.000Z"'
     writeTransaction((conn) =>
