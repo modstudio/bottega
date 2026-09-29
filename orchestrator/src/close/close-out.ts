@@ -7,7 +7,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db, nowIso, sessionId } from '../database/db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
@@ -63,6 +63,8 @@ export type CloseOutResult = {
 }
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
+
+const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 type AliveTurn = { id: number; status: string; pid: number | null }
 
