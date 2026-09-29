@@ -31,29 +31,12 @@ import {
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { db, nowIso } from '../database/db.ts'
-import {
-  backfillReviewRecords,
-  REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
-  REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
-  REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
-  REVIEW_RECORD_PAYLOAD_CONTRACT,
-} from '../review/review-outbox.ts'
-import {
-  backfillQuestionRecords,
-  QUESTION_RECORD_PAYLOAD_CONTRACT,
-} from '../run/question-outbox.ts'
-import { backfillRunRecords, RUN_RECORD_PAYLOAD_CONTRACT } from '../run/run-outbox.ts'
-import { backfillScoreRecords, SCORE_RECORD_PAYLOAD_CONTRACT } from '../score/score-outbox.ts'
+import { backfillReviewRecords } from '../review/review-outbox.ts'
+import { backfillQuestionRecords } from '../run/question-outbox.ts'
+import { backfillRunRecords } from '../run/run-outbox.ts'
+import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import {
-  backfillLandingEvidenceRecords,
-  CONTENTION_RECORD_PAYLOAD_CONTRACT,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
-  LANDING_RECORD_PAYLOAD_CONTRACT,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
-  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
-  TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
-} from './landing-outbox.ts'
+import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { deferOutboxRow, markOutboxRowSynced, outboxRowIsEligible } from './outbox-dependency.ts'
 import {
@@ -62,6 +45,7 @@ import {
   outboxFailureDisposition,
   unreachableSpaceProject,
 } from './outbox-failure.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
@@ -683,11 +667,11 @@ async function projectRecordId(
 
 const recordKinds = {
   run: {
-    ...RUN_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.run,
     push: pushRun,
   },
   score: {
-    ...SCORE_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.score,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -695,7 +679,7 @@ const recordKinds = {
       }),
   },
   question: {
-    ...QUESTION_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.question,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -726,7 +710,7 @@ const recordKinds = {
       }),
   },
   review: {
-    ...REVIEW_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.review,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -739,7 +723,7 @@ const recordKinds = {
       }),
   },
   review_lens: {
-    ...REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.review_lens,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -752,7 +736,7 @@ const recordKinds = {
       }),
   },
   review_finding: {
-    ...REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.review_finding,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -765,7 +749,7 @@ const recordKinds = {
       }),
   },
   review_read: {
-    ...REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.review_read,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -782,7 +766,7 @@ const recordKinds = {
       }),
   },
   landing: {
-    ...LANDING_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.landing,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -795,7 +779,7 @@ const recordKinds = {
       }),
   },
   landing_override: {
-    ...LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.landing_override,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -808,7 +792,7 @@ const recordKinds = {
       }),
   },
   landing_review_carry: {
-    ...LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.landing_review_carry,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -821,7 +805,7 @@ const recordKinds = {
       }),
   },
   landing_triage_snapshot: {
-    ...LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -834,7 +818,7 @@ const recordKinds = {
       }),
   },
   contention: {
-    ...CONTENTION_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.contention,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -847,7 +831,7 @@ const recordKinds = {
       }),
   },
   test_flake: {
-    ...TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
+    ...OUTBOX_PAYLOAD_CONTRACTS.test_flake,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
@@ -859,7 +843,14 @@ const recordKinds = {
           .onConflictDoUpdate({ target: testFlakeRecord.id, set: updates })
       }),
   },
-} as const
+} as const satisfies Record<
+  keyof typeof OUTBOX_PAYLOAD_CONTRACTS,
+  {
+    columns: readonly string[]
+    laterAdded: Readonly<Record<string, unknown>>
+    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) => Promise<unknown>
+  }
+>
 
 type OutboxAttempt = {
   row: OutboxRow
