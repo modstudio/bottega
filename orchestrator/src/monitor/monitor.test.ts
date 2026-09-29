@@ -18,7 +18,7 @@ const condition = (
   action: 'reported',
   ...overrides,
 })
-function insertRun4177PackRows(): void {
+function insertRun4177PackRows(): string {
   const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
   upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
   const projectId = (
@@ -50,6 +50,7 @@ function insertRun4177PackRows(): void {
     docs,
     '2026-09-16T00:00:00.000Z',
   )
+  return root
 }
 
 describe('operational monitor conditions', () => {
@@ -84,13 +85,18 @@ describe('operational monitor conditions', () => {
   })
 
   test('the persistence path inserts the run 4177 de-duplicated condition set', async () => {
-    insertRun4177PackRows()
-    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
-      exitCode: 0,
-      stdout: Buffer.from(''),
-      stderr: Buffer.from(''),
-      success: true,
-    } as unknown as ReturnType<typeof Bun.spawnSync>)
+    const root = insertRun4177PackRows()
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((
+      command: string[] | { cmd: string[] },
+    ) => {
+      const argv = Array.isArray(command) ? command : command.cmd
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(argv.includes('--show-toplevel') ? `${root}\n` : ''),
+        stderr: Buffer.from(''),
+        success: true,
+      } as unknown as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
     try {
       const result = await monitor('invoked')
       const subject = `review-lens/${PLATFORM_SLUG}`

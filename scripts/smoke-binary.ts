@@ -28,6 +28,7 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
   delete env.ORCH_DB
   delete env.ORCH_DB_WRITE
   delete env.ORCH_RECORD_URL
+  delete env.HUB_HOSTED_URL
   delete env.HUB_DB
   return env
 }
@@ -39,7 +40,7 @@ async function smoke(
   expectedOutput?: string,
   expectedExit = 0,
   cwd?: string,
-): Promise<void> {
+): Promise<string> {
   const rendered = [executable, ...args].join(' ')
   const child = Bun.spawn([executable, ...args], {
     cwd,
@@ -63,6 +64,7 @@ async function smoke(
   if (expectedOutput && !output.includes(expectedOutput)) {
     throw new Error(`${rendered} output did not include ${JSON.stringify(expectedOutput)}`)
   }
+  return stdout
 }
 
 async function freePort(): Promise<number> {
@@ -162,6 +164,17 @@ try {
   if (!existsSync(join(stateHome, 'hub', 'hub.db'))) {
     throw new Error('hub task list did not create the hub store')
   }
+  await smoke(
+    binary,
+    ['hub', 'task', 'new', '--project', 'tasks', '--title', 'smoke'],
+    stateHome,
+    'TASK-1',
+  )
+  await smoke(binary, ['hub', 'task', 'list', '--project', 'tasks'], stateHome, 'TASK-1')
+  const setupFacts = JSON.parse(
+    await smoke(binary, ['orch', 'setup', 'facts', '--json'], stateHome),
+  ) as { os?: unknown }
+  if (!setupFacts.os) throw new Error('orch setup facts --json returned no os field')
   const orchestrator = new Database(join(stateHome, 'orchestrator', 'orch.db'), {
     readonly: true,
   })

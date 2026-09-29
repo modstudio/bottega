@@ -12,6 +12,7 @@ import {
   applyLocalProjectRename,
   assertProjectRename,
   assertRegisterBranches,
+  isProjectRepository,
   type Project,
   type ProjectSettings,
   projectByName,
@@ -35,6 +36,7 @@ function listedProjectJson(project: Project) {
   const { retiredAt, ...rest } = project
   return {
     ...rest,
+    repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
     lifecycle_form: lifecycleForm(project.settings.worktree),
     problems: validateProjectSettings(project.settings, project.path),

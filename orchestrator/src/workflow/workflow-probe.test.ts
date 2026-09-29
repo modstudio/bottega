@@ -1,23 +1,35 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+
+const probeRepository = mkdtempSync(join(tmpdir(), 'workflow-probe-project-'))
+const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+  cwd: probeRepository,
+  stdout: 'pipe',
+  stderr: 'pipe',
+})
+if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
+afterAll(() => rmSync(probeRepository, { recursive: true, force: true }))
 
 const database = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
-  d.query(
-    "INSERT INTO project (name,path,settings) VALUES ('probe-project','/tmp/probe','{}')",
-  ).run()
+  d.query("INSERT INTO project (name,path,settings) VALUES ('probe-project',?,'{}')").run(
+    probeRepository,
+  )
   return d
 }
 
 test('records command, cwd, commit, exit and a bounded tail', async () => {
   const d = database()
   const result = await recordWorkflowProbe(['printf', 'ok'], {
-    cwd: '/tmp/probe',
+    cwd: probeRepository,
     d,
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'ok\n' }),
@@ -27,7 +39,7 @@ test('records command, cwd, commit, exit and a bounded tail', async () => {
     d.query('SELECT command,cwd,head_commit,exit_code,output_tail,withheld FROM probe').get(),
   ).toEqual({
     command: '["printf","ok"]',
-    cwd: '/tmp/probe',
+    cwd: probeRepository,
     head_commit: 'abc',
     exit_code: 0,
     output_tail: 'ok\n',
@@ -38,7 +50,7 @@ test('records command, cwd, commit, exit and a bounded tail', async () => {
 test('withholds secret-shaped output', async () => {
   const d = database()
   const result = await recordWorkflowProbe(['env'], {
-    cwd: '/tmp/probe',
+    cwd: probeRepository,
     d,
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'token=ghp_exampletokenvalue' }),
@@ -53,7 +65,7 @@ test('withholds secret-shaped output', async () => {
 test('withholds secret-shaped command JSON', async () => {
   const d = database()
   const result = await recordWorkflowProbe(['echo', 'token=ghp_exampletokenvalue'], {
-    cwd: '/tmp/probe',
+    cwd: probeRepository,
     d,
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'ok' }),
@@ -69,7 +81,7 @@ test('bounds a long tail using GATE_OUTPUT_TAIL_BYTES', async () => {
   const d = database()
   const output = 'x'.repeat(GATE_OUTPUT_TAIL_BYTES + 50)
   await recordWorkflowProbe(['yes'], {
-    cwd: '/tmp/probe',
+    cwd: probeRepository,
     d,
     commit: 'abc',
     runner: () => ({ exitCode: 0, output }),
@@ -103,7 +115,7 @@ test('exec records an architect command with its kind and session', async () => 
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const d = database()
     const result = await recordWorkflowExec(['printf', 'ok'], {
-      cwd: '/tmp/probe',
+      cwd: probeRepository,
       d,
       commit: 'abc',
       runner: () => ({ exitCode: 0, output: 'ok\n' }),

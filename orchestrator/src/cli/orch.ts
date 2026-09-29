@@ -29,15 +29,15 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
   }
 }
 
-async function fullCli(argv: string[], helpShaped: boolean): Promise<number> {
+async function fullCli(argv: string[], storeFree: boolean): Promise<number> {
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
   registerStandardRuntime()
-  if (!helpShaped && argv[0] !== 'migrate') {
+  if (!storeFree && argv[0] !== 'migrate') {
     const { ensureDatabase } = await import('../database/db.ts')
     ensureDatabase()
   }
   const { recordInvocationSession, run } = await import('./program.ts')
-  if (!helpShaped) recordInvocationSession(argv)
+  if (!storeFree) recordInvocationSession(argv)
   return run(argv)
 }
 
@@ -50,6 +50,11 @@ export function isHelpShapedInvocation(argv: string[]): boolean {
     argv.includes('-h') ||
     argv.includes('--version')
   )
+}
+
+/** Informational commands that neither need nor stamp the orchestrator store. */
+export function isStoreFreeInvocation(argv: string[]): boolean {
+  return isHelpShapedInvocation(argv) || (argv[0] === 'setup' && argv[1] === 'facts')
 }
 
 async function degradedCollection(argv: string[], error: unknown): Promise<number> {
@@ -74,11 +79,11 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
 }
 
 export async function main(argv: string[]): Promise<number> {
-  const helpShaped = isHelpShapedInvocation(argv)
+  const storeFree = isStoreFreeInvocation(argv)
   if (argv.length === 1 && argv[0] === '--version') return versionCommand()
-  if (argv[0] === 'init-db' && !helpShaped) return initDatabaseCommand(argv)
+  if (argv[0] === 'init-db' && !storeFree) return initDatabaseCommand(argv)
   try {
-    return await fullCli(argv, helpShaped)
+    return await fullCli(argv, storeFree)
   } catch (error) {
     if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
     return degradedCollection(argv, error)

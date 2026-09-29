@@ -32,14 +32,19 @@ function retainedRefFailure(args: string[]): ReturnType<typeof Bun.spawnSync> | 
   return null
 }
 
+function normalizedGitArgs(command: string[]): string[] {
+  const rawArgs = command[0] === 'git' ? command.slice(1) : command
+  const cwdStripped = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+  return cwdStripped[0] === '--no-optional-locks' ? cwdStripped.slice(1) : cwdStripped
+}
+
 function landingObservationResult(
   command: string[],
   observation: 'becomes-dirty' | 'missing-branch' | undefined,
   branch: string,
   state: { statusCalls: number },
 ): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
-  const rawArgs = command[0] === 'git' ? command.slice(1) : command
-  const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+  const args = normalizedGitArgs(command)
   if (args[0] === 'status') {
     state.statusCalls++
     const dirty = observation === 'becomes-dirty' && state.statusCalls > 1
@@ -240,8 +245,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
   const head = '1234567890abcdef1234567890abcdef12345678'
   const branch = `DEV-647-orch-${fixture.id}`
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    const rawArgs = command[0] === 'git' ? command.slice(1) : command
-    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    const args = normalizedGitArgs(command)
     commands.push(args.join(' '))
     if (args.join(' ') === 'teardown-marker') return spawnResult()
     if (args[0] === 'worktree' && args[1] === 'remove') return spawnResult('', 1)
@@ -289,8 +293,7 @@ test('present-tree inline-recipe teardown stays done when Git removal fails and 
   const head = '1234567890abcdef1234567890abcdef12345678'
   const branch = `DEV-647-orch-${fixture.id}`
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    const rawArgs = command[0] === 'git' ? command.slice(1) : command
-    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    const args = normalizedGitArgs(command)
     commands.push(args.join(' '))
     if (args.join(' ') === 'sh -c inline-stop-marker') return spawnResult()
     if (args[0] === 'worktree' && args[1] === 'remove') return spawnResult('', 1)
@@ -426,8 +429,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', () 
   const commands: string[] = []
   const head = '1234567890abcdef1234567890abcdef12345678'
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    const rawArgs = command[0] === 'git' ? command.slice(1) : command
-    const args = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
+    const args = normalizedGitArgs(command)
     commands.push(args.join(' '))
     if (args.join(' ') === 'teardown-marker') return spawnResult()
     if (args.includes('--git-common-dir')) return spawnResult('.git')
@@ -497,6 +499,7 @@ test('a legacy absent tracked-recipe tree with null teardown state is not torn d
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
+    if (args.includes('--show-toplevel')) return spawnResult(fixture.repo)
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
@@ -542,6 +545,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
+    if (args.includes('--show-toplevel')) return spawnResult(fixture.repo)
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {

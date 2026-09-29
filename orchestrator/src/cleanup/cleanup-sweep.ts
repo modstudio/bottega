@@ -9,6 +9,7 @@ import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import {
   absentTreeTeardownPlan,
+  isProjectRepository,
   projectAt,
   projectByName,
   projects,
@@ -470,7 +471,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const selectedProject = projectName === undefined ? null : projectByName(projectName)
   if (projectName !== undefined && !selectedProject)
     throw new Error(`unknown project ${projectName}`)
-  const sweepProjects = selectedProject ? [selectedProject] : projects()
+  const sweepProjects = (selectedProject ? [selectedProject] : projects()).filter(
+    isProjectRepository,
+  )
   if (!dry) writableDb()
   const trustObservation = helpers.observeGrokTrustHeadings()
   reconcileAbsentClaims({

@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
+
+const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
+const knownRepository = repositoryRoot
+const otherRepository = `${repositoryRoot}/hub`
 
 describe('scoped operator docs', () => {
   test('consumeDoc consults and patches a top-level open status after nested consumed status', async () => {
@@ -70,8 +75,8 @@ describe('scoped operator docs', () => {
   })
 
   test('listOpenResumes lists only open briefs for the cwd project, newest first', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    upsertProject({ name: 'other', path: '/w/other', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'other', path: otherRepository, stack: null, canon: true, settings: {} })
     const now = Date.parse('2026-09-03T12:00:00.000Z')
     await setDoc({
       scope: 'resume',
@@ -119,7 +124,7 @@ describe('scoped operator docs', () => {
       body: resumeBody('open', '2026-09-03T11:59:00.000Z'),
     })
     expect(listOpenResumes('/nowhere', now)).toEqual({ open: [], unreadable: [] })
-    expect(listOpenResumes('/w/known/src', now)).toEqual({
+    expect(listOpenResumes(`${knownRepository}/src`, now)).toEqual({
       open: [
         {
           slug: 'newer',
@@ -139,7 +144,7 @@ describe('scoped operator docs', () => {
   })
 
   test('indented resume frontmatter cases A-D parse and list, with top-level keys winning', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     const cases = [
       [
         'case-a',
@@ -185,14 +190,14 @@ describe('scoped operator docs', () => {
       .run(topWins, 'resume', 'known', 'top-wins')
 
     expect(
-      listOpenResumes('/w/known')
+      listOpenResumes(knownRepository)
         .open.map((resume) => resume.slug)
         .sort(),
     ).toEqual(['case-a', 'case-b', 'case-c', 'case-d'])
   })
 
   test('the last duplicate top-level status controls listing and consumption', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -206,7 +211,7 @@ describe('scoped operator docs', () => {
       .run(duplicate, 'resume', 'known', 'legacy-duplicate')
 
     expect(parseResumeFrontmatter(duplicate)?.status).toBe('open')
-    expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).toContain(
+    expect(listOpenResumes(knownRepository).open.map((resume) => resume.slug)).toContain(
       'legacy-duplicate',
     )
 
@@ -214,13 +219,13 @@ describe('scoped operator docs', () => {
     expect(consumed.already_consumed).toBe(false)
     expect(consumed.body).toContain('status: consumed\nstatus: consumed\n')
     expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
-    expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).not.toContain(
+    expect(listOpenResumes(knownRepository).open.map((resume) => resume.slug)).not.toContain(
       'legacy-duplicate',
     )
   })
 
   test('the last nested status controls parsing, listing, and consumption', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     const cases = [
       [
         'nested-open',
@@ -258,7 +263,7 @@ describe('scoped operator docs', () => {
 
       expect(parseResumeFrontmatter(body)?.status).toBe(status)
       expect(
-        listOpenResumes('/w/known')
+        listOpenResumes(knownRepository)
           .open.map((resume) => resume.slug)
           .includes(slug),
       ).toBe(status === 'open')
@@ -267,7 +272,9 @@ describe('scoped operator docs', () => {
       expect(consumed.already_consumed).toBe(status === 'consumed')
       if (status === 'open') {
         expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
-        expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).not.toContain(slug)
+        expect(listOpenResumes(knownRepository).open.map((resume) => resume.slug)).not.toContain(
+          slug,
+        )
       } else {
         expect(consumed.body).toBe(body)
         expect(consumed.body).not.toContain('consumed_by:')
@@ -276,7 +283,7 @@ describe('scoped operator docs', () => {
   })
 
   test('round-three status forms still resolve and consume correctly', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     const bodies = [
       '---\r\nstatus: "consumed"\r\nstatus: \'open\'\r\n---\r\n\r\nBODY',
       '---\nmetadata:\n  status: consumed\nstatus: open\n---\n\nBODY',
@@ -296,7 +303,7 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc refuses a resume without readable top-level status', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     await expect(
       setDoc({
         scope: 'resume',
@@ -318,7 +325,7 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc refuses duplicate top-level resume statuses and names the slug', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     await expect(
       setDoc({
         scope: 'resume',
@@ -331,7 +338,7 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc refuses an unrecognized resume status and names the value and the permitted two', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     await expect(
       setDoc({
         scope: 'resume',
@@ -346,7 +353,7 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc accepts open and consumed resume status, including quoted forms', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     const accepted = [
       ['plain-open', 'open', 'open'],
       ['plain-consumed', 'consumed', 'consumed'],
@@ -368,7 +375,7 @@ describe('scoped operator docs', () => {
   })
 
   test('listOpenResumes reports a stored unrecognized status as unreadable rather than dropping it', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -380,15 +387,15 @@ describe('scoped operator docs', () => {
       .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
       .run(resumeBody('pending'), 'resume', 'known', 'pending-brief')
 
-    expect(listOpenResumes('/w/known')).toEqual({
+    expect(listOpenResumes(knownRepository)).toEqual({
       open: [],
       unreadable: [{ slug: 'pending-brief', reason: 'unrecognized-status' }],
     })
   })
 
   test('orch doc resumes prints padded columns and is silent when there are none', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    expect(listOpenResumes('/w/known')).toEqual({ open: [], unreadable: [] })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    expect(listOpenResumes(knownRepository)).toEqual({ open: [], unreadable: [] })
     expect(listOpenResumes('/nowhere')).toEqual({ open: [], unreadable: [] })
     const now = Date.now()
     await setDoc({
@@ -398,14 +405,14 @@ describe('scoped operator docs', () => {
       title: 'Title here',
       body: resumeBody('open', new Date(now).toISOString()),
     })
-    expect(listOpenResumes('/w/known', now)).toEqual({
+    expect(listOpenResumes(knownRepository, now)).toEqual({
       open: [{ slug: 'epic-name', title: 'Title here', age: '0s', at: now }],
       unreadable: [],
     })
   }, 20_000)
 
   test('orch doc resumes reports unreadable briefs without changing human stdout', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     const invalidBriefs: Array<[string, string]> = [
       ['no-frontmatter', 'BODY'],
       ['no-status', '---\nepic: demo\n---\n\nBODY'],
@@ -423,7 +430,7 @@ describe('scoped operator docs', () => {
         .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
         .run(body, 'resume', 'known', slug)
     }
-    expect(listOpenResumes('/w/known')).toEqual({
+    expect(listOpenResumes(knownRepository)).toEqual({
       open: [],
       unreadable: [
         { slug: 'no-frontmatter', reason: 'no-frontmatter' },

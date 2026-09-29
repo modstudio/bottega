@@ -16,7 +16,7 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants, sampleProcesses } from '../idle-kill.ts'
-import { projects } from '../project/projects.ts'
+import { isProjectRepository, projects } from '../project/projects.ts'
 import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
   refGuardInventory,
@@ -599,7 +599,9 @@ export function dockerConditions(clock: number): {
     Labels?: Record<string, string> | null
   }[]
   const liveTrees = new Set(liveRuns().flatMap((row) => (row.worktree ? [row.worktree] : [])))
-  const ownedRoots = projects().map((project) => `${join(project.path, '.claude', 'worktrees')}/`)
+  const ownedRoots = projects()
+    .filter(isProjectRepository)
+    .map((project) => `${join(project.path, '.claude', 'worktrees')}/`)
   const conditions = rows.flatMap((row): MonitorCondition[] => {
     const workingDir = row.Labels?.['com.docker.compose.project.working_dir'] ?? null
     if (

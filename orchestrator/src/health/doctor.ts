@@ -422,12 +422,14 @@ export async function doctorCommand(
     absentTreeTeardownPlan,
     projectByName,
     projects: registeredProjects,
+    isProjectRepository,
     resolvedWorktreeTool,
     undeclaredCommitHooks,
     registerBranchCheck,
   } = await import('../project/projects.ts')
+  const repositoryProjects = registeredProjects().filter(isProjectRepository)
   lifecycleReportLines(
-    registeredProjects().map((project) => ({
+    repositoryProjects.map((project) => ({
       name: project.name,
       path: project.path,
       worktree: project.settings.worktree,
@@ -436,12 +438,12 @@ export async function doctorCommand(
   ).forEach((line) => {
     log(line)
   })
-  const hookFlags = registeredProjects().map(undeclaredCommitHooks).filter(Boolean)
+  const hookFlags = repositoryProjects.map(undeclaredCommitHooks).filter(Boolean)
   if (hookFlags.length) {
     log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
     for (const line of hookFlags) log(`  ${line}`)
   }
-  const registerQuestions = registeredProjects().flatMap((project) =>
+  const registerQuestions = repositoryProjects.flatMap((project) =>
     registerBranchCheck(project).problems.map((problem) => `${project.name}: ${problem}`),
   )
   if (registerQuestions.length) {

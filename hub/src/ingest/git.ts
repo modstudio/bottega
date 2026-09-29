@@ -75,7 +75,7 @@ function scanGit(since: string) {
     return days.get(d)!
   }
 
-  for (const project of projects()) {
+  for (const project of projects().filter((project) => project.repository)) {
     const repo = project.name
     const proc = Bun.spawnSync(
       [

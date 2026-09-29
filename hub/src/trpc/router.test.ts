@@ -154,6 +154,7 @@ describe('project.list', () => {
       path: '/fixtures/repos/alpha',
       stack: null,
       canon: true,
+      repository: true,
       settings: {
         keyPrefixes: ['ALP'],
         color: '#112233',
@@ -517,6 +518,7 @@ describe('project writes', () => {
     path: '/tmp/new-project',
     stack: 'bun',
     canon: true,
+    repository: true,
     settings: {},
   }
 

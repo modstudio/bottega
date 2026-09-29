@@ -5,7 +5,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
-import { projectByName, projects } from '../project/projects.ts'
+import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
 import { finalizeTriageIntent } from '../pull-request/pr-admission.ts'
 import { type PullRequestLandingEvidence, verifyBranchLanding } from './branch-landing-record.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
@@ -499,7 +499,7 @@ export function branchesReport(options: {
   if (options.project !== undefined && !selected)
     throw new Error(`unknown project ${options.project}`)
   return {
-    projects: (selected ? [selected] : projects()).map((project) => {
+    projects: (selected ? [selected] : projects()).filter(isProjectRepository).map((project) => {
       try {
         return branchReportFor(project, options)
       } catch (error) {

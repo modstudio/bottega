@@ -7,6 +7,7 @@ import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import {
   projectAt,
   projectByName,
+  projectRepositoryRefusal,
   projects,
   retiredProjectAt,
   retiredProjectByName,
@@ -120,6 +121,10 @@ function assertDispatchableProject(
   if (explicitRepo && !projectByName(explicitRepo)) {
     if (retiredProjectByName(explicitRepo)) throw new Error(retiredProjectRefusal(explicitRepo))
     throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
+  }
+  if (explicitRepo) {
+    const refusal = projectRepositoryRefusal(projectByName(explicitRepo)!)
+    if (refusal) throw new Error(refusal)
   }
 }
 

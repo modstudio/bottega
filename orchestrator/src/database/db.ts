@@ -1,8 +1,8 @@
 // concern: database
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { Database } from 'bun:sqlite'
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -21,6 +21,7 @@ import {
   readUserVersion,
   staleWriteRefusal,
 } from './migrations.ts'
+import { initializeDefaultLocalProject } from './project-register-store.ts'
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -314,6 +315,47 @@ export function initializeDatabase(): string {
   return ensureDatabase()
 }
 
+const DATABASE_SIDECAR_SUFFIXES = ['', '-wal', '-shm', '-journal'] as const
+
+function removeDatabaseFiles(path: string): void {
+  for (const suffix of DATABASE_SIDECAR_SUFFIXES) rmSync(`${path}${suffix}`, { force: true })
+}
+
+/**
+ * Build a new store under a private same-directory name, then publish its main
+ * file with an atomic hard link. link(2) never replaces an existing path, so a
+ * concurrent creator either publishes the whole closed store or loses without
+ * gaining authority to remove the winner's files.
+ */
+export function createDatabasePrivately<T>(
+  path: string,
+  initialize: (database: Database) => T,
+): { published: boolean; result: T } {
+  mkdirSync(dirname(path), { recursive: true })
+  const temporary = `${path}.create-${process.pid}-${randomUUID()}.tmp`
+  let database: Database | null = new Database(temporary, { readwrite: true, create: true })
+  try {
+    database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    const result = initialize(database)
+    database.exec('PRAGMA wal_checkpoint(TRUNCATE);')
+    database.close()
+    database = null
+    try {
+      linkSync(temporary, path)
+      return { published: true, result }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      return { published: false, result }
+    }
+  } finally {
+    try {
+      database?.close()
+    } finally {
+      removeDatabaseFiles(temporary)
+    }
+  }
+}
+
 /** Seed the project register once from paths already recorded in run history. */
 function seedProjects(d: Database): void {
   const { n } = d.query('SELECT COUNT(*) AS n FROM project').get() as { n: number }
@@ -347,14 +389,37 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   const create = !existsSync(DB_PATH)
   const creationRefusal = create ? implicitDatabaseCreationRefusal() : null
   if (creationRefusal) throw new Error(creationRefusal)
-  const migrationRefusal = !create ? existingDatabaseMigrationRefusal() : null
-  if (migrationRefusal) throw new Error(migrationRefusal)
+  const existingRefusal = !create ? existingDatabaseMigrationRefusal() : null
+  if (existingRefusal) throw new Error(existingRefusal)
   registeredOpenHooks()
-  if (create) mkdirSync(dirname(DB_PATH), { recursive: true })
-  const d = new Database(DB_PATH, { readwrite: true, create })
+  if (create) {
+    const created = createDatabasePrivately(DB_PATH, (database) => {
+      const versions = applyMigrations(database)
+      writeTransaction(() => initializeDefaultLocalProject(database, true), database)
+      seedProjects(database)
+      runOpenHooks('afterInitialize', database)
+      return versions
+    })
+    if (!created.published) {
+      // The winning creator published only after checkpointing and closing.
+      // Opening it here makes the losing attempt observe that complete store
+      // before reporting successful initialization to its caller.
+      const winner = new Database(DB_PATH, { readwrite: true, create: false })
+      try {
+        winner.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+        const refused = migrationRefusal(winner)
+        if (refused) throw new Error(refused)
+      } finally {
+        winner.close()
+      }
+    }
+    return { path: DB_PATH, versions: created.result }
+  }
+  const d = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const versions = applyMigrations(d)
+    writeTransaction(() => initializeDefaultLocalProject(d, false), d)
     seedProjects(d)
     runOpenHooks('afterInitialize', d)
     return { path: DB_PATH, versions }

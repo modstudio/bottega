@@ -34,6 +34,7 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
+import { writeProjectRegisterRow } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { validateAutonomySettings } from '../workflow/autonomy.ts'
@@ -189,6 +190,7 @@ export function retiredProjectRefusal(name: string): string {
 export function retiredProjectAt(cwd: string): Project | null {
   let best: Project | null = null
   for (const p of projects({ retired: true })) {
+    if (!isProjectRepository(p)) continue
     if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
       if (!best || p.path.length > best.path.length) best = p
     }
@@ -213,11 +215,23 @@ export function retiredProjectAt(cwd: string): Project | null {
 export function projectAt(cwd: string, database: Database = db()): Project | null {
   let best: Project | null = null
   for (const p of projects(undefined, database)) {
+    if (!isProjectRepository(p)) continue
     if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
       if (!best || p.path.length > best.path.length) best = p
     }
   }
   return best
+}
+
+/** Whether a registered project path is a repository that repository consumers may enter. */
+export function isProjectRepository(project: Pick<Project, 'path'>): boolean {
+  return gitToplevel(project.path) !== null
+}
+
+export function projectRepositoryRefusal(project: Pick<Project, 'name' | 'path'>): string | null {
+  return isProjectRepository(project)
+    ? null
+    : `project ${project.name} has no repository: ${project.path} is not a git checkout`
 }
 
 /** The stack a directory's work is in, for routing. */
@@ -232,21 +246,8 @@ export function upsertProject(p: {
   canon?: boolean
   settings?: ProjectSettings
 }): void {
-  writableDb()
-  db()
-    .query(
-      `INSERT INTO project (name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,NULL)
-     ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
-                                     canon=excluded.canon, settings=excluded.settings,
-                                     retired_at=NULL`,
-    )
-    .run(
-      p.name,
-      p.path.replace(/\/$/, ''),
-      p.stack ?? null,
-      p.canon ? 1 : 0,
-      JSON.stringify(p.settings ?? {}),
-    )
+  const database = writableDb()
+  writeProjectRegisterRow(database, p)
 }
 
 export async function writeHostedProject(p: {
