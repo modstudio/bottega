@@ -74,7 +74,12 @@ export async function settingsEnvImportCommand(
   }
   const owned = parseStoredOwnedSettings(row.body)
   owned.envKeys = result.names
-  await writeOwned(targetAddress({ kind: 'user' }, owner), owned, 'imported env key names')
+  await writeOwned(
+    targetAddress({ kind: 'user' }, owner),
+    owned,
+    'imported env key names',
+    row.revision!,
+  )
   presentation.log(`imported ${result.names.length} env key names`)
 }
 
@@ -106,7 +111,12 @@ export async function settingsAdoptCommand(
   }
   const owned = parseStoredOwnedSettings(row.body)
   const adopted = adoptPermissionRules(owned, local, selected)
-  await writeOwned(targetAddress(target, owner), owned, 'adopted local permission grants')
+  await writeOwned(
+    targetAddress(target, owner),
+    owned,
+    'adopted local permission grants',
+    row.revision!,
+  )
   presentation.log(`adopted: ${adopted.length}`)
   for (const [index, item] of adopted.entries()) {
     presentation.log(
@@ -252,6 +262,7 @@ async function writeOwned(
   address: { subject: string | null; owner: string | null },
   owned: OwnedSettings,
   reason: string,
+  expectedRevision: string,
 ): Promise<void> {
   await setDoc({
     scope: SETTINGS_SCOPE,
@@ -262,6 +273,7 @@ async function writeOwned(
     body: serializeOwnedSettings(owned),
     delivery: 'demand',
     reason,
+    expectedRevision,
   })
 }
 

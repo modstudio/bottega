@@ -112,6 +112,7 @@ describe('settings import', () => {
         title: 'settings',
         body: JSON.stringify({ permissions: {}, hooks: {}, env: { X: '1' } }),
         reason: 'reject extra keys',
+        expectedRevision: stored!.revision!,
       }),
     ).rejects.toThrow(/unknown or missing/)
   })

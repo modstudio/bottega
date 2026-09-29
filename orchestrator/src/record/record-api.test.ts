@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import type { OwnedSettings } from '../settings/settings.ts'
+import { editSettingsPermission } from '../settings/settings-permission.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -6,6 +8,11 @@ import {
   SNAPSHOT_MAX_BYTES,
 } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { RecordDocError } from './record-docs.ts'
+import {
+  applyRecordSettingsPermission,
+  type RecordSettingsPermissionInput,
+} from './record-settings.ts'
 
 const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -52,6 +59,10 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     restoreDoc: async () => ({ id, revisionId: id }),
     renameDocSubject: async () => ({ docs: 0, revisions: 0 }),
     countDocs: async () => ({ docs: 0, revisions: 0 }),
+    applySettingsPermission: async () => ({
+      revision: id,
+      permissions: { allow: [], ask: [], deny: [] },
+    }),
     upsertScore: async () => undefined,
     voidRun: async () => undefined,
     unvoidRun: async () => undefined,
@@ -90,6 +101,149 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
+  test('applies permission adds and removes, refuses stale revisions, and binds user targets', async () => {
+    let revision = '01990000-0000-7000-8000-000000000010'
+    let settings: OwnedSettings = { permissions: {}, hooks: {}, envKeys: [] }
+    const owners: string[] = []
+    const app = appWith(identity, {
+      applySettingsPermission: async (input: RecordSettingsPermissionInput) => {
+        owners.push(input.userId)
+        if (input.expectedRevision !== revision) {
+          throw new RecordDocError(
+            `refusing stale document update: expected revision ${input.expectedRevision}, current revision ${revision}`,
+            409,
+          )
+        }
+        const edit = editSettingsPermission(settings, input)
+        settings = edit.settings
+        revision =
+          revision === '01990000-0000-7000-8000-000000000010'
+            ? '01990000-0000-7000-8000-000000000011'
+            : '01990000-0000-7000-8000-000000000012'
+        return { revision, permissions: edit.permissions }
+      },
+    })
+    const edit = (body: Record<string, unknown>) =>
+      app.request('/v1/settings/permission', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const base = {
+      target: { kind: 'user' },
+      list: 'allow',
+      rule: 'Bash(orch *)',
+      reason: 'test edit',
+    }
+    const added = await edit({
+      ...base,
+      operation: 'add',
+      expectedRevision: '01990000-0000-7000-8000-000000000010',
+    })
+    expect(added.status).toBe(200)
+    expect(await added.json()).toMatchObject({ permissions: { allow: ['Bash(orch *)'] } })
+    const stale = await edit({
+      ...base,
+      operation: 'remove',
+      expectedRevision: '01990000-0000-7000-8000-000000000010',
+    })
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toMatchObject({ error: expect.stringContaining('current revision') })
+    const removed = await edit({
+      ...base,
+      operation: 'remove',
+      expectedRevision: '01990000-0000-7000-8000-000000000011',
+    })
+    expect(removed.status).toBe(200)
+    expect(await removed.json()).toMatchObject({ permissions: { allow: [] } })
+    expect(owners).toEqual(['user-a', 'user-a', 'user-a'])
+
+    const otherUser = await edit({
+      ...base,
+      target: { kind: 'user', userId: 'user-b' },
+      operation: 'add',
+      expectedRevision: revision,
+    })
+    expect(otherUser.status).toBe(400)
+    expect(owners).toHaveLength(3)
+  })
+
+  test('refuses a permission write when the revision changes between read and locked write', async () => {
+    const expectedRevision = '01990000-0000-7000-8000-000000000020'
+    const racedRevision = '01990000-0000-7000-8000-000000000021'
+    let currentRevision = expectedRevision
+    const app = appWith(identity, {
+      applySettingsPermission: (input: RecordSettingsPermissionInput) =>
+        applyRecordSettingsPermission(input, {
+          listDocs: async () => [
+            {
+              id,
+              spaceId: 'space-a',
+              spaceName: 'Space A',
+              scope: 'settings',
+              subject: null,
+              owner: 'user-a',
+              slug: 'settings',
+              title: 'settings',
+              body: JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+              delivery: 'demand',
+              projectName: null,
+              createdAt: '2026-09-28T12:00:00.000Z',
+              updatedAt: '2026-09-28T12:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          listRevisions: async () => {
+            const readRevision = currentRevision
+            currentRevision = racedRevision
+            return [
+              {
+                id: readRevision,
+                docId: id,
+                scope: 'settings',
+                subject: null,
+                owner: 'user-a',
+                slug: 'settings',
+                op: 'set',
+                title: 'settings',
+                body: '{}',
+                delivery: 'demand',
+                reason: 'fixture',
+                author: 'fixture',
+                sessionId: null,
+                at: '2026-09-28T12:00:00.000Z',
+              },
+            ]
+          },
+          upsertDoc: async (write) => {
+            if (write.expectedRevision !== currentRevision) {
+              throw new RecordDocError(
+                `refusing stale document update: expected revision ${write.expectedRevision}, current revision ${currentRevision}`,
+                409,
+              )
+            }
+            return { id, revisionId: racedRevision }
+          },
+        }),
+    })
+    const response = await app.request('/v1/settings/permission', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        target: { kind: 'user' },
+        list: 'allow',
+        rule: 'Bash(orch *)',
+        operation: 'add',
+        reason: 'race test',
+        expectedRevision,
+      }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining(`current revision ${racedRevision}`),
+    })
+  })
+
   test('binds user canon imports to the authenticated owner and ignores bootstrap authority', async () => {
     const calls: Record<string, unknown>[] = []
     const app = appWith(identity, {

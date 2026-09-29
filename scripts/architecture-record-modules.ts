@@ -82,6 +82,18 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
+  module('orchestrator/src/record/record-api-settings.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-settings.ts',
+  ]),
+  module('orchestrator/src/record/record-settings.ts', [
+    '../doc/doc-write-allowed.ts',
+    '../settings/settings.ts',
+    '../settings/settings-permission.ts',
+    './record-docs.ts',
+  ]),
   module('orchestrator/src/record/record-space-move.ts', [
     'bun',
     '../postgres/postgres-migrate.ts',

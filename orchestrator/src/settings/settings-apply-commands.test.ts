@@ -216,6 +216,7 @@ describe('settings render write', () => {
       body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
       delivery: 'demand',
       reason: 'drop fixture',
+      expectedRevision: getDoc('settings', null, 'settings', OWNER)!.revision!,
     })
     await settingsRenderWriteCommand(
       flags({ user: true, write: true, yes: true, 'drop-env': 'ONLY_HERE' }),

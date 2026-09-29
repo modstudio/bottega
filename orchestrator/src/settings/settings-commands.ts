@@ -1,6 +1,7 @@
 // concern: settings-commands
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
+import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
@@ -29,6 +30,7 @@ import {
   userSettingsPath,
 } from './settings-files.ts'
 import { adoptionCandidates, lintSettings, type SettingsTarget } from './settings-lint.ts'
+import { editSettingsPermission, type SettingsPermissionOperation } from './settings-permission.ts'
 import {
   diffOwnedSettings,
   displayHookDrift,
@@ -49,8 +51,6 @@ type SettingsPresentation = {
 }
 
 type SettingsTargetKind = { kind: 'user' } | { kind: 'project'; name: string }
-
-export type SettingsPermissionOperation = 'add' | 'remove'
 
 export async function settingsPermissionCommand(
   flags: SettingsFlags,
@@ -74,26 +74,23 @@ export async function settingsPermissionCommand(
     }
     throw new Error(`refusing settings permission add: no settings row for ${targetLabel(target)}`)
   }
-  const owned = parseStoredOwnedSettings(row.body)
-  const permissionList = list as PermissionList
-  const current = permissionLists(owned.permissions)[permissionList]
-  const present = current.includes(rule)
-  if ((operation === 'add' && present) || (operation === 'remove' && !present)) {
+  const revision = decideDocRevisionWrite({
+    expected: expectedRevision,
+    current: row.revision ?? null,
+    isCreate: false,
+    scope: SETTINGS_SCOPE,
+  })
+  if (!revision.allow) throw new Error(revision.reason)
+  const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), { list, rule, operation })
+  if (!edit.changed) {
     return {
       revision: row.revision!,
-      counts: permissionCounts(owned),
+      counts: permissionCounts(edit.settings),
       changed: false,
-      message: operation === 'add' ? 'already present' : 'rule is absent',
+      message: edit.message,
     }
   }
-  const next = operation === 'add' ? [...current, rule] : current.filter((item) => item !== rule)
-  const body = serializeOwnedSettings({
-    ...owned,
-    permissions: {
-      ...(isPlainObject(owned.permissions) ? owned.permissions : {}),
-      [permissionList]: next,
-    },
-  })
+  const body = serializeOwnedSettings(edit.settings)
   const refusal = refuseSettingsBody(SETTINGS_SCOPE, body)
   if (refusal) throw new Error(refusal)
   const written = await setDoc({

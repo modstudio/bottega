@@ -104,6 +104,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
   const imports: RecordDocImportInput[] = []
   const hosted = new Map<string, Record<string, unknown>>()
   const client: RecordApiClient = {
+    applySettingsPermission: unused,
     inviteMember: unused,
     putSnapshot: unused,
     listSnapshots: unused,

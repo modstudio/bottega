@@ -20,6 +20,10 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     getDoc: async () => ({}),
     listRevisions: async () => [],
     upsertDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),
+    applySettingsPermission: async () => ({
+      revision: newRecordId(),
+      permissions: { allow: [], ask: [], deny: [] },
+    }),
     importDoc: async () => ({ id: newRecordId(), revisionIds: [] }),
     importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),

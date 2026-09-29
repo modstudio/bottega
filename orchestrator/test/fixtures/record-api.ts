@@ -72,6 +72,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     )
 
   return {
+    async applySettingsPermission() {
+      throw new Error('settings permission endpoint is not implemented by the memory fixture')
+    },
     async whoami() {
       return {
         user: {

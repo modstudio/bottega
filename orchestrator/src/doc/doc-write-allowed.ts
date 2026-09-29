@@ -127,7 +127,12 @@ export function decideDocRevisionWrite(input: {
     }
   }
   if (input.isCreate && input.expected === undefined) return { allow: true }
-  if (!input.isCreate && input.scope !== 'canon' && input.expected === undefined) {
+  if (
+    !input.isCreate &&
+    input.scope !== 'canon' &&
+    input.scope !== 'settings' &&
+    input.expected === undefined
+  ) {
     return { allow: true }
   }
 
@@ -136,7 +141,7 @@ export function decideDocRevisionWrite(input: {
     return {
       allow: false,
       reason:
-        `refusing canon update at current revision ${current}; pass --expect ${current}\n` +
+        `refusing ${input.scope} update at current revision ${current}; pass --expect ${current}\n` +
         're-read with orch doc get and re-apply the edit',
     }
   }

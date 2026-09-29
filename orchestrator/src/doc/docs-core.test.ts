@@ -43,6 +43,30 @@ describe('scoped operator docs', () => {
     expect(getDoc('settings', null, 'settings', owner)?.id).toBe(created.id)
   })
 
+  test('settings updates require the exposed current revision locally', async () => {
+    const owner = '01990000-0000-7000-8000-000000000093'
+    const created = await writeDoc({
+      scope: 'settings',
+      subject: null,
+      owner,
+      slug: 'settings',
+      title: 'settings',
+      body: '{"permissions":{},"hooks":{},"envKeys":[]}\n',
+      reason: 'create settings revision fixture',
+    })
+    await expect(
+      writeDoc({
+        scope: 'settings',
+        subject: null,
+        owner,
+        slug: 'settings',
+        title: 'settings',
+        body: '{"permissions":{"allow":[]},"hooks":{},"envKeys":[]}\n',
+        reason: 'missing settings revision',
+      }),
+    ).rejects.toThrow(`current revision ${created.revision}; pass --expect ${created.revision}`)
+  })
+
   test('owned canon is visible only through its owner address locally', async () => {
     const owner = '01990000-0000-7000-8000-000000000091'
     const created = await writeDoc({

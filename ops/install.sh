@@ -105,7 +105,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.record-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/record-tunnel"
   fi
-  if [[ "$label" == "com.user.orch-record-sync" ]]; then
+  if [[ "$label" == "com.user.orch-record-sync" || "$label" == "com.user.orch-settings-apply" ]]; then
     has_env_file=false
     for env_file in ${ENV_FILES[@]+"${ENV_FILES[@]}"}; do
       [[ -f "$env_file" ]] && has_env_file=true
@@ -117,6 +117,9 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   fi
   if [[ "$label" == "com.user.orch-record-sync" ]]; then
     mkdir -p "$HOME/Library/Logs/orch-record-sync"
+  fi
+  if [[ "$label" == "com.user.orch-settings-apply" ]]; then
+    mkdir -p "$HOME/Library/Logs/orch-settings-apply"
   fi
 
   target="$AGENTS_DIR/$label.plist"
@@ -158,7 +161,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-settings-apply|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

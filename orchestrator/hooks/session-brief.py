@@ -21,6 +21,72 @@ def _start(orch, *args, env=None):
     )
 
 
+def _state_root(env=None):
+    environment = env if env is not None else os.environ
+    override = environment.get("BOTTEGA_STATE_HOME")
+    state_slug = "BOTTEGA_STATE_HOME".removesuffix("_STATE_HOME").lower()
+    if override:
+        if not os.path.isabs(override):
+            raise RuntimeError(
+                "BOTTEGA_STATE_HOME must be an absolute state root; "
+                "set it to an absolute path"
+            )
+        return override
+    xdg = environment.get("XDG_STATE_HOME")
+    if xdg and os.path.isabs(xdg):
+        return os.path.join(xdg, state_slug)
+    home = environment.get("HOME")
+    if not home:
+        raise RuntimeError("cannot resolve platform state directory")
+    return os.path.join(home, ".local", "state", state_slug)
+
+
+def _start_settings_apply(orch, env=None):
+    log_path = os.path.join(_state_root(env), "orchestrator", "settings-apply.log")
+    os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
+    descriptor = os.open(
+        log_path,
+        os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW,
+        0o600,
+    )
+    log = os.fdopen(descriptor, "a", encoding="utf-8")
+    offset = os.lseek(descriptor, 0, os.SEEK_END)
+    try:
+        proc = subprocess.Popen(
+            [orch, "settings", "apply"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+            start_new_session=True,
+        )
+    finally:
+        log.close()
+    return proc, log_path, offset
+
+
+def _wait_settings_apply(proc, deadline, log_path, offset):
+    try:
+        timeout = None if proc.poll() is not None else max(0, deadline - time.monotonic())
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    descriptor = os.open(log_path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "r", encoding="utf-8", errors="replace") as log:
+        log.seek(offset)
+        output = log.read()
+    return subprocess.CompletedProcess(proc.args, proc.returncode, output, "")
+
+
+def _settings_apply_start_failure(error):
+    return f"Settings apply was not started: {error}."
+
+
+def _settings_apply_read_failure(log_path, error):
+    return f"Settings apply result at {log_path} could not be read: {error}."
+
+
 def _kill(proc):
     if proc is None or proc.poll() is not None:
         return
@@ -161,6 +227,25 @@ def _autonomy_slice(completed):
         return "", "Autonomy response was invalid; autonomy state is unknown."
 
 
+def _settings_apply_notice(completed, log_path=None):
+    if completed is None:
+        return f"settings apply still running; its result lands in {log_path}"
+    lines = [
+        line.strip()
+        for text in (completed.stdout or "", completed.stderr or "")
+        for line in text.splitlines()
+        if line.strip()
+    ]
+    if completed.returncode != 0:
+        refused = [line for line in lines if "refused" in line]
+        detail = "; ".join(refused or lines[:1])
+        suffix = f": {detail}" if detail else ""
+        return f"Settings apply failed with exit {completed.returncode}{suffix}."
+    if any(": applied;" in line for line in lines):
+        return "settings applied; they take effect in the next session"
+    return None
+
+
 def orch_worker_session(env=None):
     return bool((env if env is not None else os.environ).get("ORCH_RUN_ID"))
 
@@ -168,7 +253,10 @@ def orch_worker_session(env=None):
 def main() -> int:
     if orch_worker_session():
         return 0
-    resumes_p = inbox_p = waiting_p = monitor_p = context_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = None
+    settings_log_path = settings_log_offset = None
+    settings_start_failure = None
+    settings_read_failure = None
     capability_dir = None
     output = None
     monitor_notices = []
@@ -202,6 +290,10 @@ def main() -> int:
         )
         waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
         context_p = _start(orch, "context", "--cwd", cwd, "--json")
+        try:
+            settings_p, settings_log_path, settings_log_offset = _start_settings_apply(orch)
+        except Exception as error:
+            settings_start_failure = _settings_apply_start_failure(error)
         monitor_failure = None
         if sid:
             try:
@@ -222,6 +314,16 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
+        settings_apply = None
+        if settings_p is not None:
+            try:
+                settings_apply = _wait_settings_apply(
+                    settings_p, deadline, settings_log_path, settings_log_offset
+                )
+            except Exception as error:
+                settings_read_failure = _settings_apply_read_failure(
+                    settings_log_path, error
+                )
 
         resume_table = ""
         resume_offer = ""
@@ -416,6 +518,13 @@ def main() -> int:
             notices.append(waiting_failure)
         if autonomy_failure:
             notices.append(autonomy_failure)
+        settings_notice = (
+            settings_start_failure
+            or settings_read_failure
+            or _settings_apply_notice(settings_apply, settings_log_path)
+        )
+        if settings_notice:
+            notices.append(settings_notice)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
             message = f"{answerable_count} {noun} waiting on your ruling."

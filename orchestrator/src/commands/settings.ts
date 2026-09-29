@@ -12,10 +12,25 @@ import {
   settingsPermissionCommand,
   settingsRenderCheckCommand,
 } from '../settings/settings-commands.ts'
+import {
+  applyMachineSettings,
+  printMachineSettingsApplyResults,
+} from '../settings/settings-machine-apply.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
   const settings = program.command('settings')
+  settings
+    .command('apply')
+    .option('--check')
+    .action(async (options) => {
+      const check = Boolean(options.check)
+      const results = await applyMachineSettings({ check })
+      printMachineSettingsApplyResults(results, log)
+      if (results.some((result) => result.outcome === 'refused' || (check && result.changed))) {
+        process.exitCode = 1
+      }
+    })
   settings
     .command('import')
     .option('--user')

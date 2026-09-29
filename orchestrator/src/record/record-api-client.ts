@@ -7,6 +7,10 @@ import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
+import type {
+  RecordSettingsPermissionInput,
+  RecordSettingsPermissionResult,
+} from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
@@ -108,6 +112,9 @@ export type RecordApiClient = {
   getDoc(id: string): Promise<Record<string, unknown>>
   listRevisions(id: string): Promise<Record<string, unknown>[]>
   upsertDoc(input: RecordDocUpsertInput): Promise<{ id: string; revisionId: string }>
+  applySettingsPermission(
+    input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
+  ): Promise<RecordSettingsPermissionResult>
   importDoc(input: RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: RecordCanonImportInput): Promise<RecordCanonImportResult>
   deleteDoc(
@@ -264,6 +271,8 @@ export function recordApiClient(): RecordApiClient {
     },
     upsertDoc: (input) =>
       request('/v1/docs', { method: 'PUT', body: JSON.stringify(input) }).then(ids),
+    applySettingsPermission: (input) =>
+      request('/v1/settings/permission', { method: 'POST', body: JSON.stringify(input) }),
     importDoc: (input) =>
       request('/v1/docs/import', { method: 'POST', body: JSON.stringify(input) }).then(importIds),
     importCanon: (input) =>

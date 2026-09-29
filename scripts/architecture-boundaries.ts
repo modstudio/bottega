@@ -8,6 +8,7 @@ import {
   recordReadBoundariesBeforePublish,
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
+import { recordSettingsBoundarySpecs } from './architecture-record-settings-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
@@ -610,6 +611,8 @@ export const importBoundaries: ImportBoundary[] = [
       './record-runs-window-query.ts',
       './record-api-projects.ts',
       './record-api-doc-schemas.ts',
+      './record-api-settings.ts',
+      './record-settings.ts',
     ],
     'Enforce the record-api concern boundary.',
   ),
@@ -619,6 +622,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['hono', 'zod', './record-auth.ts', './record-projects.ts'],
     'Keep hosted project routes independent of SQL and local execution.',
   ),
+  ...recordSettingsBoundarySpecs,
   boundary(
     'record-project-write-boundary',
     'orchestrator/src/record/record-project-write.ts',
@@ -634,6 +638,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-auth.ts',
       './record-session.ts',
       './record-snapshots.ts',
+      './record-settings.ts',
     ],
     'Enforce the record API client concern boundary.',
     ['../canon/canon-lint.ts'],
@@ -651,6 +656,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-reviews.ts',
       './record-runs.ts',
       './record-snapshots.ts',
+      './record-settings.ts',
       './record-verdicts.ts',
     ],
     'Enforce the record-api-server concern boundary.',
