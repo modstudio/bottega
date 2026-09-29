@@ -72,23 +72,29 @@ async function localAutonomy(project: string) {
     return {
       ...resolved,
       userPreset,
+      configKnown: configWarning === null,
       ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
     } as typeof resolved & {
       userPreset?: AutonomyPreset | null
+      configKnown: boolean
     }
   }
-  const stages: Array<(typeof resolved.stages)[number] & { overridden?: boolean }> =
+  const stages: Array<(typeof resolved.stages)[number] & { overridden?: boolean | null }> =
     resolved.stages.map((stage) => ({
       ...stage,
-      overridden: user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
+      overridden: configWarning
+        ? null
+        : user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
     }))
   return {
     ...resolved,
     userPreset,
+    configKnown: configWarning === null,
     stages,
     ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
   } as Omit<typeof resolved, 'stages'> & {
     userPreset?: AutonomyPreset | null
+    configKnown: boolean
     stages: typeof stages
   }
 }
