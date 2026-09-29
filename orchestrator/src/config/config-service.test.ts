@@ -6,7 +6,7 @@ import type { ConfigClient } from '../../../shared/config-client.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readTrustList } from '../../../shared/trust-list.ts'
-import { machineInit, planRotation } from './config-service.ts'
+import { deleteEntry, machineInit, planRotation, setEntry } from './config-service.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -57,6 +57,44 @@ test('rotation plan retires an unreferenced old key and does so on a converged r
       current,
     ]),
   ).toEqual({ reseal: [], retireDekIds: ['unused-old'] })
+})
+
+test('entry writes and deletes pass explicit expected row versions without a prior read', async () => {
+  const writes: unknown[] = []
+  const client = {
+    getEntry: async () => {
+      throw new Error('unexpected read')
+    },
+    putEntry: async (key: string, input: unknown) => {
+      writes.push(['put', key, input])
+      return { key }
+    },
+    deleteEntry: async (key: string, input: unknown) => {
+      writes.push(['delete', key, input])
+      return { deleted: true }
+    },
+  } as unknown as ConfigClient
+
+  await setEntry('autonomy.preset', 'guided', 'user', 4, client)
+  await deleteEntry('autonomy.stage.review', 'user', 7, client)
+
+  expect(writes).toEqual([
+    [
+      'put',
+      'autonomy.preset',
+      {
+        scope: 'user',
+        environment: 'default',
+        value: 'guided',
+        expectedRowVersion: 4,
+      },
+    ],
+    [
+      'delete',
+      'autonomy.stage.review',
+      { scope: 'user', environment: 'default', expectedRowVersion: 7 },
+    ],
+  ])
 })
 
 test('machine init converges with an existing key, pin, space, and registration', async () => {

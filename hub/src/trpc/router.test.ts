@@ -81,7 +81,22 @@ const contextGet = mock(async (_cwd: string) => ({
   ],
   text: 'Autonomy for alpha',
 }))
-const configSet = mock(async (key: string, value: string) => ({ key, value }))
+const configSet = mock(async (key: string, value: string, _expected?: number | null) => ({
+  key,
+  value,
+}))
+const configList = mock(
+  async () =>
+    [] as Array<{
+      key: string
+      environment: string
+      scope: 'user' | 'space'
+      value: string
+      rowVersion: number
+      updatedAt: string
+    }>,
+)
+const configDelete = mock(async (_key: string, _expected?: number) => '')
 const settingsCheck = mock(async (_target: unknown) => ({
   target: { kind: 'user' as const },
   file: { path: '/tmp/settings.json', exists: true },
@@ -121,6 +136,8 @@ mock.module('../orch.ts', () => ({
   userDocRemove,
   contextGet,
   configSet,
+  configList,
+  configDelete,
   settingsCheck,
   settingsPermission,
   dashboardMutationAvailable,
@@ -581,6 +598,20 @@ describe('project writes', () => {
 })
 
 describe('managed context', () => {
+  test('returns local autonomy with a warning when hosted config is unavailable', async () => {
+    configList.mockRejectedValueOnce(new Error('hosted config is not configured'))
+
+    const result = await caller.context.autonomy.get({ project: 'alpha' })
+
+    expect(result.userPreset).toBeUndefined()
+    expect(result.warnings).toContain(
+      'warning: hosted autonomy preset and overrides are unavailable until you sign in',
+    )
+    expect(result.registered && result.stages.every((stage) => stage.overridden === null)).toBe(
+      true,
+    )
+  })
+
   test('sets the exact hosted user autonomy key and returns a fresh resolution', async () => {
     contextGet.mockResolvedValueOnce({
       registered: true,
@@ -615,6 +646,102 @@ describe('managed context', () => {
     expect(configSet).toHaveBeenLastCalledWith('autonomy.release', 'promote')
     expect(contextGet).toHaveBeenLastCalledWith('/fixtures/repos/alpha')
     expect(result.registered && result.release.value).toBe('land')
+  })
+
+  test('setting a preset clears user stage overrides and returns the fresh preset', async () => {
+    configList
+      .mockResolvedValueOnce([
+        {
+          key: 'autonomy.stage.review',
+          environment: 'default',
+          scope: 'user',
+          value: 'auto',
+          rowVersion: 2,
+          updatedAt: '2026-09-28T12:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          key: 'autonomy.preset',
+          environment: 'default',
+          scope: 'user',
+          value: 'manual',
+          rowVersion: 1,
+          updatedAt: '2026-09-28T12:00:01.000Z',
+        },
+      ])
+
+    const result = await caller.context.autonomy.setPreset({
+      project: 'alpha',
+      value: 'manual',
+    })
+
+    expect(configDelete).toHaveBeenCalledWith('autonomy.stage.review', 2)
+    expect(configSet).toHaveBeenCalledWith('autonomy.preset', 'manual', undefined)
+    expect(result.userPreset).toBe('manual')
+    expect(result.registered && result.stages[0]?.overridden).toBe(false)
+  })
+
+  test('a failing preset write deletes no stage overrides', async () => {
+    const deletesBefore = configDelete.mock.calls.length
+    configSet.mockRejectedValueOnce(new Error('hosted config route returned HTTP 409'))
+
+    await expect(
+      caller.context.autonomy.setPreset({
+        project: 'alpha',
+        value: 'guided',
+        expectedRowVersion: 4,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
+
+    expect(configSet).toHaveBeenLastCalledWith('autonomy.preset', 'guided', 4)
+    expect(configDelete.mock.calls).toHaveLength(deletesBefore)
+  })
+
+  test('retries a conflicted preset override delete and reports only overrides left', async () => {
+    configList
+      .mockResolvedValueOnce([
+        {
+          key: 'autonomy.stage.review',
+          environment: 'default',
+          scope: 'user',
+          value: 'auto',
+          rowVersion: 2,
+          updatedAt: '2026-09-28T12:00:00.000Z',
+        },
+        {
+          key: 'autonomy.stage.ship',
+          environment: 'default',
+          scope: 'user',
+          value: 'auto',
+          rowVersion: 7,
+          updatedAt: '2026-09-28T12:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          key: 'autonomy.stage.review',
+          environment: 'default',
+          scope: 'user',
+          value: 'auto',
+          rowVersion: 3,
+          updatedAt: '2026-09-28T12:00:01.000Z',
+        },
+      ])
+    configDelete
+      .mockRejectedValueOnce(new Error('hosted config route returned HTTP 409'))
+      .mockRejectedValueOnce(new Error('hosted config route returned HTTP 409'))
+
+    await expect(
+      caller.context.autonomy.setPreset({ project: 'alpha', value: 'manual' }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('review'),
+    })
+
+    expect(configDelete).toHaveBeenCalledWith('autonomy.stage.review', 2)
+    expect(configDelete).toHaveBeenCalledWith('autonomy.stage.review', 3)
+    expect(configDelete).toHaveBeenCalledWith('autonomy.stage.ship', 7)
   })
 
   test('validates permission edits before calling orch', async () => {

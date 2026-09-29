@@ -2,19 +2,26 @@
 /** Owns the pure workflow-autonomy vocabulary, parsing, resolution, and decisions. */
 
 import {
+  AUTONOMY_PRESETS,
+  AUTONOMY_STAGES,
+  AUTONOMY_VALUES,
+  type AutonomyPreset,
+  type AutonomyStage,
+  type AutonomyValue,
+} from '../../../shared/autonomy.ts'
+import {
   RELEASE_AUTONOMY_VALUES,
   type ReleaseAutonomyValue,
 } from '../../../shared/release-autonomy.ts'
 
-export const autonomyStages = ['plan', 'implement', 'review', 'docs', 'canon', 'ship'] as const
-export const autonomyValues = ['ask', 'review', 'auto'] as const
-export const autonomyPresets = ['manual', 'guided', 'autonomous'] as const
+export const autonomyStages = AUTONOMY_STAGES
+export const autonomyValues = AUTONOMY_VALUES
+export const autonomyPresets = AUTONOMY_PRESETS
 export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 const builtInRelease: ReleaseValue = 'land'
-export type AutonomyStage = (typeof autonomyStages)[number]
-export type AutonomyValue = (typeof autonomyValues)[number]
+
+export type { AutonomyPreset, AutonomyStage, AutonomyValue }
 export type StageAutonomyValue = AutonomyValue | 'per step'
-export type AutonomyPreset = (typeof autonomyPresets)[number]
 export type ReleaseValue = ReleaseAutonomyValue
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {

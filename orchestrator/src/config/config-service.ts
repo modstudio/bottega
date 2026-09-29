@@ -400,13 +400,17 @@ export async function setEntry(
   key: string,
   value: string,
   scope: ConfigScope,
+  expectedRowVersion?: number | null,
   client = configClient(),
 ) {
-  let version: number | null = null
-  try {
-    version = (await getEntry(key, scope, client)).rowVersion
-  } catch (error) {
-    if (!isNotFound(error)) throw error
+  let version = expectedRowVersion
+  if (version === undefined) {
+    version = null
+    try {
+      version = (await getEntry(key, scope, client)).rowVersion
+    } catch (error) {
+      if (!isNotFound(error)) throw error
+    }
   }
   return client.putEntry(key, {
     scope,
@@ -420,12 +424,17 @@ export async function listEntries(client = configClient()) {
   return client.listEntries(HOSTED_CONFIG_ENVIRONMENT)
 }
 
-export async function deleteEntry(key: string, scope: ConfigScope, client = configClient()) {
-  const row = await getEntry(key, scope, client)
+export async function deleteEntry(
+  key: string,
+  scope: ConfigScope,
+  expectedRowVersion?: number,
+  client = configClient(),
+) {
+  const version = expectedRowVersion ?? (await getEntry(key, scope, client)).rowVersion
   return client.deleteEntry(key, {
     scope,
     environment: HOSTED_CONFIG_ENVIRONMENT,
-    expectedRowVersion: row.rowVersion,
+    expectedRowVersion: version,
   })
 }
 

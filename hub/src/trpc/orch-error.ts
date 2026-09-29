@@ -15,6 +15,9 @@ export async function fromOrch<T>(
     if (classifyStaleRevision && message.includes('refusing stale document update')) {
       throw new TRPCError({ code: 'CONFLICT', message: staleDocumentMessage, cause })
     }
+    if (message.includes('hosted config route') && message.includes('returned HTTP 409')) {
+      throw new TRPCError({ code: 'CONFLICT', message, cause })
+    }
     throw new TRPCError({ code: 'BAD_REQUEST', message, cause })
   }
 }

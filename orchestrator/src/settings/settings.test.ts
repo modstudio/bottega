@@ -176,6 +176,22 @@ describe('secretShapedSettingsRefusal', () => {
     expect(refusal).not.toContain(command)
   })
 
+  test('refuses a sentinel hook matcher without quoting it', () => {
+    const credential = ['sk-proj-', 'z'.repeat(24)].join('')
+    const matcher = `Authorization: Bearer ${credential}`
+    const refusal = refuseSettingsBody(
+      'settings',
+      serializeOwnedSettings({
+        permissions: {},
+        hooks: { PreToolUse: [{ matcher }] },
+      }),
+    )
+    expect(refusal).toContain('hooks.PreToolUse[0].matcher')
+    expect(refusal).toContain('env variable supplied from the secrets file')
+    expect(refusal).not.toContain(credential)
+    expect(refusal).not.toContain(matcher)
+  })
+
   test('refuses a sentinel permission rule without quoting it', () => {
     const credential = ['ghp_', 'testtoken', '0'.repeat(28)].join('')
     const rule = `Bash(${credential})`

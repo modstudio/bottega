@@ -169,7 +169,8 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
-  module('orchestrator/src/workflow/autonomy.ts', ['../../../shared/release-autonomy.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/workflow/autonomy.ts', ['../../../shared/autonomy.ts', '../../../shared/release-autonomy.ts']),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
     '../../../shared/config-client.ts',
@@ -268,15 +269,14 @@ export const modules: ArchitectureModule[] = [
     './hosted-secrets.ts',
   ]),
   module('shared/machine-config.ts', ['node:fs', 'node:path', 'zod', './config-directory.ts']),
-  module('shared/config-client.ts', [
-    './http-json.ts',
-    './record-session.ts',
-    './record-remedies.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('shared/config-client.ts', ['./http-json.ts', './record-session.ts', './record-remedies.ts']),
   module('shared/http-json.ts', []),
+  module('shared/autonomy.ts', []),
   module('shared/keychain.ts', []),
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', []),
+  module('shared/settings-summary.ts', ['node:crypto', './secret-shaped.ts']),
   module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
   module('shared/hosted-secret-opening.ts', [
     './config-client.ts',

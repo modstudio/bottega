@@ -24,9 +24,20 @@ describe('hosted server config', () => {
 })
 
 describe('hostedRouter', () => {
-  test('exposes only the record namespace', () => {
+  test('exposes the record and hosted context namespaces', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([
+      'context.autonomy.get',
+      'context.autonomy.set',
+      'context.autonomy.setPreset',
+      'context.autonomy.setRelease',
+      'context.projects',
+      'context.settings.get',
+      'context.settings.permission',
+      'context.userCanon.get',
+      'context.userCanon.list',
+      'context.userCanon.remove',
+      'context.userCanon.set',
       'record.agents',
       'record.board',
       'record.createReportSubscription',

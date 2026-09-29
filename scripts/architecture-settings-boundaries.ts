@@ -68,6 +68,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-commands.ts`,
     allowed: [
       'shared/ratchet.ts',
+      'shared/settings-summary.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/project/projects.ts',

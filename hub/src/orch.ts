@@ -536,7 +536,7 @@ const ConfigEntrySchema = z.object({
 })
 
 const ContextSchema = z.discriminatedUnion('registered', [
-  z.object({ registered: z.literal(false) }),
+  z.object({ registered: z.literal(false), warnings: z.array(z.string()).optional() }),
   z.object({
     registered: z.literal(true),
     project: z.string(),
@@ -570,6 +570,7 @@ const ContextSchema = z.discriminatedUnion('registered', [
       ]),
     ),
     text: z.string(),
+    warnings: z.array(z.string()).optional(),
   }),
 ])
 
@@ -609,12 +610,24 @@ const SettingsCheckSchema = z.object({
 })
 
 export const contextArgv = (cwd: string) => ['context', '--cwd', cwd, '--json']
-export const configArgv = (op: 'get' | 'list' | 'set', key?: string, value?: string) => [
+export const configArgv = (
+  op: 'get' | 'list' | 'set',
+  key?: string,
+  value?: string,
+  expectedRowVersion?: number | null,
+) => [
   'config',
   op,
   ...(key ? [key] : []),
   ...(value ? [value] : []),
+  ...(expectedRowVersion !== undefined ? ['--expect', String(expectedRowVersion)] : []),
   '--json',
+]
+export const configDeleteArgv = (key: string, expectedRowVersion?: number) => [
+  'config',
+  'delete',
+  key,
+  ...(expectedRowVersion !== undefined ? ['--expect', String(expectedRowVersion)] : []),
 ]
 export const settingsCheckArgv = (target: { user: true } | { project: string }) => [
   'settings',
@@ -656,8 +669,13 @@ export const userDocRemove = (slug: string, reason: string, expectedRevision?: s
   )
 
 export const contextGet = (cwd: string) => json(contextArgv(cwd), ContextSchema)
-export const configSet = (key: string, value: string) =>
-  json(configArgv('set', key, value), ConfigEntrySchema, {
+export const configSet = (key: string, value: string, expectedRowVersion?: number | null) =>
+  json(configArgv('set', key, value, expectedRowVersion), ConfigEntrySchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+export const configList = () => json(configArgv('list'), z.array(ConfigEntrySchema))
+export const configDelete = (key: string, expectedRowVersion?: number) =>
+  orchProcess(configDeleteArgv(key, expectedRowVersion), 20_000, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const settingsCheck = (target: { user: true } | { project: string }) =>

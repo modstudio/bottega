@@ -105,6 +105,82 @@ describe('record client', () => {
     ])
   })
 
+  test('writes docs, config entries, and settings permissions through their record routes', async () => {
+    const id = '01990000-0000-7000-8000-000000000001'
+    const revisionId = '01990000-0000-7000-8000-000000000002'
+    const requests: Array<{ url: string; method: string; body: unknown }> = []
+    const fetch: RecordFetch = async (url, init) => {
+      requests.push({ url, method: init?.method ?? '', body: JSON.parse(String(init?.body)) })
+      if (url.endsWith('/v1/settings/permission')) {
+        return jsonResponse({
+          revision: revisionId,
+          permissions: { allow: [], ask: [], deny: [] },
+        })
+      }
+      if (url.includes('/v1/config/entries/')) {
+        if (init?.method === 'DELETE') return jsonResponse({ deleted: true })
+        return jsonResponse({
+          key: 'autonomy.preset',
+          environment: 'default',
+          scope: 'user',
+          value: 'manual',
+          rowVersion: 2,
+          updatedAt: '2026-09-28T12:00:00.000Z',
+        })
+      }
+      return jsonResponse({ id, revisionId })
+    }
+    const client = clientWith(fetch)
+    await client.putDoc({
+      scope: 'canon',
+      subject: null,
+      owner: id,
+      slug: 'preferences',
+      title: 'Preferences',
+      body: 'Body',
+      delivery: 'inject',
+      reason: 'updated',
+      author: 'hub-dashboard',
+      expectedRevision: revisionId,
+    })
+    await client.deleteDoc(id, {
+      reason: 'obsolete',
+      author: 'hub-dashboard',
+      expectedRevision: revisionId,
+    })
+    await client.putConfigEntry('autonomy.preset', {
+      scope: 'user',
+      value: 'manual',
+      expectedRowVersion: 1,
+    })
+    await client.deleteConfigEntry('autonomy.stage.review', {
+      scope: 'user',
+      expectedRowVersion: 3,
+    })
+    await client.settingsPermission({
+      target: { kind: 'user' },
+      list: 'allow',
+      rule: 'Bash(orch *)',
+      operation: 'add',
+      reason: 'needed',
+      expectedRevision: revisionId,
+    })
+
+    expect(requests.map(({ url, method }) => [url, method])).toEqual([
+      ['https://api.example.test/v1/docs', 'PUT'],
+      [`https://api.example.test/v1/docs/${id}`, 'DELETE'],
+      ['https://api.example.test/v1/config/entries/autonomy.preset', 'PUT'],
+      ['https://api.example.test/v1/config/entries/autonomy.stage.review', 'DELETE'],
+      ['https://api.example.test/v1/settings/permission', 'POST'],
+    ])
+    expect(requests[2]?.body).toEqual({
+      scope: 'user',
+      value: 'manual',
+      expectedRowVersion: 1,
+      environment: 'default',
+    })
+  })
+
   test('maps 401 to UNAUTHORIZED with the API remedy text', async () => {
     const fetch: RecordFetch = async () =>
       jsonResponse({ error: 'record authentication required', remedy: 'sign in again' }, 401)
@@ -114,12 +190,12 @@ describe('record client', () => {
     })
   })
 
-  test('maps 409 to PRECONDITION_FAILED and 404 to NOT_FOUND', async () => {
+  test('maps 409 to CONFLICT and 404 to NOT_FOUND', async () => {
     const conflict: RecordFetch = async () =>
       jsonResponse({ error: 'record session has no active space' }, 409)
     const missing: RecordFetch = async () => jsonResponse({ error: 'run not found' }, 404)
     await expect(clientWith(conflict).whoami()).rejects.toMatchObject({
-      code: 'PRECONDITION_FAILED',
+      code: 'CONFLICT',
       message: 'record session has no active space',
     })
     await expect(
