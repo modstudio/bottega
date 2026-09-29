@@ -1,11 +1,19 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/evidence/premature-final.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/run/run-bootstrap.ts',
     allowed: ['./run-alive.ts'],
   },
   {
     file: 'orchestrator/src/run/run-coordinator-log.ts',
     allowed: ['node:fs', 'node:path', '../../../shared/secret-shaped.ts', './run-artifacts.ts'],
+  },
+  {
+    file: 'orchestrator/src/run/run-terminal-premature.ts',
+    allowed: ['../contract/contract.ts', '../evidence/premature-final.ts'],
   },
 ] as const
 

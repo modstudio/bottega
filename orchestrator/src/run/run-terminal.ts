@@ -52,6 +52,10 @@ import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { blockersToRecord } from './run-terminal-blockers.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
+import {
+  applyPrematureFinalFailure,
+  terminalPrematureFinalRefusal,
+} from './run-terminal-premature.ts'
 
 type TerminalOptions = {
   job: string
@@ -118,6 +122,7 @@ export type TerminalInput = {
   name: string
   artifactsPersisted: boolean
   mcpRuling: TerminalMcpRuling
+  workerEvents: Array<{ kind: string }>
 }
 
 export type TerminalResult = {
@@ -305,6 +310,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     name,
     artifactsPersisted,
     mcpRuling,
+    workerEvents,
   } = input
   if (timer) clearTimeout(timer)
   if (checkpointTimer) clearInterval(checkpointTimer)
@@ -458,6 +464,21 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   error = evidenceAssessment.error
   failureKind = evidenceAssessment.failureKind
   const provenanceWrongProjectTool = evidenceAssessment.provenanceWrongProjectTool
+
+  ;({ status, error, failureKind } = applyPrematureFinalFailure(
+    { status, error, failureKind },
+    terminalPrematureFinalRefusal({
+      readerJob: isReaderJob(opts.job),
+      output,
+      parsedReview,
+      contract,
+      measuredFiles: changes?.files ?? null,
+      workerEvents,
+      acceptedQuestionCount: acceptedQuestions.length,
+      exitCode,
+      latencyMs: Date.now() - started,
+    }),
+  ))
 
   /**
    * Questions are deliberately inserted BEFORE the terminal row is written.

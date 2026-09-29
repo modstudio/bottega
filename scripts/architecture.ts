@@ -572,6 +572,7 @@ export const modules: ArchitectureModule[] = [
     './run/run-process.ts',
     './transport/transport.ts',
   ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/run/run-terminal.ts', [
     '../ask/ask.ts',
     './checkpoint.ts',
@@ -596,7 +597,7 @@ export const modules: ArchitectureModule[] = [
     './run-resume-kind.ts',
     './question-vocabulary.ts',
     './question-outbox.ts',
-    './run-terminal-blockers.ts',
+    './run-terminal-blockers.ts', './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
     '../sandbox/sandbox.ts',
     '../worktree/worktree-remove.ts',
