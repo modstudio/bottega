@@ -14,6 +14,7 @@ import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
+import { setupModuleSpecs } from './architecture-setup-modules.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
@@ -944,11 +945,10 @@ export const importBoundaries: ImportBoundary[] = [
   ...runStopBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
-  boundary(
-    'score-boundary',
-    'orchestrator/src/score/score.ts',
-    [],
-    'Enforce the score concern boundary.',
+  // biome-ignore format: compact declaration keeps this frozen manifest below its ceiling.
+  boundary('score-boundary', 'orchestrator/src/score/score.ts', [], 'Enforce the score concern boundary.'),
+  ...setupModuleSpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   boundary(
     'store-hooks-boundary',

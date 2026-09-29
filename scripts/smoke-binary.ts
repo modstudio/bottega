@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -18,12 +19,16 @@ import { buildHostBinary } from './build-binary.ts'
 import { run } from './build-release.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-smoke-`))
+let recordApiUrl: string | undefined
+let securityBin: string | undefined
 
 function smokeEnvironment(stateHome: string): Record<string, string | undefined> {
   const env = {
     ...process.env,
     BOTTEGA_STATE_HOME: stateHome,
     CLAUDE_CODE_SESSION_ID: 'DEV-997-binary-smoke',
+    ...(recordApiUrl ? { ORCH_RECORD_API_URL: recordApiUrl } : {}),
+    ...(securityBin ? { PATH: `${securityBin}:${process.env.PATH ?? ''}` } : {}),
   }
   delete env.ORCH_DB
   delete env.ORCH_DB_WRITE
@@ -138,9 +143,27 @@ async function smokeDashboard(executable: string, stateHome: string): Promise<vo
   }
 }
 
+let recordApi: ReturnType<typeof Bun.serve> | null = null
 try {
   const output = join(scratch, 'bin')
   const stateHome = join(scratch, 'state')
+  securityBin = join(scratch, 'security-bin')
+  mkdirSync(securityBin)
+  const security = join(securityBin, 'security')
+  writeFileSync(security, '#!/bin/sh\nprintf smoke-record-token\n')
+  chmodSync(security, 0o755)
+  recordApi = Bun.serve({
+    port: await freePort(),
+    hostname: '127.0.0.1',
+    fetch: async (request) => {
+      if (request.method !== 'PUT' || new URL(request.url).pathname !== '/v1/projects') {
+        return Response.json({ error: 'not found' }, { status: 404 })
+      }
+      const body = (await request.json()) as { name?: string }
+      return Response.json({ name: body.name })
+    },
+  })
+  recordApiUrl = `http://127.0.0.1:${recordApi.port}`
   const binary = await buildHostBinary('v0.1.0', output)
   console.log(`binary size ${statSync(binary).size} bytes`)
   const orch = join(output, 'orch')
@@ -175,6 +198,46 @@ try {
     await smoke(binary, ['orch', 'setup', 'facts', '--json'], stateHome),
   ) as { os?: unknown }
   if (!setupFacts.os) throw new Error('orch setup facts --json returned no os field')
+  const setupRepository = join(scratch, 'setup-repository')
+  mkdirSync(setupRepository)
+  writeFileSync(join(setupRepository, 'README.md'), 'setup binary smoke\n')
+  await run(['git', 'init', '--initial-branch=main'], setupRepository)
+  await run(['git', 'config', 'user.email', 'smoke@example.invalid'], setupRepository)
+  await run(['git', 'config', 'user.name', 'Binary Smoke'], setupRepository)
+  await run(['git', 'add', 'README.md'], setupRepository)
+  await run(['git', 'commit', '-m', 'DEV-1015 setup smoke fixture'], setupRepository)
+  const setupPlan = JSON.parse(
+    await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
+  ) as { diff?: { kind?: string }[] }
+  if (setupPlan.diff?.length !== 1 || setupPlan.diff[0]?.kind !== 'add') {
+    throw new Error('orch setup plan did not return exactly one add proposal')
+  }
+  await smoke(binary, ['orch', 'setup', 'apply', '--in', setupRepository, '--yes'], stateHome)
+  const setupProjects = JSON.parse(
+    await smoke(binary, ['orch', 'project', 'list', '--json'], stateHome),
+  ) as { path?: string; settings?: { keyPrefixes?: string[] } }[]
+  const setupProject = setupProjects.find(
+    (project) => project.path === realpathSync(setupRepository),
+  )
+  if (!setupProject?.settings?.keyPrefixes?.length) {
+    throw new Error('orch setup apply did not register a key prefix')
+  }
+  const secondSetupPlan = JSON.parse(
+    await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
+  ) as { questions?: unknown[] }
+  if (secondSetupPlan.questions?.length !== 0) {
+    throw new Error('second orch setup plan returned questions for a configured project')
+  }
+  const secondSetup = JSON.parse(
+    await smoke(
+      binary,
+      ['orch', 'setup', 'apply', '--in', setupRepository, '--yes', '--json'],
+      stateHome,
+    ),
+  ) as { actions?: { status?: string }[] }
+  if (secondSetup.actions?.length !== 1 || secondSetup.actions[0]?.status !== 'unchanged') {
+    throw new Error('second orch setup apply did not report unchanged')
+  }
   const orchestrator = new Database(join(stateHome, 'orchestrator', 'orch.db'), {
     readonly: true,
   })
@@ -238,5 +301,6 @@ try {
   console.log(`sandboxed workflow probe extracted ${extractedRuntime}`)
   await smokeDashboard(binary, stateHome)
 } finally {
+  recordApi?.stop(true)
   rmSync(scratch, { recursive: true, force: true })
 }

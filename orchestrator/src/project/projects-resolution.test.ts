@@ -117,6 +117,32 @@ describe('projects are data, not code', () => {
     ).toContain('managedContext must be a boolean')
   })
 
+  test('validates only key prefixes being written against register rows', () => {
+    const register = [{ name: 'existing', settings: { keyPrefixes: ['DEV'] } }]
+    expect(
+      validateProjectSettings({ keyPrefixes: ['TASK'] }, undefined, {
+        validateKeyPrefixes: true,
+        currentProjectName: 'new',
+        register,
+      }),
+    ).toContain('key prefix TASK is reserved')
+    expect(
+      validateProjectSettings({ keyPrefixes: ['TASK'] }, undefined, {
+        validateKeyPrefixes: true,
+        currentProjectName: 'tasks',
+        register,
+      }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({ keyPrefixes: ['DEV'] }, undefined, {
+        validateKeyPrefixes: true,
+        currentProjectName: 'new',
+        register,
+      }),
+    ).toContain('key prefix DEV is already used by another project')
+    expect(validateProjectSettings({ keyPrefixes: ['legacy-invalid'] })).toEqual([])
+  })
+
   test('a directory belongs to the project that contains it', () => {
     const path = repository('alpha')
     upsertProject({ name: 'alpha', path, stack: 'php-laravel' })

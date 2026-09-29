@@ -119,6 +119,47 @@ async function validateDeclaredSpace(
   await requireMembership(url, space)
 }
 
+export type AddProjectInput = {
+  path: string
+  name: string
+  stack: string | null
+  canon: boolean
+  settings: ProjectSettings
+  allowIncomplete: boolean
+}
+
+export async function addProject(
+  input: AddProjectInput,
+  requireMembership: (url: string, space: string) => Promise<unknown>,
+): Promise<{ project: Project; wasRetired: boolean }> {
+  if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
+  const malformed = validateProjectSettings(input.settings, input.path, {
+    validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
+    currentProjectName: input.name,
+    register: projects(),
+  })
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  await validateDeclaredSpace(input.settings, requireMembership)
+  const candidate = {
+    id: 0,
+    name: input.name,
+    path: input.path,
+    stack: input.stack,
+    canon: input.canon,
+    retiredAt: null,
+    settings: input.settings,
+  }
+  const incomplete = incompleteWorktreeProblems(candidate)
+  if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
+  assertRegisterBranches(candidate)
+  const wasRetired = Boolean(retiredProjectByName(input.name))
+  await writeHostedProject(candidate)
+  upsertProject(candidate)
+  const project = projectByName(input.name)
+  if (!project) throw new Error(`project ${input.name} was not registered`)
+  return { project, wasRetired }
+}
+
 async function addProjectCommand(
   argv: string[],
   flags: ProjectFlags,
@@ -127,42 +168,32 @@ async function addProjectCommand(
 ): Promise<void> {
   const { has, flag } = flags
   const path = (argv[2] ?? presentation.cwd()).replace(/\/$/, '')
-  if (!existsSync(path)) throw new Error(`no such directory: ${path}`)
   const name = flag('name') ?? path.split('/').filter(Boolean).pop()!
   // Sniffed only as a SUGGESTION, at the one moment a person is looking
   // straight at the project and can correct it. A guess that reruns on
   // every routing decision is a guess nobody ever reviews.
   const stack = flag('stack') ?? sniffStack(path)
   let settings = {} as ProjectSettings
-  let settingsPatch: unknown
   if (flag('settings')) {
     try {
-      settingsPatch = JSON.parse(flag('settings')!)
-      settings = settingsPatch as typeof settings
+      settings = JSON.parse(flag('settings')!) as typeof settings
     } catch (e) {
       throw new Error(`--settings must be JSON: ${e}`)
     }
-    const malformed = validateProjectSettings(settings, path)
-    if (malformed.length) throw new Error(malformed.join('\n'))
-    await validateDeclaredSpace(settingsPatch, requireMembership)
   }
-  const candidate = {
-    id: 0,
-    name,
-    path,
-    stack,
-    canon: !has('no-canon'),
-    retiredAt: null,
-    settings,
-  }
-  const incomplete = incompleteWorktreeProblems(candidate)
-  if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
-  assertRegisterBranches(candidate)
-  const wasRetired = Boolean(retiredProjectByName(name))
-  await writeHostedProject(candidate)
-  upsertProject(candidate)
+  const { project, wasRetired } = await addProject(
+    {
+      path,
+      name,
+      stack,
+      canon: !has('no-canon'),
+      settings,
+      allowIncomplete: has('allow-incomplete'),
+    },
+    requireMembership,
+  )
   if (has('json')) {
-    presentation.log(JSON.stringify(projectByName(name)))
+    presentation.log(JSON.stringify(project))
     return
   }
   if (wasRetired) {
@@ -175,6 +206,47 @@ async function addProjectCommand(
   for (const w of worktreeWarnings(projectByName(name)!)) {
     presentation.log(`${' '.repeat(14)} ! ${w}`)
   }
+}
+
+export type FillAbsentProjectInput = {
+  name: string
+  fill: { stack?: string; settings: ProjectSettings }
+}
+
+/** Atomically fills setup-owned gaps without overwriting a value written since planning. */
+export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
+  let candidate: Project | null = null
+  writeTransaction(() => {
+    const current = projectByName(input.name)
+    if (!current) throw new Error(`no project "${input.name}"`)
+    if (input.fill.stack !== undefined && current.stack !== null) {
+      throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
+    }
+    for (const key of Object.keys(input.fill.settings) as (keyof ProjectSettings)[]) {
+      if (current.settings[key] !== undefined) {
+        throw new Error(`cannot fill ${String(key)} for ${input.name}: field is no longer absent`)
+      }
+    }
+    const settings = { ...current.settings, ...input.fill.settings }
+    const malformed = validateProjectSettings(settings, current.path, {
+      validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
+      currentProjectName: current.name,
+      register: projects(),
+    })
+    if (malformed.length) throw new Error(malformed.join('\n'))
+    const next: Project = {
+      ...current,
+      stack: input.fill.stack ?? current.stack,
+      settings,
+    }
+    const incomplete = incompleteWorktreeProblems(next)
+    if (incomplete.length) throw new Error(incomplete.join('\n'))
+    assertRegisterBranches(next)
+    upsertProject(next)
+    candidate = next
+  })
+  if (!candidate) throw new Error(`project ${input.name} was not updated`)
+  await writeHostedProject(candidate)
 }
 
 function mergeableObject(value: unknown): value is Record<string, unknown> {
@@ -221,6 +293,16 @@ function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarning
       warning.startsWith('has a create command but no branch template') ||
       warning.startsWith('has a create command with a {seed} placeholder but no seeds list'),
   )
+}
+
+function writesKeyPrefixes(settingsJson: string | undefined): boolean {
+  if (!settingsJson) return false
+  try {
+    const patch = JSON.parse(settingsJson)
+    return Boolean(patch && typeof patch === 'object' && Object.hasOwn(patch, 'keyPrefixes'))
+  } catch {
+    return false
+  }
 }
 
 async function persistSetProject(
@@ -281,9 +363,14 @@ async function setProjectCommand(
     retiredAt: project.retiredAt,
     settings,
   }
-  const malformed = validateProjectSettings(candidate.settings, candidate.path).filter(
-    (problem) => !skipLegacyCreateMigration(project, candidate, problem),
-  )
+  const malformed = validateProjectSettings(candidate.settings, candidate.path, {
+    validateKeyPrefixes:
+      writesKeyPrefixes(flags.flag('settings')) ||
+      (nextName !== name && candidate.settings.keyPrefixes !== undefined),
+    currentProjectName: name,
+    projectNameAfterWrite: nextName,
+    register: projects(),
+  }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
   if (malformed.length) throw new Error(malformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))

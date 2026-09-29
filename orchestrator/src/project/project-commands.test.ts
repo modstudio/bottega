@@ -6,7 +6,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { projectCommand } from './project-commands.ts'
+import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
 async function runProject(
@@ -215,4 +215,29 @@ test('declaring a space refuses a space outside the signed-in memberships', asyn
     ),
   ).rejects.toThrow('join it first with an invitation')
   expect(projectByName('space-refusal')?.settings.space).toBeUndefined()
+})
+
+test('fill absent settings refuses a stale snapshot without changing any field', async () => {
+  upsertProject({
+    name: 'setup-stale',
+    path: '/w/setup-stale',
+    settings: { trunk: 'written-elsewhere' },
+  })
+  await expect(
+    fillAbsentProjectSettings({
+      name: 'setup-stale',
+      fill: {
+        stack: 'node',
+        settings: {
+          trunk: 'main',
+          tracker: { kind: 'hub', protocol: 'hub' },
+        },
+      },
+    }),
+  ).rejects.toThrow('trunk for setup-stale: field is no longer absent')
+  expect(projectByName('setup-stale')).toMatchObject({
+    stack: null,
+    settings: { trunk: 'written-elsewhere' },
+  })
+  expect(projectByName('setup-stale')?.settings.tracker).toBeUndefined()
 })

@@ -1,0 +1,128 @@
+// concern: setup-planner
+/** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
+import type { ProjectSettings } from '../project/projects.ts'
+import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
+
+export type SetupAnswers = Record<string, string>
+type SettingsDiff = Record<string, { from: unknown; to: unknown }>
+type SetupActionBase = {
+  path: string
+  settingsDiff: SettingsDiff
+}
+export type SetupAction =
+  | (SetupActionBase & {
+      kind: 'add'
+      name: string
+      stack: string | null
+      settings: ProjectSettings
+    })
+  | (SetupActionBase & {
+      kind: 'set'
+      currentName: string
+      fill: { stack?: string; settings: ProjectSettings }
+    })
+  | (SetupActionBase & {
+      kind: 'unchanged'
+      name: string
+    })
+
+export function validateSetupAnswers(questions: SetupQuestion[], value: unknown): SetupAnswers {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('answers must be a JSON object mapping question id to option id')
+  }
+  const answers = value as Record<string, unknown>
+  const known = new Map(questions.map((question) => [question.id, question]))
+  for (const id of Object.keys(answers)) {
+    if (!known.has(id)) throw new Error(`unknown answer id ${JSON.stringify(id)}`)
+  }
+  for (const question of questions) {
+    if (!Object.hasOwn(answers, question.id)) {
+      throw new Error(`missing answer for ${JSON.stringify(question.id)}`)
+    }
+    const answer = answers[question.id]
+    if (typeof answer !== 'string' || !question.options.some((option) => option.id === answer)) {
+      throw new Error(
+        `invalid option for ${JSON.stringify(question.id)}: ${JSON.stringify(answer)}; expected one of ${question.options.map((option) => option.id).join(', ')}`,
+      )
+    }
+  }
+  return answers as SetupAnswers
+}
+
+function resolvedSettings(
+  proposal: SetupProposal,
+  answers: SetupAnswers,
+  questions: SetupQuestion[],
+): ProjectSettings {
+  const settings = { ...proposal.project.settings }
+  if (proposal.prefixQuestionId) {
+    const answer = answers[proposal.prefixQuestionId]
+    if (!answer) throw new Error(`missing answer for ${JSON.stringify(proposal.prefixQuestionId)}`)
+    settings.keyPrefixes = [answer]
+  }
+  if (proposal.trunkQuestionId) {
+    const trunkQuestionId = proposal.trunkQuestionId
+    const question = questions.find((candidate) => candidate.id === trunkQuestionId)
+    const option = question?.options.find((candidate) => candidate.id === answers[trunkQuestionId])
+    // The engine owns what a choice means; ids are only stable answer handles.
+    const effect = option?.effect
+    if (effect?.trunk === null) delete settings.trunk
+    else if (effect) settings.trunk = effect.trunk
+  }
+  return settings
+}
+
+function diffSettings(current: ProjectSettings | null, proposed: ProjectSettings): SettingsDiff {
+  const diff: SettingsDiff = {}
+  for (const [key, to] of Object.entries(proposed)) {
+    const from = current?.[key as keyof ProjectSettings] ?? null
+    if (JSON.stringify(from) !== JSON.stringify(to)) diff[key] = { from, to }
+  }
+  return diff
+}
+
+export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  return plan.proposals.map((proposal) => {
+    const settings = resolvedSettings(proposal, answers, plan.questions)
+    const settingsDiff = diffSettings(proposal.current?.settings ?? null, settings)
+    const metadataDiffers = Boolean(
+      proposal.current && proposal.current.stack === null && proposal.project.stack !== null,
+    )
+    if (!proposal.current) {
+      return {
+        kind: 'add',
+        name: proposal.project.name,
+        path: proposal.project.path,
+        stack: proposal.project.stack,
+        settings,
+        settingsDiff,
+      }
+    }
+    if (metadataDiffers || Object.keys(settingsDiff).length) {
+      return {
+        kind: 'set',
+        currentName: proposal.current.name,
+        path: proposal.project.path,
+        fill: {
+          ...(metadataDiffers && proposal.project.stack ? { stack: proposal.project.stack } : {}),
+          settings: Object.fromEntries(
+            Object.entries(settingsDiff).map(([key, change]) => [key, change.to]),
+          ) as ProjectSettings,
+        },
+        settingsDiff,
+      }
+    }
+    return {
+      kind: 'unchanged',
+      name: proposal.project.name,
+      path: proposal.project.path,
+      settingsDiff,
+    }
+  })
+}
+
+export function recommendedAnswers(plan: SetupPlan): SetupAnswers {
+  return Object.fromEntries(
+    plan.questions.map((question) => [question.id, question.recommendation]),
+  )
+}

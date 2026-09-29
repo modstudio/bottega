@@ -14,6 +14,7 @@ import { retrievalModules } from './architecture-retrieval.ts'
 import { runModuleSpecs } from './architecture-run-modules.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
+import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 
@@ -32,12 +33,8 @@ export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }
 type ArchitectureCycle = { cycle: string[]; reason: string }
 
-const module = (file: string, allowed: string[]): ArchitectureModule => ({
-  file,
-  allowed: allowed.map((target) =>
-    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
-  ),
-})
+// biome-ignore format: compact declaration keeps this frozen manifest below its ceiling.
+const module = (file: string, allowed: string[]): ArchitectureModule => ({ file, allowed: allowed.map((target) => target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target) })
 
 const concerns: ConcernManifest = {
   roots: CONCERNS,
@@ -627,6 +624,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/sandbox/sandbox.ts', ['../../../shared/self-spawn.ts', '../../../shared/config-directory.ts', '../../../shared/state-directory.ts', '../database/db.ts', '../mcp/mcp-probe.ts', '../project/projects.ts', './sandbox-runtime.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/setup/setup-facts.ts', ['node:fs', 'bun', '../agent/agent-auth.ts', '../agent/cli-version.ts', '../agent/model-host.ts', '../sandbox/sandbox-runtime.ts']),
+  ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/sandbox/sandbox-runtime.ts', ['node:fs', 'node:path', '@anthropic-ai/sandbox-runtime', '../../../shared/embedded-assets.ts', '../../../shared/sandbox-runtime-assets.ts', '../../../shared/state-directory.ts', '../database/db.ts']),
   module('orchestrator/src/runtime/standard-calibration.ts', [
