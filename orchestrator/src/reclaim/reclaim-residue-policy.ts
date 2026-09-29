@@ -92,6 +92,7 @@ export function processReleaseDecision(facts: {
   alive: boolean
   startTimeMatches: boolean
   commandMatches: boolean
+  signalAllowed?: boolean
 }): ProcessReleaseDecision {
   if (!facts.runExists)
     return refuse(
@@ -101,6 +102,11 @@ export function processReleaseDecision(facts: {
   if (!facts.terminal)
     return refuse('the run is terminal', 'use orch stop for a live run') as ProcessReleaseDecision
   if (!facts.alive) return { allowed: true, action: 'record-released' }
+  if (facts.signalAllowed === false)
+    return refuse(
+      'unattended reclaim never signals a live process',
+      'reclaim this process manually',
+    ) as ProcessReleaseDecision
   return facts.startTimeMatches && facts.commandMatches
     ? { allowed: true, action: 'signal' }
     : { allowed: true, action: 'record-released' }

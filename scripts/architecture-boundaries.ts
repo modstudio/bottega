@@ -155,6 +155,7 @@ export const importBoundaries: ImportBoundary[] = [
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
       './cleanup-sweep-reclaim.ts',
+      './cleanup-sweep-residue.ts',
       './claim-reconciliation.ts',
       '../close/close-out.ts',
       '../database/db.ts',

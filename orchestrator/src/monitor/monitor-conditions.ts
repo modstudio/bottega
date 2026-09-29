@@ -21,8 +21,12 @@ import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
+  type SandboxDirectoryInventory,
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
+
+export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
+
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
@@ -101,6 +105,25 @@ export function unscoredRuns(database = db()): AddressedRun[] {
        FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
     )
     .all() as AddressedRun[]
+}
+
+/** Report terminal stale rows that have not yet been settled out of evidence. */
+export function staleRunConditions(database = db(), clock = Date.now()): MonitorCondition[] {
+  const rows = database
+    .query(
+      `SELECT id, started_at, error, session_id FROM run
+        WHERE status='stale' AND evidence_excluded IS NULL`,
+    )
+    .all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
+  return rows.map((run) => ({
+    kind: 'stale-run',
+    subject: `run:${run.id}`,
+    since: run.started_at,
+    ageMs: age(run.started_at, clock),
+    detail: run.error ?? `run ${run.id} is stale`,
+    action: `run orch reclaim stale-run ${run.id} --dry-run, then orch reclaim stale-run ${run.id}`,
+    ownerSession: run.session_id,
+  }))
 }
 
 export const age = (since: string | null, clock: number) => {
@@ -305,8 +328,16 @@ function terminalProcessState(run: TerminalProcessRun) {
   return { coordinatorLive, vendorIdentity, roots, pgid }
 }
 
-/** Report recorded pids and descendants that outlived a terminal run. Observation only. */
-export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
+export type TerminalProcessResidueObservation = {
+  runId: number
+  liveness: 'dead' | 'live' | 'unknown'
+  condition: MonitorCondition
+}
+
+/** Observe recorded pids and descendants that outlived a terminal run. Never mutates them. */
+export function terminalProcessResidueObservations(
+  clock = Date.now(),
+): TerminalProcessResidueObservation[] {
   const terminal = db()
     .query(
       `SELECT id, started_at, latency_ms, pid, agent_pid, agent_pgid, agent_start_time FROM run
@@ -314,7 +345,7 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
         AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
     )
     .all() as TerminalProcessRun[]
-  return terminal.flatMap((run): MonitorCondition[] => {
+  return terminal.flatMap((run): TerminalProcessResidueObservation[] => {
     const { coordinatorLive, vendorIdentity, roots, pgid } = terminalProcessState(run)
     const vendorLive = vendorIdentity === 'live' || vendorIdentity === 'unknown'
     const descendantsLive = runHasLiveDescendants(roots, [], {}, pgid)
@@ -341,15 +372,31 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
     const who = parts.join(' and ') || `a descendant of pid ${roots.join('/')}`
     return [
       {
-        kind: 'terminal-process-alive',
-        subject: `run:${run.id}:pid:${reported}`,
-        since: run.started_at,
-        ageMs: age(run.started_at, clock),
-        detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
-        action: `run orch reclaim process ${run.id} --dry-run, then orch reclaim process ${run.id}`,
+        runId: run.id,
+        // An identity-unverified live pid remains operator-only. Its record is
+        // released unattended only after a fresh observation proves it gone.
+        liveness:
+          vendorIdentity === 'unknown'
+            ? 'unknown'
+            : coordinatorLive || vendorIdentity === 'live' || descendantsLive
+              ? 'live'
+              : 'dead',
+        condition: {
+          kind: 'terminal-process-alive',
+          subject: `run:${run.id}:pid:${reported}`,
+          since: run.started_at,
+          ageMs: age(run.started_at, clock),
+          detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
+          action: `run orch reclaim process ${run.id} --dry-run, then orch reclaim process ${run.id}`,
+        },
       },
     ]
   })
+}
+
+/** Report recorded pids and descendants that outlived a terminal run. Observation only. */
+export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
+  return terminalProcessResidueObservations(clock).map(({ condition }) => condition)
 }
 
 /** Report vendor processes that vanished while their run still claims to be running. */
@@ -765,14 +812,6 @@ export function orphanDockerNetworkConditions(
   })
   return { conditions, errors: [] }
 }
-
-export type SandboxDirectoryInventory =
-  | {
-      ascertainable: true
-      directories: { rootId: number; path: string; sizeBytes: number }[]
-      conversations: { rootId: number; terminal: boolean }[]
-    }
-  | { ascertainable: false; reason: string }
 
 /** Report sandbox homes only after every turn in their conversation is terminal. */
 export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInventory): {

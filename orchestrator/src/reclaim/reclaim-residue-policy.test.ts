@@ -122,10 +122,38 @@ describe('residue release decisions', () => {
         runExists: true,
         terminal: true,
         alive: true,
+        startTimeMatches: true,
+        commandMatches: true,
+        signalAllowed: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      refusal:
+        'refused; invariant: unattended reclaim never signals a live process; fix: reclaim this process manually',
+    })
+    expect(
+      processReleaseDecision({
+        runExists: true,
+        terminal: true,
+        alive: true,
         startTimeMatches: false,
         commandMatches: true,
       }),
     ).toEqual({ allowed: true, action: 'record-released' })
+    expect(
+      processReleaseDecision({
+        runExists: true,
+        terminal: true,
+        alive: true,
+        startTimeMatches: false,
+        commandMatches: false,
+        signalAllowed: false,
+      }),
+    ).toEqual({
+      allowed: false,
+      refusal:
+        'refused; invariant: unattended reclaim never signals a live process; fix: reclaim this process manually',
+    })
     expect(
       processReleaseDecision({
         runExists: true,

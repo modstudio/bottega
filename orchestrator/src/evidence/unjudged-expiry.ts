@@ -15,6 +15,14 @@ export type UnjudgedRun = {
 
 export const UNJUDGED_EXCLUSION_REASON = 'unjudged: owner gone'
 
+/** Exclude one run from evidence and enqueue the changed hosted record atomically. */
+export function settleRunEvidence(runId: number, reason: string, changedAt: string): void {
+  writeTransaction(() => {
+    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(reason, runId)
+    enqueueRunRecord(db(), runId, machineId(), changedAt)
+  })
+}
+
 type UnjudgedExpiryDecision = (facts: {
   ownerSessionId: string | null
   ownerLastSeenAt: number | null

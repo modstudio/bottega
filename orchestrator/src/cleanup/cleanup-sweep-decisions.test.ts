@@ -9,6 +9,7 @@ import {
   decideRecordedRunPointer,
   decideRecordedRunPostInventory,
   decideRecordedRunPreInventory,
+  decideUnattendedReclaim,
   type FilesystemOrphanAfterInventoryFacts,
   type FilesystemOrphanAfterRemovalFacts,
   type FilesystemOrphanEligibilityFacts,
@@ -128,6 +129,39 @@ describe('unjudged owner expiry', () => {
         windowMs,
       }),
     ).toBe(false)
+  })
+})
+
+describe('unattended residue reclaim', () => {
+  const now = Date.parse('2026-09-23T12:00:00.000Z')
+  const reclaimable = {
+    kind: 'stale-run',
+    ownerSessionId: 'owner',
+    ownerLastSeenAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
+    runLastActivityAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
+    now,
+    windowMs: UNJUDGED_OWNER_WINDOW_MS,
+    liveness: 'dead' as const,
+    uncommittedWork: false as const,
+    runRecordExists: true,
+  }
+
+  for (const kind of ['stale-run', 'process', 'ref-guard', 'retained-ref', 'sandbox']) {
+    test(`allows gone-owner ${kind} residue`, () => {
+      expect(decideUnattendedReclaim({ ...reclaimable, kind })).toEqual({ action: 'allow' })
+    })
+  }
+
+  test.each([
+    ['recent owner', { ownerLastSeenAt: now - UNJUDGED_OWNER_WINDOW_MS + 1 }],
+    ['live liveness', { liveness: 'live' as const }],
+    ['unknown liveness', { liveness: 'unknown' as const }],
+    ['uncommitted work', { uncommittedWork: true as const }],
+    ['uninspectable work', { uncommittedWork: 'unknown' as const }],
+    ['missing run record', { runRecordExists: false }],
+    ['unlisted kind', { kind: 'worktree' }],
+  ])('refuses %s', (_name, changed) => {
+    expect(decideUnattendedReclaim({ ...reclaimable, ...changed }).action).toBe('keep')
   })
 })
 
