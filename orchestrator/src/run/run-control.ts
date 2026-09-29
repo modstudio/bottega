@@ -26,7 +26,12 @@ import {
   resumeTreePlan,
 } from './resume-tree.ts'
 import { packedResumePrompt } from './run.ts'
-import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import {
+  adoptRunMutation,
+  auditRunMutation,
+  authorizeRunMutation,
+  reauthorizeRunMutation,
+} from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
@@ -652,6 +657,7 @@ export async function continueRun(
     }
   }
   authority = writeTransaction(() => {
+    authority = reauthorizeRunMutation(authority, 'continue')
     const adopted = adoptRunMutation(authority, 'continue')
     // Stop preserves the artifact specifically so this transition can reopen it.
     db().query("UPDATE run SET status='failed' WHERE id=? AND status='stopped'").run(id)

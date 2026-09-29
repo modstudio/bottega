@@ -150,6 +150,9 @@ describe('file ruling', () => {
          VALUES (?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
+    db()
+      .query('UPDATE workflow_cursor SET updated_at=? WHERE id=?')
+      .run(new Date().toISOString(), cursor.id)
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
 
     await expect(file({ questionId: question.id, as: 'doc' })).rejects.toThrow(

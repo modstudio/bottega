@@ -4,6 +4,12 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import {
+  joinMutationReason,
+  RUN_MUTATION_WINDOW_MS,
+  reauthorizeAdoptedMutation,
+  runMutationOwnerDecision,
+} from './run-mutation-owner.ts'
 
 const RUN_MUTATION_ACTIONS = [
   'adopt',
@@ -32,28 +38,61 @@ export type RootAuthority = {
   rootId: number
   owner: string | null
   actor: string | null
+  ownerLastSeenAt: number | null
+  chainLastActivityAt: number
+  now: number
+  windowMs: number
 }
 
 export function runMutationAuthority(database: Database, runId: number): RootAuthority {
   const row = database
     .query(
-      `SELECT requested.id run_id, root.id root_id, root.session_id owner
+      `SELECT requested.id run_id, root.id root_id, root.session_id owner, seen.last_seen,
+              (SELECT COALESCE(turn.last_event_at,turn.started_at)
+                 FROM run turn
+                WHERE turn.id=root.id OR turn.parent_run_id=root.id
+                ORDER BY turn.turn DESC,turn.id DESC LIMIT 1) chain_last_activity
        FROM run requested
        JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+       LEFT JOIN session_seen seen ON seen.session_id=root.session_id
       WHERE requested.id = ?`,
     )
-    .get(runId) as { run_id: number; root_id: number; owner: string | null } | null
+    .get(runId) as {
+    run_id: number
+    root_id: number
+    owner: string | null
+    last_seen: string | null
+    chain_last_activity: string
+  } | null
   if (!row) throw new Error(`no run ${runId}`)
   return {
     runId: row.run_id,
     rootId: row.root_id,
     owner: row.owner,
     actor: sessionId(),
+    ownerLastSeenAt: row.last_seen === null ? null : Date.parse(row.last_seen),
+    chainLastActivityAt: Date.parse(row.chain_last_activity),
+    now: Date.now(),
+    windowMs: RUN_MUTATION_WINDOW_MS,
   }
+}
+
+function adoptedMutationReason(authority: RootAuthority): string | null {
+  if (runMutationOwnerDecision(authority) !== 'adopt') return null
+  return `adopted from gone owner ${authority.owner} by ${authority.actor}`
 }
 
 export function runMutationActor(runId: number): RootAuthority {
   return runMutationAuthority(db(), runId)
+}
+
+function refuseRunMutation(authority: RootAuthority, action: RunMutationAction | 'receipt'): never {
+  const actor =
+    authority.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'
+  throw new Error(
+    `run ${authority.runId} is owned by session ${authority.owner}; ` +
+      `current session ${actor} cannot ${action} it (owner active within the window)`,
+  )
 }
 
 export function authorizeRunMutation(
@@ -62,13 +101,20 @@ export function authorizeRunMutation(
 ): RootAuthority {
   writableDb()
   const authority = runMutationActor(runId)
-  if (authority.owner && authority.actor !== authority.owner) {
-    throw new Error(
-      `run ${runId} is owned by session ${authority.owner}; ` +
-        `current session ${authority.actor ?? 'no session identity is present'} cannot ${action} it`,
-    )
-  }
+  if (runMutationOwnerDecision(authority) === 'refuse') refuseRunMutation(authority, action)
   return authority
+}
+
+export function reauthorizeRunMutation(
+  authority: RootAuthority,
+  action: RunMutationAction | 'receipt',
+  database: Database = db(),
+): RootAuthority {
+  return reauthorizeAdoptedMutation(
+    authority,
+    () => runMutationAuthority(database, authority.runId),
+    (current) => refuseRunMutation(current, action),
+  )
 }
 
 export function auditRunMutation(
@@ -83,7 +129,15 @@ export function auditRunMutation(
       `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason, turn_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason, turnId)
+    .run(
+      authority.runId,
+      authority.rootId,
+      action,
+      authority.actor,
+      nowIso(),
+      joinMutationReason(reason, adoptedMutationReason(authority)),
+      turnId,
+    )
 }
 
 const ADOPTING_ACTIONS = [

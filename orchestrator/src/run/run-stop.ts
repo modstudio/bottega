@@ -23,7 +23,12 @@ import {
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
-import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import {
+  adoptRunMutation,
+  auditRunMutation,
+  authorizeRunMutation,
+  reauthorizeRunMutation,
+} from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
@@ -118,6 +123,7 @@ export async function stopRun(
         root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
     }
 
+    authority = reauthorizeRunMutation(authority, 'stop')
     authority = adoptRunMutation(authority, 'stop')
     const changed = db()
       .query(
@@ -247,6 +253,7 @@ export async function abandonRun(
       worktree_source:
         root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
     }
+    authority = reauthorizeRunMutation(authority, 'abandon')
     authority = adoptRunMutation(authority, 'abandon')
     const openQuestions = db()
       .query<{ id: number }, [number, number]>(

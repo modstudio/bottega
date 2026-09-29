@@ -14,6 +14,7 @@ type OverturnRow = {
   root_id: number | null
   workflow_cursor_id: number | null
   workflow_owner: string | null
+  workflow_updated_at: string | null
   answered_at: string | null
   overturned_at: string | null
   overturned_by: string | null
@@ -50,7 +51,7 @@ export function overturnRuling(input: {
   const row = db()
     .query(
       `SELECT q.id,q.run_id,COALESCE(owner.parent_run_id,owner.id) root_id,
-              q.workflow_cursor_id,c.session_id workflow_owner,
+              q.workflow_cursor_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
               q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
          FROM question q LEFT JOIN run owner ON owner.id=q.run_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id WHERE q.id=?`,
@@ -62,13 +63,15 @@ export function overturnRuling(input: {
   const actor = sessionId()
   const denied = refusal(row)
   if (denied) throw new Error(denied)
+  let adoptionReason: string | null = null
   if (row.run_id === null)
-    authorizeWorkflowQuestionMutation({
+    adoptionReason = authorizeWorkflowQuestionMutation({
       owner: row.workflow_owner,
       actor,
       fromOperator: input.fromOperator,
       subject: `workflow cursor ${row.workflow_cursor_id}`,
       action: 'overturn',
+      chainLastActivityAt: Date.parse(row.workflow_updated_at!),
     })
   const at = nowIso()
   let overturnedBy = ''
@@ -92,6 +95,7 @@ export function overturnRuling(input: {
         actor,
         at,
         reason: input.reason,
+        adoptionReason,
       })
     enqueueQuestionRecord(db(), row.id)
   })

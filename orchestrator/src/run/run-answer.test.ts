@@ -718,6 +718,22 @@ test('answer rejects a fixture ruling from a non-owning session without writing 
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
 })
 
+test('answer refuses a session-less caller even when the owner is gone', async () => {
+  const id = insert('asking', 'implement')
+  db()
+    .query('UPDATE run SET session_id=?,started_at=?,last_event_at=? WHERE id=?')
+    .run('gone-owner', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', id)
+  db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .run(id, new Date().toISOString(), 'which?')
+  delete process.env.CLAUDE_CODE_SESSION_ID
+
+  await expect(
+    answerRun(id, { argv: ['anonymous ruling'], recordOnly: true, flags }, helpers),
+  ).rejects.toThrow('CLAUDE_CODE_SESSION_ID is not set')
+  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+})
+
 test('UI operator answers require the hub dashboard capability', async () => {
   const id = insert('asking', 'implement')
   const question = db()

@@ -848,7 +848,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'run-authority-boundary',
     'orchestrator/src/run/run-authority.ts',
-    ['../database/db.ts', 'bun:sqlite'],
+    ['../database/db.ts', './run-mutation-owner.ts', 'bun:sqlite'],
     'Enforce the run-authority concern boundary.',
   ),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.

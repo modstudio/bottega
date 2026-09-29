@@ -17,6 +17,7 @@ import {
   auditRunMutation,
   authorizeRunMutation,
   type RootAuthority,
+  reauthorizeRunMutation,
 } from '../run/run-authority.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import {
@@ -434,11 +435,12 @@ export function discardWorktree(
     const sharers = otherConversationWorktreeSharers(db(), row)
     if (sharers.length) {
       writeTransaction(() => {
-        clearConversationWorktree(row.id, row.worktree)
         if (auditAuthority) {
+          auditAuthority = reauthorizeRunMutation(auditAuthority, 'discard')
           auditAuthority = adoptRunMutation(auditAuthority, 'discard')
           auditRunMutation(auditAuthority, 'discard', options.auditReason)
         }
+        clearConversationWorktree(row.id, row.worktree)
       })
       const claim = new SharedWorktreeClaimError(row.worktree, sharers)
       claim.message +=
@@ -541,6 +543,10 @@ export function discardWorktree(
     const keptProtectedBranch =
       protectedBranch && row.branch && branchTip(repoRoot, row.branch) ? row.branch : null
     writeTransaction(() => {
+      if (auditAuthority) {
+        auditAuthority = reauthorizeRunMutation(auditAuthority, 'discard')
+        auditAuthority = adoptRunMutation(auditAuthority, 'discard')
+      }
       clearConversationWorktree(row.id, row.worktree, keptProtectedBranch)
       settleClaims(db(), {
         rootRunId: row.id,
@@ -681,8 +687,9 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
     withCleanupLock(repoRoot, `discard kept branch for run ${id}`, null, () => {
       const provenanceRefusal = branchDeletionProvenanceRefusal(row.id, row.branch_kept)
       if (provenanceRefusal) {
-        authority = adoptRunMutation(authority, 'discard')
         writeTransaction(() => {
+          authority = reauthorizeRunMutation(authority, 'discard')
+          authority = adoptRunMutation(authority, 'discard')
           db()
             .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
             .run(authority.rootId)
@@ -723,6 +730,8 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
       if (outcome.warning) options.presentation.error(outcome.warning)
       if (removed) {
         writeTransaction(() => {
+          authority = reauthorizeRunMutation(authority, 'discard')
+          authority = adoptRunMutation(authority, 'discard')
           db()
             .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
             .run(authority.rootId)

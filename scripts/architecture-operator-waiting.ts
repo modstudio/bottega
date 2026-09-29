@@ -19,10 +19,11 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './run-mutation-owner.ts',
   ]),
   module('orchestrator/src/run/question-ruling-remedy.ts', []),
-  module('orchestrator/src/run/run-mutation-owner.ts', []),
+  module('orchestrator/src/run/run-mutation-owner.ts', ['../cleanup/cleanup-sweep-decisions.ts']),
   module('orchestrator/src/run/ruling-file-authority.ts', [
     '../../../shared/question-vocabulary.ts',
     './run-answer-authority.ts',
+    './run-mutation-owner.ts',
   ]),
   module('orchestrator/src/run/ruling-file-text.ts', []),
   module('orchestrator/src/run/ruling-list.ts', [
@@ -45,6 +46,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './ruling-file-authority.ts',
     './ruling-file-text.ts',
     './run-authority.ts',
+    './run-mutation-owner.ts',
   ]),
   module('orchestrator/src/operator/operator-waiting.ts', [
     'bun:sqlite',

@@ -1,5 +1,5 @@
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
-import { runMutationOwnerDecision } from './run-mutation-owner.ts'
+import { type RunMutationOwnerFacts, runMutationOwnerDecision } from './run-mutation-owner.ts'
 
 export type AnswerAuthorityDecision =
   | { kind: 'allow-as-owner' }
@@ -12,15 +12,15 @@ export type AnswerAuthorityDecision =
     }
 
 /** Decide answer authority without touching process state or the database. */
-export function answerAuthorityDecision(input: {
-  channel: AnswerChannel
-  fromOperator: boolean
-  sessionIdPresent: boolean
-  depthPresent: boolean
-  dashboardAuthorized: boolean
-  owner: string | null
-  actor: string | null
-}): AnswerAuthorityDecision {
+export function answerAuthorityDecision(
+  input: RunMutationOwnerFacts & {
+    channel: AnswerChannel
+    fromOperator: boolean
+    sessionIdPresent: boolean
+    depthPresent: boolean
+    dashboardAuthorized: boolean
+  },
+): AnswerAuthorityDecision {
   if (input.channel === 'ui') {
     if (!input.fromOperator) return { kind: 'refuse', code: 'operator-attribution' }
     if (input.sessionIdPresent)
@@ -29,8 +29,8 @@ export function answerAuthorityDecision(input: {
     if (!input.dashboardAuthorized) return { kind: 'refuse', code: 'dashboard-capability' }
     return { kind: 'allow-as-operator', actor: 'operator:ui' }
   }
-  const owner = runMutationOwnerDecision({ owner: input.owner, actor: input.actor })
-  if (owner.kind === 'refuse') {
+  const owner = runMutationOwnerDecision(input)
+  if (owner === 'refuse') {
     return {
       kind: 'refuse',
       code: 'owner-mismatch',

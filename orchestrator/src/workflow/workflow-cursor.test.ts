@@ -624,6 +624,45 @@ describe('workflow cursor adapter', () => {
     }
   })
 
+  test('workflow rule refuses a session-less caller even when the owner is gone', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+    d.query('UPDATE workflow_cursor SET updated_at=?').run('2020-01-01T00:00:00.000Z')
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    delete process.env.CLAUDE_CODE_SESSION_ID
+    try {
+      expect(() =>
+        ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
+      ).toThrow('CLAUDE_CODE_SESSION_ID is not set')
+      expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: null })
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
+    }
+  })
+
+  test("an adopted workflow rule keeps the gone owner's session", () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+    d.query('UPDATE workflow_cursor SET updated_at=?').run('2020-01-01T00:00:00.000Z')
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'adopting-session'
+    try {
+      ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
+      expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
+        session_id: 'session-one',
+      })
+      expect(d.query('SELECT reason FROM question_mutation_audit').get()).toEqual({
+        reason: 'adopted from gone owner session-one by adopting-session; Proceed.',
+      })
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
+    }
+  })
+
   test('await persists a rebound argument while refusing other conflicts', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
