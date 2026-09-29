@@ -6,7 +6,30 @@ import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
+import { runInboxCommand } from './run-inbox.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+
+async function inbox(): Promise<string> {
+  const lines: string[] = []
+  await runInboxCommand(
+    { has: () => false },
+    {
+      log: (...values) => lines.push(values.join(' ')),
+      dur: (ms) => String(ms ?? 0),
+      chainHasPendingDelivery: (root) =>
+        Boolean(
+          db()
+            .query(
+              `SELECT 1 FROM question q JOIN run r ON r.id=q.run_id
+               WHERE (r.id=? OR r.parent_run_id=?) AND q.delivery_pending_at IS NOT NULL`,
+            )
+            .get(root, root),
+        ),
+      strandedRecovery: (root) => `stranded — orch retry ${root} --agent`,
+    },
+  )
+  return lines.join('\n')
+}
 
 describe('reapStale', () => {
   test('elapsed time does not kill a legacy run while its pid is alive', () => {
@@ -105,6 +128,40 @@ describe('reapStale', () => {
     const grok = candidates('implement').find((c) => c.agent === 'grok')!
     expect(grok.failures).toBe(1)
     expect(grok.evidence).toBe(1)
+  })
+
+  test('reaping a running child retires an answered pending delivery after root roll-up', async () => {
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db()
+      .query(
+        `INSERT INTO question
+          (run_id,asked_at,question,answer,answered_at,delivery_pending_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(root, nowIso(), 'answered', 'the ruling', nowIso(), nowIso())
+    const child = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'running',
+      parent: root,
+      turn: 2,
+    })
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, child)
+
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'stale' })
+    expect(db().query('SELECT delivery_pending_at FROM question WHERE run_id=?').get(root)).toEqual(
+      { delivery_pending_at: null },
+    )
+    expect(
+      db()
+        .query(
+          `SELECT outcome,error FROM question_delivery
+           WHERE question_id=(SELECT id FROM question WHERE run_id=?)`,
+        )
+        .get(root),
+    ).toEqual({ outcome: 'retired', error: 'chain-stale' })
+    expect(await inbox()).not.toContain(`run ${root}`)
   })
 
   test('a pid-less (pending) row older than the bootstrap bound is failed/harness', () => {
