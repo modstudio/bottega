@@ -18,6 +18,7 @@ import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch
 import {
   answerWaitingArgv,
   configArgv,
+  configDeleteArgv,
   contextArgv,
   contextGet,
   decodeRunsJson,
@@ -46,6 +47,11 @@ test('managed context wrappers build exact argv', () => {
     'autonomy.stage.review',
     'auto',
     '--json',
+  ])
+  expect(configDeleteArgv('autonomy.stage.review')).toEqual([
+    'config',
+    'delete',
+    'autonomy.stage.review',
   ])
   expect(settingsCheckArgv({ user: true })).toEqual([
     'settings',

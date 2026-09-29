@@ -169,7 +169,10 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
-  module('orchestrator/src/workflow/autonomy.ts', ['../../../shared/release-autonomy.ts']),
+  module('orchestrator/src/workflow/autonomy.ts', [
+    '../../../shared/autonomy.ts',
+    '../../../shared/release-autonomy.ts',
+  ]),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
     '../../../shared/config-client.ts',
@@ -274,9 +277,11 @@ export const modules: ArchitectureModule[] = [
     './record-remedies.ts',
   ]),
   module('shared/http-json.ts', []),
+  module('shared/autonomy.ts', []),
   module('shared/keychain.ts', []),
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', []),
+  module('shared/settings-summary.ts', ['node:crypto', './secret-shaped.ts']),
   module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
   module('shared/hosted-secret-opening.ts', [
     './config-client.ts',

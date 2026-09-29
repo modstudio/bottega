@@ -1,6 +1,7 @@
 // concern: settings-commands
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 import type { Finding } from '../../../shared/ratchet.ts'
+import { summarizeSettings } from '../../../shared/settings-summary.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
@@ -35,7 +36,6 @@ import {
   diffOwnedSettings,
   displayHookDrift,
   displaySettingsValue,
-  hookDriftEntries,
   renderOwnedSettingsFile,
   type SettingsDrift,
 } from './settings-render.ts'
@@ -241,7 +241,7 @@ export async function settingsRenderCheckCommand(
         target,
         file: { path, exists: parsed !== null },
         revision: existing?.revision ?? null,
-        settings: settingsSummary(storeOwned),
+        settings: summarizeSettings(storeOwned),
         drift: redactedDrift(drift, fileOwned, storeOwned),
         findings: findings.map((finding) => ({
           ...finding,
@@ -260,27 +260,6 @@ export async function settingsRenderCheckCommand(
     presentation.log(`no settings row for ${targetLabel(target)}`)
   }
   if (drifted || !existing) presentation.exitCode(1)
-}
-
-function settingsSummary(owned: OwnedSettings) {
-  const lists = permissionLists(owned.permissions)
-  return {
-    permissions: Object.fromEntries(
-      PERMISSION_LISTS.map((name) => [
-        name,
-        lists[name].map((rule, index) =>
-          displaySettingsValue(`permissions.${name}[${index}]`, rule),
-        ),
-      ]),
-    ),
-    hooks: hookDriftEntries(owned.hooks).map(({ event, matcher, fingerprint, path }) => {
-      const shown = displayHookDrift({ event, matcher, fingerprint, path }, owned)
-      return shown.includes(' secret-shaped')
-        ? { event: path, matcher: 'secret-shaped', fingerprint }
-        : { event, matcher, fingerprint }
-    }),
-    envKeys: [...(owned.envKeys ?? [])],
-  }
 }
 
 function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSettings) {

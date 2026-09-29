@@ -207,6 +207,7 @@ const docSchema = z.object({
   spaceName: z.string(),
   scope: z.string(),
   subject: z.string().nullable(),
+  owner: z.string().uuid().nullable(),
   slug: z.string(),
   title: z.string(),
   body: z.string(),
@@ -224,6 +225,7 @@ const docRevisionSchema = z.object({
   docId: z.string().uuid(),
   scope: z.string(),
   subject: z.string().nullable(),
+  owner: z.string().uuid().nullable(),
   slug: z.string(),
   op: z.enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill']),
   title: z.string(),
@@ -245,12 +247,34 @@ type RecordDocListInput = {
   acrossReadableSpaces?: boolean
 }
 
+const docWriteResultSchema = z.object({ id: z.string().uuid(), revisionId: z.string().uuid() })
+const deletedResultSchema = z.object({ id: z.string().uuid(), revisionId: z.string().uuid() })
+const configEntrySchema = z.object({
+  key: z.string(),
+  environment: z.string(),
+  scope: z.enum(['user', 'space']),
+  value: z.string(),
+  rowVersion: z.number().int().positive(),
+  updatedAt: z.string().datetime({ offset: true }),
+})
+const settingsPermissionResultSchema = z.object({
+  revision: z.string().uuid(),
+  permissions: z.object({
+    allow: z.array(z.string()),
+    ask: z.array(z.string()),
+    deny: z.array(z.string()),
+  }),
+})
+
+export type RecordDoc = z.infer<typeof docSchema>
+export type RecordConfigEntry = z.infer<typeof configEntrySchema>
+
 function mappedError(status: number, body: unknown): TRPCError {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   const error = typeof record.error === 'string' ? record.error : `record API ${status}`
   const remedy = typeof record.remedy === 'string' ? record.remedy : undefined
   if (status === 401) return new TRPCError({ code: 'UNAUTHORIZED', message: remedy ?? error })
-  if (status === 409) return new TRPCError({ code: 'PRECONDITION_FAILED', message: error })
+  if (status === 409) return new TRPCError({ code: 'CONFLICT', message: error })
   if (status === 404) return new TRPCError({ code: 'NOT_FOUND', message: error })
   if (status === 400) return new TRPCError({ code: 'BAD_REQUEST', message: error })
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error })
@@ -349,5 +373,76 @@ export function createRecordClient(options: RecordClientOptions) {
     doc: (id: string) => request(options, `/v1/docs/${encodeURIComponent(id)}`, docSchema),
     docRevisions: (id: string) =>
       request(options, `/v1/docs/${encodeURIComponent(id)}/revisions`, docRevisionsSchema),
+    putDoc: (input: {
+      scope: string
+      subject: string | null
+      owner?: string | null
+      slug: string
+      title: string
+      body: string
+      delivery: 'inject' | 'demand'
+      reason: string
+      author: string
+      expectedRevision?: string
+    }) =>
+      request(options, '/v1/docs', docWriteResultSchema, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    deleteDoc: (id: string, input: { reason: string; author: string; expectedRevision?: string }) =>
+      request(options, `/v1/docs/${encodeURIComponent(id)}`, deletedResultSchema, {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    configEntries: () =>
+      request(
+        options,
+        query('/v1/config/entries', { environment: 'default' }),
+        z.object({ items: z.array(configEntrySchema) }),
+      ).then(({ items }) => items),
+    putConfigEntry: (
+      key: string,
+      input: {
+        scope: 'user' | 'space'
+        value: string
+        expectedRowVersion: number | null
+      },
+    ) =>
+      request(options, `/v1/config/entries/${encodeURIComponent(key)}`, configEntrySchema, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...input, environment: 'default' }),
+      }),
+    deleteConfigEntry: (
+      key: string,
+      input: { scope: 'user' | 'space'; expectedRowVersion: number },
+    ) =>
+      request(
+        options,
+        `/v1/config/entries/${encodeURIComponent(key)}`,
+        z.object({ deleted: z.literal(true) }),
+        {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...input, environment: 'default' }),
+        },
+      ),
+    settingsPermission: (input: {
+      target: { kind: 'user' } | { kind: 'project'; project: string }
+      list: 'allow' | 'ask' | 'deny'
+      rule: string
+      operation: 'add' | 'remove'
+      reason: string
+      expectedRevision: string
+    }) =>
+      request(options, '/v1/settings/permission', settingsPermissionResultSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
   }
 }
+
+export type RecordClient = ReturnType<typeof createRecordClient>

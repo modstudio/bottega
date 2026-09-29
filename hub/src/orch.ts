@@ -616,6 +616,7 @@ export const configArgv = (op: 'get' | 'list' | 'set', key?: string, value?: str
   ...(value ? [value] : []),
   '--json',
 ]
+export const configDeleteArgv = (key: string) => ['config', 'delete', key]
 export const settingsCheckArgv = (target: { user: true } | { project: string }) => [
   'settings',
   'render',
@@ -660,6 +661,9 @@ export const configSet = (key: string, value: string) =>
   json(configArgv('set', key, value), ConfigEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
+export const configList = () => json(configArgv('list'), z.array(ConfigEntrySchema))
+export const configDelete = (key: string) =>
+  orchProcess(configDeleteArgv(key), 20_000, { env: requiredDashboardCapabilityEnvironment() })
 export const settingsCheck = (target: { user: true } | { project: string }) =>
   json(settingsCheckArgv(target), SettingsCheckSchema, {
     acceptedExitCodes: [1],

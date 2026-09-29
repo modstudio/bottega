@@ -82,6 +82,18 @@ const contextGet = mock(async (_cwd: string) => ({
   text: 'Autonomy for alpha',
 }))
 const configSet = mock(async (key: string, value: string) => ({ key, value }))
+const configList = mock(
+  async () =>
+    [] as Array<{
+      key: string
+      environment: string
+      scope: 'user' | 'space'
+      value: string
+      rowVersion: number
+      updatedAt: string
+    }>,
+)
+const configDelete = mock(async (_key: string) => '')
 const settingsCheck = mock(async (_target: unknown) => ({
   target: { kind: 'user' as const },
   file: { path: '/tmp/settings.json', exists: true },
@@ -121,6 +133,8 @@ mock.module('../orch.ts', () => ({
   userDocRemove,
   contextGet,
   configSet,
+  configList,
+  configDelete,
   settingsCheck,
   settingsPermission,
   dashboardMutationAvailable,
@@ -615,6 +629,40 @@ describe('managed context', () => {
     expect(configSet).toHaveBeenLastCalledWith('autonomy.release', 'promote')
     expect(contextGet).toHaveBeenLastCalledWith('/fixtures/repos/alpha')
     expect(result.registered && result.release.value).toBe('land')
+  })
+
+  test('setting a preset clears user stage overrides and returns the fresh preset', async () => {
+    configList
+      .mockResolvedValueOnce([
+        {
+          key: 'autonomy.stage.review',
+          environment: 'default',
+          scope: 'user',
+          value: 'auto',
+          rowVersion: 2,
+          updatedAt: '2026-09-28T12:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          key: 'autonomy.preset',
+          environment: 'default',
+          scope: 'user',
+          value: 'manual',
+          rowVersion: 1,
+          updatedAt: '2026-09-28T12:00:01.000Z',
+        },
+      ])
+
+    const result = await caller.context.autonomy.setPreset({
+      project: 'alpha',
+      value: 'manual',
+    })
+
+    expect(configDelete).toHaveBeenCalledWith('autonomy.stage.review')
+    expect(configSet).toHaveBeenCalledWith('autonomy.preset', 'manual')
+    expect(result.userPreset).toBe('manual')
+    expect(result.registered && result.stages[0]?.overridden).toBe(false)
   })
 
   test('validates permission edits before calling orch', async () => {
