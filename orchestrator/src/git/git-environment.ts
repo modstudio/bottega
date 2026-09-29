@@ -210,6 +210,23 @@ export function contentTree(cwd: string): string {
   }
 }
 
+/** Changed paths between a review base and a commit or measured content tree. */
+export function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
+  const args = ['diff', '--name-only', `${base}..${inputTree}`]
+  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(
+      `could not measure explicit review paths with git ${args.join(' ')}: ` +
+        (p.stderr.toString().trim() || `exit ${p.exitCode}`),
+    )
+  }
+  return p.stdout.toString().trim().split('\n').filter(Boolean)
+}
+
 /** Read repository configuration without inheriting the worker config we return below. */
 function gitConfigOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null

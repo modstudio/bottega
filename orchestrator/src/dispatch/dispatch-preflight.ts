@@ -23,7 +23,12 @@ import {
   resolvedWorktreeTool,
   validateStoredProjectSettings,
 } from '../project/projects.ts'
-import { resolveReviewTarget } from '../review/review-target.ts'
+import {
+  implicitReviewRefusal,
+  measureImplicitReviewTarget,
+  resolveReviewTarget,
+  takesReviewTarget,
+} from '../review/review-target.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { createCommandExists, validateSeedWithTool } from '../worktree/worktree-preflight.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
@@ -43,6 +48,28 @@ export function resolvedFindingsLens(
 }
 
 const warnedMainCheckouts = new Set<string>()
+
+function assertImplicitReviewTarget(input: {
+  jobName: string
+  findings: boolean | undefined
+  cwd: string
+  reviewRef: string | undefined
+  carry: boolean
+}): void {
+  if (!input.findings || !takesReviewTarget(input.jobName) || input.reviewRef !== undefined) {
+    return
+  }
+  const refusal = implicitReviewRefusal(
+    measureImplicitReviewTarget(input.cwd, input.carry) ?? {
+      changedPathCount: null,
+      carry: input.carry,
+      trunk: '',
+      base: '',
+      head: '',
+    },
+  )
+  if (refusal) throw new Error(refusal)
+}
 
 export function callerCheckoutFacts(cwd: string): {
   repoRoot: string | null
@@ -121,6 +148,13 @@ export function preflight(
   if (lens) {
     resolveLens(lens, repo ?? projectAt(cwd)?.name ?? null)
   }
+  assertImplicitReviewTarget({
+    jobName,
+    findings: j.findings,
+    cwd,
+    reviewRef,
+    carry,
+  })
   const repoRoot = repoRootOf(cwd)
   if (jobName === 'review-lens' && repoRoot === null) {
     throw new Error(

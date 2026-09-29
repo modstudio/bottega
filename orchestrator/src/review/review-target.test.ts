@@ -1,5 +1,17 @@
 import { describe, expect, test } from 'bun:test'
-import { emptyReviewRefusal, reviewArtifactBlock, reviewTrunkRef } from './review-target.ts'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import { db } from '../database/db.ts'
+import { preflight } from '../dispatch/dispatch-preflight.ts'
+import { upsertProject } from '../project/projects.ts'
+import {
+  emptyReviewRefusal,
+  implicitReviewRefusal,
+  reviewArtifactBlock,
+  reviewTrunkRef,
+} from './review-target.ts'
 
 describe('review target', () => {
   test('names the resolved artifact and makes checkout HEAD authoritative', () => {
@@ -35,5 +47,71 @@ describe('review target', () => {
 
   test('allows a commit after its trunk merge base', () => {
     expect(emptyReviewRefusal('branch-tip', 'fork-point', 'feature', 'main')).toBeNull()
+  })
+
+  test('refuses an empty implicit target with artifact-selection remedies', () => {
+    expect(
+      implicitReviewRefusal({
+        changedPathCount: 0,
+        carry: false,
+        trunk: 'main',
+        base: '1234567890abcdef',
+        head: 'abcdef1234567890',
+      }),
+    ).toBe(
+      'refused: implicit review target 12345678..abcdef12 against main has no changed paths. Pass --review <branch under review>, or --cwd <worktree of the change>, or --carry for uncommitted work. Prompt text does not select the artifact.',
+    )
+  })
+
+  test('allows changed and unmeasurable implicit targets, including carried changes', () => {
+    const target = {
+      carry: false,
+      trunk: 'main',
+      base: 'base',
+      head: 'head',
+    }
+    expect(implicitReviewRefusal({ ...target, changedPathCount: 1 })).toBeNull()
+    expect(implicitReviewRefusal({ ...target, carry: true, changedPathCount: 1 })).toBeNull()
+    expect(implicitReviewRefusal({ ...target, changedPathCount: null })).toBeNull()
+  })
+
+  test('preflight refuses an empty implicit target without claiming a run row', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'implicit-review-preflight-'))
+    const priorDepth = process.env.ORCH_DEPTH
+    const git = (...args: string[]) => {
+      const result = spawnFixtureGitSync(args, { cwd: repo })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    try {
+      process.env.ORCH_DEPTH = '0'
+      git('init', '-b', 'main')
+      git('config', 'user.name', 'Fixture')
+      git('config', 'user.email', 'fixture@example.com')
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      git('add', 'base.txt')
+      git('commit', '-m', 'base')
+      upsertProject({ name: 'implicit-review-preflight', path: repo, settings: { trunk: 'main' } })
+      const before = db().query<{ count: number }, []>('SELECT COUNT(*) AS count FROM run').get()!
+
+      expect(() =>
+        preflight(
+          'review-lens',
+          repo,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          'correctness',
+        ),
+      ).toThrow('has no changed paths')
+      expect(db().query<{ count: number }, []>('SELECT COUNT(*) AS count FROM run').get()).toEqual(
+        before,
+      )
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
