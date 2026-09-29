@@ -80,12 +80,11 @@ function hookSummaries(hooks: unknown) {
       const matcher = object(item) && typeof item.matcher === 'string' ? item.matcher : '-'
       return {
         event: secretCommand ? `hooks.${event}[${index}]` : event,
-        matcher:
-          secretCommand
-            ? 'secret-shaped'
-            : containsSecretShaped(matcher)
-              ? '[withheld: secret-shaped]'
-              : matcher,
+        matcher: secretCommand
+          ? 'secret-shaped'
+          : containsSecretShaped(matcher)
+            ? '[withheld: secret-shaped]'
+            : matcher,
         fingerprint: fingerprint(item),
       }
     })
