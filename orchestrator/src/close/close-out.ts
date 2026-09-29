@@ -425,8 +425,7 @@ function turnHeadForCloseOut(
   return tip ? { branch, tip } : null
 }
 
-function landingTreeSweepHold(input: {
-  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
+function landingTreeReleaseHold(input: {
   runId: number
   job: string
   repo: string | null
@@ -435,10 +434,28 @@ function landingTreeSweepHold(input: {
   sessionId: string | null
   launchKey: string | null
   status: string
-  landingInFlight: boolean
 }): CloseOutResult | null {
-  if (input.intent !== 'sweep' || input.job !== LANDING_TREE_JOB) return null
-  const decision = observeLandingTreeRelease({ ...input, treeExists: existsSync(input.worktree) })
+  if (input.job !== LANDING_TREE_JOB) return null
+  const project = input.repo ?? projectAt(input.worktree)?.name ?? null
+  const treeExists = existsSync(input.worktree)
+  // A failed creation can leave only a missing path, before project and branch
+  // identity were recorded. There is no branch whose landing could be in flight.
+  if (!treeExists && (!project || !input.branch)) return null
+  const landingInFlight = Boolean(
+    project &&
+      input.branch &&
+      db()
+        .query(
+          `SELECT 1 FROM landing
+           WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
+        )
+        .get(project, input.branch),
+  )
+  const decision = observeLandingTreeRelease({
+    ...input,
+    treeExists,
+    landingInFlight,
+  })
   return decision.action === 'keep'
     ? {
         runId: input.runId,
@@ -511,7 +528,6 @@ function attemptCloseOutRun(
     lockTimeoutMs?: number
     extraPids?: number[]
     pgid?: number | null
-    landingInFlight?: boolean
     keepTreeDecision: ConversationKeepTreeHold
   },
 ): CloseOutAttemptResult {
@@ -564,8 +580,7 @@ function attemptCloseOutRun(
     session_id: root?.session_id ?? row.session_id,
     launch_key: root?.launch_key ?? row.launch_key,
   }
-  const landingSweepInput = {
-    intent: options.intent,
+  const landingReleaseInput = {
     runId: row.root_id,
     job: effective.job,
     repo: effective.repo,
@@ -574,15 +589,11 @@ function attemptCloseOutRun(
     sessionId: effective.session_id,
     launchKey: effective.launch_key,
     status: effective.status,
-    landingInFlight: options.landingInFlight ?? false,
   }
-  const terminalHold = terminalHoldResult(
-    row.root_id,
-    treePath,
-    effective.status,
-    options.keepTreeDecision,
-  )
-  if (terminalHold) return terminalHold
+  const preRemovalHold =
+    terminalHoldResult(row.root_id, treePath, effective.status, options.keepTreeDecision) ??
+    (!existsSync(treePath) ? landingTreeReleaseHold(landingReleaseInput) : null)
+  if (preRemovalHold) return preRemovalHold
   const retainedBranch = retainedBranchForCloseOut(effective.minted_branch)
   const turnHead = turnHeadForCloseOut(row, treePath)
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
@@ -625,7 +636,7 @@ function attemptCloseOutRun(
     dryRun: options.dryRun,
     recordRetainedBranch,
   })
-  if (absentTree.result) return landingTreeSweepHold(landingSweepInput) ?? absentTree.result
+  if (absentTree.result) return absentTree.result
   const { absent: treeAbsent, repoRoot } = absentTree
   if (!repoRoot)
     return {
@@ -775,7 +786,7 @@ function attemptCloseOutRun(
                 detail: `coordinator lease for run ${liveCoordinator.id} is still held`,
               }
             terminateRunProcesses(row.id, [process.pid])
-            const landingHold = landingTreeSweepHold(landingSweepInput)
+            const landingHold = landingTreeReleaseHold(landingReleaseInput)
             if (landingHold) return landingHold
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
@@ -919,6 +930,14 @@ function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
   return byPath
 }
 
+function settlementLivenessResult(result: CloseOutAttemptResult): CloseOutAttemptResult {
+  if (!['released', 'absent', 'forgotten'].includes(result.outcome)) return result
+  return (
+    liveCloseOutResult(result.runId, result.worktree, aliveConversationTurns(result.runId)) ??
+    result
+  )
+}
+
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
   runId: number,
@@ -928,7 +947,6 @@ export function closeOutRun(
     lockTimeoutMs?: number
     extraPids?: number[]
     pgid?: number | null
-    landingInFlight?: boolean
   },
 ): CloseOutResult {
   const root = db()
@@ -940,18 +958,19 @@ export function closeOutRun(
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
-  const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
-  result.detail = releaseAbsentCloseOutResidue({
-    runId: result.runId,
-    outcome: result.outcome,
-    detail: result.detail,
-    dryRun: options.dryRun ?? false,
-  })
+  let result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
   }
   if (!options.dryRun) {
     writeTransaction(() => {
+      result = settlementLivenessResult(result)
+      result.detail = releaseAbsentCloseOutResidue({
+        runId: result.runId,
+        outcome: result.outcome,
+        detail: result.detail,
+        dryRun: false,
+      })
       const settled = settledStateForCloseOut(result.outcome, 'worktree')
       const settledAt = nowIso()
       db()

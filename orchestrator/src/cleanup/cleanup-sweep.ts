@@ -450,7 +450,6 @@ function sweepRecordedRow(
   const closed = closeOutRun(r.id, {
     intent: 'sweep',
     dryRun: dry,
-    landingInFlight: landingInFlightForSweep(r),
   })
   const closeRuling = decideRecordedRunCloseOut({
     dry,

@@ -392,7 +392,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
          VALUES (?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
       .run(project, `DEV-1023-orch-${id}`)
-    expect(closeOutRun(id, { intent: 'sweep', landingInFlight: true })).toMatchObject({
+    expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
     })
@@ -405,15 +405,20 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
       status: 'running',
       parent: id,
     })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, child)
-    expect(closeOutRun(id, { intent: 'sweep', landingInFlight: false })).toMatchObject({
+    db().query('UPDATE run SET pid=NULL,agent_pid=? WHERE id=?').run(process.pid, child)
+    expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail: `live run(s): ${child} (running)`,
     })
     expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
+    db().query('UPDATE run SET pid=?,agent_pid=NULL WHERE id=?').run(process.pid, child)
+    expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
+      outcome: 'live',
+      detail: `live run(s): ${child} (running)`,
+    })
     db().query("UPDATE run SET status='ok',pid=NULL WHERE id=?").run(child)
 
-    const result = closeOutRun(id, { intent: 'sweep', landingInFlight: false })
+    const result = closeOutRun(id, { intent: 'sweep' })
 
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain(`ref-guard ${project}:${id} was already absent`)
@@ -424,6 +429,42 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
         .query("SELECT state FROM resource_claim WHERE root_run_id=? AND kind='worktree'")
         .get(id),
     ).toEqual({ state: 'absent' })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('absent landing-tree close-out rechecks conversation liveness before clearing pointers', () => {
+  const id = addRun({ agent: '(architect)', job: 'landing-tree', status: 'ok' })
+  const child = addRun({ agent: 'codex', job: 'implement', status: 'running', parent: id })
+  const project = `absent-landing-liveness-${id}`
+  const repo = join(dir, project)
+  const tree = join(repo, '.claude', 'worktrees', `orch-${id}-land`)
+  const branch = `DEV-1023-orch-${id}`
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  db()
+    .query(
+      `UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,minted_branch=?,session_id='owner'
+       WHERE id=?`,
+    )
+    .run(project, tree, tree, branch, branch, id)
+  let becameAlive = false
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    const args = normalizedGitArgs(command)
+    if (!becameAlive && args[0] === 'rev-parse') {
+      becameAlive = true
+      db().query('UPDATE run SET agent_pid=? WHERE id=?').run(process.pid, child)
+    }
+    return spawnResult('', 1)
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+      outcome: 'live',
+      detail: `live run(s): ${child} (running)`,
+    })
+    expect(becameAlive).toBe(true)
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

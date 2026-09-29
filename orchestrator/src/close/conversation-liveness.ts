@@ -7,7 +7,7 @@ import { db } from '../database/db.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 
-type AliveTurn = { id: number; status: string; pid: number | null }
+type AliveTurn = { id: number; status: string; pid: number | null; agent_pid: number | null }
 type ConversationCloseOutResult = {
   runId: number
   worktree: string | null
@@ -17,13 +17,15 @@ type ConversationCloseOutResult = {
 
 export function aliveConversationTurns(rootId: number): AliveTurn[] {
   const turns = db()
-    .query('SELECT id,status,pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .query('SELECT id,status,pid,agent_pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
     .all(rootId, rootId) as AliveTurn[]
   return turns.filter((turn) =>
     runAlive({
       status: turn.status,
       lease: runLeaseState(turn.id),
-      pidAlive: Boolean(turn.pid && pidAlive(turn.pid)),
+      pidAlive: Boolean(
+        (turn.pid && pidAlive(turn.pid)) || (turn.agent_pid && pidAlive(turn.agent_pid)),
+      ),
     }),
   )
 }
