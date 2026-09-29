@@ -21,7 +21,7 @@ import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
-import { contentTree, gitContext, targetGitEnvironment } from '../git/git-environment.ts'
+import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import {
   formatIdleKillError,
   idleKillMayProceed,
@@ -90,22 +90,6 @@ function fallbackMatches(contract: ReplyContract, text: string, schema: unknown)
   if (contract === 'text') return valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)
   if (contract === 'custom') return valueMatchesStrictSchema(schema, value)
   return false
-}
-
-function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
-  const args = ['diff', '--name-only', `${base}..${inputTree}`]
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (p.exitCode !== 0) {
-    throw new Error(
-      `could not measure explicit review paths with git ${args.join(' ')}: ` +
-        (p.stderr.toString().trim() || `exit ${p.exitCode}`),
-    )
-  }
-  return p.stdout.toString().trim().split('\n').filter(Boolean)
 }
 
 /** A missing named reply is observable even when its final-message fallback is valid. */

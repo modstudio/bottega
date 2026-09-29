@@ -325,6 +325,7 @@ export async function run(opts: {
     opts.resolvedReviewTarget ? undefined : opts.review,
     opts.carry,
     opts.repo,
+    opts.resolvedReviewTarget !== undefined,
   )
   const reviewTarget =
     opts.resolvedReviewTarget ??

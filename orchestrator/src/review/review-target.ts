@@ -4,11 +4,21 @@
  * know transports, database write paths, contracts, or routing.
  */
 import { basename } from 'node:path'
-import { branchOf, gitContext, targetGitEnvironment } from '../git/git-environment.ts'
+import {
+  branchOf,
+  contentTree,
+  gitContext,
+  reviewChangedPaths,
+  targetGitEnvironment,
+} from '../git/git-environment.ts'
 import { projectAt, resolveBranchRef } from '../project/projects.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
+
+export function takesReviewTarget(jobName: string): boolean {
+  return EXPLICIT_REVIEW_JOBS.has(jobName)
+}
 
 /** Bind a resolved explicit-review target into the reviewer's job instructions. */
 export function reviewArtifactBlock(target: {
@@ -55,6 +65,54 @@ export function emptyReviewRefusal(
   )
 }
 
+export function implicitReviewRefusal(input: {
+  changedPathCount: number | null
+  carry: boolean
+  trunk: string
+  base: string
+  head: string
+}): string | null {
+  if (input.changedPathCount === null || input.changedPathCount > 0) return null
+  const carryRemedy = input.carry ? '--carry with uncommitted work' : '--carry for uncommitted work'
+  return (
+    `refused: implicit review target ${input.base.slice(0, 8)}..${input.head.slice(0, 8)} ` +
+    `against ${input.trunk} has no changed paths. Pass --review <branch under review>, or ` +
+    `--cwd <worktree of the change>, or ${carryRemedy}. Prompt text does not select the artifact.`
+  )
+}
+
+/** Measure an implicit findings target exactly as its eventual run will. */
+export function measureImplicitReviewTarget(
+  cwd: string,
+  carry: boolean,
+): {
+  changedPathCount: number
+  carry: boolean
+  trunk: string
+  base: string
+  head: string
+} | null {
+  const trunk = projectAt(cwd)?.settings.trunk?.trim()
+  if (!trunk) return null
+  try {
+    const root = gitContext(cwd, 'rev-parse', '--show-toplevel')
+    if (!root) return null
+    const head = resolveBase(root, 'HEAD')
+    const base = resolveReviewMergeBase(root, head, trunk)
+    if (!base) return null
+    const inputTree = carry ? contentTree(root) : head
+    return {
+      changedPathCount: reviewChangedPaths(root, base, inputTree).length,
+      carry,
+      trunk,
+      base,
+      head,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Coverage base for a findings job dispatched without --review. Null if unmeasurable. */
 export function implicitReviewCoverageBase(cwd: string): string | null {
   const trunk = projectAt(cwd)?.settings.trunk?.trim()
@@ -74,7 +132,7 @@ export function resolveReviewTarget(
   carry = false,
 ): { branch: string; commit: string; base: string } | null {
   if (reviewRef === undefined) return null
-  if (!EXPLICIT_REVIEW_JOBS.has(jobName)) {
+  if (!takesReviewTarget(jobName)) {
     throw new Error('--review is only valid for review-lens, safety, and craft')
   }
   // Review jobs never write, so their tree is the detached read-only one
