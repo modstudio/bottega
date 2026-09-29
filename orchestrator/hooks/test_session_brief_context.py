@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -205,11 +206,37 @@ class SettingsApplyNotice(unittest.TestCase):
         self.assertIn("move the key first", notice)
         self.assertIn("canon batch refused", notice)
 
-    def test_timeout_is_a_notice(self):
+    def test_still_running_names_the_detached_log(self):
         self.assertEqual(
-            session_brief._settings_apply_notice(self.completed(returncode=-1)),
-            "Settings apply timed out; settings state is unknown.",
+            session_brief._settings_apply_notice(None, "/state/orchestrator/settings-apply.log"),
+            "settings apply still running; its result lands in "
+            "/state/orchestrator/settings-apply.log",
         )
+
+    def test_detached_completion_uses_logged_result(self):
+        completed = self.completed(
+            stdout="settings /tmp/settings.json: applied; backup /tmp/backup\n"
+        )
+        self.assertEqual(
+            session_brief._settings_apply_notice(completed, "/state/settings-apply.log"),
+            "settings applied; they take effect in the next session",
+        )
+
+    def test_settings_apply_starts_in_its_own_session_with_state_logging(self):
+        process = SimpleNamespace()
+        with tempfile.TemporaryDirectory() as state:
+            with mock.patch.object(session_brief, "_state_root", return_value=state):
+                with mock.patch.object(
+                    session_brief.subprocess, "Popen", return_value=process
+                ) as popen:
+                    started, log_path, offset = session_brief._start_settings_apply("/bin/orch")
+        self.assertIs(started, process)
+        self.assertEqual(log_path, f"{state}/orchestrator/settings-apply.log")
+        self.assertEqual(offset, 0)
+        kwargs = popen.call_args.kwargs
+        self.assertTrue(kwargs["start_new_session"])
+        self.assertEqual(kwargs["stdin"], session_brief.subprocess.DEVNULL)
+        self.assertEqual(kwargs["stderr"], session_brief.subprocess.STDOUT)
 
 
 if __name__ == "__main__":

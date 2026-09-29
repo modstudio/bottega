@@ -21,6 +21,53 @@ def _start(orch, *args, env=None):
     )
 
 
+def _state_root(env=None):
+    environment = env if env is not None else os.environ
+    override = environment.get("BOTTEGA_STATE_HOME")
+    state_slug = "BOTTEGA_STATE_HOME".removesuffix("_STATE_HOME").lower()
+    if override and os.path.isabs(override):
+        return override
+    xdg = environment.get("XDG_STATE_HOME")
+    if xdg and os.path.isabs(xdg):
+        return os.path.join(xdg, state_slug)
+    home = environment.get("HOME")
+    if not home:
+        raise RuntimeError("cannot resolve platform state directory")
+    return os.path.join(home, ".local", "state", state_slug)
+
+
+def _start_settings_apply(orch, env=None):
+    log_path = os.path.join(_state_root(env), "orchestrator", "settings-apply.log")
+    os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
+    log = open(log_path, "a+", encoding="utf-8")
+    offset = log.seek(0, os.SEEK_END)
+    try:
+        proc = subprocess.Popen(
+            [orch, "settings", "apply"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+            start_new_session=True,
+        )
+    finally:
+        log.close()
+    return proc, log_path, offset
+
+
+def _wait_settings_apply(proc, deadline, log_path, offset):
+    try:
+        timeout = None if proc.poll() is not None else max(0, deadline - time.monotonic())
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    with open(log_path, "r", encoding="utf-8", errors="replace") as log:
+        log.seek(offset)
+        output = log.read()
+    return subprocess.CompletedProcess(proc.args, proc.returncode, output, "")
+
+
 def _kill(proc):
     if proc is None or proc.poll() is not None:
         return
@@ -161,9 +208,9 @@ def _autonomy_slice(completed):
         return "", "Autonomy response was invalid; autonomy state is unknown."
 
 
-def _settings_apply_notice(completed):
-    if completed.returncode == -1:
-        return "Settings apply timed out; settings state is unknown."
+def _settings_apply_notice(completed, log_path=None):
+    if completed is None:
+        return f"settings apply still running; its result lands in {log_path}"
     lines = [
         line.strip()
         for text in (completed.stdout or "", completed.stderr or "")
@@ -221,7 +268,7 @@ def main() -> int:
         )
         waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
         context_p = _start(orch, "context", "--cwd", cwd, "--json")
-        settings_p = _start(orch, "settings", "apply")
+        settings_p, settings_log_path, settings_log_offset = _start_settings_apply(orch)
         monitor_failure = None
         if sid:
             try:
@@ -242,7 +289,9 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
-        settings_apply = _wait(settings_p, deadline)
+        settings_apply = _wait_settings_apply(
+            settings_p, deadline, settings_log_path, settings_log_offset
+        )
 
         resume_table = ""
         resume_offer = ""
@@ -437,7 +486,7 @@ def main() -> int:
             notices.append(waiting_failure)
         if autonomy_failure:
             notices.append(autonomy_failure)
-        settings_notice = _settings_apply_notice(settings_apply)
+        settings_notice = _settings_apply_notice(settings_apply, settings_log_path)
         if settings_notice:
             notices.append(settings_notice)
         if answerable_count:
@@ -634,7 +683,6 @@ def main() -> int:
         _kill(inbox_p)
         _kill(waiting_p)
         _kill(context_p)
-        _kill(settings_p)
         _kill(monitor_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)

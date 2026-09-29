@@ -34,12 +34,25 @@ export type RecordSettingsPermissionResult = {
   permissions: Record<PermissionList, string[]>
 }
 
+export type RecordSettingsPermissionDependencies = {
+  listDocs: typeof listRecordDocs
+  listRevisions: typeof listRecordDocRevisions
+  upsertDoc: typeof upsertRecordDoc
+}
+
+const recordSettingsDependencies: RecordSettingsPermissionDependencies = {
+  listDocs: listRecordDocs,
+  listRevisions: listRecordDocRevisions,
+  upsertDoc: upsertRecordDoc,
+}
+
 export async function applyRecordSettingsPermission(
   input: RecordSettingsPermissionInput,
+  dependencies: RecordSettingsPermissionDependencies = recordSettingsDependencies,
 ): Promise<RecordSettingsPermissionResult> {
   const subject = input.target.kind === 'project' ? input.target.project : null
   const owner = input.target.kind === 'user' ? input.userId : null
-  const rows = await listRecordDocs({
+  const rows = await dependencies.listDocs({
     ...input,
     scope: SETTINGS_SCOPE,
     subject,
@@ -55,7 +68,7 @@ export async function applyRecordSettingsPermission(
       candidate.subject === subject,
   )
   if (!row) throw new RecordDocError('settings doc not found', 404)
-  const revisions = await listRecordDocRevisions({ ...input, id: row.id })
+  const revisions = await dependencies.listRevisions({ ...input, id: row.id })
   const current = revisions?.[0]?.id ?? null
   const decision = decideDocRevisionWrite({
     expected: input.expectedRevision,
@@ -66,7 +79,7 @@ export async function applyRecordSettingsPermission(
   if (!decision.allow) throw new RecordDocError(decision.reason, 409)
   const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), input)
   if (!edit.changed) return { revision: current!, permissions: edit.permissions }
-  const written = await upsertRecordDoc({
+  const written = await dependencies.upsertDoc({
     ...input,
     scope: SETTINGS_SCOPE,
     subject,
@@ -77,6 +90,7 @@ export async function applyRecordSettingsPermission(
     delivery: 'demand',
     projectName: subject,
     author: 'hub-dashboard',
+    expectedRevision: input.expectedRevision,
   })
   return { revision: written.revisionId, permissions: edit.permissions }
 }

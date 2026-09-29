@@ -94,10 +94,13 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-machine-apply.ts`,
     allowed: [
       'bun:sqlite',
+      'node:fs',
+      'node:path',
       'shared/state-directory.ts',
       'orchestrator/src/canon/user-canon-home-files.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/project/project-lock.ts',
       'orchestrator/src/record/record-cache.ts',
       'orchestrator/src/run/run-process.ts',
       `${source}settings.ts`,

@@ -8,6 +8,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
+import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
 import { applySettingsWrite } from './settings-write.ts'
@@ -189,15 +190,35 @@ describe('settings apply', () => {
     expect(pulls).toBe(0)
   })
 
+  test('skips successfully when another settings apply holds the per-user lock', async () => {
+    const stateDirectory = join(root, 'state', 'orchestrator')
+    mkdirSync(stateDirectory, { recursive: true })
+    const lease = tryKernelLease(join(stateDirectory, 'settings-apply.lock'), true)
+    expect(lease).not.toBeNull()
+    try {
+      expect(await applyMachineSettings({ check: false }, deps())).toEqual([
+        { target: 'settings apply', outcome: 'skipped', changed: false },
+      ])
+      expect(pulls).toBe(0)
+    } finally {
+      lease!.release()
+    }
+  })
+
   test('presentation emits exactly one line per target', () => {
     const lines: string[] = []
     printMachineSettingsApplyResults(
       [
         { target: 'settings one', outcome: 'current', changed: false },
         { target: 'canon two', outcome: 'refused', detail: 'first\nsecond', changed: false },
+        { target: 'settings apply', outcome: 'skipped', changed: false },
       ],
       (...values) => lines.push(values.join(' ')),
     )
-    expect(lines).toEqual(['settings one: already current', 'canon two: refused; first; second'])
+    expect(lines).toEqual([
+      'settings one: already current',
+      'canon two: refused; first; second',
+      'settings apply already running; skipped',
+    ])
   })
 })

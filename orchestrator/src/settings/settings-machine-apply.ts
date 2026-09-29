@@ -1,7 +1,9 @@
 // concern: settings-machine-apply
 /** Applies hosted user settings and canon to this machine. Must not know CLI grammar or scheduling. */
 import type { Database } from 'bun:sqlite'
-import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { resolveRunsDirectory, resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
@@ -12,6 +14,7 @@ import {
 } from '../canon/user-canon-home-files.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocs, signedInDocOwner } from '../doc/docs.ts'
+import { tryKernelLease } from '../project/project-lock.ts'
 import { pullRecordCache } from '../record/record-cache.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { parseStoredOwnedSettings, SETTINGS_SCOPE, SETTINGS_SLUG } from './settings.ts'
@@ -26,7 +29,7 @@ import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
 
 export type MachineSettingsApplyResult = {
   target: string
-  outcome: 'applied' | 'current' | 'refused'
+  outcome: 'applied' | 'current' | 'refused' | 'skipped'
   detail?: string
   changed: boolean
 }
@@ -188,9 +191,22 @@ export async function applyMachineSettings(
     )
   }
   const deps = dependencies({ ...overrides, workerProcess })
-  await deps.pull()
-  const owner = await deps.owner()
-  return [applyUserSettings(owner, input.check, deps), ...applyUserCanon(owner, input.check, deps)]
+  const stateDirectory = resolveStatePaths(deps.environment).orchestratorDirectory
+  mkdirSync(stateDirectory, { recursive: true, mode: 0o700 })
+  const lease = tryKernelLease(join(stateDirectory, 'settings-apply.lock'), true)
+  if (!lease) {
+    return [{ target: 'settings apply', outcome: 'skipped', changed: false }]
+  }
+  try {
+    await deps.pull()
+    const owner = await deps.owner()
+    return [
+      applyUserSettings(owner, input.check, deps),
+      ...applyUserCanon(owner, input.check, deps),
+    ]
+  } finally {
+    lease.release()
+  }
 }
 
 export function printMachineSettingsApplyResults(
@@ -198,6 +214,10 @@ export function printMachineSettingsApplyResults(
   log: (...values: unknown[]) => void,
 ): void {
   for (const result of results) {
+    if (result.outcome === 'skipped') {
+      log('settings apply already running; skipped')
+      continue
+    }
     const status = result.outcome === 'current' ? 'already current' : result.outcome
     const detail = result.detail?.replaceAll('\n', '; ')
     log(`${result.target}: ${status}${detail ? `; ${detail}` : ''}`)
