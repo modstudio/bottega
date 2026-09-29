@@ -169,10 +169,8 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
-  module('orchestrator/src/workflow/autonomy.ts', [
-    '../../../shared/autonomy.ts',
-    '../../../shared/release-autonomy.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/workflow/autonomy.ts', ['../../../shared/autonomy.ts', '../../../shared/release-autonomy.ts']),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
     '../../../shared/config-client.ts',

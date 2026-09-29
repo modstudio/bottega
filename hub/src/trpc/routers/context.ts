@@ -63,14 +63,23 @@ async function localAutonomy(project: string) {
   const userPreset = AUTONOMY_PRESETS.includes(preset as AutonomyPreset)
     ? (preset as AutonomyPreset)
     : null
-  if (!resolved.registered) return { ...resolved, userPreset }
+  if (!resolved.registered) {
+    return { ...resolved, userPreset } as typeof resolved & {
+      userPreset?: AutonomyPreset | null
+    }
+  }
+  const stages: Array<(typeof resolved.stages)[number] & { overridden?: boolean }> =
+    resolved.stages.map((stage) => ({
+      ...stage,
+      overridden: user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
+    }))
   return {
     ...resolved,
     userPreset,
-    stages: resolved.stages.map((stage) => ({
-      ...stage,
-      overridden: user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
-    })),
+    stages,
+  } as Omit<typeof resolved, 'stages'> & {
+    userPreset?: AutonomyPreset | null
+    stages: typeof stages
   }
 }
 
@@ -173,10 +182,10 @@ export const contextRouter = t.router({
       }),
   }),
   settings: t.router({
-    get: t.procedure.input(target).query(async ({ input }) => ({
-      ...(await fromOrch(() => settingsCheck(input))),
-      mode: 'local' as const,
-    })),
+    get: t.procedure.input(target).query(async ({ input }) => {
+      const result = await fromOrch(() => settingsCheck(input))
+      return { ...result, mode: 'local' } as typeof result & { mode?: 'local' }
+    }),
     permission: mutation
       .input(
         z.object({
