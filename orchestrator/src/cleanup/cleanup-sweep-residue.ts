@@ -2,7 +2,10 @@
 /** Enumerates monitor residue, applies the owner-gone policy, and delegates guarded reclaim. */
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
-import { terminalProcessResidueObservations } from '../monitor/monitor-conditions.ts'
+import {
+  staleRunConditions,
+  terminalProcessResidueObservations,
+} from '../monitor/monitor-conditions.ts'
 import { type ResidueKind, reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import {
   refGuardInventory,
@@ -39,6 +42,7 @@ type ReclaimResult = { ok: boolean; action: string }
 export type UnattendedResidueDependencies = {
   inventory?: (selectedProject: string | null) => Inventory
   ownerFacts?: (runId: number, now: number) => OwnerFacts
+  liveness?: (candidate: UnattendedResidueCandidate) => Liveness
   reclaim?: (
     kind: ResidueKind,
     subject: string,
@@ -72,26 +76,26 @@ function conversationLiveness(runId: number): Liveness {
 type ProjectSelection = (project: string | null) => boolean
 
 function staleRunCandidates(selected: ProjectSelection): UnattendedResidueCandidate[] {
-  const stale = db()
-    .query(
-      `SELECT r.id,COALESCE(r.repo,project.name) project
-         FROM run r LEFT JOIN project ON project.id=r.project_id
-        WHERE r.status='stale' AND r.evidence_excluded IS NULL`,
-    )
-    .all() as { id: number; project: string | null }[]
-  return stale.flatMap((row) =>
-    selected(row.project)
+  return staleRunConditions().flatMap((condition) => {
+    const runId = Number(condition.subject.slice('run:'.length))
+    const row = db()
+      .query(
+        `SELECT COALESCE(project.name,r.repo) project
+           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+      )
+      .get(runId) as { project: string | null } | null
+    return row && selected(row.project)
       ? [
           {
             kind: 'stale-run',
-            subject: String(row.id),
-            runId: row.id,
+            subject: String(runId),
+            runId,
             project: row.project,
-            liveness: conversationLiveness(row.id),
+            liveness: conversationLiveness(runId),
           } satisfies UnattendedResidueCandidate,
         ]
-      : [],
-  )
+      : []
+  })
 }
 
 export function unattendedProcessCandidates(
@@ -100,7 +104,7 @@ export function unattendedProcessCandidates(
   return terminalProcessResidueObservations().flatMap((observation) => {
     const row = db()
       .query(
-        `SELECT COALESCE(r.repo,project.name) project
+        `SELECT COALESCE(project.name,r.repo) project
            FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
       )
       .get(observation.runId) as { project: string | null } | null
@@ -174,7 +178,7 @@ function sandboxCandidates(selected: ProjectSelection): Inventory {
       if (!terminal.has(directory.rootId)) return []
       const row = db()
         .query(
-          `SELECT COALESCE(root.repo,project.name) project
+          `SELECT COALESCE(project.name,root.repo) project
              FROM run member
              JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
              LEFT JOIN project ON project.id=root.project_id
@@ -194,6 +198,15 @@ function sandboxCandidates(selected: ProjectSelection): Inventory {
         : []
     }),
   }
+}
+
+function currentLiveness(candidate: UnattendedResidueCandidate): Liveness {
+  if (candidate.kind !== 'process') return conversationLiveness(candidate.runId)
+  return (
+    terminalProcessResidueObservations().find(
+      (observation) => observation.runId === candidate.runId,
+    )?.liveness ?? 'dead'
+  )
 }
 
 function defaultInventory(selectedProject: string | null): Inventory {
@@ -257,7 +270,7 @@ export function sweepUnattendedResidue(
   const inventory = (dependencies.inventory ?? defaultInventory)(input.selectedProject)
   const ownerFacts = dependencies.ownerFacts ?? defaultOwnerFacts
   const reclaim = dependencies.reclaim ?? reclaimResidue
-  const now = input.now ?? Date.now()
+  const liveness = dependencies.liveness ?? currentLiveness
   const counts = Object.fromEntries(UNATTENDED_RECLAIM_KINDS.map((kind) => [kind, 0])) as Record<
     UnattendedReclaimKind,
     number
@@ -265,12 +278,15 @@ export function sweepUnattendedResidue(
   const failed = inventory.errors.length > 0
   for (const error of inventory.errors) input.presentation.error(error)
   for (const candidate of inventory.candidates) {
+    // Candidate enumeration can take minutes. Re-observe immediately before
+    // dispatch so an owner or process that revived after inventory is kept.
+    const now = input.now ?? Date.now()
     const ruling = decideUnattendedReclaim({
       kind: candidate.kind,
       ...ownerFacts(candidate.runId, now),
       now,
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
-      liveness: candidate.liveness,
+      liveness: liveness(candidate),
       uncommittedWork: false,
     })
     if (ruling.action === 'keep') {

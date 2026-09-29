@@ -107,6 +107,25 @@ export function unscoredRuns(database = db()): AddressedRun[] {
     .all() as AddressedRun[]
 }
 
+/** Report terminal stale rows that have not yet been settled out of evidence. */
+export function staleRunConditions(database = db(), clock = Date.now()): MonitorCondition[] {
+  const rows = database
+    .query(
+      `SELECT id, started_at, error, session_id FROM run
+        WHERE status='stale' AND evidence_excluded IS NULL`,
+    )
+    .all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
+  return rows.map((run) => ({
+    kind: 'stale-run',
+    subject: `run:${run.id}`,
+    since: run.started_at,
+    ageMs: age(run.started_at, clock),
+    detail: run.error ?? `run ${run.id} is stale`,
+    action: `run orch reclaim stale-run ${run.id} --dry-run, then orch reclaim stale-run ${run.id}`,
+    ownerSession: run.session_id,
+  }))
+}
+
 export const age = (since: string | null, clock: number) => {
   if (!since) return null
   const at = Date.parse(since)
@@ -311,7 +330,7 @@ function terminalProcessState(run: TerminalProcessRun) {
 
 export type TerminalProcessResidueObservation = {
   runId: number
-  liveness: 'dead' | 'live'
+  liveness: 'dead' | 'live' | 'unknown'
   condition: MonitorCondition
 }
 
@@ -354,15 +373,14 @@ export function terminalProcessResidueObservations(
     return [
       {
         runId: run.id,
-        // An identity-unverified vendor pid is safe only for record release: the
-        // guarded reclaim path cannot signal it. Verified process observations
-        // remain operator-only.
+        // An identity-unverified live pid remains operator-only. Its record is
+        // released unattended only after a fresh observation proves it gone.
         liveness:
-          coordinatorLive ||
-          vendorIdentity === 'live' ||
-          (vendorIdentity !== 'unknown' && descendantsLive)
-            ? 'live'
-            : 'dead',
+          vendorIdentity === 'unknown'
+            ? 'unknown'
+            : coordinatorLive || vendorIdentity === 'live' || descendantsLive
+              ? 'live'
+              : 'dead',
         condition: {
           kind: 'terminal-process-alive',
           subject: `run:${run.id}:pid:${reported}`,

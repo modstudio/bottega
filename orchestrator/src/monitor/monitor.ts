@@ -46,6 +46,7 @@ import {
   retainedRefConditions,
   rulingConditions,
   sandboxDirectoryInventory,
+  staleRunConditions,
   staleTrustEntryConditions,
   stalledRunConditions,
   terminalCloseOutRuns,
@@ -466,20 +467,7 @@ export async function monitor(
     })
   }
 
-  const stale = database
-    .query(
-      `SELECT id, started_at, error, session_id FROM run WHERE status='stale' AND evidence_excluded IS NULL`,
-    )
-    .all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
-  for (const run of stale)
-    add({
-      kind: 'stale-run',
-      subject: `run:${run.id}`,
-      since: run.started_at,
-      detail: run.error ?? `run ${run.id} is stale`,
-      action: `run orch reclaim stale-run ${run.id} --dry-run, then orch reclaim stale-run ${run.id}`,
-      ownerSession: run.session_id,
-    })
+  conditions.push(...staleRunConditions(database, clock))
 
   conditions.push(...terminalProcessAliveConditions(clock))
 

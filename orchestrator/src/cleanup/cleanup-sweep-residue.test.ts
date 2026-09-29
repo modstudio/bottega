@@ -43,7 +43,7 @@ describe('unattended residue sweep adapter', () => {
     expect(unattendedProcessCandidates(null)).toEqual([])
   })
 
-  test('selects an identity-unverified process observation only for record release', () => {
+  test('keeps an identity-unverified live process observation unknown', () => {
     const runId = addRun({
       agent: 'codex',
       job: 'implement',
@@ -60,7 +60,7 @@ describe('unattended residue sweep adapter', () => {
         subject: String(runId),
         runId,
         project: 'project',
-        liveness: 'dead',
+        liveness: 'unknown',
       },
     ])
   })
@@ -73,6 +73,7 @@ describe('unattended residue sweep adapter', () => {
         { dryRun: false, selectedProject: null, presentation: presentation(lines), now },
         {
           inventory: () => ({ candidates: [candidate(kind)], errors: [] }),
+          liveness: (item) => item.liveness,
           ownerFacts: () => ({
             ownerSessionId: 'gone',
             ownerLastSeenAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
@@ -100,6 +101,7 @@ describe('unattended residue sweep adapter', () => {
         { dryRun: false, selectedProject: null, presentation: presentation(lines), now },
         {
           inventory: () => ({ candidates: [candidate(kind)], errors: [] }),
+          liveness: (item) => item.liveness,
           ownerFacts: () => ({
             ownerSessionId: 'recent',
             ownerLastSeenAt: now - UNJUDGED_OWNER_WINDOW_MS + 1,
@@ -124,6 +126,7 @@ describe('unattended residue sweep adapter', () => {
       { dryRun: true, selectedProject: null, presentation: presentation([]), now },
       {
         inventory: () => ({ candidates: [candidate('stale-run')], errors: [] }),
+        liveness: (item) => item.liveness,
         ownerFacts: () => ({
           ownerSessionId: null,
           ownerLastSeenAt: null,
@@ -137,5 +140,38 @@ describe('unattended residue sweep adapter', () => {
       },
     )
     expect(calls).toEqual([true])
+  })
+
+  test('re-reads owner and liveness facts immediately before dispatch', () => {
+    const observed: string[] = []
+    const item = candidate('process')
+    sweepUnattendedResidue(
+      { dryRun: false, selectedProject: null, presentation: presentation([]), now },
+      {
+        inventory: () => {
+          observed.push('inventory')
+          return { candidates: [item], errors: [] }
+        },
+        ownerFacts: () => {
+          observed.push('owner')
+          return {
+            ownerSessionId: 'gone',
+            ownerLastSeenAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
+            runLastActivityAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
+            runRecordExists: true,
+          }
+        },
+        liveness: () => {
+          observed.push('liveness')
+          return 'unknown'
+        },
+        reclaim: () => {
+          observed.push('reclaim')
+          return { ok: true, action: 'unexpected' }
+        },
+      },
+    )
+
+    expect(observed).toEqual(['inventory', 'owner', 'liveness'])
   })
 })

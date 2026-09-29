@@ -362,6 +362,7 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     '../agent/agent-registry.ts',
     '../database/db.ts',
+    '../evidence/unjudged-expiry.ts',
     '../git/git-environment.ts',
     '../sandbox/grok-trust.ts',
     '../idle-kill.ts',

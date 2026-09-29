@@ -4,7 +4,8 @@ import { existsSync, realpathSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writableDb } from '../database/db.ts'
+import { settleRunEvidence } from '../evidence/unjudged-expiry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
@@ -56,6 +57,29 @@ function projectRunSubject(subject: string): { projectName: string; runId: numbe
   return { projectName: match[1]!, runId: Number(match[2]) }
 }
 
+function recordedRunProject(runId: number): string | null {
+  return (
+    (
+      db()
+        .query(
+          `SELECT COALESCE(project.name,r.repo) project
+           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+        )
+        .get(runId) as { project: string | null } | null
+    )?.project ?? null
+  )
+}
+
+function projectMatchesRun(projectName: string, runId: number) {
+  const recorded = recordedRunProject(runId)
+  return recorded === projectName
+    ? null
+    : {
+        ok: false,
+        action: `refused; invariant: run ${runId} belongs to project ${projectName}; fix: use its recorded project ${recorded ?? '(missing)'}`,
+      }
+}
+
 function conversationRows(runId: number) {
   const owner = db().query('SELECT id,parent_run_id FROM run WHERE id=?').get(runId) as {
     id: number
@@ -99,6 +123,8 @@ function refTip(projectPath: string, ref: string): string | null {
 
 function reclaimRefGuard(subject: string, options: Options) {
   const { projectName, runId } = projectRunSubject(subject)
+  const mismatch = projectMatchesRun(projectName, runId)
+  if (mismatch) return mismatch
   const project = projectByName(projectName)
   if (!project)
     return {
@@ -150,6 +176,8 @@ function reclaimSandbox(subject: string, options: Options) {
 
 function reclaimRetainedRef(subject: string, options: Options) {
   const { projectName, runId } = projectRunSubject(subject)
+  const mismatch = projectMatchesRun(projectName, runId)
+  if (mismatch) return mismatch
   const project = projectByName(projectName)
   if (!project)
     return {
@@ -309,11 +337,8 @@ function reclaimStaleRun(subject: string, options: Options) {
   if (!decision.allowed) return denied(decision)
   if (!options.dryRun) {
     writableDb()
-    writeTransaction(() =>
-      db()
-        .query('UPDATE run SET evidence_excluded=? WHERE id=?')
-        .run(`settled by orch reclaim stale-run at ${nowIso()}`, runId),
-    )
+    const changedAt = nowIso()
+    settleRunEvidence(runId, `settled by orch reclaim stale-run at ${changedAt}`, changedAt)
   }
   return {
     ok: true,
