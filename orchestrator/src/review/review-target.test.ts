@@ -75,7 +75,7 @@ describe('review target', () => {
     expect(implicitReviewRefusal({ ...target, changedPathCount: null })).toBeNull()
   })
 
-  test('preflight refuses an empty implicit target without claiming a run row', () => {
+  test('preflight distinguishes plain, resolved, and already-reserved implicit targets', () => {
     const repo = mkdtempSync(join(tmpdir(), 'implicit-review-preflight-'))
     const priorDepth = process.env.ORCH_DEPTH
     const git = (...args: string[]) => {
@@ -105,6 +105,25 @@ describe('review target', () => {
           'correctness',
         ),
       ).toThrow('has no changed paths')
+      expect(() =>
+        preflight(
+          'review-lens',
+          repo,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          'correctness',
+          undefined,
+          false,
+          undefined,
+          true,
+        ),
+      ).not.toThrow()
+      expect(() =>
+        preflight('review-lens', repo, undefined, undefined, undefined, false, true, 'correctness'),
+      ).not.toThrow()
       expect(db().query<{ count: number }, []>('SELECT COUNT(*) AS count FROM run').get()).toEqual(
         before,
       )

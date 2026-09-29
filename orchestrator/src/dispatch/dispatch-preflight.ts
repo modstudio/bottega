@@ -54,9 +54,17 @@ function assertImplicitReviewTarget(input: {
   findings: boolean | undefined
   cwd: string
   reviewRef: string | undefined
+  hasResolvedReviewTarget: boolean
+  rowAlreadyReserved: boolean
   carry: boolean
 }): void {
-  if (!input.findings || !takesReviewTarget(input.jobName) || input.reviewRef !== undefined) {
+  if (
+    !input.findings ||
+    !takesReviewTarget(input.jobName) ||
+    input.reviewRef !== undefined ||
+    input.hasResolvedReviewTarget ||
+    input.rowAlreadyReserved
+  ) {
     return
   }
   const refusal = implicitReviewRefusal(
@@ -117,6 +125,7 @@ export function preflight(
   reviewRef?: string,
   carry = false,
   repo?: string,
+  hasResolvedReviewTarget = false,
 ): string | undefined {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
@@ -153,6 +162,8 @@ export function preflight(
     findings: j.findings,
     cwd,
     reviewRef,
+    hasResolvedReviewTarget,
+    rowAlreadyReserved: seedAlreadyValidated,
     carry,
   })
   const repoRoot = repoRootOf(cwd)
