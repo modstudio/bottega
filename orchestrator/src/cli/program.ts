@@ -61,6 +61,7 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'yield'],
     pr: ['check'],
+    setup: ['facts', 'plan'],
   }
   if (argv[0] === 'migrate') return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.

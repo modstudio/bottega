@@ -34,7 +34,10 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
-import { writeProjectRegisterRow } from '../database/project-register-store.ts'
+import {
+  DEFAULT_LOCAL_PROJECT_NAME,
+  writeProjectRegisterRow,
+} from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { validateAutonomySettings } from '../workflow/autonomy.ts'
@@ -546,7 +549,51 @@ function projectSearchProblems(value: unknown): string[] {
   return problems
 }
 
-export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {
+type ProjectSettingsValidationContext = {
+  validateKeyPrefixes?: boolean
+  currentProjectName?: string
+  projectNameAfterWrite?: string
+  register?: Pick<Project, 'name' | 'settings'>[]
+}
+
+function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationContext): string[] {
+  if (!context.validateKeyPrefixes) return []
+  if (!Array.isArray(value) || value.length === 0) {
+    return ['keyPrefixes must be a non-empty array of plain prefixes']
+  }
+  const problems: string[] = []
+  const seen = new Set<string>()
+  const occupied = new Set(
+    (context.register ?? [])
+      .filter((project) => project.name !== context.currentProjectName)
+      .flatMap((project) => project.settings.keyPrefixes ?? []),
+  )
+  for (const prefix of value) {
+    if (typeof prefix !== 'string' || !/^[A-Z][A-Z0-9]*$/.test(prefix)) {
+      problems.push(
+        'keyPrefixes must contain only plain prefixes (A-Z and digits, starting with a letter)',
+      )
+      continue
+    }
+    if (
+      prefix === 'TASK' &&
+      (context.projectNameAfterWrite ?? context.currentProjectName) !== DEFAULT_LOCAL_PROJECT_NAME
+    ) {
+      problems.push('key prefix TASK is reserved')
+    }
+    if (seen.has(prefix)) problems.push(`key prefix ${prefix} is repeated`)
+    if (occupied.has(prefix))
+      problems.push(`key prefix ${prefix} is already used by another project`)
+    seen.add(prefix)
+  }
+  return problems
+}
+
+export function validateProjectSettings(
+  settings: ProjectSettings,
+  projectPath?: string,
+  context: ProjectSettingsValidationContext = {},
+): string[] {
   const problems = [
     ...validateProjectInjectionSettings(settings),
     ...validateCreate(settings.worktree?.create as unknown, 'worktree.create', CREATE_VARS),
@@ -564,6 +611,7 @@ export function validateProjectSettings(settings: ProjectSettings, projectPath?:
     ...managedContextProblems(settings.managedContext),
     ...canonMirrorKeyProblems(settings.canonMirrorKey),
     ...projectSearchProblems(settings.search),
+    ...keyPrefixProblems(settings.keyPrefixes, context),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

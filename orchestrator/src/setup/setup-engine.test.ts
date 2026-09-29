@@ -1,0 +1,154 @@
+import { expect, test } from 'bun:test'
+import type { Project } from '../project/projects.ts'
+import type { RepositoryFacts } from './repository-facts.ts'
+import { deriveKeyPrefix, proposeSetup } from './setup-engine.ts'
+import type { SetupFacts } from './setup-facts.ts'
+import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
+
+const machine = {
+  git: { path: '/bin/git', version: '1' },
+  gh: { path: '/bin/gh', version: '1', loggedIn: true },
+} as SetupFacts
+
+function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
+  return {
+    name: 'alpha-project',
+    path: '/repos/alpha-project',
+    currentBranch: 'main',
+    clean: true,
+    originUrl: 'git@github.com:owner/alpha-project.git',
+    originHost: 'github.com',
+    remoteDefaultBranch: 'main',
+    stack: 'node',
+    inspectionTimedOut: false,
+    ...overrides,
+  }
+}
+
+function registered(settings: Project['settings'], overrides: Partial<Project> = {}): Project {
+  return {
+    id: 1,
+    name: 'alpha-project',
+    path: '/repos/alpha-project',
+    stack: 'node',
+    canon: true,
+    retiredAt: null,
+    settings,
+    ...overrides,
+  }
+}
+
+test('plans add, set, and unchanged from fixture facts', () => {
+  const addPlan = proposeSetup(machine, [repository()], [])
+  expect(planSetupActions(addPlan, recommendedAnswers(addPlan))[0]?.kind).toBe('add')
+  const currentSettings = {
+    keyPrefixes: ['ALPHA'],
+    tracker: { kind: 'hub', protocol: 'hub' } as const,
+    trunk: 'main',
+  }
+  const unchangedPlan = proposeSetup(machine, [repository()], [registered(currentSettings)])
+  expect(planSetupActions(unchangedPlan, recommendedAnswers(unchangedPlan))[0]).toMatchObject({
+    kind: 'unchanged',
+    settingsDiff: {},
+  })
+  const setPlan = proposeSetup(machine, [repository()], [registered({})])
+  expect(planSetupActions(setPlan, recommendedAnswers(setPlan))[0]).toMatchObject({
+    kind: 'set',
+    settingsDiff: {
+      keyPrefixes: { from: null, to: ['ALPHA'] },
+      tracker: { from: null, to: { kind: 'hub', protocol: 'hub' } },
+      trunk: { from: null, to: 'main' },
+    },
+  })
+})
+
+test('preserves every configured value for an existing project', () => {
+  const current = registered(
+    {
+      keyPrefixes: ['KEEP'],
+      tracker: { kind: 'linear', team: 'existing' },
+      trunk: 'develop',
+    },
+    { name: 'registered-name', stack: 'php' },
+  )
+  const plan = proposeSetup(
+    machine,
+    [repository({ currentBranch: 'feature', remoteDefaultBranch: 'main', stack: 'node' })],
+    [current],
+  )
+  expect(plan.questions).toEqual([])
+  expect(plan.notices).toEqual([])
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+    kind: 'unchanged',
+    name: 'registered-name',
+    settingsDiff: {},
+  })
+})
+
+test('fills only a missing prefix without changing the registered name', () => {
+  const current = registered(
+    { tracker: { kind: 'linear', team: 'existing' }, trunk: 'main' },
+    { name: 'registered-name' },
+  )
+  const plan = proposeSetup(machine, [repository()], [current])
+  expect(plan.questions).toHaveLength(1)
+  expect(plan.questions[0]?.id).toEndWith(':key-prefix')
+  const action = planSetupActions(plan, recommendedAnswers(plan))[0]
+  expect(action).toMatchObject({
+    kind: 'set',
+    currentName: 'registered-name',
+    fill: { settings: { keyPrefixes: ['ALPHA'] } },
+  })
+  expect(action?.settingsDiff).toEqual({ keyPrefixes: { from: null, to: ['ALPHA'] } })
+})
+
+test('asks about trunk only when known branches disagree', () => {
+  const same = proposeSetup(machine, [repository()], [])
+  expect(same.questions.filter((question) => question.id.endsWith(':trunk'))).toHaveLength(0)
+  expect(same.proposals[0]?.project.settings.trunk).toBe('main')
+  const differing = proposeSetup(
+    machine,
+    [repository({ currentBranch: 'feature', remoteDefaultBranch: 'main' })],
+    [],
+  )
+  expect(differing.questions.find((question) => question.id.endsWith(':trunk'))).toMatchObject({
+    recommendation: 'unset',
+  })
+  expect(differing.notices[0]?.message).toContain('check out main')
+  const differingAction = planSetupActions(differing, recommendedAnswers(differing))[0]
+  expect(differingAction?.kind).toBe('add')
+  if (differingAction?.kind === 'add') expect(differingAction.settings).not.toHaveProperty('trunk')
+  const detached = proposeSetup(machine, [repository({ currentBranch: null })], [])
+  expect(detached.questions.filter((question) => question.id.endsWith(':trunk'))).toHaveLength(0)
+  expect(detached.notices[0]?.message).toContain('detached HEAD')
+})
+
+test('reports a bounded git inspection timeout as a repository notice', () => {
+  const plan = proposeSetup(machine, [repository({ inspectionTimedOut: true })], [])
+  expect(plan.notices).toContainEqual(
+    expect.objectContaining({ message: expect.stringContaining('alpha-project') }),
+  )
+  expect(plan.notices[0]?.message).toContain('timed out')
+})
+
+test('derives bounded unique prefixes and excludes TASK', () => {
+  expect(deriveKeyPrefix('alpha-project', new Set())).toBe('ALPHA')
+  const collision = deriveKeyPrefix('alpha-project', new Set(['ALPHA']))
+  expect(collision).not.toBe('ALPHA')
+  expect(collision).toHaveLength(5)
+  expect(deriveKeyPrefix('task', new Set())).toBe('TASK1')
+})
+
+test('answers validation refuses unknown, missing, and invalid options', () => {
+  const plan = proposeSetup(machine, [repository()], [])
+  expect(() => validateSetupAnswers(plan.questions, {})).toThrow('missing answer')
+  expect(() =>
+    validateSetupAnswers(plan.questions, { ...recommendedAnswers(plan), unknown: 'value' }),
+  ).toThrow('unknown answer id')
+  expect(() =>
+    validateSetupAnswers(plan.questions, {
+      ...recommendedAnswers(plan),
+      [plan.questions[0]!.id]: 'invalid',
+    }),
+  ).toThrow('invalid option')
+})
