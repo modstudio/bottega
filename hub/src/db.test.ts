@@ -1,15 +1,19 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import {
   decideHubDatabasePath,
   implicitHubDatabaseCreationRefusal,
   missingHubDatabaseMessage,
+  resolveHubRuntime,
   unauthorizedHubMigrationMessage,
 } from './db.ts'
+
+afterEach(() => registerEmbeddedAssets(null))
 
 const livePath = '/nonexistent-live-hub-store/hub.db'
 const tempPath = '/nonexistent-temp-hub-store/hub.db'
@@ -80,4 +84,31 @@ test('the unauthorized default-store migration refusal names the condition and r
       'invariant: A default store is created or migrated only by a checkout or an installed distribution.\n' +
       `cleared by: run hub migrate from a checkout or reinstall ${PLATFORM_NAME}`,
   )
+})
+
+test('an embedded distribution resolves and authorizes its store without git', () => {
+  registerEmbeddedAssets({
+    assets: {},
+    files: {},
+    manifest: {
+      name: PLATFORM_NAME,
+      version: '1.2.3',
+      built: '2026-09-28T00:00:00Z',
+      commit: 'fixture',
+    },
+  })
+  const runtime = resolveHubRuntime('/$bunfs/root', { HOME: '/fixture-home' }, () => {
+    throw new Error('git executable must not be consulted')
+  })
+
+  expect(runtime).toEqual({
+    mainCheckout: null,
+    linkedCheckout: false,
+    livePath: `/fixture-home/.local/state/${PLATFORM_SLUG}/hub/${FROZEN_STATE_NAMES.hubDatabase}`,
+    legacyPath: null,
+    authorized: true,
+  })
+  expect(
+    implicitHubDatabaseCreationRefusal(false, runtime.authorized, runtime.linkedCheckout),
+  ).toBeNull()
 })

@@ -36,7 +36,7 @@
         "ops/install.sh!",
         "ops/bin/*.sh!",
         "release/bottega.ts!",
-        "scripts/{build-binary,smoke-binary}.ts!",
+        "scripts/{build-binary,build-release-artifacts,publish-release,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
         "!scripts/**/*.fixtures.ts",

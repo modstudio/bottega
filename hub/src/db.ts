@@ -3,9 +3,14 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../shared/brand.ts'
+import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
-import { legacyStoreRefusal, resolveHubDatabase } from '../../shared/state-directory.ts'
+import {
+  legacyStoreRefusal,
+  resolveHubDatabase,
+  type StateEnvironment,
+} from '../../shared/state-directory.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -16,10 +21,38 @@ import {
 export type { Project } from './projects.ts'
 
 const checkout = fileURLToPath(new URL('../..', import.meta.url))
-const mainCheckout = mainCheckoutOf(checkout)
-const linkedCheckout = Boolean(mainCheckout && resolve(mainCheckout) !== resolve(checkout))
-const livePath = resolveHubDatabase(process.env)
-const legacyPath = mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.hubDatabase) : null
+type HubRuntime = {
+  mainCheckout: string | null
+  linkedCheckout: boolean
+  livePath: string
+  legacyPath: string | null
+  authorized: boolean
+}
+
+export function resolveHubRuntime(
+  checkoutPath: string,
+  env: StateEnvironment,
+  discoverCheckout: (path: string) => string | null = mainCheckoutOf,
+): HubRuntime {
+  const embedded = embeddedDistributionManifest() !== null
+  const mainCheckout = embedded ? null : discoverCheckout(checkoutPath)
+  return {
+    mainCheckout,
+    linkedCheckout: Boolean(mainCheckout && resolve(mainCheckout) !== resolve(checkoutPath)),
+    livePath: resolveHubDatabase(env),
+    legacyPath: mainCheckout ? join(mainCheckout, 'hub', FROZEN_STATE_NAMES.hubDatabase) : null,
+    authorized: isAuthorizedPlatformInstallation(
+      checkoutPath,
+      env,
+      Boolean(mainCheckout && resolve(mainCheckout) === resolve(checkoutPath)),
+    ),
+  }
+}
+
+const runtime = resolveHubRuntime(checkout, process.env)
+const linkedCheckout = runtime.linkedCheckout
+const livePath = runtime.livePath
+const legacyPath = runtime.legacyPath
 export const DB_PATH = livePath
 
 function legacyDatabaseRefusal(): string | null {
@@ -56,11 +89,7 @@ export function decideHubDatabasePath(
 }
 
 function authorizedHubInstallation(): boolean {
-  return isAuthorizedPlatformInstallation(
-    checkout,
-    process.env,
-    Boolean(mainCheckout && resolve(mainCheckout) === resolve(checkout)),
-  )
+  return runtime.authorized
 }
 
 export function missingHubDatabaseMessage(path = DB_PATH): string {

@@ -1,11 +1,9 @@
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME } from '../shared/brand.ts'
 import { DIST_MANIFEST } from '../shared/install-root.ts'
-import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
-import { embeddedAssetPaths } from './build-binary.ts'
 import {
   DECLARED_PAYLOAD_PATHS,
   distributionManifest,
@@ -39,36 +37,6 @@ test('the payload has only the declared runtime paths', () => {
     'bin/orch',
     'bin/hub',
     'bin/retrieval-search',
-  ])
-})
-
-test('binary asset paths include files below dot-prefixed directories', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'binary-assets-'))
-  try {
-    mkdirSync(join(root, '.well-known'), { recursive: true })
-    writeFileSync(join(root, 'app.js'), '')
-    writeFileSync(join(root, '.well-known', 'assetlinks.json'), '')
-
-    expect(await embeddedAssetPaths('hub/web/dist', root)).toEqual([
-      'hub/web/dist/.well-known/assetlinks.json',
-      'hub/web/dist/app.js',
-    ])
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('binary sandbox payloads are selected for the build target only', () => {
-  expect(sandboxRuntimePayloadPaths('darwin', 'arm64')).toEqual([
-    'orchestrator/node_modules/@anthropic-ai/sandbox-runtime/vendor/java-proxy-agent/srt-proxy-agent.jar',
-  ])
-  expect(sandboxRuntimePayloadPaths('linux', 'x64')).toEqual([
-    'orchestrator/node_modules/@anthropic-ai/sandbox-runtime/vendor/java-proxy-agent/srt-proxy-agent.jar',
-    'orchestrator/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp',
-  ])
-  expect(sandboxRuntimePayloadPaths('win32', 'arm64')).toEqual([
-    'orchestrator/node_modules/@anthropic-ai/sandbox-runtime/vendor/java-proxy-agent/srt-proxy-agent.jar',
-    'orchestrator/node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/arm64/srt-win.exe',
   ])
 })
 

@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
 import { distributionManifest, releaseVersion, run } from './build-release.ts'
+import { requireReleaseBun } from './release-config.ts'
 
 const repositoryRoot = resolve(import.meta.dir, '..')
 
@@ -72,7 +73,37 @@ async function webAssetPaths(): Promise<string[]> {
   return paths
 }
 
-export async function buildHostBinary(tag: string, outputDirectory: string): Promise<string> {
+export const BINARY_TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64'] as const
+export type BinaryTarget = (typeof BINARY_TARGETS)[number]
+
+export function parseBinaryTarget(value: string): BinaryTarget {
+  if ((BINARY_TARGETS as readonly string[]).includes(value)) return value as BinaryTarget
+  throw new Error(
+    `unsupported binary target ${JSON.stringify(value)}; supported targets: ${BINARY_TARGETS.join(', ')} (Windows and musl are unsupported)`,
+  )
+}
+
+function targetParts(target: BinaryTarget): { platform: NodeJS.Platform; arch: string } {
+  const [os, arch] = target.split('-')
+  return { platform: os === 'darwin' ? 'darwin' : 'linux', arch }
+}
+
+export function assertTargetHost(target: BinaryTarget, hostPlatform: NodeJS.Platform): void {
+  if (target.startsWith('darwin-') && hostPlatform !== 'darwin') {
+    throw new Error(
+      `refusing to build ${target} on ${hostPlatform}: Darwin binaries must be ad-hoc signed on a Darwin host`,
+    )
+  }
+}
+
+export async function buildBinary(
+  tag: string,
+  outputDirectory: string,
+  target: BinaryTarget,
+): Promise<string> {
+  requireReleaseBun()
+  const { platform, arch } = targetParts(target)
+  assertTargetHost(target, process.platform)
   const version = releaseVersion(tag)
   const destination = resolve(outputDirectory, PLATFORM_SLUG)
   const generatedDirectory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-binary-`))
@@ -87,7 +118,7 @@ export async function buildHostBinary(tag: string, outputDirectory: string): Pro
       assets,
       generatedAssetModule(
         await migrationAssetPaths(),
-        [...(await webAssetPaths()), ...sandboxRuntimePayloadPaths(process.platform, process.arch)],
+        [...(await webAssetPaths()), ...sandboxRuntimePayloadPaths(platform, arch)],
         manifest,
       ),
     )
@@ -99,20 +130,20 @@ await import(${JSON.stringify(join(repositoryRoot, 'release', `${PLATFORM_SLUG}.
 `,
     )
 
-    const buildCwd = process.cwd()
-    process.chdir(generatedDirectory)
-    const result = await Bun.build({
-      entrypoints: [wrapper],
-      target: 'bun',
-      compile: {
-        outfile: destination,
-        autoloadDotenv: false,
-      },
-    }).finally(() => process.chdir(buildCwd))
-    if (!result.success) {
-      throw new Error(`binary build failed:\n${result.logs.map(String).join('\n')}`)
-    }
-    if (process.platform === 'darwin') {
+    await run(
+      [
+        'bun',
+        'build',
+        '--compile',
+        `--target=bun-${target}`,
+        '--no-autoload-dotenv',
+        '--outfile',
+        destination,
+        wrapper,
+      ],
+      generatedDirectory,
+    )
+    if (platform === 'darwin') {
       await run(['codesign', '--force', '--sign', '-', destination])
     }
     return destination
@@ -121,10 +152,16 @@ await import(${JSON.stringify(join(repositoryRoot, 'release', `${PLATFORM_SLUG}.
   }
 }
 
+export async function buildHostBinary(tag: string, outputDirectory: string): Promise<string> {
+  return buildBinary(tag, outputDirectory, parseBinaryTarget(`${process.platform}-${process.arch}`))
+}
+
 if (import.meta.main) {
-  const [tag, outputDirectory] = process.argv.slice(2)
-  if (!tag || !outputDirectory || process.argv.length !== 4) {
-    throw new Error('working form: bun run release:binary -- v<version> <output-directory>')
+  const [tag, outputDirectory, rawTarget] = process.argv.slice(2)
+  if (!tag || !outputDirectory || !rawTarget || process.argv.length !== 5) {
+    throw new Error(
+      'working form: bun run release:binary -- v<version> <output-directory> <target>',
+    )
   }
-  console.log(await buildHostBinary(tag, outputDirectory))
+  console.log(await buildBinary(tag, outputDirectory, parseBinaryTarget(rawTarget)))
 }
