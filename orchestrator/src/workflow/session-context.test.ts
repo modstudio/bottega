@@ -14,6 +14,18 @@ mkdirSync(stateRoot)
 const stateEnvironment = { BOTTEGA_STATE_HOME: stateRoot }
 type SessionContextDependencies = NonNullable<Parameters<typeof sessionContextCommand>[2]>
 
+function repository(name: string): string {
+  const path = join(stateRoot, name)
+  mkdirSync(path, { recursive: true })
+  const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+    cwd: path,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
+  return path
+}
+
 async function contextJson(cwd: string, dependencies: SessionContextDependencies = {}) {
   const lines: string[] = []
   await sessionContextCommand(
@@ -83,9 +95,10 @@ test('an unregistered cwd prints nothing and JSON says unregistered', async () =
 })
 
 test('a registered project reports rulings and one value when a stage agrees', async () => {
+  const path = repository('session-context-agree')
   upsertProject({
     name: 'session-context-agree',
-    path: '/session-context-agree',
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -94,7 +107,7 @@ test('a registered project reports rulings and one value when a stage agrees', a
       autonomy: { rulings: 'user', stages: { plan: 'review' } },
     },
   })
-  const slice = await contextJson('/session-context-agree/tree')
+  const slice = await contextJson(join(path, 'tree'))
   expect(slice.registered).toBe(true)
   expect(slice.project).toBe('session-context-agree')
   expect(slice.rulings).toEqual({ value: 'user', scope: 'project' })
@@ -117,7 +130,7 @@ test('a registered project reports rulings and one value when a stage agrees', a
   expect(text).toContain('release: land (land to main) (built-in)')
   expect(text.split('\n').at(-1)).toBe('release: land (land to main) (built-in)')
   expect(text.split('\n').filter((line) => line.startsWith('plan:'))).toHaveLength(1)
-  expect(await contextText('/session-context-agree/tree')).toBe(text)
+  expect(await contextText(join(path, 'tree'))).toBe(text)
 })
 
 test('release renders every register branch phrase', async () => {
@@ -148,9 +161,10 @@ test('release renders every register branch phrase', async () => {
     },
   ]
   for (const item of cases) {
+    const path = repository(item.name)
     upsertProject({
       name: item.name,
-      path: `/${item.name}`,
+      path,
       stack: 'bun',
       settings: {
         gate: 'bun run check',
@@ -160,7 +174,7 @@ test('release renders every register branch phrase', async () => {
         autonomy: item.autonomy,
       },
     })
-    const slice = await contextJson(`/${item.name}`)
+    const slice = await contextJson(path)
     expect(slice.release).toEqual({
       value: item.autonomy.release,
       scope: 'project',
@@ -174,9 +188,10 @@ test('release renders every register branch phrase', async () => {
 test('a missing landing branch is nullable and never renders undefined', async () => {
   for (const release of ['land', 'promote'] as const) {
     const name = `session-context-${release}-missing-landing`
+    const path = repository(name)
     upsertProject({
       name,
-      path: `/${name}`,
+      path,
       stack: 'bun',
       settings: {
         gate: 'bun run check',
@@ -185,7 +200,7 @@ test('a missing landing branch is nullable and never renders undefined', async (
         autonomy: { release },
       },
     })
-    const slice = await contextJson(`/${name}`)
+    const slice = await contextJson(path)
     expect(slice.release).toEqual({
       value: release,
       scope: 'project',
@@ -199,9 +214,10 @@ test('a missing landing branch is nullable and never renders undefined', async (
 
 test('context warns about an ignored invalid release and keeps the scope stage', async () => {
   const name = 'session-context-invalid-release'
+  const path = repository(name)
   upsertProject({
     name,
-    path: `/${name}`,
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -221,7 +237,7 @@ test('context warns about an ignored invalid release and keeps the scope stage',
       }),
       name,
     )
-  const slice = await contextJson(`/${name}`)
+  const slice = await contextJson(path)
   expect(slice.release).toMatchObject({ value: 'land', scope: 'built-in' })
   expect(slice.text).toContain('plan: auto (project)')
   expect(slice.text).toContain(
@@ -235,9 +251,10 @@ test('a mixed stage lists each distinct value with its step count and scope', as
   )
   expect(implement.length).toBeGreaterThan(1)
   const first = implement[0]!
+  const path = repository('session-context-mixed')
   upsertProject({
     name: 'session-context-mixed',
-    path: '/session-context-mixed',
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -249,7 +266,7 @@ test('a mixed stage lists each distinct value with its step count and scope', as
       },
     },
   })
-  const slice = await contextJson('/session-context-mixed')
+  const slice = await contextJson(path)
   const row = (
     slice.stages as {
       stage: string
@@ -275,9 +292,10 @@ test('a workflow catalogue with no canon steps still reports resolved canon auto
   expect(productionStepCatalogue().definition.steps.some((step) => step.stage === 'canon')).toBe(
     false,
   )
+  const path = repository('session-context-empty-stage')
   upsertProject({
     name: 'session-context-empty-stage',
-    path: '/session-context-empty-stage',
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -286,7 +304,7 @@ test('a workflow catalogue with no canon steps still reports resolved canon auto
     },
   })
 
-  const slice = await contextJson('/session-context-empty-stage')
+  const slice = await contextJson(path)
   const stages = slice.stages as {
     stage: string
     agreed: boolean
@@ -314,9 +332,10 @@ test('a workflow catalogue with no canon steps still reports resolved canon auto
 
 test('a hosted-read failure serves the cached successful resolution', async () => {
   const name = 'session-context-stale-adapter'
+  const path = repository(name)
   upsertProject({
     name,
-    path: `/${name}`,
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -327,12 +346,12 @@ test('a hosted-read failure serves the cached successful resolution', async () =
     },
   })
   const resolvedAt = new Date('2026-09-28T18:00:00.000Z')
-  await contextJson(`/${name}`, {
+  await contextJson(path, {
     clientFactory: () => ({ listEntries: async () => [] }) as never,
     now: () => resolvedAt,
   })
 
-  const stale = await contextJson(`/${name}`, {
+  const stale = await contextJson(path, {
     clientFactory: () =>
       ({
         listEntries: async () => {
@@ -355,9 +374,10 @@ test('a hosted-read failure serves the cached successful resolution', async () =
 
 test('a hosted-read failure without a cache serves the local-scope resolution', async () => {
   const name = 'session-context-degraded-without-cache'
+  const path = repository(name)
   upsertProject({
     name,
-    path: `/${name}`,
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -367,7 +387,7 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
     },
   })
 
-  const degraded = await contextJson(`/${name}`, {
+  const degraded = await contextJson(path, {
     clientFactory: () =>
       ({
         listEntries: async () => {
@@ -385,9 +405,10 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
 
 test('a degraded resolution does not overwrite the successful cache', async () => {
   const name = 'session-context-degraded-preserves-cache'
+  const path = repository(name)
   upsertProject({
     name,
-    path: `/${name}`,
+    path,
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -397,13 +418,13 @@ test('a degraded resolution does not overwrite the successful cache', async () =
     },
   })
   const resolvedAt = new Date('2026-09-28T19:00:00.000Z')
-  await contextJson(`/${name}`, {
+  await contextJson(path, {
     clientFactory: () => ({ listEntries: async () => [] }) as never,
     now: () => resolvedAt,
   })
 
   const degradedAt = new Date('2026-09-28T20:00:00.000Z')
-  const stale = await contextJson(`/${name}`, {
+  const stale = await contextJson(path, {
     clientFactory: () =>
       ({
         listEntries: async () => {

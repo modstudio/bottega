@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 import type { Caps } from './capabilities.ts'
+import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
 
 /**
  * What `exec` means to codex.
@@ -192,10 +193,6 @@ export type Agent = {
   notes: string
 }
 
-function parsedCliVersion(text: string): string | null {
-  return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
-}
-
 export function versionBelow(actual: string, minimum: string): boolean {
   const a = actual.split('.').map(Number)
   const m = minimum.split('.').map(Number)
@@ -206,11 +203,14 @@ export function versionBelow(actual: string, minimum: string): boolean {
 }
 
 export function cliVersion(bin: string): { display: string; parsed: string | null } {
-  const p = Bun.spawnSync([bin, '--version'], { stdout: 'pipe', stderr: 'pipe' })
-  const stdout = new TextDecoder().decode(p.stdout).trim()
-  const stderr = new TextDecoder().decode(p.stderr).trim()
-  const display = stdout || stderr || `exit ${p.exitCode}`
-  return { display, parsed: parsedCliVersion(`${stdout}\n${stderr}`) }
+  const capture = captureCliVersion(bin)
+  const stdout = capture.stdout.trim()
+  const stderr = capture.stderr.trim()
+  const display =
+    stdout ||
+    stderr ||
+    (capture.timedOut ? 'timed out' : capture.error ? capture.error : `exit ${capture.exitCode}`)
+  return { display, parsed: capturedCliVersion(capture) }
 }
 
 export function minimumCliVersionRefusal(agent: Agent): string | null {

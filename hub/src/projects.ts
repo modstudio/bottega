@@ -55,7 +55,9 @@ export function trackerPresentation(project: TrackerProject): TrackerPresentatio
 export function projectRoot(): string | null {
   const overridden = process.env.HUB_PROJECT_ROOT
   if (overridden) return resolve(overridden)
-  const paths = projects().map((project) => resolve(project.path))
+  const paths = projects()
+    .filter((project) => project.repository)
+    .map((project) => resolve(project.path))
   if (!paths.length) return null
   let parent = dirname(paths[0]!)
   while (!paths.every((path) => path === parent || path.startsWith(parent + '/'))) {

@@ -9,7 +9,12 @@ import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
+import {
+  isProjectRepository,
+  projectAt,
+  projectByName,
+  projectRepositoryRefusal,
+} from '../project/projects.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import {
   acceptPackDiff,
@@ -132,6 +137,12 @@ function requestedProject(flags: CanonFlags) {
   return project
 }
 
+function requestedRepositoryProject(flags: CanonFlags) {
+  const project = requestedProject(flags)
+  if (!isProjectRepository(project)) throw new Error(projectRepositoryRefusal(project)!)
+  return project
+}
+
 function projectCanonImportPlan(
   project: NonNullable<ReturnType<typeof projectByName>>,
   requestedCwd: string,
@@ -197,7 +208,7 @@ async function canonImportCommand(
     return
   }
   refuseUnsupportedFlags(flags, ['project', 'cwd', 'reason', 'dry-run'])
-  const project = requestedProject(flags)
+  const project = requestedRepositoryProject(flags)
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')
   const requestedCwd = resolve(flags.flag('cwd') ?? project.path)
@@ -244,7 +255,7 @@ async function canonHydrateCommand(
     await userCanonHydrateCommand(flags, presentation)
     return
   }
-  const project = requestedProject(flags)
+  const project = requestedRepositoryProject(flags)
   const requested = flags.flag('cwd')
   if (!requested) throw new Error('--cwd is required')
   const root = canonGitRoot(resolve(requested))

@@ -135,6 +135,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
   module('orchestrator/src/agent/worker-launch-env.ts', []),
+  module('orchestrator/src/agent/cli-version.ts', []),
   ...mcpModules,
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',
@@ -348,6 +349,8 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/database/project-register-store.ts', ['bun:sqlite', 'node:fs', 'node:path', '../../../shared/state-directory.ts', '../project/project-settings.ts']),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
     '../../../shared/process-identity.ts',
@@ -622,6 +625,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/sandbox/sandbox.ts', ['../../../shared/self-spawn.ts', '../../../shared/config-directory.ts', '../../../shared/state-directory.ts', '../database/db.ts', '../mcp/mcp-probe.ts', '../project/projects.ts', './sandbox-runtime.ts']),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/setup/setup-facts.ts', ['node:fs', 'bun', '../agent/agent-auth.ts', '../agent/cli-version.ts', '../agent/model-host.ts', '../sandbox/sandbox-runtime.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/sandbox/sandbox-runtime.ts', ['node:fs', 'node:path', '@anthropic-ai/sandbox-runtime', '../../../shared/embedded-assets.ts', '../../../shared/sandbox-runtime-assets.ts', '../../../shared/state-directory.ts', '../database/db.ts']),
   module('orchestrator/src/runtime/standard-calibration.ts', [

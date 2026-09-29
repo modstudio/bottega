@@ -11,6 +11,7 @@ import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
 import {
   absentTreeTeardownPlan,
+  isProjectRepository,
   projectAt,
   projectByName,
   projects,
@@ -175,7 +176,9 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
       )
       .all() as { id: number; worktree: string; mcp_trust_path: string }[]
     const present = new Set(grokTrustHeadings())
-    const registeredProjectPaths = projects().map((project) => project.path)
+    const registeredProjectPaths = projects()
+      .filter(isProjectRepository)
+      .map((project) => project.path)
     const entries = rows.flatMap((row) => {
       const headings = JSON.parse(row.mcp_trust_path) as unknown
       if (!Array.isArray(headings) || headings.some((heading) => typeof heading !== 'string')) {
@@ -533,7 +536,7 @@ export async function monitor(
       ownerSession: run.session_id,
     })
 
-  for (const project of projects()) {
+  for (const project of projects().filter(isProjectRepository)) {
     conditions.push(...observeProjectCanonDrift(project))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
     for (const lockName of ['create', 'cleanup']) {

@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { cloneRepository } from '../../../shared/test-git-repository.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
-import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { docsForRun, docsMarkdown } from '../doc/docs.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -10,6 +10,11 @@ import { upsertProject } from '../project/projects.ts'
 import { CanonBudgetError, compilePack, storedPackDrift } from './canon.ts'
 
 const AT = '2026-09-15T00:00:00.000Z'
+let repositoryPath = ''
+
+beforeEach(() => {
+  repositoryPath = cloneRepository(process.env, 'canon-pack-project-')
+})
 
 function putCanon(subject: string | null, slug: string, body: string): void {
   const projectId = subject
@@ -71,7 +76,7 @@ describe('worker pack canon', () => {
   })
 
   test('always-on rows appear in the pack in entry-then-rules order', async () => {
-    upsertProject({ name: 'pack-canon-order', path: dir, settings: { trunk: 'main' } })
+    upsertProject({ name: 'pack-canon-order', path: repositoryPath, settings: { trunk: 'main' } })
     await putOperator('OPERATOR-DOC-UNIQUE')
     putCanon('pack-canon-order', 'AGENTS.md', 'ENTRY-BODY-UNIQUE\n')
     putCanon(
@@ -79,7 +84,7 @@ describe('worker pack canon', () => {
       '.agents/rules/alpha.md',
       '---\ndescription: A rule\n---\nRULE-BODY-UNIQUE\n',
     )
-    const pack = compilePack({ job: 'understand', cwd: dir })
+    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
     expect(pack.markdown.indexOf('ENTRY-BODY-UNIQUE')).toBeGreaterThanOrEqual(0)
     expect(pack.markdown.indexOf('RULE-BODY-UNIQUE')).toBeGreaterThan(
       pack.markdown.indexOf('ENTRY-BODY-UNIQUE'),
@@ -91,28 +96,28 @@ describe('worker pack canon', () => {
   })
 
   test('global always-on rows pack before project rows of the same tier', async () => {
-    upsertProject({ name: 'pack-global-order', path: dir, settings: { trunk: 'main' } })
+    upsertProject({ name: 'pack-global-order', path: repositoryPath, settings: { trunk: 'main' } })
     putCanon(null, '.agents/rules/global.md', '---\ndescription: Global\n---\nGLOBAL-RULE-UNIQUE\n')
     putCanon(
       'pack-global-order',
       '.agents/rules/project.md',
       '---\ndescription: Project\n---\nPROJECT-RULE-UNIQUE\n',
     )
-    const markdown = compilePack({ job: 'understand', cwd: dir }).markdown
+    const markdown = compilePack({ job: 'understand', cwd: repositoryPath }).markdown
     expect(markdown.indexOf('GLOBAL-RULE-UNIQUE')).toBeLessThan(
       markdown.indexOf('PROJECT-RULE-UNIQUE'),
     )
   })
 
   test('a context row contributes one index line and never its body', async () => {
-    upsertProject({ name: 'pack-canon-context', path: dir, settings: { trunk: 'main' } })
+    upsertProject({ name: 'pack-canon-context', path: repositoryPath, settings: { trunk: 'main' } })
     await putOperator('operator')
     putCanon(
       'pack-canon-context',
       '.agents/contexts/api.md',
       '---\ndescription: API surface\npaths:\n  - src/**\n  - tests/**\n---\nCONTEXT-BODY-MUST-NOT-APPEAR\n',
     )
-    const pack = compilePack({ job: 'understand', cwd: dir })
+    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
     expect(pack.markdown).toContain('## Path-scoped contexts')
     expect(pack.markdown).toContain(
       'Read the context file in your worktree before editing a path it governs.',
@@ -125,32 +130,34 @@ describe('worker pack canon', () => {
   })
 
   test('a card row contributes nothing', async () => {
-    upsertProject({ name: 'pack-canon-card', path: dir, settings: { trunk: 'main' } })
+    upsertProject({ name: 'pack-canon-card', path: repositoryPath, settings: { trunk: 'main' } })
     await putOperator('operator')
     putCanon(
       'pack-canon-card',
       'hub/AGENTS.md',
       '## Purpose\n\nP\n\n## Belongs here\n\nB\n\n## Does not belong here\n\nD\n\n## May depend on\n\nM\nCARD-BODY-MUST-NOT-APPEAR\n',
     )
-    const pack = compilePack({ job: 'understand', cwd: dir })
-    expect(pack.markdown).toBe(operatorPack(dir))
+    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
+    expect(pack.markdown).toBe(operatorPack(repositoryPath))
     expect(pack.markdown).not.toContain('CARD-BODY-MUST-NOT-APPEAR')
     expect(pack.canonBytes).toBe(0)
     expect(pack.docBytes).toBe(pack.bytes)
   })
 
   test('the pack refuses over budget with a message naming the tier to demote', async () => {
-    upsertProject({ name: 'pack-canon-budget', path: dir, settings: { trunk: 'main' } })
+    upsertProject({ name: 'pack-canon-budget', path: repositoryPath, settings: { trunk: 'main' } })
     await putOperator('t')
     putCanon('pack-canon-budget', 'AGENTS.md', `${'E'.repeat(400)}\n`)
-    const measured = compilePack({ job: 'understand', cwd: dir })
+    const measured = compilePack({ job: 'understand', cwd: repositoryPath })
     const old = JOBS.understand!.packBytes
     JOBS.understand!.packBytes = measured.bytes - 1
     try {
-      expect(() => compilePack({ job: 'understand', cwd: dir })).toThrow(CanonBudgetError)
+      expect(() => compilePack({ job: 'understand', cwd: repositoryPath })).toThrow(
+        CanonBudgetError,
+      )
       let message = ''
       try {
-        compilePack({ job: 'understand', cwd: dir })
+        compilePack({ job: 'understand', cwd: repositoryPath })
       } catch (error) {
         message = (error as Error).message
       }
@@ -166,7 +173,7 @@ describe('worker pack canon', () => {
   })
 
   test("a project with no canon rows produces today's pack exactly", async () => {
-    upsertProject({ name: 'pack-canon-none', path: dir, settings: { trunk: 'main' } })
+    upsertProject({ name: 'pack-canon-none', path: repositoryPath, settings: { trunk: 'main' } })
     await setDoc({
       scope: 'job',
       subject: 'understand',
@@ -174,8 +181,8 @@ describe('worker pack canon', () => {
       title: 'Injected',
       body: 'today',
     })
-    const pack = compilePack({ job: 'understand', cwd: dir })
-    const today = operatorPack(dir)
+    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
+    const today = operatorPack(repositoryPath)
     expect(pack.markdown).toBe(today)
     expect(pack.bytes).toBe(Buffer.byteLength(today))
     expect(pack.canonBytes).toBe(0)

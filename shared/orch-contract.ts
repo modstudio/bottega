@@ -183,6 +183,7 @@ export const OrchProjectSchema = z
     path: z.string(),
     stack: nullableString,
     canon: z.boolean(),
+    repository: z.boolean(),
     settings: z
       .object({
         color: z.string().optional(),

@@ -371,6 +371,7 @@ export const CLI_COMMANDS = new Set([
   'search',
   'serve',
   'settings',
+  'setup',
   'setup-ask',
   'spawns',
   'state',

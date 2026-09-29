@@ -23,6 +23,7 @@ console.log(
       path: '/fixtures/repos/alpha',
       stack: null,
       canon: true,
+      repository: true,
       settings: {
         keyPrefixes: ['ALP'],
         color: '#112233',
@@ -41,6 +42,7 @@ console.log(
       path: '/fixtures/repos/beta',
       stack: null,
       canon: true,
+      repository: true,
       settings: { keyPrefixes: ['BET'] },
     },
     {
@@ -49,6 +51,7 @@ console.log(
       path: '/fixtures/repos/gamma',
       stack: null,
       canon: true,
+      repository: true,
       settings: { keyPrefixes: ['GAM'] },
     },
     {
@@ -57,6 +60,7 @@ console.log(
       path: '/fixtures/repos/delta',
       stack: null,
       canon: true,
+      repository: true,
       settings: { keyPrefixes: ['DEL', 'SHUL'] },
     },
     {
@@ -65,6 +69,7 @@ console.log(
       path: '/fixtures/repos/workshop',
       stack: null,
       canon: true,
+      repository: true,
       settings: { keyPrefixes: ['LOC'], color: '#654321', colorDark: '#fedcba' },
     },
     {
@@ -73,6 +78,7 @@ console.log(
       path: '/fixtures/repos/alpha/packages/nested',
       stack: null,
       canon: true,
+      repository: true,
       settings: {},
     },
     {
@@ -81,6 +87,7 @@ console.log(
       path: '/fixtures/repos/epsilon',
       stack: null,
       canon: true,
+      repository: true,
       settings: { keyPrefixes: ['SHR'] },
     },
     {
@@ -89,6 +96,7 @@ console.log(
       path: '/fixtures/repos/zeta',
       stack: null,
       canon: true,
+      repository: true,
       settings: { keyPrefixes: ['SHR'] },
     },
     {
@@ -97,6 +105,7 @@ console.log(
       path: '/fixtures/repos/stopal',
       stack: null,
       canon: true,
+      repository: true,
       settings: {},
     },
   ]),

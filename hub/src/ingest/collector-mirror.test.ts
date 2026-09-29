@@ -6,6 +6,7 @@ const project = {
   path: '/fixtures/repos/alpha',
   stack: null,
   canon: true,
+  repository: true,
   settings: {
     keyPrefixes: ['ALP'],
     tracker: {
@@ -28,9 +29,18 @@ const stopalProject = {
     tracker: { ...project.settings.tracker, envPrefix: 'STOPAL' },
   },
 }
+const localTasksProject = {
+  ...project,
+  id: 3,
+  name: 'tasks',
+  path: '/fixtures/state/projects/tasks',
+  canon: false,
+  repository: false,
+  settings: { keyPrefixes: ['TASK'] },
+}
 
 mock.module('../projects.ts', () => ({
-  projects: () => [project, stopalProject],
+  projects: () => [project, stopalProject, localTasksProject],
   projectRoot: () => '/fixtures/repos',
   projectNames: () => ['alpha'],
   refreshProjects: () => {},
@@ -157,7 +167,9 @@ test('a refused tracker mirror still writes locally and retries the persisted ta
 })
 
 test('git seeding keeps a foreign-space task local and mirrors only the active-space task', async () => {
+  const scanned: string[] = []
   const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    scanned.push(command[2]!)
     const stopal = command.includes('/fixtures/repos/stopal')
     const key = stopal ? 'STO-2' : 'ALP-2'
     const sha = stopal ? 'feedface' : 'deadbeef'
@@ -184,6 +196,12 @@ test('git seeding keeps a foreign-space task local and mirrors only the active-s
       ?.project,
   ).toBe('stopal')
   expect(mirrored.has('STO-2')).toBe(false)
+  expect(scanned).toEqual([
+    '/fixtures/repos/alpha',
+    '/fixtures/repos/stopal',
+    '/fixtures/repos/alpha',
+    '/fixtures/repos/stopal',
+  ])
 })
 
 test('tracker status events use the same project-space filter as task snapshots', async () => {

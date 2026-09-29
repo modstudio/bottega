@@ -53,6 +53,7 @@ describe('tracker register', () => {
         path: '/working',
         stack: null,
         canon: true,
+        repository: true,
         settings: { tracker: { protocol: 'array-mcp', envPrefix: 'WORKING' } },
       },
       {
@@ -61,6 +62,7 @@ describe('tracker register', () => {
         path: '/broken',
         stack: null,
         canon: true,
+        repository: true,
         settings: { tracker: { protocol: 'future-mcp', envPrefix: 'BROKEN' } },
       },
     ]

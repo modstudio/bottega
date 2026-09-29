@@ -1,8 +1,11 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
 import { runArchitectGate } from './gate-run.ts'
+
+const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 let priorDepth: string | undefined
 let priorSession: string | undefined
@@ -25,7 +28,7 @@ const database = () => {
   applyMigrations(d)
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'fixture',
-    '/tmp/gate-run',
+    repositoryPath,
     'bun',
     JSON.stringify({ gate: 'bun run check' }),
   )
@@ -36,7 +39,7 @@ test('inserts a finished architect row with a null run_id and no tooling paths',
   const d = database()
   const chunks: string[] = []
   const result = await runArchitectGate({
-    cwd: '/tmp/gate-run',
+    cwd: repositoryPath,
     d,
     commit: 'abc',
     write: (chunk) => chunks.push(chunk),
@@ -67,7 +70,7 @@ test('inserts a finished architect row with a null run_id and no tooling paths',
     exit_code: 0,
     tooling_paths: '[]',
     head_commit: 'abc',
-    cwd: '/tmp/gate-run',
+    cwd: repositoryPath,
     output_artifact: null,
   })
 })
@@ -76,7 +79,7 @@ test('bounds the recorded tail', async () => {
   const d = database()
   const output = 'x'.repeat(GATE_OUTPUT_TAIL_BYTES + 20)
   await runArchitectGate({
-    cwd: '/tmp/gate-run',
+    cwd: repositoryPath,
     d,
     commit: 'abc',
     write: () => {},
@@ -96,7 +99,7 @@ test('bounds the recorded tail', async () => {
 test('withholds secret-shaped output', async () => {
   const d = database()
   await runArchitectGate({
-    cwd: '/tmp/gate-run',
+    cwd: repositoryPath,
     d,
     commit: 'abc',
     write: () => {},
@@ -119,7 +122,7 @@ test('refuses a project without a registered gate', async () => {
   d.query("UPDATE project SET settings='{}'").run()
   expect(
     runArchitectGate({
-      cwd: '/tmp/gate-run',
+      cwd: repositoryPath,
       d,
       commit: 'abc',
       runner: () => {
@@ -131,14 +134,14 @@ test('refuses a project without a registered gate', async () => {
 
 test('refuses a worker session', async () => {
   process.env.ORCH_DEPTH = '1'
-  expect(runArchitectGate({ cwd: '/tmp/gate-run', d: database() })).rejects.toThrow(
+  expect(runArchitectGate({ cwd: repositoryPath, d: database() })).rejects.toThrow(
     'ORCH_DEPTH is set',
   )
 })
 
 test('refuses when the architect session identity is absent', async () => {
   delete process.env.CLAUDE_CODE_SESSION_ID
-  expect(runArchitectGate({ cwd: '/tmp/gate-run', d: database() })).rejects.toThrow(
+  expect(runArchitectGate({ cwd: repositoryPath, d: database() })).rejects.toThrow(
     'CLAUDE_CODE_SESSION_ID is not set',
   )
 })

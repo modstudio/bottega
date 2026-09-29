@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { projects } from '../project/projects.ts'
+import { isProjectRepository, projects } from '../project/projects.ts'
 
 const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 
@@ -105,7 +105,7 @@ function listCommand(
 /** Inventory recipe-provisioned Postgres and MySQL databases. Never mutates them. */
 export function worktreeDatabaseInventory(): DatabaseInventory {
   const databases: WorktreeDatabase[] = []
-  for (const project of projects()) {
+  for (const project of projects().filter(isProjectRepository)) {
     const provider = project.settings.worktree?.recipe?.database
     if (!provider || (provider.kind !== 'postgres-template' && provider.kind !== 'mysql-dump'))
       continue
@@ -165,7 +165,7 @@ function git(
 /** Inventory `refs/orch/retained/<run>` pins left after close-out. Never deletes them. */
 export function retainedRefInventory(): GitResourceInventory<RetainedRef> {
   const items: RetainedRef[] = []
-  for (const project of projects()) {
+  for (const project of projects().filter(isProjectRepository)) {
     if (!existsSync(project.path)) continue
     const listed = git(project.path, [
       'for-each-ref',
@@ -188,7 +188,7 @@ export function retainedRefInventory(): GitResourceInventory<RetainedRef> {
 /** Inventory `.git/orch-guards/<run>` directories. Never removes them. */
 export function refGuardInventory(): GitResourceInventory<RefGuard> {
   const items: RefGuard[] = []
-  for (const project of projects()) {
+  for (const project of projects().filter(isProjectRepository)) {
     if (!existsSync(project.path)) continue
     const common = git(project.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     if (!common.ok) return { ascertainable: false, reason: `${project.name}: ${common.reason}` }

@@ -18,6 +18,7 @@ import { register as registerRouting } from '../commands/routing.ts'
 import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
 import { register as registerSettings } from '../commands/settings.ts'
+import { register as registerSetup } from '../commands/setup.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { recordSessionSeen } from '../database/db.ts'
@@ -52,6 +53,7 @@ registerRouting(program)
 registerRulings(program)
 registerLogic(program)
 registerSettings(program)
+registerSetup(program)
 registerSync(program)
 
 /** Verbs that only read the store must not stamp the session as seen. */
