@@ -708,6 +708,7 @@ export const importBoundaries: ImportBoundary[] = [
       './landing-outbox.ts',
       './machine-identity.ts',
       './outbox-dependency.ts', './outbox-failure.ts', './outbox-quarantine.ts',
+      './outbox-payload-contracts.ts',
       './record-cache.ts',
       './record-review-read.ts',
       './record-review-values.ts',

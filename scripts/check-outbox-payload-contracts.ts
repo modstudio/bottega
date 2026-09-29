@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../orchestrator/src/record/outbox-payload-contracts.ts'
 
 type OutboxPayloadContract = {
   columns: readonly string[]
@@ -65,33 +66,8 @@ function baseline(): OutboxPayloadBaseline {
   return JSON.parse(readFileSync(path, 'utf8')) as OutboxPayloadBaseline
 }
 
-async function registeredContracts(): Promise<OutboxPayloadContracts> {
-  const [run, score, question, review, landing] = await Promise.all([
-    import('../orchestrator/src/run/run-outbox.ts'),
-    import('../orchestrator/src/score/score-outbox.ts'),
-    import('../orchestrator/src/run/question-outbox.ts'),
-    import('../orchestrator/src/review/review-outbox.ts'),
-    import('../orchestrator/src/record/landing-outbox.ts'),
-  ])
-  return {
-    run: run.RUN_RECORD_PAYLOAD_CONTRACT,
-    score: score.SCORE_RECORD_PAYLOAD_CONTRACT,
-    question: question.QUESTION_RECORD_PAYLOAD_CONTRACT,
-    review: review.REVIEW_RECORD_PAYLOAD_CONTRACT,
-    review_lens: review.REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
-    review_finding: review.REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
-    review_read: review.REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
-    landing: landing.LANDING_RECORD_PAYLOAD_CONTRACT,
-    landing_override: landing.LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
-    landing_review_carry: landing.LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
-    landing_triage_snapshot: landing.LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
-    contention: landing.CONTENTION_RECORD_PAYLOAD_CONTRACT,
-    test_flake: landing.TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
-  }
-}
-
 if (import.meta.main) {
-  const failures = outboxPayloadContractFailures(baseline(), await registeredContracts())
+  const failures = outboxPayloadContractFailures(baseline(), OUTBOX_PAYLOAD_CONTRACTS)
   if (failures.length > 0) {
     console.error(
       `outbox payload contract check failed:\n${failures.map((failure) => `- ${failure}`).join('\n')}`,
