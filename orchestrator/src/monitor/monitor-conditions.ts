@@ -309,8 +309,16 @@ function terminalProcessState(run: TerminalProcessRun) {
   return { coordinatorLive, vendorIdentity, roots, pgid }
 }
 
-/** Report recorded pids and descendants that outlived a terminal run. Observation only. */
-export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
+export type TerminalProcessResidueObservation = {
+  runId: number
+  liveness: 'dead' | 'live'
+  condition: MonitorCondition
+}
+
+/** Observe recorded pids and descendants that outlived a terminal run. Never mutates them. */
+export function terminalProcessResidueObservations(
+  clock = Date.now(),
+): TerminalProcessResidueObservation[] {
   const terminal = db()
     .query(
       `SELECT id, started_at, latency_ms, pid, agent_pid, agent_pgid, agent_start_time FROM run
@@ -318,7 +326,7 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
         AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
     )
     .all() as TerminalProcessRun[]
-  return terminal.flatMap((run): MonitorCondition[] => {
+  return terminal.flatMap((run): TerminalProcessResidueObservation[] => {
     const { coordinatorLive, vendorIdentity, roots, pgid } = terminalProcessState(run)
     const vendorLive = vendorIdentity === 'live' || vendorIdentity === 'unknown'
     const descendantsLive = runHasLiveDescendants(roots, [], {}, pgid)
@@ -345,15 +353,32 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
     const who = parts.join(' and ') || `a descendant of pid ${roots.join('/')}`
     return [
       {
-        kind: 'terminal-process-alive',
-        subject: `run:${run.id}:pid:${reported}`,
-        since: run.started_at,
-        ageMs: age(run.started_at, clock),
-        detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
-        action: `run orch reclaim process ${run.id} --dry-run, then orch reclaim process ${run.id}`,
+        runId: run.id,
+        // An identity-unverified vendor pid is safe only for record release: the
+        // guarded reclaim path cannot signal it. Verified process observations
+        // remain operator-only.
+        liveness:
+          coordinatorLive ||
+          vendorIdentity === 'live' ||
+          (vendorIdentity !== 'unknown' && descendantsLive)
+            ? 'live'
+            : 'dead',
+        condition: {
+          kind: 'terminal-process-alive',
+          subject: `run:${run.id}:pid:${reported}`,
+          since: run.started_at,
+          ageMs: age(run.started_at, clock),
+          detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
+          action: `run orch reclaim process ${run.id} --dry-run, then orch reclaim process ${run.id}`,
+        },
       },
     ]
   })
+}
+
+/** Report recorded pids and descendants that outlived a terminal run. Observation only. */
+export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
+  return terminalProcessResidueObservations(clock).map(({ condition }) => condition)
 }
 
 /** Report vendor processes that vanished while their run still claims to be running. */

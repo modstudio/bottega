@@ -1,17 +1,14 @@
 // concern: unattended cleanup sweep residue reclamation
 /** Enumerates monitor residue, applies the owner-gone policy, and delegates guarded reclaim. */
-import { basename } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { processStartTime } from '../project/project-lock.ts'
+import { terminalProcessResidueObservations } from '../monitor/monitor-conditions.ts'
 import { type ResidueKind, reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
   sandboxDirectoryInventory,
 } from '../resources/resource-inventory.ts'
-import { processTable } from '../run/run-process.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideUnattendedReclaim,
@@ -72,31 +69,6 @@ function conversationLiveness(runId: number): Liveness {
     : 'dead'
 }
 
-function processLiveness(row: {
-  pid: number | null
-  agent: string
-  agent_pid: number | null
-  agent_start_time: string | null
-}): Liveness {
-  if (pidAlive(row.pid)) return 'live'
-  if (!row.agent_pid || !pidAlive(row.agent_pid)) return 'dead'
-  const inventory = processTable()
-  const command = inventory.ascertainable
-    ? (inventory.rows.find((item) => item.pid === row.agent_pid)?.command ?? null)
-    : null
-  const expectedBin = basename(AGENTS[row.agent]?.bin ?? row.agent)
-  const startTimeMatches = Boolean(
-    row.agent_start_time && processStartTime(row.agent_pid) === row.agent_start_time,
-  )
-  const commandMatches = Boolean(
-    command &&
-      new RegExp(`(?:^|[/\\s])${expectedBin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|$)`).test(
-        command,
-      ),
-  )
-  return startTimeMatches && commandMatches ? 'live' : 'dead'
-}
-
 type ProjectSelection = (project: string | null) => boolean
 
 function staleRunCandidates(selected: ProjectSelection): UnattendedResidueCandidate[] {
@@ -122,36 +94,28 @@ function staleRunCandidates(selected: ProjectSelection): UnattendedResidueCandid
   )
 }
 
-function processCandidates(selected: ProjectSelection): UnattendedResidueCandidate[] {
-  const processes = db()
-    .query(
-      `SELECT r.id,r.pid,r.agent,r.agent_pid,r.agent_start_time,
-              COALESCE(r.repo,project.name) project
-         FROM run r LEFT JOIN project ON project.id=r.project_id
-        WHERE r.status IN ('ok','failed','stale','stopped')
-          AND (r.pid IS NOT NULL OR r.agent_pid IS NOT NULL OR r.agent_pgid IS NOT NULL)`,
-    )
-    .all() as {
-    id: number
-    pid: number | null
-    agent: string
-    agent_pid: number | null
-    agent_start_time: string | null
-    project: string | null
-  }[]
-  return processes.flatMap((row) =>
-    selected(row.project)
+export function unattendedProcessCandidates(
+  selectedProject: string | null,
+): UnattendedResidueCandidate[] {
+  return terminalProcessResidueObservations().flatMap((observation) => {
+    const row = db()
+      .query(
+        `SELECT COALESCE(r.repo,project.name) project
+           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+      )
+      .get(observation.runId) as { project: string | null } | null
+    return (selectedProject === null || row?.project === selectedProject) && row
       ? [
           {
             kind: 'process',
-            subject: String(row.id),
-            runId: row.id,
+            subject: String(observation.runId),
+            runId: observation.runId,
             project: row.project,
-            liveness: processLiveness(row),
+            liveness: observation.liveness,
           } satisfies UnattendedResidueCandidate,
         ]
-      : [],
-  )
+      : []
+  })
 }
 
 function retainedRefCandidates(selected: ProjectSelection): Inventory {
@@ -199,9 +163,15 @@ function refGuardCandidates(selected: ProjectSelection): Inventory {
 function sandboxCandidates(selected: ProjectSelection): Inventory {
   const sandboxes = sandboxDirectoryInventory(db())
   if (!sandboxes.ascertainable) return { candidates: [], errors: [sandboxes.reason] }
+  const terminal = new Set(
+    sandboxes.conversations
+      .filter((conversation) => conversation.terminal)
+      .map((conversation) => conversation.rootId),
+  )
   return {
     errors: [],
     candidates: sandboxes.directories.flatMap((directory) => {
+      if (!terminal.has(directory.rootId)) return []
       const row = db()
         .query(
           `SELECT COALESCE(root.repo,project.name) project
@@ -231,7 +201,7 @@ function defaultInventory(selectedProject: string | null): Inventory {
     selectedProject === null || project === selectedProject
   const inventories = [
     { candidates: staleRunCandidates(selected), errors: [] },
-    { candidates: processCandidates(selected), errors: [] },
+    { candidates: unattendedProcessCandidates(selectedProject), errors: [] },
     retainedRefCandidates(selected),
     refGuardCandidates(selected),
     sandboxCandidates(selected),

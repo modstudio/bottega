@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { UNJUDGED_OWNER_WINDOW_MS, type UnattendedReclaimKind } from './cleanup-sweep-decisions.ts'
-import { sweepUnattendedResidue, type UnattendedResidueCandidate } from './cleanup-sweep-residue.ts'
+import {
+  sweepUnattendedResidue,
+  type UnattendedResidueCandidate,
+  unattendedProcessCandidates,
+} from './cleanup-sweep-residue.ts'
 
 const now = Date.parse('2026-09-29T12:00:00.000Z')
 
@@ -25,6 +31,40 @@ function candidate(kind: UnattendedReclaimKind): UnattendedResidueCandidate {
 }
 
 describe('unattended residue sweep adapter', () => {
+  test('does not select a terminal pid record absent from the monitor detector', () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      repo: 'project',
+    })
+    db().query('UPDATE run SET pid=? WHERE id=?').run(2_147_483_647, runId)
+
+    expect(unattendedProcessCandidates(null)).toEqual([])
+  })
+
+  test('selects an identity-unverified process observation only for record release', () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      repo: 'project',
+    })
+    db()
+      .query('UPDATE run SET agent_pid=?,agent_start_time=NULL WHERE id=?')
+      .run(process.pid, runId)
+
+    expect(unattendedProcessCandidates(null)).toEqual([
+      {
+        kind: 'process',
+        subject: String(runId),
+        runId,
+        project: 'project',
+        liveness: 'dead',
+      },
+    ])
+  })
+
   for (const kind of ['stale-run', 'process', 'ref-guard', 'retained-ref', 'sandbox'] as const) {
     test(`reclaims gone-owner dead ${kind} residue through the guarded verb`, () => {
       const calls: { kind: string; subject: string; dryRun: boolean; allowSignal: false }[] = []
