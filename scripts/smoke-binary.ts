@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -21,6 +22,9 @@ import { run } from './build-release.ts'
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-smoke-`))
 let recordApiUrl: string | undefined
 let securityBin: string | undefined
+let harnessBin: string | undefined
+let mcpRecord: string | undefined
+let mcpState: string | undefined
 
 function smokeEnvironment(stateHome: string): Record<string, string | undefined> {
   const env = {
@@ -28,7 +32,13 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
     BOTTEGA_STATE_HOME: stateHome,
     CLAUDE_CODE_SESSION_ID: 'DEV-997-binary-smoke',
     ...(recordApiUrl ? { ORCH_RECORD_API_URL: recordApiUrl } : {}),
-    ...(securityBin ? { PATH: `${securityBin}:${process.env.PATH ?? ''}` } : {}),
+    ...(securityBin
+      ? {
+          PATH: [harnessBin, securityBin, '/usr/bin', '/bin'].filter(Boolean).join(':'),
+        }
+      : {}),
+    ...(mcpRecord ? { SMOKE_MCP_RECORD: mcpRecord } : {}),
+    ...(mcpState ? { SMOKE_MCP_STATE: mcpState } : {}),
   }
   delete env.ORCH_DB
   delete env.ORCH_DB_WRITE
@@ -152,6 +162,63 @@ try {
   const security = join(securityBin, 'security')
   writeFileSync(security, '#!/bin/sh\nprintf smoke-record-token\n')
   chmodSync(security, 0o755)
+  harnessBin = join(scratch, 'harness-bin')
+  mcpState = join(scratch, 'mcp-state')
+  mcpRecord = join(scratch, 'mcp-argv.log')
+  mkdirSync(harnessBin)
+  mkdirSync(mcpState)
+  const fakeHarness = `#!/bin/sh
+harness="\${0##*/}"
+record="\${SMOKE_MCP_RECORD:?}"
+state="\${SMOKE_MCP_STATE:?}"
+printf '%s' "$harness" >> "$record"
+for arg in "$@"; do printf '\\t%s' "$arg" >> "$record"; done
+printf '\\n' >> "$record"
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+  shift 2
+  if [ "$1" = "--scope" ]; then shift 2; fi
+  name="$1"
+  shift
+  if [ "$1" = "--" ]; then shift; fi
+  command="$1"
+  shift
+  printf '%s\\n' "$command" > "$state/$harness-$name.command"
+  printf '%s\\n' "$*" > "$state/$harness-$name.args"
+  printf 'added %s\\n' "$name"
+  exit 0
+fi
+if [ "$1" = "mcp" ] && [ "$2" = "get" ]; then
+  name="$3"
+  if [ ! -f "$state/$harness-$name.command" ]; then
+    if [ "$harness" = "codex" ]; then
+      printf "Error: No MCP server named '%s' found.\\n" "$name" >&2
+    else
+      printf 'No MCP server named "%s". Configured servers: probe\\n' "$name" >&2
+    fi
+    exit 1
+  fi
+  IFS= read -r command < "$state/$harness-$name.command"
+  IFS= read -r args < "$state/$harness-$name.args"
+  if [ "$harness" = "codex" ]; then
+    printf '{"transport":{"type":"stdio","command":"%s","args":[' "$command"
+    separator=''
+    for arg in $args; do printf '%s"%s"' "$separator" "$arg"; separator=','; done
+    printf ']}}\\n'
+  else
+    printf 'Command: %s\\nArgs: [' "$command"
+    separator=''
+    for arg in $args; do printf '%s"%s"' "$separator" "$arg"; separator=','; done
+    printf ']\\n'
+  fi
+  exit 0
+fi
+exit 0
+`
+  for (const harness of ['claude', 'codex']) {
+    const executable = join(harnessBin, harness)
+    writeFileSync(executable, fakeHarness)
+    chmodSync(executable, 0o755)
+  }
   recordApi = Bun.serve({
     port: await freePort(),
     hostname: '127.0.0.1',
@@ -209,10 +276,24 @@ try {
   const setupPlan = JSON.parse(
     await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
   ) as { diff?: { kind?: string }[] }
-  if (setupPlan.diff?.length !== 1 || setupPlan.diff[0]?.kind !== 'add') {
+  if (setupPlan.diff?.filter((action) => action.kind === 'add').length !== 1) {
     throw new Error('orch setup plan did not return exactly one add proposal')
   }
   await smoke(binary, ['orch', 'setup', 'apply', '--in', setupRepository, '--yes'], stateHome)
+  const mcpInvocations = readFileSync(mcpRecord, 'utf8').split('\n')
+  const addInvocations = mcpInvocations.filter((line) => line.includes('\tmcp\tadd\t'))
+  if (!addInvocations.some((line) => line.startsWith('claude\t') && line.includes('\torch\t'))) {
+    throw new Error('orch setup apply did not register orch with Claude')
+  }
+  if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch\t'))) {
+    throw new Error('orch setup apply did not register orch with Codex')
+  }
+  if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch-ask\t'))) {
+    throw new Error('orch setup apply did not register orch-ask with Codex')
+  }
+  if (!addInvocations.every((line) => line.includes(`\t${realpathSync(binary)}\t`))) {
+    throw new Error('orch setup apply did not register the compiled binary command')
+  }
   const setupProjects = JSON.parse(
     await smoke(binary, ['orch', 'project', 'list', '--json'], stateHome),
   ) as { path?: string; settings?: { keyPrefixes?: string[] } }[]
@@ -235,7 +316,10 @@ try {
       stateHome,
     ),
   ) as { actions?: { status?: string }[] }
-  if (secondSetup.actions?.length !== 1 || secondSetup.actions[0]?.status !== 'unchanged') {
+  if (
+    !secondSetup.actions?.length ||
+    secondSetup.actions.some((action) => action.status !== 'unchanged')
+  ) {
     throw new Error('second orch setup apply did not report unchanged')
   }
   const orchestrator = new Database(join(stateHome, 'orchestrator', 'orch.db'), {

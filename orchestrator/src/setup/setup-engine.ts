@@ -1,8 +1,17 @@
 // concern: setup-engine
 /** Turns setup facts into proposals and ruling-shaped questions. Pure: no store, process, or filesystem. */
+
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
+import {
+  harnessMcpServers,
+  type McpReadback,
+  type McpServer,
+  manualMcpInstructions,
+  sameMcpRegistration,
+} from './setup-mcp.ts'
 
 export type SetupQuestion = {
   id: string
@@ -25,14 +34,140 @@ export type SetupProposal = {
   prefixQuestionId: string | null
   trunkQuestionId: string | null
 }
+type SetupRegistrationProposal = {
+  harness: keyof SetupFacts['harnesses']
+  bin: string
+  server: McpServer
+  current: McpReadback
+  questionId: string | null
+  state: 'absent' | 'same' | 'different' | 'unreadable'
+}
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
   proposals: SetupProposal[]
+  registrations: SetupRegistrationProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`
+const registrationQuestionId = (harness: string, server?: string) =>
+  `harness:${harness}:mcp-${server ? `replace-${server}` : 'register'}`
+
+type HarnessFacts = SetupFacts['harnesses'][keyof SetupFacts['harnesses']]
+
+function proposeHarnessRegistrations(
+  harness: keyof SetupFacts['harnesses'],
+  facts: HarnessFacts,
+  servers: McpServer[],
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+): SetupRegistrationProposal[] {
+  if (!facts.path || !facts.mcp) return []
+  if (facts.mcp.support === 'manual') {
+    notices.push({
+      message: `${harness} cannot register a local MCP server non-interactively through its CLI`,
+      fix: manualMcpInstructions(harness),
+    })
+    return []
+  }
+  const desired = servers.filter((server) => harnessMcpServers(harness).includes(server.name))
+  const absent = desired.filter(
+    (server) => facts.mcp?.registrations[server.name]?.status === 'absent',
+  )
+  const absentQuestionId = absent.length ? registrationQuestionId(harness) : null
+  if (absentQuestionId) {
+    const recommendation = facts.auth === 'signed-out' ? 'skip' : 'register'
+    questions.push({
+      id: absentQuestionId,
+      question: `Register ${absent.map((server) => server.name).join(' and ')} in ${harness} at user scope?`,
+      options: [
+        {
+          id: 'register',
+          label: 'Register',
+          why: `Makes ${PLATFORM_NAME}'s selected MCP servers available in ${harness}.`,
+        },
+        {
+          id: 'skip',
+          label: 'Skip',
+          why: `Leaves ${harness}'s user MCP configuration unchanged.`,
+        },
+      ],
+      recommendation,
+      why:
+        facts.auth === 'signed-out'
+          ? `${harness} is installed but signed out.`
+          : `${harness} is installed and does not have the selected servers.`,
+    })
+  }
+  return desired.map((server) => {
+    const current = facts.mcp!.registrations[server.name] ?? {
+      status: 'unreadable' as const,
+      detail: 'registration was not captured',
+    }
+    if (sameMcpRegistration(current, server)) {
+      return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
+    }
+    if (current.status === 'absent') {
+      return {
+        harness,
+        bin: facts.path!,
+        server,
+        current,
+        questionId: absentQuestionId,
+        state: 'absent',
+      }
+    }
+    const replaceQuestionId = registrationQuestionId(harness, server.name)
+    questions.push({
+      id: replaceQuestionId,
+      question: `Replace the existing ${server.name} MCP registration in ${harness}?`,
+      options: [
+        {
+          id: 'keep',
+          label: 'Keep existing',
+          why: `Preserves ${harness}'s current ${server.name} registration.`,
+        },
+        {
+          id: 'replace',
+          label: 'Replace',
+          why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
+        },
+      ],
+      recommendation: 'keep',
+      why:
+        current.status === 'registered'
+          ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
+          : `The existing registration could not be read exactly: ${current.detail}`,
+    })
+    if (current.status === 'unreadable')
+      notices.push({
+        message: `${harness} ${server.name} registration could not be read exactly: ${current.detail}`,
+        fix: `${facts.path} ${harness === 'grok' ? 'mcp list --json' : `mcp get ${server.name}`}`,
+      })
+    return {
+      harness,
+      bin: facts.path!,
+      server,
+      current,
+      questionId: replaceQuestionId,
+      state: current.status === 'registered' ? 'different' : 'unreadable',
+    }
+  })
+}
+
+function proposeMcpRegistrations(
+  machine: SetupFacts,
+  servers: McpServer[],
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+): SetupRegistrationProposal[] {
+  return (
+    Object.entries(machine.harnesses ?? {}) as [keyof SetupFacts['harnesses'], HarnessFacts][]
+  ).flatMap(([harness, facts]) =>
+    proposeHarnessRegistrations(harness, facts, servers, questions, notices),
+  )
+}
 
 export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): string {
   const letters = name
@@ -61,6 +196,7 @@ export function proposeSetup(
   repositories: RepositoryFacts[],
   register: Project[],
   repositoryNotices: SetupNotice[] = [],
+  servers: McpServer[] = [],
 ): SetupPlan {
   const occupied = new Set(
     register
@@ -69,6 +205,7 @@ export function proposeSetup(
   )
   const questions: SetupQuestion[] = []
   const notices = [...machineNotices(machine), ...repositoryNotices]
+  const registrations = proposeMcpRegistrations(machine, servers, questions, notices)
   const proposals = repositories.map((repository) => {
     if (repository.inspectionTimedOut) {
       notices.push({
@@ -165,5 +302,5 @@ export function proposeSetup(
       trunkQuestionId,
     }
   })
-  return { facts: { machine, repositories }, proposals, questions, notices }
+  return { facts: { machine, repositories }, proposals, registrations, questions, notices }
 }

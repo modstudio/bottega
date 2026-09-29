@@ -395,7 +395,10 @@ export function register(program: Command): void {
   program
     .command('setup-ask')
     .allowExcessArguments(false)
-    .action(() => setupAskCommand(bottegaEntryArgv('ask-server'), presentation))
+    .action(async () => {
+      const code = await setupAskCommand(bottegaEntryArgv('ask-server'), presentation)
+      if (code) process.exitCode = code
+    })
   program
     .command('monitor')
     .option('--limit <value>')
