@@ -76,7 +76,7 @@ export function runMutationAuthority(database: Database, runId: number): RootAut
   }
 }
 
-export function adoptedMutationReason(authority: RootAuthority): string | null {
+function adoptedMutationReason(authority: RootAuthority): string | null {
   if (runMutationOwnerDecision(authority) !== 'adopt') return null
   return `adopted from gone owner ${authority.owner} by ${authority.actor}`
 }
