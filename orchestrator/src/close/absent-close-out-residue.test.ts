@@ -32,4 +32,18 @@ describe('absent close-out residue decision', () => {
       'conversation absent; ref-guard not released: not a git repository; released retained ref',
     )
   })
+
+  test('tells reclaim that already-absent residue satisfies absent-tree close-out', () => {
+    const options: unknown[] = []
+    releaseAbsentCloseOutResidueKinds({
+      detail: 'conversation absent',
+      kinds: ['ref-guard', 'retained-ref'],
+      subject: 'project-a:42',
+      reclaim: (_kind, _subject, reclaimOptions) => {
+        options.push(reclaimOptions)
+        return { ok: true, action: 'already absent' }
+      },
+    })
+    expect(options).toEqual([{ absentSatisfies: true }, { absentSatisfies: true }])
+  })
 })

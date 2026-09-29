@@ -14,6 +14,9 @@ export type LandingTreeReleaseRow = {
   branch: string | null
   sessionId: string | null
   launchKey: string | null
+  status: string
+  treeExists: boolean
+  landingInFlight: boolean
 }
 
 function unavailable(row: LandingTreeReleaseRow, detail: string): LandingTreeReleaseDecision {
@@ -29,11 +32,19 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
   try {
     const project = row.repo ? projectByName(row.repo) : projectAt(row.worktree)
     if (!project || !row.branch) return unavailable(row, 'project or branch is no longer recorded')
+    const decisionFacts = {
+      job: row.job,
+      sessionId: row.sessionId,
+      treeExists: row.treeExists,
+      status: row.status,
+      landingInFlight: row.landingInFlight,
+    }
+    if (!row.treeExists) return landingTreeReleaseDecision(decisionFacts, false, false)
     const trunk = project.settings.trunk?.trim()
     if (!trunk) return unavailable(row, `project ${project.name} has no registered trunk`)
     const cleanStatus = git(['status', '--porcelain=v1', '--untracked-files=all'], row.worktree)
     if (cleanStatus !== '') {
-      return landingTreeReleaseDecision({ job: row.job, sessionId: row.sessionId }, false, false)
+      return landingTreeReleaseDecision(decisionFacts, false, false)
     }
     const branchTip = gitContext(
       project.path,
@@ -66,7 +77,7 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
             commitMessage: `orch landing tree ${row.branch}`,
           }),
         )
-    return landingTreeReleaseDecision({ job: row.job, sessionId: row.sessionId }, true, landed)
+    return landingTreeReleaseDecision(decisionFacts, true, landed)
   } catch (error) {
     return unavailable(row, String((error as Error)?.message ?? error))
   }

@@ -38,7 +38,7 @@ export type ResidueKind =
   | 'process'
   | 'stale-run'
 
-type Options = { dryRun?: boolean; allowSignal?: boolean }
+type Options = { dryRun?: boolean; allowSignal?: boolean; absentSatisfies?: boolean }
 const terminal = (status: string) => ['ok', 'failed', 'stale', 'stopped'].includes(status)
 const denied = (decision: Extract<ReleaseDecision, { allowed: false }>) => ({
   ok: false,
@@ -144,6 +144,9 @@ function reclaimRefGuard(subject: string, options: Options) {
       }),
     ),
   })
+  if (!decision.allowed && options.absentSatisfies && !existsSync(path)) {
+    return { ok: true, action: `ref-guard ${subject} was already absent` }
+  }
   if (!decision.allowed) return denied(decision)
   if (!options.dryRun) rmSync(path, { recursive: true })
   return {
@@ -194,6 +197,9 @@ function reclaimRetainedRef(subject: string, options: Options) {
     runExists: row !== null,
     terminal: Boolean(row && terminal(row.status)),
   })
+  if (!decision.allowed && options.absentSatisfies && tip === null) {
+    return { ok: true, action: `retained ref ${subject} was already absent` }
+  }
   if (!decision.allowed) return denied(decision)
   if (!options.dryRun && !gitUpdateRef(project.path, ref, tip!)) {
     return {

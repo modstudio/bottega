@@ -16,6 +16,14 @@ type AbsentResult = {
 type ReleasedResult = Omit<AbsentResult, 'outcome'> & { outcome: 'released' }
 type HeldResult = Omit<AbsentResult, 'outcome'> & { outcome: 'held' }
 
+/** A vanished tree cannot justify keeping a pointer that could later name a replacement tree. */
+export function pointerMustClear(outcome: string, worktree: string): boolean {
+  return (
+    ['released', 'forgotten', 'absent'].includes(outcome) ||
+    (outcome === 'failed' && !worktreeExists(worktree))
+  )
+}
+
 export type ResourceTeardownResult = {
   resourceTeardownCompleted?: true
   resourceTeardownFailed?: true

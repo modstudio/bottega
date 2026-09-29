@@ -194,6 +194,7 @@ export const importBoundaries: ImportBoundary[] = [
       './absent-tree-close-out.ts',
       './close-out-adoption.ts',
       './close-out-questions.ts',
+      './conversation-liveness.ts',
       './retained-branch.ts',
       '../database/db.ts',
       '../git/git-environment.ts',

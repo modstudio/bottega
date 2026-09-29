@@ -41,7 +41,7 @@ import {
 } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { reconcileAbsentClaims } from './claim-reconciliation.ts'
+import { landingInFlight, reconcileAbsentClaims } from './claim-reconciliation.ts'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -388,7 +388,16 @@ function landingTreeSweepDecision(r: SweepCandidate) {
     branch: r.branch,
     sessionId: r.session_id,
     launchKey: r.launch_key,
+    status: r.status,
+    treeExists: existsSync(r.worktree),
+    landingInFlight: landingInFlightForSweep(r),
   })
+}
+
+function landingInFlightForSweep(r: SweepCandidate): boolean {
+  if (!r.worktree || !r.branch) return false
+  const project = r.repo ?? projectAt(r.worktree)?.name
+  return Boolean(project && landingInFlight(db(), project, r.branch))
 }
 
 function landingTreeSweepRuling(
@@ -438,7 +447,10 @@ function sweepRecordedRow(
     presentation.error(`could not verify reclaim ${r.id}: ${preInventoryRuling.presentationError}`)
     return
   }
-  const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
+  const closed = closeOutRun(r.id, {
+    intent: 'sweep',
+    dryRun: dry,
+  })
   const closeRuling = decideRecordedRunCloseOut({
     dry,
     outcome: closed.outcome,

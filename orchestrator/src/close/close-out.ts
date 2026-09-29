@@ -6,7 +6,6 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
@@ -33,9 +32,8 @@ import {
   otherConversationWorktreeSharers,
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
-import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { removeFreeRunLease, runLeaseState } from '../run/run-lease.ts'
+import { removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -47,12 +45,18 @@ import {
   absentTreeCloseOut,
   dryRunReleaseResult,
   failedResourceRemovalResult,
+  pointerMustClear,
   type ResourceTeardownResult,
   reconstructibilityHold,
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
+import {
+  aliveConversationTurns,
+  liveCloseOutResult,
+  missingTreeConversationResult,
+} from './conversation-liveness.ts'
 import { retainedBranchForCloseOut } from './retained-branch.ts'
 
 export type CloseOutResult = {
@@ -65,21 +69,6 @@ export type CloseOutResult = {
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
-
-type AliveTurn = { id: number; status: string; pid: number | null }
-
-function aliveConversationTurns(rootId: number): AliveTurn[] {
-  const turns = db()
-    .query('SELECT id,status,pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-    .all(rootId, rootId) as AliveTurn[]
-  return turns.filter((turn) =>
-    runAlive({
-      status: turn.status,
-      lease: runLeaseState(turn.id),
-      pidAlive: Boolean(turn.pid && pidAlive(turn.pid)),
-    }),
-  )
-}
 
 type ConversationKeepTreeHold =
   | (KeepTreeHoldDecision & { reason?: string })
@@ -259,18 +248,12 @@ export function releaseSandboxDirectoryForConversation(
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
-    .query('SELECT id,status,pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-    .all(rootId, rootId) as AliveTurn[]
+    .query('SELECT status FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .all(rootId, rootId) as { status: string }[]
   const keepTree = conversationKeepTreeHold(rootId, nowIso())
   const decision = sandboxDirectoryRelease({
     terminal: turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status)),
-    liveTurn: turns.some((turn) =>
-      runAlive({
-        status: turn.status,
-        lease: runLeaseState(turn.id),
-        pidAlive: Boolean(turn.pid && pidAlive(turn.pid)),
-      }),
-    ),
+    liveTurn: aliveConversationTurns(rootId).length > 0,
     liveProcess: conversationProcessState(rootId),
     worktreeState: options.worktreeState ?? recordedWorktreeState(rootId),
     keepTree: keepTree.held,
@@ -421,13 +404,8 @@ function lockedLiveOrForgottenHold(
   live: { id: number; status: string }[],
   dryRun?: boolean,
 ): CloseOutResult | null {
-  if (live.length)
-    return {
-      runId,
-      worktree: treePath,
-      outcome: 'live',
-      detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-    }
+  const liveResult = liveCloseOutResult(runId, treePath, live)
+  if (liveResult) return liveResult
   if (!otherConversationKeepTreeHeld(runId, treePath)) return null
   return ownershipCloseOutResult({
     runId,
@@ -447,8 +425,7 @@ function turnHeadForCloseOut(
   return tip ? { branch, tip } : null
 }
 
-function landingTreeSweepHold(input: {
-  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
+function landingTreeReleaseHold(input: {
   runId: number
   job: string
   repo: string | null
@@ -456,9 +433,29 @@ function landingTreeSweepHold(input: {
   branch: string | null
   sessionId: string | null
   launchKey: string | null
+  status: string
 }): CloseOutResult | null {
-  if (input.intent !== 'sweep' || input.job !== LANDING_TREE_JOB) return null
-  const decision = observeLandingTreeRelease(input)
+  if (input.job !== LANDING_TREE_JOB) return null
+  const project = input.repo ?? projectAt(input.worktree)?.name ?? null
+  const treeExists = existsSync(input.worktree)
+  // A failed creation can leave only a missing path, before project and branch
+  // identity were recorded. There is no branch whose landing could be in flight.
+  if (!treeExists && (!project || !input.branch)) return null
+  const landingInFlight = Boolean(
+    project &&
+      input.branch &&
+      db()
+        .query(
+          `SELECT 1 FROM landing
+           WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
+        )
+        .get(project, input.branch),
+  )
+  const decision = observeLandingTreeRelease({
+    ...input,
+    treeExists,
+    landingInFlight,
+  })
   return decision.action === 'keep'
     ? {
         runId: input.runId,
@@ -565,14 +562,10 @@ function attemptCloseOutRun(
        FROM run WHERE id=?`,
     )
     .get(row.root_id) as typeof row
-  const treePath = row.worktree ?? root?.worktree ?? null
-  if (!treePath)
-    return {
-      runId: row.root_id,
-      worktree: null,
-      outcome: 'absent',
-      detail: 'no worktree',
-    }
+  const resolvedTreePath = row.worktree ?? root?.worktree ?? null
+  const missingTreeResult = missingTreeConversationResult(row.root_id, resolvedTreePath)
+  if (missingTreeResult) return missingTreeResult
+  const treePath = resolvedTreePath as string
   const effective = {
     id: row.root_id,
     job: root?.job ?? row.job,
@@ -587,13 +580,20 @@ function attemptCloseOutRun(
     session_id: root?.session_id ?? row.session_id,
     launch_key: root?.launch_key ?? row.launch_key,
   }
-  const terminalHold = terminalHoldResult(
-    row.root_id,
-    treePath,
-    effective.status,
-    options.keepTreeDecision,
-  )
-  if (terminalHold) return terminalHold
+  const landingReleaseInput = {
+    runId: row.root_id,
+    job: effective.job,
+    repo: effective.repo,
+    worktree: treePath,
+    branch: effective.branch,
+    sessionId: effective.session_id,
+    launchKey: effective.launch_key,
+    status: effective.status,
+  }
+  const preRemovalHold =
+    terminalHoldResult(row.root_id, treePath, effective.status, options.keepTreeDecision) ??
+    (!existsSync(treePath) ? landingTreeReleaseHold(landingReleaseInput) : null)
+  if (preRemovalHold) return preRemovalHold
   const retainedBranch = retainedBranchForCloseOut(effective.minted_branch)
   const turnHead = turnHeadForCloseOut(row, treePath)
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
@@ -671,13 +671,8 @@ function attemptCloseOutRun(
     return [...conversation, ...sharers]
   }
   const live = liveRows()
-  if (live.length)
-    return {
-      runId: row.root_id,
-      worktree: treePath,
-      outcome: 'live',
-      detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-    }
+  const liveResult = liveCloseOutResult(row.root_id, treePath, live)
+  if (liveResult) return liveResult
   // Every recorded spelling of this tree, not one string: a trailing separator
   // or an unresolved symlink makes two rows for one worktree, and matching only
   // the spelling in hand releases a tree whose other owner is still running.
@@ -774,16 +769,6 @@ function attemptCloseOutRun(
               options.dryRun,
             )
             if (lockedHold) return lockedHold
-            const landingSweepInput = {
-              intent: options.intent,
-              runId: row.root_id,
-              job: effective.job,
-              repo: effective.repo,
-              worktree: treePath,
-              branch: effective.branch,
-              sessionId: effective.session_id,
-              launchKey: effective.launch_key,
-            }
             const reconstructibility = reconstructibilityHold(row.root_id, treePath, treeAbsent)
             if (reconstructibility) return reconstructibility
             if (options.dryRun) {
@@ -801,7 +786,7 @@ function attemptCloseOutRun(
                 detail: `coordinator lease for run ${liveCoordinator.id} is still held`,
               }
             terminateRunProcesses(row.id, [process.pid])
-            const landingHold = landingTreeSweepHold(landingSweepInput)
+            const landingHold = landingTreeReleaseHold(landingReleaseInput)
             if (landingHold) return landingHold
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
@@ -945,15 +930,12 @@ function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
   return byPath
 }
 
-/**
- * A pointer outlives its tree only while something may still use that tree. A
- * failed close-out can fail after the removal itself, so a vanished directory
- * clears the pointer too; otherwise a tree later created at the same path would
- * be taken for this run's.
- */
-function pointerMustClear(outcome: CloseOutResult['outcome'], worktree: string): boolean {
-  if (outcome === 'released' || outcome === 'forgotten') return true
-  return outcome === 'failed' && !existsSync(worktree)
+function settlementLivenessResult(result: CloseOutAttemptResult): CloseOutAttemptResult {
+  if (!['released', 'absent', 'forgotten'].includes(result.outcome)) return result
+  return (
+    liveCloseOutResult(result.runId, result.worktree, aliveConversationTurns(result.runId)) ??
+    result
+  )
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
@@ -976,18 +958,19 @@ export function closeOutRun(
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(root.root_id)
-  const result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
-  result.detail = releaseAbsentCloseOutResidue({
-    runId: result.runId,
-    outcome: result.outcome,
-    detail: result.detail,
-    dryRun: options.dryRun ?? false,
-  })
+  let result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
   }
   if (!options.dryRun) {
     writeTransaction(() => {
+      result = settlementLivenessResult(result)
+      result.detail = releaseAbsentCloseOutResidue({
+        runId: result.runId,
+        outcome: result.outcome,
+        detail: result.detail,
+        dryRun: false,
+      })
       const settled = settledStateForCloseOut(result.outcome, 'worktree')
       const settledAt = nowIso()
       db()
