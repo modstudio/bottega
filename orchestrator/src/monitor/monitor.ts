@@ -611,7 +611,7 @@ export async function monitor(
       .map((line) => line.slice(18))
     const localHeads = git(project.path, [
       'for-each-ref',
-      '--format=%(refname:short)',
+      '--format=%(refname:lstrip=2)',
       'refs/heads',
     ])
     if (localHeads === null) continue
