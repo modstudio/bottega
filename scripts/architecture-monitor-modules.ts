@@ -29,6 +29,7 @@ export const monitorModules: MonitorModule[] = [
     '../worktree/keep-tree-hold.ts',
     '../mcp/mcp.ts',
     './monitor-conditions.ts',
+    './monitor-branches.ts',
     './monitor-gate-tooling.ts',
     './monitor-record-tunnel.ts',
     './monitor-harness-load.ts',
@@ -47,6 +48,7 @@ export const monitorModules: MonitorModule[] = [
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
   ]),
+  module('orchestrator/src/monitor/monitor-branches.ts', []),
   module('orchestrator/src/monitor/monitor-harness-load.ts', [
     '../canon/canon-load.ts',
     '../canon/canon-load-files.ts',

@@ -29,6 +29,7 @@ import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { existingBranchesWithoutWorktrees } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import {
   abandonedBootstrapConditions,
@@ -604,25 +605,24 @@ export async function monitor(
       })
     }
 
-    const worktreeRefs = new Set(
-      (git(project.path, ['worktree', 'list', '--porcelain']) ?? '')
-        .split('\n')
-        .filter((line) => line.startsWith('branch refs/heads/'))
-        .map((line) => line.slice(18)),
-    )
+    const worktreeRefs = (git(project.path, ['worktree', 'list', '--porcelain']) ?? '')
+      .split('\n')
+      .filter((line) => line.startsWith('branch refs/heads/'))
+      .map((line) => line.slice(18))
+    const localHeads = git(project.path, [
+      'for-each-ref',
+      '--format=%(refname:short)',
+      'refs/heads',
+    ])
+    if (localHeads === null) continue
     const branches = database
       .query(
         `SELECT minted_branch branch, MIN(started_at) started_at FROM run
         WHERE repo=? AND minted_branch IS NOT NULL GROUP BY minted_branch`,
       )
       .all(project.name) as { branch: string; started_at: string }[]
-    for (const branch of branches) {
-      if (worktreeRefs.has(branch.branch)) continue
-      if (
-        git(project.path, ['show-ref', '--verify', '--quiet', `refs/heads/${branch.branch}`]) ===
-        null
-      )
-        continue
+    const existingHeads = localHeads.split('\n').filter(Boolean)
+    for (const branch of existingBranchesWithoutWorktrees(branches, worktreeRefs, existingHeads)) {
       const subject = `${project.name}:${branch.branch}`
       let action: string
       if (reclaimProject?.name !== project.name) {
