@@ -7,15 +7,23 @@ import { JOBS } from '../jobs/jobs.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { dryRunReleaseResult, reconstructibilityHold } from './absent-tree-close-out.ts'
 import { readerScratchReleaseDecision } from './reader-scratch-release.ts'
 
-export type ReaderScratchCloseOutPlan =
+type ReaderScratchCloseOutPlan =
   | { action: 'ordinary' }
   | { action: 'archive' }
   | { action: 'hold'; detail: string }
 
+type ScratchCloseOutResult = {
+  runId: number
+  worktree: string
+  outcome: 'held' | 'released' | 'absent'
+  detail: string
+}
+
 /** Identify terminal dirty reader scratch without inspecting writing-job worktrees. */
-export function readerScratchCloseOutPlan(input: {
+function readerScratchCloseOutPlan(input: {
   job: string
   terminal: boolean
   treeAbsent: boolean
@@ -34,6 +42,39 @@ export function readerScratchCloseOutPlan(input: {
   if (decision !== 'archive-then-release') return { action: 'ordinary' }
   const safety = proveWorktreeReconstructible(input.treePath, { allowDirty: true })
   return safety.ok ? { action: 'archive' } : { action: 'hold', detail: safety.action }
+}
+
+/** Resolve reader scratch and the ordinary reconstructibility/dry-run gates in one decision edge. */
+export function prepareReaderScratchCloseOut(input: {
+  runId: number
+  job: string
+  terminal: boolean
+  treeAbsent: boolean
+  treePath: string
+  dryRun: boolean
+}): { proceed: true; archive: boolean } | { proceed: false; result: ScratchCloseOutResult } {
+  const plan = readerScratchCloseOutPlan(input)
+  if (plan.action === 'hold')
+    return {
+      proceed: false,
+      result: {
+        runId: input.runId,
+        worktree: input.treePath,
+        outcome: 'held',
+        detail: plan.detail,
+      },
+    }
+  if (plan.action === 'ordinary') {
+    const hold = reconstructibilityHold(input.runId, input.treePath, input.treeAbsent)
+    if (hold) return { proceed: false, result: hold }
+  }
+  if (input.dryRun) {
+    const result = dryRunReleaseResult(input.runId, input.treePath, input.treeAbsent)
+    if (plan.action === 'archive')
+      result.detail = 'would archive reader scratch and release its terminal clone'
+    return { proceed: false, result }
+  }
+  return { proceed: true, archive: plan.action === 'archive' }
 }
 
 function archiveFailure(detail: string, terminal: boolean): { ok: false; detail: string } {
@@ -55,7 +96,9 @@ export function archiveReaderScratchForRelease(input: {
   runId: number
   treePath: string
   terminal: boolean
-}): { ok: true; path: string } | { ok: false; detail: string } {
+  planned: boolean
+}): { ok: true; path: string | null } | { ok: false; detail: string } {
+  if (!input.planned) return { ok: true, path: null }
   const intent = gitResult(['add', '-N', '--', '.'], input.treePath)
   if (!intent.ok || intent.stderr)
     return archiveFailure(
@@ -89,4 +132,9 @@ export function archiveReaderScratchForRelease(input: {
   return decision === 'release'
     ? { ok: true, path }
     : { ok: false, detail: 'reader scratch archive did not permit release' }
+}
+
+/** Add the durable archive address only when reader scratch was archived. */
+export function readerScratchReleaseDetail(detail: string, path: string | null): string {
+  return path ? `${detail}; reader scratch archived at ${path}` : detail
 }

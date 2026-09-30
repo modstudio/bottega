@@ -42,11 +42,9 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import {
   absentTreeCloseOut,
-  dryRunReleaseResult,
   failedResourceRemovalResult,
   pointerMustClear,
   type ResourceTeardownResult,
-  reconstructibilityHold,
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
@@ -63,7 +61,8 @@ import {
 } from './conversation-liveness.ts'
 import {
   archiveReaderScratchForRelease,
-  readerScratchCloseOutPlan,
+  prepareReaderScratchCloseOut,
+  readerScratchReleaseDetail,
 } from './reader-scratch-close-out.ts'
 import { retainedBranchForCloseOut } from './retained-branch.ts'
 
@@ -718,29 +717,15 @@ function attemptCloseOutRun(
               options.dryRun,
             )
             if (lockedHold) return lockedHold
-            const scratchPlan = readerScratchCloseOutPlan({
+            const scratch = prepareReaderScratchCloseOut({
+              runId: row.root_id,
               job: effective.job,
               terminal: TERMINAL.has(effective.status),
               treeAbsent,
               treePath,
+              dryRun: Boolean(options.dryRun),
             })
-            if (scratchPlan.action === 'hold')
-              return {
-                runId: row.root_id,
-                worktree: treePath,
-                outcome: 'held' as const,
-                detail: scratchPlan.detail,
-              }
-            if (scratchPlan.action === 'ordinary') {
-              const reconstructibility = reconstructibilityHold(row.root_id, treePath, treeAbsent)
-              if (reconstructibility) return reconstructibility
-            }
-            if (options.dryRun) {
-              const result = dryRunReleaseResult(row.root_id, treePath, treeAbsent)
-              if (scratchPlan.action === 'archive')
-                result.detail = 'would archive reader scratch and release its terminal clone'
-              return result
-            }
+            if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.
             const liveCoordinator = aliveConversationTurns(row.root_id).find(
               (turn) => turn.pid !== process.pid,
@@ -755,23 +740,20 @@ function attemptCloseOutRun(
             terminateRunProcesses(row.id, [process.pid])
             const landingHold = landingTreeReleaseHold(landingReleaseInput)
             if (landingHold) return landingHold
-            let archivedScratchPath: string | null = null
-            if (scratchPlan.action === 'archive') {
-              const archive = archiveReaderScratchForRelease({
-                runId: extractionRunId(row),
-                treePath,
-                terminal: TERMINAL.has(effective.status),
-              })
-              if (!archive.ok) {
-                return {
-                  runId: row.root_id,
-                  worktree: treePath,
-                  outcome: 'held' as const,
-                  detail: `${archive.detail}; clone and claim retained`,
-                }
+            const archive = archiveReaderScratchForRelease({
+              runId: extractionRunId(row),
+              treePath,
+              terminal: TERMINAL.has(effective.status),
+              planned: scratch.archive,
+            })
+            if (!archive.ok)
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'held' as const,
+                detail: `${archive.detail}; clone and claim retained`,
               }
-              archivedScratchPath = archive.path
-            }
+            const archivedScratchPath = archive.path
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
             const pinFailure = protectRetainedBranch({
@@ -879,8 +861,7 @@ function attemptCloseOutRun(
               }
             }
             const released = successfulReleaseResult(row.root_id, treePath, treeAbsent, result)
-            if (archivedScratchPath)
-              released.detail = `${released.detail}; reader scratch archived at ${archivedScratchPath}`
+            released.detail = readerScratchReleaseDetail(released.detail, archivedScratchPath)
             return released
           },
           options.lockTimeoutMs,
