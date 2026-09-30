@@ -8,6 +8,8 @@ import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
 import { matchAutomaticBranchLandingForTip, matchBranchLandings } from './branch-landing-match.ts'
 import {
+  type AutomaticLandingPreview,
+  previewAutomaticBranchLandingEvidence,
   type RecordedLandingReport,
   recordAutomaticBranchLandingEvidence,
 } from './branch-landing-service.ts'
@@ -80,6 +82,7 @@ type BranchReportProject = {
   protected: { branch: string; runIds: number[] }[]
   keys: { key: string; branches: BranchReportRow[] }[]
   recordedLandings: RecordedLandingReport[]
+  wouldRecordLandings: AutomaticLandingPreview[]
   observations: string[]
   other?: OtherBranchReportRow[]
 }
@@ -101,6 +104,7 @@ export type BranchPruneReport = {
     command: string
   }[]
   recordedLandings: RecordedLandingReport[]
+  wouldRecordLandings: AutomaticLandingPreview[]
   observations: string[]
   errors: string[]
 }
@@ -223,9 +227,11 @@ function repairBranchLandings(input: {
   trunkTip: string
   recordedLandings: BranchLandingRecord[]
   pullRequests: readonly MergedPullRequest[]
+  dryRun: boolean
 }): {
   recordedLandings: BranchLandingRecord[]
   newlyRecordedLandings: RecordedLandingReport[]
+  wouldRecordLandings: AutomaticLandingPreview[]
   observations: string[]
 } {
   const candidateBranches = new Set(
@@ -249,12 +255,19 @@ function repairBranchLandings(input: {
     ]
   })
   const newlyRecordedLandings: RecordedLandingReport[] = []
+  const wouldRecordLandings: AutomaticLandingPreview[] = []
   const observations: string[] = []
   for (const match of matchBranchLandings(candidates, input.pullRequests)) {
     try {
-      newlyRecordedLandings.push(
-        recordAutomaticBranchLandingEvidence(match.branch, match.pullRequest),
-      )
+      if (input.dryRun) {
+        wouldRecordLandings.push(
+          previewAutomaticBranchLandingEvidence(match.branch, match.pullRequest),
+        )
+      } else {
+        newlyRecordedLandings.push(
+          recordAutomaticBranchLandingEvidence(match.branch, match.pullRequest),
+        )
+      }
     } catch (error) {
       observations.push(
         `${match.branch}: landing lookup found PR #${match.pullRequest.number} but did not record it: ${error instanceof Error ? error.message : String(error)}`,
@@ -266,13 +279,19 @@ function repairBranchLandings(input: {
       ? recordedBranchLandings()
       : input.recordedLandings,
     newlyRecordedLandings,
+    wouldRecordLandings,
     observations,
   }
 }
 
 function branchReportFor(
   project: Project,
-  options: { key?: string; allLocal?: boolean; repairLandings?: boolean },
+  options: {
+    key?: string
+    allLocal?: boolean
+    repairLandings?: boolean
+    dryRunLandingRepair?: boolean
+  },
 ): BranchReportProject {
   const trunk = project.settings.trunk?.trim() ?? ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
@@ -291,6 +310,7 @@ function branchReportFor(
   const checkedOut = checkedOutBranches(project)
   let recordedLandings = recordedBranchLandings()
   let newlyRecordedLandings: RecordedLandingReport[] = []
+  let wouldRecordLandings: AutomaticLandingPreview[] = []
   let observations: string[] = []
   const trunkTip = git(
     project.path,
@@ -328,9 +348,11 @@ function branchReportFor(
       trunkTip,
       recordedLandings,
       pullRequests,
+      dryRun: options.dryRunLandingRepair ?? false,
     })
     recordedLandings = repair.recordedLandings
     newlyRecordedLandings = repair.newlyRecordedLandings
+    wouldRecordLandings = repair.wouldRecordLandings
     observations = repair.observations
   }
 
@@ -450,6 +472,7 @@ function branchReportFor(
     protected: protectedBranches,
     keys,
     recordedLandings: newlyRecordedLandings,
+    wouldRecordLandings,
     observations,
   }
   if (options.allLocal) {
@@ -572,6 +595,7 @@ function observationError(project: Project, error: unknown): BranchReportProject
     protected: [],
     keys: [],
     recordedLandings: [],
+    wouldRecordLandings: [],
     observations: lookupFailed ? [`landing lookup failed: ${detail}`] : [],
   }
 }
@@ -581,6 +605,7 @@ export function branchesReport(options: {
   key?: string
   allLocal?: boolean
   repairLandings?: boolean
+  dryRunLandingRepair?: boolean
 }): BranchesReport {
   const selected = options.project === undefined ? null : projectByName(options.project)
   if (options.project !== undefined && !selected)
@@ -713,6 +738,7 @@ export function pruneBranches(options: {
     project: options.project,
     key: options.key,
     repairLandings: true,
+    dryRunLandingRepair: options.dryRun,
   })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
@@ -728,6 +754,7 @@ export function pruneBranches(options: {
     kept: [],
     operator: [],
     recordedLandings: projectReport.recordedLandings,
+    wouldRecordLandings: projectReport.wouldRecordLandings,
     observations: projectReport.observations,
     errors: [],
   }
@@ -748,7 +775,11 @@ export function pruneProjectBranches(options: {
   project: string
   dryRun?: boolean
 }): BranchPruneReport {
-  const observed = branchesReport({ project: options.project, repairLandings: true })
+  const observed = branchesReport({
+    project: options.project,
+    repairLandings: true,
+    dryRunLandingRepair: options.dryRun,
+  })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const project = projectByName(options.project)!
@@ -762,6 +793,7 @@ export function pruneProjectBranches(options: {
     kept: [],
     operator: [],
     recordedLandings: projectReport.recordedLandings,
+    wouldRecordLandings: projectReport.wouldRecordLandings,
     observations: projectReport.observations,
     errors: [],
   }
@@ -873,6 +905,7 @@ export function pruneOtherBranches(options: {
     project: options.project,
     allLocal: true,
     repairLandings: true,
+    dryRunLandingRepair: options.dryRun,
   })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
@@ -887,6 +920,7 @@ export function pruneOtherBranches(options: {
     kept: [],
     operator: [],
     recordedLandings: projectReport.recordedLandings,
+    wouldRecordLandings: projectReport.wouldRecordLandings,
     observations: projectReport.observations,
     errors: [],
   }
@@ -927,6 +961,9 @@ export function renderBranchPruneReport(report: BranchPruneReport): string {
   for (const landing of report.recordedLandings) {
     lines.push(`  recorded landing: ${landing.branch} (PR #${landing.number})`)
   }
+  for (const landing of report.wouldRecordLandings) {
+    lines.push(`  would record landing: ${landing.branch} (PR #${landing.number})`)
+  }
   for (const observation of report.observations) lines.push(`  observation: ${observation}`)
   for (const branch of acted) lines.push(`  ${action}: ${branch}`)
   for (const row of report.kept) lines.push(`  kept: ${row.branch} (${row.reason})`)
@@ -948,6 +985,9 @@ function renderProject(project: BranchReportProject): string[] {
   }
   for (const landing of project.recordedLandings) {
     lines.push(`  recorded landing: ${landing.branch} (PR #${landing.number})`)
+  }
+  for (const landing of project.wouldRecordLandings) {
+    lines.push(`  would record landing: ${landing.branch} (PR #${landing.number})`)
   }
   for (const row of project.protected) {
     lines.push(`  protected: ${row.branch}  runs ${row.runIds.join(',')}`)

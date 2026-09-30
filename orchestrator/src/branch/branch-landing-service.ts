@@ -25,6 +25,14 @@ export type RecordedLandingReport = {
   localTipDiffersFromPrHead: boolean
 }
 
+export type AutomaticLandingPreview = Omit<RecordedLandingReport, 'recordedAt'>
+
+type PreparedAutomaticLanding = {
+  project: Project
+  tip: string
+  report: AutomaticLandingPreview
+}
+
 function command(cwd: string, argv: string[], label: string): string {
   let process: ReturnType<typeof Bun.spawnSync>
   try {
@@ -140,6 +148,29 @@ export function recordAutomaticBranchLandingEvidence(
   branch: string,
   pullRequest: PullRequestLandingEvidence,
 ): RecordedLandingReport {
+  const prepared = prepareAutomaticBranchLandingEvidence(branch, pullRequest)
+  return persistVerifiedBranchLanding(
+    branch,
+    prepared.project,
+    prepared.report.taskKey,
+    prepared.report,
+    prepared.tip,
+    false,
+  )
+}
+
+/** Verify already-listed GitHub evidence without performing the automatic repair. */
+export function previewAutomaticBranchLandingEvidence(
+  branch: string,
+  pullRequest: PullRequestLandingEvidence,
+): AutomaticLandingPreview {
+  return prepareAutomaticBranchLandingEvidence(branch, pullRequest).report
+}
+
+function prepareAutomaticBranchLandingEvidence(
+  branch: string,
+  pullRequest: PullRequestLandingEvidence,
+): PreparedAutomaticLanding {
   const { project, taskKey } = branchRunIdentity(branch)
   const verification = verifyBranchLanding(taskKey, pullRequest)
   if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
@@ -153,14 +184,16 @@ export function recordAutomaticBranchLandingEvidence(
   if (decision.action === 'skip') {
     throw new Error(`refusing to record landing: ${decision.reason}`)
   }
-  return persistVerifiedBranchLanding(
-    branch,
+  return {
     project,
-    taskKey,
-    verification.landing,
-    decision.tip,
-    false,
-  )
+    tip: decision.tip,
+    report: {
+      branch,
+      taskKey,
+      ...verification.landing,
+      localTipDiffersFromPrHead: false,
+    },
+  }
 }
 
 function persistBranchLanding(
