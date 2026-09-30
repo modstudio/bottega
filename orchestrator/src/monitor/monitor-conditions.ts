@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import {
   type PidRecordIdentity,
   pidAlive,
-  pidRecordIdentity,
   processStartTime,
 } from '../../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -302,20 +301,47 @@ type TerminalProcessRun = {
   agent_start_time: string | null
 }
 
-function terminalProcessState(run: TerminalProcessRun) {
+type TerminalProcessStateDeps = {
+  alive: (pid: number) => boolean
+  observedStartTime: (pid: number) => string | null
+}
+
+function terminalPidObservation(
+  pid: number | null,
+  deps: TerminalProcessStateDeps,
+): { alive: boolean; birth: string | null } {
+  const alive = Boolean(pid && deps.alive(pid))
+  return { alive, birth: pid && alive ? deps.observedStartTime(pid) : null }
+}
+
+function terminalVendorIdentity(
+  run: TerminalProcessRun,
+  alive: boolean,
+  birth: string | null,
+  finishedAt: number | null,
+): PidRecordIdentity {
+  if (pidBornAfterRun(birth, finishedAt)) return 'reused'
+  if (!run.agent_pid || run.agent_pid <= 1 || !alive) return 'dead'
+  if (!run.agent_start_time || birth === null) return 'unknown'
+  return birth === run.agent_start_time ? 'live' : 'reused'
+}
+
+/** Classify one terminal run from supplied process observations. */
+export function terminalProcessState(
+  run: TerminalProcessRun,
+  deps: TerminalProcessStateDeps = {
+    alive: pidAlive,
+    observedStartTime: processStartTime,
+  },
+) {
   const startedAt = Date.parse(run.started_at)
   const finishedAt =
     run.latency_ms !== null && Number.isFinite(startedAt) ? startedAt + run.latency_ms : null
-  const coordinatorReused = Boolean(
-    run.pid && pidBornAfterRun(processStartTime(run.pid), finishedAt),
-  )
-  const vendorReused = Boolean(
-    run.agent_pid && pidBornAfterRun(processStartTime(run.agent_pid), finishedAt),
-  )
-  const vendorIdentity = vendorReused
-    ? 'reused'
-    : pidRecordIdentity(run.agent_pid, run.agent_start_time)
-  const coordinatorLive = Boolean(run.pid && run.pid > 1 && !coordinatorReused && pidAlive(run.pid))
+  const coordinator = terminalPidObservation(run.pid, deps)
+  const vendor = terminalPidObservation(run.agent_pid, deps)
+  const coordinatorReused = pidBornAfterRun(coordinator.birth, finishedAt)
+  const vendorIdentity = terminalVendorIdentity(run, vendor.alive, vendor.birth, finishedAt)
+  const coordinatorLive = Boolean(run.pid && run.pid > 1 && !coordinatorReused && coordinator.alive)
   const roots = [
     ...new Set(
       [
@@ -337,6 +363,11 @@ export type TerminalProcessResidueObservation = {
 /** Observe recorded pids and descendants that outlived a terminal run. Never mutates them. */
 export function terminalProcessResidueObservations(
   clock = Date.now(),
+  deps: {
+    sample?: typeof sampleProcesses
+    alive?: (pid: number) => boolean
+    observedStartTime?: (pid: number) => string | null
+  } = {},
 ): TerminalProcessResidueObservation[] {
   const terminal = db()
     .query(
@@ -345,10 +376,20 @@ export function terminalProcessResidueObservations(
         AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
     )
     .all() as TerminalProcessRun[]
+  const samples = terminal.length ? (deps.sample ?? sampleProcesses)() : []
+  const stateDeps: TerminalProcessStateDeps = {
+    alive: deps.alive ?? pidAlive,
+    observedStartTime: deps.observedStartTime ?? processStartTime,
+  }
   return terminal.flatMap((run): TerminalProcessResidueObservation[] => {
-    const { coordinatorLive, vendorIdentity, roots, pgid } = terminalProcessState(run)
+    const { coordinatorLive, vendorIdentity, roots, pgid } = terminalProcessState(run, stateDeps)
     const vendorLive = vendorIdentity === 'live' || vendorIdentity === 'unknown'
-    const descendantsLive = runHasLiveDescendants(roots, [], {}, pgid)
+    const descendantsLive = runHasLiveDescendants(
+      roots,
+      [],
+      { sample: () => samples, alive: stateDeps.alive },
+      pgid,
+    )
     if (!coordinatorLive && !vendorLive && !descendantsLive) return []
     const reported =
       (vendorLive && run.agent_pid) ||
