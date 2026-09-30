@@ -22,6 +22,100 @@ type ScratchCloseOutResult = {
   detail: string
 }
 
+const NESTED_REPOSITORY_SEARCH_LIMIT = 10_000
+
+function nestedRepositoryHold(paths: string[]): ReaderScratchCloseOutPlan {
+  return {
+    action: 'hold',
+    detail:
+      `reader clone contains nested repositories: ${paths.join(', ')}; ` +
+      'inspect and remove them by hand before retrying close-out',
+  }
+}
+
+function initializedSubmodulePaths(
+  treePath: string,
+): { ok: true; paths: string[] } | { ok: false; detail: string } {
+  const status = gitResult(['submodule', 'status', '--recursive'], treePath)
+  if (!status.ok)
+    return {
+      ok: false,
+      detail: `could not inspect initialized submodules: ${status.stderr || 'unknown error'}`,
+    }
+  const paths = status.stdout
+    .split('\n')
+    .filter((line) => line && line[0] !== '-')
+    .map((line) =>
+      line
+        .slice(1)
+        .trimStart()
+        .replace(/^[0-9a-f]+\s+/, '')
+        .replace(/\s+\(.*\)$/, ''),
+    )
+    .filter(Boolean)
+  return { ok: true, paths }
+}
+
+function nestedDirectoryEntries(
+  treePath: string,
+  directory: string,
+  entries: Dirent[],
+  pending: string[],
+  paths: string[],
+): void {
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === '.git') continue
+    const child = join(directory, entry.name)
+    if (existsSync(join(child, '.git'))) paths.push(relative(treePath, child))
+    else pending.push(child)
+  }
+}
+
+function readNestedDirectory(
+  treePath: string,
+  directory: string,
+): { ok: true; entries: Dirent[] } | { ok: false; detail: string } {
+  try {
+    return { ok: true, entries: readdirSync(directory, { withFileTypes: true }) }
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `could not inspect ${relative(treePath, directory) || '.'}: ${String((error as Error).message ?? error)}`,
+    }
+  }
+}
+
+function nestedGitEntryPaths(
+  treePath: string,
+): { ok: true; paths: string[] } | { ok: false; detail: string } {
+  const pending = [treePath]
+  const paths: string[] = []
+  let inspected = 0
+  while (pending.length) {
+    const directory = pending.pop()!
+    const read = readNestedDirectory(treePath, directory)
+    if (!read.ok) return read
+    inspected += read.entries.length
+    if (inspected > NESTED_REPOSITORY_SEARCH_LIMIT)
+      return {
+        ok: false,
+        detail: `nested repository search exceeded ${NESTED_REPOSITORY_SEARCH_LIMIT} entries`,
+      }
+    nestedDirectoryEntries(treePath, directory, read.entries, pending, paths)
+  }
+  return { ok: true, paths }
+}
+
+function nestedRepositoryPaths(
+  treePath: string,
+): { ok: true; paths: string[] } | { ok: false; detail: string } {
+  const submodules = initializedSubmodulePaths(treePath)
+  if (!submodules.ok) return submodules
+  const entries = nestedGitEntryPaths(treePath)
+  if (!entries.ok) return entries
+  return { ok: true, paths: [...new Set([...submodules.paths, ...entries.paths])].sort() }
+}
+
 /** Identify terminal dirty reader scratch without inspecting writing-job worktrees. */
 function readerScratchCloseOutPlan(input: {
   job: string
@@ -33,6 +127,13 @@ function readerScratchCloseOutPlan(input: {
   const definition = JOBS[input.job]
   const readOnlyJob = Boolean(definition?.needs.readsRepo) && !definition?.needs.writesRepo
   if (!readOnlyJob || input.treeAbsent) return { action: 'ordinary' }
+  const nested = nestedRepositoryPaths(input.treePath)
+  if (!nested.ok)
+    return {
+      action: 'hold',
+      detail: `${nested.detail}; clone and nested contents retained for manual inspection`,
+    }
+  if (nested.paths.length) return nestedRepositoryHold(nested.paths)
   const decision = readerScratchReleaseDecision({
     readOnlyJob,
     terminal: input.terminal,
@@ -91,57 +192,6 @@ function archiveFailure(detail: string, terminal: boolean): { ok: false; detail:
   }
 }
 
-function inspectNestedRepository(
-  treePath: string,
-  repositoryPath: string,
-  dirtyPaths: string[],
-): string | null {
-  if (!existsSync(join(repositoryPath, '.git'))) return null
-  const nestedPath = relative(treePath, repositoryPath) || '.'
-  const status = gitResult(
-    ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'],
-    repositoryPath,
-  )
-  if (!status.ok) return `could not inspect nested repository ${nestedPath}: ${status.stderr}`
-  if (status.stdout.trim()) dirtyPaths.push(nestedPath)
-  return null
-}
-
-function inspectNestedDirectory(
-  treePath: string,
-  directory: string,
-  pending: string[],
-  dirtyPaths: string[],
-): string | null {
-  let entries: Dirent[]
-  try {
-    entries = readdirSync(directory, { withFileTypes: true })
-  } catch (error) {
-    return `could not inspect ${relative(treePath, directory) || '.'}: ${String((error as Error).message ?? error)}`
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === '.git') continue
-    const child = join(directory, entry.name)
-    const failure = inspectNestedRepository(treePath, child, dirtyPaths)
-    if (failure) return failure
-    pending.push(child)
-  }
-  return null
-}
-
-function inspectNestedRepositories(
-  treePath: string,
-): { ok: true; dirtyPaths: string[] } | { ok: false; detail: string } {
-  const pending = [treePath]
-  const dirtyPaths: string[] = []
-  while (pending.length) {
-    const directory = pending.pop()!
-    const failure = inspectNestedDirectory(treePath, directory, pending, dirtyPaths)
-    if (failure) return { ok: false, detail: failure }
-  }
-  return { ok: true, dirtyPaths }
-}
-
 /** Write tracked and untracked reader scratch as one patch without touching a ref. */
 export function archiveReaderScratchForRelease(input: {
   runId: number
@@ -150,17 +200,6 @@ export function archiveReaderScratchForRelease(input: {
   planned: boolean
 }): { ok: true; path: string | null } | { ok: false; detail: string } {
   if (!input.planned) return { ok: true, path: null }
-  const nested = inspectNestedRepositories(input.treePath)
-  if (!nested.ok)
-    return archiveFailure(
-      `scratch archive could not prove nested repositories clean: ${nested.detail}; preserve and clean nested repository changes, then retry close-out`,
-      input.terminal,
-    )
-  if (nested.dirtyPaths.length)
-    return archiveFailure(
-      `scratch archive refused dirty nested repositories: ${nested.dirtyPaths.join(', ')}; preserve and clean their changes, then retry close-out`,
-      input.terminal,
-    )
   const intent = gitResult(['add', '-N', '--', '.'], input.treePath)
   if (!intent.ok || intent.stderr)
     return archiveFailure(
