@@ -368,7 +368,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       key,
       { project: taskFlag('project') },
       taskHas('keep-branches'),
-      taskHas('force') ? required('force') : undefined,
+      taskHas('abandon') ? required('abandon') : undefined,
       {},
     )
     printRow(closed)
@@ -549,6 +549,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     printRow(
       await setTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') }, changes, {
         force: taskHas('force'),
+        abandonReason: taskHas('abandon') ? required('abandon') : undefined,
       }),
     )
     return

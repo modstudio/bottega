@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTaskClose } from './task-close.ts'
+import { decideTaskClose } from './task-close-decision.ts'
 
 describe('task close decision', () => {
   test('closes when every branch is landed', () => {
@@ -20,7 +20,7 @@ describe('task close decision', () => {
       reason:
         'refusing to close a task with unlanded branch work:\n' +
         '  DEV-1027-worker: unlanded; 2 commits not on trunk\n' +
-        'Land each branch, delete it, or pass --force "<reason>" to close and record why the work was abandoned.',
+        'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.',
     })
   })
 

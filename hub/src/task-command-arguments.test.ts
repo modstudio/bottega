@@ -37,8 +37,10 @@ describe('task command arguments', () => {
   })
 
   test('requires a reason when forcing a close', () => {
-    expect(parse('close', ['DEV-847', '--force', 'abandoned']).ok).toBeTrue()
-    expect(parse('close', ['DEV-847', '--force']).ok).toBeFalse()
+    expect(parse('close', ['DEV-847', '--abandon', 'prototype abandoned']).ok).toBeTrue()
+    expect(parse('close', ['DEV-847', '--abandon']).ok).toBeFalse()
+    expect(parse('set', ['DEV-847', '--status', 'done', '--abandon', 'prototype abandoned']).ok).toBeTrue()
+    expect(parse('set', ['DEV-847', '--status', 'done', '--abandon']).ok).toBeFalse()
   })
 
   test('refuses a value flag with no value', () => {

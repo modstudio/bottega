@@ -6,8 +6,10 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { projectWriteDecisionFor } from './hosted-write-mode.ts'
 import { persistInstallBinding, readInstallBinding } from './install-binding.ts'
+import { classifyTaskBranches, type BranchPruneResult } from './orch.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { runRef } from './reconcile.ts'
+import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import {
   hostedCloseTask,
   hostedCommentTask,
@@ -174,6 +176,12 @@ function assertParent(key: string | null | undefined, project?: string) {
 
 /** Check, allocate, insert, and record an override under one serialized write transaction. */
 type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
+
+type DoneTransitionOptions = {
+  abandonReason?: string
+  classify?: (project: string, key: string) => Promise<BranchPruneResult>
+  comment?: typeof commentTask
+}
 
 function writeMode(
   projectName: string,
@@ -613,6 +621,38 @@ function applyLocalTaskPatch(
   return row
 }
 
+async function prepareDoneTransition(
+  current: TaskRow,
+  options: { hosted?: HostedOptions } & DoneTransitionOptions,
+): Promise<void> {
+  if (options.abandonReason && current.source !== 'local') {
+    throw new Error(
+      `cannot abandon unlanded work for task ${current.key}: task is not local and cannot take a comment`,
+    )
+  }
+  let classification: ReturnType<typeof landingCheck>
+  try {
+    classification = landingCheck(
+      await (options.classify ?? classifyTaskBranches)(current.project, current.key),
+    )
+  } catch (error) {
+    classification = {
+      available: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
+  const decision = decideTaskClose(classification, options.abandonReason)
+  if (decision.action === 'refuse') throw new Error(decision.reason)
+  if (decision.comment !== null) {
+    await (options.comment ?? commentTask)(
+      current.key,
+      { recordId: current.record_id },
+      decision.comment,
+      { hosted: options.hosted },
+    )
+  }
+}
+
 export async function setTask(
   key: string,
   scope: TaskScope,
@@ -623,7 +663,7 @@ export async function setTask(
     body?: string
     assignee?: string | null
   },
-  options: { force?: boolean; hosted?: HostedOptions } = {},
+  options: { force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
   const current = showTask(upper, scope).task
@@ -633,6 +673,9 @@ export async function setTask(
   const parent =
     changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
   assertParent(parent, current.project)
+  if (category === 'done' && current.status_category !== 'done') {
+    await prepareDoneTransition(current, options)
+  }
   const mode = writeMode(current.project, options.hosted)
   if (mode === 'local-authoritative') {
     const at = nowIso()
@@ -661,9 +704,10 @@ export async function setTask(
 export async function closeTask(
   key: string,
   scope: TaskScope,
-  options: { hosted?: HostedOptions } = {},
+  options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
   const current = showTask(key, scope).task
+  if (current.status_category !== 'done') await prepareDoneTransition(current, options)
   const mode = writeMode(current.project, options.hosted)
   if (mode === 'local-authoritative') {
     const at = nowIso()
