@@ -431,9 +431,13 @@ describe('local-authoritative task writes', () => {
     await deleteTaskDocument(document.id)
     expect(() => getTaskDocument(document.id)).toThrow(`no task document ${document.id}`)
 
-    const closed = await closeTask(created.key, {}, {
-      classify: async (_project, key) => branchClassification(key),
-    })
+    const closed = await closeTask(
+      created.key,
+      {},
+      {
+        classify: async (_project, key) => branchClassification(key),
+      },
+    )
     expect(closed.status_category).toBe('done')
     expect(closed.closed_at).toBeTruthy()
   })
@@ -441,29 +445,39 @@ describe('local-authoritative task writes', () => {
   test('set refuses a done transition with an unlanded branch without mutating', async () => {
     const created = await createTask({ project: 'beta', title: 'Unlanded set transition' })
     await expect(
-      setTask(created.key, {}, { status: 'done' }, {
-        classify: async (_project, key) =>
-          branchClassification(key, [
-            {
-              branch: `${key}-worker`,
-              state: 'unlanded',
-              commitsNotOnTrunk: 2,
-              command: `git branch -D ${key}-worker`,
-            },
-          ]),
-      }),
+      setTask(
+        created.key,
+        {},
+        { status: 'done' },
+        {
+          classify: async (_project, key) =>
+            branchClassification(key, [
+              {
+                branch: `${key}-worker`,
+                state: 'unlanded',
+                commitsNotOnTrunk: 2,
+                command: `git branch -D ${key}-worker`,
+              },
+            ]),
+        },
+      ),
     ).rejects.toThrow(`${created.key}-worker: unlanded; 2 commits not on trunk`)
     expect(showTask(created.key).task.status_category).toBe('open')
   })
 
   test('set allows a done transition when every branch is landed or deleted', async () => {
     const created = await createTask({ project: 'beta', title: 'Landed set transition' })
-    const closed = await setTask(created.key, {}, { status: 'done' }, {
-      classify: async (_project, key) => ({
-        ...branchClassification(key),
-        wouldDelete: [`${key}-landed`],
-      }),
-    })
+    const closed = await setTask(
+      created.key,
+      {},
+      { status: 'done' },
+      {
+        classify: async (_project, key) => ({
+          ...branchClassification(key),
+          wouldDelete: [`${key}-landed`],
+        }),
+      },
+    )
     expect(closed.status_category).toBe('done')
   })
 
@@ -471,13 +485,18 @@ describe('local-authoritative task writes', () => {
     seed('BET-998', 'beta', 'mcp')
     let classified = false
     await expect(
-      setTask('BET-998', {}, { status: 'done' }, {
-        abandonReason: 'work deliberately abandoned',
-        classify: async (_project, key) => {
-          classified = true
-          return branchClassification(key)
+      setTask(
+        'BET-998',
+        {},
+        { status: 'done' },
+        {
+          abandonReason: 'work deliberately abandoned',
+          classify: async (_project, key) => {
+            classified = true
+            return branchClassification(key)
+          },
         },
-      }),
+      ),
     ).rejects.toThrow('task BET-998 is not local')
     expect(classified).toBeFalse()
     expect(showTask('BET-998').task.status_category).toBe('open')
@@ -486,21 +505,26 @@ describe('local-authoritative task writes', () => {
   test('a failed abandon comment leaves the task open', async () => {
     const created = await createTask({ project: 'beta', title: 'Failed abandon comment' })
     await expect(
-      setTask(created.key, {}, { status: 'done' }, {
-        abandonReason: 'work deliberately abandoned',
-        classify: async (_project, key) =>
-          branchClassification(key, [
-            {
-              branch: `${key}-worker`,
-              state: 'unlanded',
-              commitsNotOnTrunk: 1,
-              command: `git branch -D ${key}-worker`,
-            },
-          ]),
-        comment: async () => {
-          throw new Error('comment write failed')
+      setTask(
+        created.key,
+        {},
+        { status: 'done' },
+        {
+          abandonReason: 'work deliberately abandoned',
+          classify: async (_project, key) =>
+            branchClassification(key, [
+              {
+                branch: `${key}-worker`,
+                state: 'unlanded',
+                commitsNotOnTrunk: 1,
+                command: `git branch -D ${key}-worker`,
+              },
+            ]),
+          comment: async () => {
+            throw new Error('comment write failed')
+          },
         },
-      }),
+      ),
     ).rejects.toThrow('comment write failed')
     expect(showTask(created.key).task.status_category).toBe('open')
   })

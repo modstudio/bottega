@@ -141,10 +141,18 @@ function validatedTaskArguments(): ParsedTaskArguments | undefined {
 }
 
 function taskArgumentReaders(parsed: ParsedTaskArguments | undefined) {
+  const taskFlag = (name: string) => parsed?.values.get(`--${name}`)
+  const taskHas = (name: string) =>
+    parsed?.values.has(`--${name}`) === true || parsed?.booleans.has(`--${name}`) === true
   return {
-    taskFlag: (name: string) => parsed?.values.get(`--${name}`),
-    taskHas: (name: string) =>
-      parsed?.values.has(`--${name}`) === true || parsed?.booleans.has(`--${name}`) === true,
+    taskFlag,
+    taskHas,
+    taskOptionalFlag: (name: string) => {
+      if (!taskHas(name)) return undefined
+      const value = taskFlag(name)
+      if (value === undefined || !value.trim()) throw new Error(`--${name} is required`)
+      return value
+    },
   }
 }
 
@@ -350,7 +358,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
   }
   const resolved = resolveTaskCommand(taskArgv)
   const sub = resolved?.command
-  const { taskFlag, taskHas } = taskArgumentReaders(parsed)
+  const { taskFlag, taskHas, taskOptionalFlag } = taskArgumentReaders(parsed)
   const required = (name: string) => {
     const value = taskFlag(name)
     if (value === undefined || !value.trim()) throw new Error(`--${name} is required`)
@@ -368,7 +376,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       key,
       { project: taskFlag('project') },
       taskHas('keep-branches'),
-      taskHas('abandon') ? required('abandon') : undefined,
+      taskOptionalFlag('abandon'),
       {},
     )
     printRow(closed)
@@ -549,7 +557,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     printRow(
       await setTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') }, changes, {
         force: taskHas('force'),
-        abandonReason: taskHas('abandon') ? required('abandon') : undefined,
+        abandonReason: taskOptionalFlag('abandon'),
       }),
     )
     return

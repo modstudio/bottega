@@ -1,6 +1,5 @@
 import { pruneTaskBranches } from './orch.ts'
 import { closeTask, type TaskRow, type TaskScope } from './task.ts'
-export { decideTaskClose } from './task-close-decision.ts'
 
 export async function closeThenPrune(
   key: string,
@@ -8,11 +7,7 @@ export async function closeThenPrune(
   keepBranches: boolean,
   abandonReason: string | undefined,
   dependencies: {
-    close?: (
-      key: string,
-      scope: TaskScope,
-      options: { abandonReason?: string },
-    ) => Promise<TaskRow>
+    close?: (key: string, scope: TaskScope, options: { abandonReason?: string }) => Promise<TaskRow>
     prune?: typeof pruneTaskBranches
   } = {},
 ) {

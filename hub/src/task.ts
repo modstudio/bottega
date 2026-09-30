@@ -6,10 +6,9 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { projectWriteDecisionFor } from './hosted-write-mode.ts'
 import { persistInstallBinding, readInstallBinding } from './install-binding.ts'
-import { classifyTaskBranches, type BranchPruneResult } from './orch.ts'
+import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { runRef } from './reconcile.ts'
-import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import {
   hostedCloseTask,
   hostedCommentTask,
@@ -20,6 +19,7 @@ import {
   hostedPatchTask,
   type TaskFetch,
 } from './task-client.ts'
+import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { resolveTask, taskIdentityDecision, taskRecordIdFor } from './task-identity.ts'
 
 export type TaskScope = { project?: string; recordId?: string }
