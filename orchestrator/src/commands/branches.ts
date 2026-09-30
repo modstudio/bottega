@@ -6,10 +6,10 @@ import {
   branchesReport,
   pruneBranches,
   pruneOtherBranches,
-  recordBranchLanding,
   renderBranchesReport,
   renderBranchPruneReport,
 } from '../branch/branches.ts'
+import { recordBranchLanding } from '../branch/branch-landing-service.ts'
 import { log } from './support.ts'
 
 export function register(program: Command): void {
@@ -26,6 +26,7 @@ export function register(program: Command): void {
         project: options.project,
         key: options.key,
         allLocal: options.allLocal,
+        repairLandings: true,
       })
       log(options.json ? JSON.stringify(report) : renderBranchesReport(report))
       if (report.projects.some((project) => project.error)) process.exitCode = 1

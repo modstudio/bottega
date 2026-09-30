@@ -10,6 +10,16 @@ export const branchModuleSpecs = [
   },
   { file: 'orchestrator/src/branch/branch-landing-record.ts', allowed: ['./branch-state.ts'] },
   {
+    file: 'orchestrator/src/branch/branch-landing-service.ts',
+    allowed: [
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      '../pull-request/pr-admission.ts',
+      './branch-landing-record.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/branch/task-key-pull-request.ts',
     allowed: ['bun:sqlite', '../database/db.ts'],
   },

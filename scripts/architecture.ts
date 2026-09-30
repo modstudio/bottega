@@ -102,7 +102,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
   ]),
   module('orchestrator/src/branch/branches.ts', [
-    './branch-landing-record.ts',
+    './branch-landing-service.ts',
     './branch-state.ts',
     './branch-settlement.ts',
     '../database/db.ts',

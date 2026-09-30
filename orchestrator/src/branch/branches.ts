@@ -1,17 +1,16 @@
 // concern: branches
 /** Observes registered projects and assembles the run-minted branch report. */
 
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, writableDb } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
-import { finalizeTriageIntent } from '../pull-request/pr-admission.ts'
 import {
-  chooseBranchLandingTip,
-  type PullRequestLandingEvidence,
-  verifyBranchLanding,
-} from './branch-landing-record.ts'
+  matchBranchLandings,
+  recordBranchLandingEvidence,
+  type RecordedLandingReport,
+} from './branch-landing-service.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLandingRecord,
@@ -80,6 +79,8 @@ type BranchReportProject = {
   truncated: boolean
   protected: { branch: string; runIds: number[] }[]
   keys: { key: string; branches: BranchReportRow[] }[]
+  recordedLandings: RecordedLandingReport[]
+  observations: string[]
   other?: OtherBranchReportRow[]
 }
 
@@ -99,6 +100,8 @@ export type BranchPruneReport = {
     commitsNotOnTrunk: number
     command: string
   }[]
+  recordedLandings: RecordedLandingReport[]
+  observations: string[]
   errors: string[]
 }
 
@@ -135,22 +138,6 @@ function command(cwd: string, argv: string[], label: string): string {
 
 function git(cwd: string, ...args: string[]): string {
   return command(cwd, ['git', ...args], `git ${args.join(' ')}`)
-}
-
-function localBranchTip(cwd: string, branch: string): string | null {
-  const args = ['rev-parse', '--verify', '--quiet', '--end-of-options', `${branch}^{commit}`]
-  const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
-  const process = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: { ...env, NO_COLOR: '1' },
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (process.exitCode === 0) return process.stdout?.toString().trim() ?? ''
-  if (process.exitCode === 1) return null
-  throw new Error(
-    `git ${args.join(' ')} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
-  )
 }
 
 function recordedBranchLandings(): BranchLandingRecord[] {
@@ -231,7 +218,7 @@ function checkedOutBranches(project: Project): Set<string> {
 
 function branchReportFor(
   project: Project,
-  options: { key?: string; allLocal?: boolean },
+  options: { key?: string; allLocal?: boolean; repairLandings?: boolean },
 ): BranchReportProject {
   const trunk = project.settings.trunk?.trim() ?? ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
@@ -248,7 +235,9 @@ function branchReportFor(
     [...branchDetails].map(([branch, detail]) => [branch, detail.tip] as const),
   )
   const checkedOut = checkedOutBranches(project)
-  const recordedLandings = recordedBranchLandings()
+  let recordedLandings = recordedBranchLandings()
+  const newlyRecordedLandings: RecordedLandingReport[] = []
+  const observations: string[] = []
   const trunkTip = git(
     project.path,
     'rev-parse',
@@ -275,6 +264,38 @@ function branchReportFor(
     const byBranch = minted.get(key) ?? new Map<string, RunRow[]>()
     byBranch.set(run.minted_branch, [...(byBranch.get(run.minted_branch) ?? []), run])
     minted.set(key, byBranch)
+  }
+
+  if (options.repairLandings) {
+    const candidateBranches = new Set(
+      [...minted.values()].flatMap((byBranch) => [...byBranch.keys()]),
+    )
+    const candidates = [...candidateBranches].flatMap((branch) => {
+      const tip = branches.get(branch)!
+      const commitCount = Number(git(project.path, 'rev-list', '--count', tip, '--not', trunkTip))
+      if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
+        throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
+      }
+      if (commitCount === 0) return []
+      return [
+        {
+          branch,
+          hasLandingRecord:
+            findRecordedBranchLanding(recordedLandings, project.name, branch) !== null,
+        },
+      ]
+    })
+    for (const match of matchBranchLandings(candidates, pullRequests)) {
+      try {
+        const recorded = recordBranchLandingEvidence(match.branch, match.pullRequest)
+        newlyRecordedLandings.push(recorded)
+      } catch (error) {
+        observations.push(
+          `${match.branch}: landing lookup found PR #${match.pullRequest.number} but did not record it: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    if (newlyRecordedLandings.length) recordedLandings = recordedBranchLandings()
   }
 
   const keys = [...minted]
@@ -388,6 +409,8 @@ function branchReportFor(
     truncated,
     protected: protectedBranches,
     keys,
+    recordedLandings: newlyRecordedLandings,
+    observations,
   }
   if (options.allLocal) {
     const mintedNames = new Set(
@@ -495,6 +518,7 @@ function otherBranchReportRow(input: {
 
 function observationError(project: Project, error: unknown): BranchReportProject {
   const detail = error instanceof Error ? error.message : String(error)
+  const lookupFailed = detail.startsWith('pull-request listing')
   const fix = detail.startsWith('merged pull-request listing')
     ? 'install gh, run gh auth login, and configure a GitHub remote for this checkout'
     : detail.startsWith('git remote get-url origin')
@@ -507,6 +531,8 @@ function observationError(project: Project, error: unknown): BranchReportProject
     truncated: false,
     protected: [],
     keys: [],
+    recordedLandings: [],
+    observations: lookupFailed ? [`landing lookup failed: ${detail}`] : [],
   }
 }
 
@@ -514,6 +540,7 @@ export function branchesReport(options: {
   project?: string
   key?: string
   allLocal?: boolean
+  repairLandings?: boolean
 }): BranchesReport {
   const selected = options.project === undefined ? null : projectByName(options.project)
   if (options.project !== undefined && !selected)
@@ -526,137 +553,6 @@ export function branchesReport(options: {
         return observationError(project, error)
       }
     }),
-  }
-}
-
-type BranchRunIdentity = { project_name: string; launch_key: string | null }
-
-function branchRunIdentity(branch: string): {
-  project: Project
-  taskKey: string
-} {
-  const matches = db()
-    .query(
-      `SELECT DISTINCT p.name project_name,r.launch_key
-         FROM run r
-         JOIN project p ON p.id=r.project_id OR (r.project_id IS NULL AND p.name=r.repo)
-        WHERE r.minted_branch=?`,
-    )
-    .all(branch) as BranchRunIdentity[]
-  if (matches.length === 0) throw new Error(`branch ${branch} is not a recorded run branch`)
-  if (matches.length !== 1) {
-    throw new Error(`branch ${branch} belongs to more than one recorded project or task key`)
-  }
-  const match = matches[0]!
-  if (!match.launch_key) throw new Error(`branch ${branch} has no recorded task key`)
-  const project = projectByName(match.project_name)
-  if (!project) throw new Error(`project ${match.project_name} is not active`)
-  return { project, taskKey: match.launch_key }
-}
-
-function pullRequestLanding(project: Project, number: number): PullRequestLandingEvidence {
-  const output = command(
-    project.path,
-    [
-      'gh',
-      'pr',
-      'view',
-      String(number),
-      '--json',
-      'number,state,title,headRefName,headRefOid,mergeCommit,mergedAt',
-    ],
-    `pull-request verification for PR #${number}`,
-  )
-  let value: unknown
-  try {
-    value = JSON.parse(output)
-  } catch (error) {
-    throw new Error(
-      `pull-request verification returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-  if (!isPullRequestLandingEvidence(value)) {
-    throw new Error('pull-request verification returned an unexpected JSON shape')
-  }
-  return value
-}
-
-function isPullRequestLandingEvidence(value: unknown): value is PullRequestLandingEvidence {
-  if (!value || typeof value !== 'object') return false
-  const row = value as Record<string, unknown>
-  const mergeCommit = row.mergeCommit
-  return (
-    Number.isInteger(row.number) &&
-    typeof row.state === 'string' &&
-    typeof row.title === 'string' &&
-    typeof row.headRefName === 'string' &&
-    (typeof row.headRefOid === 'string' || row.headRefOid === null) &&
-    (typeof row.mergedAt === 'string' || row.mergedAt === null) &&
-    (mergeCommit === null ||
-      (typeof mergeCommit === 'object' &&
-        mergeCommit !== null &&
-        typeof (mergeCommit as Record<string, unknown>).oid === 'string'))
-  )
-}
-
-export type RecordedLandingReport = {
-  branch: string
-  taskKey: string
-  number: number
-  mergeCommit: string | null
-  mergedAt: string
-  recordedAt: string
-  localTipDiffersFromPrHead: boolean
-}
-
-/** Verify GitHub's merged PR evidence, then persist one explicit landing row. */
-export function recordBranchLanding(branch: string, number: number): RecordedLandingReport {
-  if (!branch.trim()) throw new Error('branch must be non-empty')
-  if (!Number.isSafeInteger(number) || number < 1) throw new Error('PR number must be positive')
-  writableDb()
-  const { project, taskKey } = branchRunIdentity(branch)
-  const pullRequest = pullRequestLanding(project, number)
-  const verification = verifyBranchLanding(taskKey, pullRequest)
-  if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
-  const tipChoice = chooseBranchLandingTip(
-    localBranchTip(project.path, branch),
-    pullRequest.headRefOid,
-  )
-  if (!tipChoice.accepted) {
-    throw new Error(
-      `refusing to record landing: neither local branch ref ${branch} nor PR #${number} headRefOid is available; run git fetch origin pull/${number}/head:refs/heads/${branch} and retry`,
-    )
-  }
-  const recordedAt = nowIso()
-  finalizeTriageIntent(project.name, branch, verification.landing.number)
-  writeTransaction(() => {
-    db()
-      .query(
-        `INSERT INTO branch_landing_record
-           (project,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?)
-         ON CONFLICT(project,branch) DO UPDATE SET
-           tip=excluded.tip, pr_number=excluded.pr_number, merge_commit=excluded.merge_commit,
-           merged_at=excluded.merged_at, recording_session=excluded.recording_session,
-           recorded_at=excluded.recorded_at`,
-      )
-      .run(
-        project.name,
-        branch,
-        tipChoice.tip,
-        verification.landing.number,
-        verification.landing.mergeCommit,
-        verification.landing.mergedAt,
-        sessionId(),
-        recordedAt,
-      )
-  })
-  return {
-    branch,
-    taskKey,
-    ...verification.landing,
-    recordedAt,
-    localTipDiffersFromPrHead: tipChoice.differsFromPrHead,
   }
 }
 
@@ -776,6 +672,7 @@ export function pruneBranches(options: {
   const observed = branchesReport({
     project: options.project,
     key: options.key,
+    repairLandings: true,
   })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
@@ -790,6 +687,8 @@ export function pruneBranches(options: {
     wouldDelete: [],
     kept: [],
     operator: [],
+    recordedLandings: projectReport.recordedLandings,
+    observations: projectReport.observations,
     errors: [],
   }
   for (const row of keyReport?.branches ?? []) {
@@ -809,7 +708,7 @@ export function pruneProjectBranches(options: {
   project: string
   dryRun?: boolean
 }): BranchPruneReport {
-  const observed = branchesReport({ project: options.project })
+  const observed = branchesReport({ project: options.project, repairLandings: true })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const project = projectByName(options.project)!
@@ -822,6 +721,8 @@ export function pruneProjectBranches(options: {
     wouldDelete: [],
     kept: [],
     operator: [],
+    recordedLandings: projectReport.recordedLandings,
+    observations: projectReport.observations,
     errors: [],
   }
   const seen = new Set<string>()
@@ -928,7 +829,11 @@ export function pruneOtherBranches(options: {
   project: string
   dryRun?: boolean
 }): BranchPruneReport {
-  const observed = branchesReport({ project: options.project, allLocal: true })
+  const observed = branchesReport({
+    project: options.project,
+    allLocal: true,
+    repairLandings: true,
+  })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const project = projectByName(options.project)!
@@ -941,6 +846,8 @@ export function pruneOtherBranches(options: {
     wouldDelete: [],
     kept: [],
     operator: [],
+    recordedLandings: projectReport.recordedLandings,
+    observations: projectReport.observations,
     errors: [],
   }
   for (const row of projectReport.other ?? []) {
@@ -977,6 +884,10 @@ export function renderBranchPruneReport(report: BranchPruneReport): string {
   const lines = [
     `${report.project} ${report.allLocal ? 'other' : report.key}: ${action} ${acted.length}; kept ${report.kept.length}`,
   ]
+  for (const landing of report.recordedLandings) {
+    lines.push(`  recorded landing: ${landing.branch} (PR #${landing.number})`)
+  }
+  for (const observation of report.observations) lines.push(`  observation: ${observation}`)
   for (const branch of acted) lines.push(`  ${action}: ${branch}`)
   for (const row of report.kept) lines.push(`  kept: ${row.branch} (${row.reason})`)
   for (const row of report.operator) {
@@ -990,9 +901,13 @@ export function renderBranchPruneReport(report: BranchPruneReport): string {
 
 function renderProject(project: BranchReportProject): string[] {
   const lines = [`${project.project} (trunk ${project.trunk || 'not configured'})`]
+  for (const observation of project.observations) lines.push(`  observation: ${observation}`)
   if (project.error) return [...lines, `  ERROR: ${project.error}`]
   if (project.truncated) {
     lines.push(`  merged PR listing reached ${GH_MERGED_PR_LIMIT}; unmatched branches are unknown`)
+  }
+  for (const landing of project.recordedLandings) {
+    lines.push(`  recorded landing: ${landing.branch} (PR #${landing.number})`)
   }
   for (const row of project.protected) {
     lines.push(`  protected: ${row.branch}  runs ${row.runIds.join(',')}`)
