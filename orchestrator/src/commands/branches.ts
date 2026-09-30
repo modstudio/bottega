@@ -42,7 +42,7 @@ export function register(program: Command): void {
       log(
         options.json
           ? JSON.stringify(report)
-          : `${report.branch}: recorded PR #${report.number} (merge ${report.mergeCommit ?? 'none'}, ${report.mergedAt})`,
+          : `${report.branch}: recorded PR #${report.number} (merge ${report.mergeCommit ?? 'none'}, ${report.mergedAt})${report.localTipDiffersFromPrHead ? '; local tip differs from PR headRefOid' : ''}`,
       )
     })
 

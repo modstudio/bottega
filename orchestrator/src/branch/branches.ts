@@ -7,7 +7,11 @@ import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
 import { finalizeTriageIntent } from '../pull-request/pr-admission.ts'
-import { type PullRequestLandingEvidence, verifyBranchLanding } from './branch-landing-record.ts'
+import {
+  chooseBranchLandingTip,
+  type PullRequestLandingEvidence,
+  verifyBranchLanding,
+} from './branch-landing-record.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLandingRecord,
@@ -131,6 +135,22 @@ function command(cwd: string, argv: string[], label: string): string {
 
 function git(cwd: string, ...args: string[]): string {
   return command(cwd, ['git', ...args], `git ${args.join(' ')}`)
+}
+
+function localBranchTip(cwd: string, branch: string): string | null {
+  const args = ['rev-parse', '--verify', '--quiet', '--end-of-options', `${branch}^{commit}`]
+  const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
+  const process = Bun.spawnSync(['git', ...args], {
+    cwd,
+    env: { ...env, NO_COLOR: '1' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (process.exitCode === 0) return process.stdout?.toString().trim() ?? ''
+  if (process.exitCode === 1) return null
+  throw new Error(
+    `git ${args.join(' ')} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
+  )
 }
 
 function recordedBranchLandings(): BranchLandingRecord[] {
@@ -543,7 +563,7 @@ function pullRequestLanding(project: Project, number: number): PullRequestLandin
       'view',
       String(number),
       '--json',
-      'number,state,title,headRefName,mergeCommit,mergedAt',
+      'number,state,title,headRefName,headRefOid,mergeCommit,mergedAt',
     ],
     `pull-request verification for PR #${number}`,
   )
@@ -570,6 +590,7 @@ function isPullRequestLandingEvidence(value: unknown): value is PullRequestLandi
     typeof row.state === 'string' &&
     typeof row.title === 'string' &&
     typeof row.headRefName === 'string' &&
+    (typeof row.headRefOid === 'string' || row.headRefOid === null) &&
     (typeof row.mergedAt === 'string' || row.mergedAt === null) &&
     (mergeCommit === null ||
       (typeof mergeCommit === 'object' &&
@@ -585,6 +606,7 @@ export type RecordedLandingReport = {
   mergeCommit: string | null
   mergedAt: string
   recordedAt: string
+  localTipDiffersFromPrHead: boolean
 }
 
 /** Verify GitHub's merged PR evidence, then persist one explicit landing row. */
@@ -593,9 +615,18 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
   if (!Number.isSafeInteger(number) || number < 1) throw new Error('PR number must be positive')
   writableDb()
   const { project, taskKey } = branchRunIdentity(branch)
-  const verification = verifyBranchLanding(taskKey, pullRequestLanding(project, number))
+  const pullRequest = pullRequestLanding(project, number)
+  const verification = verifyBranchLanding(taskKey, pullRequest)
   if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
-  const tip = git(project.path, 'rev-parse', '--verify', '--end-of-options', `${branch}^{commit}`)
+  const tipChoice = chooseBranchLandingTip(
+    localBranchTip(project.path, branch),
+    pullRequest.headRefOid,
+  )
+  if (!tipChoice.accepted) {
+    throw new Error(
+      `refusing to record landing: neither local branch ref ${branch} nor PR #${number} headRefOid is available; run git fetch origin pull/${number}/head:refs/heads/${branch} and retry`,
+    )
+  }
   const recordedAt = nowIso()
   finalizeTriageIntent(project.name, branch, verification.landing.number)
   writeTransaction(() => {
@@ -612,7 +643,7 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
       .run(
         project.name,
         branch,
-        tip,
+        tipChoice.tip,
         verification.landing.number,
         verification.landing.mergeCommit,
         verification.landing.mergedAt,
@@ -620,7 +651,13 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
         recordedAt,
       )
   })
-  return { branch, taskKey, ...verification.landing, recordedAt }
+  return {
+    branch,
+    taskKey,
+    ...verification.landing,
+    recordedAt,
+    localTipDiffersFromPrHead: tipChoice.differsFromPrHead,
+  }
 }
 
 function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): boolean {
