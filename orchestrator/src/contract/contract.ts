@@ -1209,6 +1209,8 @@ const IMPERATIVE = /^(?:push|rebase|amend)$/i
 const FILLER = /^(?:then|and|now|please)$/i
 const JOIN_PREPOSITION = /^(?:to|onto|into|from|off|on|with)$/i
 const CLAUSE_PREFIX = /^(?:\d+[.)]|[-*•])\s+/
+const HYPHEN_JOINED_TOKEN = /\b\w+(?:-\w+)+\b/g
+const FORCE_PUSH_TOKEN = /^force-push(?:es|ed|ing)?$/i
 
 function firstWord(text: string): string | null {
   const match = text.trim().match(/^[A-Za-z]+/)
@@ -1250,6 +1252,12 @@ function isGitSense(clause: string): boolean {
   )
 }
 
+function contractClauseText(clause: string): string {
+  return clause.replace(HYPHEN_JOINED_TOKEN, (token) =>
+    FORCE_PUSH_TOKEN.test(token) ? token : ' ',
+  )
+}
+
 export function contractConflicts(spec: string): ContractConflict[] {
   const prohibition =
     /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
@@ -1266,14 +1274,14 @@ export function contractConflicts(spec: string): ContractConflict[] {
   }
 
   return groups.flatMap(({ line, text, folded }) =>
-    folded
+    contractClauseText(folded)
       .split(/[.;]/)
       .some(
-        (clause) =>
-          GIT_ACTION.test(clause) &&
-          isGitSense(clause) &&
-          !prohibition.test(clause) &&
-          !noAction.test(clause),
+        (testedClause) =>
+          GIT_ACTION.test(testedClause) &&
+          isGitSense(testedClause) &&
+          !prohibition.test(testedClause) &&
+          !noAction.test(testedClause),
       )
       ? [{ line, text }]
       : [],
