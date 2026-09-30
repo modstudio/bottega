@@ -36,7 +36,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { inspectTreeOwnership, worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -53,6 +53,10 @@ import {
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
 import {
+  type ConversationKeepTreeHold,
+  cleanLandingTreeCloseOutResult,
+} from './close-out-report.ts'
+import {
   aliveConversationTurns,
   liveCloseOutResult,
   missingTreeConversationResult,
@@ -62,7 +66,8 @@ import { retainedBranchForCloseOut } from './retained-branch.ts'
 export type CloseOutResult = {
   runId: number
   worktree: string | null
-  outcome: 'released' | 'forgotten' | 'kept' | 'held' | 'live' | 'absent' | 'failed'
+  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
+  reportOutcome?: 'kept'
   detail: string
 }
 
@@ -70,19 +75,13 @@ type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
-type ConversationKeepTreeHold =
-  | (KeepTreeHoldDecision & { reason?: string })
-  | { held: true; until: null; reason: string }
-  | { held: false; kept: true; reason: string }
-
 function conversationKeepTreeHold(rootId: number, now: string): ConversationKeepTreeHold {
   const rows = db()
     .query(
-      `SELECT id,job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
+      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
        WHERE id=? OR parent_run_id=? ORDER BY id`,
     )
     .all(rootId, rootId) as {
-    id: number
     job: string
     keep_tree: number
     keep_tree_until: string | null
@@ -376,7 +375,7 @@ function terminalHoldResult(
     }
   }
   if ('kept' in hold && hold.kept)
-    return { runId, worktree: treePath, outcome: 'kept', detail: hold.reason }
+    return cleanLandingTreeCloseOutResult(runId, treePath, hold.reason)
   return null
 }
 

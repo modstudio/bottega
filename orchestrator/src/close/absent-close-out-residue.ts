@@ -7,7 +7,7 @@ type AbsentResidueKind = 'ref-guard' | 'retained-ref'
 
 type AbsentCloseOutInput = {
   runId: number
-  outcome: 'released' | 'forgotten' | 'kept' | 'held' | 'live' | 'absent' | 'failed'
+  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
   dryRun: boolean
 }

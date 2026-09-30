@@ -124,7 +124,7 @@ export function decideRecordedRunPreInventory(
 
 export type RecordedRunCloseOutFacts = {
   dry: boolean
-  outcome: 'released' | 'forgotten' | 'kept' | 'held' | 'live' | 'absent' | 'failed'
+  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
 }
 export type RecordedRunCloseOutRuling =
