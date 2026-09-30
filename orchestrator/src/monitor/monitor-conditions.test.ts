@@ -17,6 +17,8 @@ import {
   stalledRunConditions,
   terminalConversationTime,
   terminalProcessPgid,
+  terminalProcessResidueObservations,
+  terminalProcessState,
   unsettledClaimConditions,
   unsettledClaimInventory,
 } from './monitor-conditions.ts'
@@ -192,6 +194,61 @@ describe('operational monitor conditions', () => {
 
     test('catches passing a reused vendor pgid as descendant evidence', () => {
       expect(terminalProcessPgid('reused', 66547)).toBe(null)
+    })
+
+    test('classifies a terminal run from supplied process observations without inspecting dead pids', () => {
+      const starts: number[] = []
+      const state = terminalProcessState(
+        {
+          id: 91,
+          started_at: '2026-09-17T08:00:00.000Z',
+          latency_ms: 1000,
+          pid: 9100,
+          agent_pid: 9101,
+          agent_pgid: 9101,
+          agent_start_time: 'Wed Sep 17 08:00:00 2026',
+        },
+        {
+          alive: (pid) => pid === 9101,
+          observedStartTime: (pid) => {
+            starts.push(pid)
+            return 'Wed Sep 17 08:00:00 2026'
+          },
+        },
+      )
+
+      expect(state).toEqual({
+        coordinatorLive: false,
+        vendorIdentity: 'live',
+        roots: [9100, 9101],
+        pgid: 9101,
+      })
+      expect(starts).toEqual([9101])
+    })
+
+    test('samples the process table once for every terminal run in one observation', () => {
+      const first = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+      const second = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+      db().query('UPDATE run SET pid=? WHERE id=?').run(91_001, first)
+      db().query('UPDATE run SET pid=? WHERE id=?').run(91_002, second)
+      let samples = 0
+      let starts = 0
+
+      expect(
+        terminalProcessResidueObservations(Date.now(), {
+          sample: () => {
+            samples += 1
+            return []
+          },
+          alive: () => false,
+          observedStartTime: () => {
+            starts += 1
+            return null
+          },
+        }),
+      ).toEqual([])
+      expect(samples).toBe(1)
+      expect(starts).toBe(0)
     })
   })
 
