@@ -6,10 +6,10 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
+import { matchBranchLandings } from './branch-landing-match.ts'
 import {
-  matchBranchLandings,
-  recordBranchLandingEvidence,
   type RecordedLandingReport,
+  recordBranchLandingEvidence,
 } from './branch-landing-service.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
@@ -216,6 +216,58 @@ function checkedOutBranches(project: Project): Set<string> {
   return checkedOut
 }
 
+function repairBranchLandings(input: {
+  project: Project
+  minted: ReadonlyMap<string, ReadonlyMap<string, RunRow[]>>
+  branches: ReadonlyMap<string, string>
+  trunkTip: string
+  recordedLandings: BranchLandingRecord[]
+  pullRequests: readonly MergedPullRequest[]
+}): {
+  recordedLandings: BranchLandingRecord[]
+  newlyRecordedLandings: RecordedLandingReport[]
+  observations: string[]
+} {
+  const candidateBranches = new Set(
+    [...input.minted.values()].flatMap((byBranch) => [...byBranch.keys()]),
+  )
+  const candidates = [...candidateBranches].flatMap((branch) => {
+    const tip = input.branches.get(branch)!
+    const commitCount = Number(
+      git(input.project.path, 'rev-list', '--count', tip, '--not', input.trunkTip),
+    )
+    if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
+      throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
+    }
+    if (commitCount === 0) return []
+    return [
+      {
+        branch,
+        hasLandingRecord:
+          findRecordedBranchLanding(input.recordedLandings, input.project.name, branch) !== null,
+      },
+    ]
+  })
+  const newlyRecordedLandings: RecordedLandingReport[] = []
+  const observations: string[] = []
+  for (const match of matchBranchLandings(candidates, input.pullRequests)) {
+    try {
+      newlyRecordedLandings.push(recordBranchLandingEvidence(match.branch, match.pullRequest))
+    } catch (error) {
+      observations.push(
+        `${match.branch}: landing lookup found PR #${match.pullRequest.number} but did not record it: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+  return {
+    recordedLandings: newlyRecordedLandings.length
+      ? recordedBranchLandings()
+      : input.recordedLandings,
+    newlyRecordedLandings,
+    observations,
+  }
+}
+
 function branchReportFor(
   project: Project,
   options: { key?: string; allLocal?: boolean; repairLandings?: boolean },
@@ -236,8 +288,8 @@ function branchReportFor(
   )
   const checkedOut = checkedOutBranches(project)
   let recordedLandings = recordedBranchLandings()
-  const newlyRecordedLandings: RecordedLandingReport[] = []
-  const observations: string[] = []
+  let newlyRecordedLandings: RecordedLandingReport[] = []
+  let observations: string[] = []
   const trunkTip = git(
     project.path,
     'rev-parse',
@@ -267,35 +319,17 @@ function branchReportFor(
   }
 
   if (options.repairLandings) {
-    const candidateBranches = new Set(
-      [...minted.values()].flatMap((byBranch) => [...byBranch.keys()]),
-    )
-    const candidates = [...candidateBranches].flatMap((branch) => {
-      const tip = branches.get(branch)!
-      const commitCount = Number(git(project.path, 'rev-list', '--count', tip, '--not', trunkTip))
-      if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
-        throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
-      }
-      if (commitCount === 0) return []
-      return [
-        {
-          branch,
-          hasLandingRecord:
-            findRecordedBranchLanding(recordedLandings, project.name, branch) !== null,
-        },
-      ]
+    const repair = repairBranchLandings({
+      project,
+      minted,
+      branches,
+      trunkTip,
+      recordedLandings,
+      pullRequests,
     })
-    for (const match of matchBranchLandings(candidates, pullRequests)) {
-      try {
-        const recorded = recordBranchLandingEvidence(match.branch, match.pullRequest)
-        newlyRecordedLandings.push(recorded)
-      } catch (error) {
-        observations.push(
-          `${match.branch}: landing lookup found PR #${match.pullRequest.number} but did not record it: ${error instanceof Error ? error.message : String(error)}`,
-        )
-      }
-    }
-    if (newlyRecordedLandings.length) recordedLandings = recordedBranchLandings()
+    recordedLandings = repair.recordedLandings
+    newlyRecordedLandings = repair.newlyRecordedLandings
+    observations = repair.observations
   }
 
   const keys = [...minted]

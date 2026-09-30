@@ -10,6 +10,10 @@ export const branchModuleSpecs = [
   },
   { file: 'orchestrator/src/branch/branch-landing-record.ts', allowed: ['./branch-state.ts'] },
   {
+    file: 'orchestrator/src/branch/branch-landing-match.ts',
+    allowed: ['./branch-landing-record.ts'],
+  },
+  {
     file: 'orchestrator/src/branch/branch-landing-service.ts',
     allowed: [
       '../database/db.ts',

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { matchBranchLandings } from './branch-landing-match.ts'
 import type { PullRequestLandingEvidence } from './branch-landing-record.ts'
-import { matchBranchLandings } from './branch-landing-service.ts'
 
 function pullRequest(
   number: number,

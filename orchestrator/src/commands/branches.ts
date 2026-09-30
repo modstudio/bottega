@@ -2,6 +2,7 @@
 /** Registers the run-minted branch report. Must not own report behavior. */
 
 import type { Command } from 'commander'
+import { recordBranchLanding } from '../branch/branch-landing-service.ts'
 import {
   branchesReport,
   pruneBranches,
@@ -9,7 +10,6 @@ import {
   renderBranchesReport,
   renderBranchPruneReport,
 } from '../branch/branches.ts'
-import { recordBranchLanding } from '../branch/branch-landing-service.ts'
 import { log } from './support.ts'
 
 export function register(program: Command): void {
