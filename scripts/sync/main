@@ -12,7 +12,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-TRUNK="main"
+STATE_ROOT="${BOTTEGA_STATE_HOME:-$HOME/.local/state/bottega}"
+SYNC_STATE="$STATE_ROOT/ops/sync/bottega"
+INSTALL_MARKER="$SYNC_STATE/bun-lock"
+BUILD_MARKER="$SYNC_STATE/hub-web-tree"
 
 usage() {
   sed -n '2,9{s/^# \{0,1\}//;p;}' "$0"
@@ -35,58 +38,99 @@ if (( $# > 1 )); then
   exit 1
 fi
 
-current_branch="$(git -C "$PROJECT_ROOT" branch --show-current)"
-if [[ "$current_branch" != "$TRUNK" ]]; then
-  echo "REFUSE: checkout is on '${current_branch:-detached HEAD}', not registered trunk '$TRUNK'" >&2
-  exit 1
-fi
-
-if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=normal)" ]]; then
+if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=all)" ]]; then
   echo "REFUSE: checkout has uncommitted or untracked changes; commit or remove them before refreshing" >&2
   exit 1
 fi
-echo "CHECK: checkout is on $TRUNK with no uncommitted or untracked changes"
+echo "CHECK: checkout has no uncommitted or untracked changes"
 
-before="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
-echo "FETCH: origin/$TRUNK"
-git -C "$PROJECT_ROOT" fetch --quiet origin "$TRUNK"
-
-if ! git -C "$PROJECT_ROOT" merge --ff-only --quiet FETCH_HEAD; then
-  echo "REFUSE: local $TRUNK cannot fast-forward to origin/$TRUNK; reconcile the branch by hand" >&2
+if ! refresh_output="$("$PROJECT_ROOT/bin/orch" tree refresh "$PROJECT_ROOT" 2>&1)"; then
+  refresh_output="${refresh_output//$'\n'/ }"
+  echo "REFUSE: $refresh_output" >&2
   exit 1
 fi
+refresh_output="${refresh_output//$'\n'/ }"
+echo "UPDATE: $refresh_output"
 
-after="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
-if [[ "$before" == "$after" ]]; then
-  echo "UPDATE: skipped; $TRUNK is already current at ${after:0:12}"
-else
-  echo "UPDATE: fast-forwarded $TRUNK from ${before:0:12} to ${after:0:12}"
+mkdir -p "$SYNC_STATE"
+
+write_marker() {
+  local marker="$1"
+  local value="$2"
+  local temporary
+  temporary="$(mktemp "$SYNC_STATE/.marker.XXXXXX")"
+  printf '%s\n' "$value" > "$temporary"
+  mv "$temporary" "$marker"
+}
+
+bun_lock_hash="$(git -C "$PROJECT_ROOT" rev-parse HEAD:bun.lock)"
+recorded_bun_lock_hash=""
+if [[ -f "$INSTALL_MARKER" ]]; then
+  recorded_bun_lock_hash="$(<"$INSTALL_MARKER")"
 fi
 
-if [[ "$before" != "$after" ]] && ! git -C "$PROJECT_ROOT" diff --quiet "$before..$after" -- bun.lock; then
-  echo "INSTALL: bun.lock changed; running root workspace install"
+install_reason=""
+if [[ ! -d "$PROJECT_ROOT/node_modules" ]]; then
+  install_reason="root node_modules is missing"
+elif [[ "$recorded_bun_lock_hash" != "$bun_lock_hash" ]]; then
+  install_reason="the recorded bun.lock hash differs"
+fi
+
+if [[ -n "$install_reason" ]]; then
+  echo "INSTALL: $install_reason; running root workspace install"
   (cd "$PROJECT_ROOT" && bun install --silent)
+  write_marker "$INSTALL_MARKER" "$bun_lock_hash"
+  echo "INSTALL: succeeded; recorded bun.lock ${bun_lock_hash:0:12}"
 else
-  echo "INSTALL: skipped; bun.lock did not change in the pulled range"
+  echo "INSTALL: skipped; recorded bun.lock and root node_modules are current"
 fi
 
-dist_index="$PROJECT_ROOT/hub/web/dist/index.html"
+hub_web_tree="$(git -C "$PROJECT_ROOT" rev-parse HEAD:hub/web)"
+recorded_hub_web_tree=""
+if [[ -f "$BUILD_MARKER" ]]; then
+  recorded_hub_web_tree="$(<"$BUILD_MARKER")"
+fi
+
+dist_dir="$PROJECT_ROOT/hub/web/dist"
 build_reason=""
-if [[ "$before" != "$after" ]] && ! git -C "$PROJECT_ROOT" diff --quiet "$before..$after" -- hub/web; then
-  build_reason="hub/web changed in the pulled range"
-elif [[ ! -f "$dist_index" ]]; then
+if [[ ! -f "$dist_dir/index.html" ]]; then
   build_reason="hub/web/dist/index.html is missing"
-else
-  newest_source_commit="$(git -C "$PROJECT_ROOT" log -1 --format=%ct -- hub/web)"
-  dist_mtime="$(python3 -c 'import os, sys; print(int(os.path.getmtime(sys.argv[1])))' "$dist_index")"
-  if [[ -n "$newest_source_commit" ]] && (( dist_mtime < newest_source_commit )); then
-    build_reason="hub/web/dist/index.html is older than the newest hub/web source commit"
-  fi
+elif [[ "$recorded_hub_web_tree" != "$hub_web_tree" ]]; then
+  build_reason="the recorded hub/web tree differs"
 fi
 
 if [[ -n "$build_reason" ]]; then
-  echo "BUILD: $build_reason; rebuilding the local web bundle"
-  (cd "$PROJECT_ROOT" && bun run --cwd hub/web build)
+  build_dir="$(mktemp -d "$PROJECT_ROOT/hub/web/.dist-sync.XXXXXX")"
+  backup_dir=""
+
+  cleanup_build_directories() {
+    if [[ -n "$backup_dir" && -d "$backup_dir" && ! -e "$dist_dir" ]]; then
+      mv "$backup_dir" "$dist_dir"
+    fi
+    if [[ -n "$build_dir" && -d "$build_dir" ]]; then
+      rm -rf "$build_dir"
+    fi
+    if [[ -n "$backup_dir" && -d "$backup_dir" ]]; then
+      rm -rf "$backup_dir"
+    fi
+  }
+  trap cleanup_build_directories EXIT
+
+  echo "BUILD: $build_reason; building the local web bundle in a temporary directory"
+  (cd "$PROJECT_ROOT" && bun run --cwd hub/web build -- --outDir "$build_dir")
+
+  if [[ -e "$dist_dir" ]]; then
+    backup_dir="$(mktemp -d "$PROJECT_ROOT/hub/web/.dist-old.XXXXXX")"
+    rmdir "$backup_dir"
+    mv "$dist_dir" "$backup_dir"
+  fi
+  mv "$build_dir" "$dist_dir"
+  build_dir=""
+  write_marker "$BUILD_MARKER" "$hub_web_tree"
+  echo "BUILD: succeeded; recorded hub/web ${hub_web_tree:0:12}; the dashboard serves it without a restart"
+
+  cleanup_build_directories
+  trap - EXIT
 else
-  echo "BUILD: skipped; the local web bundle is current"
+  echo "BUILD: skipped; recorded hub/web tree and local web bundle are current"
 fi
