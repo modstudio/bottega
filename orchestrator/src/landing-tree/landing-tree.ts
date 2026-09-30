@@ -85,10 +85,19 @@ export function landingTreeReleaseDecision(
 }
 
 export function landingTreeHoldDecision<T>(
-  row: { job: string; treeExists: boolean },
+  row: { job: string; treeExists: boolean; branch: string | null; runId: number },
+  clean: boolean,
   ordinary: T,
-): T | { held: true; until: null; reason: string } {
-  return row.job === LANDING_TREE_JOB && row.treeExists
-    ? { held: true, until: null, reason: 'landing tree; remove with orch tree remove <path>' }
-    : ordinary
+): T | { held: true; until: null; reason: string } | { held: false; kept: true; reason: string } {
+  if (row.job !== LANDING_TREE_JOB || !row.treeExists) return ordinary
+  if (!clean) {
+    return { held: true, until: null, reason: 'landing tree; remove with orch tree remove <path>' }
+  }
+  return {
+    held: false,
+    kept: true,
+    reason:
+      `clean landing tree; branch ${row.branch ?? '<unknown>'} holds its work; ` +
+      `orch tree open ${row.runId} recreates it`,
+  }
 }

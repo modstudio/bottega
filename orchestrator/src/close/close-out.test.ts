@@ -10,6 +10,7 @@ import {
   extractionRunId,
   releaseRunFailoverAttempts,
 } from './close-out.ts'
+import { closeOutCommand } from './close-out-command.ts'
 
 afterEach(() => {
   mock.restore()
@@ -40,7 +41,7 @@ function normalizedGitArgs(command: string[]): string[] {
 
 function landingObservationResult(
   command: string[],
-  observation: 'becomes-dirty' | 'missing-branch' | undefined,
+  observation: 'clean' | 'becomes-dirty' | 'missing-branch' | undefined,
   branch: string,
   state: { statusCalls: number },
 ): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
@@ -63,7 +64,7 @@ function landingObservationResult(
 function closeOutFixture(
   ownership: 'owned' | 'attached',
   retainedRefDeleteFails = false,
-  landingObservation?: 'becomes-dirty' | 'missing-branch',
+  landingObservation?: 'clean' | 'becomes-dirty' | 'missing-branch',
 ) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
@@ -335,6 +336,28 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
     expect(result).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: tree is dirty',
+    })
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('clean landing-tree close-out persists held while reporting kept', () => {
+  const fixture = closeOutFixture('owned', false, 'clean')
+  const lines: string[] = []
+  const exitCodes: number[] = []
+  try {
+    closeOutCommand(fixture.id, true, {
+      log: (line) => lines.push(line),
+      setExitCode: (code) => exitCodes.push(code),
+    })
+
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toStartWith(`kept run ${fixture.id} ${fixture.tree}: clean landing tree;`)
+    expect(exitCodes).toEqual([])
+    expect(db().query('SELECT close_out_outcome FROM run WHERE id=?').get(fixture.id)).toEqual({
+      close_out_outcome: 'held',
     })
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {

@@ -36,8 +36,8 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { type KeepTreeHoldDecision, keepTreeHold } from '../worktree/keep-tree-hold.ts'
-import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
+import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { inspectTreeOwnership, worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
@@ -53,6 +53,10 @@ import {
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
 import {
+  type ConversationKeepTreeHold,
+  cleanLandingTreeCloseOutResult,
+} from './close-out-report.ts'
+import {
   aliveConversationTurns,
   liveCloseOutResult,
   missingTreeConversationResult,
@@ -63,6 +67,7 @@ export type CloseOutResult = {
   runId: number
   worktree: string | null
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
+  reportOutcome?: 'kept'
   detail: string
 }
 
@@ -70,14 +75,10 @@ type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
-type ConversationKeepTreeHold =
-  | (KeepTreeHoldDecision & { reason?: string })
-  | { held: true; until: null; reason: string }
-
 function conversationKeepTreeHold(rootId: number, now: string): ConversationKeepTreeHold {
   const rows = db()
     .query(
-      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree FROM run
+      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
        WHERE id=? OR parent_run_id=? ORDER BY id`,
     )
     .all(rootId, rootId) as {
@@ -87,6 +88,7 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
     keep_tree_reason: string | null
     started_at: string
     worktree: string | null
+    branch: string | null
   }[]
   const treeExists = rows.some((row) => row.worktree !== null && existsSync(row.worktree))
   const expired: { held: false; expiredAt: string }[] = []
@@ -99,7 +101,8 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
     })
     if (decision.held) {
       return landingTreeHoldDecision(
-        { job: row.job, treeExists },
+        { job: row.job, treeExists, branch: row.branch, runId: rootId },
+        !row.worktree || !existsSync(row.worktree) || !worktreeDirty(row.worktree).dirty,
         hookTreeHoldDecision(
           { job: row.job, treeExists },
           {
@@ -113,9 +116,17 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
   }
   const latest = expired.sort((a, b) => Date.parse(b.expiredAt) - Date.parse(a.expiredAt))[0]
   const hook = rows.some((row) => row.job === HOOK_TREE_JOB) ? HOOK_TREE_JOB : ''
-  const landing = rows.some((row) => row.job === LANDING_TREE_JOB) ? LANDING_TREE_JOB : ''
+  const landingRows = rows.filter((row) => row.job === LANDING_TREE_JOB)
   return landingTreeHoldDecision(
-    { job: landing, treeExists },
+    {
+      job: landingRows[0]?.job ?? '',
+      treeExists,
+      branch: landingRows[0]?.branch ?? null,
+      runId: rootId,
+    },
+    landingRows
+      .filter((row) => row.worktree && existsSync(row.worktree))
+      .every((row) => !worktreeDirty(row.worktree!).dirty),
     hookTreeHoldDecision({ job: hook, treeExists }, latest ?? { held: false as const }),
   )
 }
@@ -363,6 +374,8 @@ function terminalHoldResult(
           : `held by ${hold.reason} until ${hold.until}; clear with orch discard ${runId}`,
     }
   }
+  if ('kept' in hold && hold.kept)
+    return cleanLandingTreeCloseOutResult(runId, treePath, hold.reason)
   return null
 }
 

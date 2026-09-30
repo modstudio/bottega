@@ -187,13 +187,14 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'close-out-boundary',
     'orchestrator/src/close/close-out.ts',
+    // biome-ignore format: compact entries keep the frozen boundary manifest within its ceiling.
     [
       'node:fs',
       'node:path',
       './absent-close-out-residue.ts',
       './absent-tree-close-out.ts',
       './close-out-adoption.ts',
-      './close-out-questions.ts',
+      './close-out-questions.ts', './close-out-report.ts',
       './conversation-liveness.ts',
       './retained-branch.ts',
       '../database/db.ts',

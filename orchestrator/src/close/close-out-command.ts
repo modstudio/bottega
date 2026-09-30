@@ -11,8 +11,9 @@ export function closeOutCommand(
 ): void {
   writableDb()
   const result = closeOutRun(id, { intent: 'explicit', lockTimeoutMs: nonBlocking ? 0 : undefined })
+  const reportOutcome = result.reportOutcome ?? result.outcome
   presentation.log(
-    `${result.outcome} run ${result.runId}${result.worktree ? ` ${result.worktree}` : ''}: ${result.detail}`,
+    `${reportOutcome} run ${result.runId}${result.worktree ? ` ${result.worktree}` : ''}: ${result.detail}`,
   )
-  if (result.outcome === 'held' || result.outcome === 'failed') presentation.setExitCode(1)
+  if (reportOutcome === 'held' || reportOutcome === 'failed') presentation.setExitCode(1)
 }
