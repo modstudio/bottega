@@ -1209,7 +1209,6 @@ const IMPERATIVE = /^(?:push|rebase|amend)$/i
 const FILLER = /^(?:then|and|now|please)$/i
 const JOIN_PREPOSITION = /^(?:to|onto|into|from|off|on|with)$/i
 const CLAUSE_PREFIX = /^(?:\d+[.)]|[-*•])\s+/
-const INLINE_CODE_SPAN = /`[^`]*`/g
 const HYPHEN_JOINED_TOKEN = /\b\w+(?:-\w+)+\b/g
 const FORCE_PUSH_TOKEN = /^force-push(?:es|ed|ing)?$/i
 
@@ -1254,9 +1253,9 @@ function isGitSense(clause: string): boolean {
 }
 
 function contractClauseText(clause: string): string {
-  return clause
-    .replace(INLINE_CODE_SPAN, '')
-    .replace(HYPHEN_JOINED_TOKEN, (token) => (FORCE_PUSH_TOKEN.test(token) ? token : ''))
+  return clause.replace(HYPHEN_JOINED_TOKEN, (token) =>
+    FORCE_PUSH_TOKEN.test(token) ? token : ' ',
+  )
 }
 
 export function contractConflicts(spec: string): ContractConflict[] {
