@@ -72,6 +72,13 @@ import {
   updateTaskDocument,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
+import {
+  type ParsedTaskArguments,
+  parseTaskArguments,
+  resolveTaskCommand,
+  TASK_USAGE,
+  taskHelpRequested,
+} from './task-command-arguments.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTask } from './tracker-new.ts'
@@ -87,104 +94,10 @@ const flags = (name: string) =>
     value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [],
   )
 const has = (name: string) => argv.includes(`--${name}`)
-const taskCommandShapes = new Map<
-  string,
-  {
-    positionalCount: number
-    valueFlags: ReadonlySet<string>
-  }
->([
-  [
-    'new',
-    {
-      positionalCount: 0,
-      valueFlags: new Set([
-        '--project',
-        '--title',
-        '--status',
-        '--parent',
-        '--body',
-        '--body-file',
-        '--allow-duplicate',
-      ]),
-    },
-  ],
-  ['duplicates', { positionalCount: 0, valueFlags: new Set(['--project', '--title']) }],
-  ['tracker-new', { positionalCount: 0, valueFlags: new Set(['--project', '--title', '--body']) }],
-  ['list', { positionalCount: 0, valueFlags: new Set(['--project', '--status', '--parent']) }],
-  ['show', { positionalCount: 1, valueFlags: new Set(['--project']) }],
-  [
-    'set',
-    {
-      positionalCount: 1,
-      valueFlags: new Set(['--project', '--title', '--status', '--parent', '--body', '--assignee']),
-    },
-  ],
-  ['close', { positionalCount: 1, valueFlags: new Set(['--project']) }],
-  ['comment', { positionalCount: 2, valueFlags: new Set(['--project']) }],
-  ['import', { positionalCount: 1, valueFlags: new Set() }],
-  ['push', { positionalCount: 0, valueFlags: new Set() }],
-  ['prune-foreign', { positionalCount: 0, valueFlags: new Set(['--confirm', '--project']) }],
-  [
-    'doc new',
-    {
-      positionalCount: 1,
-      valueFlags: new Set(['--project', '--title', '--role', '--body', '--body-file']),
-    },
-  ],
-  ['doc list', { positionalCount: 1, valueFlags: new Set(['--project']) }],
-  ['doc show', { positionalCount: 1, valueFlags: new Set() }],
-  [
-    'doc set',
-    {
-      positionalCount: 1,
-      valueFlags: new Set(['--title', '--role', '--body', '--body-file', '--version']),
-    },
-  ],
-  ['doc rm', { positionalCount: 1, valueFlags: new Set() }],
-  [
-    'document new',
-    {
-      positionalCount: 1,
-      valueFlags: new Set(['--project', '--title', '--role', '--body', '--body-file']),
-    },
-  ],
-  ['document list', { positionalCount: 1, valueFlags: new Set(['--project']) }],
-  ['document show', { positionalCount: 1, valueFlags: new Set() }],
-  [
-    'document set',
-    {
-      positionalCount: 1,
-      valueFlags: new Set(['--title', '--role', '--body', '--body-file', '--version']),
-    },
-  ],
-  ['document rm', { positionalCount: 1, valueFlags: new Set() }],
-])
 const isHelpToken = (token: string | undefined) =>
   token === 'help' || token === '--help' || token === '-h'
-const taskHelpRequested = () => {
-  const verb = argv[1]
-  if (isHelpToken(verb)) return true
-  const hasAction = verb === 'doc' || verb === 'document'
-  const action = hasAction ? argv[2] : undefined
-  if (hasAction && isHelpToken(action)) return true
-  const command = hasAction ? `${verb} ${action}` : verb
-  const positionalStart = hasAction ? 3 : 2
-  const shape = taskCommandShapes.get(command ?? '')
-  const positionalCount = shape?.positionalCount ?? 0
-  let expectingValue = false
-  for (const token of argv.slice(positionalStart + positionalCount)) {
-    if (expectingValue) {
-      expectingValue = false
-      continue
-    }
-    if (isHelpToken(token)) return true
-    expectingValue = shape?.valueFlags.has(token) ?? false
-  }
-  return false
-}
 const hubHelpRequested = () => {
-  if (cmd === 'task') return taskHelpRequested()
+  if (cmd === 'task') return taskHelpRequested(argv.slice(1))
   if (isHelpToken(cmd) || argv[1] === 'help') return true
   const valueFlags = new Set([
     '--area',
@@ -217,26 +130,23 @@ const hubHelpRequested = () => {
   return false
 }
 
-const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--parent KEY]
-               [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
-  hub task duplicates --project X --title "..." --json
-  hub task list [--project X] [--status Y] [--parent KEY] [--json]
-  hub task show <KEY> [--project X] [--json]
-  hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent]
-               [--body "..."] [--assignee NAME] [--force]
-  hub task close <KEY> [--project X] [--keep-branches]
-  hub task comment <KEY> "..." [--project X]
-  hub task tracker-new --project X --title "..." --body "..."
-  hub task doc new <KEY> [--project X] --title "..." [--role handoff]
-               [--body "..."|--body-file PATH]
-  hub task doc list <KEY> [--project X] [--json]
-  hub task doc show <ID> [--json]
-  hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
-               [--body "..."|--body-file PATH] [--version TOKEN]
-  hub task doc rm <ID>
-  hub task import <file.json> backfill from a clustered commit history
-  hub task push [--dry-run]   migrate and verify the local task cache
-  hub task prune-foreign [--dry-run] [--confirm N] [--project NAME] [--only-present-elsewhere] [--json]`
+function validatedTaskArguments(): ParsedTaskArguments | undefined {
+  const taskArgv = argv.slice(1)
+  const resolved = resolveTaskCommand(taskArgv)
+  if (!resolved) return undefined
+  const result = parseTaskArguments(taskArgv, resolved)
+  if (!result) return undefined
+  if (!result.ok) throw new Error(result.refusal)
+  return result.arguments
+}
+
+function taskArgumentReaders(parsed: ParsedTaskArguments | undefined) {
+  return {
+    taskFlag: (name: string) => parsed?.values.get(`--${name}`),
+    taskHas: (name: string) =>
+      parsed?.values.has(`--${name}`) === true || parsed?.booleans.has(`--${name}`) === true,
+  }
+}
 
 const USAGE = `hub — every project's tasks in flight, what each cost, and scheduled reports
 
@@ -391,11 +301,13 @@ async function importTasks(file: string) {
 async function createTaskCommand(
   required: (name: string) => string,
   newBody: () => string | undefined,
+  taskFlag: (name: string) => string | undefined,
+  taskHas: (name: string) => boolean,
 ) {
   const project = required('project')
   const title = required('title')
   const body = newBody()
-  const override = flag('allow-duplicate')
+  const override = taskFlag('allow-duplicate')
   const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
   const afterDuplicateSearch =
     delay > 0
@@ -407,9 +319,9 @@ async function createTaskCommand(
       : undefined
   try {
     const row = await createTask(
-      { project, title, status: flag('status'), parent: flag('parent'), body },
+      { project, title, status: taskFlag('status'), parent: taskFlag('parent'), body },
       {
-        allowDuplicateReason: has('allow-duplicate') ? override : undefined,
+        allowDuplicateReason: taskHas('allow-duplicate') ? override : undefined,
         afterDuplicateSearch,
       },
     )
@@ -430,16 +342,17 @@ async function createTaskCommand(
   }
 }
 
-async function task() {
-  const sub = argv[1]
-  if (taskHelpRequested()) {
+async function task(parsed: ParsedTaskArguments | undefined) {
+  const taskArgv = argv.slice(1)
+  if (taskHelpRequested(taskArgv)) {
     console.log(TASK_USAGE)
     return
   }
+  const resolved = resolveTaskCommand(taskArgv)
+  const sub = resolved?.command
+  const { taskFlag, taskHas } = taskArgumentReaders(parsed)
   const required = (name: string) => {
-    const value = flag(name)
-    // The next token is the value even when it begins with a dash. A title
-    // about a flag is the ordinary case; calling that "missing" is a lie.
+    const value = taskFlag(name)
     if (value === undefined || !value.trim()) throw new Error(`--${name} is required`)
     return value
   }
@@ -453,8 +366,8 @@ async function task() {
   async function closeAndPruneTask(key: string) {
     const { closed, pruned, pruneError } = await closeThenPrune(
       key,
-      { project: flag('project') },
-      has('keep-branches'),
+      { project: taskFlag('project') },
+      taskHas('keep-branches'),
       {},
     )
     printRow(closed)
@@ -473,26 +386,26 @@ async function task() {
     }
   }
   const newBody = () => {
-    if (has('body') && has('body-file')) {
+    if (taskHas('body') && taskHas('body-file')) {
       throw new Error('--body and --body-file are mutually exclusive')
     }
-    if (has('body-file')) return readFileSync(required('body-file'), 'utf8')
-    if (has('body')) return required('body')
+    if (taskHas('body-file')) return readFileSync(required('body-file'), 'utf8')
+    if (taskHas('body')) return required('body')
     return undefined
   }
 
-  if (sub === 'doc' || sub === 'document') {
-    const action = argv[2]
-    const ref = argv[3] ?? ''
+  if (sub?.startsWith('doc ')) {
+    const action = sub.slice('doc '.length)
+    const ref = parsed?.positionals[0] ?? ''
     if (action === 'new') {
       const document = await createTaskDocument(
         {
           task: ref,
           title: required('title'),
           body: newBody(),
-          role: flag('role'),
+          role: taskFlag('role'),
         },
-        { project: flag('project') },
+        { project: taskFlag('project') },
       )
       // This is a value for the caller to pass back, not presentational output.
       // Bun inspects a numeric console argument and ANSI-wraps it when
@@ -501,8 +414,8 @@ async function task() {
       return
     }
     if (action === 'list') {
-      const documents = listTaskDocuments(ref, { project: flag('project') })
-      if (has('json')) console.log(JSON.stringify(documents))
+      const documents = listTaskDocuments(ref, { project: taskFlag('project') })
+      if (taskHas('json')) console.log(JSON.stringify(documents))
       else if (!documents.length) console.log('no documents')
       else
         for (const document of documents) {
@@ -513,7 +426,7 @@ async function task() {
     }
     if (action === 'show') {
       const document = getTaskDocument(ref)
-      if (has('json')) console.log(JSON.stringify(document))
+      if (taskHas('json')) console.log(JSON.stringify(document))
       else {
         console.log(
           `${document.id}  ${document.task_key}${document.role ? ` [${document.role}]` : ''}  ${document.title}`,
@@ -524,14 +437,18 @@ async function task() {
       return
     }
     if (action === 'set') {
-      if (has('role') && has('no-role'))
+      if (taskHas('role') && taskHas('no-role'))
         throw new Error('--role and --no-role are mutually exclusive')
       const body = newBody()
       const changes = {
-        ...(has('title') ? { title: required('title') } : {}),
-        ...(has('role') ? { role: required('role') } : has('no-role') ? { role: null } : {}),
+        ...(taskHas('title') ? { title: required('title') } : {}),
+        ...(taskHas('role')
+          ? { role: required('role') }
+          : taskHas('no-role')
+            ? { role: null }
+            : {}),
         ...(body !== undefined ? { body } : {}),
-        ...(has('version') ? { expectedVersion: required('version') } : {}),
+        ...(taskHas('version') ? { expectedVersion: required('version') } : {}),
       }
       if (!Object.keys(changes).length)
         throw new Error('hub task doc set requires a field to change')
@@ -544,16 +461,16 @@ async function task() {
       console.log(`${document.id} removed from ${document.task_key}`)
       return
     }
-    throw new Error('hub task doc: expected new | list | show | set | rm')
+    throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)
   }
 
   if (sub === 'new') {
-    await createTaskCommand(required, newBody)
+    await createTaskCommand(required, newBody, taskFlag, taskHas)
     return
   }
   if (sub === 'duplicates') {
     const rows = duplicateCandidates(listTasks({ project: required('project') }), required('title'))
-    if (!has('json')) throw new Error('hub task duplicates requires --json')
+    if (!taskHas('json')) throw new Error('hub task duplicates requires --json')
     console.log(JSON.stringify(rows))
     return
   }
@@ -584,18 +501,18 @@ async function task() {
   }
   if (sub === 'list') {
     const rows = listTasks({
-      project: flag('project'),
-      status: flag('status'),
-      parent: flag('parent'),
+      project: taskFlag('project'),
+      status: taskFlag('status'),
+      parent: taskFlag('parent'),
     })
-    if (has('json')) console.log(JSON.stringify(rows))
+    if (taskHas('json')) console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('no tasks')
     else rows.forEach(printRow)
     return
   }
   if (sub === 'show') {
-    const shown = showTask(argv[2] ?? '', { project: flag('project') })
-    if (has('json')) console.log(JSON.stringify(shown))
+    const shown = showTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') })
+    if (taskHas('json')) console.log(JSON.stringify(shown))
     else {
       printRow(shown.task)
       if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
@@ -614,46 +531,49 @@ async function task() {
     return
   }
   if (sub === 'set') {
-    if (has('parent') && has('no-parent'))
+    if (taskHas('parent') && taskHas('no-parent'))
       throw new Error('--parent and --no-parent are mutually exclusive')
     const changes = {
-      ...(has('title') ? { title: required('title') } : {}),
-      ...(has('status') ? { status: required('status') } : {}),
-      ...(has('parent')
+      ...(taskHas('title') ? { title: required('title') } : {}),
+      ...(taskHas('status') ? { status: required('status') } : {}),
+      ...(taskHas('parent')
         ? { parent: required('parent') }
-        : has('no-parent')
+        : taskHas('no-parent')
           ? { parent: null }
           : {}),
-      ...(has('body') ? { body: required('body') } : {}),
-      ...(has('assignee') ? { assignee: required('assignee') } : {}),
+      ...(taskHas('body') ? { body: required('body') } : {}),
+      ...(taskHas('assignee') ? { assignee: required('assignee') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
     printRow(
-      await setTask(argv[2] ?? '', { project: flag('project') }, changes, {
-        force: has('force'),
+      await setTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') }, changes, {
+        force: taskHas('force'),
       }),
     )
     return
   }
   if (sub === 'close') {
-    await closeAndPruneTask(argv[2] ?? '')
+    await closeAndPruneTask(parsed?.positionals[0] ?? '')
     return
   }
   if (sub === 'comment') {
-    const body = argv[3]
-    if (!body) throw new Error('hub task comment <KEY> "..."')
-    const comment = await commentTask(argv[2] ?? '', { project: flag('project') }, body)
+    const body = parsed?.positionals[1]
+    const comment = await commentTask(
+      parsed?.positionals[0] ?? '',
+      { project: taskFlag('project') },
+      body!,
+    )
     console.log(`${comment.task_key} commented ${comment.created_at}`)
     return
   }
   if (sub === 'import') {
-    const file = argv[2]
-    if (!file) throw new Error('hub task import <file.json>')
-    await importTasks(file)
+    const file = parsed?.positionals[0]
+    await importTasks(file!)
     return
   }
-  if (sub === 'push' || sub === 'prune-foreign') return runHostedTaskMaintenance(sub, argv)
-  throw new Error('hub task <new|list|show|set|close|comment|import|push|prune-foreign>')
+  if ((sub === 'push' || sub === 'prune-foreign') && parsed)
+    return runHostedTaskMaintenance(sub, parsed)
+  throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)
 }
 
 async function note() {
@@ -814,6 +734,8 @@ try {
     console.log(cmd === 'task' ? TASK_USAGE : USAGE)
     process.exit(0)
   }
+
+  const taskArguments = cmd === 'task' ? validatedTaskArguments() : undefined
 
   const usesDatabase =
     cmd === 'collect' ||
@@ -1014,7 +936,7 @@ try {
       break
     }
     case 'task':
-      await task()
+      await task(taskArguments)
       break
     case 'note':
       await note()
