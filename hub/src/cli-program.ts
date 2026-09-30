@@ -75,7 +75,8 @@ import { closeThenPrune } from './task-close.ts'
 import {
   type ParsedTaskArguments,
   parseTaskArguments,
-  taskCommandShapes,
+  resolveTaskCommand,
+  TASK_USAGE,
   taskHelpRequested,
 } from './task-command-arguments.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
@@ -96,7 +97,7 @@ const has = (name: string) => argv.includes(`--${name}`)
 const isHelpToken = (token: string | undefined) =>
   token === 'help' || token === '--help' || token === '-h'
 const hubHelpRequested = () => {
-  if (cmd === 'task') return taskHelpRequested(argv)
+  if (cmd === 'task') return taskHelpRequested(argv.slice(1))
   if (isHelpToken(cmd) || argv[1] === 'help') return true
   const valueFlags = new Set([
     '--area',
@@ -129,35 +130,12 @@ const hubHelpRequested = () => {
   return false
 }
 
-const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--parent KEY]
-               [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
-  hub task duplicates --project X --title "..." --json
-  hub task list [--project X] [--status Y] [--parent KEY] [--json]
-  hub task show <KEY> [--project X] [--json]
-  hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent]
-               [--body "..."] [--assignee NAME] [--force]
-  hub task close <KEY> [--project X] [--keep-branches]
-  hub task comment <KEY> "..." [--project X]
-  hub task tracker-new --project X --title "..." --body "..."
-  hub task doc new <KEY> [--project X] --title "..." [--role handoff]
-               [--body "..."|--body-file PATH]
-  hub task doc list <KEY> [--project X] [--json]
-  hub task doc show <ID> [--json]
-  hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
-               [--body "..."|--body-file PATH] [--version TOKEN]
-  hub task doc rm <ID>
-  hub task import <file.json> backfill from a clustered commit history
-  hub task push [--dry-run]   migrate and verify the local task cache
-  hub task prune-foreign [--dry-run] [--confirm N] [--project NAME] [--only-present-elsewhere] [--json]`
-
 function validatedTaskArguments(): ParsedTaskArguments | undefined {
-  const verb = argv[1]
-  const hasAction = verb === 'doc' || verb === 'document'
-  const action = hasAction ? argv[2] : undefined
-  const command = hasAction ? `${verb} ${action}` : verb
-  const commandShape = taskCommandShapes.get(command ?? '')
-  if (!commandShape) return undefined
-  const result = parseTaskArguments(argv.slice(hasAction ? 3 : 2), commandShape)
+  const taskArgv = argv.slice(1)
+  const resolved = resolveTaskCommand(taskArgv)
+  if (!resolved) return undefined
+  const result = parseTaskArguments(taskArgv, resolved)
+  if (!result) return undefined
   if (!result.ok) throw new Error(result.refusal)
   return result.arguments
 }
@@ -365,11 +343,13 @@ async function createTaskCommand(
 }
 
 async function task(parsed: ParsedTaskArguments | undefined) {
-  const sub = argv[1]
-  if (taskHelpRequested(argv)) {
+  const taskArgv = argv.slice(1)
+  if (taskHelpRequested(taskArgv)) {
     console.log(TASK_USAGE)
     return
   }
+  const resolved = resolveTaskCommand(taskArgv)
+  const sub = resolved?.command
   const { taskFlag, taskHas } = taskArgumentReaders(parsed)
   const required = (name: string) => {
     const value = taskFlag(name)
@@ -414,8 +394,8 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     return undefined
   }
 
-  if (sub === 'doc' || sub === 'document') {
-    const action = argv[2]
+  if (sub?.startsWith('doc ')) {
+    const action = sub.slice('doc '.length)
     const ref = parsed?.positionals[0] ?? ''
     if (action === 'new') {
       const document = await createTaskDocument(
@@ -481,7 +461,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       console.log(`${document.id} removed from ${document.task_key}`)
       return
     }
-    throw new Error('hub task doc: expected new | list | show | set | rm')
+    throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)
   }
 
   if (sub === 'new') {
@@ -578,23 +558,22 @@ async function task(parsed: ParsedTaskArguments | undefined) {
   }
   if (sub === 'comment') {
     const body = parsed?.positionals[1]
-    if (!body) throw new Error('hub task comment <KEY> "..."')
     const comment = await commentTask(
       parsed?.positionals[0] ?? '',
       { project: taskFlag('project') },
-      body,
+      body!,
     )
     console.log(`${comment.task_key} commented ${comment.created_at}`)
     return
   }
   if (sub === 'import') {
     const file = parsed?.positionals[0]
-    if (!file) throw new Error('hub task import <file.json>')
-    await importTasks(file)
+    await importTasks(file!)
     return
   }
-  if (sub === 'push' || sub === 'prune-foreign') return runHostedTaskMaintenance(sub, argv)
-  throw new Error('hub task <new|list|show|set|close|comment|import|push|prune-foreign>')
+  if ((sub === 'push' || sub === 'prune-foreign') && parsed)
+    return runHostedTaskMaintenance(sub, parsed)
+  throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)
 }
 
 async function note() {

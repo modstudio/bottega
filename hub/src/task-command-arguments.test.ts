@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { parseTaskArguments, taskCommandShapes } from './task-command-arguments.ts'
+import { parseTaskArguments, resolveTaskCommand } from './task-command-arguments.ts'
 
 function parse(command: string, argv: string[]) {
-  const commandShape = taskCommandShapes.get(command)
-  if (!commandShape) throw new Error(`missing test shape for ${command}`)
-  return parseTaskArguments(argv, commandShape)
+  const commandArgv = [...command.split(' '), ...argv]
+  const resolved = resolveTaskCommand(commandArgv)
+  if (!resolved) throw new Error(`missing test shape for ${command}`)
+  return parseTaskArguments(commandArgv, resolved)!
 }
 
 describe('task command arguments', () => {
@@ -46,5 +47,11 @@ describe('task command arguments', () => {
   test('refuses too few or too many positionals', () => {
     expect(parse('show', []).ok).toBeFalse()
     expect(parse('show', ['DEV-847', 'extra']).ok).toBeFalse()
+  })
+
+  test('resolves document as an alias of doc', () => {
+    const resolved = resolveTaskCommand(['document', 'show', '42'])
+    expect(resolved?.command).toBe('doc show')
+    expect(resolved?.remaining).toEqual(['42'])
   })
 })

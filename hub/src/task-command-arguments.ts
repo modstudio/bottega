@@ -1,8 +1,9 @@
-export type TaskCommandShape = {
+type TaskCommandShape = {
   positionalCount: number
   valueFlags: ReadonlySet<string>
   booleanFlags: ReadonlySet<string>
   syntax: string
+  help?: string
 }
 
 export type ParsedTaskArguments = {
@@ -20,14 +21,16 @@ const shape = (
   syntax: string,
   valueFlags: string[] = [],
   booleanFlags: string[] = [],
+  help?: string,
 ): TaskCommandShape => ({
   positionalCount,
   syntax,
   valueFlags: new Set(valueFlags),
   booleanFlags: new Set(booleanFlags),
+  help,
 })
 
-export const taskCommandShapes = new Map<string, TaskCommandShape>([
+const taskCommandShapes = new Map<string, TaskCommandShape>([
   [
     'new',
     shape(
@@ -90,8 +93,20 @@ export const taskCommandShapes = new Map<string, TaskCommandShape>([
     ),
   ],
   ['comment', shape(2, 'hub task comment <KEY> "..." [--project X]', ['--project'])],
-  ['import', shape(1, 'hub task import <file.json>')],
-  ['push', shape(0, 'hub task push [--dry-run]', [], ['--dry-run'])],
+  [
+    'import',
+    shape(1, 'hub task import <file.json>', [], [], 'backfill from a clustered commit history'),
+  ],
+  [
+    'push',
+    shape(
+      0,
+      'hub task push [--dry-run]',
+      [],
+      ['--dry-run'],
+      'migrate and verify the local task cache',
+    ),
+  ],
   [
     'prune-foreign',
     shape(
@@ -124,30 +139,30 @@ export const taskCommandShapes = new Map<string, TaskCommandShape>([
     ),
   ],
   ['doc rm', shape(1, 'hub task doc rm <ID>')],
-  [
-    'document new',
-    shape(
-      1,
-      'hub task document new <KEY> [--project X] --title "..." [--role handoff] [--body "..."|--body-file PATH]',
-      ['--project', '--title', '--role', '--body', '--body-file'],
-    ),
-  ],
-  [
-    'document list',
-    shape(1, 'hub task document list <KEY> [--project X] [--json]', ['--project'], ['--json']),
-  ],
-  ['document show', shape(1, 'hub task document show <ID> [--json]', [], ['--json'])],
-  [
-    'document set',
-    shape(
-      1,
-      'hub task document set <ID> [--title "..."] [--role handoff|--no-role] [--body "..."|--body-file PATH] [--version TOKEN]',
-      ['--title', '--role', '--body', '--body-file', '--version'],
-      ['--no-role'],
-    ),
-  ],
-  ['document rm', shape(1, 'hub task document rm <ID>')],
 ])
+
+export type ResolvedTaskCommand = {
+  command: string
+  shape: TaskCommandShape
+  remaining: readonly string[]
+}
+
+export function resolveTaskCommand(argv: readonly string[]): ResolvedTaskCommand | undefined {
+  const verb = argv[0]
+  const canonicalVerb = verb === 'document' ? 'doc' : verb
+  const hasAction = canonicalVerb === 'doc'
+  const command = hasAction ? `${canonicalVerb} ${argv[1]}` : canonicalVerb
+  const commandShape = taskCommandShapes.get(command ?? '')
+  if (!commandShape || !command) return undefined
+  return { command, shape: commandShape, remaining: argv.slice(hasAction ? 2 : 1) }
+}
+
+export const TASK_USAGE = [...taskCommandShapes.values()]
+  .map(
+    (command) =>
+      `hub task ${command.syntax.slice('hub task '.length)}${command.help ? `   ${command.help}` : ''}`,
+  )
+  .join('\n  ')
 
 const refuse = (
   token: string,
@@ -205,34 +220,37 @@ function parseFlags(
 
 export function parseTaskArguments(
   argv: readonly string[],
-  command: TaskCommandShape,
-): TaskArgumentResult {
-  const positionalResult = parsePositionals(argv, command)
+  resolved = resolveTaskCommand(argv),
+): TaskArgumentResult | undefined {
+  if (!resolved) return undefined
+  const positionalResult = parsePositionals(resolved.remaining, resolved.shape)
   if (!positionalResult.ok) return positionalResult
-  return parseFlags(argv.slice(command.positionalCount), command, positionalResult.positionals)
+  return parseFlags(
+    resolved.remaining.slice(resolved.shape.positionalCount),
+    resolved.shape,
+    positionalResult.positionals,
+  )
 }
 
 const isHelpToken = (token: string | undefined) =>
   token === 'help' || token === '--help' || token === '-h'
 
 export function taskHelpRequested(argv: readonly string[]): boolean {
-  const verb = argv[1]
+  const verb = argv[0]
   if (isHelpToken(verb)) return true
   const hasAction = verb === 'doc' || verb === 'document'
-  const action = hasAction ? argv[2] : undefined
+  const action = hasAction ? argv[1] : undefined
   if (hasAction && isHelpToken(action)) return true
-  const command = hasAction ? `${verb} ${action}` : verb
-  const positionalStart = hasAction ? 3 : 2
-  const commandShape = taskCommandShapes.get(command ?? '')
-  const positionalCount = commandShape?.positionalCount ?? 0
+  const resolved = resolveTaskCommand(argv)
+  const positionalCount = resolved?.shape.positionalCount ?? 0
   let expectingValue = false
-  for (const token of argv.slice(positionalStart + positionalCount)) {
+  for (const token of resolved?.remaining.slice(positionalCount) ?? []) {
     if (expectingValue) {
       expectingValue = false
       continue
     }
     if (isHelpToken(token)) return true
-    expectingValue = commandShape?.valueFlags.has(token) ?? false
+    expectingValue = resolved?.shape.valueFlags.has(token) ?? false
   }
   return false
 }
