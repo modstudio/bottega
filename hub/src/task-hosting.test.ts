@@ -224,7 +224,18 @@ describe('hosted-only task safety', () => {
   test('close never prunes after a hosted close failure', async () => {
     let pruned = false
     await expect(
-      closeThenPrune('DEV-1', {}, false, {
+      closeThenPrune('DEV-1', {}, false, undefined, {
+        show: () => ({ task: { project: 'workshop', key: 'DEV-1' } as never }) as never,
+        classify: async (project, key) => ({
+          project,
+          key,
+          dryRun: true,
+          deleted: [],
+          kept: [],
+          operator: [],
+          wouldDelete: [],
+          errors: [],
+        }),
         close: async () => {
           throw new Error('hosted close failed')
         },

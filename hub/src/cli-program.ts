@@ -368,6 +368,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       key,
       { project: taskFlag('project') },
       taskHas('keep-branches'),
+      taskHas('force') ? required('force') : undefined,
       {},
     )
     printRow(closed)

@@ -87,8 +87,8 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
     'close',
     shape(
       1,
-      'hub task close <KEY> [--project X] [--keep-branches]',
-      ['--project'],
+      'hub task close <KEY> [--project X] [--keep-branches] [--force "reason"]',
+      ['--project', '--force'],
       ['--keep-branches'],
     ),
   ],
