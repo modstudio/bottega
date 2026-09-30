@@ -78,8 +78,8 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
     'set',
     shape(
       1,
-      'hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent] [--body "..."] [--assignee NAME] [--force]',
-      ['--project', '--title', '--status', '--parent', '--body', '--assignee'],
+      'hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent] [--body "..."] [--assignee NAME] [--force] [--abandon "reason"]',
+      ['--project', '--title', '--status', '--parent', '--body', '--assignee', '--abandon'],
       ['--no-parent', '--force'],
     ),
   ],
@@ -87,8 +87,8 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
     'close',
     shape(
       1,
-      'hub task close <KEY> [--project X] [--keep-branches]',
-      ['--project'],
+      'hub task close <KEY> [--project X] [--keep-branches] [--abandon "reason"]',
+      ['--project', '--abandon'],
       ['--keep-branches'],
     ),
   ],

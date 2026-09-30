@@ -405,7 +405,7 @@ export async function projectRemove(name: string): Promise<void> {
   refreshProjects()
 }
 
-type BranchPruneResult = {
+export type BranchPruneResult = {
   project: string
   key: string
   dryRun: boolean
@@ -420,6 +420,19 @@ type BranchPruneResult = {
   }[]
   errors: string[]
 }
+
+/** Ask orchestrator to classify a task's branches without changing them. */
+export const classifyTaskBranches = (project: string, key: string): Promise<BranchPruneResult> =>
+  jsonDocument<BranchPruneResult>([
+    'branches',
+    'prune',
+    '--project',
+    project,
+    '--key',
+    key,
+    '--dry-run',
+    '--json',
+  ])
 
 /** Ask orchestrator to prune a closed task's run-minted branches. */
 export const pruneTaskBranches = (project: string, key: string): Promise<BranchPruneResult> =>
