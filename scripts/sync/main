@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Refresh the registered Bottega main checkout and its local dashboard bundle.
+#
+# Usage:
+#   scripts/sync/main [--refresh]
+#
+# Exit codes:
+#   0 - Success
+#   1 - Refused or failed
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+TRUNK="main"
+
+usage() {
+  sed -n '2,9{s/^# \{0,1\}//;p;}' "$0"
+}
+
+case "${1:-}" in
+  ""|--refresh) ;;
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "REFUSE: unsupported option '$1'; use --refresh" >&2
+    exit 1
+    ;;
+esac
+
+if (( $# > 1 )); then
+  echo "REFUSE: expected at most one option; use --refresh" >&2
+  exit 1
+fi
+
+current_branch="$(git -C "$PROJECT_ROOT" branch --show-current)"
+if [[ "$current_branch" != "$TRUNK" ]]; then
+  echo "REFUSE: checkout is on '${current_branch:-detached HEAD}', not registered trunk '$TRUNK'" >&2
+  exit 1
+fi
+
+if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=normal)" ]]; then
+  echo "REFUSE: checkout has uncommitted or untracked changes; commit or remove them before refreshing" >&2
+  exit 1
+fi
+echo "CHECK: checkout is on $TRUNK with no uncommitted or untracked changes"
+
+before="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+echo "FETCH: origin/$TRUNK"
+git -C "$PROJECT_ROOT" fetch --quiet origin "$TRUNK"
+
+if ! git -C "$PROJECT_ROOT" merge --ff-only --quiet FETCH_HEAD; then
+  echo "REFUSE: local $TRUNK cannot fast-forward to origin/$TRUNK; reconcile the branch by hand" >&2
+  exit 1
+fi
+
+after="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+if [[ "$before" == "$after" ]]; then
+  echo "UPDATE: skipped; $TRUNK is already current at ${after:0:12}"
+else
+  echo "UPDATE: fast-forwarded $TRUNK from ${before:0:12} to ${after:0:12}"
+fi
+
+if [[ "$before" != "$after" ]] && ! git -C "$PROJECT_ROOT" diff --quiet "$before..$after" -- bun.lock; then
+  echo "INSTALL: bun.lock changed; running root workspace install"
+  (cd "$PROJECT_ROOT" && bun install --silent)
+else
+  echo "INSTALL: skipped; bun.lock did not change in the pulled range"
+fi
+
+dist_index="$PROJECT_ROOT/hub/web/dist/index.html"
+build_reason=""
+if [[ "$before" != "$after" ]] && ! git -C "$PROJECT_ROOT" diff --quiet "$before..$after" -- hub/web; then
+  build_reason="hub/web changed in the pulled range"
+elif [[ ! -f "$dist_index" ]]; then
+  build_reason="hub/web/dist/index.html is missing"
+else
+  newest_source_commit="$(git -C "$PROJECT_ROOT" log -1 --format=%ct -- hub/web)"
+  dist_mtime="$(python3 -c 'import os, sys; print(int(os.path.getmtime(sys.argv[1])))' "$dist_index")"
+  if [[ -n "$newest_source_commit" ]] && (( dist_mtime < newest_source_commit )); then
+    build_reason="hub/web/dist/index.html is older than the newest hub/web source commit"
+  fi
+fi
+
+if [[ -n "$build_reason" ]]; then
+  echo "BUILD: $build_reason; rebuilding the local web bundle"
+  (cd "$PROJECT_ROOT" && bun run --cwd hub/web build)
+else
+  echo "BUILD: skipped; the local web bundle is current"
+fi
