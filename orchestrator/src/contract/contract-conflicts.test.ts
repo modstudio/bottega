@@ -27,6 +27,7 @@ describe('job contracts are visible before submission', () => {
     ['The merge-pr and promote-release steps refuse post-merge evidence.', false],
     ['the merge-pr step waits for checks', false],
     ["run `git push` only in the architect's step", false],
+    ['run `git push origin a.b` only in the architect step', false],
     ['the pre-push hook refuses it', false],
     ['force-push the branch', true],
     ['force-pushed the branch', true],

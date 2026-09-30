@@ -1275,9 +1275,8 @@ export function contractConflicts(spec: string): ContractConflict[] {
   }
 
   return groups.flatMap(({ line, text, folded }) =>
-    folded
+    contractClauseText(folded)
       .split(/[.;]/)
-      .map(contractClauseText)
       .some(
         (testedClause) =>
           GIT_ACTION.test(testedClause) &&
