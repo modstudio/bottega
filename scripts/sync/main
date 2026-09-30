@@ -55,6 +55,15 @@ write_marker() {
   mv "$temporary" "$marker"
 }
 
+filesystem_device() {
+  local path="$1"
+  if stat -f '%d' "$path" >/dev/null 2>&1; then
+    stat -f '%d' "$path"
+  else
+    stat -c '%d' "$path"
+  fi
+}
+
 if [[ ! -d "$PROJECT_ROOT/node_modules" ]]; then
   bootstrap_bun_lock_hash="$(git -C "$PROJECT_ROOT" rev-parse HEAD:bun.lock)"
   echo "INSTALL: root node_modules is missing; bootstrapping dependencies for the refresh command"
@@ -108,7 +117,16 @@ elif [[ "$recorded_hub_web_tree" != "$hub_web_tree" ]]; then
 fi
 
 if [[ -n "$build_reason" ]]; then
-  build_dir="$(mktemp -d "$PROJECT_ROOT/hub/web/.dist-sync.XXXXXX")"
+  temporary_root="$SYNC_STATE"
+  if [[ "$(filesystem_device "$SYNC_STATE")" != "$(filesystem_device "$PROJECT_ROOT/hub/web")" ]]; then
+    temporary_root="$PROJECT_ROOT/hub/web/node_modules"
+    mkdir -p "$temporary_root"
+    echo "BUILD: per-user sync state is on another filesystem; using gitignored hub/web/node_modules for atomic replacement"
+  else
+    echo "BUILD: using per-user sync state for the temporary bundle and backup"
+  fi
+
+  build_dir="$(mktemp -d "$temporary_root/build.XXXXXX")"
   backup_dir=""
 
   cleanup_build_directories() {
@@ -128,7 +146,7 @@ if [[ -n "$build_reason" ]]; then
   (cd "$PROJECT_ROOT" && bun run --cwd hub/web build -- --outDir "$build_dir")
 
   if [[ -e "$dist_dir" ]]; then
-    backup_dir="$(mktemp -d "$PROJECT_ROOT/hub/web/.dist-old.XXXXXX")"
+    backup_dir="$(mktemp -d "$temporary_root/backup.XXXXXX")"
     rmdir "$backup_dir"
     mv "$dist_dir" "$backup_dir"
   fi
