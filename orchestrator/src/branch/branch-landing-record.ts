@@ -8,9 +8,15 @@ export type PullRequestLandingEvidence = {
   state: string
   title: string
   headRefName: string
+  headRefOid: string | null
   mergeCommit: { oid: string } | null
   mergedAt: string | null
 }
+
+export type BranchLandingTipChoice =
+  | { accepted: true; tip: string; source: 'local'; differsFromPrHead: boolean }
+  | { accepted: true; tip: string; source: 'pull-request'; differsFromPrHead: false }
+  | { accepted: false }
 
 type VerifiedBranchLanding = {
   number: number
@@ -21,6 +27,24 @@ type VerifiedBranchLanding = {
 type LandingVerification =
   | { accepted: true; landing: VerifiedBranchLanding }
   | { accepted: false; reason: string }
+
+export function chooseBranchLandingTip(
+  localTip: string | null,
+  prHeadOid: string | null,
+): BranchLandingTipChoice {
+  if (localTip !== null) {
+    return {
+      accepted: true,
+      tip: localTip,
+      source: 'local',
+      differsFromPrHead: prHeadOid !== null && localTip !== prHeadOid,
+    }
+  }
+  if (prHeadOid !== null) {
+    return { accepted: true, tip: prHeadOid, source: 'pull-request', differsFromPrHead: false }
+  }
+  return { accepted: false }
+}
 
 export function verifyBranchLanding(
   taskKey: string,
