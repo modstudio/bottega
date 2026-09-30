@@ -38,7 +38,7 @@ export function createReadOnlyWorktree(
     git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
-    provisionWorktree(repoRoot, path, provision)
+    provisionWorktree(repoRoot, path, provision, 'the project register row')
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
     verifyBorrowedCheckout(path, repoRoot)

@@ -66,11 +66,17 @@ describe('tracked recipe refusal rules', () => {
   })
 
   test('accepts valid provisions and refuses malformed or duplicate entries', () => {
+    const omitted = recipeSchema.safeParse({
+      create: [],
+      provision: [{ path: 'node_modules', method: 'link' }],
+    })
+    expect(omitted.success).toBe(true)
+    if (omitted.success) expect(omitted.data.provision?.[0]?.required).toBe(false)
     expect(
       recipeSchema.safeParse({
         create: [],
         provision: [
-          { path: 'node_modules', method: 'link' },
+          { path: 'node_modules', method: 'link', required: true },
           { path: 'vendor', method: 'clone' },
         ],
       }).success,
@@ -81,6 +87,11 @@ describe('tracked recipe refusal rules', () => {
     expect(
       messages({ create: [], provision: [{ path: 'vendor', method: 'copy' }] }).join('\n'),
     ).toContain('Invalid option')
+    expect(
+      messages({ create: [], provision: [{ path: 'vendor', method: 'clone', extra: true }] }).join(
+        '\n',
+      ),
+    ).toContain('unknown-key rule')
     expect(
       messages({
         create: [],

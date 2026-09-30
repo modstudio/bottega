@@ -600,6 +600,25 @@ function failTrackedCreation(input: {
     const removal = input.createInput.remove(input.worktree)
     settleCreateTimeBranchCleanup(input.worktree, input.createInput.runId)
     if (removal.removed) {
+      writeTransaction(() => {
+        const database = db()
+        const run = database
+          .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+          .get(input.createInput.runId) as { root_id: number } | null
+        database
+          .query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
+          .run(input.createInput.runId, input.worktree.path)
+        if (run) {
+          settleClaims(database, {
+            rootRunId: run.root_id,
+            kind: 'worktree',
+            state: 'released',
+            settledAt: nowIso(),
+            detail: setup,
+            allocationKey: input.worktree.path,
+          })
+        }
+      })
       input.allocator.release(input.allocationAttempt, setup)
       throw new Error(setup)
     }
@@ -675,7 +694,12 @@ export function createTrackedRecipe(
   input.attribute(worktree)
   const context = { treeRoot: path, vars }
   try {
-    const skipped = provisionWorktree(input.repoRoot, path, prepared.recipe.provision ?? [])
+    const skipped = provisionWorktree(
+      input.repoRoot,
+      path,
+      prepared.recipe.provision ?? [],
+      `tracked recipe "${snapshot.source.path}"`,
+    )
     for (const entry of skipped) {
       console.error(`orch: provision skipped "${entry.path}": ${entry.reason}`)
     }

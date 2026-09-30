@@ -20,6 +20,7 @@ const provisionEntrySchema = strictObject({
       { error: 'provision path must be a non-empty relative path without ..' },
     ),
   method: z.enum(['link', 'clone']),
+  required: z.boolean().optional(),
 })
 
 const placeholderName = z.enum(['branch', 'name', 'base', 'seed', 'key', 'path', 'main', 'index'])
@@ -497,6 +498,14 @@ const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
 
 export const recipeSchema = validatedRecipeSchema.transform((recipe) => ({
   ...recipe,
+  ...(recipe.provision === undefined
+    ? {}
+    : {
+        provision: recipe.provision.map((entry) => ({
+          ...entry,
+          required: entry.required ?? false,
+        })),
+      }),
   ...(recipe.shared === undefined
     ? {}
     : { shared: recipe.shared.map((entry) => ({ ...entry, at: sharedTarget(entry) })) }),
