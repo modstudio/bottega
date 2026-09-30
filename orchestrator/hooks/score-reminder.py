@@ -172,6 +172,7 @@ def main() -> int:
         return 0  # never block a session because of a database problem
 
     cleanup_holds = []
+    cleanup_kept = []
     cleanup_deferred = []
     for index, (root_id,) in enumerate(cleanup_roots):
         remaining = remaining_budget()
@@ -186,6 +187,8 @@ def main() -> int:
             report = (result.stdout or result.stderr).strip()
             if report.startswith("held "):
                 cleanup_holds.append(report)
+            elif report.startswith("kept "):
+                cleanup_kept.append(report)
             elif not (report.startswith("released ") or report.startswith("absent ")):
                 cleanup_deferred.append(root_id)
         except subprocess.TimeoutExpired:
@@ -203,6 +206,8 @@ def main() -> int:
             ),
             file=sys.stderr,
         )
+    for report in cleanup_kept:
+        print(report, file=sys.stderr)
 
     notes = []
     try:

@@ -183,6 +183,8 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     expect(hook).toContain('GLOBAL_BUDGET_SECONDS = 20')
     expect(hook).toContain('deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS')
     expect(hook).toContain('[orch_bin(), "close-out", str(root_id), "--non-blocking"]')
+    expect(hook).toContain('elif report.startswith("kept "):')
+    expect(hook).toContain('print(report, file=sys.stderr)')
     expect(hook).toContain('cleanup_roots[index:]')
     expect(hook).toContain('for sweep')
     expect(hook).not.toContain('timeout=300')

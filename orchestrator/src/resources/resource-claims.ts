@@ -28,7 +28,14 @@ const RESOURCE_CLAIM_KINDS = [
 export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 export type ResourceClaimState = 'claimed' | 'released' | 'retained' | 'forgotten' | 'absent'
 export type PortBand = { start: number; end: number }
-export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
+export type CloseOutClaimOutcome =
+  | 'released'
+  | 'forgotten'
+  | 'kept'
+  | 'held'
+  | 'live'
+  | 'absent'
+  | 'failed'
 export type SandboxDirectoryReleaseInput = {
   terminal: boolean
   liveTurn: boolean

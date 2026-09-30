@@ -9,16 +9,45 @@ import {
 } from './landing-tree.ts'
 
 describe('landing-tree decisions', () => {
-  test('holds an existing landing tree and leaves an absent tree to its ordinary decision', () => {
+  test('keeps a clean existing landing tree without holding close-out', () => {
+    expect(
+      landingTreeHoldDecision(
+        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        true,
+        { held: false as const },
+      ),
+    ).toEqual({
+      held: false,
+      kept: true,
+      reason:
+        'clean landing tree; branch DEV-1037-orch-1 holds its work; orch tree open 1 recreates it',
+    })
+  })
+
+  test('holds a dirty existing landing tree', () => {
     const ordinary = { held: false as const }
-    expect(landingTreeHoldDecision({ job: LANDING_TREE_JOB, treeExists: true }, ordinary)).toEqual({
+    expect(
+      landingTreeHoldDecision(
+        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        false,
+        ordinary,
+      ),
+    ).toEqual({
       held: true,
       until: null,
       reason: 'landing tree; remove with orch tree remove <path>',
     })
-    expect(landingTreeHoldDecision({ job: LANDING_TREE_JOB, treeExists: false }, ordinary)).toBe(
-      ordinary,
-    )
+  })
+
+  test('leaves a non-landing-tree row unchanged', () => {
+    const ordinary = { held: true as const, until: null, reason: 'ordinary hold' }
+    expect(
+      landingTreeHoldDecision(
+        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        true,
+        ordinary,
+      ),
+    ).toBe(ordinary)
   })
 
   test('names opening refusals and their remedies', () => {
