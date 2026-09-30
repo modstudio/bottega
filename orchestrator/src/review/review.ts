@@ -38,7 +38,7 @@ export function normalizeCoveredPath(path: string): string {
   return repositoryPath.trim().replace(/^\.\//, '')
 }
 
-/** Classify the evidence on a findings:[] reply against the recorded change path set. */
+/** Classify whether a review reply has evidence, including changed-path coverage for clean replies. */
 export function cleanReviewEvidence(
   runId: number,
   output: ReviewReply,
@@ -46,10 +46,10 @@ export function cleanReviewEvidence(
 ): CleanReviewEvidence {
   const provenance = output.provenance
   provenance.files_covered = provenance.files_covered.map(normalizeCoveredPath)
-  if (output.findings.length) return { failure: null, note: null }
   if (!provenance.files_covered.length && !provenance.commands_run.length) {
     return { failure: UNEVIDENCED_REVIEW_ERROR, note: null, kind: 'unevidenced' }
   }
+  if (output.findings.length) return { failure: null, note: null }
   const unavailable = (why: string): CleanReviewEvidence => ({
     failure: `clean review changed-path coverage not checked: ${why}`,
     note: null,

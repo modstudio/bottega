@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
-import { getReview } from './review.ts'
+import { cleanReviewEvidence, getReview, UNEVIDENCED_REVIEW_ERROR } from './review.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { amendFinding, completeReview, recordReview, triageFinding } from './review-triage.ts'
 
@@ -156,6 +156,27 @@ describe('review triage', () => {
 
 describe('review files_covered matching', () => {
   const changed = 'app/Http/Controllers/Foo.php'
+
+  test('a placeholder finding with empty provenance is unevidenced', () => {
+    const reply = reviewReply(1)
+    reply.findings[0]!.evidence = 'prompt truncated, read the offloaded prompt'
+    reply.provenance.files_covered = []
+    reply.provenance.commands_run = []
+
+    expect(cleanReviewEvidence(0, reply, db())).toEqual({
+      failure: UNEVIDENCED_REVIEW_ERROR,
+      note: null,
+      kind: 'unevidenced',
+    })
+  })
+
+  test('a placeholder finding with one covered file is accepted', () => {
+    const reply = reviewReply(1)
+    reply.findings[0]!.evidence = 'prompt truncated, read the offloaded prompt'
+    reply.provenance.commands_run = []
+
+    expect(cleanReviewEvidence(0, reply, db())).toEqual({ failure: null, note: null })
+  })
 
   test('an absolute worktree path ending in a changed path counts as coverage', () => {
     expect(
