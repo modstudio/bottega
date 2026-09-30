@@ -44,14 +44,6 @@ if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=all)" ]]
 fi
 echo "CHECK: checkout has no uncommitted or untracked changes"
 
-if ! refresh_output="$("$PROJECT_ROOT/bin/orch" tree refresh "$PROJECT_ROOT" 2>&1)"; then
-  refresh_output="${refresh_output//$'\n'/ }"
-  echo "REFUSE: $refresh_output" >&2
-  exit 1
-fi
-refresh_output="${refresh_output//$'\n'/ }"
-echo "UPDATE: $refresh_output"
-
 mkdir -p "$SYNC_STATE"
 
 write_marker() {
@@ -62,6 +54,22 @@ write_marker() {
   printf '%s\n' "$value" > "$temporary"
   mv "$temporary" "$marker"
 }
+
+if [[ ! -d "$PROJECT_ROOT/node_modules" ]]; then
+  bootstrap_bun_lock_hash="$(git -C "$PROJECT_ROOT" rev-parse HEAD:bun.lock)"
+  echo "INSTALL: root node_modules is missing; bootstrapping dependencies for the refresh command"
+  (cd "$PROJECT_ROOT" && bun install --silent --frozen-lockfile)
+  write_marker "$INSTALL_MARKER" "$bootstrap_bun_lock_hash"
+  echo "INSTALL: bootstrap succeeded; recorded bun.lock ${bootstrap_bun_lock_hash:0:12}"
+fi
+
+if ! refresh_output="$("$PROJECT_ROOT/bin/orch" tree refresh "$PROJECT_ROOT" 2>&1)"; then
+  refresh_output="${refresh_output//$'\n'/ }"
+  echo "REFUSE: $refresh_output" >&2
+  exit 1
+fi
+refresh_output="${refresh_output//$'\n'/ }"
+echo "UPDATE: $refresh_output"
 
 bun_lock_hash="$(git -C "$PROJECT_ROOT" rev-parse HEAD:bun.lock)"
 recorded_bun_lock_hash=""
