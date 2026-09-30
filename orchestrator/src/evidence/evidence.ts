@@ -8,6 +8,7 @@ import {
   UNEVIDENCED_DELIVERABLE_ERROR,
 } from '../contract/contract.ts'
 import { provenanceServer } from '../mcp/mcp-preflight.ts'
+import type { OutcomeStatus } from '../outcome.ts'
 import type { CleanReviewEvidence } from '../review/review.ts'
 import { recordReview } from '../review/review-triage.ts'
 
@@ -34,7 +35,7 @@ export function assessEvidencePrompt(facts: EvidencePromptFacts): EvidencePrompt
 }
 
 export type ProvisionalEvidenceOutcome<FailureKind extends string = string> = {
-  status: string
+  status: OutcomeStatus
   error: string | null
   failureKind: FailureKind | null
 }

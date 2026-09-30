@@ -30,7 +30,7 @@ import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
-import { finalizeWorkerReply } from '../outcome.ts'
+import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -142,7 +142,7 @@ export type TerminalInput = {
   retargetDiagnostic: string | null
   error: string | null
   contract: WorkerReply | null
-  status: string
+  status: OutcomeStatus
   contractObjects: number
   vendorTerminatedStream: string | null
   acceptedQuestions: ReturnType<typeof realQuestions>
@@ -172,7 +172,7 @@ export type TerminalInput = {
 }
 
 export type TerminalResult = {
-  status: string
+  status: OutcomeStatus
   error: string | null
   failureKind: ReturnType<typeof classify> | null
   changes: Changes | null
@@ -209,11 +209,11 @@ export function shouldCheckpointAtTerminal(input: {
 
 /** Artifact copy faults retain the worker outcome while remaining visible on the run. */
 export function artifactPersistenceOutcome<FailureKind extends string>(input: {
-  status: string
+  status: OutcomeStatus
   error: string | null
   failureKind: FailureKind | null
   persistenceError: string
-}): { status: string; error: string; failureKind: FailureKind | null } {
+}): { status: OutcomeStatus; error: string; failureKind: FailureKind | null } {
   return {
     status: input.status,
     error: input.error ? `${input.error}\n${input.persistenceError}` : input.persistenceError,
@@ -269,7 +269,7 @@ function confinementUnverifiedError(failures: FreezeFailure[]): string {
 
 function applyRequiredMcpFailure(
   outcome: {
-    status: string
+    status: OutcomeStatus
     error: string | null
     failureKind: ReturnType<typeof classify> | null
   },
@@ -456,7 +456,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const finalization = finalizeWorkerReply({
     reply: contract,
     measuredFiles: changes?.files ?? null,
-    status: status as import('../outcome.ts').OutcomeStatus,
+    status,
     failureKind,
     error,
     contractObjects,

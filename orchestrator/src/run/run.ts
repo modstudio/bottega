@@ -54,6 +54,7 @@ import {
   readMcpConfig,
   storedMcpProbe,
 } from '../mcp/mcp-probe.ts'
+import type { OutcomeStatus } from '../outcome.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import {
@@ -973,7 +974,7 @@ export async function run(opts: {
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
-  let status = 'failed'
+  let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
   let artifactsPersisted = true
