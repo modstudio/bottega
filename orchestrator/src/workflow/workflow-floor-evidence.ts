@@ -45,6 +45,7 @@ type CheckoutResolution = {
   headIsTipOrAncestor: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
+  headIsTrunkTipOrAncestor?: boolean
 }
 
 type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
@@ -54,9 +55,11 @@ export function classifyCheckoutEvidence(input: {
   headIsTipOrAncestor: boolean
   landingCommit: string | null
   landingIsHeadOrAncestor: boolean
+  headIsTrunkTipOrAncestor: boolean
 }): CheckoutEvidenceLocation {
   if (input.headIsTipOrAncestor) return 'branch'
-  if (input.landingCommit && input.landingIsHeadOrAncestor) return 'post-landing'
+  if (input.landingCommit && input.landingIsHeadOrAncestor && input.headIsTrunkTipOrAncestor)
+    return 'post-landing'
   return 'outside-change'
 }
 
@@ -189,7 +192,22 @@ function productionResolveCheckout(
       headCommit &&
       gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
   )
-  return { project, branch, headIsTipOrAncestor, landingCommit, landingIsHeadOrAncestor }
+  const trunk = projectByName(identity.project, d)?.settings.trunk?.trim()
+  const trunkTip = trunk
+    ? (gitText(cwd, ['rev-parse', '--verify', trunk]) ??
+      gitText(cwd, ['rev-parse', '--verify', `origin/${trunk}`]))
+    : null
+  const headIsTrunkTipOrAncestor = Boolean(
+    headCommit && trunkTip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, trunkTip]),
+  )
+  return {
+    project,
+    branch,
+    headIsTipOrAncestor,
+    landingCommit,
+    landingIsHeadOrAncestor,
+    headIsTrunkTipOrAncestor,
+  }
 }
 
 function gatherRuling(
@@ -332,6 +350,7 @@ function requireCheckout(
     headIsTipOrAncestor: false,
     landingCommit: null,
     landingIsHeadOrAncestor: false,
+    headIsTrunkTipOrAncestor: false,
   }
   if (checkout.project !== identity.project)
     throw new Error(
@@ -341,6 +360,7 @@ function requireCheckout(
     headIsTipOrAncestor: checkout.headIsTipOrAncestor,
     landingCommit: checkout.landingCommit ?? null,
     landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
+    headIsTrunkTipOrAncestor: checkout.headIsTrunkTipOrAncestor ?? false,
   })
   if (
     requireOnBranch &&

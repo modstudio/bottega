@@ -14,6 +14,7 @@ test('checkout evidence accepts a commit from the cursor branch', () => {
       headIsTipOrAncestor: true,
       landingCommit: null,
       landingIsHeadOrAncestor: false,
+      headIsTrunkTipOrAncestor: false,
     }),
   ).toBe('branch')
 })
@@ -24,8 +25,20 @@ test('checkout evidence accepts a trunk commit at or after the recorded landing'
       headIsTipOrAncestor: false,
       landingCommit: 'landing',
       landingIsHeadOrAncestor: true,
+      headIsTrunkTipOrAncestor: true,
     }),
   ).toBe('post-landing')
+})
+
+test('checkout evidence refuses a later commit off trunk after the recorded landing', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'landing',
+      landingIsHeadOrAncestor: true,
+      headIsTrunkTipOrAncestor: false,
+    }),
+  ).toBe('outside-change')
 })
 
 test('checkout evidence refuses a trunk commit before the recorded landing', () => {
@@ -34,6 +47,7 @@ test('checkout evidence refuses a trunk commit before the recorded landing', () 
       headIsTipOrAncestor: false,
       landingCommit: 'later-landing',
       landingIsHeadOrAncestor: false,
+      headIsTrunkTipOrAncestor: true,
     }),
   ).toBe('outside-change')
 })
@@ -44,6 +58,7 @@ test('checkout evidence refuses an unrelated commit', () => {
       headIsTipOrAncestor: false,
       landingCommit: 'landing-on-trunk',
       landingIsHeadOrAncestor: false,
+      headIsTrunkTipOrAncestor: false,
     }),
   ).toBe('outside-change')
 })
