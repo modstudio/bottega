@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideProvision,
   provisionWorktree,
@@ -89,9 +90,14 @@ test('provision decision fails only a missing required source', () => {
 test('missing required source names the entry, source, and remedy', () => {
   const { main, tree } = fixture()
   expect(() =>
-    provisionWorktree(main, tree, [{ path: 'vendor', method: 'clone', required: true }]),
+    provisionWorktree(
+      main,
+      tree,
+      [{ path: 'vendor', method: 'clone', required: true }],
+      `tracked recipe "${PLATFORM_SLUG}.jsonc"`,
+    ),
   ).toThrow(
-    `required provision "vendor" source is missing at ${join(main, 'vendor')}; install dependencies in the main checkout, or correct the register row`,
+    `required provision "vendor" from tracked recipe "${PLATFORM_SLUG}.jsonc" is missing its source at ${join(main, 'vendor')}; install dependencies in the main checkout, or correct tracked recipe "${PLATFORM_SLUG}.jsonc"`,
   )
 })
 

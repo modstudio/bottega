@@ -64,6 +64,7 @@ export function provisionWorktree(
   main: string,
   tree: string,
   provisions: WorktreeProvision,
+  declarationSource = 'the provision declaration',
 ): ProvisionSkip[] {
   const skipped: ProvisionSkip[] = []
   for (const provision of provisions) {
@@ -72,7 +73,7 @@ export function provisionWorktree(
     const decision = decideProvision(provision, existsSync(source))
     if (decision === 'fail') {
       throw new Error(
-        `required provision "${provision.path}" source is missing at ${source}; install dependencies in the main checkout, or correct the register row`,
+        `required provision "${provision.path}" from ${declarationSource} is missing its source at ${source}; install dependencies in the main checkout, or correct ${declarationSource}`,
       )
     }
     if (decision === 'skip') {

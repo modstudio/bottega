@@ -11,11 +11,15 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso } from '../database/db.ts'
+import { git } from '../git/git-environment.ts'
+import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 import {
   type AllocationAttempt,
+  createTrackedRecipe,
   executeTrackedCreateSteps,
   executeTrackedPreSteps,
   executeTrackedRefreshSteps,
@@ -62,6 +66,128 @@ function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {
 }
 
 describe('tracked recipe execution', () => {
+  test('a missing required provision removes the partial tree and settles only its run claims', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-required-provision-'))
+    directories.push(repoRoot)
+    git(['init', '--initial-branch=main'], repoRoot)
+    mkdirSync(join(repoRoot, 'present'))
+    writeFileSync(join(repoRoot, 'present', 'dependency'), 'ready')
+    writeFileSync(
+      join(repoRoot, `${PLATFORM_SLUG}.jsonc`),
+      JSON.stringify({
+        worktree: {
+          provision: [
+            { path: 'present', method: 'link' },
+            { path: 'missing', method: 'link', required: true },
+          ],
+          create: [],
+        },
+      }),
+    )
+    git(['add', '.'], repoRoot)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '-m',
+        'fixture',
+      ],
+      repoRoot,
+    )
+
+    const database = db()
+    const projectId = Number(
+      database
+        .query("INSERT INTO project(name,path,canon) VALUES ('required-provision',?,1)")
+        .run(repoRoot).lastInsertRowid,
+    )
+    const insertRun = database.query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       VALUES (?,'codex','implement','sha',1,'required provision','running',?,1)`,
+    )
+    const runId = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const unrelatedRunId = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    database
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?,?,?,'worktree','/unrelated','claimed',?)`,
+      )
+      .run(unrelatedRunId, unrelatedRunId, projectId, nowIso())
+
+    const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+    const branch = `DEV-1039-orch-${runId}`
+    let earlierProvisionObserved = false
+    expect(() =>
+      createTrackedRecipe({
+        tool: { recipePath: `${PLATFORM_SLUG}.jsonc` },
+        repoRoot,
+        runId,
+        branch,
+        name: `orch-${runId}`,
+        path,
+        attribute(worktree) {
+          database
+            .query('UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=? WHERE id=?')
+            .run(
+              worktree.path,
+              worktree.path,
+              worktree.branch,
+              worktree.mintedBranch ?? null,
+              runId,
+            )
+          recordCreatedWorktreeClaims(database, {
+            rootRunId: runId,
+            runId,
+            projectId,
+            owned: true,
+            path: worktree.path,
+            head: worktree.base,
+            mintedBranch: worktree.mintedBranch ?? null,
+            label: String(runId),
+            claimedAt: nowIso(),
+          })
+        },
+        verify() {},
+        remove(worktree) {
+          earlierProvisionObserved = existsSync(join(worktree.path, 'present', 'dependency'))
+          try {
+            git(['worktree', 'remove', '--force', worktree.path], repoRoot)
+            if (worktree.mintedBranch) git(['branch', '-D', worktree.mintedBranch], repoRoot)
+            return { removed: true, detail: worktree.path }
+          } catch (error) {
+            return { removed: false, detail: String(error) }
+          }
+        },
+        removeProvisioned: () => ({ removed: false, detail: 'unused' }),
+      }),
+    ).toThrow(`from tracked recipe "${PLATFORM_SLUG}.jsonc"`)
+
+    expect(earlierProvisionObserved).toBeTrue()
+    expect(existsSync(path)).toBeFalse()
+    expect(database.query('SELECT worktree FROM run WHERE id=?').get(runId)).toEqual({
+      worktree: null,
+    })
+    expect(
+      database
+        .query(
+          'SELECT kind,state FROM resource_claim WHERE root_run_id=? ORDER BY kind,allocation_key',
+        )
+        .all(runId),
+    ).toEqual([
+      { kind: 'branch', state: 'released' },
+      { kind: 'index', state: 'released' },
+      { kind: 'worktree', state: 'released' },
+    ])
+    expect(
+      database.query('SELECT state FROM resource_claim WHERE root_run_id=?').get(unrelatedRunId),
+    ).toEqual({ state: 'claimed' })
+  })
+
   test('builds every worktree-add form with optional relative git pointers', () => {
     const common = { branch: 'DEV-877-tree', path: '/trees/dev-877', base: 'main' }
     expect(
