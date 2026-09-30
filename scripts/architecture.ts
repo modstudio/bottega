@@ -612,7 +612,10 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/run/run-terminal-blockers.ts', ['../failure/failure.ts']),
-  module('orchestrator/src/run/run-terminal-precedence.ts', ['../failure/failure.ts']),
+  module('orchestrator/src/run/run-terminal-precedence.ts', [
+    '../failure/failure.ts',
+    '../outcome.ts',
+  ]),
   module('orchestrator/src/run/run-types.ts', [
     '../contract/contract.ts',
     '../worktree/worktree-remove.ts',

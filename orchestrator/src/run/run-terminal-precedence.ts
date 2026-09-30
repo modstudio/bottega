@@ -1,7 +1,8 @@
 import type { FailureKind } from '../failure/failure.ts'
+import type { OutcomeStatus } from '../outcome.ts'
 
 export type TerminalOutcome = {
-  status: string
+  status: OutcomeStatus
   failureKind: FailureKind | null
   error: string | null
 }

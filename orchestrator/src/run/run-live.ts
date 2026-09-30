@@ -34,7 +34,7 @@ import { type Job, jobIdleKillMs } from '../jobs/jobs.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { deferredWorkerMessageNotice } from '../mailbox/mailbox-notice.ts'
-import { decideOutcome } from '../outcome.ts'
+import { decideOutcome, type OutcomeStatus } from '../outcome.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
@@ -182,7 +182,7 @@ export type LiveResult = {
   contract: WorkerReply | null
   contractObjects: number
   acceptedQuestions: ReturnType<typeof realQuestions>
-  status: string
+  status: OutcomeStatus
   error: string | null
   failureKind: ReturnType<typeof classify> | null
   artifactsPersisted: boolean
@@ -278,7 +278,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
-  let status = 'failed'
+  let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
   const artifactsPersisted = true

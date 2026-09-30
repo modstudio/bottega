@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { WorkerReply } from '../contract/contract.ts'
 import type { PrematureFinalRefusal } from '../evidence/premature-final.ts'
+import type { TerminalOutcome } from './run-terminal-precedence.ts'
 import {
   applyPrematureFinalFailure,
   terminalPrematureFinalRefusal,
@@ -13,7 +14,7 @@ const refusal: PrematureFinalRefusal = {
 
 describe('premature final terminal integration', () => {
   test('preserves a prior truncated outcome', () => {
-    const truncated = {
+    const truncated: TerminalOutcome = {
       status: 'failed',
       failureKind: 'truncated',
       error: 'vendor terminated stream',

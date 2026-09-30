@@ -13,7 +13,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-terminal-premature.ts',
-    allowed: ['../contract/contract.ts', '../evidence/premature-final.ts'],
+    allowed: ['../contract/contract.ts', '../evidence/premature-final.ts', '../outcome.ts'],
   },
 ] as const
 
