@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { matchBranchLandings } from './branch-landing-match.ts'
+import {
+  decideAutomaticBranchLandingTip,
+  matchAutomaticBranchLandingForTip,
+  matchBranchLandings,
+} from './branch-landing-match.ts'
 import type { PullRequestLandingEvidence } from './branch-landing-record.ts'
+import { decideBranchState, decidePruneEligibility } from './branch-state.ts'
+import type { MergedPullRequest } from './merged-pull-request.ts'
 
 function pullRequest(
   number: number,
@@ -61,5 +67,57 @@ describe('branch landing matching', () => {
         [pullRequest(1, 'DEV-1049-orch-7636')],
       ),
     ).toEqual([])
+  })
+})
+
+describe('automatic branch landing tip decision', () => {
+  test('records when the local tip equals the PR head', () => {
+    expect(decideAutomaticBranchLandingTip('same123', 'same123')).toEqual({
+      action: 'record',
+      tip: 'same123',
+    })
+  })
+
+  test('records the PR head when the local branch is absent', () => {
+    expect(decideAutomaticBranchLandingTip(null, 'head123')).toEqual({
+      action: 'record',
+      tip: 'head123',
+    })
+  })
+
+  test('skips and identifies both tips when the local branch advanced', () => {
+    expect(decideAutomaticBranchLandingTip('advanced456', 'head123')).toEqual({
+      action: 'skip',
+      reason: 'local tip advanced456 differs from PR head head123',
+    })
+  })
+
+  test('an advanced branch stays unlanded and ineligible for prune', () => {
+    const branch = 'DEV-1049-orch-7636'
+    const merged = pullRequest(1, branch, { headRefOid: 'merged123' }) as MergedPullRequest
+    const matching = matchAutomaticBranchLandingForTip(branch, 'advanced456', [merged])
+    const state = decideBranchState({
+      branch,
+      tip: 'advanced456',
+      mergedPullRequests: matching ? [merged] : [],
+      mergedPullRequestsTruncated: false,
+      commitsNotOnTrunk: 1,
+      patchEquivalent: null,
+      pullRequestCommitCheck: null,
+      recordedLanding: null,
+      laterTurnBranches: [],
+      superseded: false,
+    })
+
+    expect(matching).toBeNull()
+    expect(state).toEqual({ state: 'unlanded' })
+    expect(
+      decidePruneEligibility({
+        state: state.state,
+        checkedOut: false,
+        liveRun: false,
+        tipMoved: false,
+      }),
+    ).toEqual({ eligible: false, reason: 'state' })
   })
 })

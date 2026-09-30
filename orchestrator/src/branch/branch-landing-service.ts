@@ -6,6 +6,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { finalizeTriageIntent } from '../pull-request/pr-admission.ts'
+import { decideAutomaticBranchLandingTip } from './branch-landing-match.ts'
 import {
   chooseBranchLandingTip,
   type PullRequestLandingEvidence,
@@ -134,13 +135,32 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
   return persistBranchLanding(branch, project, taskKey, pullRequestLanding(project, number))
 }
 
-/** Verify already-listed GitHub evidence, then persist its run-branch landing. */
-export function recordBranchLandingEvidence(
+/** Verify already-listed GitHub evidence, then persist a safe automatic landing repair. */
+export function recordAutomaticBranchLandingEvidence(
   branch: string,
   pullRequest: PullRequestLandingEvidence,
 ): RecordedLandingReport {
   const { project, taskKey } = branchRunIdentity(branch)
-  return persistBranchLanding(branch, project, taskKey, pullRequest)
+  const verification = verifyBranchLanding(taskKey, pullRequest)
+  if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
+  if (pullRequest.headRefOid === null) {
+    throw new Error(`refusing to record landing: PR #${pullRequest.number} has no headRefOid`)
+  }
+  const decision = decideAutomaticBranchLandingTip(
+    localBranchTip(project.path, branch),
+    pullRequest.headRefOid,
+  )
+  if (decision.action === 'skip') {
+    throw new Error(`refusing to record landing: ${decision.reason}`)
+  }
+  return persistVerifiedBranchLanding(
+    branch,
+    project,
+    taskKey,
+    verification.landing,
+    decision.tip,
+    false,
+  )
 }
 
 function persistBranchLanding(
@@ -161,8 +181,26 @@ function persistBranchLanding(
       `refusing to record landing: neither local branch ref ${branch} nor PR #${pullRequest.number} headRefOid is available; run git fetch origin pull/${pullRequest.number}/head:refs/heads/${branch} and retry`,
     )
   }
+  return persistVerifiedBranchLanding(
+    branch,
+    project,
+    taskKey,
+    verification.landing,
+    tipChoice.tip,
+    tipChoice.differsFromPrHead,
+  )
+}
+
+function persistVerifiedBranchLanding(
+  branch: string,
+  project: Project,
+  taskKey: string,
+  landing: { number: number; mergeCommit: string | null; mergedAt: string },
+  tip: string,
+  localTipDiffersFromPrHead: boolean,
+): RecordedLandingReport {
   const recordedAt = nowIso()
-  finalizeTriageIntent(project.name, branch, verification.landing.number)
+  finalizeTriageIntent(project.name, branch, landing.number)
   writeTransaction(() => {
     db()
       .query(
@@ -177,10 +215,10 @@ function persistBranchLanding(
       .run(
         project.name,
         branch,
-        tipChoice.tip,
-        verification.landing.number,
-        verification.landing.mergeCommit,
-        verification.landing.mergedAt,
+        tip,
+        landing.number,
+        landing.mergeCommit,
+        landing.mergedAt,
         sessionId(),
         recordedAt,
       )
@@ -188,8 +226,8 @@ function persistBranchLanding(
   return {
     branch,
     taskKey,
-    ...verification.landing,
+    ...landing,
     recordedAt,
-    localTipDiffersFromPrHead: tipChoice.differsFromPrHead,
+    localTipDiffersFromPrHead,
   }
 }

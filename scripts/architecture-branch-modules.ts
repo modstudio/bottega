@@ -20,6 +20,7 @@ export const branchModuleSpecs = [
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../pull-request/pr-admission.ts',
+      './branch-landing-match.ts',
       './branch-landing-record.ts',
     ],
   },

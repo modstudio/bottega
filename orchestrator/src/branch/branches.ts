@@ -6,10 +6,10 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
-import { matchBranchLandings } from './branch-landing-match.ts'
+import { matchAutomaticBranchLandingForTip, matchBranchLandings } from './branch-landing-match.ts'
 import {
   type RecordedLandingReport,
-  recordBranchLandingEvidence,
+  recordAutomaticBranchLandingEvidence,
 } from './branch-landing-service.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
@@ -252,7 +252,9 @@ function repairBranchLandings(input: {
   const observations: string[] = []
   for (const match of matchBranchLandings(candidates, input.pullRequests)) {
     try {
-      newlyRecordedLandings.push(recordBranchLandingEvidence(match.branch, match.pullRequest))
+      newlyRecordedLandings.push(
+        recordAutomaticBranchLandingEvidence(match.branch, match.pullRequest),
+      )
     } catch (error) {
       observations.push(
         `${match.branch}: landing lookup found PR #${match.pullRequest.number} but did not record it: ${error instanceof Error ? error.message : String(error)}`,
@@ -351,7 +353,7 @@ function branchReportFor(
         if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
           throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
         }
-        const matchingPr = pullRequests.some((pr) => pr.headRefName === branch)
+        const matchingPr = matchAutomaticBranchLandingForTip(branch, tip, pullRequests) !== null
         let patchEquivalent = null
         if (!matchingPr && commitCount > 0) {
           const mergeBase = git(project.path, 'merge-base', trunkTip, tip)
@@ -370,6 +372,7 @@ function branchReportFor(
           checkedOut: checkedOut.has(branch),
           liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
           runIds: branchRuns.map((run) => run.id),
+          matchingPr,
           patchEquivalent: patchEquivalent as PatchEquivalentForm | null,
           pullRequestCommitCheck:
             !matchingPr && commitCount > 0 && !patchEquivalent && key !== 'unkeyed'
@@ -406,7 +409,9 @@ function branchReportFor(
           decideBranchState({
             branch: row.branch,
             tip: row.tip,
-            mergedPullRequests: pullRequests,
+            mergedPullRequests: row.matchingPr
+              ? pullRequests
+              : pullRequests.filter((pullRequest) => pullRequest.headRefName !== row.branch),
             mergedPullRequestsTruncated: truncated,
             commitsNotOnTrunk: row.commitsNotOnTrunk,
             patchEquivalent: row.patchEquivalent,
@@ -422,6 +427,7 @@ function branchReportFor(
         .map(
           ({
             patchEquivalent: _patchEquivalent,
+            matchingPr: _matchingPr,
             pullRequestCommitCheck: _pullRequestCommitCheck,
             recordedLanding: _recordedLanding,
             superseded: _superseded,
