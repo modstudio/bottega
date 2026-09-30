@@ -6,6 +6,27 @@ export type BranchCandidate = {
   started_at: string
 }
 
+export function branchInventoryDecision(
+  project: string,
+  candidates: readonly BranchCandidate[],
+  worktreeRefs: readonly string[],
+  localHeads: string | null,
+): { branches: BranchCandidate[]; errors: string[] } {
+  if (localHeads === null)
+    return {
+      branches: [],
+      errors: [`${project} branch inventory: git for-each-ref failed`],
+    }
+  return {
+    branches: existingBranchesWithoutWorktrees(
+      candidates,
+      worktreeRefs,
+      localHeads.split('\n').filter(Boolean),
+    ),
+    errors: [],
+  }
+}
+
 export function existingBranchesWithoutWorktrees(
   candidates: readonly BranchCandidate[],
   worktreeRefs: readonly string[],

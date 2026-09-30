@@ -145,6 +145,33 @@ describe('operational monitor conditions', () => {
     }
   })
 
+  test('a failed local branch inventory marks the monitor pass partial', async () => {
+    const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
+    upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((
+      command: string[] | { cmd: string[] },
+    ) => {
+      const argv = Array.isArray(command) ? command : command.cmd
+      const branchInventory = argv.includes('for-each-ref')
+      return {
+        exitCode: branchInventory ? 1 : 0,
+        stdout: Buffer.from(argv.includes('--show-toplevel') ? `${root}\n` : ''),
+        stderr: Buffer.from(branchInventory ? 'inventory failed' : ''),
+        success: !branchInventory,
+      } as unknown as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+    try {
+      const result = await monitor('invoked')
+      const detail = `${PLATFORM_SLUG} branch inventory: git for-each-ref failed`
+      expect(result.errors).toContain(detail)
+      expect(result.conditions).toContainEqual(
+        expect.objectContaining({ kind: 'observation-error', detail }),
+      )
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
   test('an absent terminal tree names close-out as the retained Docker resource remedy', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const project = `monitor-absent-${runId}`

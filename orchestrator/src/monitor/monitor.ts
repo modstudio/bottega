@@ -29,7 +29,7 @@ import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
-import { existingBranchesWithoutWorktrees } from './monitor-branches.ts'
+import { branchInventoryDecision } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import {
   abandonedBootstrapConditions,
@@ -614,15 +614,20 @@ export async function monitor(
       '--format=%(refname:lstrip=2)',
       'refs/heads',
     ])
-    if (localHeads === null) continue
     const branches = database
       .query(
         `SELECT minted_branch branch, MIN(started_at) started_at FROM run
-        WHERE repo=? AND minted_branch IS NOT NULL GROUP BY minted_branch`,
+          WHERE repo=? AND minted_branch IS NOT NULL GROUP BY minted_branch`,
       )
       .all(project.name) as { branch: string; started_at: string }[]
-    const existingHeads = localHeads.split('\n').filter(Boolean)
-    for (const branch of existingBranchesWithoutWorktrees(branches, worktreeRefs, existingHeads)) {
+    const branchInventory = branchInventoryDecision(
+      project.name,
+      branches,
+      worktreeRefs,
+      localHeads,
+    )
+    errors.push(...branchInventory.errors)
+    for (const branch of branchInventory.branches) {
       const subject = `${project.name}:${branch.branch}`
       let action: string
       if (reclaimProject?.name !== project.name) {
