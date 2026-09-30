@@ -10,9 +10,10 @@ import {
 } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 
-type ProvisionEntry = { path: string; method: 'link' | 'clone' }
+type ProvisionEntry = { path: string; method: 'link' | 'clone'; required?: boolean }
 export type WorktreeProvision = ProvisionEntry[]
 export type ReadonlyProvision = WorktreeProvision
+export type ProvisionDecision = 'provision' | 'skip' | 'fail'
 export type ProvisionSkip = {
   path: string
   reason: 'missing source' | 'existing target'
@@ -52,6 +53,12 @@ function linkProvision(source: string, target: string): void {
   }
 }
 
+/** Decide how one declared dependency is handled without consulting the filesystem. */
+export function decideProvision(entry: ProvisionEntry, sourceExists: boolean): ProvisionDecision {
+  if (sourceExists) return 'provision'
+  return entry.required === true ? 'fail' : 'skip'
+}
+
 /** Place declared dependencies and report entries deliberately left alone. */
 export function provisionWorktree(
   main: string,
@@ -62,7 +69,13 @@ export function provisionWorktree(
   for (const provision of provisions) {
     const source = join(main, provision.path)
     const target = join(tree, provision.path)
-    if (!existsSync(source)) {
+    const decision = decideProvision(provision, existsSync(source))
+    if (decision === 'fail') {
+      throw new Error(
+        `required provision "${provision.path}" source is missing at ${source}; install dependencies in the main checkout, or correct the register row`,
+      )
+    }
+    if (decision === 'skip') {
       skipped.push({ path: provision.path, reason: 'missing source' })
       continue
     }
@@ -122,6 +135,9 @@ export function validateReadonlyProvision(value: unknown): string[] {
     }
     if (candidate.method !== 'link' && candidate.method !== 'clone') {
       problems.push("worktree.readonly_provision method must be 'link' or 'clone'")
+    }
+    if (candidate.required !== undefined && typeof candidate.required !== 'boolean') {
+      problems.push('worktree.readonly_provision required must be a boolean')
     }
   }
   return problems

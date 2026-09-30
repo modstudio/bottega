@@ -12,7 +12,11 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { provisionWorktree, validateReadonlyProvision } from './worktree-provision.ts'
+import {
+  decideProvision,
+  provisionWorktree,
+  validateReadonlyProvision,
+} from './worktree-provision.ts'
 
 const roots: string[] = []
 const fixture = () => {
@@ -75,6 +79,22 @@ test('missing source path is skipped and reported', () => {
   expect(() => lstatSync(join(tree, 'missing'))).toThrow()
 })
 
+test('provision decision fails only a missing required source', () => {
+  expect(decideProvision({ path: 'vendor', method: 'clone' }, true)).toBe('provision')
+  expect(decideProvision({ path: 'vendor', method: 'clone' }, false)).toBe('skip')
+  expect(decideProvision({ path: 'vendor', method: 'clone', required: false }, false)).toBe('skip')
+  expect(decideProvision({ path: 'vendor', method: 'clone', required: true }, false)).toBe('fail')
+})
+
+test('missing required source names the entry, source, and remedy', () => {
+  const { main, tree } = fixture()
+  expect(() =>
+    provisionWorktree(main, tree, [{ path: 'vendor', method: 'clone', required: true }]),
+  ).toThrow(
+    `required provision "vendor" source is missing at ${join(main, 'vendor')}; install dependencies in the main checkout, or correct the register row`,
+  )
+})
+
 test('existing target is left alone', () => {
   const { main, tree } = fixture()
   mkdirSync(join(main, 'vendor'))
@@ -107,6 +127,12 @@ test('validation refuses malformed readonly provision declarations', () => {
       { path: 'vendor', method: 'link' },
     ]),
   ).toEqual(['worktree.readonly_provision path must be unique: "vendor"'])
+  expect(validateReadonlyProvision([{ path: 'vendor', method: 'clone', required: true }])).toEqual(
+    [],
+  )
+  expect(validateReadonlyProvision([{ path: 'vendor', method: 'clone', required: 'yes' }])).toEqual(
+    ['worktree.readonly_provision required must be a boolean'],
+  )
 })
 
 test('a path through a symlinked ancestor that leaves the tree is refused and creates nothing outside', () => {
