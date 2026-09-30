@@ -43,6 +43,21 @@ type CheckoutResolution = {
   project: string | null
   branch: string | null
   headIsTipOrAncestor: boolean
+  landingCommit?: string | null
+  landingIsHeadOrAncestor?: boolean
+}
+
+type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
+
+/** Decides whether a commit belongs to the change before or after its recorded landing. */
+export function classifyCheckoutEvidence(input: {
+  headIsTipOrAncestor: boolean
+  landingCommit: string | null
+  landingIsHeadOrAncestor: boolean
+}): CheckoutEvidenceLocation {
+  if (input.headIsTipOrAncestor) return 'branch'
+  if (input.landingCommit && input.landingIsHeadOrAncestor) return 'post-landing'
+  return 'outside-change'
 }
 
 type PullRequestMergeView = { state: string; mergedAt: string | null }
@@ -138,6 +153,19 @@ function cwdProject(cwd: string, identity: CursorIdentity, d: Database): string 
   return null
 }
 
+function recordedLandingCommit(project: string, branch: string | null, d: Database): string | null {
+  if (!branch) return null
+  return (
+    d
+      .query<{ merge_commit: string | null }, [string, string]>(
+        `SELECT merge_commit FROM branch_landing_record
+          WHERE project=? AND branch=?
+          ORDER BY merged_at DESC, pr_number DESC LIMIT 1`,
+      )
+      .get(project, branch)?.merge_commit ?? null
+  )
+}
+
 function productionResolveCheckout(
   cwd: string,
   headCommit: string | null,
@@ -155,7 +183,13 @@ function productionResolveCheckout(
   const headIsTipOrAncestor = Boolean(
     headCommit && tip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, tip]),
   )
-  return { project, branch, headIsTipOrAncestor }
+  const landingCommit = recordedLandingCommit(identity.project, expectedBranch, d)
+  const landingIsHeadOrAncestor = Boolean(
+    landingCommit &&
+      headCommit &&
+      gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+  )
+  return { project, branch, headIsTipOrAncestor, landingCommit, landingIsHeadOrAncestor }
 }
 
 function gatherRuling(
@@ -296,16 +330,28 @@ function requireCheckout(
     project: null,
     branch: null,
     headIsTipOrAncestor: false,
+    landingCommit: null,
+    landingIsHeadOrAncestor: false,
   }
   if (checkout.project !== identity.project)
     throw new Error(
       `${flag} cwd project is ${checkout.project ?? 'unset'}, not this cursor's ${identity.project}`,
     )
-  if (requireOnBranch && identity.branch && checkout.branch !== identity.branch)
+  const location = classifyCheckoutEvidence({
+    headIsTipOrAncestor: checkout.headIsTipOrAncestor,
+    landingCommit: checkout.landingCommit ?? null,
+    landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
+  })
+  if (
+    requireOnBranch &&
+    identity.branch &&
+    checkout.branch !== identity.branch &&
+    location !== 'post-landing'
+  )
     throw new Error(
       `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
     )
-  if (identity.branch && !checkout.headIsTipOrAncestor)
+  if (identity.branch && location === 'outside-change')
     throw new Error(`${flag} head_commit is not the tip or an ancestor of ${identity.branch}`)
 }
 
