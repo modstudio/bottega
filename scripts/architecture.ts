@@ -86,8 +86,8 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/close/absent-close-out-residue.ts', ['../database/db.ts', '../reclaim/reclaim-residue.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/close/absent-tree-close-out.ts', ['../git/git-environment.ts', '../project/projects.ts', '../reclaim/reclaim.ts', '../worktree/worktree.ts', '../worktree/worktree-remove.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/close/conversation-liveness.ts', ['node:fs', '../../../shared/process-identity.ts', '../database/db.ts', '../run/run-alive.ts', '../run/run-lease.ts']),
+  // biome-ignore format: compact declarations keep this frozen manifest within its ceiling.
+  module('orchestrator/src/close/conversation-liveness.ts', ['node:fs', '../../../shared/process-identity.ts', '../database/db.ts', '../run/run-alive.ts', '../run/run-lease.ts']), module('orchestrator/src/close/close-out-release-holds.ts', ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../landing-tree/release-observation.ts', '../project/projects.ts', '../run/synthetic-lifecycle-job.ts']), module('orchestrator/src/close/reader-scratch-close-out.ts', ['node:fs', 'node:path', '../git/git-environment.ts', '../jobs/jobs.ts', '../reclaim/reclaim.ts', '../run/run-artifacts.ts', '../worktree/worktree-attribution.ts', './reader-scratch-release.ts']), module('orchestrator/src/close/reader-scratch-release.ts', []),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
   module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', ['node:fs', '../branch/branches.ts', '../database/db.ts', '../project/projects.ts', '../reclaim/reclaim-residue.ts', './cleanup.ts']),
   // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.

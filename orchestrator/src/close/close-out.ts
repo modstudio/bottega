@@ -11,7 +11,6 @@ import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
-import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -52,6 +51,7 @@ import {
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
+import { landingTreeReleaseHold, protectRetainedBranch } from './close-out-release-holds.ts'
 import {
   type ConversationKeepTreeHold,
   cleanLandingTreeCloseOutResult,
@@ -61,6 +61,10 @@ import {
   liveCloseOutResult,
   missingTreeConversationResult,
 } from './conversation-liveness.ts'
+import {
+  archiveReaderScratchForRelease,
+  readerScratchCloseOutPlan,
+} from './reader-scratch-close-out.ts'
 import { retainedBranchForCloseOut } from './retained-branch.ts'
 
 export type CloseOutResult = {
@@ -438,74 +442,6 @@ function turnHeadForCloseOut(
   return tip ? { branch, tip } : null
 }
 
-function landingTreeReleaseHold(input: {
-  runId: number
-  job: string
-  repo: string | null
-  worktree: string
-  branch: string | null
-  sessionId: string | null
-  launchKey: string | null
-  status: string
-}): CloseOutResult | null {
-  if (input.job !== LANDING_TREE_JOB) return null
-  const project = input.repo ?? projectAt(input.worktree)?.name ?? null
-  const treeExists = existsSync(input.worktree)
-  // A failed creation can leave only a missing path, before project and branch
-  // identity were recorded. There is no branch whose landing could be in flight.
-  if (!treeExists && (!project || !input.branch)) return null
-  const landingInFlight = Boolean(
-    project &&
-      input.branch &&
-      db()
-        .query(
-          `SELECT 1 FROM landing
-           WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
-        )
-        .get(project, input.branch),
-  )
-  const decision = observeLandingTreeRelease({
-    ...input,
-    treeExists,
-    landingInFlight,
-  })
-  return decision.action === 'keep'
-    ? {
-        runId: input.runId,
-        worktree: input.worktree,
-        outcome: 'held',
-        detail: decision.reason,
-      }
-    : null
-}
-
-function protectRetainedBranch(input: {
-  repoRoot: string
-  retainedRef: string | null
-  branchSnapshot: string | null
-  retainedBranch: string | null
-  runId: number
-  treePath: string
-}): CloseOutResult | null {
-  if (!input.retainedRef || !input.branchSnapshot) return null
-  const pinned = Bun.spawnSync(['git', 'update-ref', input.retainedRef, input.branchSnapshot], {
-    cwd: input.repoRoot,
-    env: targetGitEnvironment(input.repoRoot),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return pinned.exitCode === 0
-    ? null
-    : {
-        runId: input.runId,
-        worktree: input.treePath,
-        outcome: 'failed',
-        detail:
-          `could not protect retained branch ${input.retainedBranch} at ${input.branchSnapshot}: ` +
-          (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
-      }
-}
-
 function presentTreeOwnershipResult(input: {
   treeAbsent: boolean
   treePath: string
@@ -782,10 +718,28 @@ function attemptCloseOutRun(
               options.dryRun,
             )
             if (lockedHold) return lockedHold
-            const reconstructibility = reconstructibilityHold(row.root_id, treePath, treeAbsent)
-            if (reconstructibility) return reconstructibility
+            const scratchPlan = readerScratchCloseOutPlan({
+              job: effective.job,
+              terminal: TERMINAL.has(effective.status),
+              treeAbsent,
+              treePath,
+            })
+            if (scratchPlan.action === 'hold')
+              return {
+                runId: row.root_id,
+                worktree: treePath,
+                outcome: 'held' as const,
+                detail: scratchPlan.detail,
+              }
+            if (scratchPlan.action === 'ordinary') {
+              const reconstructibility = reconstructibilityHold(row.root_id, treePath, treeAbsent)
+              if (reconstructibility) return reconstructibility
+            }
             if (options.dryRun) {
-              return dryRunReleaseResult(row.root_id, treePath, treeAbsent)
+              const result = dryRunReleaseResult(row.root_id, treePath, treeAbsent)
+              if (scratchPlan.action === 'archive')
+                result.detail = 'would archive reader scratch and release its terminal clone'
+              return result
             }
             // The coordinator proves its own identity before descendants are signaled.
             const liveCoordinator = aliveConversationTurns(row.root_id).find(
@@ -801,6 +755,23 @@ function attemptCloseOutRun(
             terminateRunProcesses(row.id, [process.pid])
             const landingHold = landingTreeReleaseHold(landingReleaseInput)
             if (landingHold) return landingHold
+            let archivedScratchPath: string | null = null
+            if (scratchPlan.action === 'archive') {
+              const archive = archiveReaderScratchForRelease({
+                runId: extractionRunId(row),
+                treePath,
+                terminal: TERMINAL.has(effective.status),
+              })
+              if (!archive.ok) {
+                return {
+                  runId: row.root_id,
+                  worktree: treePath,
+                  outcome: 'held' as const,
+                  detail: `${archive.detail}; clone and claim retained`,
+                }
+              }
+              archivedScratchPath = archive.path
+            }
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
             const pinFailure = protectRetainedBranch({
@@ -830,6 +801,7 @@ function attemptCloseOutRun(
               extractionRunId(row),
               false,
               treeAbsent,
+              archivedScratchPath !== null,
             )
             if (retainedBranch && branchSnapshot) {
               const branchAfter = branchTip(repoRoot, retainedBranch)
@@ -906,7 +878,10 @@ function attemptCloseOutRun(
                   acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
               }
             }
-            return successfulReleaseResult(row.root_id, treePath, treeAbsent, result)
+            const released = successfulReleaseResult(row.root_id, treePath, treeAbsent, result)
+            if (archivedScratchPath)
+              released.detail = `${released.detail}; reader scratch archived at ${archivedScratchPath}`
+            return released
           },
           options.lockTimeoutMs,
         ),
