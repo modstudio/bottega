@@ -24,6 +24,13 @@ describe('job contracts are visible before submission', () => {
     ['open a PR and merge it', true],
     ['merge into the main branch', true],
     ['merge from main', false],
+    ['The merge-pr and promote-release steps refuse post-merge evidence.', false],
+    ['the merge-pr step waits for checks', false],
+    ["run `git push` only in the architect's step", false],
+    ['the pre-push hook refuses it', false],
+    ['force-push the branch', true],
+    ['force-pushed the branch', true],
+    ['force-pushing the branch', true],
   ] as const)('git-sense conflict %j fires=%s', (line, fires) => {
     expect(contractConflicts(line)).toEqual(fires ? [{ line: 1, text: line }] : [])
   })
