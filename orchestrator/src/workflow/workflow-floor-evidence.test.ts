@@ -3,9 +3,65 @@ import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   type CursorIdentity,
+  classifyCheckoutEvidence,
   type FloorEvidencePorts,
   gatherValidatedEvidence,
 } from './workflow-floor-evidence.ts'
+
+test('checkout evidence accepts a commit from the cursor branch', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: true,
+      landingCommit: null,
+      landingIsHeadOrAncestor: false,
+      headIsTrunkTipOrAncestor: false,
+    }),
+  ).toBe('branch')
+})
+
+test('checkout evidence accepts a trunk commit at or after the recorded landing', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'landing',
+      landingIsHeadOrAncestor: true,
+      headIsTrunkTipOrAncestor: true,
+    }),
+  ).toBe('post-landing')
+})
+
+test('checkout evidence refuses a later commit off trunk after the recorded landing', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'landing',
+      landingIsHeadOrAncestor: true,
+      headIsTrunkTipOrAncestor: false,
+    }),
+  ).toBe('outside-change')
+})
+
+test('checkout evidence refuses a trunk commit before the recorded landing', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'later-landing',
+      landingIsHeadOrAncestor: false,
+      headIsTrunkTipOrAncestor: true,
+    }),
+  ).toBe('outside-change')
+})
+
+test('checkout evidence refuses an unrelated commit', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'landing-on-trunk',
+      landingIsHeadOrAncestor: false,
+      headIsTrunkTipOrAncestor: false,
+    }),
+  ).toBe('outside-change')
+})
 
 const identity: CursorIdentity = {
   project: 'fixture',
