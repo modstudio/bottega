@@ -255,7 +255,7 @@ describe('operational monitor conditions', () => {
     }
   })
 
-  test('an absent attached tree keeps manual review as the retained Docker resource remedy', async () => {
+  test('an absent attached tree is no longer retained for manual Docker review', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     db()
       .query('UPDATE run SET worktree=?,worktree_source=? WHERE id=?')
@@ -279,9 +279,7 @@ describe('operational monitor conditions', () => {
             condition.kind === 'retained-worktree-docker-resource' &&
             condition.subject === `app-orch-${runId}-web`,
         ),
-      ).toMatchObject({
-        action: 'informational; retained resources require review before any removal',
-      })
+      ).toBeUndefined()
     } finally {
       spawn.mockRestore()
     }

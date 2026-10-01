@@ -235,6 +235,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       return createWorkerWorktree({
         tool,
         cwd: project.path,
+        mainProjectPath: project.path,
         runId: inserted.id,
         writes: true,
         readOnlyBase: plan.tip,
@@ -248,6 +249,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         recordRecipeResource,
         claimRecipePort: claimRecipeServePort,
         templateBaseRef: templateBase,
+        mainStackConsumers: project.settings.mainStack?.consumers,
       })
     })
     const actualBranch = branchOf(created.path)

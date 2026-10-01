@@ -450,7 +450,7 @@ export async function doctorCommand(
     log('\nregister questions (not run failures):')
     for (const question of registerQuestions) log(`  ${question}`)
   }
-  const docker = dockerRunResources()
+  const docker = dockerRunResources(repositoryProjects.map(({ path }) => path))
   const dockerResources = docker.ascertainable ? docker.resources : []
   const dockerOwnerIds = new Set(dockerResources.map(({ runId }) => runId))
   const owners = (

@@ -12,30 +12,124 @@ afterEach(() => {
   mock.restore()
 })
 
-test('a failed resume child with no recorded worktree cannot ascertain removal', () => {
+test('a terminal child leaves its live conversation resource untouched', () => {
   const parent = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent, turn: 2 })
   db().query('UPDATE run SET worktree=? WHERE id=?').run(dir, parent)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
-    commands.push(args.join(' '))
-    return result(`app-orch-${parent}-web`)
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a')) return result(`app-orch-${parent}-web`)
+    if (command.startsWith('docker volume ls')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('')
   }) as typeof Bun.spawnSync)
 
   const teardown = teardownTerminalRunResources(db(), failed)
 
-  expect(commands).toEqual([])
+  expect(commands).not.toContain(`docker rm -f app-orch-${parent}-web`)
   expect(teardown).toEqual(
     expect.objectContaining({
-      outcome: 'unascertainable',
-      reason: 'no recorded worktree',
+      outcome: 'live-sibling',
+      reason: 'live sharer present',
       removed: 0,
       skipped: true,
     }),
   )
 })
 
-test('an unresolvable repository root cannot ascertain removal', () => {
+test('a terminal transition without a recorded worktree skips Docker inventory', () => {
+  const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a')) return result(`app-orch-${terminal}-web`)
+    if (command.startsWith('docker volume ls')) return result(`app_orch-${terminal}_data`)
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('')
+  }) as typeof Bun.spawnSync)
+
+  const teardown = teardownTerminalRunResources(db(), terminal)
+
+  expect(commands).toEqual([])
+  expect(teardown).toEqual(expect.objectContaining({ outcome: 'nothing', removed: 0 }))
+})
+
+test('a supplied sweep inventory reclaims resources whose run no longer records a worktree', () => {
+  const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return result('')
+  }) as typeof Bun.spawnSync)
+
+  const teardown = teardownTerminalRunResources(db(), terminal, {
+    ascertainable: true,
+    resources: [
+      { kind: 'container', name: `app-orch-${terminal}-web`, runId: terminal },
+      { kind: 'volume', name: `app_orch-${terminal}_data`, runId: terminal },
+    ],
+  })
+
+  expect(commands).toContain(`docker rm -f app-orch-${terminal}-web`)
+  expect(commands).toContain(`docker volume rm app_orch-${terminal}_data`)
+  expect(teardown).toEqual(expect.objectContaining({ outcome: 'removed', removed: 2 }))
+})
+
+test('a dry-run applies terminal teardown eligibility without mutating Docker', () => {
+  const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    return result('')
+  }) as typeof Bun.spawnSync)
+
+  const preview = teardownTerminalRunResources(
+    db(),
+    terminal,
+    {
+      ascertainable: true,
+      resources: [
+        { kind: 'container', name: `app-orch-${terminal}-web`, runId: terminal },
+        { kind: 'volume', name: `app_orch-${terminal}_data`, runId: terminal },
+      ],
+    },
+    { dryRun: true },
+  )
+
+  expect(commands).toEqual([])
+  expect(preview).toEqual(
+    expect.objectContaining({ outcome: 'removed', removed: 2, skipped: false }),
+  )
+})
+
+test('a dry-run retains a main-checkout resource just like the real path', () => {
+  const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const preview = teardownTerminalRunResources(
+    db(),
+    terminal,
+    {
+      ascertainable: true,
+      resources: [
+        {
+          kind: 'volume',
+          name: 'main_database',
+          runId: terminal,
+          mainCheckout: true,
+        },
+      ],
+    },
+    { dryRun: true },
+  )
+
+  expect(preview).toEqual(
+    expect.objectContaining({ outcome: 'unascertainable', removed: 0, skipped: true }),
+  )
+})
+
+test('an absent unregistered tree with no resources is already clean', () => {
   const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'absent-worktree'), terminal)
   const commands: string[] = []
@@ -46,11 +140,11 @@ test('an unresolvable repository root cannot ascertain removal', () => {
 
   const teardown = teardownTerminalRunResources(db(), terminal)
 
-  expect(commands.some((command) => command.startsWith('docker '))).toBe(false)
+  expect(commands.some((command) => command.startsWith('docker '))).toBe(true)
   expect(teardown).toEqual(
     expect.objectContaining({
-      outcome: 'unascertainable',
-      reason: 'unresolvable repository root',
+      outcome: 'nothing',
+      reason: null,
       removed: 0,
     }),
   )
@@ -69,7 +163,7 @@ test('a registered project root resolves safety after the worktree is gone', () 
   expect(terminalDockerRetentionReasonForRun(db(), terminal)).toBeNull()
 })
 
-test('stopped runs with gone trees retain surviving infrastructure for review', () => {
+test('stopped runs with gone trees treat disposable infrastructure as ordinary cleanup', () => {
   const stopped = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'gone-worktree'), stopped)
   const commands: string[] = []
@@ -78,13 +172,13 @@ test('stopped runs with gone trees retain surviving infrastructure for review', 
     return result('')
   }) as typeof Bun.spawnSync)
   const teardown = teardownTerminalRunResources(db(), stopped)
-  expect(commands.some((command) => command.startsWith('docker '))).toBe(false)
+  expect(commands.some((command) => command.startsWith('docker '))).toBe(true)
   expect(teardown).toEqual(
     expect.objectContaining({
-      outcome: 'unascertainable',
-      reason: 'unresolvable repository root',
+      outcome: 'nothing',
+      reason: null,
       removed: 0,
-      skipped: true,
+      skipped: false,
     }),
   )
 })
