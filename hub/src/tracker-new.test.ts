@@ -41,8 +41,30 @@ describe('tracker-new MCP creation', () => {
     ).toBe('hosted')
     expect(
       taskCreationDestination({ name: 'read-only', settings: { tracker: { protocol: 'custom' } } }),
-    ).toBe('hosted')
+    ).toBe('tracker')
     expect(taskCreationDestination({ name: 'hosted', settings: {} })).toBe('hosted')
+  })
+
+  test('refuses creation for an unknown remote tracker without create support', async () => {
+    const project: TrackerProject = {
+      name: 'future',
+      settings: { tracker: { protocol: 'future-mcp' } },
+    }
+    expect(taskCreationDestination(project)).toBe('tracker')
+    await expect(
+      createAdvertisedTrackerTask(
+        {
+          async listTools() {
+            return []
+          },
+          async callTool() {
+            throw new Error('must not call a tracker tool')
+          },
+        },
+        project,
+        { title: 'No silent mint', body: '', status: 'open' },
+      ),
+    ).rejects.toThrow('tracker protocol future-mcp has no create support')
   })
 
   test('maps requested and default statuses into tracker vocabulary', () => {

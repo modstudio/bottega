@@ -9,6 +9,7 @@ import {
   mirrorCollisionDecision,
   type TaskIdentity,
 } from './hosted-tasks.ts'
+import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
 
 export type HostedNote = {
@@ -278,6 +279,13 @@ export async function promoteHostedNote(
     if (!note) return null
     if (note.promoted_task)
       throw new Error(`note ${number} is already promoted to ${note.promoted_task}`)
+    if (input.task !== undefined) {
+      const project = rows<{ key_prefixes: string[]; tracker: { protocol?: string } | null }>(
+        await tx`SELECT key_prefixes,tracker FROM project
+        WHERE space_id=${identity.spaceId}::uuid AND name=${note.project}`,
+      )[0]
+      validateHostedPromotionTaskKey(input.task, note.project, project)
+    }
     const anchors = JSON.parse(note.anchors) as Array<Record<string, unknown>>
     const evidence = anchors
       .map(
@@ -305,6 +313,23 @@ export async function promoteHostedNote(
     )[0]!
     return { note: promoted, task }
   })
+}
+
+export function validateHostedPromotionTaskKey(
+  key: string,
+  projectName: string,
+  project:
+    | { key_prefixes: readonly string[]; tracker: { protocol?: string } | null | undefined }
+    | undefined,
+): void {
+  if (!project || !projectHasRemoteTracker(project.tracker))
+    throw new Error(`project '${projectName}' does not have a remote tracker`)
+  const prefix = key.split('-', 1)[0]?.toUpperCase()
+  const prefixes = project.key_prefixes.map((candidate) => candidate.toUpperCase())
+  if (!prefix || !prefixes.includes(prefix))
+    throw new Error(
+      `task key '${key}' has the wrong prefix for project ${projectName}; expected: ${project.key_prefixes.join(', ')}`,
+    )
 }
 
 export async function selectPromotionTask(

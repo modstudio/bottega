@@ -7,6 +7,7 @@ import {
   trackerCreatedTaskKey,
   trackerWireAction,
 } from '../../shared/trackers.ts'
+import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import type { McpTool } from './mcp.ts'
 
 type ToolListingCaller = ToolCaller & {
@@ -17,16 +18,7 @@ export type TaskCreationDestination = 'tracker' | 'hosted'
 
 /** Decide which system owns creation and therefore the task key. */
 export function taskCreationDestination(project: TrackerProject): TaskCreationDestination {
-  const tracker = project.settings.tracker
-  if (!tracker || tracker.protocol === 'hub') return 'hosted'
-  if (
-    tracker.protocol === 'workspace-mcp' ||
-    tracker.protocol === 'cursor-mcp' ||
-    tracker.protocol === 'array-mcp' ||
-    tracker.actions?.create
-  )
-    return 'tracker'
-  return 'hosted'
+  return projectHasRemoteTracker(project.settings.tracker) ? 'tracker' : 'hosted'
 }
 
 export function trackerTaskInput(
