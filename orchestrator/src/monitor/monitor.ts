@@ -61,6 +61,7 @@ import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
+import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import type {
   AddressedMonitorCondition,
@@ -690,6 +691,9 @@ export async function monitor(
   const hub = reconcileHub(clock)
   conditions.push(...hub.conditions)
   errors.push(...hub.errors)
+  const retrievalPins = observeRetrievalPins()
+  conditions.push(...retrievalPins.conditions)
+  errors.push(...retrievalPins.errors)
   const rulings = rulingConditions(clock)
   conditions.push(...rulings.conditions)
   errors.push(...rulings.errors)

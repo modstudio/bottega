@@ -25,6 +25,7 @@ export type DocRow = {
   slug: string
   title: string
   body: string
+  revision?: string | null
 }
 
 const CODE_SOURCE_GLOBS = [
@@ -205,11 +206,12 @@ function isDocRow(value: unknown): value is DocRow {
     (typeof row.subject === 'string' || row.subject === null) &&
     typeof row.slug === 'string' &&
     typeof row.title === 'string' &&
-    typeof row.body === 'string'
+    typeof row.body === 'string' &&
+    (typeof row.revision === 'string' || row.revision === null)
   )
 }
 
-export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
+export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
   const child = Bun.spawn(
     [...bottegaEntryArgv('orch', resolve(repositoryRoot, 'bin/orch')), 'doc', 'list', '--json'],
     {
@@ -240,7 +242,11 @@ export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
   if (!Array.isArray(rows) || !rows.every(isDocRow)) {
     throw new Error('doc corpus export did not contain valid document rows')
   }
-  return rows.filter((doc) => doc.scope !== 'resume').flatMap((doc) => chunkDoc(doc))
+  return rows.filter((doc) => doc.scope !== 'resume')
+}
+
+export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
+  return (await loadDocRows(repositoryRoot)).flatMap((doc) => chunkDoc(doc))
 }
 
 export async function loadCodeCorpus(repositoryRoot: string): Promise<Chunk[]> {
