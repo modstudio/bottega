@@ -600,6 +600,15 @@ export function withCleanupLock<T>(
   return withProjectLock(repoRoot, 'cleanup', identity, action, timeoutMs, true)
 }
 
+/** Refuse rather than wait when another release already owns this project. */
+export function withReleaseLock<T>(
+  repoRoot: string,
+  identity: ProjectLockIdentity,
+  action: () => T,
+): T {
+  return withProjectLock(repoRoot, 'release', identity, action, 0, true)
+}
+
 export function worktreeLeaseName(worktreePath: string): string {
   let real = worktreePath
   try {

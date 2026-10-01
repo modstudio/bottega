@@ -505,6 +505,13 @@
       "when": 1790272800024,
       "tag": "0071_worker_note_request",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1790884800000,
+      "tag": "0072_release_ledger",
+      "breakpoints": true
     }
   ]
 }
