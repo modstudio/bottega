@@ -487,7 +487,6 @@ export const modules: ArchitectureModule[] = [
     './resume-tree.ts',
     '../sandbox/sandbox.ts',
     '../branch/task-branch.ts',
-    '../branch/task-branch-reuse.ts',
     '../worktree/worktree.ts',
     '../worktree/worktree-caller.ts',
     '../worktree/worktree-mcp.ts',
@@ -500,10 +499,15 @@ export const modules: ArchitectureModule[] = [
     './run-resume-claim.ts',
     './run-retry-claim.ts',
     './run-task-reference.ts',
+    './run-task-branch-resolution.ts',
     './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
   module('orchestrator/src/run/run-task-reference.ts', ['../../../shared/self-spawn.ts']),
+  module('orchestrator/src/run/run-task-branch-resolution.ts', [
+    '../branch/task-branch.ts',
+    '../branch/task-branch-reuse.ts',
+  ]),
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
   module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
   module('orchestrator/src/run/run-close.ts', [

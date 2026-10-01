@@ -26,6 +26,7 @@ export function createReadOnlyWorktree(
   base: string,
   record?: RecordWorktree,
   provision: WorktreeProvision = [],
+  provisionTimeoutMs?: number,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -38,7 +39,7 @@ export function createReadOnlyWorktree(
     git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
-    provisionWorktree(repoRoot, path, provision, 'the project register row')
+    provisionWorktree(repoRoot, path, provision, 'the project register row', provisionTimeoutMs)
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
     verifyBorrowedCheckout(path, repoRoot)
