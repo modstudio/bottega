@@ -55,6 +55,8 @@ const originalPath = process.env.PATH
 const originalSandbox = process.env.ORCH_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
+const originalRunId = process.env.ORCH_RUN_ID
+const originalDepth = process.env.ORCH_DEPTH
 const inheritedGitConfig: Record<string, string> = {}
 const gitConfigEnvironmentName = /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/
 const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
@@ -181,6 +183,8 @@ let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
 
 beforeAll(() => {
+  delete process.env.ORCH_RUN_ID
+  delete process.env.ORCH_DEPTH
   for (const [key, value] of Object.entries(process.env)) {
     if (!gitConfigEnvironmentName.test(key) || value === undefined) continue
     inheritedGitConfig[key] = value
@@ -253,6 +257,10 @@ afterAll(() => {
   else process.env[CONFIG_HOME_ENV] = originalConfigHome
   if (originalRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
   else process.env.ORCH_RECORD_API_URL = originalRecordApiUrl
+  if (originalRunId === undefined) delete process.env.ORCH_RUN_ID
+  else process.env.ORCH_RUN_ID = originalRunId
+  if (originalDepth === undefined) delete process.env.ORCH_DEPTH
+  else process.env.ORCH_DEPTH = originalDepth
   for (const key of Object.keys(process.env)) {
     if (gitConfigEnvironmentName.test(key)) delete process.env[key]
   }

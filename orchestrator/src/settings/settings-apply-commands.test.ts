@@ -263,3 +263,56 @@ describe('settings adopt', () => {
     expect(stored.permissions).toEqual({ allow: ['Bash(git status)'] })
   })
 })
+
+describe('worker settings apply refusals', () => {
+  let priorRunId: string | undefined
+
+  beforeEach(() => {
+    priorRunId = process.env.ORCH_RUN_ID
+    process.env.ORCH_RUN_ID = 'settings-apply-worker'
+  })
+
+  afterEach(() => {
+    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
+    else process.env.ORCH_RUN_ID = priorRunId
+  })
+
+  test('settings env-import allows an architect caller and refuses a worker caller', async () => {
+    delete process.env.ORCH_RUN_ID
+    await seedUser()
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { FIRST: 'private' } }))
+    await settingsEnvImportCommand(flags({ user: true }), shown().port)
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).envKeys,
+    ).toEqual(['FIRST'])
+
+    writeFileSync(
+      join(claude, 'settings.json'),
+      JSON.stringify({ env: { FIRST: 'private', SECOND: 'private' } }),
+    )
+    process.env.ORCH_RUN_ID = 'settings-apply-worker'
+    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
+      'refusing document store write from an orch worker run',
+    )
+  })
+
+  test('settings adopt allows an architect caller and refuses a worker caller', async () => {
+    delete process.env.ORCH_RUN_ID
+    await seedUser()
+    const local = join(claude, 'settings.local.json')
+    writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(git status)'] } }))
+    await settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port)
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).permissions,
+    ).toEqual({ allow: ['Bash(git status)'] })
+
+    writeFileSync(
+      local,
+      JSON.stringify({ permissions: { allow: ['Bash(git status)', 'Bash(git diff)'] } }),
+    )
+    process.env.ORCH_RUN_ID = 'settings-apply-worker'
+    await expect(
+      settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port),
+    ).rejects.toThrow('refusing document store write from an orch worker run')
+  })
+})

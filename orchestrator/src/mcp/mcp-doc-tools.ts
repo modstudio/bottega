@@ -12,7 +12,6 @@ import {
   setDoc,
   signedInDocOwner,
 } from '../doc/docs.ts'
-import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
 const text = (value: unknown) => ({
@@ -45,10 +44,7 @@ async function withMcpDocWriteRemedy<T>(write: () => Promise<T>): Promise<T> {
   }
 }
 
-export function registerDocTools(
-  server: McpServer,
-  workerProcess: () => boolean = () => isOrchWorkerProcess(process.env, process.pid),
-): void {
+export function registerDocTools(server: McpServer): void {
   server.registerTool(
     'list_docs',
     {
@@ -156,7 +152,7 @@ export function registerDocTools(
       expected_revision,
       cwd,
     }) => {
-      const refusal = decideMcpDocWrite('set_doc', scope, workerProcess())
+      const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
       const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
       const doc = await withMcpDocWriteRemedy(() =>
@@ -201,7 +197,7 @@ export function registerDocTools(
       },
     },
     async ({ scope, subject, slug, reason, author, expected_revision, cwd }) => {
-      const refusal = decideMcpDocWrite('remove_doc', scope, workerProcess())
+      const refusal = decideMcpDocWrite('remove_doc', scope)
       if (refusal) throw new Error(refusal)
       const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
@@ -228,7 +224,7 @@ export function registerDocTools(
       },
     },
     async ({ scope, subject, slug }) => {
-      const refusal = decideMcpDocWrite('consume_doc', scope, workerProcess())
+      const refusal = decideMcpDocWrite('consume_doc', scope)
       if (refusal) throw new Error(refusal)
       return text(await consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' }))
     },

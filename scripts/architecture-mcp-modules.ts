@@ -39,14 +39,14 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
   ]),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
-  module('orchestrator/src/mcp/mcp-doc-write.ts', []),
+  module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../canon/canon.ts',
     '../doc/doc-canon-tree.ts',
     '../doc/docs.ts',
-    '../run/run-process.ts',
+    '../worker-store-write.ts',
     './mcp-doc-write.ts',
   ]),
   module('orchestrator/src/mcp/mcp-search-tools.ts', [

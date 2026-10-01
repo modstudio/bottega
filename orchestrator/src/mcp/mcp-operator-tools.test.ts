@@ -8,15 +8,20 @@ import { createDocsMcpServer } from './mcp.ts'
 
 const SESSION = 'mcp-operator-tools-test'
 let priorSession: string | undefined
+let priorRunId: string | undefined
 
 beforeEach(() => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  priorRunId = process.env.ORCH_RUN_ID
   process.env.CLAUDE_CODE_SESSION_ID = SESSION
+  delete process.env.ORCH_RUN_ID
 })
 
 afterEach(() => {
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
+  else process.env.ORCH_RUN_ID = priorRunId
 })
 
 async function withClient<T>(run: (client: Client) => Promise<T>): Promise<T> {
@@ -282,5 +287,33 @@ describe('operator MCP tools', () => {
     expect(db().query('SELECT filed_as FROM question WHERE id=?').get(questionId)).toEqual({
       filed_as: 'doc',
     })
+
+    const workerRunId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'ok',
+      session: SESSION,
+      repo: 'file-ruling-project',
+    })
+    const workerQuestionId = addQuestion(workerRunId, 'Which worker shape?')
+    db()
+      .query(
+        `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
+         WHERE id=?`,
+      )
+      .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', workerQuestionId)
+    process.env.ORCH_RUN_ID = 'mcp-worker'
+    const refused = await withClient((client) =>
+      client.callTool({
+        name: 'file_ruling',
+        arguments: { question_id: workerQuestionId, as: 'doc' },
+      }),
+    )
+    expect(refused.isError).toBe(true)
+    expect(refused.content).toEqual([
+      expect.objectContaining({
+        text: expect.stringContaining('refusing document store write from an orch worker run'),
+      }),
+    ])
   })
 })

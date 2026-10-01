@@ -2,6 +2,7 @@
 /** Shared draft/promote/retire/event mechanics for versioned operator-owned JSON stores. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 
 type VersionStatus = 'draft' | 'production' | 'retired'
 export type VersionEvent = 'set' | 'fork' | 'import' | 'promote' | 'retire'
@@ -39,6 +40,10 @@ const required = (value: string | undefined, name: string) => {
 const author = (value?: string) => value?.trim() || sessionId() || 'unknown'
 
 export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
+  const assertWorkerStoreWriteAllowed = (operation: VersionEvent) => {
+    const refusal = workerStoreWriteRefusal('workflow', `${operation} ${config.noun}`, process.env)
+    if (refusal) throw new Error(refusal)
+  }
   const ownerId = (slug: string, d: Database) => {
     const row = d.query(`SELECT id FROM ${config.identityTable} WHERE slug=?`).get(slug) as {
       id: number
@@ -100,6 +105,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     kind: Extract<VersionEvent, 'set' | 'fork' | 'import'>,
     d: Database,
   ) => {
+    assertWorkerStoreWriteAllowed(kind)
     config.validate(definition, d)
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
@@ -133,6 +139,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     d: Database,
     preflight?: (definition: T, d: Database) => void,
   ) => {
+    assertWorkerStoreWriteAllowed('promote')
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
@@ -166,6 +173,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     authorValue: string | undefined,
     d: Database,
   ) => {
+    assertWorkerStoreWriteAllowed('retire')
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),

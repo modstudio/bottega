@@ -299,7 +299,14 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'doc-commands-boundary',
     'orchestrator/src/doc/doc-commands.ts',
-    ['node:fs', '../canon/canon.ts', './doc-canon-tree.ts', './doc-search.ts', './docs.ts'],
+    [
+      'node:fs',
+      '../canon/canon.ts',
+      '../worker-store-write.ts',
+      './doc-canon-tree.ts',
+      './doc-search.ts',
+      './docs.ts',
+    ],
     'Keep doc commands independent of database writes beyond docs, runs, routing, transports, and the CLI.',
   ),
   boundary(

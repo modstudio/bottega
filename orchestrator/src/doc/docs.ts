@@ -28,6 +28,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/record-auth.ts'
+import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
@@ -44,6 +45,11 @@ import {
 export type { Doc, DocRevision, DocRevisionMetadata }
 export type DocListFilters = StoreDocListFilters
 export type DocMetadata = StoreDocMetadata
+
+function assertWorkerDocStoreWriteAllowed(operation: string): void {
+  const refusal = workerStoreWriteRefusal('document', operation, process.env)
+  if (refusal) throw new Error(refusal)
+}
 
 import {
   assertLocalRevisionWrite,
@@ -469,6 +475,7 @@ export async function setDoc(
     delivery?: 'inject' | 'demand'
   } & DocWriteContext,
 ): Promise<Doc> {
+  assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
     if (!frontmatter?.top.status) {
@@ -499,6 +506,7 @@ export async function importDoc(
     delivery?: 'inject' | 'demand'
   } & DocWriteContext,
 ): Promise<Doc> {
+  assertWorkerDocStoreWriteAllowed('importDoc')
   return setDocWithOp(input, 'import')
 }
 
@@ -509,6 +517,7 @@ export async function removeDoc(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<boolean> {
+  assertWorkerDocStoreWriteAllowed('removeDoc')
   writableDb()
   validScope(scope)
   const identity = docWriteIdentity(context)
@@ -572,6 +581,7 @@ export async function consumeDoc(
   slug: string,
   context: DocWriteContext,
 ): Promise<Doc & { already_consumed: boolean }> {
+  assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricAddress(scope, slug)
   const identity = docWriteIdentity(context)
@@ -830,6 +840,7 @@ function importedDoc(path: string, fileName: string): { title: string; body: str
 }
 
 export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
+  assertWorkerDocStoreWriteAllowed('importDocs')
   writableDb()
   docWriteIdentity(context)
   let count = 0
@@ -893,6 +904,7 @@ export async function restoreDoc(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
+  assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
   validateHistoricAddress(scope, slug)
   const identity = docWriteIdentity(context)
