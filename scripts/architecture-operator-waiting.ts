@@ -32,8 +32,14 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-open.ts',
   ]),
   module('orchestrator/src/run/ruling-overturn-authority.ts', []),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/run/ruling-overturn.ts', ['../database/db.ts', './question-vocabulary.ts', './question-mutation.ts', './question-outbox.ts', './ruling-overturn-authority.ts', './run-authority.ts']),
+  module('orchestrator/src/run/ruling-overturn.ts', [
+    '../database/db.ts',
+    './question-vocabulary.ts',
+    './question-mutation.ts',
+    './question-outbox.ts',
+    './ruling-overturn-authority.ts',
+    './run-authority.ts',
+  ]),
   module('orchestrator/src/run/ruling-file.ts', [
     '../../../shared/docs.ts',
     '../../../shared/question-vocabulary.ts',
