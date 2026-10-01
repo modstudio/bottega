@@ -27,17 +27,15 @@ import {
   curateNotes,
   curatorEnabled,
   dropNote,
-  getNote,
   listActionableNotes,
   listNotes,
   mergeNote,
   noteSessionId,
   parseExplicitNoteAnchor,
-  promoteNote,
-  promotionTaskInput,
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
+import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
@@ -82,12 +80,9 @@ import {
   taskHelpRequested,
 } from './task-command-arguments.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
+import { createTrackerOwnedTask } from './tracker-task-cli.ts'
 import { hoursAgo } from './time.ts'
-import {
-  createAdvertisedTrackerTaskKey,
-  taskCreationDestination,
-  trackerTaskInput,
-} from './tracker-new.ts'
+import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -333,33 +328,23 @@ async function createTaskCommand(
         }
       : undefined
   try {
-    const registered = projects().find((candidate) => candidate.name === project)
-    if (!registered) throw new Error(`unknown project '${project}'`)
-    if (taskCreationDestination(registered) === 'tracker') {
-      const parent = taskFlag('parent')
-      const input = trackerTaskInput(registered, {
+    if (taskHas('allow-duplicate') && !override?.trim())
+      throw new Error('--allow-duplicate requires a non-empty reason')
+    const trackerKey = await createTrackerOwnedTask(
+      {
+        project,
         title,
         body,
         status: taskFlag('status'),
-        ...(parent ? { parent } : {}),
-      })
-      const candidates = duplicateCandidates(listTasks({ project }), title)
-      afterDuplicateSearch?.()
-      if (taskHas('allow-duplicate') && !override?.trim())
-        throw new Error('--allow-duplicate requires a non-empty reason')
-      if (candidates.length && !taskHas('allow-duplicate')) throw new DuplicateTaskError(candidates)
-      const tracker = registered.settings.tracker!
-      const env = tracker.envPrefix ?? registered.settings.envPrefix
-      if (!env) throw new Error(`project ${registered.name} has no usable tracker configured`)
-      const auth = await credentials(env)
-      if (!auth) throw new Error(`credentials for ${registered.name} tracker do not resolve`)
-      const client = new Mcp(auth.url, auth.token)
-      try {
-        await client.initialize()
-        console.log(await createAdvertisedTrackerTaskKey(client, registered, input))
-      } finally {
-        await client.close()
-      }
+        parent: taskFlag('parent'),
+      },
+      {
+        allowDuplicateReason: taskHas('allow-duplicate') ? override : undefined,
+        afterDuplicateSearch,
+      },
+    )
+    if (trackerKey) {
+      console.log(trackerKey)
       return
     }
     const row = await createTask(
@@ -674,40 +659,7 @@ async function note() {
     return
   }
   if (sub === 'promote') {
-    const id = argv[2] ?? ''
-    const note = getNote(id)
-    const project = projects().find((candidate) => candidate.name === note.project)
-    if (!project) throw new Error(`unknown project '${note.project}'`)
-    let existingTaskKey = flag('task')
-    let created = false
-    if (taskCreationDestination(project) === 'tracker' && !existingTaskKey) {
-      const tracker = project.settings.tracker!
-      const env = tracker.envPrefix ?? project.settings.envPrefix
-      if (!env) throw new Error(`project ${project.name} has no usable tracker configured`)
-      const auth = await credentials(env)
-      if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
-      const client = new Mcp(auth.url, auth.token)
-      try {
-        await client.initialize()
-        existingTaskKey = await createAdvertisedTrackerTaskKey(
-          client,
-          project,
-          trackerTaskInput(project, promotionTaskInput(note)),
-        )
-        created = true
-      } finally {
-        await client.close()
-      }
-    }
-    let row: Awaited<ReturnType<typeof promoteNote>>
-    try {
-      row = await promoteNote(id, { existingTaskKey })
-    } catch (error) {
-      if (!created) throw error
-      throw new Error(
-        `tracker task ${existingTaskKey} was created, but note promotion failed: ${(error as Error).message}. Finish with: hub note promote ${note.id} --task ${existingTaskKey}`,
-      )
-    }
+    const row = await promoteNoteCommand(argv[2] ?? '', flag('task'))
     console.log(`${row.promoted_task}`)
     return
   }
