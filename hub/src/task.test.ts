@@ -132,6 +132,15 @@ const branchClassification = (
 })
 
 describe('local task tracker', () => {
+  test('a hub-protocol project still mints through hub', async () => {
+    const task = await createTask(
+      { project: 'workshop', title: `Hub-owned ${crypto.randomUUID()}` },
+      { hosted },
+    )
+    expect(task.key).toMatch(/^DEV-\d+$/)
+    expect(task.source).toBe('local')
+  })
+
   test('issues above the highest existing number for the project prefix', async () => {
     seed('BET-700', 'beta')
     expect((await createTask({ project: 'beta', title: 'Next beta task' }, { hosted })).key).toBe(

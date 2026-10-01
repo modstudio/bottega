@@ -228,6 +228,29 @@ describe('suggestion notes', () => {
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
     })
 
+    test('a hub-protocol note promotion mints through hub and refuses --task', async () => {
+      const created = (
+        await createNote({
+          text: `Hub-owned promotion ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const promoted = await promoteNote(created.id)
+      expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
+
+      const another = (
+        await createNote({
+          text: `Hub-owned task refusal ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      await expect(promoteNote(another.id, { existingTaskKey: 'LOC-999' })).rejects.toThrow(
+        '--task is valid only for a project that owns its tracker',
+      )
+    })
+
     test('drop merge and reap write locally and keep hosted invariants', async () => {
       const one = (
         await createNote({

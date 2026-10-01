@@ -22,6 +22,26 @@ describe('tracker-new MCP creation', () => {
 
   test('chooses the owner of task creation', () => {
     expect(taskCreationDestination(trackerProject)).toBe('tracker')
+    for (const protocol of ['workspace-mcp', 'cursor-mcp', 'array-mcp'] as const) {
+      expect(
+        taskCreationDestination({
+          name: protocol,
+          settings: { tracker: { protocol, openStatuses: ['open'] } },
+        }),
+      ).toBe('tracker')
+    }
+    expect(
+      taskCreationDestination({
+        name: 'custom',
+        settings: { tracker: { protocol: 'custom-mcp', actions: { create: 'task_create' } } },
+      }),
+    ).toBe('tracker')
+    expect(
+      taskCreationDestination({ name: 'hub', settings: { tracker: { protocol: 'hub' } } }),
+    ).toBe('hosted')
+    expect(
+      taskCreationDestination({ name: 'read-only', settings: { tracker: { protocol: 'custom' } } }),
+    ).toBe('hosted')
     expect(taskCreationDestination({ name: 'hosted', settings: {} })).toBe('hosted')
   })
 

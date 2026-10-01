@@ -17,7 +17,16 @@ export type TaskCreationDestination = 'tracker' | 'hosted'
 
 /** Decide which system owns creation and therefore the task key. */
 export function taskCreationDestination(project: TrackerProject): TaskCreationDestination {
-  return project.settings.tracker ? 'tracker' : 'hosted'
+  const tracker = project.settings.tracker
+  if (!tracker || tracker.protocol === 'hub') return 'hosted'
+  if (
+    tracker.protocol === 'workspace-mcp' ||
+    tracker.protocol === 'cursor-mcp' ||
+    tracker.protocol === 'array-mcp' ||
+    tracker.actions?.create
+  )
+    return 'tracker'
+  return 'hosted'
 }
 
 export function trackerTaskInput(

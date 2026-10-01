@@ -659,7 +659,7 @@ async function note() {
     return
   }
   if (sub === 'promote') {
-    const row = await promoteNoteCommand(argv[2] ?? '', flag('task'))
+    const row = await promoteNoteCommand(argv[2] ?? '', flag('task'), has('task'))
     console.log(`${row.promoted_task}`)
     return
   }

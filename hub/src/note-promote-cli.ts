@@ -7,7 +7,19 @@ import {
   trackerTaskInput,
 } from './tracker-new.ts'
 
-export async function promoteNoteCommand(id: string, suppliedTaskKey?: string) {
+export function promotionTaskKey(value: string | undefined, present: boolean): string | undefined {
+  if (!present) return undefined
+  if (!value?.trim())
+    throw new Error('--task requires a task key: hub note promote <ID> --task <KEY>')
+  return value
+}
+
+export async function promoteNoteCommand(
+  id: string,
+  suppliedTaskKey?: string,
+  taskFlagPresent = suppliedTaskKey !== undefined,
+) {
+  suppliedTaskKey = promotionTaskKey(suppliedTaskKey, taskFlagPresent)
   const note = getNote(id)
   const project = projects().find((candidate) => candidate.name === note.project)
   if (!project) throw new Error(`unknown project '${note.project}'`)
