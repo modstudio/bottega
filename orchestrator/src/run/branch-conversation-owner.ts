@@ -6,6 +6,8 @@ export type BranchConversationRow = {
   parent_run_id: number | null
   status: string
   branch: string | null
+  job: string
+  writesRepo: boolean
 }
 
 /** Return the first live run on this branch from a different conversation. */
@@ -18,6 +20,7 @@ export function aliveBranchConversationOwner(
     rows.find(
       (row) =>
         row.branch === branch &&
+        row.writesRepo &&
         (row.status === 'running' || row.status === 'asking') &&
         (conversationRootId === null || (row.parent_run_id ?? row.id) !== conversationRootId),
     ) ?? null

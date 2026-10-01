@@ -73,7 +73,8 @@ export async function main(argv: string[]): Promise<number> {
     await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))
     return 0
   } catch (e) {
-    const why = String((e as Error)?.stack ?? e)
+    const message = String((e as Error)?.message ?? e)
+    const diagnostic = String((e as Error)?.stack ?? e)
     /**
      * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
      *
@@ -83,8 +84,8 @@ export async function main(argv: string[]): Promise<number> {
      * this codebase already reserves for "orch was wrong", and like `unreachable`
      * and `interrupted` it is never counted as evidence about an agent.
      */
-    recordStartupFailure(id, `the worker process could not start:\n${why}`)
-    console.error(`orch: run ${id} could not start: ${why}`)
+    recordStartupFailure(id, message)
+    console.error(`orch: run ${id} could not start: ${diagnostic}`)
     return 1
   }
 }

@@ -2,10 +2,19 @@
 /** Guards worktree creation against another live conversation on the branch. */
 
 import { db } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import {
   aliveBranchConversationOwner,
   type BranchConversationRow,
 } from './branch-conversation-owner.ts'
+
+export function jobWritesRepo(
+  job: string,
+  jobs: Readonly<Record<string, { needs: { writesRepo?: boolean } }>>,
+): boolean {
+  const definition = jobs[job]
+  return definition === undefined ? true : definition.needs.writesRepo === true
+}
 
 function aliveOwnerOnBranch(input: {
   branch: string
@@ -15,13 +24,20 @@ function aliveOwnerOnBranch(input: {
 }): BranchConversationRow | null {
   const rows = db()
     .query(
-      `SELECT id, parent_run_id, status, branch FROM run
+      `SELECT id, parent_run_id, status, branch, job FROM run
        WHERE branch=? AND status IN ('running','asking')
          AND (project_id=? OR (project_id IS NULL AND repo=?))
        ORDER BY id`,
     )
-    .all(input.branch, input.projectId, input.projectName) as BranchConversationRow[]
-  return aliveBranchConversationOwner(rows, input.branch, input.conversationRootId)
+    .all(input.branch, input.projectId, input.projectName) as Omit<
+    BranchConversationRow,
+    'writesRepo'
+  >[]
+  const declaredRows = rows.map((row) => ({
+    ...row,
+    writesRepo: jobWritesRepo(row.job, JOBS),
+  }))
+  return aliveBranchConversationOwner(declaredRows, input.branch, input.conversationRootId)
 }
 
 export function assertBranchHasNoAliveOwner(input: {

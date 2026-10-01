@@ -32,6 +32,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',
+    '../jobs/jobs.ts',
     './branch-conversation-owner.ts',
   ]),
   module('orchestrator/src/run/run-claim.ts', [
