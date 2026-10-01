@@ -80,9 +80,9 @@ import {
   taskHelpRequested,
 } from './task-command-arguments.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
-import { createTrackerOwnedTask } from './tracker-task-cli.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
+import { createTrackerOwnedTask } from './tracker-task-cli.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
