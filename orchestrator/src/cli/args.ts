@@ -361,6 +361,7 @@ export const CLI_COMMANDS = new Set([
   'reclassify-failures',
   'reconcile',
   'relay',
+  'release',
   'result',
   'retry',
   'review',

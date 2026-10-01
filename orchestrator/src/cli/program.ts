@@ -13,6 +13,7 @@ import { register as registerJudgment } from '../commands/judgment.ts'
 import { register as registerLogic } from '../commands/logic.ts'
 import { register as registerPullRequest } from '../commands/pull-request.ts'
 import { register as registerRecordAuth } from '../commands/record-auth.ts'
+import { register as registerRelease } from '../commands/release.ts'
 import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
 import { register as registerRulings } from '../commands/rulings.ts'
@@ -41,6 +42,7 @@ registerPullRequest(program)
 registerCode(program)
 registerBranches(program)
 registerRecordAuth(program)
+registerRelease(program)
 registerDocs(program)
 registerRunListing(program)
 registerHealth(program)

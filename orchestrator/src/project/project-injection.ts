@@ -19,6 +19,7 @@ const releaseSchema = strictObject({
       name: z.string(),
       branch: z.string(),
       deploy: z.string().optional(),
+      live: z.string().trim().min(1).optional(),
     }),
   ),
   mergeMethod: z.enum(['squash', 'merge', 'rebase']),

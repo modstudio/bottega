@@ -8,7 +8,14 @@ import {
 import { type Project, validateProjectSettings } from './projects.ts'
 
 const release: ReleaseSettings = {
-  rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
+  rungs: [
+    {
+      name: 'production',
+      branch: 'production',
+      deploy: 'bun run deploy',
+      live: 'curl -fsS https://example.test/version | jq -r .commit',
+    },
+  ],
   mergeMethod: 'squash',
   requiredChecks: ['gate'],
   observationWindowHours: 24,
@@ -27,6 +34,14 @@ describe('project workflow injection', () => {
         release: { ...release, unexpected: true },
       } as Parameters<typeof validateProjectSettings>[0]),
     ).toEqual([expect.stringContaining('release: Unrecognized key')])
+  })
+
+  test('validates a rung live command as a non-empty string', () => {
+    expect(
+      validateProjectSettings({
+        release: { ...release, rungs: [{ ...release.rungs[0]!, live: ' ' }] },
+      }),
+    ).toEqual([expect.stringContaining('release.rungs.0.live: Too small')])
   })
 
   test('refuses the retired release.deployCommand instead of silently accepting it', () => {

@@ -462,6 +462,15 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
+  module('orchestrator/src/release/release-decision.ts', []),
+  module('orchestrator/src/release/release-service.ts', [
+    '../database/db.ts',
+    '../gate/gate-decision.ts',
+    '../git/git-environment.ts',
+    '../project/project-lock.ts',
+    '../project/projects.ts',
+    './release-decision.ts',
+  ]),
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',
     'node:fs',
