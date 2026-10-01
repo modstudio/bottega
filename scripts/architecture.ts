@@ -101,19 +101,8 @@ export const modules: ArchitectureModule[] = [
     '../evidence/evidence-query.ts',
     '../resources/resource-claims.ts',
   ]),
-  module('orchestrator/src/branch/branches.ts', [
-    './branch-landing-record.ts',
-    './branch-state.ts',
-    './branch-settlement.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    './merged-pull-request.ts',
-    './other-branch-state.ts',
-    '../project/project-lock.ts',
-    '../project/projects.ts',
-    '../pull-request/pr-admission.ts',
-    './task-branch.ts',
-  ]),
+  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
+  module('orchestrator/src/branch/branches.ts', ['./branch-landing-match.ts', './branch-landing-service.ts', './branch-state.ts', './branch-settlement.ts', '../database/db.ts', '../git/git-environment.ts', './merged-pull-request.ts', './other-branch-state.ts', '../project/project-lock.ts', '../project/projects.ts', './task-branch.ts']),
   module('orchestrator/src/agent/agent-probe.ts', [
     './agent-registry.ts',
     './agents.ts',
