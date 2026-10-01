@@ -13,7 +13,29 @@ import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
  * bridge for Claude Code's benefit — underneath, each is a plain endpoint with
  * a bearer token.
  */
-class McpError extends Error {}
+class McpError extends Error {
+  override name = 'McpError'
+}
+
+export const MCP_PROTOCOL_VERSION = '2024-11-05'
+
+type McpTransportHeaders = {
+  accept: string | null
+  contentType: string | null
+  mcpProtocolVersion: string | null
+  mcpSessionIdPresent: boolean
+}
+
+export type McpExchange = {
+  method: string
+  request: McpTransportHeaders
+  response: McpTransportHeaders & {
+    bodyFormat: 'empty' | 'json' | 'sse' | 'unknown'
+    status: number
+  }
+  /** Present only on the initialize exchange. */
+  answeredProtocolVersion: string | null
+}
 
 export type McpTool = {
   name: string
@@ -29,11 +51,21 @@ export class Mcp {
   private url: string
   private token: string
   private timeoutMs: number
+  private observe: ((exchange: McpExchange) => void) | null
+  private requestProtocolVersion: string
 
-  constructor(url: string, token: string, timeoutMs = 30_000) {
+  constructor(
+    url: string,
+    token: string,
+    timeoutMs = 30_000,
+    observe: ((exchange: McpExchange) => void) | null = null,
+    requestProtocolVersion = MCP_PROTOCOL_VERSION,
+  ) {
     this.url = url
     this.token = token
     this.timeoutMs = timeoutMs
+    this.observe = observe
+    this.requestProtocolVersion = requestProtocolVersion
   }
 
   private headers(): Record<string, string> {
@@ -49,18 +81,43 @@ export class Mcp {
   }
 
   private async post(body: unknown, expectResponse = true) {
+    const message = body as { method?: unknown }
+    const requestHeaders = this.headers()
     const res = await fetch(this.url, {
       method: 'POST',
-      headers: this.headers(),
+      headers: requestHeaders,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeoutMs),
     })
     const sid = res.headers.get('mcp-session-id')
     if (sid) this.sessionId = sid
-    if (!res.ok) throw new McpError(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    if (!expectResponse) return {}
     const raw = await res.text()
-    if (!raw) return {}
+    let parsed: Record<string, unknown> = {}
+    let parseError: unknown
+    if (expectResponse && raw && res.ok) {
+      try {
+        parsed = this.parseResponse(raw)
+      } catch (error) {
+        parseError = error
+      }
+    }
+    this.observe?.({
+      method: typeof message.method === 'string' ? message.method : '(unknown)',
+      request: transportHeaders(new Headers(requestHeaders)),
+      response: {
+        ...transportHeaders(res.headers),
+        bodyFormat: responseBodyFormat(raw, res.headers.get('content-type')),
+        status: res.status,
+      },
+      answeredProtocolVersion:
+        message.method === 'initialize' ? initializeProtocolVersion(parsed) : null,
+    })
+    if (!res.ok) throw new McpError(`HTTP ${res.status}: ${raw.slice(0, 200)}`)
+    if (parseError) throw parseError
+    return parsed
+  }
+
+  private parseResponse(raw: string): Record<string, unknown> {
     try {
       return JSON.parse(raw) as Record<string, unknown>
     } catch {
@@ -73,7 +130,7 @@ export class Mcp {
           /* next */
         }
       }
-      throw new McpError(`unparseable response: ${raw.slice(0, 200)}`)
+      throw new McpError('unparseable response')
     }
   }
 
@@ -83,7 +140,7 @@ export class Mcp {
       id: this.nextId++,
       method: 'initialize',
       params: {
-        protocolVersion: '2024-11-05',
+        protocolVersion: this.requestProtocolVersion,
         capabilities: {},
         clientInfo: { name: 'hub', version: '0.1' },
       },
@@ -126,6 +183,36 @@ export class Mcp {
     }
     return res
   }
+}
+
+function transportHeaders(headers: Headers): McpTransportHeaders {
+  return {
+    accept: headers.get('accept'),
+    contentType: headers.get('content-type'),
+    mcpProtocolVersion: headers.get('mcp-protocol-version'),
+    mcpSessionIdPresent: headers.has('mcp-session-id'),
+  }
+}
+
+function responseBodyFormat(
+  raw: string,
+  contentType: string | null,
+): McpExchange['response']['bodyFormat'] {
+  if (!raw) return 'empty'
+  if (contentType?.toLowerCase().includes('text/event-stream') || /^data:/m.test(raw)) return 'sse'
+  try {
+    JSON.parse(raw)
+    return 'json'
+  } catch {
+    return 'unknown'
+  }
+}
+
+function initializeProtocolVersion(message: Record<string, unknown>): string | null {
+  const result = message.result
+  if (!result || typeof result !== 'object') return null
+  const version = (result as { protocolVersion?: unknown }).protocolVersion
+  return typeof version === 'string' ? version : null
 }
 
 /**

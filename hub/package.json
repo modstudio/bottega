@@ -5,6 +5,7 @@
   "description": "One aggregator: tasks in flight across every project, what each cost, and scheduled reports",
   "type": "module",
   "scripts": {
+    "evidence:mcp-dialects": "bun --no-env-file scripts/mcp-dialect-evidence.ts",
     "hub": "bun --no-env-file src/cli.ts",
     "report-deliver": "bun src/report-delivery-cli.ts",
     "typecheck": "tsc --noEmit",
