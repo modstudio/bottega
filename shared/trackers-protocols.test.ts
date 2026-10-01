@@ -10,12 +10,14 @@ import {
   TRACKER_COMMENT_WRITE_REFUSAL,
   TRACKER_STATUS_WRITE_REFUSAL,
   TRACKER_TITLE_WRITE_REFUSAL,
+  TrackerLookupUnverifiable,
   type TrackerProject,
   trackerCapabilities,
   trackerCreatedTaskKey,
   trackerSourceFor,
   trackerWireAction,
   UNKNOWN_TRACKER_REFUSAL,
+  WORKSPACE_LOOKUP_PAGE_SIZE,
 } from './trackers.ts'
 
 describe('tracker action names', () => {
@@ -216,6 +218,68 @@ describe('tracker create protocols', () => {
 })
 
 describe('tracker source construction', () => {
+  test('workspace lookup refuses to establish absence from a full result page', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    const tasks = Array.from({ length: WORKSPACE_LOOKUP_PAGE_SIZE }, (_, index) => ({
+      short_id: `STAR-12${index}`,
+      summary: `Crowding task ${index}`,
+      status: 'todo',
+    }))
+
+    await expect(
+      source.lookup!({ callTool: async () => ({ tasks }) }, 'STAR-12'),
+    ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+  })
+
+  test('workspace lookup establishes absence from a short result page', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+
+    expect(
+      await source.lookup!(
+        { callTool: async () => ({ tasks: [{ short_id: 'STAR-120' }] }) },
+        'STAR-12',
+      ),
+    ).toBeNull()
+  })
+
+  test('array lookup refuses to establish absence from an unexpected response', async () => {
+    const source = trackerSourceFor(project('adanim', 'array-mcp'))!
+
+    await expect(
+      source.lookup!({ callTool: async () => ({ tasks: [] }) }, 'ADN-12'),
+    ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+  })
+
+  test('cursor lookup establishes absence from the typed NOT_FOUND envelope', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+
+    expect(
+      await source.lookup!(
+        {
+          callTool: async () => {
+            throw Object.assign(new Error('Task not found: STO-12'), {
+              name: 'McpToolCallError',
+              structuredContent: {
+                success: false,
+                error: 'Task not found: STO-12',
+                code: 'NOT_FOUND',
+              },
+            })
+          },
+        },
+        'STO-12',
+      ),
+    ).toBeNull()
+  })
+
+  test('cursor lookup refuses to establish absence from an unexpected response', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+
+    await expect(
+      source.lookup!({ callTool: async () => ({ data: null }) }, 'STO-12'),
+    ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+  })
+
   test('maps immutable external ids from each captured protocol response shape', async () => {
     const cases = [
       {

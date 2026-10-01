@@ -89,7 +89,7 @@ const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
 const MCP_PROBE_ERROR_LIMIT = 400
 
 /** Remove configured credentials from probe errors before they become durable evidence. */
-function sanitizeProbeError(text: string, secrets: string[]): string {
+export function sanitizeProbeError(text: string, secrets: string[]): string {
   let sanitized = text
   const longestFirst = [...new Set(secrets.filter(Boolean))].sort(
     (left, right) => right.length - left.length,
@@ -98,7 +98,7 @@ function sanitizeProbeError(text: string, secrets: string[]): string {
   return sanitized.slice(0, MCP_PROBE_ERROR_LIMIT)
 }
 
-function probeSecrets(config: McpServerConfig | undefined): string[] {
+export function probeSecrets(config: McpServerConfig | undefined): string[] {
   const headers = Object.values(config?.headers ?? {})
   const headerTokens = headers.flatMap((value) =>
     value.split(/\s+/).filter((token) => token.length >= 8),

@@ -291,6 +291,13 @@ export type TrackerSource = {
   lookup?: (m: ToolCaller, key: string) => Promise<TrackerTask | null>
 }
 
+export class TrackerLookupUnverifiable extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TrackerLookupUnverifiable'
+  }
+}
+
 export type CreateTrackerTask = {
   title: string
   body: string
@@ -307,6 +314,7 @@ export type ToolInputSchema = {
  * nothing spins.
  */
 const MAX_PAGES = 40
+export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 
 /** The raw status word wins where it is finer than the tracker's category. */
 function categoryOf(
@@ -440,20 +448,36 @@ function workspaceSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
+      const r = await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
         search: key,
-        per_page: 5,
-      })) as {
-        tasks?: {
-          id?: string
-          short_id?: string
-          summary?: string
-          status?: string
-          status_category?: string
-          assignee_id?: string | number | null
-        }[]
+        per_page: WORKSPACE_LOOKUP_PAGE_SIZE,
+      })
+      const tasks =
+        r && typeof r === 'object' && Array.isArray((r as { tasks?: unknown }).tasks)
+          ? (
+              r as {
+                tasks: {
+                  id?: string
+                  short_id?: string
+                  summary?: string
+                  status?: string
+                  status_category?: string
+                  assignee_id?: string | number | null
+                }[]
+              }
+            ).tasks
+          : null
+      if (!tasks) {
+        throw new TrackerLookupUnverifiable(
+          `workspace-mcp lookup for ${key} returned an unexpected response`,
+        )
       }
-      const hit = (r.tasks ?? []).find((t) => t.short_id?.toUpperCase() === key)
+      const hit = tasks.find((t) => t.short_id?.toUpperCase() === key)
+      if (!hit && tasks.length >= WORKSPACE_LOOKUP_PAGE_SIZE) {
+        throw new TrackerLookupUnverifiable(
+          `workspace-mcp lookup for ${key} returned a full page without an exact match`,
+        )
+      }
       if (!hit) return null
       const [assignee] = await assignees(m, [{ id: hit.assignee_id, taskKey: key }])
       return {
@@ -532,7 +556,28 @@ function cursorMcpSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })) as {
+      let response: unknown
+      try {
+        response = await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })
+      } catch (cause) {
+        const structuredContent =
+          cause instanceof Error &&
+          cause.name === 'McpToolCallError' &&
+          'structuredContent' in cause
+            ? cause.structuredContent
+            : undefined
+        if (
+          structuredContent &&
+          typeof structuredContent === 'object' &&
+          (structuredContent as { success?: unknown }).success === false &&
+          (structuredContent as { code?: unknown }).code === 'NOT_FOUND'
+        ) {
+          return null
+        }
+        throw cause
+      }
+      const r = response as {
+        success?: boolean
         data?: {
           id?: string
           humanKey?: string
@@ -543,7 +588,11 @@ function cursorMcpSource(
         }
       }
       const t = r.data
-      if (!t?.humanKey) return null
+      if (r.success !== true || !t?.humanKey) {
+        throw new TrackerLookupUnverifiable(
+          `cursor-mcp lookup for ${key} returned an unexpected response`,
+        )
+      }
       return {
         externalId: t.id ?? null,
         key,
@@ -604,15 +653,22 @@ function arrayMcpSource(
       return out
     },
     async lookup(m, key) {
-      const r = (await m.callTool(trackerWireAction('array-mcp', 'get'), { search: key })) as {
-        id?: string
-        key?: string
-        title?: string
-        status?: string
-        updatedAt?: string
-        assigneeName?: string | null
-      }[]
-      const hit = (Array.isArray(r) ? r : []).find((t) => t.key?.toUpperCase() === key)
+      const r = await m.callTool(trackerWireAction('array-mcp', 'get'), { search: key })
+      if (!Array.isArray(r)) {
+        throw new TrackerLookupUnverifiable(
+          `array-mcp lookup for ${key} returned an unexpected response`,
+        )
+      }
+      const hit = (
+        r as {
+          id?: string
+          key?: string
+          title?: string
+          status?: string
+          updatedAt?: string
+          assigneeName?: string | null
+        }[]
+      ).find((t) => t.key?.toUpperCase() === key)
       if (!hit) return null
       return {
         externalId: hit.id ?? null,

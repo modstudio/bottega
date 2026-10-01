@@ -18,6 +18,7 @@ import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import { reviewLensPrompt } from './review-lens-prompt.ts'
+import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.ts'
 
 type TransportName = 'cli' | 'acp'
 
@@ -59,6 +60,8 @@ type DispatchPresentation = {
     notice: string | null
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
+  lookupTaskKey: TaskKeyLookup
+  recordRunWarning(runId: number, warning: string): void
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
 }
@@ -155,6 +158,36 @@ function assertExecutionRequirement(input: {
   if (refusal) throw new Error(refusal)
 }
 
+async function taskKeyWarningForDispatch(
+  input: { explicitRepo: string | undefined; callerCwd: string; key: string | undefined },
+  lookup: TaskKeyLookup,
+  warn: (...values: unknown[]) => void,
+): Promise<string | null> {
+  const project = input.explicitRepo
+    ? projectByName(input.explicitRepo)
+    : projectAt(input.callerCwd)
+  if (!input.key || !project) return null
+  const admission = await checkTaskKeyAdmission(
+    {
+      project: project.name,
+      key: input.key,
+      protocol: project.settings.tracker?.protocol ?? '(missing)',
+    },
+    lookup,
+  )
+  if (admission.action === 'refuse') throw new Error(admission.message)
+  if (admission.warning) warn(admission.warning)
+  return admission.warning
+}
+
+function recordTaskKeyWarning(
+  runId: number,
+  warning: string | null,
+  record: (runId: number, warning: string) => void,
+): void {
+  if (warning) record(runId, warning)
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -178,6 +211,8 @@ export async function dispatchCommand(
     implicitReviewWarning,
     resolveCallerCheckout,
     resolveDispatchOptions,
+    lookupTaskKey,
+    recordRunWarning,
     detach,
     follow,
   } = presentation
@@ -224,6 +259,11 @@ export async function dispatchCommand(
     reviewRef,
     has('carry'),
     explicitRepo,
+  )
+  const taskKeyWarning = await taskKeyWarningForDispatch(
+    { explicitRepo, callerCwd, key: flag('key') },
+    lookupTaskKey,
+    error,
   )
   const lens = flag('lens')
   assertExecutionRequirement({
@@ -350,6 +390,7 @@ export async function dispatchCommand(
       keepTree,
       resolvedTaskBranch,
     })
+    recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
     printRunId(id)
     if (!has('quiet') && !porcelain) {
@@ -409,6 +450,7 @@ export async function dispatchCommand(
     keepTree,
     resolvedTaskBranch,
   })
+  recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
   warnImplementContractConflicts(conflicts, id)
 
   await follow(id, has('quiet'))
