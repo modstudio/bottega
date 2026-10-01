@@ -1,6 +1,15 @@
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+} from 'node:fs'
+import { isAbsolute, relative, resolve } from 'node:path'
+import { z } from 'zod'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
@@ -35,6 +44,65 @@ export type NoteAnchor = {
   branch: string | null
   commit: string | null
   session_id: string | null
+}
+
+export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
+
+const noteAnchorSchema: z.ZodType<NoteAnchor> = z.object({
+  cwd: z.string(),
+  project: z.string(),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      line: z.number(),
+      content: z.string(),
+    }),
+  ),
+  run_id: z.number().nullable(),
+  branch: z.string().nullable(),
+  commit: z.string().nullable(),
+  session_id: z.string().nullable(),
+})
+
+export function parseNoteAnchor(value: unknown): NoteAnchor {
+  return noteAnchorSchema.parse(value)
+}
+
+export function confineExplicitNoteAnchor(
+  anchor: NoteAnchor,
+  facts: { cwdProject: string | null; projectPath: string; realpath?: (path: string) => string },
+): NoteAnchor {
+  if (!facts.cwdProject) throw new Error('anchor.project: hub cwd has no registered project')
+  if (anchor.project !== facts.cwdProject) {
+    throw new Error(`anchor.project: expected '${facts.cwdProject}'`)
+  }
+  const realpath = facts.realpath ?? realpathSync
+  const root = realpath(facts.projectPath)
+  for (const [index, file] of anchor.files.entries()) {
+    let path: string
+    try {
+      path = realpath(file.path)
+    } catch {
+      throw new Error(`anchor.files[${index}].path: cannot resolve inside the registered checkout`)
+    }
+    const fromRoot = relative(root, path)
+    if (
+      fromRoot === '..' ||
+      fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+      isAbsolute(fromRoot)
+    ) {
+      throw new Error(`anchor.files[${index}].path: must resolve inside the registered checkout`)
+    }
+  }
+  return anchor
+}
+
+export function parseExplicitNoteAnchor(value: unknown, cwd = process.cwd()): NoteAnchor {
+  const anchor = parseNoteAnchor(value)
+  const cwdProject = projectOf(cwd)
+  const project = projects().find((candidate) => candidate.name === cwdProject)
+  if (!project) throw new Error('anchor.project: hub cwd has no registered project')
+  return confineExplicitNoteAnchor(anchor, { cwdProject, projectPath: project.path })
 }
 
 export type NoteRow = {
@@ -116,17 +184,70 @@ function mintLocalNoteNumber(conn: Database): number {
   return number
 }
 
+function boundedNoteLine(path: string, requested: number): string | null {
+  const fd = openSync(path, 'r')
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isFile() || stat.size > NOTE_ANCHOR_MAX_FILE_BYTES) return null
+    const bytes: number[] = []
+    const byte = Buffer.allocUnsafe(1)
+    let line = 1
+    let total = 0
+    while (readSync(fd, byte, 0, 1, null) === 1) {
+      total += 1
+      if (total > NOTE_ANCHOR_MAX_FILE_BYTES) return null
+      if (byte[0] === 10) {
+        if (line === requested) return Buffer.from(bytes).toString('utf8').replace(/\r$/, '')
+        line += 1
+        continue
+      }
+      if (line === requested) bytes.push(byte[0]!)
+    }
+    return line === requested ? Buffer.from(bytes).toString('utf8').replace(/\r$/, '') : null
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/** Derive only bounded file facts whose real paths stay strictly inside the checkout. */
+export function deriveNoteFileAnchors(text: string, projectPath: string): NoteAnchor['files'] {
+  let root: string
+  try {
+    root = realpathSync(projectPath)
+  } catch {
+    return []
+  }
+  return [...text.matchAll(/(?:^|[\s`(])([^\s`():]+):(\d+)\b/g)].flatMap((match) => {
+    const line = Number(match[2])
+    let path: string
+    try {
+      path = realpathSync(isAbsolute(match[1]!) ? match[1]! : resolve(root, match[1]!))
+    } catch {
+      return []
+    }
+    const fromRoot = relative(root, path)
+    if (
+      !fromRoot ||
+      fromRoot === '..' ||
+      fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+      isAbsolute(fromRoot)
+    ) {
+      return []
+    }
+    try {
+      const content = boundedNoteLine(path, line)
+      return content === null ? [] : [{ path, line, content }]
+    } catch {
+      return []
+    }
+  })
+}
+
 export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = process.env): NoteAnchor {
   const project = projectOf(cwd)
   if (!project) throw new Error(`cannot file note: no registered project contains ${cwd}`)
-  const root = git(cwd, 'rev-parse', '--show-toplevel') || cwd
-  const files = [...text.matchAll(/(?:^|[\s`(])([^\s`():]+):(\d+)\b/g)].flatMap((match) => {
-    const line = Number(match[2])
-    const path = isAbsolute(match[1]!) ? match[1]! : resolve(root, match[1]!)
-    if (!existsSync(path)) return []
-    const content = readFileSync(path, 'utf8').split(/\r?\n/)[line - 1]
-    return content === undefined ? [] : [{ path, line, content }]
-  })
+  const projectPath = projects().find((candidate) => candidate.name === project)?.path ?? cwd
+  const files = deriveNoteFileAnchors(text, projectPath)
   const run = Number(env.ORCH_RUN_ID ?? 0)
   return {
     cwd,
@@ -325,13 +446,14 @@ export async function createNote(
     area?: string
     sameAs?: number
     forceNew?: boolean
+    anchor?: NoteAnchor
   },
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<{ note: NoteRow; candidates: NoteCandidate[] }> {
   const text = input.text.trim()
   if (!text) throw new Error('note text is required')
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
-  const anchor = deriveNoteAnchor(text, input.cwd)
+  const anchor = input.anchor ?? deriveNoteAnchor(text, input.cwd)
   const candidates = noteCandidates(text, anchor.project)
   const mode = writeMode(anchor.project, options.hosted)
   if (input.sameAs) {

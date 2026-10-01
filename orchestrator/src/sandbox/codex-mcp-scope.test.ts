@@ -5,6 +5,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { ROOT } from '../database/database-location.ts'
 import {
   CODEX_ASK_ENV_VARS,
+  CODEX_ORCH_ENV_VARS,
   CODEX_REASONING_EFFORT,
   codexMcpSetupHeader,
   codexProjectServers,
@@ -138,7 +139,7 @@ test('orch-ask CLI definition matches the ACP command and args', () => {
   )
   expect(entry).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
   expect(serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' }))).toContain(
-    `mcp_servers.orch={command=${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))},args=["mcp"]}`,
+    `mcp_servers.orch={command=${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))},args=["mcp"],env_vars=${JSON.stringify(CODEX_ORCH_ENV_VARS)}}`,
   )
 })
 

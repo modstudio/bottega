@@ -287,8 +287,9 @@
   {
     "file": "orchestrator/src/events.ts",
     "function": "formatPeek",
-    "line": 418,
-    "score": 30
+    "line": 558,
+    "score": 16,
+    "key": "orchestrator/src/events.ts\u0000formatPeek"
   },
   {
     "file": "orchestrator/src/evidence/evidence.ts",

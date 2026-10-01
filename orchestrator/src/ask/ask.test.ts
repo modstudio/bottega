@@ -5,8 +5,13 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { ask, createAskMcpServer } from './ask.ts'
 
-async function askClient(runId: number, token = '', timeoutMs?: number) {
-  const server = createAskMcpServer(runId, token, timeoutMs)
+async function askClient(
+  runId: number,
+  token = '',
+  timeoutMs?: number,
+  dependencies?: Parameters<typeof createAskMcpServer>[3],
+) {
+  const server = createAskMcpServer(runId, token, timeoutMs, dependencies)
   const client = new Client({ name: 'orch-ask-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -33,6 +38,8 @@ describe('the live ask channel always answers', () => {
     try {
       const writerTools = await writerConnection.client.listTools()
       const readerTools = await readerConnection.client.listTools()
+      expect(writerTools.tools.find((tool) => tool.name === 'note')).toBeDefined()
+      expect(readerTools.tools.find((tool) => tool.name === 'note')).toBeDefined()
       expect(writerTools.tools.find((tool) => tool.name === 'run_gate')).toBeDefined()
       expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
@@ -235,6 +242,62 @@ describe('the live ask channel always answers', () => {
       ).toBe(0)
     } finally {
       await close()
+    }
+  })
+
+  test('note derives run identity and reports the filed and candidate ids', async () => {
+    const run = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    const project = db()
+      .query(`INSERT INTO project (name,path,settings) VALUES (?,?,?) RETURNING id,name`)
+      .get('worker-note-project', '/projects/worker-note', '{}') as { id: number; name: string }
+    db()
+      .query(
+        `UPDATE run SET project_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`,
+      )
+      .run(project.id, '/runs/review-tree', 'DEV-1029-review', 'session-1029', 'abc123', run)
+    const seen: unknown[] = []
+    const connection = await askClient(run, '', undefined, {
+      fileWorkerNote: async (derived, input) => {
+        seen.push(derived, input)
+        return {
+          noteId: 71,
+          candidateIds: [8, 13],
+          anchorDropped:
+            'File anchor src/file.ts:3 was dropped because the line is new or changed on the branch.',
+        }
+      },
+    })
+    try {
+      const refused = await connection.client.callTool({
+        name: 'note',
+        arguments: { text: 'first\nsecond' },
+      })
+      expect(refused.isError).toBe(true)
+      expect(resultText(refused)).toContain('must be a single line')
+      expect(seen).toEqual([])
+
+      const result = await connection.client.callTool({
+        name: 'note',
+        arguments: { text: 'outside defect', file: 'src/file.ts:3' },
+      })
+      expect(result.isError).toBeUndefined()
+      expect(resultText(result)).toBe(
+        'Note 71 filed. Near-duplicate candidate ids: 8, 13. File anchor src/file.ts:3 was dropped because the line is new or changed on the branch.',
+      )
+      expect(seen).toEqual([
+        {
+          id: run,
+          project: project.name,
+          projectPath: '/projects/worker-note',
+          tree: '/runs/review-tree',
+          branch: 'DEV-1029-review',
+          sessionId: 'session-1029',
+          headCommit: 'abc123',
+        },
+        { text: 'outside defect', file: 'src/file.ts:3' },
+      ])
+    } finally {
+      await connection.close()
     }
   })
 

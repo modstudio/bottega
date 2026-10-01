@@ -7,7 +7,7 @@ import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
 registerStandardRuntime()
 
-import { strictlyAuthenticatedWorkerRun } from '../ask/ask.ts'
+import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { docsMarkdown, listDocs } from '../doc/docs.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -57,10 +57,11 @@ import { registerOperatorTools } from './mcp-operator-tools.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 
-const text = (value: unknown) => ({
+const text = (value: unknown, isError = false) => ({
   content: [
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
+  ...(isError ? { isError: true } : {}),
 })
 
 const requiredReportField = (field: string, belongs: string) =>
@@ -902,7 +903,18 @@ export function createDocsMcpServer(): McpServer {
         new: z.boolean().optional(),
       },
     },
-    async (input) => text(await fileNote(input)),
+    async (input) => {
+      if (process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH) {
+        throw new Error(
+          'Worker note filing is available only through the orch-ask note tool; do not retry this orch MCP tool.',
+        )
+      }
+      try {
+        return text(await fileNote(input))
+      } catch {
+        return text('The note was not filed.', true)
+      }
+    },
   )
 
   return server

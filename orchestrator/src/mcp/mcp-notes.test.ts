@@ -5,6 +5,61 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('scoped operator docs', () => {
+  test.each(['ORCH_RUN_ID', 'ORCH_DEPTH'])(
+    'orch MCP note gives workers the fixed orch-ask remedy for %s',
+    async (marker) => {
+      const prior = process.env.ORCH_RUN_ID
+      const priorDepth = process.env.ORCH_DEPTH
+      process.env[marker] = '42'
+      const server = createDocsMcpServer()
+      const client = new Client({ name: 'orch-test', version: '1.0.0' })
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      await server.connect(serverTransport)
+      await client.connect(clientTransport)
+      try {
+        const filed = await client.callTool({ name: 'note', arguments: { text: 'outside defect' } })
+        expect(filed.isError).toBe(true)
+        expect((filed.content as { text: string }[])[0]!.text).toContain(
+          'only through the orch-ask note tool; do not retry',
+        )
+      } finally {
+        if (prior === undefined) delete process.env.ORCH_RUN_ID
+        else process.env.ORCH_RUN_ID = prior
+        if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+        else process.env.ORCH_DEPTH = priorDepth
+        await client.close()
+        await server.close()
+      }
+    },
+  )
+
+  test('orch MCP note masks filing errors', async () => {
+    const priorRun = process.env.ORCH_RUN_ID
+    const priorDepth = process.env.ORCH_DEPTH
+    delete process.env.ORCH_RUN_ID
+    delete process.env.ORCH_DEPTH
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const filed = await client.callTool({
+        name: 'note',
+        arguments: { text: 'outside defect', same_as: 1, new: true },
+      })
+      expect(filed.isError).toBe(true)
+      expect((filed.content as { text: string }[])[0]!.text).toBe('The note was not filed.')
+    } finally {
+      if (priorRun === undefined) delete process.env.ORCH_RUN_ID
+      else process.env.ORCH_RUN_ID = priorRun
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('MCP file_issue refuses a defect missing reproduce_command with an actionable message', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })

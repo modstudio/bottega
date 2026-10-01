@@ -10,6 +10,8 @@ import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
 
 /** Parent environment names Codex may forward into the orch-ask subprocess. */
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
+/** Parent environment names Codex may forward into the read-mostly orch subprocess. */
+export const CODEX_ORCH_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_DEPTH'] as const
 
 /** Worker reasoning is evidence-bearing configuration, never operator config. */
 export const CODEX_REASONING_EFFORT = 'medium'
@@ -154,7 +156,11 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
     env_vars: CODEX_ASK_ENV_VARS,
   }
   const [orchCommand, ...orchArgs] = bottegaEntryArgv('orch')
-  const orchServer = { command: orchCommand, args: [...orchArgs, 'mcp'] }
+  const orchServer = {
+    command: orchCommand,
+    args: [...orchArgs, 'mcp'],
+    env_vars: CODEX_ORCH_ENV_VARS,
+  }
   args.push('-c', serverOverlay('orch-ask', askServer), '-c', serverOverlay('orch', orchServer))
   for (const [name, server] of Object.entries(opts.projectServers ?? {})) {
     if (name !== 'orch-ask' && name !== 'orch') args.push('-c', serverOverlay(name, server))

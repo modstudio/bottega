@@ -27,6 +27,7 @@ const PEEK_TEXT_CHARS = 120
 
 export type RunLogEvent =
   | { ts: string; type: 'text'; text: string }
+  | { ts: string; type: 'note'; noteId: number; candidateIds: number[] }
   | {
       ts: string
       type: 'tool_call'
@@ -39,6 +40,7 @@ export type RunLogEvent =
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
+  | { type: 'note'; noteId: number; candidateIds: number[] }
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
@@ -452,6 +454,9 @@ function readEventLog(path: string): RunLogEvent[] {
 
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
+  if (event.type === 'note') {
+    return { type: 'note', noteId: event.noteId, candidateIds: event.candidateIds }
+  }
   if (event.type === 'tool_call') {
     return { type: 'tool_call', title: event.title, target: event.locations?.[0]?.path }
   }
@@ -536,6 +541,20 @@ export function peekRun(
   }
 }
 
+function formatPeekEvent(event: PeekEventSummary): string {
+  if (event.type === 'text') return `  text ${event.text}`
+  if (event.type === 'note') {
+    return `  note ${event.noteId}${event.candidateIds.length ? ` near ${event.candidateIds.join(',')}` : ''}`
+  }
+  if (event.type === 'tool_call') {
+    return `  tool ${event.title}${event.target ? ` ${event.target}` : ''}`
+  }
+  if (event.type === 'tool_result') {
+    return `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd()
+  }
+  return `  usage ${event.tokens}`
+}
+
 export function formatPeek(summary: PeekSummary): string {
   const elapsed =
     summary.elapsed_ms < 60_000
@@ -555,16 +574,7 @@ export function formatPeek(summary: PeekSummary): string {
   ]
   if (summary.events.length) {
     lines.push('events:')
-    for (const event of summary.events) {
-      if (event.type === 'text') lines.push(`  text ${event.text}`)
-      else if (event.type === 'tool_call') {
-        lines.push(`  tool ${event.title}${event.target ? ` ${event.target}` : ''}`)
-      } else if (event.type === 'tool_result') {
-        lines.push(
-          `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd(),
-        )
-      } else lines.push(`  usage ${event.tokens}`)
-    }
+    for (const event of summary.events) lines.push(formatPeekEvent(event))
   }
   if (summary.files.length) {
     lines.push('files:')
