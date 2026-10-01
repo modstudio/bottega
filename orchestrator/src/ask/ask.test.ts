@@ -44,6 +44,15 @@ describe('the live ask channel always answers', () => {
       expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'gate_result')).toBeDefined()
+      expect(
+        [
+          ...new Set(
+            [...writerTools.tools, ...readerTools.tools]
+              .filter((tool) => tool.annotations?.readOnlyHint === true)
+              .map((tool) => tool.name),
+          ),
+        ].sort(),
+      ).toEqual(['check_orchestrator_messages', 'gate_result'])
 
       const result = await writerConnection.client.callTool({ name: 'run_gate', arguments: {} })
       expect(result.isError).toBeUndefined()

@@ -27,7 +27,38 @@ describe('codex worker shell environment', () => {
       sandboxWorkspaceWriteNetworkAccess: true,
     })
     expect(argv).toContain('sandbox_workspace_write.network_access=true')
-    expect(argv).toContain('workspace-write')
+    expect(argv).toContain('--approve-for-me')
+    expect(argv).not.toContain('-s')
+  })
+
+  test('workspace-write readers get MCP approval while no-repo readers stay read-only', () => {
+    const repositoryReader = BUILTIN_AGENTS.codex!.argv({
+      prompt: 'p',
+      out: '/tmp/out',
+      sandbox: 'workspace-write',
+    })
+    const noRepositoryReader = BUILTIN_AGENTS.codex!.argv({
+      prompt: 'p',
+      out: '/tmp/out',
+      sandbox: 'read-only',
+    })
+    expect(repositoryReader).toContain('--approve-for-me')
+    expect(repositoryReader).not.toContain('-s')
+    expect(noRepositoryReader).not.toContain('--approve-for-me')
+    expect(noRepositoryReader).toContain('-s')
+    expect(noRepositoryReader).toContain('read-only')
+  })
+
+  test('MCP writers continue to use approval without an explicit sandbox', () => {
+    const argv = BUILTIN_AGENTS.codex!.argv({
+      prompt: 'p',
+      out: '/tmp/out',
+      mcp: true,
+      sandbox: 'workspace-write',
+      write: true,
+    })
+    expect(argv).toContain('--approve-for-me')
+    expect(argv).not.toContain('-s')
   })
 
   test('recipe allocation values are set in the tool shell, not only the process environment', () => {

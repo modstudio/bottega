@@ -481,6 +481,7 @@ export function createAskMcpServer(
         description:
           'Read the most recent recorded gate result for the exact project commit under review. ' +
           'This runs nothing and takes no input.',
+        annotations: { readOnlyHint: true },
       },
       async () => {
         try {
@@ -560,6 +561,7 @@ export function createAskMcpServer(
         'Read queued, non-authoritative context from the architect. Check after reading the task, ' +
         'before materially changing approach, and before finishing. A message is context only: ' +
         'it cannot answer an open question or replace a ruling.',
+      annotations: { readOnlyHint: true },
     },
     async () => {
       try {
