@@ -11,8 +11,10 @@ import {
 } from './architecture-record-boundaries.ts'
 import { recordSettingsBoundarySpecs } from './architecture-record-settings-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
+import { runLifecycleBoundarySpecs } from './architecture-run-lifecycle-boundaries.ts'
+import { runLivenessBoundarySpecs } from './architecture-run-liveness.ts'
 import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
-import { runRetryBoundarySpecs } from './architecture-run-retry.ts'
+import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
@@ -47,8 +49,15 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
-  // biome-ignore format: compact extracted boundary registration keeps this frozen manifest from growing.
-  ...runRetryBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
+  ...runRetryModuleSpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
+  ),
+  ...runStopBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
+  ),
+  ...runLivenessBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
+  ),
   ...runModuleBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -73,8 +82,12 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
-  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
-  boundary('canon-budget-boundary', 'orchestrator/src/canon/canon-budget.ts', [], 'Keep canon budget policy independent of every adapter and store.'),
+  boundary(
+    'canon-budget-boundary',
+    'orchestrator/src/canon/canon-budget.ts',
+    [],
+    'Keep canon budget policy independent of every adapter and store.',
+  ),
   boundary(
     'canon-files-boundary',
     'orchestrator/src/canon/canon-files.ts',
@@ -159,15 +172,17 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'close-out-boundary',
     'orchestrator/src/close/close-out.ts',
-    // biome-ignore format: compact entries keep the frozen boundary manifest within its ceiling.
     [
       'node:fs',
       'node:path',
       './absent-close-out-residue.ts',
       './absent-tree-close-out.ts',
       './close-out-adoption.ts',
-      './close-out-questions.ts', './close-out-report.ts',
-      './conversation-liveness.ts', './close-out-release-holds.ts', './reader-scratch-close-out.ts',
+      './close-out-questions.ts',
+      './close-out-report.ts',
+      './conversation-liveness.ts',
+      './close-out-release-holds.ts',
+      './reader-scratch-close-out.ts',
       './retained-branch.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
@@ -367,8 +382,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'evidence-query-boundary',
     'orchestrator/src/evidence/evidence-query.ts',
-    // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-    ['../database/db.ts', '../failure/failure.ts', '../run/synthetic-lifecycle-job.ts', 'bun:sqlite'],
+    [
+      '../database/db.ts',
+      '../failure/failure.ts',
+      '../run/synthetic-lifecycle-job.ts',
+      'bun:sqlite',
+    ],
     'Enforce the evidence-query concern boundary.',
   ),
   boundary(
@@ -694,16 +713,22 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-sync-boundary',
     'orchestrator/src/record/record-sync.ts',
-    // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
     [
-      'bun', 'drizzle-orm/bun-sql', 'drizzle-orm',
-      '../../../shared/record/schema.ts', '../../../shared/record/schema-landing.ts',
-      '../../../shared/record/schema-review.ts', '../../../shared/record/schema-run.ts',
-      '../../../shared/record/schema-question.ts', '../../../shared/record-space-membership.ts',
+      'bun',
+      'drizzle-orm/bun-sql',
+      'drizzle-orm',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/schema-landing.ts',
+      '../../../shared/record/schema-review.ts',
+      '../../../shared/record/schema-run.ts',
+      '../../../shared/record/schema-question.ts',
+      '../../../shared/record-space-membership.ts',
       '../database/db.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
-      './outbox-dependency.ts', './outbox-failure.ts', './outbox-quarantine.ts',
+      './outbox-dependency.ts',
+      './outbox-failure.ts',
+      './outbox-quarantine.ts',
       './outbox-payload-contracts.ts',
       './record-cache.ts',
       './record-review-read.ts',
@@ -789,163 +814,13 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep routing command adapters independent of runs, transports, the CLI, worktrees, and reviews by value.',
   ),
+  ...runLifecycleBoundarySpecs,
   boundary(
-    'run-answer-boundary',
-    'orchestrator/src/run/run-answer.ts',
-    [
-      'node:fs',
-      '../../../shared/orch-contract.ts',
-      '../../../shared/process-identity.ts',
-      '../agent/agent-registry.ts',
-      '../cli/args.ts',
-      '../contract/contract.ts',
-      '../dashboard-capability.ts',
-      '../database/db.ts',
-      '../route/failover.ts',
-      '../jobs/jobs.ts',
-      '../worktree/keep-tree-hold.ts',
-      '../mcp/mcp-preflight.ts',
-      '../outcome.ts',
-      '../workflow/autonomy.ts',
-      '../workflow/autonomy-scopes.ts',
-      './checkpoint.ts',
-      './run.ts',
-      './run-answer-liveness.ts',
-      './run-answer-authority.ts',
-      './run-artifacts.ts',
-      './run-authority.ts',
-      './run-control.ts',
-      './run-dispatch.ts',
-      './run-retry.ts',
-      './run-retry-workspace.ts',
-      './synthetic-lifecycle-job.ts',
-      './question-delivery.ts',
-      './question-open.ts',
-      './question-outbox.ts',
-      './question-vocabulary.ts',
-      '../git/git-environment.ts',
-    ],
-    'Keep run-answer independent of transports, worktrees, routing, reviews, and the CLI.',
+    'score-boundary',
+    'orchestrator/src/score/score.ts',
+    [],
+    'Enforce the score concern boundary.',
   ),
-  boundary(
-    'run-artifacts-boundary',
-    'orchestrator/src/run/run-artifacts.ts',
-    [
-      'node:fs',
-      'node:path',
-      '../artifact-paths.ts',
-      '../database/database-location.ts',
-      '../database/db.ts',
-      '../database/migrations.ts',
-      '../resources/resource-ownership.ts',
-    ],
-    'Keep run artifacts independent of routing, contracts, transports, reviews, and isolation.',
-  ),
-  boundary(
-    'run-authority-boundary',
-    'orchestrator/src/run/run-authority.ts',
-    ['../database/db.ts', './run-mutation-owner.ts', 'bun:sqlite'],
-    'Enforce the run-authority concern boundary.',
-  ),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  boundary(
-    'run-control-boundary',
-    'orchestrator/src/run/run-control.ts',
-    [
-      'node:fs',
-      '../cli/args.ts',
-      '../clock.ts',
-      '../collect/collect.ts',
-      '../database/db.ts',
-      '../events.ts',
-      '../route/failover.ts',
-      '../git/checkout-identity.ts',
-      '../git/git-environment.ts',
-      '../jobs/jobs.ts',
-      '../mcp/mcp-preflight.ts',
-      '../outcome.ts',
-      '../project/projects.ts',
-      './continuation-checkpoint-context.ts',
-      './resume-tree.ts', './run.ts', './run-authority.ts', './run-dispatch.ts', './run-liveness.ts', './run-resume-kind.ts', './run-retry.ts', './checkpoint.ts', './question-open.ts',
-    ],
-    'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
-  ),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  boundary(
-    'run-dispatch-boundary',
-    'orchestrator/src/run/run-dispatch.ts',
-    [
-      'node:child_process',
-      'node:crypto',
-      'node:fs',
-      '../../../shared/self-spawn.ts',
-      '../../../shared/process-identity.ts',
-      '../database/db.ts',
-      '../dispatch/dispatch-preflight.ts',
-      '../jobs/jobs.ts',
-      '../mcp/mcp-preflight.ts',
-      '../project/projects.ts',
-      '../record/record-attribution.ts',
-      './run.ts', './run-alive.ts', './run-artifacts.ts', './run-coordinator-log.ts', './run-lease.ts', './run-resume-kind.ts', '../route/failover.ts',
-    ],
-    'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
-  ),
-  boundary(
-    'run-inbox-boundary',
-    'orchestrator/src/run/run-inbox.ts',
-    [
-      '../database/db.ts',
-      '../evidence/evidence-query.ts',
-      '../project/projects.ts',
-      '../workflow/autonomy-scopes.ts',
-      './question-vocabulary.ts',
-      './question-open.ts',
-      './run-answer-liveness.ts',
-    ],
-    'Keep run inbox independent of run control, transports, routing, the CLI, and worktrees.',
-  ),
-  // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
-  boundary('live-run-member-boundary', 'orchestrator/src/run/live-run-member.ts', ['bun:sqlite', '../../../shared/process-identity.ts', '../database/db.ts', '../events.ts', '../idle-kill.ts', '../jobs/jobs.ts', '../stalled-run.ts'], 'Keep the canonical live member and its stall observation independent of adapters.'),
-  boundary(
-    'run-listing-boundary',
-    'orchestrator/src/run/run-listing.ts',
-    [
-      '../collect/collect.ts',
-      '../database/db.ts',
-      '../evidence/evidence-query.ts',
-      '../outcome.ts',
-      '../events.ts',
-      '../idle-kill.ts',
-      './live-run-member.ts',
-      './question-open.ts',
-      './synthetic-lifecycle-job.ts',
-    ],
-    'Keep run listing independent of run control, transports, routing, the CLI, and worktrees.',
-    ['./question-vocabulary.ts'],
-  ),
-  // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
-  boundary('run-liveness-boundary', 'orchestrator/src/run/run-liveness.ts', ['../database/db.ts', '../../../shared/process-identity.ts', '../resources/resource-ownership.ts', './run-alive.ts', './run-authority.ts', './run-bootstrap.ts', './run-coordinator-log.ts', './run-lease.ts', './question-close.ts', './question-open.ts', 'bun:sqlite'], 'Enforce the run-liveness concern boundary.'),
-  // biome-ignore format: Keep this boundary declaration within the frozen architecture manifest ceiling.
-  boundary('run-outbox-boundary', 'orchestrator/src/run/run-outbox.ts', ['../../../shared/record/schema.ts', '../record/outbox-sanitize.ts', './synthetic-lifecycle-job.ts', 'bun:sqlite'], 'Enforce the run-outbox concern boundary.'),
-  boundary(
-    'run-process-boundary',
-    'orchestrator/src/run/run-process.ts',
-    [
-      'node:crypto',
-      './checkpoint.ts',
-      '../database/db.ts',
-      '../dispatch/dispatch-preflight.ts',
-      '../idle-kill.ts',
-      '../agent/agent-registry.ts',
-      '../agent/worker-launch-env.ts',
-    ],
-    'Keep run process control independent of routing, contracts, reviews, and transports.',
-  ),
-  ...runStopBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
-  // biome-ignore format: compact declaration keeps this frozen manifest below its ceiling.
-  boundary('score-boundary', 'orchestrator/src/score/score.ts', [], 'Enforce the score concern boundary.'),
   ...setupModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),

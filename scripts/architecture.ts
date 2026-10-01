@@ -11,8 +11,11 @@ import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { releaseModules } from './architecture-release.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
+import { runLifecycleModules } from './architecture-run-lifecycle-modules.ts'
+import { runLivenessModuleSpecs } from './architecture-run-liveness.ts'
 import { runModuleSpecs } from './architecture-run-modules.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
+import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
@@ -33,8 +36,12 @@ export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }
 type ArchitectureCycle = { cycle: string[]; reason: string }
 
-// biome-ignore format: compact declaration keeps this frozen manifest below its ceiling.
-const module = (file: string, allowed: string[]): ArchitectureModule => ({ file, allowed: allowed.map((target) => target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target) })
+const module = (file: string, allowed: string[]): ArchitectureModule => ({
+  file,
+  allowed: allowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
+})
 
 const concerns: ConcernManifest = {
   roots: CONCERNS,
@@ -60,11 +67,23 @@ export const modules: ArchitectureModule[] = [
   ...gateModules,
   ...runModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...runResumeModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...runRetryModuleSpecs.map((spec) =>
+    module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
+  ),
+  ...runLivenessModuleSpecs.map((spec) =>
+    module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
+  ),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/doc/doc-search.ts', ['../../../shared/self-spawn.ts', '../../../shared/orch-contract.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/doc/doc-canon-tree.ts', ['node:fs', '../../../shared/git.ts', '../project/projects.ts', './doc-write-allowed.ts']),
+  module('orchestrator/src/doc/doc-search.ts', [
+    '../../../shared/self-spawn.ts',
+    '../../../shared/orch-contract.ts',
+  ]),
+  module('orchestrator/src/doc/doc-canon-tree.ts', [
+    'node:fs',
+    '../../../shared/git.ts',
+    '../project/projects.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/canon-removal.ts', [
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',
@@ -74,31 +93,87 @@ export const modules: ArchitectureModule[] = [
     './doc-read-store.ts',
     './doc-write-allowed.ts',
   ]),
-  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
-  module('orchestrator/src/code/code-search.ts', ['../../../shared/self-spawn.ts', '../../../shared/orch-contract.ts', '../project/projects.ts']),
-  module('orchestrator/src/run/run-answer-liveness.ts', []),
+  module('orchestrator/src/code/code-search.ts', [
+    '../../../shared/self-spawn.ts',
+    '../../../shared/orch-contract.ts',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/run/question-open.ts', []),
-  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
-  module('orchestrator/src/run/question-close.ts', ['../database/db.ts', './question-mutation.ts', './question-open.ts', './question-outbox.ts']),
-  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
-  module('orchestrator/src/close/close-out-questions.ts', ['../database/db.ts', '../run/question-close.ts']),
-  // biome-ignore format: compact declaration keeps this frozen manifest shrinking.
-  module('orchestrator/src/close/absent-close-out-residue.ts', ['../database/db.ts', '../reclaim/reclaim-residue.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/close/absent-tree-close-out.ts', ['../git/git-environment.ts', '../project/projects.ts', '../reclaim/reclaim.ts', '../worktree/worktree.ts', '../worktree/worktree-remove.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/close/conversation-liveness.ts', ['node:fs', '../../../shared/process-identity.ts', '../database/db.ts', '../run/run-alive.ts', '../run/run-lease.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/close/close-out-release-holds.ts', ['node:fs', '../database/db.ts', '../git/git-environment.ts', '../landing-tree/release-observation.ts', '../project/projects.ts', '../run/synthetic-lifecycle-job.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/close/reader-scratch-close-out.ts', ['node:fs', 'node:path', '../git/git-environment.ts', '../jobs/jobs.ts', '../reclaim/reclaim.ts', '../run/run-artifacts.ts', '../worktree/worktree-attribution.ts', './absent-tree-close-out.ts', './reader-scratch-release.ts']),
+  module('orchestrator/src/run/question-close.ts', [
+    '../database/db.ts',
+    './question-mutation.ts',
+    './question-open.ts',
+    './question-outbox.ts',
+  ]),
+  module('orchestrator/src/close/close-out-questions.ts', [
+    '../database/db.ts',
+    '../run/question-close.ts',
+  ]),
+  module('orchestrator/src/close/absent-close-out-residue.ts', [
+    '../database/db.ts',
+    '../reclaim/reclaim-residue.ts',
+  ]),
+  module('orchestrator/src/close/absent-tree-close-out.ts', [
+    '../git/git-environment.ts',
+    '../project/projects.ts',
+    '../reclaim/reclaim.ts',
+    '../worktree/worktree.ts',
+    '../worktree/worktree-remove.ts',
+  ]),
+  module('orchestrator/src/close/conversation-liveness.ts', [
+    'node:fs',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../run/run-alive.ts',
+    '../run/run-lease.ts',
+  ]),
+  module('orchestrator/src/close/close-out-release-holds.ts', [
+    'node:fs',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../landing-tree/release-observation.ts',
+    '../project/projects.ts',
+    '../run/synthetic-lifecycle-job.ts',
+  ]),
+  module('orchestrator/src/close/reader-scratch-close-out.ts', [
+    'node:fs',
+    'node:path',
+    '../git/git-environment.ts',
+    '../jobs/jobs.ts',
+    '../reclaim/reclaim.ts',
+    '../run/run-artifacts.ts',
+    '../worktree/worktree-attribution.ts',
+    './absent-tree-close-out.ts',
+    './reader-scratch-release.ts',
+  ]),
   module('orchestrator/src/close/reader-scratch-release.ts', []),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', ['node:fs', '../branch/branches.ts', '../database/db.ts', '../project/projects.ts', '../reclaim/reclaim-residue.ts', './cleanup.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/cleanup/claim-reconciliation.ts', ['node:fs', '../../../shared/process-identity.ts', '../database/db.ts', '../git/git-environment.ts', '../project/project-lock.ts', '../resources/resource-claims.ts', '../run/run-lease.ts', '../sandbox/grok-trust.ts', './cleanup.ts', './cleanup-sweep-decisions.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/evidence/unjudged-expiry.ts', ['../../../shared/record/schema.ts', '../database/db.ts', '../record/machine-identity.ts', '../run/run-outbox.ts', './evidence-query.ts']),
+  module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', [
+    'node:fs',
+    '../branch/branches.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../reclaim/reclaim-residue.ts',
+    './cleanup.ts',
+  ]),
+  module('orchestrator/src/cleanup/claim-reconciliation.ts', [
+    'node:fs',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../project/project-lock.ts',
+    '../resources/resource-claims.ts',
+    '../run/run-lease.ts',
+    '../sandbox/grok-trust.ts',
+    './cleanup.ts',
+    './cleanup-sweep-decisions.ts',
+  ]),
+  module('orchestrator/src/evidence/unjudged-expiry.ts', [
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    '../record/machine-identity.ts',
+    '../run/run-outbox.ts',
+    './evidence-query.ts',
+  ]),
   ...branchModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...pullRequestModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/branch/branch-settlement.ts', [
@@ -106,8 +181,21 @@ export const modules: ArchitectureModule[] = [
     '../evidence/evidence-query.ts',
     '../resources/resource-claims.ts',
   ]),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/branch/branches.ts', ['./branch-landing-match.ts', './branch-landing-record.ts', './branch-landing-service.ts', './branch-state.ts', './branch-settlement.ts', '../database/db.ts', '../git/git-environment.ts', './merged-pull-request.ts', './other-branch-state.ts', '../project/project-lock.ts', '../project/projects.ts', '../pull-request/pr-admission.ts', './task-branch.ts']),
+  module('orchestrator/src/branch/branches.ts', [
+    './branch-landing-match.ts',
+    './branch-landing-record.ts',
+    './branch-landing-service.ts',
+    './branch-state.ts',
+    './branch-settlement.ts',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    './merged-pull-request.ts',
+    './other-branch-state.ts',
+    '../project/project-lock.ts',
+    '../project/projects.ts',
+    '../pull-request/pr-admission.ts',
+    './task-branch.ts',
+  ]),
   module('orchestrator/src/agent/agent-probe.ts', [
     './agent-registry.ts',
     './agents.ts',
@@ -118,8 +206,12 @@ export const modules: ArchitectureModule[] = [
     '../mcp/mcp-probe.ts',
     '../transport/transport.ts',
   ]),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/agent/vendor-probe.ts', ['./agent-registry.ts', '../database/db.ts', '../failure/failure.ts', '../transport/transport.ts']),
+  module('orchestrator/src/agent/vendor-probe.ts', [
+    './agent-registry.ts',
+    '../database/db.ts',
+    '../failure/failure.ts',
+    '../transport/transport.ts',
+  ]),
   module('orchestrator/src/agent/agent-registry.ts', [
     './agents.ts',
     './capabilities.ts',
@@ -162,8 +254,10 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/workflow/autonomy.ts', ['../../../shared/autonomy.ts', '../../../shared/release-autonomy.ts']),
+  module('orchestrator/src/workflow/autonomy.ts', [
+    '../../../shared/autonomy.ts',
+    '../../../shared/release-autonomy.ts',
+  ]),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
     '../../../shared/config-client.ts',
@@ -206,15 +300,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/machine-config.ts',
     './monitor-conditions.ts',
     './monitor-types.ts',
-  ]),
-  module('orchestrator/src/run/live-run-member.ts', [
-    'bun:sqlite',
-    '../../../shared/process-identity.ts',
-    '../database/db.ts',
-    '../events.ts',
-    '../idle-kill.ts',
-    '../jobs/jobs.ts',
-    '../stalled-run.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
     '../database/db.ts',
@@ -263,8 +348,11 @@ export const modules: ArchitectureModule[] = [
     './hosted-secrets.ts',
   ]),
   module('shared/machine-config.ts', ['node:fs', 'node:path', 'zod', './config-directory.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('shared/config-client.ts', ['./http-json.ts', './record-session.ts', './record-remedies.ts']),
+  module('shared/config-client.ts', [
+    './http-json.ts',
+    './record-session.ts',
+    './record-remedies.ts',
+  ]),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', []),
   module('shared/keychain.ts', []),
@@ -327,24 +415,59 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/machine-key-store.ts',
     '../../../shared/trust-list.ts',
   ]),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/commands/config.ts', ['node:readline/promises', 'commander', '../../../shared/config-client.ts', '../../../shared/release-autonomy.ts', '../config/config-service.ts', '../run/run-process.ts', './support.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/commands/settings.ts', ['commander', '../settings/settings-apply-commands.ts', '../settings/settings-commands.ts', '../settings/settings-machine-apply.ts', './support.ts']),
+  module('orchestrator/src/commands/config.ts', [
+    'node:readline/promises',
+    'commander',
+    '../../../shared/config-client.ts',
+    '../../../shared/release-autonomy.ts',
+    '../config/config-service.ts',
+    '../run/run-process.ts',
+    './support.ts',
+  ]),
+  module('orchestrator/src/commands/settings.ts', [
+    'commander',
+    '../settings/settings-apply-commands.ts',
+    '../settings/settings-commands.ts',
+    '../settings/settings-machine-apply.ts',
+    './support.ts',
+  ]),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/settings/settings-machine-apply.ts', ['bun:sqlite', 'fs', 'path', '../../../shared/state-directory.ts', '../canon/user-canon-home-files.ts', '../database/db.ts', '../doc/docs.ts', '../project/project-lock.ts', '../record/record-cache.ts', '../run/run-process.ts', './settings.ts', './settings-env.ts', './settings-files.ts', './settings-render.ts', './settings-write.ts']),
+  module('orchestrator/src/settings/settings-machine-apply.ts', [
+    'bun:sqlite',
+    'fs',
+    'path',
+    '../../../shared/state-directory.ts',
+    '../canon/user-canon-home-files.ts',
+    '../database/db.ts',
+    '../doc/docs.ts',
+    '../project/project-lock.ts',
+    '../record/record-cache.ts',
+    '../run/run-process.ts',
+    './settings.ts',
+    './settings-env.ts',
+    './settings-files.ts',
+    './settings-render.ts',
+    './settings-write.ts',
+  ]),
   ...recordModules,
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/score/score-outbox.ts', ['../../../shared/record/schema.ts', '../record/outbox-sanitize.ts', '../verdict/verdict-payload.ts']),
+  module('orchestrator/src/score/score-outbox.ts', [
+    '../../../shared/record/schema.ts',
+    '../record/outbox-sanitize.ts',
+    '../verdict/verdict-payload.ts',
+  ]),
   module('orchestrator/src/project/project-lock.ts', [
     '../database/db.ts',
     '../git/git-environment.ts',
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/database/project-register-store.ts', ['bun:sqlite', 'node:fs', 'node:path', '../../../shared/state-directory.ts', '../project/project-settings.ts']),
+  module('orchestrator/src/database/project-register-store.ts', [
+    'bun:sqlite',
+    'node:fs',
+    'node:path',
+    '../../../shared/state-directory.ts',
+    '../project/project-settings.ts',
+  ]),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
     '../../../shared/process-identity.ts',
@@ -372,41 +495,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-lease.ts',
   ]),
   module('orchestrator/src/resources/resource-claims.ts', ['../run/synthetic-lifecycle-job.ts']),
-  module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
-  module('orchestrator/src/run/run-resume-options.ts', [
-    '../worktree/worktree-types.ts',
-    './resume-tree.ts',
-    './run-resume-kind.ts',
-  ]),
-  module('orchestrator/src/run/run-resume-claim.ts', [
-    '../git/git-environment.ts',
-    '../worktree/worktree-remove.ts',
-    '../worktree/worktree-types.ts',
-    './resume-tree.ts',
-  ]),
-  module('orchestrator/src/run/run-retry-claim.ts', [
-    '../git/git-environment.ts',
-    '../worktree/worktree.ts',
-    '../worktree/worktree-types.ts',
-    './branch-owner-guard.ts',
-    './run-retry.ts',
-  ]),
-  module('orchestrator/src/run/run-retry.ts', []),
-  module('orchestrator/src/run/run-retry-workspace.ts', [
-    'node:fs',
-    '../../../shared/process-identity.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    '../project/projects.ts',
-    '../worktree/worktree-types.ts',
-    './branch-owner-guard.ts',
-    './checkpoint.ts',
-    './resume-tree.ts',
-    './run-retry.ts',
-    './run-alive.ts',
-    './run-control.ts',
-    './run-lease.ts',
-  ]),
+  ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
     '../database/db.ts',
     './review-vocabulary.ts',
@@ -451,174 +540,6 @@ export const modules: ArchitectureModule[] = [
     './review-vocabulary.ts',
     './change-identity.ts',
   ]),
-  module('orchestrator/src/run/run-alive.ts', []),
-  module('orchestrator/src/run/branch-conversation-owner.ts', []),
-  module('orchestrator/src/run/branch-owner-guard.ts', [
-    '../database/db.ts',
-    './branch-conversation-owner.ts',
-  ]),
-  module('orchestrator/src/run/run-claim.ts', [
-    '../agent/agents.ts',
-    '../branch/create-time-settlement.ts',
-    '../contract/codex-schema.ts',
-    '../canon/canon.ts',
-    '../git/checkout-identity.ts',
-    '../contract/contract.ts',
-    '../database/db.ts',
-    '../dispatch/dispatch-preflight.ts',
-    '../events.ts',
-    '../route/failover.ts',
-    '../git/git-environment.ts',
-    '../sandbox/grok-trust.ts',
-    '../worktree/keep-tree-hold.ts',
-    '../mcp/mcp-preflight.ts',
-    '../mcp/mcp-probe.ts',
-    '../project/project-lock.ts',
-    '../project/projects.ts',
-    '../dispatch/prompt-retarget.ts',
-    '../../../shared/record/schema.ts',
-    '../resources/resource-claims.ts',
-    '../resources/resource-ownership.ts',
-    '../review/review-target.ts',
-    './run-artifacts.ts',
-    './question-close.ts',
-    './branch-owner-guard.ts',
-    './run-process.ts',
-    './resume-tree.ts',
-    '../sandbox/sandbox.ts',
-    '../branch/task-branch.ts',
-    '../worktree/worktree.ts',
-    '../worktree/worktree-caller.ts',
-    '../worktree/worktree-mcp.ts',
-    '../worktree/worktree-preflight.ts',
-    '../worktree/worktree-remove.ts',
-    '../worktree/worktree-types.ts',
-    './run-claim-plan.ts',
-    './run-resume-kind.ts',
-    './run-resume-options.ts',
-    './run-resume-claim.ts',
-    './run-retry-claim.ts',
-    './run-task-reference.ts',
-    './run-task-branch-resolution.ts',
-    './run-worker-home.ts',
-  ]),
-  module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
-  module('orchestrator/src/run/run-task-reference.ts', ['../../../shared/self-spawn.ts']),
-  module('orchestrator/src/run/run-task-branch-resolution.ts', [
-    '../branch/task-branch.ts',
-    '../branch/task-branch-reuse.ts',
-  ]),
-  module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
-  module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
-  module('orchestrator/src/run/run-close.ts', [
-    '../close/close-out.ts',
-    '../contract/contract.ts',
-    '../database/db.ts',
-    '../route/failover.ts',
-    '../failure/failure.ts',
-    '../jobs/jobs.ts',
-    '../worktree/keep-tree-hold.ts',
-    '../mcp/mcp-preflight.ts',
-    '../project/projects.ts',
-    '../review/review-calibration.ts',
-    '../route/route.ts',
-    './question-close.ts',
-    './run-process.ts',
-    './run-types.ts',
-    '../transport/transport.ts',
-    '../worktree/worktree-remove.ts',
-    '../worktree/worktree-types.ts',
-  ]),
-  module('orchestrator/src/run/run-lease.ts', [
-    '../database/database-location.ts',
-    '../project/project-lock.ts',
-    './run-alive.ts',
-  ]),
-  module('orchestrator/src/run/run-live.ts', [
-    '../agent/agents.ts',
-    '../ask/ask.ts',
-    './checkpoint.ts',
-    './question-open.ts',
-    '../sandbox/codex-mcp-scope.ts',
-    '../confinement/confinement.ts',
-    '../contract/contract.ts',
-    '../database/db.ts',
-    '../events.ts',
-    '../failure/failure.ts',
-    '../gate/gate-broker.ts',
-    '../git/git-environment.ts',
-    '../idle-kill.ts',
-    '../jobs/jobs.ts',
-    '../mailbox/mailbox-notice.ts',
-    '../mailbox/mailbox.ts',
-    '../live-outcome.ts',
-    '../outcome.ts',
-    '../project/project-lock.ts',
-    './run-process.ts',
-    './run-reply-source.ts',
-    './run-resume-kind.ts',
-    '../sandbox/sandbox.ts',
-    '../transport/transport.ts',
-    '../worktree/worktree-types.ts',
-  ]),
-  module('orchestrator/src/run/run-reply-source.ts', [
-    '../contract/contract.ts',
-    '../transport/transport.ts',
-  ]),
-  module('orchestrator/src/run/run-launch.ts', [
-    '../route/failover.ts',
-    '../transport/transport.ts',
-  ]),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/run/run-worker-home.ts', ['../agent/agents.ts', '../recipe/tracked-recipe.ts', '../sandbox/codex-mcp-preflight.ts', '../sandbox/codex-mcp-scope.ts', '../sandbox/sandbox.ts', '../worktree/worktree-types.ts', './run-process.ts']),
-  module('orchestrator/src/live-outcome.ts', [
-    './failure/failure.ts',
-    './outcome.ts',
-    './run/run-process.ts',
-    './transport/transport.ts',
-  ]),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/run/run-terminal.ts', [
-    '../ask/ask.ts',
-    './checkpoint.ts',
-    '../confinement/confinement.ts',
-    '../contract/contract.ts',
-    '../database/db.ts',
-    '../evidence/evidence.ts',
-    '../failure/failure.ts',
-    '../idle-kill.ts',
-    '../jobs/jobs.ts',
-    '../record/machine-identity.ts',
-    '../mcp/mcp-preflight.ts',
-    '../outcome.ts',
-    '../operator/operator-waiting.ts',
-    '../project/projects.ts',
-    '../resources/resource-ownership.ts',
-    '../review/review.ts',
-    './run-artifacts.ts',
-    './run-liveness.ts',
-    './run-outbox.ts',
-    './run-process.ts',
-    './run-resume-kind.ts',
-    './question-vocabulary.ts',
-    './question-close.ts',
-    './question-outbox.ts',
-    './run-terminal-blockers.ts', './run-terminal-premature.ts',
-    './run-terminal-precedence.ts',
-    '../sandbox/sandbox.ts',
-    '../worktree/worktree-remove.ts',
-    '../worktree/worktree-types.ts',
-  ]),
-  module('orchestrator/src/run/run-terminal-blockers.ts', ['../failure/failure.ts']),
-  module('orchestrator/src/run/run-terminal-precedence.ts', [
-    '../failure/failure.ts',
-    '../outcome.ts',
-  ]),
-  module('orchestrator/src/run/run-types.ts', [
-    '../contract/contract.ts',
-    '../worktree/worktree-remove.ts',
-    '../worktree/worktree-types.ts',
-  ]),
   module('orchestrator/src/runtime/runtime-registration.ts', [
     './standard-calibration.ts',
     './store-hooks.ts',
@@ -630,13 +551,34 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     'node:stream',
   ]),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/sandbox/sandbox.ts', ['../../../shared/self-spawn.ts', '../../../shared/config-directory.ts', '../../../shared/state-directory.ts', '../database/db.ts', '../mcp/mcp-probe.ts', '../project/projects.ts', './sandbox-runtime.ts']),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/setup/setup-facts.ts', ['node:fs', 'bun', '../agent/agent-auth.ts', '../agent/cli-version.ts', '../agent/model-host.ts', '../sandbox/sandbox-runtime.ts', './setup-mcp.ts']),
+  module('orchestrator/src/sandbox/sandbox.ts', [
+    '../../../shared/self-spawn.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
+    '../mcp/mcp-probe.ts',
+    '../project/projects.ts',
+    './sandbox-runtime.ts',
+  ]),
+  module('orchestrator/src/setup/setup-facts.ts', [
+    'node:fs',
+    'bun',
+    '../agent/agent-auth.ts',
+    '../agent/cli-version.ts',
+    '../agent/model-host.ts',
+    '../sandbox/sandbox-runtime.ts',
+    './setup-mcp.ts',
+  ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
-  // biome-ignore format: compact dependency list keeps this manifest within its frozen file ceiling.
-  module('orchestrator/src/sandbox/sandbox-runtime.ts', ['node:fs', 'node:path', '@anthropic-ai/sandbox-runtime', '../../../shared/embedded-assets.ts', '../../../shared/sandbox-runtime-assets.ts', '../../../shared/state-directory.ts', '../database/db.ts']),
+  module('orchestrator/src/sandbox/sandbox-runtime.ts', [
+    'node:fs',
+    'node:path',
+    '@anthropic-ai/sandbox-runtime',
+    '../../../shared/embedded-assets.ts',
+    '../../../shared/sandbox-runtime-assets.ts',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/runtime/standard-calibration.ts', [
     './calibration-port.ts',
     '../review/review-calibration.ts',

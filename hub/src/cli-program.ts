@@ -922,9 +922,10 @@ try {
         const rate = (value: number | null) =>
           value == null ? 'n/a' : `${(value * 100).toFixed(1)}%`
         console.log(`overturns: ${stats.overturns.count}  rate ${rate(stats.overturns.rate)}`)
-        // biome-ignore format: keep this frozen command adapter below its file ceiling.
         for (const kind of ['operator', 'agent'] as const) {
-          console.log(`  ${kind}: ${stats.overturns.by_answerer_kind[kind].count}  rate ${rate(stats.overturns.by_answerer_kind[kind].rate)}`)
+          console.log(
+            `  ${kind}: ${stats.overturns.by_answerer_kind[kind].count}  rate ${rate(stats.overturns.by_answerer_kind[kind].rate)}`,
+          )
         }
         break
       }

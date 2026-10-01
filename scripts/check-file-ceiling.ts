@@ -60,7 +60,11 @@ function codeLines(content: string): number {
   return count
 }
 
-type FileMeasurement = { path: string; lines: number }
+export function hasFormatSuppression(content: string): boolean {
+  return /^[\t ]*(?:\/\/|\/\*)[\t ]*biome-ignore[\t ]+format\b/m.test(content)
+}
+
+type FileMeasurement = { path: string; lines: number; ignoresFormat?: boolean }
 type Reporter = Pick<Console, 'error' | 'log'>
 
 type FileCeilingOptions = {
@@ -81,10 +85,22 @@ function writeState(stateFile: string, state: Record<string, number>) {
 }
 
 function measureFiles(): FileMeasurement[] {
-  return measuredSourceFiles().map((file) => ({
-    path: file.path,
-    lines: codeLines(readFileSync(file.absolute, 'utf8')),
-  }))
+  return measuredSourceFiles().map((file) => {
+    const content = readFileSync(file.absolute, 'utf8')
+    return {
+      path: file.path,
+      lines: codeLines(content),
+      ignoresFormat: hasFormatSuppression(content),
+    }
+  })
+}
+
+function formatSuppressionViolations(path: string, ignoresFormat: boolean | undefined) {
+  if (!ignoresFormat) return []
+  return [
+    `${path}: biome-ignore format is forbidden in measured source; ` +
+      'split a concern out (canon 10-code: Respect the file ceiling)',
+  ]
 }
 
 export function checkFileCeiling(options: FileCeilingOptions = {}) {
@@ -96,7 +112,8 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
   const next = { ...frozen }
   const violations: string[] = []
   const tightenings: string[] = []
-  for (const { path, lines } of measured) {
+  for (const { path, lines, ignoresFormat } of measured) {
+    violations.push(...formatSuppressionViolations(path, ignoresFormat))
     const decision = decideCeiling({
       key: path,
       value: lines,

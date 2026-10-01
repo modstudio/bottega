@@ -946,7 +946,6 @@ export function ruleWorkflow(
     const question = d
       .query('SELECT id FROM question WHERE workflow_cursor_id=? AND answered_at=?')
       .get(row.id, at) as { id: number }
-    // biome-ignore format: keep the frozen workflow adapter below its file ceiling.
     auditQuestionMutation(
       { questionId: question.id, action: 'rule', actor, at, reason: ruling.trim(), adoptionReason },
       d,

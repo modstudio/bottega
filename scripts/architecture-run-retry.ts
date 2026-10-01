@@ -1,8 +1,9 @@
-export const runRetryBoundarySpecs = [
+export const runRetryModuleSpecs = [
   {
     name: 'run-retry-boundary',
     file: 'orchestrator/src/run/run-retry.ts',
     allowed: [],
+    typeOnlyAllowed: [],
     reason:
       'Keep retry path and prompt decisions independent of stores, Git, projects, worktrees, routing, and transports.',
   },
@@ -24,6 +25,7 @@ export const runRetryBoundarySpecs = [
       './run-control.ts',
       './run-lease.ts',
     ],
+    typeOnlyAllowed: [],
     reason:
       'Keep writing-retry workspace resolution independent of contracts, transports, routing, reviews, and the CLI.',
   },
