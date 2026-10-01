@@ -1,6 +1,24 @@
 // concern: release-decision
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
+export const RELEASE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
+
+/** Withhold captured release text as a unit so secrets cannot straddle a later tail boundary. */
+export function releaseCapturedText(text: string, secretShaped: boolean): string {
+  return secretShaped ? RELEASE_OUTPUT_WITHHELD : text
+}
+
+export function rollbackReasonDecision(secretShaped: boolean): Decision {
+  if (secretShaped) {
+    return {
+      ok: false,
+      message:
+        'rollback reason contains secret-shaped text; restate the reason without the credential, then retry',
+    }
+  }
+  return { ok: true }
+}
+
 export type CheckoutFacts = {
   branch: string
   requiredBranch: string

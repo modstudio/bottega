@@ -71,6 +71,13 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
       { name: 'grok', billing: 'subscription', operated_by: 'vendor' },
       { name: 'qwen-local', billing: 'none', operated_by: 'self' },
     ])
+    expect(
+      database
+        .query(
+          `SELECT name,"notnull" AS required FROM pragma_table_info('release_ledger') WHERE name='actor'`,
+        )
+        .get(),
+    ).toEqual({ name: 'actor', required: 1 })
   } finally {
     database.close()
   }

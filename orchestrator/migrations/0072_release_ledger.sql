@@ -6,6 +6,7 @@ CREATE TABLE release_ledger (
   live_commit_before TEXT,
   rollback INTEGER NOT NULL CHECK (rollback IN (0,1)),
   rollback_reason TEXT,
+  actor TEXT NOT NULL,
   session_id TEXT,
   started_at TEXT NOT NULL,
   finished_at TEXT,

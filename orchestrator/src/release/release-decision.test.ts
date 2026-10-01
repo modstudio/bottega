@@ -3,7 +3,10 @@ import {
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
+  RELEASE_OUTPUT_WITHHELD,
+  releaseCapturedText,
   releaseLockDecision,
+  rollbackReasonDecision,
 } from './release-decision.ts'
 
 const level = {
@@ -61,6 +64,24 @@ describe('forward-only release', () => {
       rollback: false,
       reason: null,
       baseline: true,
+    }))
+})
+
+describe('release text policy', () => {
+  test('withholds secret-shaped captured output', () =>
+    expect(
+      releaseCapturedText(`token=credential\n${'ordinary trailing output\n'.repeat(2_000)}`, true),
+    ).toBe(RELEASE_OUTPUT_WITHHELD))
+
+  test('keeps ordinary captured output', () =>
+    expect(releaseCapturedText('deploying revision abc123\ndone', false)).toBe(
+      'deploying revision abc123\ndone',
+    ))
+
+  test('refuses a secret-shaped rollback reason', () =>
+    expect(rollbackReasonDecision(true)).toEqual({
+      ok: false,
+      message: expect.stringContaining('restate the reason without the credential'),
     }))
 })
 

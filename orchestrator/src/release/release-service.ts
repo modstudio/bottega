@@ -1,6 +1,8 @@
 // concern: release-service
 /** Gathers release facts, executes a registered deploy under the project lock, and owns its ledger. */
 
+import { userInfo } from 'node:os'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -10,7 +12,9 @@ import {
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
+  releaseCapturedText,
   releaseLockDecision,
+  rollbackReasonDecision,
   selectReleaseRung,
 } from './release-decision.ts'
 
@@ -24,6 +28,7 @@ export type ReleaseLedgerRow = {
   live_commit_before: string | null
   rollback: number
   rollback_reason: string | null
+  actor: string
   session_id: string | null
   started_at: string
   finished_at: string | null
@@ -60,17 +65,22 @@ function shell(command: string, cwd: string): CommandResult {
   return run(['/bin/sh', '-lc', command], cwd)
 }
 
+function capturedReleaseText(text: string): string {
+  return releaseCapturedText(text, containsSecretShaped(text))
+}
+
 function commitFromCommand(command: string, cwd: string, purpose: string): string {
   const result = shell(command, cwd)
   if (result.exitCode !== 0) {
+    const output = capturedReleaseText(result.output.trim())
     throw new Error(
-      `${purpose} command failed (exit ${result.exitCode}): ${result.output.trim() || '(no output)'}; fix the registered live command or deployed endpoint, then retry`,
+      `${purpose} command failed (exit ${result.exitCode}): ${output || '(no output)'}; fix the registered live command or deployed endpoint, then retry`,
     )
   }
   const commit = result.output.trim()
   if (!/^[0-9a-f]{40}$/i.test(commit)) {
     throw new Error(
-      `${purpose} command did not print one full commit sha: ${JSON.stringify(commit)}; update release.rungs[].live to print only the deployed commit sha, then retry`,
+      `${purpose} command did not print one full commit sha: ${JSON.stringify(capturedReleaseText(commit))}; update release.rungs[].live to print only the deployed commit sha, then retry`,
     )
   }
   return commit.toLowerCase()
@@ -116,8 +126,8 @@ function insertStarted(input: {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO release_ledger
-       (project,rung,candidate_commit,live_commit_before,rollback,rollback_reason,session_id,started_at)
-       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+       (project,rung,candidate_commit,live_commit_before,rollback,rollback_reason,actor,session_id,started_at)
+       VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         input.project,
@@ -126,6 +136,7 @@ function insertStarted(input: {
         input.live,
         input.rollback ? 1 : 0,
         input.reason,
+        userInfo().username,
         sessionId(),
         nowIso(),
       )
@@ -137,6 +148,7 @@ function insertStarted(input: {
 function finishEntry(
   id: number,
   result: CommandResult,
+  outputTail: string,
   after: string | null,
   matches: boolean | null,
   warning: string | null,
@@ -148,7 +160,7 @@ function finishEntry(
     ).run(
       nowIso(),
       result.exitCode,
-      boundedGateOutputTail(result.output, GATE_OUTPUT_TAIL_BYTES),
+      outputTail,
       after,
       matches === null ? null : matches ? 1 : 0,
       warning,
@@ -162,6 +174,10 @@ export function releaseProject(
   requestedRung: string | undefined,
   rollbackReason: string | undefined,
 ) {
+  const reasonDecision = rollbackReasonDecision(
+    rollbackReason !== undefined && containsSecretShaped(rollbackReason),
+  )
+  if (!reasonDecision.ok) throw new Error(reasonDecision.message)
   const project = projectByName(projectName)
   if (!project)
     throw new Error(`no project "${projectName}"; register it with orch project add, then retry`)
@@ -217,12 +233,16 @@ export function releaseProject(
           after = commitFromCommand(selected.live, project.path, 'post-deploy live')
           const checked = postDeployLiveDecision(checkout.head, after)
           matches = checked.matches
-          warning = checked.warning
+          warning = checked.warning === null ? null : capturedReleaseText(checked.warning)
         } catch (error) {
-          warning = error instanceof Error ? error.message : String(error)
+          warning = capturedReleaseText(error instanceof Error ? error.message : String(error))
         }
       }
-      finishEntry(id, deployed, after, matches, warning)
+      const outputTail = boundedGateOutputTail(
+        capturedReleaseText(deployed.output),
+        GATE_OUTPUT_TAIL_BYTES,
+      )
+      finishEntry(id, deployed, outputTail, after, matches, warning)
       return {
         id,
         project: projectName,
@@ -232,7 +252,7 @@ export function releaseProject(
         baseline: forward.baseline,
         rollback: forward.rollback,
         exitCode: deployed.exitCode,
-        outputTail: boundedGateOutputTail(deployed.output, GATE_OUTPUT_TAIL_BYTES),
+        outputTail,
         liveAfter: after,
         liveMatchesCandidate: matches,
         warning,

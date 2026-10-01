@@ -469,6 +469,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
+    '../../../shared/secret-shaped.ts',
     './release-decision.ts',
   ]),
   module('orchestrator/src/database/project-register-store.ts', [
