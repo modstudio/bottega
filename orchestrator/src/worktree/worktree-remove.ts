@@ -524,12 +524,13 @@ export function removeFor(
   runId?: number,
   forceUnmerged = false,
   skipGitRemoval = false,
+  scratchAlreadyArchived = false,
 ): WorktreeRemovalResult {
   // The marker identifies who created a tree; it does not transfer that run's
   // branch ownership to a later attacher. Cleanup names only the discarding
   // run's minted branch.
   const owningRunId = runId ?? markedWorktreeRunId(w.path)
-  if (existsSync(w.path)) {
+  if (existsSync(w.path) && !scratchAlreadyArchived) {
     const extracted = extractWorktree(w.path, owningRunId)
     if (!extracted.ok) return { removed: false, detail: extracted.detail }
   }

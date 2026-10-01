@@ -130,20 +130,26 @@ function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
   )
 }
 
-function existingTreeGitRefusal(path: string, repoRoot: string): ReclaimResult | null {
+function existingTreeGitRefusal(
+  path: string,
+  repoRoot: string,
+  allowDirty: boolean,
+): ReclaimResult | null {
   if (!existsSync(path)) return null
   const safety = orphanSafety(path, repoRoot, '')
   if (!safety.removable) {
     return refuse(`worktree safety could not be proved: ${safety.detail}`)
   }
-  return reclaimDirtyTreeRefusal({
-    path,
-    treeExists: true,
-    dirty: worktreeDirty(path),
-  })
+  return allowDirty
+    ? null
+    : reclaimDirtyTreeRefusal({
+        path,
+        treeExists: true,
+        dirty: worktreeDirty(path),
+      })
 }
 
-function proveWorktree(path: string, clock: number, _allowDirty = false): WorktreeProof {
+function proveWorktree(path: string, clock: number, allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   const row = rows[0]
   const project = row?.repo ? projectByName(row.repo) : projectAt(path)
@@ -185,7 +191,7 @@ function proveWorktree(path: string, clock: number, _allowDirty = false): Worktr
         }
     }
   }
-  const gitRefusal = existingTreeGitRefusal(path, project.path)
+  const gitRefusal = existingTreeGitRefusal(path, project.path, allowDirty)
   if (gitRefusal) return { result: gitRefusal }
   const recipeRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: Boolean(row),
