@@ -29,6 +29,21 @@ type ScratchCloseOutResult = {
 }
 const SEARCH_LIMIT = 10_000
 
+function looksLikeBareRepository(treePath: string, directory: string): boolean {
+  return Boolean(
+    relative(treePath, directory) &&
+      existsSync(join(directory, 'HEAD')) &&
+      existsSync(join(directory, 'objects')) &&
+      existsSync(join(directory, 'refs')),
+  )
+}
+
+function enqueueChildDirectories(directory: string, pending: string[]): void {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name !== '.git') pending.push(join(directory, entry.name))
+  }
+}
+
 function repositoryStorageAbsent(treePath: string): boolean {
   if (existsSync(join(treePath, '.git', 'modules'))) return false
   const pending = [treePath]
@@ -40,22 +55,9 @@ function repositoryStorageAbsent(treePath: string): boolean {
       inspected += entries.length
       if (inspected > SEARCH_LIMIT) return false
       const relativeDirectory = relative(treePath, directory)
-      if (
-        relativeDirectory &&
-        existsSync(join(directory, 'HEAD')) &&
-        existsSync(join(directory, 'objects')) &&
-        existsSync(join(directory, 'refs'))
-      )
-        return false
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue
-        if (entry.name === '.git') {
-          if (directory !== treePath) return false
-          continue
-        }
-        pending.push(join(directory, entry.name))
-      }
+      if (looksLikeBareRepository(treePath, directory)) return false
       if (relativeDirectory && existsSync(join(directory, '.git'))) return false
+      enqueueChildDirectories(directory, pending)
     }
   } catch {
     return false
@@ -74,7 +76,7 @@ function noUniqueReachableCommit(treePath: string, repoRoot: string, baseCommit:
   return result.ok && result.stdout.trim() === ''
 }
 
-export function readerCloneDisposableFacts(input: {
+function readerCloneDisposableFacts(input: {
   treePath: string
   repoRoot: string
   baseCommit: string
