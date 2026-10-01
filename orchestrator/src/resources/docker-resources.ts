@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { markMainCheckoutResources } from './docker-main-checkout.ts'
 
 const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
 const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
@@ -40,12 +40,10 @@ export type DockerInventory =
   | {
       ascertainable: true
       resources: DockerResource[]
-      unattributable?: {
-        kind: DockerResourceKind
-        name: string
-        reason: string
-        workingDir: string
-      }[]
+      unattributable?: UnattributableDockerResource[]
+      unattributedComposeResources?: UnattributedComposeDockerResource[]
+      composeContainerProjects?: string[]
+      composeContainers?: ComposeContainerFact[]
     }
   | { ascertainable: false; reason: string }
 
@@ -154,11 +152,30 @@ export function dockerRunResource(
   return runId === null ? null : { runId }
 }
 
-type UnattributableDockerResource = {
+export type UnattributableDockerResource = {
   kind: DockerResourceKind
   name: string
   reason: string
   workingDir: string
+  composeProject: string | null
+  mainCheckout: boolean
+}
+
+export type UnattributedComposeDockerResource = {
+  kind: 'network' | 'volume'
+  name: string
+  reason: string
+  workingDir: null
+  composeProject: string
+  mainCheckout: boolean
+}
+
+type ComposeContainerFact = {
+  name: string
+  composeProject: string
+  workingDir: string | null
+  runAttributed: boolean
+  mainCheckout: boolean
 }
 
 function classifyListedRows(
@@ -182,6 +199,8 @@ function classifyListedRows(
         name: row.name,
         reason: `compose working directory ${workingDir} has no attributable run`,
         workingDir,
+        composeProject,
+        mainCheckout: false,
       })
   }
   return { resources, unattributable }
@@ -212,30 +231,82 @@ function classifyNetworkRows(networks: DockerNetwork[]): {
         name: network.name,
         reason: `compose working directory ${network.workingDir} has no attributable run`,
         workingDir: network.workingDir,
+        composeProject: network.composeProject,
+        mainCheckout: false,
       })
   }
   return { resources, unattributable }
 }
 
-function protectMainCheckoutResources(rows: DockerResource[], paths: string[]): DockerResource[] {
-  const mainPaths = new Set(paths.map((path) => resolve(path)))
-  const mainComposeProjects = new Set(
-    rows
-      .filter((row) => row.workingDir && mainPaths.has(resolve(row.workingDir)))
-      .flatMap((row) => (row.composeProject ? [row.composeProject] : [])),
-  )
-  return rows.map((row) => ({
-    ...row,
-    mainCheckout:
-      Boolean(row.workingDir && mainPaths.has(resolve(row.workingDir))) ||
-      Boolean(row.composeProject && mainComposeProjects.has(row.composeProject)),
+function listedComposeFacts(
+  kind: 'container' | 'volume',
+  listed: { name: string; labels: Record<string, string> }[],
+): {
+  observed: { workingDir: string | null; composeProject: string | null }[]
+  containerProjects: string[]
+  unattributed: UnattributedComposeDockerResource[]
+} {
+  const observed = listed.map(({ labels }) => ({
+    workingDir: labels['com.docker.compose.project.working_dir'] ?? null,
+    composeProject: labels['com.docker.compose.project'] ?? null,
   }))
+  const containerProjects =
+    kind === 'container'
+      ? listed.flatMap(({ labels }) => {
+          const project = labels['com.docker.compose.project']
+          return project ? [project] : []
+        })
+      : []
+  const unattributed =
+    kind === 'volume'
+      ? listed.flatMap((row): UnattributedComposeDockerResource[] => {
+          const composeProject = row.labels['com.docker.compose.project']
+          const attributed =
+            dockerRunResource(row.name, row.labels) ||
+            (composeProject ? dockerRunResource(composeProject) : null)
+          if (!composeProject || row.labels['com.docker.compose.project.working_dir'] || attributed)
+            return []
+          return [
+            {
+              kind,
+              name: row.name,
+              reason: `Compose project ${composeProject} has no attributable run or working directory`,
+              workingDir: null,
+              composeProject,
+              mainCheckout: false,
+            },
+          ]
+        })
+      : []
+  return { observed, containerProjects, unattributed }
+}
+
+function unattributedComposeNetworks(
+  networks: DockerNetwork[],
+): UnattributedComposeDockerResource[] {
+  return networks.flatMap((network) => {
+    if (!network.composeProject || network.runId !== null || network.workingDir) return []
+    return [
+      {
+        kind: 'network',
+        name: network.name,
+        reason: `Compose project ${network.composeProject} has no attributable run or working directory`,
+        workingDir: null,
+        composeProject: network.composeProject,
+        mainCheckout: false,
+      },
+    ]
+  })
 }
 
 /** Inventory only resources created for orch run worktrees. Never mutates Docker. */
 export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInventory {
   const rows: DockerResource[] = []
   const unattributable: UnattributableDockerResource[] = []
+  const unattributedComposeResources: UnattributedComposeDockerResource[] = []
+  const composeContainerProjects = new Set<string>()
+  const composeContainers: ComposeContainerFact[] = []
+  const observed: { workingDir: string | null; composeProject: string | null }[] = []
   const configuredTimeout = dockerInventoryTimeoutMs()
   const explicitTimeout = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
   for (const kind of ['container', 'volume'] as const) {
@@ -246,6 +317,34 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
       found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
     }
     if (!found.ascertainable) return found
+    const compose = listedComposeFacts(kind, found.rows)
+    observed.push(...compose.observed)
+    compose.containerProjects.forEach((project) => {
+      composeContainerProjects.add(project)
+    })
+    unattributedComposeResources.push(...compose.unattributed)
+    if (kind === 'container') {
+      composeContainers.push(
+        ...found.rows.flatMap(({ name, labels }): ComposeContainerFact[] => {
+          const composeProject = labels['com.docker.compose.project']
+          if (!composeProject) return []
+          const workingDir = labels['com.docker.compose.project.working_dir'] ?? null
+          return [
+            {
+              name,
+              composeProject,
+              workingDir,
+              runAttributed: Boolean(
+                dockerRunResource(name, labels) ||
+                  dockerRunResource(composeProject) ||
+                  (workingDir && dockerRunResource(workingDir)),
+              ),
+              mainCheckout: false,
+            },
+          ]
+        }),
+      )
+    }
     const classified = classifyListedRows(kind, found.rows)
     rows.push(...classified.resources)
     unattributable.push(...classified.unattributable)
@@ -253,13 +352,37 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   const networks = dockerNetworkInventory()
   if (!networks.ascertainable) return networks
   const networkRows = classifyNetworkRows(networks.networks)
+  observed.push(...networks.networks)
   rows.push(...networkRows.resources)
   unattributable.push(...networkRows.unattributable)
-  const resources = protectMainCheckoutResources(rows, mainCheckoutPaths)
+  unattributedComposeResources.push(...unattributedComposeNetworks(networks.networks))
+  const resources = markMainCheckoutResources(rows, observed, mainCheckoutPaths)
+  const protectedUnattributable = markMainCheckoutResources(
+    unattributable,
+    observed,
+    mainCheckoutPaths,
+  )
+  const protectedComposeResources = markMainCheckoutResources(
+    unattributedComposeResources,
+    observed,
+    mainCheckoutPaths,
+  )
+  const protectedComposeContainers = markMainCheckoutResources(
+    composeContainers,
+    observed,
+    mainCheckoutPaths,
+  )
   return {
     ascertainable: true,
     resources,
-    ...(unattributable.length ? { unattributable } : {}),
+    ...(protectedUnattributable.length ? { unattributable: protectedUnattributable } : {}),
+    ...(protectedComposeResources.length
+      ? { unattributedComposeResources: protectedComposeResources }
+      : {}),
+    ...(protectedComposeResources.length && composeContainerProjects.size
+      ? { composeContainerProjects: [...composeContainerProjects] }
+      : {}),
+    ...(protectedComposeContainers.length ? { composeContainers: protectedComposeContainers } : {}),
   }
 }
 
@@ -370,7 +493,9 @@ export type DockerTeardown = {
   skipped: boolean
 }
 
-function removeDockerResource(resource: DockerResource): string | null {
+export function removeDockerResource(
+  resource: Pick<DockerResource, 'kind' | 'name'>,
+): string | null {
   const command = dockerRemovalCommand(resource)
   let process: ReturnType<typeof Bun.spawnSync>
   try {
@@ -483,7 +608,7 @@ export function leakedResourceLines(resources: DockerResource[], project: string
   )
 }
 
-export function dockerRemovalCommand(resource: DockerResource): string {
+export function dockerRemovalCommand(resource: Pick<DockerResource, 'kind' | 'name'>): string {
   if (resource.kind === 'container') return `docker rm -f ${resource.name}`
   if (resource.kind === 'network') return `docker network rm ${resource.name}`
   return `docker volume rm ${resource.name}`
