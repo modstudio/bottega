@@ -32,6 +32,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-branches.ts',
     './monitor-gate-tooling.ts',
     './monitor-record-tunnel.ts',
+    './monitor-stray-worktrees.ts',
     './monitor-harness-load.ts',
     './monitor-canon-drift.ts',
     './monitor-notices.ts',

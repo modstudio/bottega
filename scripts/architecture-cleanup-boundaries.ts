@@ -10,6 +10,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-reclaim.ts',
       './cleanup-sweep-residue.ts',
       './reader-clone-archive-retention.ts',
+      './stray-worktree-sweep.ts',
       './cleanup-sweep-docker.ts',
       './claim-reconciliation.ts',
       '../close/close-out.ts',
