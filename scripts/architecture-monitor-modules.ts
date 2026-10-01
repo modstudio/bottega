@@ -32,6 +32,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-branches.ts',
     './monitor-gate-tooling.ts',
     './monitor-record-tunnel.ts',
+    './monitor-retrieval-pins.ts',
     './monitor-stray-worktrees.ts',
     './monitor-harness-load.ts',
     './monitor-canon-drift.ts',
@@ -61,6 +62,10 @@ export const monitorModules: MonitorModule[] = [
     '../canon/canon-hydrate.ts',
     '../canon/canon-stored-rows.ts',
     '../project/projects.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-retrieval-pins.ts', [
+    '../../../shared/self-spawn.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-store-write-lock.ts', [

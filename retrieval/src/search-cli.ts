@@ -8,7 +8,10 @@ import {
   OrchProjectListSchema,
 } from '../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
+import { checkDocPins } from './benchmark/doc-pins.ts'
+import { DOC_QUERIES } from './benchmark/queries.ts'
 import { searchCode } from './code-search.ts'
+import { loadDocRows } from './corpus/chunks.ts'
 import { search } from './search.ts'
 import { endpointsFromEnvironment, probeEndpointStatuses } from './services/endpoints.ts'
 
@@ -107,6 +110,13 @@ export function formatRefreshSummary(refresh: {
 }
 
 export async function main(argv: string[]): Promise<void> {
+  if (argv.length === 1 && argv[0] === '--check-doc-pins') {
+    const repositoryRoot = resolve(import.meta.dir, '../..')
+    const pins = checkDocPins(DOC_QUERIES, await loadDocRows(repositoryRoot))
+    console.log(JSON.stringify({ pins }, null, 2))
+    if (pins.some((pin) => !pin.current)) process.exitCode = 1
+    return
+  }
   if (argv.length === 1 && argv[0] === '--check') {
     const statuses = await probeEndpointStatuses(endpointsFromEnvironment(process.env))
     for (const status of statuses) {

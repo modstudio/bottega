@@ -5,7 +5,13 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { searchCode } from '../code-search.ts'
 import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
-import { type Chunk, chunkDocument, loadCorpus, splitChunksToModelLimit } from '../corpus/chunks.ts'
+import {
+  type Chunk,
+  chunkDocument,
+  loadCorpus,
+  loadDocRows,
+  splitChunksToModelLimit,
+} from '../corpus/chunks.ts'
 import { search } from '../search.ts'
 import {
   embed,
@@ -15,6 +21,7 @@ import {
   tokenize,
 } from '../services/endpoints.ts'
 import { cosineTopK } from '../vector-ranking.ts'
+import { checkDocPins } from './doc-pins.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
 import {
@@ -155,6 +162,12 @@ function reportSet(
 
 async function main() {
   const repositoryRoot = resolve(import.meta.dir, '../../..')
+  if (process.argv.includes('--check-doc-pins')) {
+    const pins = checkDocPins(DOC_QUERIES, await loadDocRows(repositoryRoot))
+    console.log(JSON.stringify({ pins }, null, 2))
+    if (pins.some((pin) => !pin.current)) process.exitCode = 1
+    return
+  }
   const endpoints = endpointsFromEnvironment(process.env)
   const chunks = await splitChunksToModelLimit(await loadCorpus(repositoryRoot), (document) =>
     tokenize(endpoints.embedUrl, document),
