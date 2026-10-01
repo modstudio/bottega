@@ -48,6 +48,15 @@ test('a compose working directory can be the only run identity', () => {
 
   expect(dockerRunResources()).toEqual({
     ascertainable: true,
+    composeContainers: [
+      {
+        name: 'database',
+        composeProject: 'adanim',
+        workingDir: '/Users/shmuel/Projects/adanim/.claude/worktrees/orch-7391',
+        runAttributed: true,
+        mainCheckout: false,
+      },
+    ],
     resources: [
       {
         kind: 'container',
@@ -59,6 +68,100 @@ test('a compose working directory can be the only run identity', () => {
       },
     ],
   })
+})
+
+test('an unattributed worktree resource inherits its Compose project main-checkout guard', () => {
+  const main = '/projects/example'
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    if (command.startsWith('docker ps -a --format'))
+      return result(
+        [
+          `main-database\t\tshared\t${main}`,
+          `worktree-database\t\tshared\t${main}/.claude/worktrees/DEV-1053-change`,
+        ].join('\n'),
+      )
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
+
+  expect(dockerRunResources([main])).toEqual({
+    ascertainable: true,
+    composeContainers: [
+      {
+        name: 'main-database',
+        composeProject: 'shared',
+        workingDir: main,
+        runAttributed: false,
+        mainCheckout: true,
+      },
+      {
+        name: 'worktree-database',
+        composeProject: 'shared',
+        workingDir: `${main}/.claude/worktrees/DEV-1053-change`,
+        runAttributed: false,
+        mainCheckout: true,
+      },
+    ],
+    resources: [],
+    unattributable: [
+      {
+        kind: 'container',
+        name: 'worktree-database',
+        reason: `compose working directory ${main}/.claude/worktrees/DEV-1053-change has no attributable run`,
+        workingDir: `${main}/.claude/worktrees/DEV-1053-change`,
+        composeProject: 'shared',
+        mainCheckout: true,
+      },
+    ],
+  })
+})
+
+test('unattributed Compose volumes and networks retain project identity and main protection', () => {
+  const main = '/projects/example'
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    if (command.startsWith('docker ps -a --format'))
+      return result(
+        [
+          `worktree-database\t\torphan-stack\t${main}/.claude/worktrees/DEV-1053-change`,
+          `main-database\t\tmain-stack\t${main}`,
+        ].join('\n'),
+      )
+    if (command.startsWith('docker volume ls --format'))
+      return result(
+        ['orphan_data\t\torphan-stack', 'remnant_data\t\tremnant', 'main_data\t\tmain-stack'].join(
+          '\n',
+        ),
+      )
+    if (command === 'docker network ls --format {{.Name}}')
+      return result('orphan_default\nremnant_default')
+    if (command === 'docker network inspect orphan_default remnant_default')
+      return result(
+        JSON.stringify([
+          { Name: 'orphan_default', Labels: { 'com.docker.compose.project': 'orphan-stack' } },
+          { Name: 'remnant_default', Labels: { 'com.docker.compose.project': 'remnant' } },
+        ]),
+      )
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
+
+  const inventory = dockerRunResources([main])
+
+  expect(inventory).toEqual(
+    expect.objectContaining({
+      ascertainable: true,
+      composeContainerProjects: ['orphan-stack', 'main-stack'],
+      unattributedComposeResources: [
+        expect.objectContaining({ kind: 'volume', name: 'orphan_data', mainCheckout: false }),
+        expect.objectContaining({ kind: 'volume', name: 'remnant_data', mainCheckout: false }),
+        expect.objectContaining({ kind: 'volume', name: 'main_data', mainCheckout: true }),
+        expect.objectContaining({ kind: 'network', name: 'orphan_default', mainCheckout: false }),
+        expect.objectContaining({ kind: 'network', name: 'remnant_default', mainCheckout: false }),
+      ],
+    }),
+  )
 })
 
 test('container, volume, and network inventory attribute project names from labels', () => {
