@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -60,6 +60,24 @@ type AcpTurnInput = {
     totalTokens?: number
     costUsd?: number
   } | null
+}
+
+export function resolveAcpEditLocations(
+  scratch: string | undefined,
+  locations: Array<{ path: string }> | null | undefined,
+): { scratchRoot: string; locations: string[] } | null {
+  if (!scratch || !locations?.length || locations.some((location) => !isAbsolute(location.path))) {
+    return null
+  }
+  try {
+    const scratchRoot = realpathSync(scratch)
+    return {
+      scratchRoot,
+      locations: locations.map((location) => resolveFsPath(location.path)),
+    }
+  } catch {
+    return null
+  }
 }
 type GrokSessionResponse = {
   models?: { currentModelId?: unknown; availableModels?: unknown }
@@ -502,29 +520,20 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     .client({ name: 'orch' })
     .onRequest(acp.methods.client.session.requestPermission, (req) => {
       // orch replies allow/reject here; the sandboxed child does not. Read-class
-      // tools may run; edit/write/execute are rejected. Gap: the architect never
+      // tools and edits confined to run scratch may run. Gap: the architect never
       // sees the prompt — the decision is the pilot policy, not a ruling.
       const title = req.params.toolCall.title ?? 'tool'
       const toolKind = req.params.toolCall.kind ?? undefined
       const optionKinds = req.params.options.map((option) => option.kind)
-      const scratch = opts.env.ORCH_SCRATCH
-      let resolvedScratch: string | undefined
-      let resolvedLocations: string[] | undefined
-      if (scratch && req.params.toolCall.locations?.length) {
-        try {
-          resolvedScratch = realpathSync(scratch)
-          resolvedLocations = req.params.toolCall.locations.map((location) =>
-            resolveFsPath(location.path, resolvedScratch),
-          )
-        } catch {
-          // An unreadable root or location is not eligible for edit permission.
-        }
-      }
+      const editLocations = resolveAcpEditLocations(
+        opts.env.ORCH_SCRATCH,
+        req.params.toolCall.locations,
+      )
       const decided = decideAcpPermission(
         toolKind,
         req.params.options,
-        resolvedLocations,
-        resolvedScratch,
+        editLocations?.locations,
+        editLocations?.scratchRoot,
       )
       const event: Extract<NormalizedEvent, { kind: 'permission' }> = {
         kind: 'permission',

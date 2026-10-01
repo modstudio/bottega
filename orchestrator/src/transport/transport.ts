@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -513,6 +513,14 @@ export function resolveFsPath(path: string, relativeRoot?: string): string {
     try {
       return join(realpathSync(ancestor), ...remainder.reverse())
     } catch {
+      try {
+        lstatSync(ancestor)
+        throw new Error(`cannot resolve filesystem path ${path}`)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw new Error(`cannot resolve filesystem path ${path}`)
+        }
+      }
       const parent = dirname(ancestor)
       if (parent === ancestor) throw new Error(`cannot resolve filesystem path ${path}`)
       remainder.push(basename(ancestor))

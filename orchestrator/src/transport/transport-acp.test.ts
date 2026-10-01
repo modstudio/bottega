@@ -50,6 +50,7 @@ import {
   grokSessionMeta,
   normalizeAcpTurn,
   persistAcpUpdates,
+  resolveAcpEditLocations,
 } from './transport-acp.ts'
 
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
@@ -507,9 +508,71 @@ describe('ACP client-served fs is confined to the worktree', () => {
       'outside the run worktree',
     )
   })
+
+  test('a dangling symlink to a missing path outside the root is refused', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-dangling-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'orch-acp-fs-dangling-outside-'))
+    roots.push(root, outside)
+    const link = join(root, 'reply.json')
+    symlinkSync(join(outside, 'missing.json'), link)
+    expect(() => confineFsPath(link, root, 'writeTextFile')).toThrow('outside the allowed root')
+  })
 })
 
 describe('ACP permission policy', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  test('the permission edge refuses a dangling symlink out of scratch', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-dangling-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'orch-acp-permission-dangling-outside-'))
+    const link = join(root, 'reply.json')
+    roots.push(root, outside)
+    symlinkSync(join(outside, 'missing.json'), link)
+    const resolved = resolveAcpEditLocations(root, [{ path: link }])
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        resolved?.locations,
+        resolved?.scratchRoot,
+      ).decision,
+    ).toBe('reject')
+  })
+
+  test('the permission edge allows a genuinely missing nested path in scratch', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-missing-root-'))
+    roots.push(root)
+    const location = join(root, 'missing', 'reply.json')
+    const resolved = resolveAcpEditLocations(root, [{ path: location }])
+    expect(resolved?.locations).toEqual([join(realpathSync(root), 'missing', 'reply.json')])
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        resolved?.locations,
+        resolved?.scratchRoot,
+      ).decision,
+    ).toBe('allow')
+  })
+
+  test('the permission edge rejects a relative location', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-relative-root-'))
+    roots.push(root)
+    const resolved = resolveAcpEditLocations(root, [{ path: 'reply.json' }])
+    expect(resolved).toBeNull()
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        resolved?.locations,
+        resolved?.scratchRoot,
+      ).decision,
+    ).toBe('reject')
+  })
+
   test('an edit confined to scratch is allowed once', () => {
     const root = '/runs/41/scratch'
     const edit = decideAcpPermission(
