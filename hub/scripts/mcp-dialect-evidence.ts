@@ -73,14 +73,14 @@ async function inspect(
       exchanges,
     }
   }
+  const client = new Mcp(
+    auth.url,
+    auth.token,
+    30_000,
+    (exchange) => exchanges.push(exchange),
+    requestProtocolVersion,
+  )
   try {
-    const client = new Mcp(
-      auth.url,
-      auth.token,
-      30_000,
-      (exchange) => exchanges.push(exchange),
-      requestProtocolVersion,
-    )
     await client.initialize()
     await client.callTool(call.tool, call.args)
     return {
@@ -108,6 +108,8 @@ async function inspect(
       failure: 'initialize or tool call failed',
       exchanges,
     }
+  } finally {
+    await client.close()
   }
 }
 
