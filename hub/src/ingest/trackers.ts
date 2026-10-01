@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   type AssigneeRef,
   resolveAssigneeIds,
+  TrackerLookupUnverifiable,
   type TrackerSource,
   type TrackerTask,
   trackerSourceFor,
@@ -388,13 +389,26 @@ async function fetchTrackerTasks(source: TrackerSource, client: Mcp): Promise<Tr
     .filter((row) => !seen.has(row.key))
   for (const { key } of vanished.slice(0, 200)) {
     try {
-      const task = source.lookup ? await source.lookup(client, key) : null
+      const task = source.lookup ? await lookupTrackerTask(source, client, key) : null
       if (task) tasks.push(task)
     } catch {
       /* unfindable: leave it as it was rather than guess */
     }
   }
   return tasks
+}
+
+async function lookupTrackerTask(
+  source: TrackerSource,
+  client: Mcp,
+  key: string,
+): Promise<TrackerTask | null> {
+  try {
+    return await source.lookup!(client, key)
+  } catch (cause) {
+    if (cause instanceof TrackerLookupUnverifiable) return null
+    throw cause
+  }
 }
 
 function writeTrackerCache(
@@ -438,7 +452,7 @@ async function backfillTrackerTasks(
   if (!source.lookup) return { filled, activity }
   for (const { task_key } of missing.filter((row) => row.project === source.project)) {
     try {
-      const task = await source.lookup(client, task_key)
+      const task = await lookupTrackerTask(source, client, task_key)
       if (!task) continue
       upsertTrackerTask(task, at)
       filled++

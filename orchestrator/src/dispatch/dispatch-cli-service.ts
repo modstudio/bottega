@@ -16,10 +16,11 @@ import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
-import { sessionId } from '../database/db.ts'
+import { nowIso, sessionId } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, requiredMcpServer } from '../mcp/mcp-preflight.ts'
-import { stackAt } from '../project/projects.ts'
+import { projectByName, stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -46,6 +47,7 @@ import {
 } from '../worktree/worktree-caller.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
 import { callerCheckoutFacts } from './dispatch-preflight.ts'
+import { lookupProjectTaskKey } from './task-key-lookup.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
@@ -346,6 +348,15 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       implicitReviewWarning,
       resolveCallerCheckout: (cwd) => resolveCallerCheckout(presentation.cwd(), cwd),
       resolveDispatchOptions: resolveOptions,
+      lookupTaskKey: async (project, key) => {
+        const registered = projectByName(project)
+        if (!registered) {
+          return { state: 'unreachable', condition: `project ${project} is not registered` }
+        }
+        return lookupProjectTaskKey(registered, key)
+      },
+      recordRunWarning: (runId, warning) =>
+        appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning }),
       detach,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {
