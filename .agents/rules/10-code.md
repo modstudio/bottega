@@ -51,7 +51,7 @@ A function at the cognitive complexity ceiling may only become simpler. Extract 
 
 ## Remove dead code and unneeded exports
 
-Code unused by production is dead and must be deleted with any test that exists only for it. A symbol used by production but imported only by tests has an unneeded export keyword. The baseline only shrinks; `scripts/check-dead-code.ts` enforces both classes.
+Code unused by production is dead and must be deleted with any test that exists only for it. `scripts/check-dead-code.ts` enforces this against a baseline that only shrinks. A symbol production uses inside its own file may be exported so that its beside-test can import it, because that export is the seam that lets a pure decision be tested in the gate.
 
 ## Name workspace packages by platform scope
 
