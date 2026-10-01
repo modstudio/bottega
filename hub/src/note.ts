@@ -35,6 +35,7 @@ import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
 import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
 import { applyHostedTask } from './task-cache.ts'
+import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = {
   cwd: string
@@ -526,13 +527,40 @@ export async function createNote(
 
 export async function promoteNote(
   value: number | string,
-  options: { hosted?: NoteClientOptions } = {},
+  options: { hosted?: NoteClientOptions; existingTaskKey?: string } = {},
 ): Promise<NoteRow> {
   const note = getNote(value)
   if (note.promoted_task)
     throw new Error(`note ${note.id} is already promoted to ${note.promoted_task}`)
+  const project = projects().find((candidate) => candidate.name === note.project)!
+  const destination = taskCreationDestination(project)
+  if (options.existingTaskKey && destination !== 'tracker')
+    throw new Error('--task is valid only for a project that owns its tracker')
+  if (destination === 'tracker' && !options.existingTaskKey)
+    throw new Error(`project ${note.project} owns task creation in its tracker`)
+  if (options.existingTaskKey) {
+    const prefixes = project.settings.keyPrefixes ?? []
+    const prefix = options.existingTaskKey.split('-', 1)[0]?.toUpperCase()
+    if (!prefix || !prefixes.some((candidate) => candidate.toUpperCase() === prefix))
+      throw new Error(
+        `task key '${options.existingTaskKey}' has the wrong prefix for project ${note.project}; expected: ${prefixes.join(', ')}`,
+      )
+  }
   const mode = writeMode(note.project, options.hosted)
   if (mode === 'local-authoritative') {
+    if (destination === 'tracker') {
+      writeTransaction((conn) => {
+        const row = decode(noteRow(conn, note.id))
+        if (row.promoted_task)
+          throw new Error(`note ${row.id} is already promoted to ${row.promoted_task}`)
+        conn
+          .query(
+            'UPDATE note SET promoted_task=?, promoted_task_record_id=NULL, last_seen_at=? WHERE id=?',
+          )
+          .run(options.existingTaskKey!, nowIso(), row.id)
+      })
+      return getNote(note.id)
+    }
     writeTransaction((conn) => {
       const row = decode(noteRow(conn, note.id))
       if (row.promoted_task)
@@ -560,12 +588,22 @@ export async function promoteNote(
     })
     return getNote(note.id)
   }
-  const hosted = await hostedPromoteNote(note.id, options.hosted)
+  const hosted = await hostedPromoteNote(note.id, options.existingTaskKey, options.hosted)
   writeTransaction((conn) => {
-    applyHostedTask(conn, hosted.task)
+    if (hosted.task) applyHostedTask(conn, hosted.task)
     applyHostedNote(conn, hosted.note)
   })
   return getNote(note.id)
+}
+
+export function promotionTaskInput(note: NoteRow) {
+  const evidence = note.anchors
+    .map(
+      (anchor, index) =>
+        `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
+    )
+    .join('\n')
+  return { title: note.text, body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}` }
 }
 
 export async function dropNote(

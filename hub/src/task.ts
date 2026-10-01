@@ -21,6 +21,7 @@ import {
 } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { resolveTask, taskIdentityDecision, taskRecordIdFor } from './task-identity.ts'
+import { taskCreationDestination } from './tracker-new.ts'
 
 export type TaskScope = { project?: string; recordId?: string }
 
@@ -251,6 +252,10 @@ export function createLocalTaskInTransaction(
   } = {},
 ): TaskRow {
   const project = registeredProject(input.project)
+  if (taskCreationDestination(project) === 'tracker')
+    throw new Error(
+      `project '${input.project}' owns task creation in its tracker; use hub task new --project ${input.project} --title "..."`,
+    )
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
     throw new Error(
@@ -385,11 +390,15 @@ export async function createTask(
   } = {},
 ): Promise<TaskRow> {
   if (!input.title.trim()) throw new Error('task title is required')
+  const project = registeredProject(input.project)
+  if (taskCreationDestination(project) === 'tracker')
+    throw new Error(
+      `project '${input.project}' owns task creation in its tracker; use hub task new --project ${input.project} --title "..."`,
+    )
   const mode = writeMode(input.project, options.hosted)
   if (mode === 'local-authoritative') {
     return writeTransaction((conn) => createLocalTaskInTransaction(conn, input, options))
   }
-  const project = registeredProject(input.project)
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
     throw new Error(

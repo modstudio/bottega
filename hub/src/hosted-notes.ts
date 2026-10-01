@@ -267,8 +267,9 @@ export async function promoteHostedNote(
   url: string,
   identity: TaskIdentity,
   number: number,
+  input: { task?: string } = {},
   createTask = createHostedTaskInTransaction,
-): Promise<{ note: HostedNote; task: HostedTask } | null> {
+): Promise<{ note: HostedNote; task: HostedTask | null } | null> {
   return tenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
@@ -284,17 +285,36 @@ export async function promoteHostedNote(
           `Sighting ${i + 1}: cwd=${a.cwd}; branch=${a.branch ?? '-'}; commit=${a.commit ?? '-'}; run=${a.run_id ?? '-'}; session=${a.session_id ?? '-'}`,
       )
       .join('\n')
-    const task = await createTask(tx, identity, {
-      project: note.project,
-      title: note.text,
-      body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
-    })
+    const selected = await selectPromotionTask(
+      input.task,
+      async (key) =>
+        rows<HostedTask>(
+          await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_name=${note.project} AND key=${key}`,
+        )[0] ?? null,
+      () =>
+        createTask(tx, identity, {
+          project: note.project,
+          title: note.text,
+          body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
+        }),
+    )
+    const { task } = selected
     const promoted = rows<HostedNote>(
-      await tx`UPDATE hub_note SET promoted_task=${task.key},promoted_task_id=${task.id}::uuid,last_seen_at=now(),updated_at=now()
+      await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND number=${number} RETURNING *,number::int number`,
     )[0]!
     return { note: promoted, task }
   })
+}
+
+export async function selectPromotionTask(
+  existingKey: string | undefined,
+  find: (key: string) => Promise<HostedTask | null>,
+  mint: () => Promise<HostedTask>,
+): Promise<{ key: string; task: HostedTask | null }> {
+  if (existingKey) return { key: existingKey, task: await find(existingKey) }
+  const task = await mint()
+  return { key: task.key, task }
 }
 
 export async function dropHostedNote(
