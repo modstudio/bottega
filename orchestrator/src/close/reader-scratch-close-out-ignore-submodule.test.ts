@@ -3,11 +3,15 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { git } from '../git/git-environment.ts'
 import { closeOutRun } from './close-out.ts'
-import { cleanFixture, closeOutFixture } from './reader-scratch-close-out.fixture.ts'
+import {
+  archivedClonePath,
+  cleanFixture,
+  closeOutFixture,
+} from './reader-scratch-close-out.fixture.ts'
 
 afterEach(() => mock.restore())
 
-test('reader close-out holds dirty submodule scratch hidden by ignore=all', () => {
+test('reader close-out archives dirty submodule scratch hidden by ignore=all', () => {
   const fixture = closeOutFixture({ submodule: true })
   const nested = join(fixture.worktree, 'nested')
   try {
@@ -18,12 +22,11 @@ test('reader close-out holds dirty submodule scratch hidden by ignore=all', () =
 
     const result = closeOutRun(fixture.id, { intent: 'terminal' })
 
-    expect(result).toMatchObject({ outcome: 'held' })
-    expect(result.detail).toContain('nested repositories: nested')
-    expect(result.detail).toContain('inspect and remove them by hand')
-    expect(existsSync(fixture.worktree)).toBe(true)
-    expect(readFileSync(join(nested, 'nested.txt'), 'utf8')).toBe('modified\n')
-    expect(readFileSync(join(nested, 'untracked.txt'), 'utf8')).toBe('scratch\n')
+    expect(result).toMatchObject({ outcome: 'released' })
+    const archive = archivedClonePath(result.detail)
+    expect(existsSync(fixture.worktree)).toBe(false)
+    expect(readFileSync(join(archive, 'nested', 'nested.txt'), 'utf8')).toBe('modified\n')
+    expect(readFileSync(join(archive, 'nested', 'untracked.txt'), 'utf8')).toBe('scratch\n')
   } finally {
     cleanFixture(fixture.repo, fixture.nestedSource)
   }

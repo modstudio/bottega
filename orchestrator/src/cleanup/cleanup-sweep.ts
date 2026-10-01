@@ -65,6 +65,7 @@ import {
 } from './cleanup-sweep-decisions.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
+import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -497,6 +498,10 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     isProjectRepository,
   )
   if (!dry) writableDb()
+  const archiveRetention = pruneReaderCloneArchives({
+    dryRun: dry,
+    presentation: options.presentation,
+  })
   const trustObservation = helpers.observeGrokTrustHeadings()
   reconcileAbsentClaims({
     dryRun: dry,
@@ -543,7 +548,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = false
+  let cleanupFailed = archiveRetention.failed > 0
   const unattended = sweepUnattendedResidue({
     dryRun: dry,
     selectedProject: selectedProject?.name ?? null,

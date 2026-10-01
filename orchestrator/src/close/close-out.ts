@@ -723,6 +723,8 @@ function attemptCloseOutRun(
               terminal: TERMINAL.has(effective.status),
               treeAbsent,
               treePath,
+              repoRoot,
+              baseCommit: effective.base_commit ?? '',
               dryRun: Boolean(options.dryRun),
             })
             if (!scratch.proceed) return scratch.result
@@ -782,7 +784,7 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent,
+              treeAbsent || archivedScratchPath !== null,
               archivedScratchPath !== null,
             )
             if (retainedBranch && branchSnapshot) {

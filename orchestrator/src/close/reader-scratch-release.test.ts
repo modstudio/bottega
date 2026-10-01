@@ -1,44 +1,56 @@
 import { describe, expect, test } from 'bun:test'
-import { readerScratchReleaseDecision } from './reader-scratch-release.ts'
+import {
+  readerCloneArchiveRetentionDecision,
+  readerCloneReleaseDecision,
+} from './reader-scratch-release.ts'
 
-const dirtyTerminalReader = {
+const reader = {
   readOnlyJob: true,
   terminal: true,
-  cloneDirty: true,
+  treeAbsent: false,
+  provablyDisposable: false,
 }
 
-describe('reader scratch release decision', () => {
-  test('archives dirty terminal reader scratch and releases after archive success', () => {
-    expect(readerScratchReleaseDecision({ ...dirtyTerminalReader, archiveSucceeded: null })).toBe(
-      'archive-then-release',
-    )
-    expect(readerScratchReleaseDecision({ ...dirtyTerminalReader, archiveSucceeded: true })).toBe(
-      'release',
-    )
+describe('reader clone release decision', () => {
+  test('removes only a provably disposable terminal reader clone', () => {
+    expect(
+      readerCloneReleaseDecision({ ...reader, provablyDisposable: true, archiveSucceeded: null }),
+    ).toBe('remove')
   })
 
-  test('keeps dirty terminal reader scratch when its archive failed', () => {
-    expect(readerScratchReleaseDecision({ ...dirtyTerminalReader, archiveSucceeded: false })).toBe(
+  test('archives every terminal reader clone that is not provably disposable', () => {
+    expect(readerCloneReleaseDecision({ ...reader, archiveSucceeded: null })).toBe(
+      'archive-then-release',
+    )
+    expect(readerCloneReleaseDecision({ ...reader, archiveSucceeded: true })).toBe('release')
+    expect(readerCloneReleaseDecision({ ...reader, archiveSucceeded: false })).toBe('keep')
+  })
+
+  test('leaves writing jobs and live readers on the ordinary keep path', () => {
+    expect(
+      readerCloneReleaseDecision({ ...reader, readOnlyJob: false, archiveSucceeded: null }),
+    ).toBe('ordinary')
+    expect(readerCloneReleaseDecision({ ...reader, terminal: false, archiveSucceeded: null })).toBe(
       'keep',
     )
   })
+})
 
-  test('keeps a dirty writing worktree under the existing policy', () => {
+describe('reader clone archive retention decision', () => {
+  test('deletes archives past the configured age and keeps newer archives', () => {
+    const day = 86_400_000
     expect(
-      readerScratchReleaseDecision({
-        ...dirtyTerminalReader,
-        readOnlyJob: false,
-        archiveSucceeded: true,
+      readerCloneArchiveRetentionDecision({
+        nowMs: 20 * day,
+        modifiedMs: 5 * day,
+        retentionDays: 14,
       }),
-    ).toBe('keep')
-  })
-
-  test('keeps a live reader clone', () => {
+    ).toBe('delete')
     expect(
-      readerScratchReleaseDecision({
-        ...dirtyTerminalReader,
-        terminal: false,
-        archiveSucceeded: true,
+      readerCloneArchiveRetentionDecision({
+        nowMs: 20 * day,
+        modifiedMs: 7 * day,
+        retentionDays: 14,
       }),
     ).toBe('keep')
   })

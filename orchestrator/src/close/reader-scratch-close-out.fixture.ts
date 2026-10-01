@@ -77,4 +77,15 @@ export function closeOutFixture(options: { submodule?: boolean } = {}) {
 export function cleanFixture(repo: string, nestedSource: string): void {
   rmSync(repo, { recursive: true, force: true })
   rmSync(nestedSource, { recursive: true, force: true })
+  rmSync(join(dirname(repo), 'archive'), { recursive: true, force: true })
+}
+
+export function archivedClonePath(detail: string): string {
+  const marker = 'whole reader clone archived at '
+  const offset = detail.indexOf(marker)
+  if (offset < 0) throw new Error(`close-out detail did not name the reader archive: ${detail}`)
+  return detail
+    .slice(offset + marker.length)
+    .split(';')[0]!
+    .trim()
 }
