@@ -121,12 +121,15 @@ test('platform-shaped MCP scope emits orch exactly once', () => {
   expect(entries.filter((entry) => entry.startsWith('mcp_servers.orch='))).toHaveLength(1)
 })
 
-test('non-MCP Codex stays isolated from user config without server entries', () => {
+test('non-MCP Codex receives only orch-ask', () => {
   const argv = codexScopeArgs({ mcp: false, mcpServer: 'starship', home: '/operator' })
   expect(argv).toContain('--ignore-user-config')
   expect(argv).toContain('features.apps=false')
   expect(argv).toContain('features.plugins=false')
-  expect(serverEntries(argv)).toEqual([])
+  expect(serverEntries(argv).map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
+    'orch-ask',
+  ])
+  expect(serverEntries(argv)[0]).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
 })
 
 test('orch-ask CLI definition matches the ACP command and args', () => {

@@ -147,21 +147,22 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
     '-c',
     `model_reasoning_effort=${JSON.stringify(CODEX_REASONING_EFFORT)}`,
   ]
-  if (!opts.mcp) return args
-
   const [askCommand, ...askArgs] = bottegaEntryArgv('ask-server')
   const askServer = {
     command: askCommand,
     args: askArgs,
     env_vars: CODEX_ASK_ENV_VARS,
   }
+  args.push('-c', serverOverlay('orch-ask', askServer))
+  if (!opts.mcp) return args
+
   const [orchCommand, ...orchArgs] = bottegaEntryArgv('orch')
   const orchServer = {
     command: orchCommand,
     args: [...orchArgs, 'mcp'],
     env_vars: CODEX_ORCH_ENV_VARS,
   }
-  args.push('-c', serverOverlay('orch-ask', askServer), '-c', serverOverlay('orch', orchServer))
+  args.push('-c', serverOverlay('orch', orchServer))
   for (const [name, server] of Object.entries(opts.projectServers ?? {})) {
     if (name !== 'orch-ask' && name !== 'orch') args.push('-c', serverOverlay(name, server))
   }

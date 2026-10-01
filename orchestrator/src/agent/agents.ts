@@ -272,6 +272,13 @@ function codexShellEnvironmentArgs(
   )
 }
 
+function codexSandboxArgs(
+  mcp: boolean | undefined,
+  sandbox: 'read-only' | 'workspace-write' | typeof CODEX_EXEC_SANDBOX,
+): string[] {
+  return mcp || sandbox === 'workspace-write' ? ['--approve-for-me'] : ['-s', sandbox]
+}
+
 function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   // -m always, never the config file's default: see Agent.model for why an
   // unpinned model quietly rewrites the meaning of every score already taken.
@@ -288,36 +295,12 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
     ...codexScopeArgs(o),
   ]
   /**
-   * MCP AND THE SANDBOX CANNOT BOTH BE CHOSEN, and the split falls out well.
-   *
    * `--approve-for-me` is required for MCP tool calls and is mutually exclusive
-   * with `--sandbox`, so a job needing the ask channel gets workspace-write and
-   * cannot also have `exec`. That sounds like a compromise and is not. What
-   * `exec` buys is EXECUTION — running the suite, reaching Docker — and that is
-   * what REVIEW lenses need, and they use no MCP at all. An implementation
-   * worker needs the ask channel more than it needs the container, because a
-   * worker that cannot ask guesses, which is the failure this whole system
-   * exists to prevent.
-   *
-   * All repository work now takes this bounded workspace-write path.
-   *
-   * IT IS A CODEX LIMITATION, NOT THE SYSTEM'S, and that distinction was worth
-   * establishing rather than assuming. grok has no such conflict: it discovers
-   * Claude-compatible MCP configuration natively and needs no approval flag, so
-   * nothing competes with its sandbox setting. Repo-local servers are separately
-   * gated by folder trust; run() passes `--trust` only for an orch-created
-   * disposable worktree and stores that grant in the run's GROK_HOME.
-   * Verified directly — with
-   * `--permission-mode acceptEdits` it reported `ask_orchestrator` among its
-   * tools AND wrote the requested file in the same run.
-   *
-   * So an implementation worker CAN have both; it just cannot be codex today.
-   * Not encoded as a routing preference, because grok has no scored implement
-   * runs yet and preferring an agent on zero evidence is the mistake this file
-   * already warns about twice. The router will find it: grok is eligible now,
-   * exploration will send it work, and if it is better here the score will say
-   * so. What this note buys is that nobody re-derives the constraint and
-   * concludes the system cannot do it.
+   * with `--sandbox`; it implies the same workspace-write sandbox repository
+   * jobs already receive. Every repository job therefore uses it for the
+   * always-present orch-ask channel, whether or not project MCP was requested.
+   * No-repository jobs retain `-s read-only`; only orch-ask tools annotated as
+   * read-only can run there without approval.
    */
   if (o.writableRoots?.length) {
     a.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(o.writableRoots)}`)
@@ -329,10 +312,13 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
     a.push('-c', 'sandbox_workspace_write.network_access=true')
   }
   a.push(...codexShellEnvironmentArgs(o.gitConfigEnvironment, o.recipeEnvironment))
-  if (o.mcp) {
-    a.push('--approve-for-me')
-  } else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)
-  else a.push('-s', o.write || o.sandbox === 'workspace-write' ? 'workspace-write' : 'read-only')
+  const sandbox =
+    o.sandbox === 'exec'
+      ? CODEX_EXEC_SANDBOX
+      : o.write || o.sandbox === 'workspace-write'
+        ? 'workspace-write'
+        : 'read-only'
+  a.push(...codexSandboxArgs(o.mcp, sandbox))
   if (o.schema) a.push('--output-schema', o.schema)
   return a
 }
