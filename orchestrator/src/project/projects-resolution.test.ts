@@ -66,6 +66,17 @@ describe('projects are data, not code', () => {
     ).toContain('search.code must be a boolean')
   })
 
+  test('main stack consumers are explicit and validated', () => {
+    expect(
+      validateProjectSettings({ mainStack: { consumers: ['gate', 'worktree-create'] } }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({ mainStack: { consumers: ['unknown'] } } as unknown as Parameters<
+        typeof validateProjectSettings
+      >[0]),
+    ).toEqual(['mainStack.consumers entries must be gate or worktree-create'])
+  })
+
   test('checks accept the optional policy shapes', () => {
     expect(
       validateProjectSettings({

@@ -691,6 +691,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           const created = createWorkerWorktree({
             tool: creationTool,
             cwd: callerCwd,
+            mainProjectPath: projectAt(callerCwd)?.path ?? repoRoot,
             runId: claim.id,
             writes: writesJob,
             readOnlyBase: readOnlyBase!,
@@ -709,6 +710,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,
             recordRecipeResource,
             claimRecipePort: claimRecipeServePort,
+            mainStackConsumers: projectAt(callerCwd)?.settings.mainStack?.consumers,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {

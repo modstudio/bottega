@@ -23,7 +23,8 @@
  * disposable worktree. No worker pushes.
  */
 import { existsSync } from 'node:fs'
-import type { WorktreeTool } from '../project/projects.ts'
+import type { MainStackConsumer, WorktreeTool } from '../project/projects.ts'
+import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import {
   type ClaimRecipePort,
   createWithTool,
@@ -42,6 +43,7 @@ export function worktreeExists(path: string): boolean {
 export type CreateWorkerWorktreeOptions = {
   tool: WorktreeTool | null
   cwd: string
+  mainProjectPath: string
   runId: number
   writes: boolean
   readOnlyBase: string
@@ -55,6 +57,7 @@ export type CreateWorkerWorktreeOptions = {
   recordRecipeResource?: RecordRecipeResource
   claimRecipePort?: ClaimRecipePort
   templateBaseRef?: string
+  mainStackConsumers?: MainStackConsumer[]
 }
 
 /** Create the worker tree through the project lifecycle or Git fallback. */
@@ -76,6 +79,11 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
           options.tool?.readonly_provision,
         )
   }
+  ensureMainStackStarted({
+    projectPath: options.mainProjectPath,
+    declaredConsumers: options.mainStackConsumers,
+    consumer: 'worktree-create',
+  })
   if (options.tool) {
     return createWithTool(
       options.tool,

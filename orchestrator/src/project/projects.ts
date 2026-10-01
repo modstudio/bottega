@@ -53,9 +53,9 @@ import {
   validateCreate,
 } from '../worktree/worktree-template.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
-import type { ProjectSettings, WorktreeTool } from './project-settings.ts'
+import type { MainStackConsumer, ProjectSettings, WorktreeTool } from './project-settings.ts'
 
-export type { ProjectSettings, WorktreeTool }
+export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
   id: number
@@ -612,6 +612,7 @@ export function validateProjectSettings(
     ...canonMirrorKeyProblems(settings.canonMirrorKey),
     ...projectSearchProblems(settings.search),
     ...keyPrefixProblems(settings.keyPrefixes, context),
+    ...mainStackProblems(settings.mainStack),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
@@ -660,6 +661,24 @@ export function validateProjectSettings(
     }
   }
   return problems
+}
+
+function mainStackProblems(value: ProjectSettings['mainStack']): string[] {
+  if (value === undefined) return []
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return ['mainStack must be an object']
+  }
+  const keys = Object.keys(value)
+  if (keys.some((key) => key !== 'consumers')) return ['mainStack contains unknown settings']
+  if (!Array.isArray(value.consumers)) return ['mainStack.consumers must be an array']
+  const allowed = new Set(['gate', 'worktree-create'])
+  if (value.consumers.some((consumer) => typeof consumer !== 'string' || !allowed.has(consumer))) {
+    return ['mainStack.consumers entries must be gate or worktree-create']
+  }
+  if (new Set(value.consumers).size !== value.consumers.length) {
+    return ['mainStack.consumers entries must be unique']
+  }
+  return []
 }
 
 function trackedRecipeProblems(worktree: WorktreeTool | undefined, projectPath?: string): string[] {

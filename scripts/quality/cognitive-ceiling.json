@@ -129,8 +129,8 @@
   {
     "file": "orchestrator/src/cleanup/cleanup-sweep.ts",
     "function": "sweepRuns",
-    "line": 426,
-    "score": 97,
+    "line": 476,
+    "score": 66,
     "key": "orchestrator/src/cleanup/cleanup-sweep.ts\u0000sweepRuns"
   },
   {
@@ -467,12 +467,6 @@
     "score": 26
   },
   {
-    "file": "orchestrator/src/resources/docker-resources.ts",
-    "function": "teardownRunResources",
-    "line": 132,
-    "score": 17
-  },
-  {
     "file": "orchestrator/src/resources/git-locks.ts",
     "function": "gitLocks",
     "line": 75,
@@ -500,8 +494,9 @@
   {
     "file": "orchestrator/src/resources/resource-ownership.ts",
     "function": "teardownTerminalRunResources",
-    "line": 153,
-    "score": 19
+    "line": 388,
+    "score": 17,
+    "key": "orchestrator/src/resources/resource-ownership.ts\u0000teardownTerminalRunResources"
   },
   {
     "file": "orchestrator/src/review/review-calibration.ts",

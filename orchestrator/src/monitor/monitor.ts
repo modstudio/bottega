@@ -103,6 +103,18 @@ function retainedDockerResourceAction(
     : 'informational; retained resources require review before any removal'
 }
 
+function unattributableDockerConditions(inventory: ReturnType<typeof dockerRunResources>) {
+  if (!inventory.ascertainable) return []
+  return (inventory.unattributable ?? []).map((resource) => ({
+    kind: 'retained-worktree-docker-resource' as const,
+    subject: resource.name,
+    since: null,
+    severity: 'informational' as const,
+    detail: `${resource.kind} ownership cannot be established: ${resource.reason}`,
+    action: 'report only; add an orch run label or attributable compose identity',
+  }))
+}
+
 export class MonitorStoreBusyError extends Error {
   constructor(cause: unknown) {
     super(cause instanceof Error ? cause.message : String(cause), { cause })
@@ -412,9 +424,14 @@ export async function monitor(
       ownerSession: run.session_id,
     })
 
-  const runDocker = dockerRunResources()
+  const runDocker = dockerRunResources(
+    projects()
+      .filter(isProjectRepository)
+      .map(({ path }) => path),
+  )
   if (!runDocker.ascertainable) errors.push(runDocker.reason)
   const runDockerResources = runDocker.ascertainable ? runDocker.resources : []
+  unattributableDockerConditions(runDocker).forEach(add)
   const dockerOwnerIds = new Set(runDockerResources.map(({ runId }) => runId))
   const dockerOwners = (
     database

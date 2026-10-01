@@ -7,25 +7,10 @@ import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
-import {
-  absentTreeTeardownPlan,
-  isProjectRepository,
-  projectAt,
-  projectByName,
-  projects,
-  resolvedWorktreeTool,
-} from '../project/projects.ts'
-import {
-  classifiedDockerResources,
-  type DockerResource,
-  dockerRunResources,
-  leakedResourceLines,
-  orchRunId,
-} from '../resources/docker-resources.ts'
-import {
-  liveWorktreeSharers,
-  terminalDockerRetentionReasonForRun,
-} from '../resources/resource-ownership.ts'
+import { isProjectRepository, projectAt, projectByName, projects } from '../project/projects.ts'
+import { type DockerResource, orchRunId } from '../resources/docker-resources.ts'
+import { sweepIdleMainStacks } from '../resources/main-stack.ts'
+import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
@@ -63,6 +48,7 @@ import {
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
+import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
@@ -549,6 +535,13 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     forgotten: 0,
   }
   let cleanupFailed = archiveRetention.failed > 0
+  cleanupFailed ||= sweepIdleMainStacks({
+    database: db(),
+    projects: sweepProjects,
+    dryRun: dry,
+    log: (message) => options.presentation.log(message),
+    error: (message) => options.presentation.error(message),
+  })
   const unattended = sweepUnattendedResidue({
     dryRun: dry,
     selectedProject: selectedProject?.name ?? null,
@@ -799,86 +792,13 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   })
   cleanupFailed ||= trustCleanupFailed
 
-  // Inventory is a read, so dry-run performs it too. A preview that omits
-  // already-leaked infrastructure is materially cleaner than the real run.
-  const inventory = dockerRunResources()
-  if (!inventory.ascertainable) {
-    inventoryErrors.add(inventory.reason)
-    cleanupFailed = true
-  }
-  const inventoryResources = inventory.ascertainable ? inventory.resources : []
-  const inventoryOwnerIds = new Set(inventoryResources.map(({ runId }) => runId))
-  const owners = (
-    db()
-      .query(
-        `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
-                COALESCE(root.worktree_source,r.worktree_source) worktree_source,
-                COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
-                COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
-         FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
-      )
-      .all() as {
-      id: number
-      repo: string | null
-      worktree: string | null
-      status: string
-      worktree_source: Worktree['source'] | null
-      recipe_snapshot: string | null
-      resource_teardown: 'pending' | 'done' | null
-    }[]
-  ).map((owner) => ({
-    ...owner,
-    absentTreeTeardown:
-      Boolean(owner.worktree && !existsSync(owner.worktree)) &&
-      absentTreeTeardownPlan({
-        recipeSnapshot: owner.recipe_snapshot,
-        worktreeSource: owner.worktree_source,
-        resourceTeardown: owner.resource_teardown,
-        registeredRemoveCommand: Boolean(
-          resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
-        ),
-      }),
-    retentionReason: inventoryOwnerIds.has(owner.id)
-      ? terminalDockerRetentionReasonForRun(db(), owner.id)
-      : null,
-  }))
-  const classified = classifiedDockerResources(inventoryResources, owners).filter(
-    (item) => !selectedProject || item.project === selectedProject.name,
-  )
-  for (const { resource, project, condition } of classified) {
-    if (condition === 'retained-worktree-resources') continue
-    const key = `${resource.kind}:${resource.name}`
-    if (!leaked.has(key)) leaked.set(key, { resource, project, runId: resource.runId })
-  }
-  const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
-  if (retained.length) {
-    options.presentation.error(
-      `\n${dry ? 'would report ' : ''}retained worktree Docker resources: ${retained.length}`,
-    )
-    for (const { resource, project, reason } of retained) {
-      options.presentation.error(
-        `  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`,
-      )
-    }
-  }
-  if (leaked.size) {
-    cleanupFailed = true
-    options.presentation.error(
-      `\n${dry ? 'would report ' : ''}leaked Docker resources: ${leaked.size}`,
-    )
-    for (const { resource, project } of leaked.values()) {
-      options.presentation.error(
-        `  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project)[0]}`,
-      )
-    }
-  }
-  if (inventoryErrors.size) {
-    options.presentation.error(
-      `\n${dry ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`,
-    )
-    for (const error of inventoryErrors)
-      options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
-  }
+  cleanupFailed ||= reclaimSweptDockerResources({
+    dryRun: dry,
+    selectedProject,
+    presentation: options.presentation,
+    inventoryErrors,
+    leaked,
+  })
 
   const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
 

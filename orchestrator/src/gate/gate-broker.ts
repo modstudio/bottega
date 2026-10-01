@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
+import type { MainStackConsumer } from '../project/project-settings.ts'
+import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import {
@@ -44,6 +46,7 @@ function gatePlan(runId: number): {
   worktree: string
   baseCommit: string
   trunk: string | null
+  mainStackConsumers: MainStackConsumer[] | undefined
 } {
   const row = db()
     .query(
@@ -57,7 +60,11 @@ function gatePlan(runId: number): {
   } | null
   if (!row?.worktree) throw new Error(`run ${runId} has no recorded worktree`)
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-  const settings = JSON.parse(row.settings ?? '{}') as { gate?: unknown; trunk?: unknown }
+  const settings = JSON.parse(row.settings ?? '{}') as {
+    gate?: unknown
+    trunk?: unknown
+    mainStack?: { consumers?: MainStackConsumer[] }
+  }
   if (typeof settings.gate !== 'string' || !settings.gate.trim()) {
     throw new Error(`run ${runId}'s project has no registered gate`)
   }
@@ -67,6 +74,7 @@ function gatePlan(runId: number): {
     baseCommit: row.base_commit,
     trunk:
       typeof settings.trunk === 'string' && settings.trunk.trim() ? settings.trunk.trim() : null,
+    mainStackConsumers: settings.mainStack?.consumers,
   }
 }
 
@@ -147,6 +155,11 @@ function startGateExecution(
       const plan = gatePlan(request.run_id)
       const mainCheckout = environment.ORCH_MAIN_CHECKOUT
       if (!mainCheckout) throw new Error(`run ${request.run_id} has no recorded main checkout`)
+      ensureMainStackStarted({
+        projectPath: mainCheckout,
+        declaredConsumers: plan.mainStackConsumers,
+        consumer: 'gate',
+      })
       command = resolveGateCommand(plan.command, mainCheckout)
       const toolingPaths = changedGateTooling(plan, record)
       db()

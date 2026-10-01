@@ -1,6 +1,7 @@
 import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
+import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import {
@@ -146,38 +147,8 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep cleanup independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
-  boundary(
-    'cleanup-sweep-boundary',
-    'orchestrator/src/cleanup/cleanup-sweep.ts',
-    [
-      'node:fs',
-      'node:path',
-      './cleanup.ts',
-      './cleanup-sweep-decisions.ts',
-      './cleanup-sweep-reclaim.ts',
-      './cleanup-sweep-residue.ts',
-      './reader-clone-archive-retention.ts',
-      './claim-reconciliation.ts',
-      '../close/close-out.ts',
-      '../database/db.ts',
-      '../evidence/unjudged-expiry.ts',
-      '../resources/docker-resources.ts',
-      '../hook-tree/hook-tree.ts',
-      '../landing-tree/release-observation.ts',
-      '../../../shared/process-identity.ts',
-      '../project/projects.ts',
-      '../resources/resource-ownership.ts',
-      '../run/run-alive.ts',
-      '../run/run-artifacts.ts',
-      '../run/run-authority.ts',
-      '../run/run-lease.ts',
-      '../run/synthetic-lifecycle-job.ts',
-      '../sandbox/grok-trust.ts',
-      '../worktree/worktree-attribution.ts',
-      '../worktree/worktree-remove.ts',
-      '../worktree/worktree-types.ts',
-    ],
-    'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  ...cleanupBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   boundary(
     'cleanup-sweep-decisions-boundary',
@@ -439,6 +410,7 @@ export const importBoundaries: ImportBoundary[] = [
       './worktree-create.ts',
       './worktree-readonly.ts',
       '../project/projects.ts',
+      '../resources/main-stack.ts',
       './worktree-types.ts',
     ],
     'Keep the isolation module independent of run policy and lifecycle concerns.',
@@ -768,6 +740,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/database-location.ts',
       '../database/db.ts',
       './docker-resources.ts',
+      './main-stack-decision.ts',
       '../evidence/evidence-query.ts',
       '../git/git-environment.ts',
       '../../../shared/process-identity.ts',

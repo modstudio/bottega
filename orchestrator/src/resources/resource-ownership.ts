@@ -3,7 +3,7 @@
  * Knows worktree claims, live sharing, and terminal resource teardown. Must not know routing, transports, reviews, contracts, or CLI adapters.
  */
 import type { Database } from 'bun:sqlite'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
@@ -15,11 +15,17 @@ import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
+  type DockerInventory,
+  type DockerResource,
   type DockerTeardown,
   dockerRunResources,
   resourcesForRuns,
   teardownRunResources,
 } from './docker-resources.ts'
+import {
+  decideTerminalDockerInventory,
+  decideWorktreeResourceTeardown,
+} from './main-stack-decision.ts'
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }
 
@@ -90,7 +96,7 @@ export type TerminalDockerRetentionReason =
   | 'cleanup lease or lock unavailable'
 
 type TerminalWorktreeSafety =
-  | { safe: true; worktree: string; repoRoot: string }
+  | { safe: true; worktree: string | null; repoRoot: string | null }
   | { safe: false; reason: TerminalDockerRetentionReason }
 
 function worktreeIdentity(path: string): string {
@@ -125,12 +131,13 @@ function terminalWorktreeSafety(
   row: { worktree: string | null; repo: string | null; cwd: string | null },
 ): TerminalWorktreeSafety {
   const { worktree } = row
-  if (!worktree) return { safe: false, reason: 'no recorded worktree' }
-  let identity: string
-  try {
-    identity = worktreeIdentity(worktree)
-  } catch {
-    return { safe: false, reason: 'normalization failed' }
+  let identity: string | null = null
+  if (worktree) {
+    try {
+      identity = worktreeIdentity(worktree)
+    } catch {
+      return { safe: false, reason: 'normalization failed' }
+    }
   }
   let repoRoot: string | null
   try {
@@ -139,13 +146,12 @@ function terminalWorktreeSafety(
           path: string
         } | null)
       : null
-    repoRoot = registered?.path ?? repoRootOf(worktree) ?? row.cwd
+    repoRoot = registered?.path ?? (worktree ? repoRootOf(worktree) : null) ?? row.cwd
   } catch {
     return { safe: false, reason: 'unresolvable repository root' }
   }
-  if (!repoRoot) return { safe: false, reason: 'unresolvable repository root' }
   try {
-    if (hasLiveWorktreeSharer(database, identity)) {
+    if (identity && hasLiveWorktreeSharer(database, identity)) {
       return { safe: false, reason: 'live sharer present' }
     }
   } catch {
@@ -205,10 +211,217 @@ export type TerminalDockerTeardown = DockerTeardown & {
   reason: TerminalDockerRetentionReason | null
 }
 
+type TerminalRunRow = {
+  status: string
+  worktree: string | null
+  repo: string | null
+  cwd: string | null
+}
+
+type TerminalDockerRemovalResult = {
+  failures: Set<string>
+  removed: number
+  skipped: boolean
+  reason: TerminalDockerRetentionReason | null
+}
+
+function chainHasLiveRun(database: Database, runId: number): boolean {
+  const candidates = database
+    .query(
+      `SELECT id,status,pid FROM run WHERE COALESCE(parent_run_id,id)=
+       (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+       AND status IN ('running','asking')`,
+    )
+    .all(runId) as { id: number; status: string; pid: number | null }[]
+  return candidates.some((candidate) =>
+    runAlive({
+      status: candidate.status,
+      lease: runLeaseState(candidate.id),
+      pidAlive: Boolean(candidate.pid && pidAlive(candidate.pid)),
+    }),
+  )
+}
+
+function removeTerminalDockerResources(input: {
+  database: Database
+  inventory: ReturnType<typeof resourcesForRuns>
+  resourceRunIds: Set<number>
+  row: TerminalRunRow
+  chainLive: boolean
+  dryRun: boolean
+}): TerminalDockerRemovalResult {
+  const { database, inventory, resourceRunIds, row, chainLive, dryRun } = input
+  const failures = new Set(inventory.ascertainable ? [] : [inventory.reason])
+  let removed = 0
+  const skipped = false
+  const reason: TerminalDockerRetentionReason | null = null
+  for (const id of resourceRunIds) {
+    const result = removeTerminalDockerResourceGroup({
+      database,
+      inventory,
+      id,
+      row,
+      chainLive,
+      dryRun,
+      failures,
+      removed,
+    })
+    removed += result.removed
+    for (const error of result.errors) failures.add(error)
+    if (result.retained) return result.retained
+  }
+  return { failures, removed, skipped, reason }
+}
+
+function removeTerminalDockerResourceGroup(input: {
+  database: Database
+  inventory: ReturnType<typeof resourcesForRuns>
+  id: number
+  row: TerminalRunRow
+  chainLive: boolean
+  dryRun: boolean
+  failures: Set<string>
+  removed: number
+}): { removed: number; errors: string[]; retained: TerminalDockerRemovalResult | null } {
+  const owned = input.inventory.ascertainable
+    ? input.inventory.resources.filter((resource) => resource.runId === input.id)
+    : []
+  if (!terminalResourcesEligible(owned, input.chainLive, input.row.worktree))
+    return {
+      removed: 0,
+      errors: [],
+      retained: {
+        failures: input.failures,
+        removed: input.removed,
+        skipped: true,
+        reason: input.chainLive ? 'live sharer present' : 'normalization failed',
+      },
+    }
+  if (input.dryRun)
+    return {
+      removed: owned.length,
+      errors: [],
+      retained: previewRetention(input.database, input.row, input.failures, input.removed),
+    }
+  const result = teardownRunResources(
+    input.id,
+    input.inventory,
+    () => terminalWorktreeSafety(input.database, input.row).safe,
+  )
+  return {
+    removed: result.removed,
+    errors: result.errors,
+    retained: result.skipped
+      ? {
+          failures: input.failures,
+          removed: input.removed + result.removed,
+          skipped: true,
+          reason:
+            terminalDockerRetentionReason(input.database, input.row) ?? 'normalization failed',
+        }
+      : null,
+  }
+}
+
+function terminalResourcesEligible(
+  resources: DockerResource[],
+  chainLive: boolean,
+  worktree: string | null,
+): boolean {
+  return resources.every(
+    (resource) =>
+      decideWorktreeResourceTeardown({
+        attributable: true,
+        mainCheckout: resource.mainCheckout === true,
+        liveRun: chainLive,
+        terminalRun: true,
+        treeAbsent: !worktree || !existsSync(worktree),
+      }) === 'remove',
+  )
+}
+
+function previewRetention(
+  database: Database,
+  row: TerminalRunRow,
+  failures: Set<string>,
+  removed: number,
+): TerminalDockerRemovalResult | null {
+  if (terminalWorktreeSafety(database, row).safe) return null
+  return {
+    failures,
+    removed,
+    skipped: true,
+    reason: terminalDockerRetentionReason(database, row) ?? 'normalization failed',
+  }
+}
+
+function underTerminalCleanupLock(
+  safety: Extract<TerminalWorktreeSafety, { safe: true }>,
+  runId: number,
+  remove: () => void,
+): void {
+  const identity = { session: sessionId(), what: `terminal Docker teardown for run ${runId}` }
+  if (!safety.repoRoot) {
+    remove()
+    return
+  }
+  if (!safety.worktree || !existsSync(safety.worktree)) {
+    withCleanupLock(safety.repoRoot, identity, remove)
+    return
+  }
+  withWorktreeLease(safety.repoRoot, safety.worktree, identity, () => {
+    withCleanupLock(safety.repoRoot!, identity, remove)
+  })
+}
+
+function terminalDockerInventory(
+  database: Database,
+  ids: { id: number }[],
+  suppliedInventory?: DockerInventory,
+): DockerInventory {
+  const inventory =
+    suppliedInventory ??
+    dockerRunResources(
+      (
+        database.query('SELECT path FROM project WHERE retired_at IS NULL').all() as {
+          path: string
+        }[]
+      ).map(({ path }) => path),
+    )
+  return resourcesForRuns(
+    ids.map(({ id }) => id),
+    inventory,
+  )
+}
+
+function terminalTeardownTarget(
+  database: Database,
+  runId: number,
+  inventorySupplied: boolean,
+): { row: TerminalRunRow; ids: { id: number; worktree: string | null }[] } | null {
+  const row = database
+    .query('SELECT status, worktree,repo,cwd FROM run WHERE id=?')
+    .get(runId) as TerminalRunRow | null
+  if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return null
+  const ids = database
+    .query(
+      `SELECT id,worktree FROM run WHERE COALESCE(parent_run_id, id) =
+      (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+    )
+    .all(runId) as { id: number; worktree: string | null }[]
+  const inventoryDecision = decideTerminalDockerInventory({
+    inventorySupplied,
+    chainHasRecordedWorktree: ids.some(({ worktree }) => worktree !== null),
+  })
+  return inventoryDecision === 'skip' ? null : { row, ids }
+}
+
 /** Best-effort container reclamation for every terminal transition in a conversation. */
 export function teardownTerminalRunResources(
   database: Database,
   runId: number,
+  suppliedInventory?: DockerInventory,
+  options: { dryRun?: boolean } = {},
 ): TerminalDockerTeardown {
   const nothing = (): TerminalDockerTeardown => ({
     complete: true,
@@ -218,13 +431,9 @@ export function teardownTerminalRunResources(
     outcome: 'nothing',
     reason: null,
   })
-  const row = database.query('SELECT status, worktree,repo,cwd FROM run WHERE id=?').get(runId) as {
-    status: string
-    worktree: string | null
-    repo: string | null
-    cwd: string | null
-  } | null
-  if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return nothing()
+  const target = terminalTeardownTarget(database, runId, suppliedInventory !== undefined)
+  if (!target) return nothing()
+  const { ids, row } = target
   const initialSafety = terminalWorktreeSafety(database, row)
   if (!initialSafety.safe)
     return {
@@ -233,57 +442,30 @@ export function teardownTerminalRunResources(
       outcome: initialSafety.reason === 'live sharer present' ? 'live-sibling' : 'unascertainable',
       reason: initialSafety.reason,
     }
-  const ids = database
-    .query(
-      `SELECT id FROM run WHERE COALESCE(parent_run_id, id) =
-      (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
-    )
-    .all(runId) as { id: number }[]
-  const inventory = resourcesForRuns(
-    ids.map(({ id }) => id),
-    dockerRunResources(),
+  const inventory = terminalDockerInventory(database, ids, suppliedInventory)
+  const resourceRunIds = new Set(
+    (inventory.ascertainable ? inventory.resources : []).map((resource) => resource.runId),
   )
-  const failures = new Set(inventory.ascertainable ? [] : [inventory.reason])
-  const containerRunIds = new Set(
-    (inventory.ascertainable ? inventory.resources : [])
-      .filter((resource) => resource.kind === 'container')
-      .map((resource) => resource.runId),
-  )
-  let removed = 0
-  let skipped = false
-  let retainedReason: TerminalDockerRetentionReason | null = null
-  const remove = () => {
-    for (const id of containerRunIds) {
-      const result = teardownRunResources(
-        id,
-        inventory,
-        () => terminalWorktreeSafety(database, row).safe,
-      )
-      removed += result.removed
-      skipped ||= result.skipped
-      if (result.skipped) {
-        retainedReason = terminalDockerRetentionReason(database, row) ?? 'normalization failed'
-      }
-      for (const error of result.errors) failures.add(error)
-      if (skipped) break
-    }
+  let result: TerminalDockerRemovalResult = {
+    failures: new Set(inventory.ascertainable ? [] : [inventory.reason]),
+    removed: 0,
+    skipped: false,
+    reason: null as TerminalDockerRetentionReason | null,
   }
-  if (containerRunIds.size) {
-    const identity = { session: sessionId(), what: `terminal Docker teardown for run ${runId}` }
-    try {
-      withWorktreeLease(initialSafety.repoRoot, initialSafety.worktree, identity, () => {
-        withCleanupLock(initialSafety.repoRoot, identity, remove)
-      })
-    } catch (error) {
-      failures.add(`Docker teardown unavailable: ${(error as Error).message}`)
-      skipped = true
-      retainedReason = 'cleanup lease or lock unavailable'
-    }
-  }
+  if (resourceRunIds.size)
+    result = executeTerminalDockerRemoval({
+      database,
+      inventory,
+      resourceRunIds,
+      row,
+      runId,
+      initialSafety,
+      dryRun: options.dryRun === true,
+    })
   if (!inventory.ascertainable) {
     console.error(`orch: ${inventory.reason}`)
   }
-  if (failures.size) {
+  if (result.failures.size) {
     try {
       const path = join(resolveRunsDirectory(process.env), String(runId), 'events.jsonl')
       mkdirSync(dirname(path), { recursive: true })
@@ -292,30 +474,66 @@ export function teardownTerminalRunResources(
         `${JSON.stringify({
           ts: nowIso(),
           type: 'text',
-          text: `Docker teardown incomplete: ${[...failures].join('; ')}`,
+          text: `Docker teardown incomplete: ${[...result.failures].join('; ')}`,
         })}\n`,
       )
     } catch {
       /* teardown remains best-effort even when its durable trace cannot be written */
     }
   }
-  const finalRetentionReason: TerminalDockerRetentionReason | null = skipped
-    ? (retainedReason ?? terminalDockerRetentionReason(database, row) ?? 'normalization failed')
+  const finalRetentionReason: TerminalDockerRetentionReason | null = result.skipped
+    ? (result.reason ?? terminalDockerRetentionReason(database, row) ?? 'normalization failed')
     : null
   return {
-    complete: failures.size === 0,
-    errors: [...failures],
-    removed,
-    skipped,
-    outcome: skipped
+    complete: result.failures.size === 0,
+    errors: [...result.failures],
+    removed: result.removed,
+    skipped: result.skipped,
+    outcome: result.skipped
       ? finalRetentionReason === 'live sharer present'
         ? 'live-sibling'
         : 'unascertainable'
-      : removed
+      : result.removed
         ? 'removed'
         : 'nothing',
     reason: finalRetentionReason,
   }
+}
+
+function executeTerminalDockerRemoval(input: {
+  database: Database
+  inventory: ReturnType<typeof resourcesForRuns>
+  resourceRunIds: Set<number>
+  row: TerminalRunRow
+  runId: number
+  initialSafety: Extract<TerminalWorktreeSafety, { safe: true }>
+  dryRun: boolean
+}): TerminalDockerRemovalResult {
+  let result: TerminalDockerRemovalResult = {
+    failures: new Set(input.inventory.ascertainable ? [] : [input.inventory.reason]),
+    removed: 0,
+    skipped: false,
+    reason: null,
+  }
+  try {
+    const remove = () => {
+      result = removeTerminalDockerResources({
+        database: input.database,
+        inventory: input.inventory,
+        resourceRunIds: input.resourceRunIds,
+        row: input.row,
+        chainLive: chainHasLiveRun(input.database, input.runId),
+        dryRun: input.dryRun,
+      })
+    }
+    if (input.dryRun) remove()
+    else underTerminalCleanupLock(input.initialSafety, input.runId, remove)
+  } catch (error) {
+    result.failures.add(`Docker teardown unavailable: ${(error as Error).message}`)
+    result.skipped = true
+    result.reason = 'cleanup lease or lock unavailable'
+  }
+  return result
 }
 
 /** Runs this session made that nobody has judged. */

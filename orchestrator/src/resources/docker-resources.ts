@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
 const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
@@ -22,18 +23,30 @@ export function dockerRemovalTimeoutMs(
   return Number.isFinite(n) && n > 0 ? n : DOCKER_REMOVAL_TIMEOUT_MS
 }
 
-type DockerResourceKind = 'container' | 'volume'
+type DockerResourceKind = 'container' | 'network' | 'volume'
 
 export type DockerResource = {
   kind: DockerResourceKind
   name: string
   runId: number
+  workingDir?: string | null
+  composeProject?: string | null
+  mainCheckout?: boolean
 }
 
 const ORCH_RUN_LABEL_KEY = 'orch.run'
 
 export type DockerInventory =
-  | { ascertainable: true; resources: DockerResource[] }
+  | {
+      ascertainable: true
+      resources: DockerResource[]
+      unattributable?: {
+        kind: DockerResourceKind
+        name: string
+        reason: string
+        workingDir: string
+      }[]
+    }
   | { ascertainable: false; reason: string }
 
 type DockerNetwork = {
@@ -41,6 +54,7 @@ type DockerNetwork = {
   createdAt: string | null
   workingDir: string | null
   runId: number | null
+  composeProject: string | null
 }
 
 export type DockerNetworkInventory =
@@ -48,15 +62,27 @@ export type DockerNetworkInventory =
   | { ascertainable: false; reason: string }
 
 function list(
-  kind: DockerResourceKind,
+  kind: 'container' | 'volume',
   timeout: number,
 ):
   | { ascertainable: true; rows: { name: string; labels: Record<string, string> }[] }
   | { ascertainable: false; reason: string } {
   const args =
     kind === 'container'
-      ? ['docker', 'ps', '-a', '--format', `{{.Names}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}`]
-      : ['docker', 'volume', 'ls', '--format', `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}`]
+      ? [
+          'docker',
+          'ps',
+          '-a',
+          '--format',
+          `{{.Names}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
+        ]
+      : [
+          'docker',
+          'volume',
+          'ls',
+          '--format',
+          `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
+        ]
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     p = Bun.spawnSync(args, {
@@ -92,9 +118,11 @@ function list(
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => {
-        const [name, label = ''] = line.split('\t')
+        const [name, label = '', composeProject = '', workingDir = ''] = line.split('\t')
         const labels: Record<string, string> = {}
         if (label) labels[ORCH_RUN_LABEL_KEY] = label
+        if (composeProject) labels['com.docker.compose.project'] = composeProject
+        if (workingDir) labels['com.docker.compose.project.working_dir'] = workingDir
         return { name: name!, labels }
       }),
   }
@@ -102,7 +130,7 @@ function list(
 
 /** The one identity rule shared by worktree names and their Docker resources. */
 export function orchRunId(name: string): number | null {
-  const match = name.match(/(?:^|[_-])orch-(\d+)(?=[_-]|$)/)
+  const match = name.match(/(?:^|[/_-])orch-(\d+)(?=[/_-]|$)/)
   if (!match) return null
   return Number(match[1])
 }
@@ -126,9 +154,88 @@ export function dockerRunResource(
   return runId === null ? null : { runId }
 }
 
-/** Inventory only resources created for orch run worktrees. Never mutates Docker. */
-export function dockerRunResources(): DockerInventory {
+type UnattributableDockerResource = {
+  kind: DockerResourceKind
+  name: string
+  reason: string
+  workingDir: string
+}
+
+function classifyListedRows(
+  kind: 'container' | 'volume',
+  listed: { name: string; labels: Record<string, string> }[],
+): { resources: DockerResource[]; unattributable: UnattributableDockerResource[] } {
   const resources: DockerResource[] = []
+  const unattributable: UnattributableDockerResource[] = []
+  for (const row of listed) {
+    const workingDir = row.labels['com.docker.compose.project.working_dir'] ?? null
+    const composeProject = row.labels['com.docker.compose.project'] ?? null
+    const parsed =
+      dockerRunResource(row.name, row.labels) ??
+      (composeProject ? dockerRunResource(composeProject) : null) ??
+      (workingDir ? dockerRunResource(workingDir) : null)
+    if (parsed)
+      resources.push({ kind, name: row.name, runId: parsed.runId, composeProject, workingDir })
+    else if (workingDir?.includes('/.claude/worktrees/'))
+      unattributable.push({
+        kind,
+        name: row.name,
+        reason: `compose working directory ${workingDir} has no attributable run`,
+        workingDir,
+      })
+  }
+  return { resources, unattributable }
+}
+
+function classifyNetworkRows(networks: DockerNetwork[]): {
+  resources: DockerResource[]
+  unattributable: UnattributableDockerResource[]
+} {
+  const resources: DockerResource[] = []
+  const unattributable: UnattributableDockerResource[] = []
+  for (const network of networks) {
+    const runId =
+      network.runId ??
+      (network.composeProject ? orchRunId(network.composeProject) : null) ??
+      (network.workingDir ? orchRunId(network.workingDir) : null)
+    if (runId !== null)
+      resources.push({
+        kind: 'network',
+        name: network.name,
+        runId,
+        workingDir: network.workingDir,
+        composeProject: network.composeProject,
+      })
+    else if (network.workingDir?.includes('/.claude/worktrees/'))
+      unattributable.push({
+        kind: 'network',
+        name: network.name,
+        reason: `compose working directory ${network.workingDir} has no attributable run`,
+        workingDir: network.workingDir,
+      })
+  }
+  return { resources, unattributable }
+}
+
+function protectMainCheckoutResources(rows: DockerResource[], paths: string[]): DockerResource[] {
+  const mainPaths = new Set(paths.map((path) => resolve(path)))
+  const mainComposeProjects = new Set(
+    rows
+      .filter((row) => row.workingDir && mainPaths.has(resolve(row.workingDir)))
+      .flatMap((row) => (row.composeProject ? [row.composeProject] : [])),
+  )
+  return rows.map((row) => ({
+    ...row,
+    mainCheckout:
+      Boolean(row.workingDir && mainPaths.has(resolve(row.workingDir))) ||
+      Boolean(row.composeProject && mainComposeProjects.has(row.composeProject)),
+  }))
+}
+
+/** Inventory only resources created for orch run worktrees. Never mutates Docker. */
+export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInventory {
+  const rows: DockerResource[] = []
+  const unattributable: UnattributableDockerResource[] = []
   const configuredTimeout = dockerInventoryTimeoutMs()
   const explicitTimeout = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
   for (const kind of ['container', 'volume'] as const) {
@@ -139,12 +246,21 @@ export function dockerRunResources(): DockerInventory {
       found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
     }
     if (!found.ascertainable) return found
-    for (const row of found.rows) {
-      const parsed = dockerRunResource(row.name, row.labels)
-      if (parsed) resources.push({ kind, name: row.name, runId: parsed.runId })
-    }
+    const classified = classifyListedRows(kind, found.rows)
+    rows.push(...classified.resources)
+    unattributable.push(...classified.unattributable)
   }
-  return { ascertainable: true, resources }
+  const networks = dockerNetworkInventory()
+  if (!networks.ascertainable) return networks
+  const networkRows = classifyNetworkRows(networks.networks)
+  rows.push(...networkRows.resources)
+  unattributable.push(...networkRows.unattributable)
+  const resources = protectMainCheckoutResources(rows, mainCheckoutPaths)
+  return {
+    ascertainable: true,
+    resources,
+    ...(unattributable.length ? { unattributable } : {}),
+  }
 }
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
@@ -219,6 +335,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
         createdAt: row.Created ?? null,
         workingDir: row.Labels?.['com.docker.compose.project.working_dir'] ?? null,
         runId: runIdFromLabels(row.Labels) ?? orchRunId(row.Name),
+        composeProject: row.Labels?.['com.docker.compose.project'] ?? null,
       })),
     }
   } catch (error) {
@@ -253,6 +370,27 @@ export type DockerTeardown = {
   skipped: boolean
 }
 
+function removeDockerResource(resource: DockerResource): string | null {
+  const command = dockerRemovalCommand(resource)
+  let process: ReturnType<typeof Bun.spawnSync>
+  try {
+    process = Bun.spawnSync(command.split(' '), {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: dockerRemovalTimeoutMs(),
+    })
+  } catch (error) {
+    return `${command} failed: ${(error as Error).message}`
+  }
+  if (process.exitedDueToTimeout)
+    return `${command} failed: timed out after ${dockerRemovalTimeoutMs()}ms`
+  if (process.exitCode === 0) return null
+  const detail = process.stderr?.toString().trim() || `exit ${process.exitCode}`
+  return /no such (?:container|network|volume)/i.test(detail)
+    ? null
+    : `${command} failed: ${detail}`
+}
+
 export function teardownRunResources(
   runId: number,
   inventory = resourcesForRun(runId),
@@ -266,41 +404,26 @@ export function teardownRunResources(
     return { complete: false, errors, removed, skipped }
   }
 
-  // Volumes are durable evidence. The project's worktree removal owns their lifecycle.
-  for (const resource of inventory.resources.filter((item) => item.kind === 'container')) {
+  const ordered = ['container', 'network', 'volume'] as const
+  for (const resource of ordered.flatMap((kind) =>
+    inventory.resources.filter((item) => item.kind === kind),
+  )) {
     // Keep the identity check at the mutation boundary as well as in
     // resourcesForRun(): an inventory may be supplied or changed independently.
     if (resource.runId !== runId) continue
+    if (resource.mainCheckout) {
+      skipped = true
+      errors.push(`refused to remove main-checkout Docker resource ${resource.name}`)
+      continue
+    }
     if (!canRemove()) {
       skipped = true
       break
     }
-    const command = dockerRemovalCommand(resource)
-    let p: ReturnType<typeof Bun.spawnSync>
-    try {
-      p = Bun.spawnSync(command.split(' '), {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: dockerRemovalTimeoutMs(),
-      })
-    } catch (error) {
-      const detail = `${command} failed: ${(error as Error).message}`
+    const detail = removeDockerResource(resource)
+    if (detail) {
       errors.push(detail)
       console.error(`orch: ${detail}`)
-      continue
-    }
-    if (p.exitedDueToTimeout) {
-      const detail = `${command} failed: timed out after ${dockerRemovalTimeoutMs()}ms`
-      errors.push(detail)
-      console.error(`orch: ${detail}`)
-      continue
-    }
-    if (p.exitCode !== 0) {
-      const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
-      // A concurrent cleanup or a repeated teardown is successful idempotence.
-      if (/no such (?:container|volume)/i.test(detail)) continue
-      errors.push(`${command} failed: ${detail}`)
-      console.error(`orch: ${command} failed: ${detail}`)
       continue
     }
     removed += 1
@@ -361,7 +484,7 @@ export function leakedResourceLines(resources: DockerResource[], project: string
 }
 
 export function dockerRemovalCommand(resource: DockerResource): string {
-  return resource.kind === 'container'
-    ? `docker rm -f ${resource.name}`
-    : `docker volume rm ${resource.name}`
+  if (resource.kind === 'container') return `docker rm -f ${resource.name}`
+  if (resource.kind === 'network') return `docker network rm ${resource.name}`
+  return `docker volume rm ${resource.name}`
 }
