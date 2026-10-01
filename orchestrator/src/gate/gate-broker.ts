@@ -1,5 +1,5 @@
 // concern: worker gate broker
-/** Host-side execution of gate requests recorded by sandboxed writing workers. */
+/** Host-side execution of gate requests recorded by sandboxed repository workers. */
 
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs'
@@ -14,6 +14,7 @@ import { runArtifactsDir } from '../run/run-artifacts.ts'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
+  decideGateHeadCommit,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
   isGateToolingPath,
@@ -160,11 +161,23 @@ function startGateExecution(
         declaredConsumers: plan.mainStackConsumers,
         consumer: 'gate',
       })
-      command = resolveGateCommand(plan.command, mainCheckout)
+      command = resolveGateCommand(plan.command, plan.worktree)
       const toolingPaths = changedGateTooling(plan, record)
+      const headCommit = decideGateHeadCommit({
+        headCommit:
+          gitPaths(plan.worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])[0]?.trim() ?? '',
+        porcelainPaths: gitPaths(plan.worktree, [
+          'status',
+          '--porcelain',
+          '-z',
+          '--untracked-files=all',
+        ]),
+      })
       db()
-        .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE id=?')
-        .run(JSON.stringify(toolingPaths), command, request.id)
+        .query(
+          'UPDATE gate_execution SET tooling_paths=?,resolved_command=?,head_commit=? WHERE id=?',
+        )
+        .run(JSON.stringify(toolingPaths), command, headCommit, request.id)
       child = spawn('sh', ['-c', command], {
         cwd: plan.worktree,
         env: brokerGateEnvironment(workerGateEnvironment(process.env), process.env, environment),

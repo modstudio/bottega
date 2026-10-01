@@ -19,7 +19,7 @@ describe('codex worker shell environment', () => {
     expect(resumed.indexOf('project_doc_max_bytes=0')).toBeLessThan(resumed.indexOf('resume'))
   })
 
-  test('a flagged read-only run opens workspace-write network access for Docker', () => {
+  test('an explicit workspace-write network option reaches Codex', () => {
     const argv = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',

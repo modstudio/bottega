@@ -5,6 +5,7 @@ import {
   decideGateCancellation,
   decideGateConcurrency,
   decideGateEligibility,
+  decideGateHeadCommit,
   GATE_CLOSE_REASON,
   GATE_OUTPUT_TAIL_BYTES,
   isGateToolingPath,
@@ -31,12 +32,19 @@ test('broker gate environment adds host paths without exposing secrets and appli
   })
 })
 
-test('relative gate scripts resolve from main while PATH programs stay registered', () => {
-  expect(resolveGateCommand('scripts/gate --plain', '/projects/app')).toBe(
-    "'/projects/app/scripts/gate' --plain",
+test('relative gate scripts resolve from the run tree while PATH programs stay registered', () => {
+  expect(resolveGateCommand('scripts/gate --plain', '/runs/41/tree')).toBe(
+    "'/runs/41/tree/scripts/gate' --plain",
   )
-  expect(resolveGateCommand('./scripts/gate', '/projects/app')).toBe("'/projects/app/scripts/gate'")
-  expect(resolveGateCommand('bun run check', '/projects/app')).toBe('bun run check')
+  expect(resolveGateCommand('./scripts/gate', '/runs/41/tree')).toBe("'/runs/41/tree/scripts/gate'")
+  expect(resolveGateCommand('bun run check', '/runs/41/tree')).toBe('bun run check')
+})
+
+test('broker gate records HEAD only for a clean tree', () => {
+  const headCommit = 'a'.repeat(40)
+  expect(decideGateHeadCommit({ headCommit, porcelainPaths: [] })).toBe(headCommit)
+  expect(decideGateHeadCommit({ headCommit, porcelainPaths: [' M src/app.ts'] })).toBeNull()
+  expect(decideGateHeadCommit({ headCommit: '', porcelainPaths: [] })).toBeNull()
 })
 
 describe('worker gate eligibility', () => {

@@ -35,12 +35,6 @@ export type WorktreeTool = {
   readonly_provision?: ReadonlyProvision
   /** What a read-only worker is told this project's detached tree can and cannot run. */
   readonly_notes?: string
-  /**
-   * Read-only trees of this project may reach the Docker socket because the
-   * project's checks run inside its containers; the worker is told to run the
-   * project's gate and no other Docker verb.
-   */
-  readonly_docker?: boolean
   /** Optional teardown for readonly_create trees. Receives `{path}` only. */
   readonly_remove?: string
   /**

@@ -42,6 +42,7 @@ import {
   formatGateResult,
   shapeGateResult,
 } from '../gate/gate-decision.ts'
+import { formatRecordedGateResult, recordedGateResult } from '../gate/gate-result.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
@@ -155,6 +156,13 @@ function gateToolAvailable(runId: number, token: string): boolean {
   if (!authenticatedWorkerRun(runId, token)) return false
   const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
   return Boolean(row && JOBS[row.job]?.needs.writesRepo)
+}
+
+function gateResultToolAvailable(runId: number, token: string): boolean {
+  if (!authenticatedWorkerRun(runId, token)) return false
+  const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
+  const needs = row ? JOBS[row.job]?.needs : null
+  return Boolean(needs?.readsRepo && !needs.writesRepo)
 }
 
 async function requestGate(runId: number): Promise<string> {
@@ -412,6 +420,24 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
           return text(await requestGate(runId))
         } catch (error) {
           return text(`The registered gate could not be run (${String(error)}).`, true)
+        }
+      },
+    )
+  }
+
+  if (gateResultToolAvailable(runId, token)) {
+    server.registerTool(
+      'gate_result',
+      {
+        description:
+          'Read the most recent recorded gate result for the exact project commit under review. ' +
+          'This runs nothing and takes no input.',
+      },
+      async () => {
+        try {
+          return text(formatRecordedGateResult(recordedGateResult(runId)))
+        } catch (error) {
+          return text(`The recorded gate result could not be read (${String(error)}).`, true)
         }
       },
     )

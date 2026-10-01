@@ -464,9 +464,12 @@ function projectSpaceProblems(space: unknown): string[] {
     : []
 }
 
-function readonlyDockerProblems(value: unknown): string[] {
-  return value !== undefined && typeof value !== 'boolean'
-    ? ['worktree.readonly_docker must be a boolean']
+function retiredReadonlyDockerProblems(worktree: unknown): string[] {
+  if (!worktree || typeof worktree !== 'object' || Array.isArray(worktree)) return []
+  return Object.hasOwn(worktree, 'readonly_docker')
+    ? [
+        'worktree.readonly_docker is retired; remove it and read the recorded gate through gate_result',
+      ]
     : []
 }
 
@@ -603,7 +606,7 @@ export function validateProjectSettings(
       new Set(['path', 'base']),
     ),
     ...validateReadonlyProvision(settings.worktree?.readonly_provision),
-    ...readonlyDockerProblems(settings.worktree?.readonly_docker),
+    ...retiredReadonlyDockerProblems(settings.worktree),
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
     ...autonomyProblems(settings.autonomy),

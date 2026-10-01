@@ -60,8 +60,7 @@ export const READONLY_LENS_DENY_PATHS = [
 ] as const
 
 /**
- * Host-control sockets denied unless worktree.readonly_docker declares that the
- * project's checks only run in containers and the operator accepts host-equivalent access.
+ * Host-control sockets are denied for every read-only worker.
  */
 export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
@@ -143,20 +142,6 @@ function refuseProtectedOverlap(
   }
 }
 
-function dockerSocketPaths(environment: ConfigEnvironment): string[] {
-  const dockerHost = environment.DOCKER_HOST
-  if (dockerHost?.startsWith('unix://')) {
-    try {
-      return [resolve(new URL(dockerHost).pathname)]
-    } catch {
-      /* fall through to the standard socket paths */
-    }
-  }
-  return [...READONLY_LENS_DENY_SOCKETS, '~/.docker/run/docker.sock']
-    .map(expandHome)
-    .map((path) => resolve(path))
-}
-
 /**
  * Find dependency roots linked from the disposable checkout into its main
  * checkout. Only directory entries named node_modules are followed; arbitrary
@@ -210,7 +195,6 @@ export function readonlyLensProfile(input: {
   nodeModuleLinks?: string[]
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
-  allowDockerSocket?: boolean
 }): SandboxRuntimeConfig {
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
@@ -257,17 +241,14 @@ export function readonlyLensProfile(input: {
           ]),
         ],
         deniedDomains: [],
-        allowUnixSockets: input.allowDockerSocket ? dockerSocketPaths(environment) : [],
+        allowUnixSockets: [],
         // On macOS srt's one switch covers both binding and outbound loopback.
         // The per-run orch-ask listener uses an OS-assigned loopback port, so it
         // cannot be named in the static domain list before srt starts.
         allowLocalBinding: true,
       },
       filesystem: {
-        denyRead: [
-          ...protectedDenies,
-          ...(input.allowDockerSocket ? [] : READONLY_LENS_DENY_SOCKETS),
-        ],
+        denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
         allowWithinDeny,
         allowWrite: [...new Set([worktree, runsDir, ...(scratchDir ? [scratchDir] : [])])],
         denyWrite: [],
@@ -340,7 +321,6 @@ export function selectReadonlySandbox(input: {
   runsDir: string
   scratchDir?: string
   project: Project | null
-  readonlyDocker?: boolean
   override?: string
   path?: string
   localBaseUrl?: string
@@ -381,10 +361,7 @@ export function selectReadonlySandbox(input: {
   }
   return {
     sandbox: 'srt',
-    reason:
-      input.readsRepo && input.readonlyDocker
-        ? 'project worktree.readonly_docker allows the Docker socket; every other read-only confinement holds'
-        : null,
+    reason: null,
     profile: readonlyLensProfile({
       worktree: input.worktree,
       runsDir: input.runsDir,
@@ -394,7 +371,6 @@ export function selectReadonlySandbox(input: {
       path: input.path,
       localBaseUrl: input.localBaseUrl,
       mcpAllowlist: input.mcpAllowlist,
-      allowDockerSocket: input.readsRepo && input.readonlyDocker,
       environment: input.environment,
     }),
   }
