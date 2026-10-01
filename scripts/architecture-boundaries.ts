@@ -628,6 +628,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-auth.ts',
       './record-docs.ts',
       './record-projects.ts',
+      './record-release-check.ts',
       './record-reviews.ts',
       './record-runs.ts',
       './record-snapshots.ts',

@@ -42,6 +42,7 @@ import {
   upsertRecordDoc,
 } from './record-docs.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
+import { recordReleaseCheck } from './record-release-check.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
@@ -171,4 +172,15 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
   })
 }
 
-if (import.meta.main) startRecordApiServer()
+if (import.meta.main) {
+  if (process.argv[2] === 'release-check') {
+    try {
+      await recordReleaseCheck('api')
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
+      process.exitCode = 1
+    }
+  } else {
+    startRecordApiServer()
+  }
+}

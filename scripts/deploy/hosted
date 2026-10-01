@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Migrate the hosted record, confirm the image's schema, and deploy one public app.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+APP="${1:-}"
+
+case "$APP" in
+  api|hub) ;;
+  *)
+    echo "REFUSE: expected api or hub; use scripts/deploy/hosted <api|hub>" >&2
+    exit 1
+    ;;
+esac
+
+if (( $# != 1 )); then
+  echo "REFUSE: expected exactly one app; use scripts/deploy/hosted <api|hub>" >&2
+  exit 1
+fi
+
+if [[ -z "${ORCH_RECORD_MIGRATE_URL:-}" ]]; then
+  echo "REFUSE: ORCH_RECORD_MIGRATE_URL is unset; its owner is ~/.claude/.env" >&2
+  exit 1
+fi
+
+if ! command -v fly >/dev/null 2>&1; then
+  echo "REFUSE: fly is unavailable; install or expose the Fly CLI before deploying" >&2
+  exit 1
+fi
+
+cd "$PROJECT_ROOT"
+
+if ! "$PROJECT_ROOT/bin/orch" record migrate; then
+  echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
+  exit 1
+fi
+
+if [[ "$APP" == "api" ]]; then
+  exec fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
+fi
+
+exec fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
+  --build-arg VITE_HUB_MODE=hosted \
+  --build-arg VITE_RECORD_API_URL=https://api.bottega.run

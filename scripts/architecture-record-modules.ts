@@ -42,6 +42,11 @@ export const recordModules: RecordModule[] = [
     './record-tunnel-error.ts',
   ]),
   module('orchestrator/src/record/record-tunnel-error.ts', []),
+  module('orchestrator/src/record/record-release-check.ts', [
+    '../postgres/postgres-migrate.ts',
+    './record-release-decision.ts',
+  ]),
+  module('orchestrator/src/record/record-release-decision.ts', []),
   module('orchestrator/src/record/record-attribution.ts', [
     'bun:sqlite',
     '../database/db.ts',

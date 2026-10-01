@@ -823,14 +823,13 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(result.stderr).toContain('permission denied for schema public')
   })
 
-  test('record actor cannot read Drizzle migration metadata', () => {
-    const result = psql(
+  test('record actor can only read Drizzle migration metadata', () => {
+    const result = succeeds(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      'SELECT count(*) FROM drizzle.__drizzle_migrations;',
+      `SELECT count(*), has_table_privilege(current_user, 'drizzle.__drizzle_migrations', 'SELECT'), has_table_privilege(current_user, 'drizzle.__drizzle_migrations', 'INSERT'), has_table_privilege(current_user, 'drizzle.__drizzle_migrations', 'UPDATE'), has_table_privilege(current_user, 'drizzle.__drizzle_migrations', 'DELETE') FROM drizzle.__drizzle_migrations;`,
     )
-    expect(result.code).not.toBe(0)
-    expect(result.stderr).toContain('permission denied for schema drizzle')
+    expect(result).toMatch(/^\d+\|t\|f\|f\|f$/)
   })
 
   test('PUBLIC has no table privilege', () => {

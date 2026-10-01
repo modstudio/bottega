@@ -17,14 +17,18 @@ fly secrets set -a bottega-hub \
   SES_FROM_ADDRESS='<display name and verified sender address>' \
   SES_ACCESS_KEY_ID='<access-key-id>' \
   SES_SECRET_ACCESS_KEY='<secret-access-key>'
-fly deploy --config hub/deploy/fly.toml \
-  --build-arg VITE_HUB_MODE=hosted \
-  --build-arg VITE_RECORD_API_URL='https://api.bottega.run'
+scripts/deploy/hosted hub
 fly ips allocate-v4 --shared -a bottega-hub
 fly ips allocate-v6 -a bottega-hub
 fly certs add app.bottega.run -a bottega-hub
 fly certs add next.bottega.run -a bottega-hub
 ```
+
+The deploy script preserves the hosted web build arguments. It reads
+`ORCH_RECORD_MIGRATE_URL` from the environment, migrates the record, and confirms that applied
+migrations equal those shipped in the image before invoking Fly. The image's release command
+uses its low-privilege `HUB_RECORD_DATABASE_URL` and refuses a release with pending migrations,
+so a bare `fly deploy` cannot run ahead of the record schema.
 
 On the record API app, allow the hub origin and share the parent cookie domain:
 

@@ -4,6 +4,9 @@ primary_region = "ewr"
 [build]
   dockerfile = "Dockerfile"
 
+[deploy]
+  release_command = "bun orchestrator/src/record/record-api-server.ts release-check"
+
 [http_service]
   internal_port = 3000
   force_https = true
