@@ -91,7 +91,7 @@ describe('job contracts are visible before submission', () => {
     expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
     expect(WORKER_PREAMBLE).toContain("reply's tests section")
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
-    expect(READONLY_PREAMBLE).toContain('Call `gate_result`')
+    expect(READONLY_PREAMBLE).toContain('Call the `gate_result` tool on the `orch-ask` MCP server')
     expect(READONLY_PREAMBLE).toContain('Never\nrun Docker or `scripts/gate` yourself')
     expect(READONLY_PREAMBLE).toContain('`could_not_verify`')
     expect(NO_REPO_PREAMBLE).not.toContain('run_gate')
