@@ -52,6 +52,7 @@ import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
+import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
 
 export type SweepOptions = {
   dryRun: boolean
@@ -564,6 +565,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   sweepTerminalRunLeases(dry)
   for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
   cleanupFailed ||= recordedState.cleanupFailed
+
+  const strayCleanupFailed = sweepStrayWorktreeDirectories({
+    projects: sweepProjects,
+    database: db(),
+    dryRun: dry,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= strayCleanupFailed
 
   /**
    * DATABASE ROWS ARE NOT AN INVENTORY OF WHAT IS ON DISK.

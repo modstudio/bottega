@@ -61,6 +61,7 @@ import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
+import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import type {
   AddressedMonitorCondition,
   HumanMonitorCondition,
@@ -76,6 +77,46 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
+
+function worktreesWithoutLiveRuns(input: {
+  project: { name: string; path: string }
+  reclaimProject: { name: string } | null
+  database: ReturnType<typeof db>
+  clock: number
+}): MonitorCondition[] {
+  const root = join(input.project.path, '.claude', 'worktrees')
+  if (!existsSync(root)) return []
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    if (!entry.isDirectory() || !existsSync(join(root, entry.name, '.git'))) return []
+    const path = realpathSync(join(root, entry.name))
+    const live = input.database
+      .query(`SELECT 1 FROM run WHERE worktree=? AND status IN ('running','asking') LIMIT 1`)
+      .get(path)
+    if (live) return []
+    let action: string
+    if (input.reclaimProject?.name !== input.project.name) {
+      action = `reported; reclaim refused by monitor scope: ${input.project.name} is outside invoked project ${input.reclaimProject?.name ?? 'unknown'}`
+    } else {
+      try {
+        action = reclaimWorktree(path, { clock: input.clock, dryRun: true }).action
+      } catch (cause) {
+        action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`
+      }
+    }
+    const since = new Date(statSync(path).mtimeMs).toISOString()
+    return [
+      {
+        kind: 'worktree-without-live-run',
+        subject: path,
+        since,
+        ageMs: age(since, input.clock),
+        detail: `${input.project.name} worktree has no running or asking run`,
+        action,
+        affectedProject: input.project.name,
+      },
+    ]
+  })
+}
 
 function retainedDockerResourceAction(
   owner: {
@@ -390,6 +431,14 @@ export async function monitor(
     } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
 
+  const strayWorktrees = strayWorktreeConditions({
+    projects: projects().filter(isProjectRepository),
+    database,
+    clock,
+  })
+  conditions.push(...strayWorktrees.conditions)
+  errors.push(...strayWorktrees.errors)
+
   const asking = askingRuns(database)
   for (const run of asking)
     add({
@@ -548,36 +597,7 @@ export async function monitor(
       )
     }
 
-    const root = join(project.path, '.claude', 'worktrees')
-    if (existsSync(root))
-      for (const entry of readdirSync(root, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue
-        const path = realpathSync(join(root, entry.name))
-        const live = database
-          .query(`SELECT 1 FROM run WHERE worktree=? AND status IN ('running','asking') LIMIT 1`)
-          .get(path)
-        const since = new Date(statSync(path).mtimeMs).toISOString()
-        if (!live) {
-          let action: string
-          if (reclaimProject?.name !== project.name) {
-            action = `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
-          } else {
-            try {
-              action = reclaimWorktree(path, { clock, dryRun: true }).action
-            } catch (cause) {
-              action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`
-            }
-          }
-          add({
-            kind: 'worktree-without-live-run',
-            subject: path,
-            since,
-            detail: `${project.name} worktree has no running or asking run`,
-            action,
-            affectedProject: project.name,
-          })
-        }
-      }
+    conditions.push(...worktreesWithoutLiveRuns({ project, reclaimProject, database, clock }))
 
     const heldTrees = database
       .query(
