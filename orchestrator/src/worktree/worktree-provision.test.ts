@@ -14,7 +14,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  assertInstallTargetSafe,
   decideProvision,
+  decideProvisionGroup,
+  installEnvironment,
   provisionWorktree,
   validateReadonlyProvision,
 } from './worktree-provision.ts'
@@ -87,6 +90,103 @@ test('provision decision fails only a missing required source', () => {
   expect(decideProvision({ path: 'vendor', method: 'clone', required: true }, false)).toBe('fail')
 })
 
+test('lockfile group decision provisions equal content and installs changed or absent source content', () => {
+  const entries = [
+    {
+      path: 'node_modules',
+      method: 'link' as const,
+      lockfile: 'bun.lock',
+      install: 'bun install --frozen-lockfile',
+    },
+  ]
+
+  expect(decideProvisionGroup(entries, 'same', 'same')).toEqual({
+    action: 'provision',
+    entries,
+  })
+  expect(decideProvisionGroup(entries, 'branch', 'main')).toEqual({
+    action: 'install',
+    entries: [{ ...entries[0]!, method: 'clone' }],
+  })
+  expect(decideProvisionGroup(entries, 'branch', null)).toEqual({
+    action: 'install',
+    entries: [{ ...entries[0]!, method: 'clone' }],
+  })
+  expect(
+    decideProvisionGroup(entries, 'branch', 'main').entries.some(
+      (entry) => entry.method === 'link',
+    ),
+  ).toBeFalse()
+})
+
+test('install environment keeps only ordinary process context', () => {
+  expect(
+    installEnvironment({
+      PATH: '/bin',
+      HOME: '/home/reader',
+      TMPDIR: '/tmp/reader',
+      LANG: 'en_US.UTF-8',
+      TERM: 'xterm-256color',
+      ORCH_DB: '/state/orch.db',
+      ORCH_RUN_TOKEN: 'run-token',
+      HUB_HOSTED_URL: 'https://hub.example',
+      SSH_AUTH_SOCK: '/tmp/agent.sock',
+      API_TOKEN: 'api-token',
+      CLIENT_SECRET: 'client-secret',
+      DB_PASSWORD: 'password',
+      SIGNING_KEY: 'key',
+      CLOUD_CREDENTIAL: 'credential',
+      USER: 'reader',
+    }),
+  ).toEqual({
+    PATH: '/bin',
+    HOME: '/home/reader',
+    TMPDIR: '/tmp/reader',
+    LANG: 'en_US.UTF-8',
+    TERM: 'xterm-256color',
+    USER: 'reader',
+  })
+  expect(
+    installEnvironment({
+      PATH: '/bin',
+      HOME: undefined,
+      orch_db: '/state/orch.db',
+      accessToken: 'token',
+    }),
+  ).toEqual({ PATH: '/bin' })
+})
+
+test('install target safety refuses a checked-in symlink even when it points inside the tree', () => {
+  const { tree } = fixture()
+  mkdirSync(join(tree, 'checked-in'))
+  symlinkSync('checked-in', join(tree, 'node_modules'))
+
+  expect(() =>
+    assertInstallTargetSafe(tree, {
+      path: 'node_modules',
+      method: 'clone',
+      lockfile: 'bun.lock',
+      install: 'bun install --frozen-lockfile',
+    }),
+  ).toThrow('install-mode provision "node_modules" target is a symlink')
+})
+
+test('install target safety refuses a target whose real path leaves the tree', () => {
+  const { tree } = fixture()
+  const outside = join(tree, '..', 'outside-install-target')
+  mkdirSync(join(outside, 'node_modules'), { recursive: true })
+  symlinkSync(outside, join(tree, 'packages'))
+
+  expect(() =>
+    assertInstallTargetSafe(tree, {
+      path: 'packages/node_modules',
+      method: 'clone',
+      lockfile: 'bun.lock',
+      install: 'bun install --frozen-lockfile',
+    }),
+  ).toThrow('install-mode provision "packages/node_modules" target resolves outside the tree')
+})
+
 test('missing required source names the entry, source, and remedy', () => {
   const { main, tree } = fixture()
   expect(() =>
@@ -139,6 +239,41 @@ test('validation refuses malformed readonly provision declarations', () => {
   expect(validateReadonlyProvision([{ path: 'vendor', method: 'clone', required: 'yes' }])).toEqual(
     ['worktree.readonly_provision required must be a boolean'],
   )
+})
+
+test('validation requires each lockfile group to agree on its install command', () => {
+  expect(
+    validateReadonlyProvision([
+      {
+        path: 'node_modules',
+        method: 'link',
+        lockfile: 'bun.lock',
+        install: 'bun install --frozen-lockfile',
+      },
+      {
+        path: 'packages/app/node_modules',
+        method: 'clone',
+        lockfile: 'bun.lock',
+        install: 'bun install',
+      },
+    ]),
+  ).toEqual(['worktree.readonly_provision entries for lockfile "bun.lock" must agree on install'])
+  expect(
+    validateReadonlyProvision([
+      {
+        path: 'node_modules',
+        method: 'link',
+        lockfile: 'bun.lock',
+        install: 'bun install --frozen-lockfile',
+      },
+      {
+        path: 'vendor',
+        method: 'clone',
+        lockfile: 'composer.lock',
+        install: 'composer install',
+      },
+    ]),
+  ).toEqual([])
 })
 
 test('a path through a symlinked ancestor that leaves the tree is refused and creates nothing outside', () => {

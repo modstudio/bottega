@@ -716,6 +716,7 @@ export async function run(opts: {
     mcpMode,
     declaredDeliverables,
     timeoutMinutes,
+    timeoutMs: boundMs,
     forbidsRepo,
     reviewTarget,
     coverageBase,

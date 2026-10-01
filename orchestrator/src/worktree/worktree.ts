@@ -58,6 +58,7 @@ export type CreateWorkerWorktreeOptions = {
   claimRecipePort?: ClaimRecipePort
   templateBaseRef?: string
   mainStackConsumers?: MainStackConsumer[]
+  provisionTimeoutMs?: number
 }
 
 /** Create the worker tree through the project lifecycle or Git fallback. */
@@ -77,6 +78,7 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
           options.readOnlyBase,
           options.record,
           options.tool?.readonly_provision,
+          options.provisionTimeoutMs,
         )
   }
   ensureMainStackStarted({

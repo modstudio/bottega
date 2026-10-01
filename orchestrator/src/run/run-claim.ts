@@ -12,7 +12,6 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import type { TaskBranchCandidate } from '../branch/task-branch.ts'
-import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -84,16 +83,9 @@ import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
+import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
 import { prepareClaimedGrokMcpScope } from './run-worker-home.ts'
-
-function taskBranchResolution(
-  supplied: TaskBranchCandidate | null | undefined,
-  callerCwd: string,
-  key: string,
-): TaskBranchCandidate | null {
-  return supplied !== undefined ? supplied : resolveCompatibleTaskBranch(callerCwd, key)
-}
 
 type ClaimOptions = {
   reserveId?: number
@@ -143,6 +135,7 @@ export type ClaimInput = {
   mcpMode: McpMode | null
   declaredDeliverables: string[]
   timeoutMinutes: number | undefined
+  timeoutMs: number
   forbidsRepo: boolean
   reviewTarget: { branch: string; commit: string; base: string } | null
   coverageBase: string | null
@@ -208,6 +201,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     mcpMode,
     declaredDeliverables,
     timeoutMinutes,
+    timeoutMs,
     forbidsRepo,
     reviewTarget,
     coverageBase,
@@ -711,6 +705,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             recordRecipeResource,
             claimRecipePort: claimRecipeServePort,
             mainStackConsumers: projectAt(callerCwd)?.settings.mainStack?.consumers,
+            provisionTimeoutMs: timeoutMs,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
