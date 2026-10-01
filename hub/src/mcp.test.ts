@@ -16,7 +16,11 @@ describe('Mcp tool discovery', () => {
       if (message.method === 'notifications/initialized') return new Response(null)
       const result =
         message.method === 'initialize'
-          ? { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: {} }
+          ? {
+              protocolVersion: '2025-11-25',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'fixture', version: '1' },
+            }
           : {
               tools: [
                 {
@@ -53,20 +57,26 @@ describe('Mcp tool discovery', () => {
       return Response.json({
         jsonrpc: '2.0',
         id: message.id,
-        result: { protocolVersion: '2026-07-28', capabilities: {}, serverInfo: {} },
+        result: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          serverInfo: { name: 'fixture', version: '1' },
+        },
       })
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 30_000, null, '2026-07-28')
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 30_000, null, '2025-06-18')
 
     await client.initialize()
 
-    expect(requestedProtocolVersion).toBe('2026-07-28')
+    expect(requestedProtocolVersion).toBe('2025-06-18')
   })
 
   test('observes protocol and transport metadata without response content', async () => {
     const exchanges: McpExchange[] = []
+    const authorizations: (string | null)[] = []
     globalThis.fetch = (async (_input, init) => {
       const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      authorizations.push(new Headers(init?.headers).get('authorization'))
       const headers = new Headers({
         'content-type': 'application/json',
         'mcp-protocol-version': '2025-06-18',
@@ -74,7 +84,11 @@ describe('Mcp tool discovery', () => {
       })
       const result =
         message.method === 'initialize'
-          ? { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {} }
+          ? {
+              protocolVersion: '2025-06-18',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'fixture', version: '1' },
+            }
           : { content: [{ type: 'text', text: '{"private":"response"}' }] }
       return Response.json({ jsonrpc: '2.0', id: message.id, result }, { headers })
     }) as typeof fetch
@@ -104,6 +118,7 @@ describe('Mcp tool discovery', () => {
       answeredProtocolVersion: '2025-06-18',
     })
     expect(exchanges[1]?.request.mcpSessionIdPresent).toBe(true)
+    expect(authorizations.at(-1)).toBe('Bearer must-not-be-recorded')
     expect(JSON.stringify(exchanges)).not.toContain('must-not-be-recorded')
     expect(JSON.stringify(exchanges)).not.toContain('private')
   })
@@ -153,5 +168,211 @@ describe('Mcp tool discovery', () => {
     ])
     expect(failure).not.toContain('must-not-be-recorded')
     expect(JSON.stringify(exchanges)).not.toContain('must-not-be-recorded')
+  })
+
+  test('maps HTTP and protocol failures to condition-named McpError messages', async () => {
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      if (message.method === 'initialize') {
+        return Response.json({
+          jsonrpc: '2.0',
+          id: message.id,
+          result: {
+            protocolVersion: '2025-11-25',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'fixture', version: '1' },
+          },
+        })
+      }
+      if (message.method === 'notifications/initialized') return new Response(null)
+      if (message.method === 'tools/list') {
+        return Response.json({
+          jsonrpc: '2.0',
+          id: message.id,
+          error: { code: -32_601, message: 'fixture protocol failure' },
+        })
+      }
+      return new Response('fixture transport failure', { status: 503 })
+    }) as typeof fetch
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+
+    await client.initialize()
+    await expect(client.listTools()).rejects.toThrow(
+      'tools/list: {"code":-32601,"message":"fixture protocol failure"}',
+    )
+    await expect(client.callTool('read-only', {})).rejects.toThrow(
+      'HTTP 503: fixture transport failure',
+    )
+  })
+
+  test('closes the standalone response stream and terminates the session', async () => {
+    let openStreams = 0
+    let terminatedSessions = 0
+    let markStreamStarted: () => void = () => {}
+    const streamStarted = new Promise<void>((resolve) => {
+      markStreamStarted = resolve
+    })
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === 'GET') {
+        openStreams++
+        const signal = init.signal
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              signal?.addEventListener(
+                'abort',
+                () => {
+                  openStreams--
+                  controller.error(signal.reason)
+                },
+                { once: true },
+              )
+              markStreamStarted()
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      if (init?.method === 'DELETE') {
+        terminatedSessions++
+        return new Response(null)
+      }
+
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      if (message.method === 'notifications/initialized') return new Response(null, { status: 202 })
+      const result =
+        message.method === 'initialize'
+          ? {
+              protocolVersion: '2025-11-25',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'fixture', version: '1' },
+            }
+          : { content: [{ type: 'text', text: '{}' }] }
+      return Response.json(
+        { jsonrpc: '2.0', id: message.id, result },
+        message.method === 'initialize'
+          ? { headers: { 'mcp-session-id': 'fixture-session' } }
+          : undefined,
+      )
+    }) as typeof fetch
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+
+    await client.initialize()
+    await streamStarted
+    await client.callTool('read-only', {})
+    expect(openStreams).toBe(1)
+
+    await client.close()
+
+    expect(openStreams).toBe(0)
+    expect(terminatedSessions).toBe(1)
+  })
+
+  test('keeps the standalone response stream open past the request timeout until close', async () => {
+    let openStreams = 0
+    let markStreamStarted: () => void = () => {}
+    const streamStarted = new Promise<void>((resolve) => {
+      markStreamStarted = resolve
+    })
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === 'GET') {
+        openStreams++
+        const signal = init.signal
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              signal?.addEventListener(
+                'abort',
+                () => {
+                  openStreams--
+                  controller.error(signal.reason)
+                },
+                { once: true },
+              )
+              markStreamStarted()
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      if (init?.method === 'DELETE') return new Response(null)
+
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      if (message.method === 'notifications/initialized') return new Response(null, { status: 202 })
+      return Response.json(
+        {
+          jsonrpc: '2.0',
+          id: message.id,
+          result: {
+            protocolVersion: '2025-11-25',
+            capabilities: {},
+            serverInfo: { name: 'fixture', version: '1' },
+          },
+        },
+        { headers: { 'mcp-session-id': 'fixture-session' } },
+      )
+    }) as typeof fetch
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 10)
+
+    await client.initialize()
+    await streamStarted
+    await Bun.sleep(30)
+
+    expect(openStreams).toBe(1)
+    await client.close()
+    expect(openStreams).toBe(0)
+  })
+
+  test('closes the client without throwing when session termination fails', async () => {
+    let openStreams = 0
+    let markStreamStarted: () => void = () => {}
+    const streamStarted = new Promise<void>((resolve) => {
+      markStreamStarted = resolve
+    })
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === 'GET') {
+        openStreams++
+        const signal = init.signal
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              signal?.addEventListener(
+                'abort',
+                () => {
+                  openStreams--
+                  controller.error(signal.reason)
+                },
+                { once: true },
+              )
+              markStreamStarted()
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      if (init?.method === 'DELETE') return new Response('fixture failure', { status: 503 })
+
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      if (message.method === 'notifications/initialized') return new Response(null, { status: 202 })
+      return Response.json(
+        {
+          jsonrpc: '2.0',
+          id: message.id,
+          result: {
+            protocolVersion: '2025-11-25',
+            capabilities: {},
+            serverInfo: { name: 'fixture', version: '1' },
+          },
+        },
+        { headers: { 'mcp-session-id': 'fixture-session' } },
+      )
+    }) as typeof fetch
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+
+    await client.initialize()
+    await streamStarted
+
+    await expect(client.close()).resolves.toBeUndefined()
+    expect(openStreams).toBe(0)
   })
 })

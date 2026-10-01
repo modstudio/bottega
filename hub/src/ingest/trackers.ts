@@ -596,42 +596,46 @@ export async function ingestTrackers(
         }
         try {
           const m = new Mcp(creds.url, creds.token)
-          await m.initialize()
-          const tasks = await fetchTrackerTasks(s, m)
+          try {
+            await m.initialize()
+            const tasks = await fetchTrackerTasks(s, m)
 
-          // One row per key. A key can arrive twice in a pass - once from the sync
-          // and once from the vanished lookup - and writing both compares the second
-          // against a `before` that the first already superseded, recording a
-          // transition that did not happen. Last wins: the lookup is the fresher read.
-          const unique = new Map(tasks.map((t) => [t.key, t]))
-          let activity = [...unique.values()].some((t) => {
-            const identity = trackerTaskLabel(t.project, t.key)
-            return !local.has(identity) && differs(t, existing.get(identity))
-          })
+            // One row per key. A key can arrive twice in a pass - once from the sync
+            // and once from the vanished lookup - and writing both compares the second
+            // against a `before` that the first already superseded, recording a
+            // transition that did not happen. Last wins: the lookup is the fresher read.
+            const unique = new Map(tasks.map((t) => [t.key, t]))
+            let activity = [...unique.values()].some((t) => {
+              const identity = trackerTaskLabel(t.project, t.key)
+              return !local.has(identity) && differs(t, existing.get(identity))
+            })
 
-          const changed = writeTrackerCache(unique.values(), before, local, at)
-          const mirrorError = await mirrorTrackerSnapshot(
-            mirror,
-            [...unique.values()],
-            local,
-            before,
-            at,
-          )
+            const changed = writeTrackerCache(unique.values(), before, local, at)
+            const mirrorError = await mirrorTrackerSnapshot(
+              mirror,
+              [...unique.values()],
+              local,
+              before,
+              at,
+            )
 
-          // Use the connection which already proved reachable for the handful of
-          // closed tasks recent work names. A failed full sync is not immediately
-          // retried here: that doubled traffic precisely when a server was down.
-          const backfill = await backfillTrackerTasks(mirror, s, m, missing, local, existing, at)
-          activity ||= backfill.activity
-          return {
-            result: {
-              project: s.project,
-              tasks: unique.size,
-              changed,
-              activity,
-              ...(mirrorError ? { error: `hosted mirror skipped: ${mirrorError.message}` } : {}),
-            },
-            filled: backfill.filled,
+            // Use the connection which already proved reachable for the handful of
+            // closed tasks recent work names. A failed full sync is not immediately
+            // retried here: that doubled traffic precisely when a server was down.
+            const backfill = await backfillTrackerTasks(mirror, s, m, missing, local, existing, at)
+            activity ||= backfill.activity
+            return {
+              result: {
+                project: s.project,
+                tasks: unique.size,
+                changed,
+                activity,
+                ...(mirrorError ? { error: `hosted mirror skipped: ${mirrorError.message}` } : {}),
+              },
+              filled: backfill.filled,
+            }
+          } finally {
+            await m.close()
           }
         } catch (e) {
           // One unreachable tracker must not take the collect down: the other

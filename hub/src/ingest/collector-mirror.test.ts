@@ -57,6 +57,7 @@ mock.module('../mcp.ts', () => ({
       this.url = url
     }
     async initialize() {}
+    async close() {}
     async callTool() {
       const stopal = this.url.includes('stopal')
       const prefix = stopal ? 'STO' : 'ALP'
