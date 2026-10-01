@@ -197,13 +197,13 @@ export type LiveResult = {
 }
 
 function startWorkerGateBroker(input: {
-  writesJob: boolean
+  repoJob: boolean
   worktree: Worktree | null
   runId: number
   scratchDir: string
   environment: Record<string, string>
 }): GateBroker | null {
-  if (!input.writesJob || !input.worktree) return null
+  if (!input.repoJob || !input.worktree) return null
   return startGateBroker({
     runId: input.runId,
     scratchDir: input.scratchDir,
@@ -310,7 +310,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       askLoopback = await startAskLoopback(claim.id, runToken)
     }
     gateBroker = startWorkerGateBroker({
-      writesJob,
+      repoJob,
       worktree,
       runId: claim.id,
       scratchDir,

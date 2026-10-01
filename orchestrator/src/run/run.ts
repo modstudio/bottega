@@ -104,7 +104,7 @@ import {
 } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
-import { codexAcpReadonlyDockerRefusal, decideCodexSandbox } from './run-codex-sandbox.ts'
+import { decideCodexSandbox } from './run-codex-sandbox.ts'
 import { workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
@@ -144,12 +144,6 @@ function requiredRunLease(
     failed(cause)
     throw cause
   }
-}
-
-function throwPreclaimRefusal(refusal: string | null, reserveId: number | undefined): void {
-  if (!refusal) return
-  if (reserveId) db().query('DELETE FROM run WHERE id=?').run(reserveId)
-  throw new Error(refusal)
 }
 
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
@@ -549,10 +543,7 @@ export async function run(opts: {
   const { agent: name, reason } = launch
   const harnessName = workerHarnessName(a)
   const codexSandboxFacts = {
-    agentIsCodex: name === 'codex',
     readsRepo: repoJob,
-    writesRepo: writesJob,
-    readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
   }
   const codexSandbox = decideCodexSandbox(codexSandboxFacts)
   let boundMs: number
@@ -575,12 +566,6 @@ export async function run(opts: {
     prompt =
       split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
   }
-  const transportRefusal = codexAcpReadonlyDockerRefusal({
-    ...codexSandboxFacts,
-    transport: transportName,
-    projectName: runProjectName ?? 'unknown',
-  })
-  throwPreclaimRefusal(transportRefusal, opts.reserveId)
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, name, a)
@@ -774,7 +759,6 @@ export async function run(opts: {
       runsDir: sandboxRunDir,
       scratchDir,
       project: projectAt(callerCwd),
-      readonlyDocker: registeredWorktreeTool?.readonly_docker === true,
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: modelHostUrl(),

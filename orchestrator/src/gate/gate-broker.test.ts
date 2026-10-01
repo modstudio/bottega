@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -26,7 +26,7 @@ async function waitForFinishedGate(id: number): Promise<void> {
   throw new Error(`gate execution ${id} did not finish`)
 }
 
-test("a rebased worker records only the worker's gate tooling changes", async () => {
+test("a rebased writer runs the gate from its tree and records only a clean tree's HEAD", async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-'))
   const repository = join(root, 'repository')
   const scratch = join(root, 'scratch')
@@ -35,18 +35,19 @@ test("a rebased worker records only the worker's gate tooling changes", async ()
   git(repository, 'config', 'user.name', 'Fixture')
   git(repository, 'config', 'user.email', 'fixture@example.test')
 
+  mkdirSync(join(repository, 'scripts'))
+  writeFileSync(join(repository, 'scripts', 'gate'), '#!/bin/sh\nexit 0\n')
+  chmodSync(join(repository, 'scripts', 'gate'), 0o755)
   writeFileSync(join(repository, 'README.md'), 'base\n')
-  git(repository, 'add', 'README.md')
+  git(repository, 'add', 'README.md', 'scripts/gate')
   git(repository, 'commit', '-m', 'base')
   const recordedBase = git(repository, 'rev-parse', 'HEAD')
 
-  mkdirSync(join(repository, 'scripts'))
   writeFileSync(join(repository, 'scripts', 'trunk.ts'), 'export const trunk = true\n')
   git(repository, 'add', 'scripts/trunk.ts')
   git(repository, 'commit', '-m', 'trunk tooling')
 
   git(repository, 'switch', '-c', 'worker', recordedBase)
-  mkdirSync(join(repository, 'scripts'))
   writeFileSync(join(repository, 'scripts', 'worker.ts'), 'export const worker = true\n')
   git(repository, 'add', 'scripts/worker.ts')
   git(repository, 'commit', '-m', 'worker tooling')
@@ -59,7 +60,7 @@ test("a rebased worker records only the worker's gate tooling changes", async ()
         'gate-broker-fixture',
         repository,
         'bun',
-        JSON.stringify({ gate: 'true', trunk: 'main' }),
+        JSON.stringify({ gate: 'scripts/gate', trunk: 'main' }),
       ) as {
       id: number
     }
@@ -68,8 +69,8 @@ test("a rebased worker records only the worker's gate tooling changes", async ()
     db()
       .query(
         `INSERT INTO run
-          (started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit)
-         VALUES (?,?,?,?,?,1,'fixture','running',?,?) RETURNING id`,
+          (started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES (?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
       )
       .get(
         new Date().toISOString(),
@@ -79,6 +80,7 @@ test("a rebased worker records only the worker's gate tooling changes", async ()
         'sha',
         repository,
         recordedBase,
+        git(repository, 'rev-parse', 'HEAD'),
       ) as {
       id: number
     }
@@ -92,7 +94,7 @@ test("a rebased worker records only the worker's gate tooling changes", async ()
   const broker = startGateBroker({
     runId,
     scratchDir: scratch,
-    environment: { ORCH_MAIN_CHECKOUT: repository },
+    environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
   })
   try {
     await waitForFinishedGate(gateId)
@@ -103,6 +105,35 @@ test("a rebased worker records only the worker's gate tooling changes", async ()
         }
       ).tooling_paths,
     ).toBe('["scripts/worker.ts"]')
+    expect(
+      (
+        db().query('SELECT resolved_command FROM gate_execution WHERE id=?').get(gateId) as {
+          resolved_command: string
+        }
+      ).resolved_command,
+    ).toBe(`'${join(repository, 'scripts', 'gate')}'`)
+    expect(
+      (
+        db().query('SELECT head_commit FROM gate_execution WHERE id=?').get(gateId) as {
+          head_commit: string | null
+        }
+      ).head_commit,
+    ).toBe(git(repository, 'rev-parse', 'HEAD'))
+
+    writeFileSync(join(repository, 'README.md'), 'dirty\n')
+    const dirtyGateId = (
+      db()
+        .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+        .get(runId, new Date().toISOString()) as { id: number }
+    ).id
+    await waitForFinishedGate(dirtyGateId)
+    expect(
+      (
+        db().query('SELECT head_commit FROM gate_execution WHERE id=?').get(dirtyGateId) as {
+          head_commit: string | null
+        }
+      ).head_commit,
+    ).toBeNull()
   } finally {
     await broker.close()
     rmSync(root, { recursive: true, force: true })

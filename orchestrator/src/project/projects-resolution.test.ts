@@ -111,13 +111,16 @@ describe('projects are data, not code', () => {
     ).toContain('checks must be an object')
   })
 
-  test('readonly_docker must be boolean when present', () => {
+  test('readonly_docker is refused with its brokered replacement', () => {
     expect(
       validateProjectSettings({
-        worktree: { readonly_docker: 'yes' } as unknown as { readonly_docker: boolean },
+        worktree: { readonly_docker: true } as unknown as Parameters<
+          typeof validateProjectSettings
+        >[0]['worktree'],
       }),
-    ).toContain('worktree.readonly_docker must be a boolean')
-    expect(validateProjectSettings({ worktree: { readonly_docker: true } })).toEqual([])
+    ).toContain(
+      'worktree.readonly_docker is retired; remove it and read the recorded gate through gate_result',
+    )
   })
 
   test('managedContext must be boolean when present', () => {

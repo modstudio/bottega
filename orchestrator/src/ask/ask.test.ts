@@ -25,7 +25,7 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
 }
 
 describe('the live ask channel always answers', () => {
-  test('run_gate is writer-only and a project without a gate runs nothing', async () => {
+  test('writers receive run_gate while readers receive only the recorded gate result', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const writerConnection = await askClient(writer)
@@ -34,12 +34,22 @@ describe('the live ask channel always answers', () => {
       const writerTools = await writerConnection.client.listTools()
       const readerTools = await readerConnection.client.listTools()
       expect(writerTools.tools.find((tool) => tool.name === 'run_gate')).toBeDefined()
+      expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
+      expect(readerTools.tools.find((tool) => tool.name === 'gate_result')).toBeDefined()
 
       const result = await writerConnection.client.callTool({ name: 'run_gate', arguments: {} })
       expect(result.isError).toBeUndefined()
       expect(resultText(result)).toBe(
         "This run's project has no registered gate, so nothing was run.",
+      )
+      const readerResult = await readerConnection.client.callTool({
+        name: 'gate_result',
+        arguments: {},
+      })
+      expect(readerResult.isError).toBeUndefined()
+      expect(resultText(readerResult)).toBe(
+        "No finished gate result is recorded. The writer's gate and the pre-merge local gate are the proof.",
       )
       expect(
         (
@@ -51,6 +61,95 @@ describe('the live ask channel always answers', () => {
     } finally {
       await writerConnection.close()
       await readerConnection.close()
+    }
+  })
+
+  test('gate_result returns the newest finished gate for the reader project and exact commit', async () => {
+    const project = db()
+      .query(
+        `INSERT INTO project (name,path,stack,settings) VALUES ('gate-result-fixture','/fixture','bun','{}') RETURNING id`,
+      )
+      .get() as { id: number }
+    const reader = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'running',
+      headCommit: 'reviewed-commit',
+    })
+    const olderWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'reviewed-commit' })
+    const newerWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'reviewed-commit' })
+    const otherWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'other-commit' })
+    for (const run of [reader, olderWriter, newerWriter, otherWriter]) {
+      db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    }
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        olderWriter,
+        '2026-10-01T10:00:00.000Z',
+        '2026-10-01T10:01:00.000Z',
+        1,
+        0,
+        60_000,
+        'older failure',
+        'reviewed-commit',
+      )
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        newerWriter,
+        '2026-10-01T11:00:00.000Z',
+        '2026-10-01T11:01:00.000Z',
+        0,
+        0,
+        61_000,
+        'newest success',
+        'reviewed-commit',
+      )
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        otherWriter,
+        '2026-10-01T12:00:00.000Z',
+        '2026-10-01T12:01:00.000Z',
+        0,
+        0,
+        62_000,
+        'wrong commit',
+        'other-commit',
+      )
+
+    const connection = await askClient(reader)
+    try {
+      const result = await connection.client.callTool({ name: 'gate_result', arguments: {} })
+      expect(result.isError).toBeUndefined()
+      expect(resultText(result)).toBe(
+        [
+          'Recorded gate result for commit reviewed-commit:',
+          "This result was recorded by the project's writer gate or by orch gate run for that commit.",
+          `executing run id: ${newerWriter}`,
+          'exit code: 0',
+          'timed out: false',
+          'elapsed ms: 61000',
+          'finished at: 2026-10-01T11:01:00.000Z',
+          'output tail:',
+          'newest success',
+        ].join('\n'),
+      )
+    } finally {
+      await connection.close()
     }
   })
 

@@ -27,7 +27,6 @@ export function runInfrastructurePrompt(input: {
     writesRepo: input.writesRepo,
     readonlyCreate: Boolean(tool.readonly_create),
     readonlyNotes: tool.readonly_notes,
-    readonlyDocker: tool.readonly_docker === true,
     readOnlyBase: input.readOnlyBase,
     regularNotes: tool.notes ?? '',
     generatedNotes: generated,
@@ -39,7 +38,6 @@ export function readonlyInfrastructurePrompt(input: {
   writesRepo: boolean
   readonlyCreate: boolean
   readonlyNotes?: string
-  readonlyDocker: boolean
   readOnlyBase: string | null
   regularNotes: string
   generatedNotes: string
@@ -59,12 +57,6 @@ export function readonlyInfrastructurePrompt(input: {
       `registered project's main checkout when project tooling needs it.`
   } else {
     infrastructure = [input.regularNotes, input.generatedNotes].filter(Boolean).join('\n\n')
-  }
-
-  if (!input.writesRepo && input.readonlyDocker) {
-    const docker =
-      "Docker is reachable from this tree so that the project's gate can run; run the gate and no other Docker verb."
-    return [infrastructure, docker].filter(Boolean).join('\n\n')
   }
   return infrastructure
 }

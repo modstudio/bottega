@@ -87,10 +87,13 @@ describe('job contracts are visible before submission', () => {
       expect(preamble).toContain('a mailbox note')
     }
   })
-  test('only writing contracts require the registered gate broker', () => {
+  test('writers run the registered gate while readers inspect its recorded result', () => {
     expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
     expect(WORKER_PREAMBLE).toContain("reply's tests section")
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
+    expect(READONLY_PREAMBLE).toContain('Call `gate_result`')
+    expect(READONLY_PREAMBLE).toContain('Never\nrun Docker or `scripts/gate` yourself')
+    expect(READONLY_PREAMBLE).toContain('`could_not_verify`')
     expect(NO_REPO_PREAMBLE).not.toContain('run_gate')
   })
   test('contract prints the same preamble selected when a job is bound', () => {

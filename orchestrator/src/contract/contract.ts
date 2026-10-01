@@ -1156,6 +1156,10 @@ Edit and test freely when that helps you verify a finding. Your findings are the
 deliverable, not your diff: every change you make here is scratch work and must
 never be treated as a proposed change to land. Do not commit, push, or merge.
 
+Call \`gate_result\` to read the recorded gate result for this exact commit. Never
+run Docker or \`scripts/gate\` yourself. Record an unrun gate in
+\`could_not_verify\`.
+
 ${INFRASTRUCTURE_RECOVERY}
 
 ${REVIEW_PROVENANCE_INSTRUCTION}

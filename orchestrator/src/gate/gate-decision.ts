@@ -39,13 +39,21 @@ function quoteShellWord(word: string): string {
   return `'${word.replaceAll("'", `'\\''`)}'`
 }
 
-/** Resolve a registered relative executable from the immutable main checkout. */
-export function resolveGateCommand(command: string, mainCheckout: string): string {
+/** Resolve a registered relative executable from the tree the gate checks. */
+export function resolveGateCommand(command: string, worktree: string): string {
   const match = /^(\s*)(\S+)([\s\S]*)$/.exec(command)
   if (!match) return command
   const [, leading, first, rest] = match
   if (!first!.includes('/') || isAbsolute(first!)) return command
-  return `${leading}${quoteShellWord(resolve(mainCheckout, first!))}${rest}`
+  return `${leading}${quoteShellWord(resolve(worktree, first!))}${rest}`
+}
+
+/** Attribute a gate to a commit only when it tested that commit's clean tree. */
+export function decideGateHeadCommit(input: {
+  headCommit: string
+  porcelainPaths: readonly string[]
+}): string | null {
+  return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
 }
 
 export type GateEligibility =
