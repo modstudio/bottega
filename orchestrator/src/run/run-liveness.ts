@@ -260,18 +260,14 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness',
-              error='the worker process never started' WHERE id=? AND status='running'`,
+              error=? WHERE id=? AND status='running'`,
     )
     for (const id of abandonedBootstraps) {
+      const error = coordinatorSetupError(id)
       writeTransaction(() => {
-        if (update.run(id).changes !== 1) return
+        if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
-        auditRunMutation(
-          authority,
-          'reap',
-          `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
-          d,
-        )
+        auditRunMutation(authority, 'reap', error, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
       }, d)
     }

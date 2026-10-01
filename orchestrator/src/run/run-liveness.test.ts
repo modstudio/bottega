@@ -183,7 +183,7 @@ describe('reapStale', () => {
     expect(swept).toEqual({
       status: 'failed',
       failure_kind: 'harness',
-      error: 'the worker process never started',
+      error: 'coordinator exited during setup before the agent started; last output: (no output)',
     })
     expect(
       (db().query('SELECT status FROM run WHERE id=?').get(young) as { status: string }).status,
@@ -200,7 +200,25 @@ describe('reapStale', () => {
     expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
       status: 'failed',
       failure_kind: 'harness',
-      error: 'the worker process never started',
+      error: 'coordinator exited during setup before the agent started; last output: (no output)',
+    })
+  })
+
+  test('a pending claim refusal reaches the run error through the coordinator log', () => {
+    const id = addRun({ agent: '(pending)', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, started_at=? WHERE id=?')
+      .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
+    writeFileSync(
+      runCoordinatorLogPath(id),
+      `orch: run ${id} could not start: Error: refusing to create a worktree on branch DEV-1054-orch-7738\n`,
+    )
+
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT error FROM run WHERE id=?').get(id)).toEqual({
+      error:
+        `coordinator exited during setup before the agent started; last output: ` +
+        `orch: run ${id} could not start: Error: refusing to create a worktree on branch DEV-1054-orch-7738`,
     })
   })
 
