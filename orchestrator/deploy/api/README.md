@@ -14,11 +14,16 @@ fly secrets set -a bottega-api \
   SES_SECRET_ACCESS_KEY='<secret-access-key>' \
   SES_REGION='us-east-2' \
   SES_FROM_ADDRESS='<display name and verified sender address>'
-fly deploy --config orchestrator/deploy/api/fly.toml
+scripts/deploy/hosted api
 fly ips allocate-v4 --shared -a bottega-api
 fly ips allocate-v6 -a bottega-api
 fly certs add api.bottega.run -a bottega-api
 ```
+
+The deploy script reads `ORCH_RECORD_MIGRATE_URL` from the environment, migrates the record,
+and confirms that applied migrations equal those shipped in the image before invoking Fly. The
+image's release command uses its low-privilege `ORCH_RECORD_URL` and refuses a release with
+pending migrations, so a bare `fly deploy` cannot run ahead of the record schema.
 
 Before migrating, create the dedicated Better Auth login as the PostgreSQL administrator:
 

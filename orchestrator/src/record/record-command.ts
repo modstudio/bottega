@@ -50,9 +50,13 @@ export async function recordMigrateCommand(presentation: Presentation): Promise<
     const redacted = redactRecordPasswords(message, [url])
     throw new Error(recordTunnelFailure(redacted, readMachineValue('record.tunnel_app')))
   }
-  presentation.log(
-    `record migrations applied before ${before}; after ${after}; shipped ${recordMigrationCount()}`,
-  )
+  const shipped = recordMigrationCount()
+  presentation.log(`record migrations applied before ${before}; after ${after}; shipped ${shipped}`)
+  if (after !== shipped) {
+    throw new Error(
+      `record migration confirmation failed: applied ${after}; shipped ${shipped}; resolve the schema mismatch before deploying`,
+    )
+  }
 }
 
 export async function recordSpaceListCommand(presentation: Presentation): Promise<void> {
