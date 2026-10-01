@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
@@ -318,5 +318,70 @@ describe('port importer', () => {
     expect(ledgerRef(targetProjectId, 'BET-7')).toEqual(priorRef)
     expect(getDoc('global', null, 'port-category-map')).toEqual(priorDoc)
     expect(listDoctrineRules()).toHaveLength(1)
+  })
+})
+
+describe('worker port import refusal', () => {
+  let priorRunId: string | undefined
+
+  beforeEach(() => {
+    priorRunId = process.env.ORCH_RUN_ID
+    process.env.ORCH_RUN_ID = 'port-import-worker'
+  })
+
+  afterEach(() => {
+    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
+    else process.env.ORCH_RUN_ID = priorRunId
+  })
+
+  test('port import and replacement allow an architect caller and refuse a worker caller', async () => {
+    upsertProject({
+      name: 'worker-source-invented',
+      path: '/w/worker-source-invented',
+      settings: { keyPrefixes: ['WRS'] },
+    })
+    upsertProject({
+      name: 'worker-target-invented',
+      path: '/w/worker-target-invented',
+      settings: { keyPrefixes: ['WRT'] },
+    })
+    const source = {
+      doctrine: '# Doctrine\n\n1. **Worker rule** Keep it.\n',
+      differences:
+        '# Differences\n\n## Stack mapping (how to translate, not a reason to skip)\nMap.\n\n## Per-project uniques\n\n### worker-source-invented\nSource.\n\n### worker-target-invented\nTarget.\n\n## Process differences\nProcess.\n',
+      backports: '# Backports\n',
+      refs: '{}',
+      state: JSON.stringify({
+        pairs: {
+          'worker-source-invented->worker-target-invented': {
+            lastPortedSha: 'abc',
+            scannedAt: '2026-01-01',
+            skipped: [],
+          },
+        },
+      }),
+      projects:
+        '# Projects\n\n## Category map\nCategories.\n\n## Reference implementations (deepest instance = default port source)\nReferences.\n',
+    }
+    const plan = planImport(source, projects())
+    expect(plan.refusals).toEqual([])
+    plan.pairs = []
+    plan.baselines = []
+    plan.skips = []
+    plan.refs = []
+    plan.doctrine = []
+    await expect(applyImport(plan)).rejects.toThrow(
+      'refusing document store write from an orch worker run',
+    )
+    expect(getDoc('global', null, 'port-category-map')).toBeNull()
+
+    delete process.env.ORCH_RUN_ID
+    await applyImport(plan)
+    expect(getDoc('global', null, 'port-category-map')).not.toBeNull()
+
+    process.env.ORCH_RUN_ID = 'port-import-worker'
+    await expect(applyImport(planImport(source, projects()), { replace: true })).rejects.toThrow(
+      'refusing document store write from an orch worker run',
+    )
   })
 })

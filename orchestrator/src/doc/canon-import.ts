@@ -2,6 +2,7 @@
 /** Mirrors one hosted canon import transaction into one local transaction. */
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { type RecordCanonImportResult, recordApiClient } from '../record/record-api-client.ts'
+import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import {
@@ -34,6 +35,8 @@ export async function importCanon(input: {
   reason: string
   author?: string
 }): Promise<RecordCanonImportResult> {
+  const refusal = workerStoreWriteRefusal('document', 'importCanon', process.env)
+  if (refusal) throw new Error(refusal)
   writableDb()
   const identity = docWriteIdentity(input)
   const subject = input.address.kind === 'project' ? input.address.subject : null

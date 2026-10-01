@@ -14,7 +14,7 @@ const selectedTree = gitToplevel(process.cwd())!
 
 async function withDocClient(run: (client: Client) => Promise<void>): Promise<void> {
   const server = new McpServer({ name: 'orch-doc-test', version: '1.0.0' })
-  registerDocTools(server, () => false)
+  registerDocTools(server)
   const client = new Client({ name: 'orch-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)

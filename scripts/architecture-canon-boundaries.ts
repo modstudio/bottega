@@ -193,6 +193,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/record-api-client.ts',
+      'orchestrator/src/worker-store-write.ts',
       'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/doc-revision-store.ts',
     ],

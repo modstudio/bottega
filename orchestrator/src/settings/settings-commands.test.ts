@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -587,4 +587,96 @@ describe('settings permission', () => {
     expect(added).toMatchObject({ changed: true, counts: { allow: 2, ask: 0, deny: 0 } })
     expect(added.revision).not.toBe(seeded.revision)
   })
+})
+
+describe('worker settings command refusals', () => {
+  let priorRunId: string | undefined
+
+  beforeEach(() => {
+    priorRunId = process.env.ORCH_RUN_ID
+    process.env.ORCH_RUN_ID = 'settings-worker'
+  })
+
+  afterEach(() => {
+    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
+    else process.env.ORCH_RUN_ID = priorRunId
+  })
+
+  test('settings import allows an architect caller and refuses a worker caller', async () => {
+    const allowedRoot = fixtureProject('import-architect')
+    delete process.env.ORCH_RUN_ID
+    await settingsImportCommand(
+      presentation().flags({ project: 'import-architect' }),
+      presentation().port(allowedRoot),
+    )
+    expect(getDoc('settings', 'import-architect', 'settings')).not.toBeNull()
+
+    process.env.ORCH_RUN_ID = 'settings-worker'
+    const refusedRoot = fixtureProject('import-worker')
+    await expect(
+      settingsImportCommand(
+        presentation().flags({ project: 'import-worker' }),
+        presentation().port(refusedRoot),
+      ),
+    ).rejects.toThrow('refusing document store write from an orch worker run')
+    expect(getDoc('settings', 'import-worker', 'settings')).toBeNull()
+  })
+
+  test.each(['add', 'remove'] as const)(
+    'settings permission %s allows an architect caller and refuses a worker caller',
+    async (operation) => {
+      const architect = `permission-${operation}-architect`
+      const worker = `permission-${operation}-worker`
+      fixtureProject(architect)
+      fixtureProject(worker)
+      delete process.env.ORCH_RUN_ID
+      const architectDoc = await setDoc({
+        scope: 'settings',
+        subject: architect,
+        slug: 'settings',
+        title: 'settings',
+        body: serializeOwnedSettings({
+          permissions: { allow: operation === 'remove' ? ['Bash(git status)'] : [] },
+          hooks: {},
+        }),
+        delivery: 'demand',
+        reason: 'fixture',
+      })
+      const workerDoc = await setDoc({
+        scope: 'settings',
+        subject: worker,
+        slug: 'settings',
+        title: 'settings',
+        body: serializeOwnedSettings({
+          permissions: { allow: operation === 'remove' ? ['Bash(git status)'] : [] },
+          hooks: {},
+        }),
+        delivery: 'demand',
+        reason: 'fixture',
+      })
+      const rule = 'Bash(git status)'
+      await settingsPermissionCommand(
+        presentation().flags({
+          project: architect,
+          list: 'allow',
+          rule,
+          expect: architectDoc.revision!,
+        }),
+        operation,
+      )
+
+      process.env.ORCH_RUN_ID = 'settings-worker'
+      await expect(
+        settingsPermissionCommand(
+          presentation().flags({
+            project: worker,
+            list: 'allow',
+            rule,
+            expect: workerDoc.revision!,
+          }),
+          operation,
+        ),
+      ).rejects.toThrow('refusing document store write from an orch worker run')
+    },
+  )
 })
