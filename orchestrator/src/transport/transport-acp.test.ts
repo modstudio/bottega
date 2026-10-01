@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -42,6 +50,7 @@ import {
   grokSessionMeta,
   normalizeAcpTurn,
   persistAcpUpdates,
+  resolveAcpEditLocations,
 } from './transport-acp.ts'
 
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
@@ -482,17 +491,150 @@ describe('ACP client-served fs is confined to the worktree', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-missing-'))
     roots.push(root)
     mkdirSync(join(root, 'src'))
-    expect(confineFsPath(join(root, 'src', 'nope.ts'), root)).toBe(
-      join(realpathSync(join(root, 'src')), 'nope.ts'),
+    expect(confineFsPath(join(root, 'src', 'missing', 'nope.ts'), root)).toBe(
+      join(realpathSync(join(root, 'src')), 'missing', 'nope.ts'),
     )
     expect(() => confineFsPath(join(tmpdir(), 'outside-nope.ts'), root)).toThrow(
       'ACP fs.readTextFile refused',
     )
   })
+
+  test('a missing path below a symlink out of the root is refused', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-symlink-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'orch-acp-fs-symlink-outside-'))
+    roots.push(root, outside)
+    symlinkSync(outside, join(root, 'link'))
+    expect(() => confineFsPath(join(root, 'link', 'missing', 'reply.json'), root)).toThrow(
+      'outside the run worktree',
+    )
+  })
+
+  test('a dangling symlink to a missing path outside the root is refused', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-dangling-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'orch-acp-fs-dangling-outside-'))
+    roots.push(root, outside)
+    const link = join(root, 'reply.json')
+    symlinkSync(join(outside, 'missing.json'), link)
+    expect(() => confineFsPath(link, root, 'writeTextFile')).toThrow('outside the allowed root')
+  })
 })
 
 describe('ACP permission policy', () => {
-  test('a read-class tool is allowed once; an edit is rejected and recorded', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  test('the permission edge refuses a dangling symlink out of scratch', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-dangling-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'orch-acp-permission-dangling-outside-'))
+    const link = join(root, 'reply.json')
+    roots.push(root, outside)
+    symlinkSync(join(outside, 'missing.json'), link)
+    const resolved = resolveAcpEditLocations(root, [{ path: link }])
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        resolved?.locations,
+        resolved?.scratchRoot,
+      ).decision,
+    ).toBe('reject')
+  })
+
+  test('the permission edge allows a genuinely missing nested path in scratch', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-missing-root-'))
+    roots.push(root)
+    const location = join(root, 'missing', 'reply.json')
+    const resolved = resolveAcpEditLocations(root, [{ path: location }])
+    expect(resolved?.locations).toEqual([join(realpathSync(root), 'missing', 'reply.json')])
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        resolved?.locations,
+        resolved?.scratchRoot,
+      ).decision,
+    ).toBe('allow')
+  })
+
+  test('the permission edge rejects a relative location', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-relative-root-'))
+    roots.push(root)
+    const resolved = resolveAcpEditLocations(root, [{ path: 'reply.json' }])
+    expect(resolved).toBeNull()
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        resolved?.locations,
+        resolved?.scratchRoot,
+      ).decision,
+    ).toBe('reject')
+  })
+
+  test('an edit confined to scratch is allowed once', () => {
+    const root = '/runs/41/scratch'
+    const edit = decideAcpPermission(
+      ACP_FIXTURE_EDIT_PERMISSION.toolKind,
+      ACP_FIXTURE_EDIT_PERMISSION.options,
+      [`${root}/reply.json`],
+      root,
+    )
+    expect(edit).toEqual({
+      decision: 'allow',
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })
+  })
+
+  test('one edit location outside scratch rejects the whole request', () => {
+    const root = '/runs/41/scratch'
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        [`${root}/reply.json`, '/runs/41/prompt.txt'],
+        root,
+      ).decision,
+    ).toBe('reject')
+  })
+
+  test('a parent traversal out of scratch is rejected', () => {
+    const root = '/runs/41/scratch'
+    expect(
+      decideAcpPermission(
+        'edit',
+        ACP_FIXTURE_EDIT_PERMISSION.options,
+        [`${root}/../prompt.txt`],
+        root,
+      ).decision,
+    ).toBe('reject')
+  })
+
+  test('an edit without locations or a scratch root is rejected', () => {
+    const options = ACP_FIXTURE_EDIT_PERMISSION.options
+    expect(decideAcpPermission('edit', options, [], '/runs/41/scratch').decision).toBe('reject')
+    expect(decideAcpPermission('edit', options, ['/runs/41/scratch/reply.json']).decision).toBe(
+      'reject',
+    )
+  })
+
+  test('an edit never selects allow_always', () => {
+    const root = '/runs/41/scratch'
+    expect(
+      decideAcpPermission(
+        'edit',
+        [
+          { optionId: 'allow-session', kind: 'allow_always' },
+          { optionId: 'reject-once', kind: 'reject_once' },
+        ],
+        [`${root}/reply.json`],
+        root,
+      ).decision,
+    ).toBe('reject')
+  })
+
+  test('a read-class tool is unchanged and a rejected edit is recorded', () => {
     const allow = decideAcpPermission('read', ACP_FIXTURE_EDIT_PERMISSION.options)
     expect(allow.decision).toBe('allow')
     const edit = decideAcpPermission(

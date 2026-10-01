@@ -417,26 +417,32 @@ export async function resetSandbox(): Promise<void> {
   await resetSandboxRuntime()
 }
 
+/** Remove any user-registered orch-ask table and its subtables. */
+export function withoutRegisteredOrchAskServer(config: string): string {
+  const kept: string[] = []
+  let inAskTable = false
+  for (const line of config.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g) ?? []) {
+    const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)
+    if (header) inAskTable = /^mcp_servers\.orch-ask(\.|$)/.test(header[1]!)
+    if (!inAskTable) kept.push(line)
+  }
+  return kept.join('')
+}
+
 /**
  * Replace any user-registered orch-ask table (and its subtables) with one built
  * from the running binary. Grok reads orch-ask only from its config file, and a
  * one-time registration goes stale when the entrypoint moves or bun is upgraded.
  */
 function withLiveGrokAskServer(config: string, command: string[]): string {
-  const kept: string[] = []
-  let inAskTable = false
-  for (const line of config.split('\n')) {
-    const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)
-    if (header) inAskTable = /^mcp_servers\.orch-ask(\.|$)/.test(header[1]!)
-    if (!inAskTable) kept.push(line)
-  }
+  const kept = withoutRegisteredOrchAskServer(config)
   const section = [
     '[mcp_servers.orch-ask]',
     `command = ${JSON.stringify(command[0])}`,
     `args = ${JSON.stringify(command.slice(1))}`,
     'enabled = true',
   ].join('\n')
-  return `${kept.join('\n').trimEnd()}\n\n${section}\n`
+  return `${kept.trimEnd()}\n\n${section}\n`
 }
 
 /** Point a sandboxed Grok run's orch-ask at this checkout's proxy. */
@@ -605,7 +611,7 @@ function codexConfigRefusal(path: string): Error {
 function secureCodexConfig(configSource: string, configTarget: string): void {
   const expected = lstatSync(configTarget, { throwIfNoEntry: false })
   if (!expected) {
-    const config = readFileSync(configSource)
+    const config = withoutRegisteredOrchAskServer(readFileSync(configSource, 'utf8'))
     let descriptor: number
     try {
       descriptor = openSync(
