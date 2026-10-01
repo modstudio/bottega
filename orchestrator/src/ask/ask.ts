@@ -51,6 +51,9 @@ import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { authenticatedWorkerRun } from './worker-auth.ts'
+import { validateWorkerNoteInput, type WorkerNoteInput, type WorkerNoteRun } from './worker-note.ts'
+import { requestWorkerNote } from './worker-note-request.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -318,7 +321,53 @@ export async function ask(o: {
  * of "my run id" would be a guess. `ORCH_RUN_ID` is set by the process that
  * spawned the agent, which is the only party that actually knows.
  */
-export function createAskMcpServer(runId: number, token: string, timeoutMs?: number): McpServer {
+type AskServerDependencies = {
+  fileWorkerNote(
+    run: WorkerNoteRun,
+    input: WorkerNoteInput,
+  ): Promise<{
+    noteId: number
+    candidateIds: number[]
+    anchorDropped?: string
+  }>
+}
+
+function workerNoteRun(runId: number): WorkerNoteRun {
+  const row = db()
+    .query(
+      `SELECT r.id,p.name AS project,p.path AS project_path,
+              COALESCE(r.worktree,r.cwd) AS tree,r.branch,
+              r.session_id,r.head_commit
+         FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+    )
+    .get(runId) as {
+    id: number
+    project: string
+    project_path: string
+    tree: string | null
+    branch: string | null
+    session_id: string | null
+    head_commit: string | null
+  } | null
+  if (!row) throw new Error(`run ${runId} has no registered project`)
+  if (!row.tree) throw new Error(`run ${runId} has no run tree for a file-bound observation`)
+  return {
+    id: row.id,
+    project: row.project,
+    projectPath: row.project_path,
+    tree: row.tree,
+    branch: row.branch,
+    sessionId: row.session_id,
+    headCommit: row.head_commit,
+  }
+}
+
+export function createAskMcpServer(
+  runId: number,
+  token: string,
+  timeoutMs?: number,
+  dependencies: AskServerDependencies = { fileWorkerNote: requestWorkerNote },
+): McpServer {
   /**
    * WHETHER THIS PROCESS IS ACTUALLY THE WORKER IT CLAIMS TO BE.
    *
@@ -444,6 +493,45 @@ export function createAskMcpServer(runId: number, token: string, timeoutMs?: num
   }
 
   server.registerTool(
+    'note',
+    {
+      description:
+        'File an observation about a defect outside your assigned task. Keep findings about ' +
+        'your own task in your final reply. The orchestrator derives the project and run anchors; ' +
+        'you may optionally anchor the observation to a relative path and line.',
+      inputSchema: {
+        text: requiredTextReachingHandler.describe('One non-empty line describing the defect.'),
+        file: z
+          .preprocess(
+            (value) => (value === undefined ? undefined : String(value)),
+            z.string().optional(),
+          )
+          .describe('Optional relative path:line inside this run tree.'),
+      },
+    },
+    async ({ text: noteText, file }) => {
+      try {
+        if (!authorized()) throw new Error(unauthorized())
+        const input = validateWorkerNoteInput({ text: noteText, file })
+        const filed = await dependencies.fileWorkerNote(workerNoteRun(runId), input)
+        const near = filed.candidateIds.length
+          ? ` Near-duplicate candidate ids: ${filed.candidateIds.join(', ')}.`
+          : ' No near-duplicate candidates were found.'
+        const anchor = filed.anchorDropped ? ` ${filed.anchorDropped}` : ''
+        return text(`Note ${filed.noteId} filed.${near}${anchor}`)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'The note was not filed.'
+        return text(
+          message.startsWith('The note was not filed')
+            ? message
+            : `The note was not filed (${message}).`,
+          true,
+        )
+      }
+    },
+  )
+
+  server.registerTool(
     'message_orchestrator',
     {
       description:
@@ -555,25 +643,4 @@ export async function serveAsk(): Promise<void> {
   const runId = Number(process.env.ORCH_RUN_ID ?? 0)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
   await createAskMcpServer(runId, token).connect(new StdioServerTransport())
-}
-
-/** The single authentication check for tools acting as an orch worker. */
-function authenticatedWorkerRun(runId: number, token: string): boolean {
-  if (!runId) return false
-  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
-    run_token: string | null
-  } | null
-  if (!row) return false
-  // A run recorded before tokens existed has none; those still work, because
-  // refusing them would break every in-flight worker on upgrade.
-  return !row.run_token || row.run_token === token
-}
-
-/** Authentication for worker actions that write outside the orchestrator. */
-export function strictlyAuthenticatedWorkerRun(runId: number, token: string): boolean {
-  if (!runId) return false
-  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
-    run_token: string | null
-  } | null
-  return row !== null && row.run_token !== null && row.run_token === token
 }

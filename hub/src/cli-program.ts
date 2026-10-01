@@ -32,6 +32,7 @@ import {
   listNotes,
   mergeNote,
   noteSessionId,
+  parseExplicitNoteAnchor,
   promoteNote,
   setCuratorEnabled,
   staleNotes,
@@ -586,6 +587,11 @@ async function task(parsed: ParsedTaskArguments | undefined) {
   throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)
 }
 
+function explicitNoteAnchor(): Parameters<typeof createNote>[0]['anchor'] {
+  const value = flag('anchor-json')
+  return value ? parseExplicitNoteAnchor(JSON.parse(value)) : undefined
+}
+
 async function note() {
   const sub = argv[1]
   refuseAmbiguousNoteVerb(sub)
@@ -679,6 +685,7 @@ async function note() {
     area: flag('area'),
     sameAs: same ? Number(same) : undefined,
     forceNew: has('new'),
+    anchor: explicitNoteAnchor(),
   })
   if (!result.note) {
     const lines = result.candidates.map(

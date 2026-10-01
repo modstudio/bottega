@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import {
   branchNote,
   collectResult,
@@ -360,6 +361,17 @@ describe('collection records', () => {
     expect(recordedResult(id).errors.join('\n')).toContain(
       'not routing evidence: shared an output file',
     )
+  })
+
+  test('orch result lists worker-filed notes and near-duplicate candidates', () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens' })
+    appendRunEvent(id, {
+      ts: new Date().toISOString(),
+      type: 'note',
+      noteId: 71,
+      candidateIds: [8, 13],
+    })
+    expect(recordedResult(id).errors.join('\n')).toContain('notes:     71 (near 8, 13)')
   })
 
   test('orch result exposes degradation and the explicit trust command', () => {

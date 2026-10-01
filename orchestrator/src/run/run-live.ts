@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
+import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
@@ -216,6 +217,10 @@ async function closeWorkerGateBroker(broker: GateBroker | null): Promise<void> {
   if (broker) await broker.close()
 }
 
+async function closeWorkerNoteBroker(broker: WorkerNoteBroker | null): Promise<void> {
+  if (broker) await broker.close()
+}
+
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -289,6 +294,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
   let gateBroker: GateBroker | null = null
+  let noteBroker: WorkerNoteBroker | null = null
   let workerEvents: StreamEvent[] = []
 
   try {
@@ -316,6 +322,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
     })
+    noteBroker = startWorkerNoteBroker(claim.id)
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
     if (checkpointMessages.length) {
@@ -784,6 +791,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     failureKind = proc ? 'other' : 'harness'
   }
   await closeWorkerGateBroker(gateBroker)
+  await closeWorkerNoteBroker(noteBroker)
 
   return {
     proc,

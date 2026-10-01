@@ -115,6 +115,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-live.ts', [
     '../agent/agents.ts',
     '../ask/ask.ts',
+    '../ask/worker-note-broker.ts',
     './checkpoint.ts',
     './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',

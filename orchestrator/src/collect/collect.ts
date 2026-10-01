@@ -210,6 +210,41 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
   return row.evidence_excluded ? `\n  not routing evidence: ${row.evidence_excluded}` : ''
 }
 
+function filedNotesNote(runId: number): string {
+  const path = join(resolveRunsDirectory(process.env), String(runId), 'events.jsonl')
+  if (!existsSync(path)) return ''
+  const notes = readFileSync(path, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        const event = JSON.parse(line) as {
+          type?: string
+          noteId?: unknown
+          candidateIds?: unknown
+        }
+        return event.type === 'note' && Number.isSafeInteger(event.noteId)
+          ? [
+              {
+                noteId: event.noteId as number,
+                candidateIds: Array.isArray(event.candidateIds)
+                  ? event.candidateIds.filter((id): id is number => Number.isSafeInteger(id))
+                  : [],
+              },
+            ]
+          : []
+      } catch {
+        return []
+      }
+    })
+  if (!notes.length) return ''
+  return `\n  notes:     ${notes
+    .map(
+      (note) =>
+        `${note.noteId}${note.candidateIds.length ? ` (near ${note.candidateIds.join(', ')})` : ''}`,
+    )
+    .join('; ')}`
+}
+
 /** The branch this turn actually ran on. */
 export function mintedBranchForRun(database: Database, runId: number): string | null {
   const run = database.query('SELECT branch, minted_branch FROM run WHERE id=?').get(runId) as {
@@ -480,6 +515,7 @@ export function collectResult(
           : `\n— run ${id} asking — recoverable: orch continue ${asking.rootId}`) +
         baseNote +
         mcpNote(row) +
+        filedNotesNote(row.id) +
         evidenceNote(row),
     )
     return
@@ -489,6 +525,7 @@ export function collectResult(
       `\n— run ${id} ${row.status}: ${failureReason(row)}` +
         baseNote +
         mcpNote(row) +
+        filedNotesNote(row.id) +
         evidenceNote(row),
     )
     presentation.exit(1)
@@ -503,6 +540,7 @@ export function collectResult(
         branchNote(database, row.id) +
         baseNote +
         mcpNote(row) +
+        filedNotesNote(row.id) +
         evidenceNote(row),
     )
   }

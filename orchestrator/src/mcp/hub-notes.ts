@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { strictlyAuthenticatedWorkerRun } from '../ask/ask.ts'
+import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 
@@ -16,6 +16,16 @@ const noteRowsSchema = z.array(
 )
 
 export type HubNote = z.infer<typeof noteRowsSchema>[number]
+
+export type FiledNoteAnchor = {
+  cwd: string
+  project: string
+  files: { path: string; line: number; content: string }[]
+  run_id: number | null
+  branch: string | null
+  commit: string | null
+  session_id: string | null
+}
 
 export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
   const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
@@ -38,7 +48,7 @@ export async function hubOutput(args: string[], cwd = process.cwd()): Promise<st
 
 export async function fileNote(
   input: { text: string; same_as?: number; new?: boolean },
-  options: { cwd?: string } = {},
+  options: { cwd?: string; anchor?: FiledNoteAnchor } = {},
 ) {
   if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
   let cwd = options.cwd ?? process.cwd()
@@ -56,8 +66,14 @@ export async function fileNote(
     'new',
     input.text,
     ...(input.same_as ? ['--same-as', String(input.same_as)] : input.new ? ['--new'] : []),
+    ...(options.anchor ? ['--anchor-json', JSON.stringify(options.anchor)] : []),
   ]
-  return { output: (await hubOutput(args, cwd)).trim() }
+  const output = (await hubOutput(args, cwd)).trim()
+  const noteId = Number(/(?:^|\n)note (\d+) filed;/.exec(output)?.[1] ?? 0)
+  const candidateIds = [...output.matchAll(/(?:^|\n)near (\d+) score/g)].map((match) =>
+    Number(match[1]),
+  )
+  return { output, noteId: noteId || null, candidateIds }
 }
 
 export async function listHubNotes(project: string, options: { cwd: string }): Promise<HubNote[]> {

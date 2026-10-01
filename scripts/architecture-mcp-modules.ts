@@ -15,7 +15,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/hub-notes.ts', [
     'zod',
     '../../../shared/self-spawn.ts',
-    '../ask/ask.ts',
+    '../ask/worker-auth.ts',
     '../database/db.ts',
     '../project/projects.ts',
   ]),
