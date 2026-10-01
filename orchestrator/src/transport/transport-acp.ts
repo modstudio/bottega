@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
@@ -24,6 +24,7 @@ import {
   outcomeFromTransport,
   registerTransport,
   resolveCodexAcpBin,
+  resolveFsPath,
   stopErrorMessage,
   type TransportHandle,
   TransportOperationTimeout,
@@ -506,7 +507,25 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       const title = req.params.toolCall.title ?? 'tool'
       const toolKind = req.params.toolCall.kind ?? undefined
       const optionKinds = req.params.options.map((option) => option.kind)
-      const decided = decideAcpPermission(toolKind, req.params.options)
+      const scratch = opts.env.ORCH_SCRATCH
+      let resolvedScratch: string | undefined
+      let resolvedLocations: string[] | undefined
+      if (scratch && req.params.toolCall.locations?.length) {
+        try {
+          resolvedScratch = realpathSync(scratch)
+          resolvedLocations = req.params.toolCall.locations.map((location) =>
+            resolveFsPath(location.path, resolvedScratch),
+          )
+        } catch {
+          // An unreadable root or location is not eligible for edit permission.
+        }
+      }
+      const decided = decideAcpPermission(
+        toolKind,
+        req.params.options,
+        resolvedLocations,
+        resolvedScratch,
+      )
       const event: Extract<NormalizedEvent, { kind: 'permission' }> = {
         kind: 'permission',
         title,

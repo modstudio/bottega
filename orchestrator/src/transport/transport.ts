@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
@@ -469,15 +469,23 @@ const READ_PERMISSION_KINDS = new Set(['read', 'search', 'think', 'fetch'])
 export function decideAcpPermission(
   toolKind: string | undefined,
   options: Array<{ optionId: string; kind: string }>,
+  resolvedLocations?: string[],
+  resolvedScratchRoot?: string,
 ): {
   decision: 'allow' | 'reject'
   outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' }
 } {
   const allowRead = READ_PERMISSION_KINDS.has(toolKind ?? '')
-  if (allowRead) {
+  const allowScratchEdit =
+    toolKind === 'edit' &&
+    resolvedScratchRoot !== undefined &&
+    resolvedLocations !== undefined &&
+    resolvedLocations.length > 0 &&
+    resolvedLocations.every((path) => pathIsWithinRoot(path, resolvedScratchRoot))
+  if (allowRead || allowScratchEdit) {
     const allow =
       options.find((option) => option.kind === 'allow_once') ??
-      options.find((option) => option.kind === 'allow_always')
+      (allowRead ? options.find((option) => option.kind === 'allow_always') : undefined)
     if (allow)
       return { decision: 'allow', outcome: { outcome: 'selected', optionId: allow.optionId } }
   }
@@ -487,6 +495,30 @@ export function decideAcpPermission(
   if (reject)
     return { decision: 'reject', outcome: { outcome: 'selected', optionId: reject.optionId } }
   return { decision: 'reject', outcome: { outcome: 'cancelled' } }
+}
+
+function pathIsWithinRoot(path: string, root: string): boolean {
+  const fromRoot = relative(root, path)
+  return (
+    fromRoot === '' ||
+    (!isAbsolute(fromRoot) && fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`))
+  )
+}
+
+/** Resolve a possibly missing path through the realpath of its nearest existing ancestor. */
+export function resolveFsPath(path: string, relativeRoot?: string): string {
+  let ancestor = isAbsolute(path) ? path : join(relativeRoot ?? process.cwd(), path)
+  const remainder: string[] = []
+  while (true) {
+    try {
+      return join(realpathSync(ancestor), ...remainder.reverse())
+    } catch {
+      const parent = dirname(ancestor)
+      if (parent === ancestor) throw new Error(`cannot resolve filesystem path ${path}`)
+      remainder.push(basename(ancestor))
+      ancestor = parent
+    }
+  }
 }
 
 /**
@@ -503,19 +535,13 @@ export function confineFsPath(path: string, root: string, method = 'readTextFile
       `ACP fs.${method} refused: ${method === 'readTextFile' ? 'worktree' : 'root'} ${root} is not readable`,
     )
   }
-  const rootedPath = isAbsolute(path) ? path : join(realRoot, path)
   let candidate: string
   try {
-    candidate = realpathSync(rootedPath)
+    candidate = resolveFsPath(path, realRoot)
   } catch {
-    try {
-      candidate = join(realpathSync(dirname(rootedPath)), basename(rootedPath))
-    } catch {
-      throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
-    }
+    throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
   }
-  const prefix = realRoot.endsWith('/') ? realRoot : `${realRoot}/`
-  if (candidate !== realRoot && !candidate.startsWith(prefix)) {
+  if (!pathIsWithinRoot(candidate, realRoot)) {
     throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
   }
   return candidate
