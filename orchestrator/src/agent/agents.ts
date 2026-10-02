@@ -321,6 +321,14 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
       : o.write || o.sandbox === 'workspace-write'
         ? 'workspace-write'
         : 'read-only'
+  if (!o.write && sandbox === 'workspace-write') {
+    a.push(
+      '-c',
+      'sandbox_workspace_write.exclude_slash_tmp=true',
+      '-c',
+      'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+    )
+  }
   a.push(...codexSandboxArgs(o.mcp, sandbox, o.write))
   if (o.schema) a.push('--output-schema', o.schema)
   return a

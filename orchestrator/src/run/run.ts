@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
@@ -198,6 +198,17 @@ export function packedResumePrompt(job: string, turnPrompt: string, parentId: nu
     return packResumePrompt(job, turnPrompt, null)
   }
   return packResumePrompt(job, turnPrompt, readFileSync(root.prompt_path, 'utf8'))
+}
+
+function codexPrivateTempEnvironment(
+  harness: string,
+  repoJob: boolean,
+  scratchDir: string,
+): Record<string, string> {
+  if (harness !== 'codex' || repoJob) return {}
+  const privateTemp = join(scratchDir, 'tmp')
+  mkdirSync(privateTemp, { recursive: true, mode: 0o700 })
+  return { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
 }
 
 export async function run(opts: {
@@ -542,10 +553,7 @@ export async function run(opts: {
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const { agent: name, reason } = launch
   const harnessName = workerHarnessName(a)
-  const codexSandboxFacts = {
-    readsRepo: repoJob,
-  }
-  const codexSandbox = decideCodexSandbox(codexSandboxFacts)
+  const codexSandbox = decideCodexSandbox()
   let boundMs: number
   try {
     // A durable historical row can name an agent that is no longer registered.
@@ -726,7 +734,10 @@ export async function run(opts: {
       : []),
   ]
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
-  const recipeEnvironment = trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id)
+  const recipeEnvironment = {
+    ...trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
+    ...codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
+  }
   if (gitConfigEnvironment) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }

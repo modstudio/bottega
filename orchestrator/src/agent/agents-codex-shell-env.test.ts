@@ -44,6 +44,11 @@ describe('codex worker shell environment', () => {
       out: '/tmp/out',
       sandbox: 'workspace-write',
       writableRoots: ['/runs/42/scratch'],
+      recipeEnvironment: {
+        TMPDIR: '/runs/42/scratch/tmp',
+        TMP: '/runs/42/scratch/tmp',
+        TEMP: '/runs/42/scratch/tmp',
+      },
     })
     expect(repositoryReader).toContain('--approve-for-me')
     expect(repositoryReader).not.toContain('-s')
@@ -51,7 +56,19 @@ describe('codex worker shell environment', () => {
     expect(noRepositoryJob).toContain('-s')
     expect(noRepositoryJob).toContain('workspace-write')
     expect(noRepositoryJob).toContain('sandbox_workspace_write.writable_roots=["/runs/42/scratch"]')
+    expect(noRepositoryJob).toContain('sandbox_workspace_write.exclude_slash_tmp=true')
+    expect(noRepositoryJob).toContain('sandbox_workspace_write.exclude_tmpdir_env_var=true')
+    expect(shellSets(noRepositoryJob)).toEqual([
+      'shell_environment_policy.set.TMPDIR="/runs/42/scratch/tmp"',
+      'shell_environment_policy.set.TMP="/runs/42/scratch/tmp"',
+      'shell_environment_policy.set.TEMP="/runs/42/scratch/tmp"',
+    ])
     expect(noRepositoryJob).not.toContain('sandbox_workspace_write.network_access=true')
+    expect(repositoryReader).not.toContain('sandbox_workspace_write.exclude_slash_tmp=true')
+    expect(repositoryReader).not.toContain('sandbox_workspace_write.exclude_tmpdir_env_var=true')
+    expect(shellSets(repositoryReader)).not.toContainEqual(
+      expect.stringMatching(/^shell_environment_policy\.set\.(?:TMPDIR|TMP|TEMP)=/),
+    )
   })
 
   test('MCP writers continue to use approval without an explicit sandbox', () => {
