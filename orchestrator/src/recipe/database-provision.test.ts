@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createDatabase, type DatabaseSpawn, dropAndVerifyDatabase } from './database-provision.ts'
+import {
+  createDatabase,
+  createProvisionedDatabases,
+  type DatabaseSpawn,
+  dropAndVerifyDatabase,
+} from './database-provision.ts'
 import { recipeSchema } from './recipe-schema.ts'
 
 const roots: string[] = []
@@ -53,7 +58,7 @@ describe('database provision adapter', () => {
       calls.push({ argv, env: options.env })
       return output()
     }
-    expect(createDatabase('app', allocation, context, spawn).status).toBe('ok')
+    expect(createDatabase('app', allocation, context, spawn).step.status).toBe('ok')
     expect(calls).toHaveLength(2)
     expect(calls[0]!.argv.slice(0, 7)).toEqual([
       'docker',
@@ -75,7 +80,10 @@ describe('database provision adapter', () => {
       calls += 1
       return output('app_1\n')
     }
-    expect(createDatabase('app', allocation, context, spawn).status).toBe('ok')
+    expect(createDatabase('app', allocation, context, spawn)).toMatchObject({
+      step: { status: 'ok' },
+      created: false,
+    })
     expect(calls).toBe(1)
   })
 
@@ -87,7 +95,7 @@ describe('database provision adapter', () => {
       inputs.push(options.stdin)
       return argv.includes('mysqldump') ? { exitCode: 0, stdout: dump, stderr: '' } : output()
     }
-    expect(createDatabase('app', allocation, context, spawn).status).toBe('ok')
+    expect(createDatabase('app', allocation, context, spawn).step.status).toBe('ok')
     expect(inputs.at(-1)).toEqual(dump)
   })
 
@@ -108,9 +116,58 @@ describe('database provision adapter', () => {
     const { allocation, context } = fixture('postgres', false, 'ADMIN_DATABASE_URL')
     writeFileSync(join(context.projectRoot, '.env'), 'OTHER=value\n')
     const outcome = createDatabase('app', allocation, context, () => output())
-    expect(outcome).toMatchObject({ status: 'refused' })
-    expect(outcome.detail).toContain('ADMIN_DATABASE_URL')
-    expect(outcome.detail).toContain('.env')
-    expect(outcome.detail).not.toContain('value')
+    expect(outcome.step).toMatchObject({ status: 'refused' })
+    expect(outcome.step.detail).toContain('ADMIN_DATABASE_URL')
+    expect(outcome.step.detail).toContain('.env')
+    expect(outcome.step.detail).not.toContain('value')
+  })
+
+  test('compensates only databases created by this attempt', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'orch-db-main-'))
+    const treeRoot = mkdtempSync(join(tmpdir(), 'orch-db-tree-'))
+    roots.push(projectRoot, treeRoot)
+    writeFileSync(
+      join(projectRoot, '.env'),
+      'DATABASE_URL=postgres://admin:super-secret@db.local/base\n',
+    )
+    const provision = {
+      from: 'base',
+      connection: { key: 'DATABASE_URL' },
+    }
+    const recipe = recipeSchema.parse({
+      allocate: {
+        databases: {
+          reused: { engine: 'postgres', name: 'reused', provision: { ...provision, reuse: true } },
+          created: { engine: 'postgres', name: 'created', provision },
+          refused: { engine: 'postgres', name: 'refused', provision },
+        },
+      },
+      create: [],
+    })
+    const calls: string[] = []
+    const spawn: DatabaseSpawn = (argv) => {
+      const command = argv.join(' ')
+      calls.push(command)
+      if (command.includes('SELECT datname')) {
+        if (command.includes("datname = 'reused'")) return output('reused\n')
+        if (command.includes("datname = 'refused'")) return output('refused\n')
+      }
+      return output()
+    }
+
+    const outcome = createProvisionedDatabases(
+      recipe,
+      {
+        projectRoot,
+        treeRoot,
+        allocations: { reused: 'reused', created: 'created', refused: 'refused' },
+      },
+      spawn,
+    )
+
+    expect(outcome.failure).toMatchObject({ name: 'database refused', status: 'refused' })
+    expect(calls.filter((call) => call.includes('DROP DATABASE'))).toEqual([
+      expect.stringContaining('DROP DATABASE IF EXISTS "created"'),
+    ])
   })
 })

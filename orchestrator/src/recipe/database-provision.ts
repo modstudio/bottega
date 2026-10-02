@@ -220,29 +220,35 @@ export function createDatabase(
   allocation: Allocation,
   context: ProvisionContext,
   spawn: DatabaseSpawn = defaultSpawn,
-): StepResult {
+): { step: StepResult; created: boolean } {
   const prepared = preparedPlan(key, allocation, context)
-  if ('status' in prepared) return prepared
+  if ('status' in prepared) return { step: prepared, created: false }
   const { plan, connection } = prepared
   const exec = allocation.provision!.exec
   const cwd = context.commandRoot ?? context.treeRoot
   const exists = inspectExists(plan, exec, connection, cwd, spawn)
   if (exists === null)
-    return result(
-      key,
-      'verify',
-      'failed',
-      'database existence could not be checked; verify the declared client and admin connection',
-    )
+    return {
+      step: result(
+        key,
+        'verify',
+        'failed',
+        'database existence could not be checked; verify the declared client and admin connection',
+      ),
+      created: false,
+    }
   if (exists)
-    return plan.reuse
-      ? result(key, 'run', 'ok')
-      : result(
-          key,
-          'run',
-          'refused',
-          `database ${plan.name} already exists; set provision.reuse true to keep it or remove it`,
-        )
+    return {
+      step: plan.reuse
+        ? result(key, 'run', 'ok')
+        : result(
+            key,
+            'run',
+            'refused',
+            `database ${plan.name} already exists; set provision.reuse true to keep it or remove it`,
+          ),
+      created: false,
+    }
   let dump: Uint8Array | undefined
   for (const command of plan.create) {
     const executed = runCommand(command, exec, connection, cwd, spawn, dump)
@@ -250,18 +256,21 @@ export function createDatabase(
       const busy =
         plan.engine === 'postgres' &&
         /being accessed by other users|source database .* is being accessed/i.test(executed.stderr)
-      return result(
-        key,
-        'run',
-        'failed',
-        busy
-          ? `postgres template ${plan.from} has other connections; disconnect them and retry worktree creation`
-          : `database create client failed; verify the declared client and admin connection`,
-      )
+      return {
+        step: result(
+          key,
+          'run',
+          'failed',
+          busy
+            ? `postgres template ${plan.from} has other connections; disconnect them and retry worktree creation`
+            : `database create client failed; verify the declared client and admin connection`,
+        ),
+        created: true,
+      }
     }
     if (command.output === 'dump') dump = executed.stdout
   }
-  return result(key, 'run', 'ok')
+  return { step: result(key, 'run', 'ok'), created: true }
 }
 
 export function dropAndVerifyDatabase(
@@ -311,13 +320,14 @@ export function createProvisionedDatabases(
     const allocation = phase.kind === 'database' ? declarations.get(phase.name) : undefined
     return allocation ? ([[phase.name, allocation]] as [string, Allocation][]) : []
   })
-  for (const [index, [key, allocation]] of entries.entries()) {
-    const created = createDatabase(key, allocation, context, spawn)
-    if (created.status !== 'ok') {
+  const createdEntries: [string, Allocation][] = []
+  for (const [key, allocation] of entries) {
+    const outcome = createDatabase(key, allocation, context, spawn)
+    if (outcome.created) createdEntries.push([key, allocation])
+    if (outcome.step.status !== 'ok') {
       return {
-        failure: created,
-        compensation: entries
-          .slice(0, index + 1)
+        failure: outcome.step,
+        compensation: createdEntries
           .reverse()
           .map(([undoKey, undo]) => dropAndVerifyDatabase(undoKey, undo, context, spawn)),
       }
