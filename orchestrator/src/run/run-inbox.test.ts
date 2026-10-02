@@ -159,6 +159,42 @@ test('inbox keeps own questions in their existing format outside a registered pr
   expect(shown).toContain(`run ${id} · codex/implement`)
   expect(shown).toContain('existing format?')
 })
+test('inbox lists workflow questions with their identity and answer command', async () => {
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+       total_steps,created_at,updated_at,enforcement)
+     VALUES ('fixture','ship','default','DEV-1069','','orch-test-session',1,1,
+             '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
+             '2026-10-01','2026-10-01','floors')`,
+    )
+    .run()
+  const inserted = db()
+    .query<{ id: number }, []>(
+      `INSERT INTO question
+      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES (1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING id`,
+    )
+    .get()!
+
+  const shown = await inbox({ all: true })
+  expect(shown).toContain('workflow ship · fixture · mode default · step 3 fix')
+  expect(shown).toContain(
+    'orch workflow rule ship --project fixture --mode default --arg key=DEV-1069 --ruling "<ruling>" --from-operator',
+  )
+  expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
+    expect.objectContaining({
+      kind: 'workflow',
+      question_id: inserted.id,
+      workflow: 'ship',
+      project: 'fixture',
+      mode: 'default',
+      step: { n: 3, slug: 'fix' },
+    }),
+  )
+})
 test('project inbox exposes a foreign question without adopting it', async () => {
   upsertProject({ name: 'inbox-project', path: process.cwd() })
   const id = addRun({

@@ -41,6 +41,77 @@ type InboxQuestion = {
   filed_at: string | null
 }
 
+type WorkflowInboxQuestion = {
+  kind: 'workflow'
+  question_id: number
+  workflow: string
+  project: string
+  mode: string
+  step: { n: number; slug: string }
+  asked_at: string
+  session_id: string | null
+  can_answer: boolean
+  question: string
+  answer_command: string
+}
+
+const shellWord = (value: string) =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
+
+function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
+  if (input.scope === 'session') return []
+  const sid = sessionId()
+  const scoped = input.requestedCwd !== undefined
+  const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
+  const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
+  const rows = db()
+    .query(
+      `SELECT q.id,q.asked_at,q.question,c.project,c.workflow_slug,c.mode_slug,c.args,
+              c.ordinal,c.step_slug,c.session_id
+         FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
+        WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
+        ORDER BY q.asked_at,q.id`,
+    )
+    .all() as Array<{
+    id: number
+    asked_at: string
+    question: string
+    project: string
+    workflow_slug: string
+    mode_slug: string
+    args: string
+    ordinal: number
+    step_slug: string
+    session_id: string | null
+  }>
+  const visible = rows.filter((row) => {
+    if (scoped) return scopedProject !== null && row.project === scopedProject.name
+    if (input.all) return true
+    if (defaultProject) return row.project === defaultProject.name || row.session_id === sid
+    return sid !== null && row.session_id === sid
+  })
+  return visible.map((row) => {
+    const flags = Object.entries(JSON.parse(row.args) as Record<string, string>)
+      .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
+      .join('')
+    return {
+      kind: 'workflow',
+      question_id: row.id,
+      workflow: row.workflow_slug,
+      project: row.project,
+      mode: row.mode_slug,
+      step: { n: row.ordinal + 1, slug: row.step_slug },
+      asked_at: row.asked_at,
+      session_id: row.session_id,
+      can_answer: row.session_id === null || (sid !== null && row.session_id === sid),
+      question: row.question,
+      answer_command:
+        `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
+        `--mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
+    }
+  })
+}
+
 export type InboxQuery = {
   scope: 'session' | 'cli-default'
   all?: boolean
@@ -48,7 +119,9 @@ export type InboxQuery = {
   requestedCwd?: string
 }
 
-export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQuestion[] }> {
+export async function queryInbox(
+  input: InboxQuery,
+): Promise<{ questions: Array<InboxQuestion | WorkflowInboxQuestion> }> {
   const sid = sessionId()
   const mine = input.scope === 'session' || !input.all
   const scoped = input.scope === 'cli-default' && input.requestedCwd !== undefined
@@ -125,31 +198,37 @@ export async function queryInbox(input: InboxQuery): Promise<{ questions: InboxQ
         )
       : rowsForInboxView(selected, scopedProjectName, defaultProject?.name ?? null, mine, sid)
   return {
-    questions: visible.map((q) => ({
-      question_id: q.id,
-      run_id: q.run_id,
-      answer_id: q.root_id,
-      job: q.job,
-      agent: q.agent,
-      repo: q.repo,
-      asked_at: q.asked_at,
-      session_live: q.session_recent ? true : null,
-      session_liveness: q.session_recent ? 'live' : 'unknown',
-      can_answer: isLive(q) && (q.session_id === null || (sid !== null && q.session_id === sid)),
-      question: q.question,
-      options: q.options ? (JSON.parse(q.options) as string[]) : [],
-      recommendation: q.recommendation,
-      why: q.why,
-      status: q.root_voided ? 'voided' : q.root_status,
-      ruling_status: rulingStatus(q.overturned_at, q.answered_at),
-      overturned_at: q.overturned_at,
-      overturned_by: q.overturned_by,
-      overturn_reason: q.overturn_reason,
-      replacement: q.replacement,
-      filed_as: q.filed_as,
-      filed_ref: q.filed_ref,
-      filed_at: q.filed_at,
-    })),
+    questions: [
+      ...visible.map(
+        (q): InboxQuestion => ({
+          question_id: q.id,
+          run_id: q.run_id,
+          answer_id: q.root_id,
+          job: q.job,
+          agent: q.agent,
+          repo: q.repo,
+          asked_at: q.asked_at,
+          session_live: q.session_recent ? true : null,
+          session_liveness: q.session_recent ? 'live' : 'unknown',
+          can_answer:
+            isLive(q) && (q.session_id === null || (sid !== null && q.session_id === sid)),
+          question: q.question,
+          options: q.options ? (JSON.parse(q.options) as string[]) : [],
+          recommendation: q.recommendation,
+          why: q.why,
+          status: q.root_voided ? 'voided' : q.root_status,
+          ruling_status: rulingStatus(q.overturned_at, q.answered_at),
+          overturned_at: q.overturned_at,
+          overturned_by: q.overturned_by,
+          overturn_reason: q.overturn_reason,
+          replacement: q.replacement,
+          filed_as: q.filed_as,
+          filed_ref: q.filed_ref,
+          filed_at: q.filed_at,
+        }),
+      ),
+      ...workflowInboxQuestions(input),
+    ],
   }
 }
 
@@ -330,6 +409,12 @@ export async function runInboxCommand(
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
   const rows = rowsForInboxView(allRows, scopedProjectName, project?.name ?? null, mine, sid)
+  const workflowRows = workflowInboxQuestions({
+    scope: 'cli-default',
+    all: has('all'),
+    activeOnly,
+    requestedCwd,
+  })
   const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
   const active = rows.filter(isLive)
   const terminal = rows.filter((q) => !active.includes(q))
@@ -372,9 +457,18 @@ export async function runInboxCommand(
   }[]
   const recoverable = rowsForInboxView(queriedRecoverable, scopedProjectName, null, false, sid)
 
-  if (!rows.length && !recoverable.length) {
+  if (!rows.length && !recoverable.length && !workflowRows.length) {
     log(emptyInboxMessage(project, mine))
     return
+  }
+  for (const q of workflowRows) {
+    log(
+      `\nworkflow ${q.workflow} · ${q.project} · mode ${q.mode} · step ${q.step.n} ${q.step.slug}`,
+    )
+    log(`  [q${q.question_id}] ${q.question}`)
+    log(`        answer: ${q.answer_command}`)
+    if (!q.can_answer)
+      log(`        owner ${q.session_id ?? 'unknown'} · visible only; authority is not transferred`)
   }
   let lastRun = -1
   let lastRoot = -1

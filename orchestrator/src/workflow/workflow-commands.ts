@@ -173,7 +173,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     'cli',
     context,
   )
-  print(result, result)
+  print(result, `${result.summary} Question ${result.questionId}.`)
 }
 
 function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
@@ -305,7 +305,10 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     flagValue(argv, 'question'),
     context,
   )
-  print(result, `workflow ${argv[2]} is awaiting a ruling at step ${result.n} ${result.slug}`)
+  print(
+    result,
+    `workflow ${argv[2]} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
+  )
 }
 
 function cursorsCommand(argv: string[], print: (value: unknown, line?: string) => void): void {

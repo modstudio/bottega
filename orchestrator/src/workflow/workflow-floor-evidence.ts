@@ -37,6 +37,8 @@ export type CursorIdentity = {
   workflowKey: string
   branch: string | null
   worktree: string | null
+  session: string | null
+  stepActivatedAt: string
 }
 
 type CheckoutResolution = {
@@ -491,9 +493,16 @@ function resolveArtifact(
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
       .query<
-        { cwd: string; head_commit: string | null; exit_code: number; kind: string },
+        {
+          cwd: string
+          head_commit: string | null
+          exit_code: number
+          kind: string
+          session_id: string | null
+          created_at: string
+        },
         [number]
-      >('SELECT cwd,head_commit,exit_code,kind FROM probe WHERE id=?')
+      >('SELECT cwd,head_commit,exit_code,kind,session_id,created_at FROM probe WHERE id=?')
       .get(ref.id)
     const flag = `--artifact ${ref.kind}:${ref.id}`
     if (!row) throw new Error(`${flag} does not exist`)
@@ -634,9 +643,19 @@ export function gatherValidatedEvidence(input: {
     )
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
-        .query<{ exit_code: number }, [number]>('SELECT exit_code FROM probe WHERE id=?')
+        .query<{ exit_code: number; session_id: string | null; created_at: string }, [number]>(
+          'SELECT exit_code,session_id,created_at FROM probe WHERE id=?',
+        )
         .get(parsed.id)!
-      gathered[parsed.kind] = { id: parsed.id, exitCode: row.exit_code }
+      if (parsed.kind === 'exec') {
+        gathered.exec = {
+          id: parsed.id,
+          exitCode: row.exit_code,
+          sessionMatches:
+            input.identity.session !== null && row.session_id === input.identity.session,
+          createdAfterStepActivation: row.created_at >= input.identity.stepActivatedAt,
+        }
+      } else gathered.probe = { id: parsed.id, exitCode: row.exit_code }
     }
   }
   if (input.evidence.task?.trim())

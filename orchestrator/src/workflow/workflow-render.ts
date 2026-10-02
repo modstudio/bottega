@@ -1,3 +1,4 @@
+import { type FloorKind, floorGuidance, floorKinds } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
@@ -90,5 +91,12 @@ export function renderWorkflowStep(step: WorkflowStep): string {
         : step.mode
           ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
           : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
-  return `facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${pointer}`
+  const guidance = step.floor.map(
+    (kind) => `Evidence for ${kind}: ${floorGuidance[kind as FloorKind]}.`,
+  )
+  return `facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
+}
+
+export function missingFloorGuidance(): FloorKind[] {
+  return floorKinds.filter((kind) => !floorGuidance[kind]?.trim())
 }

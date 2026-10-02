@@ -68,6 +68,8 @@ const identity: CursorIdentity = {
   workflowKey: 'DEV-977',
   branch: 'DEV-977-work',
   worktree: '/fixture/work',
+  session: 's',
+  stepActivatedAt: '2026-09-01',
 }
 
 const matchingCheckout = {

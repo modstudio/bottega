@@ -34,7 +34,9 @@ const gradedReview: ValidatedEvidence = {
 const passingGate: ValidatedEvidence = { gate: { id: 2, finished: true, exitCode: 0 } }
 const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
-const passingExec: ValidatedEvidence = { exec: { id: 4, exitCode: 0 } }
+const passingExec: ValidatedEvidence = {
+  exec: { id: 4, exitCode: 0, sessionMatches: true, createdAfterStepActivation: true },
+}
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
 const closedTask: ValidatedEvidence = {
   task: { key: 'DEV-977', status: 'done', mergedPullRequest: true },
@@ -104,9 +106,42 @@ test('a probe with the expected exit satisfies command-exit', () => {
 
 test('an exec with the expected exit satisfies command-exit', () => {
   expect(decide({ floors: [commandExit], evidence: passingExec }).action).toBe('allow')
-  expect(decide({ floors: [commandExit], evidence: { exec: { id: 4, exitCode: 1 } } }).action).toBe(
-    'refuse',
-  )
+  expect(
+    decide({
+      floors: [commandExit],
+      evidence: {
+        exec: { id: 4, exitCode: 1, sessionMatches: true, createdAfterStepActivation: true },
+      },
+    }).action,
+  ).toBe('refuse')
+})
+
+test('an exec from another session is refused with the rerun remedy', () => {
+  const decision = decide({
+    floors: [commandExit],
+    evidence: {
+      exec: { id: 4, exitCode: 0, sessionMatches: false, createdAfterStepActivation: true },
+    },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'command-exit evidence exec:4 belongs to another session; run the command again with `orch workflow exec <command>` in this session after the step started',
+  })
+})
+
+test('an exec older than the active step is refused with the rerun remedy', () => {
+  const decision = decide({
+    floors: [commandExit],
+    evidence: {
+      exec: { id: 4, exitCode: 0, sessionMatches: true, createdAfterStepActivation: false },
+    },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'command-exit evidence exec:4 predates this step becoming active; run the command again with `orch workflow exec <command>` in this session after the step started',
+  })
 })
 
 test('a non-zero gate fails unless the floor states otherwise', () => {

@@ -10,6 +10,15 @@ export const floorKinds = [
 export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
 
+export const floorGuidance = {
+  ruling:
+    'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`',
+  'command-exit': 'run it with `orch workflow exec <command>` and pass `--artifact exec:<id>`',
+  'recorded-artifact':
+    'record the artifact and pass `--artifact <doc id | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id>>`',
+  'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
+} satisfies Record<FloorKind, string>
+
 export const DEFAULT_EXPECTED_EXIT_CODE = 0
 export const DEFAULT_EXPECTED_STATUS = 'done'
 
@@ -56,7 +65,12 @@ export type ValidatedEvidence = {
   gate?: { id: number; finished: boolean; exitCode: number | null }
   run?: { id: number; terminal: boolean; exitCode: number | null }
   probe?: { id: number; exitCode: number }
-  exec?: { id: number; exitCode: number }
+  exec?: {
+    id: number
+    exitCode: number
+    sessionMatches: boolean
+    createdAfterStepActivation: boolean
+  }
   artifact?: { ref: string; exists: boolean }
   task?: { key: string; status: string | null; mergedPullRequest: boolean }
   deferReason?: string
@@ -150,7 +164,11 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const gateOk = Boolean(gate?.finished && gate.exitCode === floor.expectedExitCode)
   const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)
   const probeOk = evidence.probe?.exitCode === floor.expectedExitCode
-  const execOk = evidence.exec?.exitCode === floor.expectedExitCode
+  const execOk = Boolean(
+    evidence.exec?.exitCode === floor.expectedExitCode &&
+      evidence.exec.sessionMatches &&
+      evidence.exec.createdAfterStepActivation,
+  )
   return gateOk || runOk || probeOk || execOk
 }
 
@@ -181,6 +199,18 @@ function unmetMessage(floors: Floor[]): string {
             : ''),
     )
     .join('; ')
+}
+
+function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
+  const exec = evidence.exec
+  if (!exec) return null
+  const remedy =
+    'run the command again with `orch workflow exec <command>` in this session after the step started'
+  if (!exec.sessionMatches)
+    return `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}`
+  if (!exec.createdAfterStepActivation)
+    return `command-exit evidence exec:${exec.id} predates this step becoming active; ${remedy}`
+  return null
 }
 
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
@@ -296,6 +326,13 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (input.enforcement === 'note-only')
     return { action: 'allow', enforcement: 'note-only', refs: [] }
   const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
+  const bindingRefusal = commandExitBindingRefusal(input.evidence)
+  if (
+    met.length === 0 &&
+    bindingRefusal &&
+    input.floors.some((floor) => floor.kind === 'command-exit')
+  )
+    return { action: 'refuse', message: bindingRefusal }
   const deferred = deferralOf(input.floors, input.evidence, met.length > 0)
   if ('action' in deferred) return deferred
   if (met.length === 0 && !deferred.defer)
