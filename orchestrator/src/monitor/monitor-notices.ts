@@ -1,6 +1,7 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
+import { requireRealSession } from '../board/board-policy.ts'
 import { claimInterruptNotices, markInterruptNoticesDelivered } from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
@@ -144,7 +145,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
 
 /** Read addressed findings without consuming them. A failed consumer gets them again. */
 export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
-  if (!ownerSession.trim()) throw new Error('monitor notices require a session id')
+  requireRealSession(ownerSession, 'monitor notices')
   const rows = db()
     .query(
       `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
@@ -241,7 +242,7 @@ export function markMonitorNoticesDelivered(
   ids: MonitorNotice['noticeId'][],
   deliveredAt = nowIso(),
 ): void {
-  if (!ownerSession.trim()) throw new Error('monitor notice acknowledgement requires a session id')
+  requireRealSession(ownerSession, 'monitor notice acknowledgement')
   const parsed = ids.map((token) => {
     const match = /^(condition|landing|board):([1-9]\d*)$/.exec(token)
     if (!match)

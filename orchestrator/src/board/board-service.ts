@@ -17,6 +17,7 @@ import {
   OPERATOR_READER,
   parseAudience,
   postDecision,
+  requireRealSession,
   resolveAudience,
   shouldInterrupt,
 } from './board-policy.ts'
@@ -109,14 +110,16 @@ export function recordPresence(
 
 function presenceFacts() {
   return (
-    db().query('SELECT session_id,project,last_seen FROM presence').all() as {
+    db().query('SELECT session_id,project,machine,last_seen FROM presence').all() as {
       session_id: string
       project: string
+      machine: string
       last_seen: string
     }[]
   ).map((row) => ({
     session: row.session_id,
     project: row.project,
+    machine: row.machine,
     lastSeen: Date.parse(row.last_seen),
   }))
 }
@@ -138,6 +141,7 @@ export function postNotice(
   input: PostNoticeInput,
   env: Environment = process.env,
   clock = Date.now(),
+  cwd = process.cwd(),
 ): { id: number; dropped: boolean } {
   if (input.title.length > BOARD_TITLE_MAX_CHARS)
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
@@ -146,7 +150,14 @@ export function postNotice(
   if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
     throw new Error('board notice contains secret-shaped text; remove the credential and retry')
   const actor = boardActor(env)
-  const audience = parseAudience(input.audience)
+  const parsedAudience = parseAudience(input.audience)
+  const postingMachine = hostname()
+  const audience =
+    parsedAudience.kind === 'machine' && parsedAudience.value === 'this'
+      ? ({ kind: 'machine', value: postingMachine } as const)
+      : parsedAudience
+  const audienceExpression =
+    audience.kind === 'machine' ? `machine:${audience.value}` : input.audience
   const refusal = audienceRefusal(audience, actor.kind)
   if (refusal) throw new Error(refusal)
   if (!input.title.trim() || !input.body.trim())
@@ -163,15 +174,13 @@ export function postNotice(
   let authorHarness: string | null = null
   let authorProject: string | null = null
   if (actor.kind === 'architect') {
-    const presence = db()
-      .query('SELECT harness,project FROM presence WHERE session_id=?')
-      .get(actor.session) as { harness: string; project: string } | null
-    if (!presence?.project)
+    const postingProject = projectAt(cwd)
+    if (!postingProject)
       throw new Error(
-        'architect posting project is unknown; run orch board presence from a registered project, then retry',
+        `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
       )
-    authorHarness = presence.harness
-    authorProject = presence.project
+    authorHarness = architectIdentity(env)!.harness
+    authorProject = postingProject.name
   }
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
@@ -189,7 +198,14 @@ export function postNotice(
        WHERE author_kind=? AND author_session IS ? AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC LIMIT 1`,
     )
-    .get(actor.kind, authorSession, input.audience, input.title, input.body, duplicateSince) as {
+    .get(
+      actor.kind,
+      authorSession,
+      audienceExpression,
+      input.title,
+      input.body,
+      duplicateSince,
+    ) as {
     id: number
   } | null
   const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
@@ -203,6 +219,33 @@ export function postNotice(
   const database = writableDb()
   let id = 0
   writeTransaction(() => {
+    if (actor.kind === 'architect') {
+      const current = database
+        .query(
+          `SELECT launch_key FROM run
+           WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
+           ORDER BY id DESC LIMIT 1`,
+        )
+        .get(actor.session) as { launch_key: string } | null
+      database
+        .query(
+          `INSERT INTO presence
+           (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
+           VALUES (?,?,'architect',?,?,?,?,?)
+           ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
+             machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
+             current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
+        )
+        .run(
+          actor.session,
+          authorHarness,
+          postingMachine,
+          authorProject,
+          cwd,
+          current?.launch_key ?? null,
+          createdAt,
+        )
+    }
     const inserted = database
       .query(
         `INSERT INTO board_message
@@ -215,7 +258,7 @@ export function postNotice(
         authorSession,
         authorHarness,
         authorProject,
-        input.audience,
+        audienceExpression,
         input.title,
         input.body,
         ackRequired ? 1 : 0,
@@ -229,7 +272,7 @@ export function postNotice(
        (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
        VALUES (?,?,1,NULL,NULL)`,
     )
-    for (const reader of recipients(input.audience, clock)) add.run(id, reader)
+    for (const reader of recipients(audienceExpression, clock)) add.run(id, reader)
   }, database)
   return { id, dropped: false }
 }
@@ -365,14 +408,19 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
     delivered_at: string | null
     acknowledged_at: string | null
   }[]
+  const unresolved = new Set(
+    row.ack_required && parseAudience(row.audience).kind === 'machine'
+      ? recipients(row.audience, clock)
+      : [],
+  )
+  for (const receipt of receipts) {
+    if (receipt.acknowledged_at) unresolved.delete(receipt.reader_session)
+    else unresolved.add(receipt.reader_session)
+  }
   return {
     message: render(row),
     receipts,
-    unacknowledged: row.ack_required
-      ? receipts
-          .filter((receipt) => !receipt.acknowledged_at)
-          .map((receipt) => receipt.reader_session)
-      : [],
+    unacknowledged: row.ack_required ? [...unresolved].sort() : [],
   }
 }
 
@@ -388,20 +436,24 @@ export function withdrawNotice(id: number, env: Environment = process.env, clock
 }
 
 export function claimInterruptNotices(session: string, clock = Date.now()) {
-  if (!session || session === OPERATOR_READER)
-    throw new Error('board delivery requires a real session id')
+  requireRealSession(session, 'board delivery')
   return messageRows()
     .filter(
       (row) =>
         rowIsLive(row, clock) &&
         addressed(row, session, clock) &&
-        shouldInterrupt({ authorKind: row.author_kind, ackRequired: row.ack_required === 1 }) &&
+        shouldInterrupt({
+          authorKind: row.author_kind,
+          audienceKind: parseAudience(row.audience).kind,
+          ackRequired: row.ack_required === 1,
+        }) &&
         !wasDelivered(row.id, session),
     )
     .map((row) => ({ noticeId: `board:${row.id}` as const, detail: render(row).text }))
 }
 
 export function markInterruptNoticesDelivered(session: string, ids: number[], at = nowIso()) {
+  requireRealSession(session, 'board delivery acknowledgement')
   const database = writableDb()
   for (const id of ids)
     database

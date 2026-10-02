@@ -25,21 +25,22 @@ export function architectIdentity(
   return null
 }
 
-export type PresenceFact = { session: string; project: string; lastSeen: number }
+export type PresenceFact = { session: string; project: string; machine: string; lastSeen: number }
 export type Audience =
   | { kind: 'operator' }
   | { kind: 'architects' }
   | { kind: 'project'; value: string }
+  | { kind: 'machine'; value: string }
   | { kind: 'session'; value: string }
 
 export function parseAudience(expression: string): Audience {
   if (expression === 'operator') return { kind: 'operator' }
   if (expression === 'architects') return { kind: 'architects' }
-  const match = /^(project|session):(.+)$/.exec(expression)
+  const match = /^(project|machine|session):(.+)$/.exec(expression)
   if (!match?.[2]?.trim()) throw new Error(`unsupported board audience ${expression}`)
   if (match[1] === 'session' && match[2] === OPERATOR_READER)
     throw new Error(`session:${OPERATOR_READER} is reserved; use audience operator`)
-  return { kind: match[1] as 'project' | 'session', value: match[2] }
+  return { kind: match[1] as 'project' | 'machine' | 'session', value: match[2] }
 }
 
 export function audienceRefusal(
@@ -62,11 +63,22 @@ export function resolveAudience(
   if (audience.kind === 'architects') return live.map((row) => row.session)
   if (audience.kind === 'project')
     return live.filter((row) => row.project === audience.value).map((row) => row.session)
+  if (audience.kind === 'machine')
+    return live.filter((row) => row.machine === audience.value).map((row) => row.session)
   return live.filter((row) => row.session === audience.value).map((row) => row.session)
 }
 
-export const shouldInterrupt = (message: { authorKind: string; ackRequired: boolean }): boolean =>
-  message.authorKind === 'operator' && message.ackRequired
+export const shouldInterrupt = (message: {
+  authorKind: string
+  audienceKind: Audience['kind']
+  ackRequired: boolean
+}): boolean =>
+  message.ackRequired && (message.authorKind === 'operator' || message.audienceKind === 'machine')
+
+export function requireRealSession(session: string, action: string): void {
+  if (!session.trim() || session === OPERATOR_READER)
+    throw new Error(`${action} requires a real session id`)
+}
 
 export const messageIsLive = (
   message: { expiresAt: number; withdrawnAt: number | null },

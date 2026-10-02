@@ -1,16 +1,35 @@
 import { expect, test } from 'bun:test'
+import { hostname } from 'node:os'
+import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
+import { markMonitorNoticesDelivered } from '../monitor/monitor-notices.ts'
+import { projectAt } from '../project/projects.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import {
   acknowledgeNotice,
   boardEscalations,
+  claimInterruptNotices,
   claimNotices,
+  markInterruptNoticesDelivered,
   noticeStatus,
   postNotice,
   readNotices,
   recordPresence,
 } from './board-service.ts'
+
+function postingProject() {
+  const cwd = resolve(import.meta.dir, '../../..')
+  db()
+    .query(
+      `INSERT OR IGNORE INTO project(name,path,settings)
+       VALUES ('board-post-fixture',?,'{}')`,
+    )
+    .run(cwd)
+  const project = projectAt(cwd)
+  if (!project) throw new Error('board post test project did not resolve')
+  return { cwd, project }
+}
 
 test('notice store round-trip resolves, renders, delivers, and explicitly acknowledges', () => {
   const clock = Date.now()
@@ -54,34 +73,42 @@ test('a session-start notice dropped for budget stays unread until a stamping re
   expect(readNotices(false, env, clock + 2).map((notice) => notice.id)).toEqual([posted.id])
 })
 
-test('architect origin is snapshotted when posted and survives presence mutation', () => {
+test('architect post resolves its current cwd project, refreshes stale presence, and snapshots it', () => {
   const clock = Date.now() + 30_000
   const session = 'origin-author'
+  const posting = postingProject()
   db()
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test','original-project','/tmp',NULL,?)`,
+       VALUES (?,'claude-code','architect','test','stale-project','/tmp',NULL,?)`,
     )
     .run(session, new Date(clock).toISOString())
   const posted = postNotice(
     { audience: 'operator', title: 'Stable origin', body: 'The origin does not move.' },
     { CLAUDE_CODE_SESSION_ID: session },
     clock,
+    posting.cwd,
   )
+  expect(db().query('SELECT project,cwd FROM presence WHERE session_id=?').get(session)).toEqual({
+    project: posting.project.name,
+    cwd: posting.cwd,
+  })
   db().query('DELETE FROM presence WHERE session_id=?').run(session)
   const rendered = noticeStatus(posted.id, {}).message.text
-  expect(rendered).toContain(`architect ${session} (claude-code, original-project)`)
+  expect(rendered).toContain(`architect ${session} (claude-code, ${posting.project.name})`)
+  expect(rendered).not.toContain('stale-project')
   expect(rendered).not.toContain('unknown project')
 })
 
-test('architect posting without project presence is refused with a remedy', () => {
+test('architect posting outside a registered project is refused with a remedy', () => {
   expect(() =>
     postNotice(
       { audience: 'operator', title: 'No project', body: 'Cannot establish origin.' },
       { CLAUDE_CODE_SESSION_ID: 'missing-project-author' },
       Date.now() + 40_000,
+      '/definitely/not/a/registered/project',
     ),
-  ).toThrow(/run orch board presence from a registered project/)
+  ).toThrow(/post from a registered project or run orch project add first/)
 })
 
 test('secret-shaped title or body is refused before storage without echoing it', () => {
@@ -172,6 +199,7 @@ test('ack deadline cannot exceed expiry and expired notices do not escalate', ()
 
 test('status is limited to operator, author, or an addressed architect and refuses workers', () => {
   const clock = Date.now() + 80_000
+  const posting = postingProject()
   const insert = db().query(
     `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
      VALUES (?,'claude-code','architect','test','status-project','/tmp',NULL,?)`,
@@ -182,6 +210,7 @@ test('status is limited to operator, author, or an addressed architect and refus
     { audience: 'session:status-reader', title: 'Guarded status', body: 'Only relevant actors.' },
     { CLAUDE_CODE_SESSION_ID: 'status-author' },
     clock,
+    posting.cwd,
   )
   expect(noticeStatus(posted.id, {}).message.id).toBe(posted.id)
   expect(noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-author' }).message.id).toBe(
@@ -208,6 +237,62 @@ test('reserved operator sentinel is refused on every session-aware board path', 
   expect(() => readNotices(false, env)).toThrow(/reserved/)
   expect(() => acknowledgeNotice(posted.id, env)).toThrow(/reserved/)
   expect(() => noticeStatus(posted.id, env)).toThrow(/reserved/)
+})
+
+test('delivery entry point refuses the operator sentinel before changing its receipt', () => {
+  const clock = Date.now() + 95_000
+  const posted = postNotice(
+    { audience: 'operator', title: 'Operator receipt', body: 'Must remain untouched.' },
+    {},
+    clock,
+  )
+  expect(() => markInterruptNoticesDelivered('operator', [posted.id])).toThrow(/real session id/)
+  expect(() => markMonitorNoticesDelivered('operator', [`board:${posted.id}`])).toThrow(
+    /real session id/,
+  )
+  expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
+      .get(posted.id, 'operator'),
+  ).toEqual({ delivered_at: null })
+})
+
+test('machine:this resolves to the posting machine, interrupts, and reports unacknowledged sessions', () => {
+  const clock = Date.now() + 100_000
+  const machine = hostname()
+  const insert = db().query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect',?,?,'/tmp',NULL,?)`,
+  )
+  insert.run('machine-one', machine, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run('machine-two', machine, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run('elsewhere', `${machine}-elsewhere`, PLATFORM_SLUG, new Date(clock).toISOString())
+  const posted = postNotice(
+    {
+      audience: 'machine:this',
+      title: 'Machine wind-down',
+      body: 'Checkpoint before restart.',
+      ackRequired: true,
+    },
+    {},
+    clock,
+  )
+  expect(
+    (
+      db().query('SELECT audience FROM board_message WHERE id=?').get(posted.id) as {
+        audience: string
+      }
+    ).audience,
+  ).toBe(`machine:${machine}`)
+  expect(claimInterruptNotices('machine-one', clock + 1).map((notice) => notice.noticeId)).toEqual([
+    `board:${posted.id}`,
+  ])
+  expect(noticeStatus(posted.id, {}, clock + 1).unacknowledged).toEqual([
+    'machine-one',
+    'machine-two',
+  ])
+  acknowledgeNotice(posted.id, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 2)
+  expect(noticeStatus(posted.id, {}, clock + 2).unacknowledged).toEqual(['machine-two'])
 })
 
 test('ack escalation keeps the posting-time audience snapshot across presence refreshes', () => {

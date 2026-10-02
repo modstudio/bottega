@@ -23,12 +23,15 @@ test('architect identity is a table with only the ruled Claude entry', () => {
 
 test('audiences resolve at delivery, including a late joiner', () => {
   const audience = parseAudience('architects')
-  const original = [{ session: 'one', project: PLATFORM_SLUG, lastSeen: 900 }]
+  const original = [{ session: 'one', project: PLATFORM_SLUG, machine: 'host-a', lastSeen: 900 }]
   expect(resolveAudience(audience, original, 1_000, 200)).toEqual(['one'])
   expect(
     resolveAudience(
       audience,
-      [...original, { session: 'late', project: PLATFORM_SLUG, lastSeen: 1_050 }],
+      [
+        ...original,
+        { session: 'late', project: PLATFORM_SLUG, machine: 'host-b', lastSeen: 1_050 },
+      ],
       1_100,
       200,
     ),
@@ -36,10 +39,28 @@ test('audiences resolve at delivery, including a late joiner', () => {
   expect(audienceRefusal(audience, 'architect')).toContain('project:<name>')
 })
 
-test('only operator ack-required notices interrupt', () => {
-  expect(shouldInterrupt({ authorKind: 'operator', ackRequired: true })).toBe(true)
-  expect(shouldInterrupt({ authorKind: 'operator', ackRequired: false })).toBe(false)
-  expect(shouldInterrupt({ authorKind: 'architect', ackRequired: true })).toBe(false)
+test('machine audiences resolve by live presence', () => {
+  const presence = [
+    { session: 'same', project: PLATFORM_SLUG, machine: 'host-a', lastSeen: 900 },
+    { session: 'other', project: PLATFORM_SLUG, machine: 'host-b', lastSeen: 900 },
+  ]
+  expect(resolveAudience(parseAudience('machine:host-a'), presence, 1_000, 200)).toEqual(['same'])
+  expect(parseAudience('machine:this')).toEqual({ kind: 'machine', value: 'this' })
+})
+
+test('operator and machine ack-required notices interrupt', () => {
+  expect(
+    shouldInterrupt({ authorKind: 'operator', audienceKind: 'architects', ackRequired: true }),
+  ).toBe(true)
+  expect(
+    shouldInterrupt({ authorKind: 'operator', audienceKind: 'architects', ackRequired: false }),
+  ).toBe(false)
+  expect(
+    shouldInterrupt({ authorKind: 'architect', audienceKind: 'project', ackRequired: true }),
+  ).toBe(false)
+  expect(
+    shouldInterrupt({ authorKind: 'architect', audienceKind: 'machine', ackRequired: true }),
+  ).toBe(true)
 })
 
 test('expiry, withdrawal, and retention are separate decisions', () => {

@@ -616,6 +616,10 @@ describe('operational monitor conditions', () => {
           .sort(),
       ).toEqual([`run:${stale}`, `run:${unscored}`].sort())
       expect(claimMonitorNotices('somebody-else')).toEqual([])
+      expect(() => claimMonitorNotices('operator')).toThrow(/real session id/)
+      expect(() =>
+        markMonitorNoticesDelivered('operator', ['condition:1'], '2026-09-04T20:01:00.000Z'),
+      ).toThrow(/real session id/)
     } finally {
       spawn.mockRestore()
     }
