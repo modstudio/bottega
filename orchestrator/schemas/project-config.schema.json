@@ -196,6 +196,28 @@
             "additionalProperties": false
           }
         },
+        "compose": {
+          "type": "object",
+          "properties": {
+            "files": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "envFile": {
+              "type": "string",
+              "minLength": 1
+            },
+            "wait": {
+              "type": "boolean"
+            }
+          },
+          "required": ["files"],
+          "additionalProperties": false
+        },
         "shared": {
           "type": "array",
           "items": {

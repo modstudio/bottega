@@ -5,8 +5,8 @@ import { type ComposeCommandPlan, composeCommandPlan } from './compose-provision
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { StepResult } from './recipe-step.ts'
 
-export const COMPOSE_INVENTORY_TIMEOUT_MS = 10_000
-export const COMPOSE_OPERATION_TIMEOUT_MS = 120_000
+const COMPOSE_INVENTORY_TIMEOUT_MS = 10_000
+const COMPOSE_OPERATION_TIMEOUT_MS = 120_000
 
 export type ComposeProcessOutput = {
   exitCode: number | null
