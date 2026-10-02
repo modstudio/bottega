@@ -153,16 +153,24 @@ test('workflow exec keeps its cwd option out of the child argv', async () => {
       cwd,
       '--',
       '/usr/bin/printf',
-      '%s%s%s',
+      '%s%s%s%s',
       '--x',
       '--cwd',
       'child-dir',
+      '--json',
     ])
 
     expect(
       db().query("SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1").get(),
     ).toEqual({
-      command: JSON.stringify(['/usr/bin/printf', '%s%s%s', '--x', '--cwd', 'child-dir']),
+      command: JSON.stringify([
+        '/usr/bin/printf',
+        '%s%s%s%s',
+        '--x',
+        '--cwd',
+        'child-dir',
+        '--json',
+      ]),
       cwd,
     })
   } finally {

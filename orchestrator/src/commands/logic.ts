@@ -192,7 +192,10 @@ export function register(program: Command): void {
         commandOwnsChildArgv ? ['workflow', ...args] : productArgv('workflow', args, options),
         presentation,
         commandOwnsChildArgv
-          ? { cwd: typeof options.cwd === 'string' ? options.cwd : undefined, json: options.json }
+          ? {
+              cwd: typeof options.cwd === 'string' ? options.cwd : undefined,
+              json: Boolean(options.json),
+            }
           : undefined,
       )
     })
