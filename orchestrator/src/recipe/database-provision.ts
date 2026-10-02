@@ -18,11 +18,12 @@ export type DatabaseProcessOutput = {
   exitCode: number | null
   stdout: Uint8Array
   stderr: string
+  timedOut?: boolean
 }
 export type DatabaseSpawn = (
   argv: string[],
   cwd: string,
-  options: { env: Record<string, string>; stdin?: Uint8Array },
+  options: { env: Record<string, string>; stdin?: Uint8Array; timeoutMs?: number },
 ) => DatabaseProcessOutput
 
 const defaultSpawn: DatabaseSpawn = (argv, cwd, options) => {
@@ -32,11 +33,15 @@ const defaultSpawn: DatabaseSpawn = (argv, cwd, options) => {
     stdin: options.stdin,
     stdout: 'pipe',
     stderr: 'pipe',
+    ...(options.timeoutMs === undefined
+      ? {}
+      : { timeout: options.timeoutMs, killSignal: 'SIGKILL' as const }),
   })
   return {
     exitCode: result.exitCode,
     stdout: result.stdout,
     stderr: result.stderr.toString(),
+    timedOut: options.timeoutMs !== undefined && result.signalCode === 'SIGKILL',
   }
 }
 
@@ -120,12 +125,17 @@ function runCommand(
   cwd: string,
   spawn: DatabaseSpawn,
   dump?: Uint8Array,
+  timeoutMs?: number,
 ): DatabaseProcessOutput {
   const call = invocation(command, exec, connection)
   try {
-    return spawn(call.argv, cwd, { env: call.environment, stdin: command.input ? dump : undefined })
+    return spawn(call.argv, cwd, {
+      env: call.environment,
+      stdin: command.input ? dump : undefined,
+      timeoutMs,
+    })
   } catch {
-    return { exitCode: null, stdout: new Uint8Array(), stderr: '' }
+    return { exitCode: null, stdout: new Uint8Array(), stderr: '', timedOut: false }
   }
 }
 
@@ -137,15 +147,25 @@ export function runDatabaseClient(
     connectionValue: string
     exec: ExecContext
     cwd: string
+    timeoutMs?: number
   },
   spawn: DatabaseSpawn = defaultSpawn,
 ): DatabaseProcessOutput {
+  const connection = clientConnection(input.engine, input.connectionValue)
+  if (input.timeoutMs !== undefined) {
+    const connectTimeoutSeconds = String(Math.max(1, Math.ceil(input.timeoutMs / 1_000)))
+    if (input.engine === 'postgres')
+      connection.environment.PGCONNECT_TIMEOUT = connectTimeoutSeconds
+    else connection.arguments.push(`--connect-timeout=${connectTimeoutSeconds}`)
+  }
   return runCommand(
     input.command,
     input.exec,
-    clientConnection(input.engine, input.connectionValue),
+    connection,
     input.cwd,
     spawn,
+    undefined,
+    input.timeoutMs,
   )
 }
 

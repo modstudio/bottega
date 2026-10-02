@@ -11,6 +11,8 @@ import type { TrackedRecipe } from './recipe-schema.ts'
 type ServerEngine = 'postgres' | 'mysql' | 'mariadb'
 type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
 
+export const RECIPE_DATABASE_OBSERVATION_TIMEOUT_MS = 5_000
+
 type RecipeDatabaseObservation = {
   project: string
   allocationKey: string
@@ -93,6 +95,7 @@ function observeAllocation(input: {
         connectionValue: resolved.value,
         exec: allocation.provision.exec,
         cwd: projectRoot,
+        timeoutMs: RECIPE_DATABASE_OBSERVATION_TIMEOUT_MS,
       },
       input.spawn,
     )
@@ -101,6 +104,13 @@ function observeAllocation(input: {
       project,
       allocationKey,
       `database connection key ${connection.key} in ${connection.file} is unusable; correct that main-checkout value`,
+    )
+  }
+  if (listed.timedOut) {
+    return error(
+      project,
+      allocationKey,
+      `${allocation.engine} database list client timed out after ${RECIPE_DATABASE_OBSERVATION_TIMEOUT_MS}ms; check the database host and client`,
     )
   }
   if (listed.exitCode !== 0) {
