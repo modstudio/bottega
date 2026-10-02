@@ -40,7 +40,7 @@ export function loadTrackedRecipe(
   return parseTrackedRecipe(source, path)
 }
 
-export function parseTrackedRecipe(source: string, label: string): LoadTrackedRecipeResult {
+function parseTrackedRecipe(source: string, label: string): LoadTrackedRecipeResult {
   let parsed: unknown
   try {
     parsed = Bun.JSONC.parse(source)
