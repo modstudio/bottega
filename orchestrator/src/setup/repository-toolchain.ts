@@ -155,6 +155,29 @@ function isBeneath(root: string, path: string): boolean {
   return offset === '' || (!offset.startsWith(`..${sep}`) && offset !== '..' && !isAbsolute(offset))
 }
 
+/** Judge one existing path component: a result ends the walk, null continues it. */
+function inspectComponent(
+  current: string,
+  path: string,
+): ToolchainFacts['inferredRecipeFile'] | null {
+  let state: ReturnType<typeof lstatSync>
+  try {
+    state = lstatSync(current)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { status: 'absent', content: null, reason: null }
+    }
+    return { status: 'unsafe', content: null, reason: String(error) }
+  }
+  if (state.isSymbolicLink()) {
+    return { status: 'unsafe', content: null, reason: `${current} is a symbolic link` }
+  }
+  if (current !== path && !state.isDirectory()) {
+    return { status: 'unsafe', content: null, reason: `${current} is not a directory` }
+  }
+  return null
+}
+
 function inspectInferredRecipe(root: string): ToolchainFacts['inferredRecipeFile'] {
   const canonicalRoot = realpathSync(root)
   const path = resolve(canonicalRoot, INFERRED_RECIPE_PATH)
@@ -164,21 +187,8 @@ function inspectInferredRecipe(root: string): ToolchainFacts['inferredRecipeFile
   let current = canonicalRoot
   for (const component of relative(canonicalRoot, path).split(sep).filter(Boolean)) {
     current = resolve(current, component)
-    let state: ReturnType<typeof lstatSync>
-    try {
-      state = lstatSync(current)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return { status: 'absent', content: null, reason: null }
-      }
-      return { status: 'unsafe', content: null, reason: String(error) }
-    }
-    if (state.isSymbolicLink()) {
-      return { status: 'unsafe', content: null, reason: `${current} is a symbolic link` }
-    }
-    if (current !== path && !state.isDirectory()) {
-      return { status: 'unsafe', content: null, reason: `${current} is not a directory` }
-    }
+    const ended = inspectComponent(current, path)
+    if (ended) return ended
   }
   const state = lstatSync(path)
   if (!state.isFile()) {
