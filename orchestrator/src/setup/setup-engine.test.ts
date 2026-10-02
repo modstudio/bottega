@@ -313,6 +313,31 @@ test('notices when an enabled built-in agent harness is not signed in', () => {
   ])
 })
 
+test('notices separately when an enabled built-in harness sign-in state is unknown', () => {
+  const plan = proposeSetup(
+    machineWithHarness('codex', '/bin/codex', 'unknown'),
+    [],
+    [],
+    [agent('codex')],
+  )
+  expect(plan.notices).toEqual([
+    {
+      message: 'the sign-in state of codex could not be established',
+      fix: 'check codex sign-in and re-run orch setup plan',
+    },
+  ])
+})
+
+test('does not notice a disabled built-in agent when harness sign-in state is unknown', () => {
+  const plan = proposeSetup(
+    machineWithHarness('grok', '/bin/grok', 'unknown'),
+    [],
+    [],
+    [agent('grok', false)],
+  )
+  expect(plan.notices).toEqual([])
+})
+
 test('notices when a ready built-in harness has a disabled agent', () => {
   const plan = proposeSetup(
     machineWithHarness('codex', '/bin/codex', 'signed-in'),

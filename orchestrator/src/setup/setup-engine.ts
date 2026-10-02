@@ -198,30 +198,47 @@ const UNREGISTERED_HARNESSES = [
   { fact: 'goose', harness: 'goose' },
 ] as const
 
+function builtInAgentNotice(
+  name: 'codex' | 'grok',
+  machine: SetupFacts,
+  agent: SetupAgent | undefined,
+): SetupNotice | null {
+  if (!agent) return null
+  const harness = machine.harnesses?.[name]
+  if (!agent.enabled) {
+    return harness?.path && harness.auth === 'signed-in'
+      ? {
+          message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
+          fix: `orch agent set ${name} --enabled true`,
+        }
+      : null
+  }
+  if (!harness?.path) {
+    return {
+      message: `${name} agent is enabled but the ${name} harness is not installed`,
+      fix: `install ${name}, or orch agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+    }
+  }
+  if (harness.auth === 'signed-out') {
+    return {
+      message: `${name} agent is enabled but the ${name} harness is not signed in`,
+      fix: `sign in to ${name}, or orch agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
+    }
+  }
+  return harness.auth === 'unknown'
+    ? {
+        message: `the sign-in state of ${name} could not be established`,
+        fix: `check ${name} sign-in and re-run orch setup plan`,
+      }
+    : null
+}
+
 function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] {
   const notices: SetupNotice[] = []
   for (const name of ['codex', 'grok'] as const) {
     const agent = agents.find((candidate) => candidate.name === name)
-    if (!agent) continue
-    const harness = machine.harnesses?.[name]
-    if (agent.enabled) {
-      if (!harness?.path) {
-        notices.push({
-          message: `${name} agent is enabled but the ${name} harness is not installed`,
-          fix: `install ${name}, or orch agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
-        })
-      } else if (harness.auth !== 'signed-in') {
-        notices.push({
-          message: `${name} agent is enabled but the ${name} harness is not signed in`,
-          fix: `sign in to ${name}, or orch agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
-        })
-      }
-    } else if (harness?.path && harness.auth === 'signed-in') {
-      notices.push({
-        message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
-        fix: `orch agent set ${name} --enabled true`,
-      })
-    }
+    const notice = builtInAgentNotice(name, machine, agent)
+    if (notice) notices.push(notice)
   }
   for (const candidate of UNREGISTERED_HARNESSES) {
     if (
