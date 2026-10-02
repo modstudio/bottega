@@ -26,6 +26,7 @@ type DialectResult = {
   tool: string
   toolCallSucceeded: boolean
   failure: 'credentials did not resolve' | 'initialize or tool call failed' | null
+  failureDetail: string | null
   exchanges: McpExchange[]
 }
 
@@ -70,6 +71,7 @@ async function inspect(
       tool: call.tool,
       toolCallSucceeded: false,
       failure: 'credentials did not resolve',
+      failureDetail: null,
       exchanges,
     }
   }
@@ -89,23 +91,25 @@ async function inspect(
       requestedProtocolVersion: requestProtocolVersion,
       answeredProtocolVersion:
         exchanges.find((exchange) => exchange.method === 'initialize')?.answeredProtocolVersion ??
-        null,
+        client.negotiatedProtocolVersion(),
       tool: call.tool,
       toolCallSucceeded: true,
       failure: null,
+      failureDetail: null,
       exchanges,
     }
-  } catch {
+  } catch (error) {
     return {
       project: target.project,
       protocol: target.protocol,
       requestedProtocolVersion: requestProtocolVersion,
       answeredProtocolVersion:
         exchanges.find((exchange) => exchange.method === 'initialize')?.answeredProtocolVersion ??
-        null,
+        client.negotiatedProtocolVersion(),
       tool: call.tool,
       toolCallSucceeded: false,
       failure: 'initialize or tool call failed',
+      failureDetail: client.failureDetail(error),
       exchanges,
     }
   } finally {

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { Mcp, type McpExchange } from './mcp.ts'
+import {
+  failureDetail,
+  MCP_PROTOCOL_VERSION,
+  Mcp,
+  type McpExchange,
+  mcpClientOptions,
+} from './mcp.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -8,6 +14,61 @@ afterEach(() => {
 })
 
 describe('Mcp tool discovery', () => {
+  test('selects production auto negotiation and pins only modern evidence requests', () => {
+    expect(mcpClientOptions()).toEqual({
+      supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
+      versionNegotiation: { mode: 'auto' },
+    })
+    expect(mcpClientOptions('2025-11-25')).toEqual({
+      supportedProtocolVersions: ['2025-11-25'],
+      versionNegotiation: { mode: 'legacy' },
+    })
+    expect(mcpClientOptions('2026-07-28')).toEqual({
+      supportedProtocolVersions: ['2026-07-28'],
+      versionNegotiation: { mode: { pin: '2026-07-28' } },
+    })
+  })
+
+  test('keeps only a redacted failure first line', () => {
+    const detail = failureDetail(
+      new Error('server refused token-value\nAuthorization: Bearer token-value'),
+      'token-value',
+    )
+
+    expect(detail).toBe('server refused [redacted]')
+    expect(detail).not.toContain('token-value')
+    expect(detail).not.toContain('Authorization')
+  })
+
+  test('observes modern discovery and exposes its negotiated protocol version', async () => {
+    const exchanges: McpExchange[] = []
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      expect(message.method).toBe('server/discover')
+      return Response.json({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
+          supportedVersions: ['2026-07-28'],
+          capabilities: {},
+        },
+      })
+    }) as typeof fetch
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 30_000, (event) =>
+      exchanges.push(event),
+    )
+
+    await client.initialize()
+
+    expect(client.negotiatedProtocolVersion()).toBe('2026-07-28')
+    expect(exchanges.map((exchange) => exchange.method)).toEqual(['server/discover'])
+    expect(exchanges[0]?.answeredProtocolVersion).toBeNull()
+    await client.close()
+  })
+
   test('lists advertised tools without calling one', async () => {
     const methods: string[] = []
     globalThis.fetch = (async (_input, init) => {
@@ -31,7 +92,13 @@ describe('Mcp tool discovery', () => {
             }
       return Response.json({ jsonrpc: '2.0', id: message.id, result })
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'fixture',
+      30_000,
+      null,
+      MCP_PROTOCOL_VERSION,
+    )
 
     await client.initialize()
     expect(await client.listTools()).toEqual([
@@ -92,8 +159,12 @@ describe('Mcp tool discovery', () => {
           : { content: [{ type: 'text', text: '{"private":"response"}' }] }
       return Response.json({ jsonrpc: '2.0', id: message.id, result }, { headers })
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'must-not-be-recorded', 30_000, (event) =>
-      exchanges.push(event),
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'must-not-be-recorded',
+      30_000,
+      (event) => exchanges.push(event),
+      '2025-06-18',
     )
 
     await client.initialize()
@@ -134,8 +205,12 @@ describe('Mcp tool discovery', () => {
           'mcp-session-id': 'must-not-be-recorded',
         },
       })) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'must-not-be-recorded', 30_000, (event) =>
-      exchanges.push(event),
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'must-not-be-recorded',
+      30_000,
+      (event) => exchanges.push(event),
+      MCP_PROTOCOL_VERSION,
     )
 
     let failure = ''
@@ -194,7 +269,13 @@ describe('Mcp tool discovery', () => {
       }
       return new Response('fixture transport failure', { status: 503 })
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'fixture',
+      30_000,
+      null,
+      MCP_PROTOCOL_VERSION,
+    )
 
     await client.initialize()
     await expect(client.listTools()).rejects.toThrow(
@@ -255,7 +336,13 @@ describe('Mcp tool discovery', () => {
           : undefined,
       )
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'fixture',
+      30_000,
+      null,
+      MCP_PROTOCOL_VERSION,
+    )
 
     await client.initialize()
     await streamStarted
@@ -312,7 +399,7 @@ describe('Mcp tool discovery', () => {
         { headers: { 'mcp-session-id': 'fixture-session' } },
       )
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 10)
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 10, null, MCP_PROTOCOL_VERSION)
 
     await client.initialize()
     await streamStarted
@@ -367,7 +454,13 @@ describe('Mcp tool discovery', () => {
         { headers: { 'mcp-session-id': 'fixture-session' } },
       )
     }) as typeof fetch
-    const client = new Mcp('https://fixture.invalid/mcp', 'fixture')
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'fixture',
+      30_000,
+      null,
+      MCP_PROTOCOL_VERSION,
+    )
 
     await client.initialize()
     await streamStarted
