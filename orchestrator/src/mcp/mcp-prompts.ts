@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { projectAt } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
@@ -73,7 +73,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
       {
         title: prompt.title,
         description: prompt.description,
-        argsSchema: promptArgsSchema(prompt),
+        argsSchema: z.object(promptArgsSchema(prompt)),
       },
       async (input) => {
         // A client may send an unfilled argument as a blank string; it counts as omitted.

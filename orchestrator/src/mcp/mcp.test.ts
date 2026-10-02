@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import {
+  Client,
+  InMemoryTransport,
+  type JSONRPCMessage,
+  type JSONRPCRequest,
+} from '@modelcontextprotocol/client'
+import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import {
   installRecordSessionRunner,
   memoryRecordSession,
@@ -13,6 +18,65 @@ import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('orch MCP', () => {
+  test('serves the same tools to legacy initialize and a pinned 2026 client', async () => {
+    const [legacyClientTransport, legacyServerTransport] = InMemoryTransport.createLinkedPair()
+    const legacyServer = serveStdio(createDocsMcpServer, { transport: legacyServerTransport })
+    await legacyClientTransport.start()
+
+    let requestId = 0
+    const legacyRequest = <T>(method: string, params?: Record<string, unknown>) => {
+      const id = ++requestId
+      return new Promise<T>((resolve, reject) => {
+        legacyClientTransport.onmessage = (message: JSONRPCMessage) => {
+          if (!('id' in message) || message.id !== id) return
+          if ('error' in message) reject(new Error(message.error.message))
+          else if ('result' in message) resolve(message.result as T)
+        }
+        const request: JSONRPCRequest = {
+          jsonrpc: '2.0',
+          id,
+          method,
+          ...(params ? { params } : {}),
+        }
+        legacyClientTransport.send(request).catch(reject)
+      })
+    }
+
+    try {
+      const initialized = await legacyRequest<{ protocolVersion: string }>('initialize', {
+        protocolVersion: '2026-07-28',
+        capabilities: {},
+        clientInfo: { name: 'orch-legacy-test', version: '1.0.0' },
+      })
+      expect(initialized.protocolVersion).toBe('2025-11-25')
+      await legacyClientTransport.send({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      })
+      const legacyTools = await legacyRequest<{ tools: { name: string }[] }>('tools/list')
+
+      const modernClient = new Client(
+        { name: 'orch-modern-test', version: '1.0.0' },
+        { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+      )
+      const [modernClientTransport, modernServerTransport] = InMemoryTransport.createLinkedPair()
+      const modernServer = serveStdio(createDocsMcpServer, { transport: modernServerTransport })
+      await modernClient.connect(modernClientTransport)
+      try {
+        const modernTools = await modernClient.listTools()
+        expect(modernTools.tools.map(({ name }) => name).sort()).toEqual(
+          legacyTools.tools.map(({ name }) => name).sort(),
+        )
+      } finally {
+        await modernClient.close()
+        await modernServer.close()
+      }
+    } finally {
+      await legacyClientTransport.close()
+      await legacyServer.close()
+    }
+  })
+
   test('worker-facing workflow tools refuse a session release override', async () => {
     const project = 'mcp-release-autonomy'
     upsertProject({

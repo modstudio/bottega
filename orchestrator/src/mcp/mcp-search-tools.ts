@@ -1,6 +1,6 @@
 // concern: mcp-search-tools
 /** Registers the semantic search tools; the retrieval work happens in the spawned retrieval command. */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { searchProjectCode } from '../code/code-search.ts'
 import { searchDocs } from '../doc/doc-search.ts'
@@ -17,10 +17,10 @@ export function registerSearchTools(server: McpServer): void {
     'search_docs',
     {
       description: 'Find docs by meaning and return addresses to open with get_doc.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().trim().min(1),
         k: z.number().int().positive().optional(),
-      },
+      }),
     },
     async ({ query, k }) => text(await searchDocs(query, k ?? 5)),
   )
@@ -29,11 +29,11 @@ export function registerSearchTools(server: McpServer): void {
     'search_code',
     {
       description: 'Find code by meaning and return repository paths and line ranges to open.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().trim().min(1),
         project: z.string().trim().min(1).optional(),
         k: z.number().int().positive().optional(),
-      },
+      }),
     },
     async ({ query, project, k }) => {
       const cwd = process.cwd()

@@ -3,9 +3,9 @@
  * Lists every tools/list page through the standard MCP transports. The caller
  * owns scope policy and interpretation of the returned pages.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 
 const MCP_TOOL_LIST_TIMEOUT_MS = 8_000
 
@@ -121,7 +121,7 @@ export async function callMcpTool(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   return withMcpClient(launch, env, async (client, request) => {
-    const result = await client.callTool({ name, arguments: args }, undefined, request)
+    const result = await client.callTool({ name, arguments: args }, request)
     return unwrapMcpToolResult(result as McpToolResult, name)
   })
 }
