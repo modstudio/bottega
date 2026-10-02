@@ -34,6 +34,7 @@ const hosted = {
       const prefixes: Record<string, string> = {
         alpha: 'ALP',
         beta: 'BET',
+        delta: 'DEL',
         gamma: 'GAM',
         workshop: 'DEV',
       }
@@ -131,6 +132,15 @@ const branchClassification = (
 })
 
 describe('local task tracker', () => {
+  test('a hub-protocol project still mints through hub', async () => {
+    const task = await createTask(
+      { project: 'workshop', title: `Hub-owned ${crypto.randomUUID()}` },
+      { hosted },
+    )
+    expect(task.key).toMatch(/^DEV-\d+$/)
+    expect(task.source).toBe('local')
+  })
+
   test('issues above the highest existing number for the project prefix', async () => {
     seed('BET-700', 'beta')
     expect((await createTask({ project: 'beta', title: 'Next beta task' }, { hosted })).key).toBe(
@@ -139,10 +149,10 @@ describe('local task tracker', () => {
   })
 
   test('an mcp-sourced key participates in issuance and cannot collide', async () => {
-    seed('ALP-900', 'alpha', 'mcp')
-    const task = await createTask({ project: 'alpha', title: 'After tracker task' }, { hosted })
-    expect(task.key).toBe('ALP-901')
-    expect(showTask('ALP-900').task.source).toBe('mcp')
+    seed('DEL-900', 'delta', 'mcp')
+    const task = await createTask({ project: 'delta', title: 'After tracker task' }, { hosted })
+    expect(task.key).toBe('DEL-901')
+    expect(showTask('DEL-900').task.source).toBe('mcp')
   })
 
   test('refuses issuance when the registered project has no prefix', async () => {
@@ -531,7 +541,7 @@ describe('local-authoritative task writes', () => {
 
   test('a remote-tracker project refuses local writes when hosting is absent', async () => {
     await expect(createTask({ project: 'alpha', title: 'Must not mint locally' })).rejects.toThrow(
-      "project 'alpha' declares a remote tracker",
+      "project 'alpha' owns task creation in its tracker",
     )
   })
 

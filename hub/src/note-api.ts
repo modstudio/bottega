@@ -116,6 +116,7 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
       config.recordDatabaseUrl,
       who,
       Number(promote[1]),
+      { task: typeof body?.task === 'string' ? body.task : undefined },
     )
     return value ? json(value) : json({ error: 'note not found' }, 404)
   }

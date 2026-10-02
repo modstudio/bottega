@@ -9,6 +9,7 @@ import {
   mirrorCollisionDecision,
   type TaskIdentity,
 } from './hosted-tasks.ts'
+import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
 
 export type HostedNote = {
@@ -267,8 +268,9 @@ export async function promoteHostedNote(
   url: string,
   identity: TaskIdentity,
   number: number,
+  input: { task?: string } = {},
   createTask = createHostedTaskInTransaction,
-): Promise<{ note: HostedNote; task: HostedTask } | null> {
+): Promise<{ note: HostedNote; task: HostedTask | null } | null> {
   return tenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
@@ -277,6 +279,13 @@ export async function promoteHostedNote(
     if (!note) return null
     if (note.promoted_task)
       throw new Error(`note ${number} is already promoted to ${note.promoted_task}`)
+    if (input.task !== undefined) {
+      const project = rows<{ key_prefixes: string[]; tracker: { protocol?: string } | null }>(
+        await tx`SELECT key_prefixes,tracker FROM project
+        WHERE space_id=${identity.spaceId}::uuid AND name=${note.project}`,
+      )[0]
+      validateHostedPromotionTaskKey(input.task, note.project, project)
+    }
     const anchors = JSON.parse(note.anchors) as Array<Record<string, unknown>>
     const evidence = anchors
       .map(
@@ -284,17 +293,53 @@ export async function promoteHostedNote(
           `Sighting ${i + 1}: cwd=${a.cwd}; branch=${a.branch ?? '-'}; commit=${a.commit ?? '-'}; run=${a.run_id ?? '-'}; session=${a.session_id ?? '-'}`,
       )
       .join('\n')
-    const task = await createTask(tx, identity, {
-      project: note.project,
-      title: note.text,
-      body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
-    })
+    const selected = await selectPromotionTask(
+      input.task,
+      async (key) =>
+        rows<HostedTask>(
+          await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_name=${note.project} AND key=${key}`,
+        )[0] ?? null,
+      () =>
+        createTask(tx, identity, {
+          project: note.project,
+          title: note.text,
+          body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
+        }),
+    )
+    const { task } = selected
     const promoted = rows<HostedNote>(
-      await tx`UPDATE hub_note SET promoted_task=${task.key},promoted_task_id=${task.id}::uuid,last_seen_at=now(),updated_at=now()
+      await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND number=${number} RETURNING *,number::int number`,
     )[0]!
     return { note: promoted, task }
   })
+}
+
+export function validateHostedPromotionTaskKey(
+  key: string,
+  projectName: string,
+  project:
+    | { key_prefixes: readonly string[]; tracker: { protocol?: string } | null | undefined }
+    | undefined,
+): void {
+  if (!project || !projectHasRemoteTracker(project.tracker))
+    throw new Error(`project '${projectName}' does not have a remote tracker`)
+  const prefix = key.split('-', 1)[0]?.toUpperCase()
+  const prefixes = project.key_prefixes.map((candidate) => candidate.toUpperCase())
+  if (!prefix || !prefixes.includes(prefix))
+    throw new Error(
+      `task key '${key}' has the wrong prefix for project ${projectName}; expected: ${project.key_prefixes.join(', ')}`,
+    )
+}
+
+export async function selectPromotionTask(
+  existingKey: string | undefined,
+  find: (key: string) => Promise<HostedTask | null>,
+  mint: () => Promise<HostedTask>,
+): Promise<{ key: string; task: HostedTask | null }> {
+  if (existingKey) return { key: existingKey, task: await find(existingKey) }
+  const task = await mint()
+  return { key: task.key, task }
 }
 
 export async function dropHostedNote(

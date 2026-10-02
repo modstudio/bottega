@@ -70,7 +70,12 @@ console.log(
       stack: null,
       canon: true,
       repository: true,
-      settings: { keyPrefixes: ['LOC'], color: '#654321', colorDark: '#fedcba' },
+      settings: {
+        keyPrefixes: ['LOC'],
+        color: '#654321',
+        colorDark: '#fedcba',
+        tracker: { protocol: 'hub' },
+      },
     },
     {
       id: 6,

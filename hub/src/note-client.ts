@@ -57,11 +57,11 @@ export const hostedAcknowledgeNote = (number: number, session: string, options?:
     acknowledgement: HostedAcknowledgement
     alreadyAcknowledged: boolean
   }>(`/v1/notes/${number}/acknowledgements`, 'POST', { session }, options)
-export const hostedPromoteNote = (number: number, options?: Options) =>
-  request<{ note: HostedNote; task: HostedTask }>(
+export const hostedPromoteNote = (number: number, task: string | undefined, options?: Options) =>
+  request<{ note: HostedNote; task: HostedTask | null }>(
     `/v1/notes/${number}/promote`,
     'POST',
-    {},
+    task ? { task } : {},
     options,
   )
 export const hostedDropNote = (number: number, reason: string, options?: Options) =>

@@ -8,7 +8,6 @@ import {
   ASKED_VIA_VALUES,
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
-import { type TrackerProtocol, trackerCreatedTaskKey } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { collectOnce, releaseLease, watch, withLease } from './collect.ts'
 import {
@@ -33,10 +32,10 @@ import {
   mergeNote,
   noteSessionId,
   parseExplicitNoteAnchor,
-  promoteNote,
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
+import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
@@ -82,7 +81,8 @@ import {
 } from './task-command-arguments.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { hoursAgo } from './time.ts'
-import { createAdvertisedTrackerTask } from './tracker-new.ts'
+import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
+import { createTrackerOwnedTask } from './tracker-task-cli.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -114,6 +114,7 @@ const hubHelpRequested = () => {
     '--since',
     '--status',
     '--title',
+    '--task',
     '--body',
     '--body-file',
     '--days',
@@ -327,6 +328,25 @@ async function createTaskCommand(
         }
       : undefined
   try {
+    if (taskHas('allow-duplicate') && !override?.trim())
+      throw new Error('--allow-duplicate requires a non-empty reason')
+    const trackerKey = await createTrackerOwnedTask(
+      {
+        project,
+        title,
+        body,
+        status: taskFlag('status'),
+        parent: taskFlag('parent'),
+      },
+      {
+        allowDuplicateReason: taskHas('allow-duplicate') ? override : undefined,
+        afterDuplicateSearch,
+      },
+    )
+    if (trackerKey) {
+      console.log(trackerKey)
+      return
+    }
     const row = await createTask(
       { project, title, status: taskFlag('status'), parent: taskFlag('parent'), body },
       {
@@ -498,17 +518,11 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     const client = new Mcp(auth.url, auth.token)
     try {
       await client.initialize()
-      const result = await createAdvertisedTrackerTask(client, project, {
+      const key = await createAdvertisedTrackerTaskKey(client, project, {
         title: required('title'),
         body: required('body'),
         status,
       })
-      const key = trackerCreatedTaskKey(tracker.protocol as TrackerProtocol, result)
-      if (!key) {
-        throw new Error(
-          `tracker created a task but returned no task key: ${JSON.stringify(result)}`,
-        )
-      }
       console.log(key)
     } finally {
       await client.close()
@@ -645,7 +659,7 @@ async function note() {
     return
   }
   if (sub === 'promote') {
-    const row = await promoteNote(argv[2] ?? '')
+    const row = await promoteNoteCommand(argv[2] ?? '', flag('task'), has('task'))
     console.log(`${row.promoted_task}`)
     return
   }
