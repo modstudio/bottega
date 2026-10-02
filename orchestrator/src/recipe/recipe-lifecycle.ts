@@ -14,12 +14,13 @@ export function sharedDeclarations(recipe: TrackedRecipe): string[] {
 /** Plan creation phases in execution order without performing them. */
 export function creationPlan(
   recipe: TrackedRecipe,
-): { kind: 'env' | 'database' | 'step'; name: string }[] {
+): { kind: 'env' | 'compose' | 'database' | 'step'; name: string }[] {
   const databases = Object.entries(recipe.allocate?.databases ?? {})
     .filter(([, allocation]) => allocation.provision)
     .map(([name]) => ({ kind: 'database' as const, name }))
   return [
     { kind: 'env', name: 'env files' },
+    ...(recipe.compose ? [{ kind: 'compose' as const, name: 'compose' }] : []),
     ...databases,
     ...recipe.create.map((step) => ({ kind: 'step' as const, name: step.name })),
   ]

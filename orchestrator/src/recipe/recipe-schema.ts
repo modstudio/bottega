@@ -114,6 +114,12 @@ const sharedSchema = strictObject({
     .optional(),
 })
 
+const composeSchema = strictObject({
+  files: z.array(z.string().min(1)).min(1),
+  envFile: z.string().min(1).optional(),
+  wait: z.boolean().optional(),
+})
+
 const recipeShape = strictObject({
   baseRef: z.string().optional(),
   relativePaths: z
@@ -144,6 +150,7 @@ const recipeShape = strictObject({
     )
     .optional(),
   env: z.array(envFileSchema).optional(),
+  compose: composeSchema.optional(),
   shared: z.array(sharedSchema).optional(),
   pre: z.array(stepSchema).optional(),
   create: z.array(stepSchema),
@@ -428,6 +435,27 @@ function validateEnvPaths(recipe: RecipeInput, context: z.RefinementCtx): void {
   }
 }
 
+function validateComposePaths(recipe: RecipeInput, context: z.RefinementCtx): void {
+  if (!recipe.compose) return
+  for (const [index, path] of recipe.compose.files.entries()) {
+    if (!isAbsoluteOrParentPath(path)) continue
+    context.addIssue({
+      code: 'custom',
+      path: ['compose', 'files', index],
+      message:
+        'compose file rule: files must be relative to the tree root and contain no .. segment',
+    })
+  }
+  if (recipe.compose.envFile && isAbsoluteOrParentPath(recipe.compose.envFile)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['compose', 'envFile'],
+      message:
+        'compose env-file rule: envFile must be relative to the tree root and contain no .. segment',
+    })
+  }
+}
+
 function validateProvisionPaths(recipe: RecipeInput, context: z.RefinementCtx): void {
   const paths = new Set<string>()
   for (const [index, entry] of (recipe.provision ?? []).entries()) {
@@ -515,12 +543,16 @@ const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
   validateAllocationEnvironmentNames(recipe, context)
   validateWorkingDirectories(recipe, context)
   validateEnvPaths(recipe, context)
+  validateComposePaths(recipe, context)
   validateProvisionPaths(recipe, context)
   validateShared(recipe, context)
 })
 
 export const recipeSchema = validatedRecipeSchema.transform((recipe) => ({
   ...recipe,
+  ...(recipe.compose === undefined
+    ? {}
+    : { compose: { ...recipe.compose, wait: recipe.compose.wait ?? true } }),
   ...(recipe.allocate?.databases === undefined
     ? {}
     : {
