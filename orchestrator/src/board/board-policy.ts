@@ -3,6 +3,8 @@ export const BOARD_DEFAULT_ACK_DEADLINE_MS = 60 * 60 * 1000
 export const BOARD_POST_RATE_LIMIT = 10
 export const BOARD_POST_RATE_WINDOW_MS = 10 * 60 * 1000
 export const BOARD_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
+export const BOARD_TITLE_MAX_CHARS = 120
+export const BOARD_BODY_MAX_CHARS = 4000
 const BOARD_RETENTION_MS = 14 * 24 * 60 * 60 * 1000
 
 /** The local operator has no session id; this reserved reader keeps receipts non-null. */
@@ -87,6 +89,8 @@ export function postDecision(input: {
 export const needsAckEscalation = (input: {
   ackRequired: boolean
   deadline: number | null
+  expiresAt: number
+  withdrawnAt: number | null
   acknowledgedAt: number | null
   audienceAtPosting: boolean
   now: number
@@ -94,5 +98,6 @@ export const needsAckEscalation = (input: {
   input.ackRequired &&
   input.deadline !== null &&
   input.deadline <= input.now &&
+  messageIsLive(input, input.now) &&
   input.acknowledgedAt === null &&
   input.audienceAtPosting

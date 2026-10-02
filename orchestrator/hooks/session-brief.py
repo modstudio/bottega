@@ -137,7 +137,7 @@ HOOK_CONTEXT_TRUNCATION_MARKER = "…"
 
 # Least important first. Board notices are separately droppable at lowest priority.
 _HOOK_CONTEXT_DROPPABLE = (
-    ("board", "board notices", "orch board read"),
+    ("board", "board notices", "orch board read --all"),
     ("issues", "filed issues", "orch fix-defect --waiting"),
     ("inbox", "inbox detail", "orch inbox"),
     ("extra", "heartbeat and monitor extra", "orch monitor"),
@@ -166,6 +166,32 @@ def _fit_to_budget(text, budget):
     if budget < len(marker):
         return ""
     return text[: budget - len(marker)] + marker
+
+
+def _board_slice(completed):
+    if completed is None or completed.returncode != 0:
+        return "", []
+    try:
+        rows = json.loads(completed.stdout)
+        if not isinstance(rows, list) or not all(
+            isinstance(row, dict)
+            and isinstance(row.get("id"), int)
+            and row["id"] > 0
+            and isinstance(row.get("text"), str)
+            for row in rows
+        ):
+            raise ValueError("invalid board notice response")
+        return "\n\n".join(row["text"] for row in rows), [row["id"] for row in rows]
+    except Exception:
+        return "", []
+
+
+def _emitted_board_ids(output, board_text, board_ids):
+    emitted_context = (
+        output.get("hookSpecificOutput", {}).get("additionalContext", "")
+        if isinstance(output, dict) else ""
+    )
+    return list(board_ids) if board_ids and board_text and board_text in emitted_context else []
 
 
 def assemble_additional_context(
@@ -263,6 +289,10 @@ def main() -> int:
     settings_read_failure = None
     capability_dir = None
     output = None
+    board_text = ""
+    board_ids = []
+    cwd = None
+    orch = None
     monitor_notices = []
     inbox_env = None
     notice_timeout = 1.0
@@ -293,7 +323,7 @@ def main() -> int:
                 [orch, "board", "presence"], env=inbox_env, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
             )
-            board_p = _start(orch, "board", "read", env=inbox_env, cwd=cwd)
+            board_p = _start(orch, "board", "read", "--claim", env=inbox_env, cwd=cwd)
         inbox_p = _start(
             orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )
@@ -324,6 +354,7 @@ def main() -> int:
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
         board = _wait(board_p, deadline) if board_p is not None else None
+        board_text, board_ids = _board_slice(board)
         settings_apply = None
         if settings_p is not None:
             try:
@@ -632,7 +663,7 @@ def main() -> int:
             "inbox": "\n".join(inbox_lines),
             "issues": "\n".join(issues_lines),
             "extra": extra_section,
-            "board": board.stdout.strip() if board is not None and board.returncode == 0 else "",
+            "board": board_text,
         }
         health_context = assemble_additional_context(**health_sections)
         health_notices = list(notices)
@@ -712,6 +743,20 @@ def main() -> int:
         if output is not None:
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
+        emitted_board_ids = _emitted_board_ids(output, board_text, board_ids)
+        if emitted_board_ids and inbox_env is not None and orch is not None:
+            try:
+                subprocess.run(
+                    [orch, "board", "delivered", ",".join(str(item) for item in emitted_board_ids)],
+                    env=inbox_env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=acknowledgement_timeout,
+                    check=False,
+                    cwd=cwd,
+                )
+            except Exception:
+                pass
         if monitor_notices and inbox_env is not None:
             try:
                 subprocess.run(

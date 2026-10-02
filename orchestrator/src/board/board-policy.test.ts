@@ -62,6 +62,8 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
     needsAckEscalation({
       ackRequired: true,
       deadline: 20,
+      expiresAt: 30,
+      withdrawnAt: null,
       acknowledgedAt: null,
       audienceAtPosting: true,
       now: 21,
@@ -71,8 +73,21 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
     needsAckEscalation({
       ackRequired: true,
       deadline: 20,
+      expiresAt: 30,
+      withdrawnAt: null,
       acknowledgedAt: null,
       audienceAtPosting: false,
+      now: 21,
+    }),
+  ).toBe(false)
+  expect(
+    needsAckEscalation({
+      ackRequired: true,
+      deadline: 20,
+      expiresAt: 21,
+      withdrawnAt: null,
+      acknowledgedAt: null,
+      audienceAtPosting: true,
       now: 21,
     }),
   ).toBe(false)

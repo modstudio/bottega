@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import {
   acknowledgeNotice,
   noticeStatus,
@@ -21,8 +22,8 @@ export function registerBoardTools(server: McpServer): void {
       description: 'Post a local architect-board notice.',
       inputSchema: z.object({
         audience: z.string().min(1),
-        title: z.string().min(1),
-        body: z.string().min(1),
+        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
         ack_required: z.boolean().optional(),
         deadline_ms: z.number().int().positive().optional(),
         expires_ms: z.number().int().positive().optional(),

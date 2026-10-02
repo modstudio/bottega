@@ -519,6 +519,13 @@
       "when": 1790884800001,
       "tag": "0073_board_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1790884800002,
+      "tag": "0074_board_origin_snapshot",
+      "breakpoints": true
     }
   ]
 }

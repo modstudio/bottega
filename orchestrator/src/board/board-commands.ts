@@ -1,6 +1,8 @@
 import type { Command } from 'commander'
 import {
   acknowledgeNotice,
+  claimNotices,
+  markNoticesDelivered,
   noticeStatus,
   postNotice,
   readNotices,
@@ -51,9 +53,20 @@ export function registerBoardCommands(program: Command): void {
   board
     .command('read')
     .option('--all')
+    .option('--claim', 'read without stamping delivery (for the session-start hook)')
     .action((options) => {
-      for (const notice of readNotices(Boolean(options.all))) console.log(notice.text)
+      const notices = options.claim
+        ? claimNotices(Boolean(options.all))
+        : readNotices(Boolean(options.all))
+      if (options.claim) console.log(JSON.stringify(notices))
+      else for (const notice of notices) console.log(notice.text)
     })
+  board.command('delivered <ids>').action((ids) => {
+    const parsed = String(ids).split(',').map(Number)
+    if (!parsed.length || parsed.some((id) => !Number.isSafeInteger(id) || id <= 0))
+      throw new Error('board delivered ids must be comma-separated positive integers')
+    markNoticesDelivered(parsed)
+  })
   board.command('ack <id>').action((id) => acknowledgeNotice(Number(id)))
   board.command('status <id>').action((id) => console.log(JSON.stringify(noticeStatus(Number(id)))))
   board.command('withdraw <id>').action((id) => withdrawNotice(Number(id)))
