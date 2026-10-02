@@ -1,5 +1,9 @@
 export const branchModuleSpecs = [
   {
+    file: 'orchestrator/src/branch/branch-base-claim.ts',
+    allowed: ['../database/db.ts', '../project/projects.ts'],
+  },
+  {
     file: 'orchestrator/src/branch/create-time-settlement.ts',
     allowed: [
       '../database/db.ts',

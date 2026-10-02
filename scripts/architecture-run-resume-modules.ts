@@ -1,5 +1,9 @@
 export const runResumeModuleSpecs = [
   {
+    file: 'orchestrator/src/run/run-base-resolution.ts',
+    allowed: ['bun:sqlite', '../database/db.ts', '../git/git-environment.ts'],
+  },
+  {
     file: 'orchestrator/src/run/resume-tree.ts',
     allowed: [],
   },

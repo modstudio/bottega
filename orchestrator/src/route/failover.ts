@@ -47,6 +47,8 @@ export type DetachSpec = {
   key?: string
   repo?: string
   base?: string
+  /** Readable branch name retained when an internal chain resume uses base as an immutable commit. */
+  launchBase?: string
   avoid?: string[]
   distinctModels?: string[]
   retryOf?: number
@@ -118,6 +120,7 @@ export function detachedRunOptions(
     key,
     repo,
     base,
+    launchBase,
     avoid,
     distinctModels,
     retryOf,
@@ -148,6 +151,7 @@ export function detachedRunOptions(
     key,
     repo,
     base,
+    launchBase,
     avoid,
     distinctModels,
     retryOf,
@@ -181,6 +185,7 @@ export function detachedRunOptions(
     key,
     repo,
     base,
+    launchBase,
     avoid,
     distinctModels,
     retryOf,

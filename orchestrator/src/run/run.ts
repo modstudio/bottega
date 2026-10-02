@@ -93,7 +93,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
-import { resolveBase, resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
+import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import {
   pruneRuns,
@@ -102,6 +102,7 @@ import {
   runFilePaths,
   runScratchDir,
 } from './run-artifacts.ts'
+import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { decideCodexSandbox } from './run-codex-sandbox.ts'
@@ -252,6 +253,8 @@ export async function run(opts: {
   key?: string
   /** A caller-selected git floor, used only by lifecycle tools that accept it. */
   base?: string
+  /** Internal readable base name when a resumed chain resolves from its recorded commit. */
+  launchBase?: string
   /** The task branch resolution already performed by dispatch for this launch. */
   resolvedTaskBranch?: ResolvedTaskBranch | null
   /** Fan-out diversity constraints, resolved by the CLI before a row exists. */
@@ -357,7 +360,13 @@ export async function run(opts: {
           readOnlyBaseProjectPath(opts.repo, callerCwd),
         )
       : null
-  if (opts.base && readOnlyBase === null) resolveBase(callerCwd, opts.base)
+  if (shouldResolveRunBase(opts.base, readOnlyBase))
+    resolveRunBase({
+      cwd: callerCwd,
+      base: opts.base,
+      resumeParent: opts.resume?.parent,
+      launchBase: opts.launchBase,
+    })
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
   // that makes it one. `available()` had only ever checked that an endpoint was
   // CONFIGURED, which stayed true while the local model host was powered off

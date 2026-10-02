@@ -105,6 +105,7 @@ type ClaimOptions = {
   cwd?: string
   launchCwd?: string
   base?: string
+  launchBase?: string
   resolvedTaskBranch?: TaskBranchCandidate | null
   carry?: boolean
   resume?: RunResumeOptions
@@ -290,7 +291,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     project: runProjectName,
     key: launchKey,
   })
-  const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
+  const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
   const resumePlan = opts.resume?.treePlan
