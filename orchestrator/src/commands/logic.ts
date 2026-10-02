@@ -34,6 +34,7 @@ import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
+import { treeReseedCommand } from '../recipe/tree-reseed.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
 import {
   fixDefectCommand,
@@ -125,6 +126,11 @@ export function register(program: Command): void {
     .command('refresh <path>')
     .allowExcessArguments(false)
     .action((path) => treeRefreshCommand(path, { log }))
+  tree
+    .command('reseed [seed]')
+    .option('--path <tree>', '', process.cwd())
+    .allowExcessArguments(false)
+    .action((seed, options) => treeReseedCommand(options.path, seed, { log }))
   program
     .command('migrate')
     .option('--backfill-spec-sha')

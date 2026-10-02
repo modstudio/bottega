@@ -46,6 +46,22 @@ describe('tracked recipe refusal rules', () => {
     ).toContain('unknown-key rule')
   })
 
+  test('accepts seed choices and requires the default to be one of them', () => {
+    expect(
+      recipeSchema.safeParse({
+        create: [],
+        seeds: {
+          choices: ['small', '--bundle=full --budget-mb=700'],
+          default: 'small',
+          reseed: { name: 'reseed', run: command },
+        },
+      }).success,
+    ).toBe(true)
+    expect(
+      messages({ create: [], seeds: { choices: ['small'], default: 'full' } }).join('\n'),
+    ).toContain('default must be one of seeds.choices')
+  })
+
   test('names placeholders in text and structured step arguments', () => {
     expect(
       stepPlaceholders({

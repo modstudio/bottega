@@ -23,6 +23,7 @@ import {
   resolvedWorktreeTool,
   validateStoredProjectSettings,
 } from '../project/projects.ts'
+import { loadTrackedRecipe } from '../recipe/recipe-loader.ts'
 import {
   implicitReviewRefusal,
   measureImplicitReviewTarget,
@@ -30,11 +31,41 @@ import {
   takesReviewTarget,
 } from '../review/review-target.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
+import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { createCommandExists, validateSeedWithTool } from '../worktree/worktree-preflight.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 
 const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
+
+export function seedPreflight(input: {
+  requested: string | undefined
+  registerChoices: string[] | undefined
+  recipeSeeds: { choices: string[]; default?: string } | undefined
+}): { seed: string | undefined; refusal: string | null } {
+  const choices = input.recipeSeeds?.choices ?? input.registerChoices
+  const seed = input.requested ?? input.recipeSeeds?.default
+  return {
+    seed,
+    refusal:
+      choices?.length && !seed
+        ? `this project requires a database size for a new worktree, and has no default.\n` +
+          `${seedGuidance(choices)}\n\n` +
+          `Choosing is the architect's call: it depends on what the task touches.`
+        : null,
+  }
+}
+
+function trackedRecipeSeeds(
+  project: ReturnType<typeof projectAt>,
+  tool: ReturnType<typeof resolvedWorktreeTool>,
+): { choices: string[]; default?: string } | undefined {
+  if (!project) return undefined
+  const lifecycle = resolveWorktreeLifecycle(tool)
+  if (lifecycle.form !== 'tracked-recipe') return undefined
+  const loaded = loadTrackedRecipe(project.path, lifecycle.recipePath)
+  return loaded.ok ? loaded.recipe?.seeds : undefined
+}
 
 /** Stable lens question and exclusions for a findings dispatch that named --lens. */
 export function resolvedFindingsLens(
@@ -118,7 +149,7 @@ export function preflight(
   cwd: string,
   seed?: string,
   key?: string,
-  baseRef?: string,
+  _baseRef?: string,
   reusesWorktree = false,
   seedAlreadyValidated = false,
   lens?: string,
@@ -195,7 +226,12 @@ export function preflight(
     const malformed = validateStoredProjectSettings(project.settings, project.path)
     if (malformed.length) throw new Error(malformed.join('\n'))
   }
-  const effectiveSeed = seed
+  const seedDecision = seedPreflight({
+    requested: seed,
+    registerChoices: tool?.seeds,
+    recipeSeeds: trackedRecipeSeeds(project, tool),
+  })
+  const effectiveSeed = seedDecision.seed
   const keyPattern = tool?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
   const problems: string[] = []
   if (key && !new RegExp(keyPattern).test(key)) {
@@ -214,12 +250,8 @@ export function preflight(
         `not invent one.\n  --key <KEY-123>`,
     )
   }
-  if (writesJob && tool?.seeds?.length && !effectiveSeed) {
-    problems.push(
-      `this project requires a database size for a new worktree, and has no default.\n` +
-        `${seedGuidance(tool.seeds)}\n\n` +
-        `Choosing is the architect's call: it depends on what the task touches.`,
-    )
+  if (writesJob && seedDecision.refusal) {
+    problems.push(seedDecision.refusal)
   } else if (writesJob && createHasPlaceholder(tool?.create, 'seed') && !effectiveSeed) {
     problems.push(
       `this project's worktree create arguments contain {seed}, so a seed is required.\n` +

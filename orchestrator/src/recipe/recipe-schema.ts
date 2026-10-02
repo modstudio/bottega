@@ -60,6 +60,12 @@ const stepFields = {
 const stepSchema = strictObject(stepFields)
 const refreshStepSchema = stepSchema.omit({ undo: true })
 
+const seedsSchema = strictObject({
+  choices: z.array(z.string().min(1)).min(1),
+  default: z.string().min(1).optional(),
+  reseed: refreshStepSchema.optional(),
+})
+
 const allocationsSchema = strictObject({
   ports: z.array(z.string().min(1)).optional(),
   databases: z.record(z.string(), databaseAllocationSchema).optional(),
@@ -155,6 +161,7 @@ const recipeShape = strictObject({
   pre: z.array(stepSchema).optional(),
   create: z.array(stepSchema),
   refresh: z.array(refreshStepSchema).optional(),
+  seeds: seedsSchema.optional(),
   serve: z
     .record(z.string(), z.array(stepSchema))
     .describe(
@@ -193,6 +200,7 @@ function allSteps(recipe: RecipeInput): StepInput[] {
     ...(recipe.pre ?? []),
     ...recipe.create,
     ...(recipe.refresh ?? []),
+    ...(recipe.seeds?.reseed ? [recipe.seeds.reseed] : []),
     ...Object.values(recipe.serve ?? {}).flat(),
     ...(recipe.destroy ?? []),
     ...(recipe.verifyDown ?? []),
@@ -289,6 +297,16 @@ function validateStepNames(recipe: RecipeInput, context: z.RefinementCtx): void 
     }
     names.add(step.name)
   }
+}
+
+function validateSeedDefault(recipe: RecipeInput, context: z.RefinementCtx): void {
+  const declared = recipe.seeds
+  if (declared?.default === undefined || declared.choices.includes(declared.default)) return
+  context.addIssue({
+    code: 'custom',
+    path: ['seeds', 'default'],
+    message: 'seed default rule: default must be one of seeds.choices',
+  })
 }
 
 function validatePlaceholders(recipe: RecipeInput, context: z.RefinementCtx): void {
@@ -535,6 +553,7 @@ function validateShared(recipe: RecipeInput, context: z.RefinementCtx): void {
 }
 
 const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
+  validateSeedDefault(recipe, context)
   validateStepNames(recipe, context)
   validatePlaceholders(recipe, context)
   validateStringAllocationTemplates(recipe, context)

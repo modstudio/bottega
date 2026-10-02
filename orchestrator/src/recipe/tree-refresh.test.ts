@@ -9,6 +9,7 @@ import {
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
 } from './tree-refresh.ts'
+import { reseedSeed, reseedStep } from './tree-reseed.ts'
 
 describe('tree refresh path collisions', () => {
   test('returns incoming paths that already exist as ignored or untracked files', () => {
@@ -139,5 +140,23 @@ describe('tree refresh recipe context', () => {
       step: 'observe lifecycle',
       placeholder: 'key',
     })
+  })
+})
+
+describe('tree reseed seed selection', () => {
+  test('uses the recorded launch seed when no seed is supplied', () => {
+    expect(reseedSeed(undefined, 'small', ['small', 'full'])).toBe('small')
+  })
+
+  test('refuses without a supplied or recorded seed and names the remedy and choices', () => {
+    expect(() => reseedSeed(undefined, null, ['small', 'full'])).toThrow(
+      'orch tree reseed <seed> (recipe choices: "small", "full")',
+    )
+  })
+
+  test('refuses a recipe without a reseed hook and names the recipe key to add', () => {
+    expect(() => reseedStep({ create: [] }, '.orch/worktree.jsonc')).toThrow(
+      'add worktree.seeds.reseed to the recipe',
+    )
   })
 })

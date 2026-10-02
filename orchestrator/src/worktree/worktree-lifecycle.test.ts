@@ -125,6 +125,25 @@ describe('worktree lifecycle declarations are measured without inference', () =>
     expect(withoutShared).not.toContain('shared:')
     expect(withShared).toContain('shared: 2 declared')
   })
+
+  test('doctor reports duplicate register and recipe seed guidance', () => {
+    const line = lifecycleReportLines(
+      [
+        {
+          name: 'app',
+          path: '/projects/app',
+          worktree: { recipePath: '.orch/worktree.jsonc', seeds: ['register-small'] },
+        },
+      ],
+      () => true,
+      () => ({
+        ok: true,
+        recipe: { create: [], seeds: { choices: ['recipe-small'] } },
+      }),
+    )[0]!
+    expect(line).toContain('duplicate seeds:')
+    expect(line).toContain('recipe wins')
+  })
 })
 
 describe('inline recipe element support', () => {

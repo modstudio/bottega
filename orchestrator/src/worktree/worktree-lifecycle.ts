@@ -15,6 +15,7 @@ type WorktreeDeclaration = {
   create?: unknown
   remove?: unknown
   sweep?: unknown
+  seeds?: unknown[]
 }
 
 export type TrackedRecipeStatus = {
@@ -152,6 +153,30 @@ function declaredInlineElements(recipe: unknown): string[] {
   })
 }
 
+function trackedRecipeLifecycleLine(
+  project: LifecycleProject,
+  resolution: Extract<LifecycleResolution, { form: 'tracked-recipe' }>,
+  fileExists: (path: string) => boolean,
+  loadRecipe: (projectPath: string, recipePath: string) => LoadTrackedRecipeResult,
+): string {
+  const pointer = resolution.recipePath
+  const status = trackedRecipeStatus(project.path, project.worktree, fileExists)!
+  const loaded = loadRecipe(project.path, pointer)
+  if (!loaded.ok) {
+    return `lifecycle ${project.name}: tracked-recipe (${pointer}); invalid (${loaded.errors.length} error(s)); first: ${loaded.errors[0]}`
+  }
+  if (!loaded.recipe) {
+    return `lifecycle ${project.name}: none; ${pointer} (${resolution.source}) declares no worktree lifecycle`
+  }
+  const shared = loaded.recipe.shared?.length ?? 0
+  const declaration = shared > 0 ? `; shared: ${shared} declared` : ''
+  const duplicateSeeds =
+    loaded.recipe.seeds && project.worktree?.seeds?.length
+      ? '; duplicate seeds: register worktree.seeds and tracked recipe seeds are both declared; recipe wins'
+      : ''
+  return `lifecycle ${project.name}: tracked-recipe (${pointer}, ${resolution.source}); valid at ${status.path}${declaration}${duplicateSeeds}`
+}
+
 /** Compose doctor lines from measurements; the caller supplies the filesystem observation. */
 export function lifecycleReportLines(
   projects: LifecycleProject[],
@@ -205,18 +230,7 @@ function projectLifecycleLine(
     return `lifecycle ${project.name}: inline-recipe (${elements.join(', ') || 'empty'}); ${suffixes.join('; ') || 'migration-ready'}`
   }
   if (form === 'tracked-recipe') {
-    const pointer = resolution.recipePath
-    const status = trackedRecipeStatus(project.path, worktree, fileExists)!
-    const loaded = loadRecipe(project.path, pointer)
-    if (loaded.ok) {
-      if (!loaded.recipe) {
-        return `lifecycle ${project.name}: none; ${pointer} (${resolution.source}) declares no worktree lifecycle`
-      }
-      const shared = loaded.recipe.shared?.length ?? 0
-      const declaration = shared > 0 ? `; shared: ${shared} declared` : ''
-      return `lifecycle ${project.name}: tracked-recipe (${pointer}, ${resolution.source}); valid at ${status.path}${declaration}`
-    }
-    return `lifecycle ${project.name}: tracked-recipe (${pointer}); invalid (${loaded.errors.length} error(s)); first: ${loaded.errors[0]}`
+    return trackedRecipeLifecycleLine(project, resolution, fileExists, loadRecipe)
   }
   return `lifecycle ${project.name}: none; target recipe not declared`
 }

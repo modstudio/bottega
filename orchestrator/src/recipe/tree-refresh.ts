@@ -119,7 +119,7 @@ function fastForwardTree(treeRoot: string, trunk: string, branch: string): strin
   return `${branch} is current with ${remote}`
 }
 
-type RefreshOwner = {
+export type RefreshOwner = {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null
@@ -194,7 +194,7 @@ export function refreshStepContext(input: {
 }
 
 /** Bind a path to its registered project and landing branch, or refuse. */
-function registeredRefreshTarget(path: string) {
+export function registeredRefreshTarget(path: string) {
   const requested = resolve(path)
   const project = projectAt(requested)
   const treeRoot = gitToplevel(requested)
@@ -211,7 +211,7 @@ function registeredRefreshTarget(path: string) {
 }
 
 /** Bind a non-main checkout to its tracked recipe, or refuse. */
-function refreshTarget(target: ReturnType<typeof registeredRefreshTarget>) {
+export function refreshTarget(target: ReturnType<typeof registeredRefreshTarget>) {
   const { project, treeRoot, trunk } = target
   const tool = resolvedWorktreeTool(project)
   const lifecycle = resolveWorktreeLifecycle(tool)
