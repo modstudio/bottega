@@ -7,7 +7,6 @@ export type ComposeCommandPlan = {
   projectName: string
   up: string[]
   down: string[]
-  downWithoutFiles: string[]
 }
 
 export function composeProjectName(projectName: string, rootRunId: number): string {
@@ -47,24 +46,6 @@ export function composeCommandPlan(input: {
       '-d',
       ...(compose.wait ? ['--wait'] : []),
     ],
-    down: [
-      'docker',
-      'compose',
-      '-p',
-      projectName,
-      ...files,
-      'down',
-      '--volumes',
-      '--remove-orphans',
-    ],
-    downWithoutFiles: [
-      'docker',
-      'compose',
-      '-p',
-      projectName,
-      'down',
-      '--volumes',
-      '--remove-orphans',
-    ],
+    down: ['docker', 'compose', '-p', projectName, 'down', '--volumes', '--remove-orphans'],
   }
 }

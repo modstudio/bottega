@@ -22,7 +22,7 @@ import {
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { createCompose, downCompose } from './compose-provision.ts'
+import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
 import {
   createProvisionedDatabases,
   type DatabaseOwnership,
@@ -601,6 +601,7 @@ function createTrackedCompose(input: {
   snapshot: RecipeSnapshot
   allocationAttempt: AllocationAttempt
   allocator: TrackedAllocator
+  spawn?: ComposeSpawn
 }): PreparedComposeContext | null {
   if (!input.recipe.compose) {
     input.snapshot.composeOwnership = false
@@ -620,7 +621,10 @@ function createTrackedCompose(input: {
       creation: { failure: prepared.failure, compensation: [] },
     })
   }
-  const compose = createCompose(input.recipe, prepared.context)
+  const compose = createCompose(input.recipe, prepared.context, input.spawn, () => {
+    input.snapshot.composeOwnership = true
+    writeSnapshot(input.createInput.runId, input.snapshot)
+  })
   input.snapshot.composeOwnership = compose.owned
   if (compose.step.status !== 'ok') {
     failTrackedCreation({
@@ -664,6 +668,7 @@ export function createTrackedRecipe(
   runStep: StepRunner = kernelRunStep,
   runUndo: StepRunner = kernelRunUndo,
   allocator: TrackedAllocator = trackedAllocator,
+  composeSpawn?: ComposeSpawn,
 ): Worktree {
   const { branch, path } = input
   if (existsSync(path))
@@ -764,6 +769,7 @@ export function createTrackedRecipe(
     snapshot,
     allocationAttempt: prepared.allocationAttempt,
     allocator,
+    spawn: composeSpawn,
   })
   const databaseContext = {
     projectRoot: input.repoRoot,

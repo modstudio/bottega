@@ -34,38 +34,49 @@ describe('Compose provision adapter', () => {
     expect(calls.some((argv) => argv.includes('up'))).toBeFalse()
   })
 
-  test('records ownership after attempting up and compensates a later failure with down', () => {
-    const calls: string[][] = []
-    const spawn: ComposeSpawn = (argv) => {
-      calls.push(argv)
+  test('records ownership before up and compensates a later failure with config-less down', () => {
+    const calls: { argv: string[]; cwd: string }[] = []
+    let owned = false
+    const spawn: ComposeSpawn = (argv, cwd) => {
+      calls.push({ argv, cwd })
+      if (argv.includes('up')) expect(owned).toBeTrue()
       return output()
     }
-    const created = createCompose(recipe, context, spawn)
+    const created = createCompose(recipe, context, spawn, () => {
+      owned = true
+    })
     expect(created).toMatchObject({ step: { status: 'ok' }, owned: true })
     const laterStepFailed = true
     const compensated = laterStepFailed ? downCompose(recipe, context, created.owned, spawn) : null
     expect(compensated).toMatchObject({ status: 'ok', phase: 'verify' })
-    expect(calls.some((argv) => argv.includes('up'))).toBeTrue()
-    expect(calls.some((argv) => argv.includes('down'))).toBeTrue()
+    expect(calls.some(({ argv }) => argv.includes('up'))).toBeTrue()
+    const down = calls.find(({ argv }) => argv.includes('down'))!
+    expect(down.cwd).not.toBe(context.treeRoot)
+    expect(down.argv).toEqual([
+      'docker',
+      'compose',
+      '-p',
+      'app-orch-42',
+      'down',
+      '--volumes',
+      '--remove-orphans',
+    ])
+    expect(down.argv).not.toContain('-f')
+    expect(down.argv).not.toContain('--env-file')
   })
 
-  test('omits file arguments when teardown runs after the tree is gone', () => {
-    const calls: string[][] = []
-    const spawn: ComposeSpawn = (argv) => {
-      calls.push(argv)
+  test('ordinary teardown is config-less in a fresh directory even while the tree exists', () => {
+    const calls: { argv: string[]; cwd: string }[] = []
+    const spawn: ComposeSpawn = (argv, cwd) => {
+      calls.push({ argv, cwd })
       return output()
     }
-    expect(
-      downCompose(
-        recipe,
-        { ...context, commandRoot: '/tmp/teardown', treeExists: false },
-        true,
-        spawn,
-      ),
-    ).toMatchObject({ status: 'ok' })
-    const down = calls.find((argv) => argv.includes('down'))!
-    expect(down).not.toContain('-f')
-    expect(down).toContain('app-orch-42')
+    expect(downCompose(recipe, context, true, spawn)).toMatchObject({ status: 'ok' })
+    const down = calls.find(({ argv }) => argv.includes('down'))!
+    expect(down.cwd).not.toBe(context.treeRoot)
+    expect(down.argv).not.toContain('-f')
+    expect(down.argv).not.toContain('--env-file')
+    expect(down.argv).toContain('app-orch-42')
   })
 
   test('fails verification with names of residue left by down', () => {

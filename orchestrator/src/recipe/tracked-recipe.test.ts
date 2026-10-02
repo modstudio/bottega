@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import {
   chmodSync,
   existsSync,
@@ -15,6 +15,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
+import type { ComposeSpawn } from './compose-provision.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 import { type EnvFileGitCheck, writeTrackedEnvFiles } from './tracked-env-files.ts'
@@ -58,6 +59,7 @@ function temporaryTree(): { project: string; tree: string } {
 }
 
 afterEach(() => {
+  mock.restore()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -68,6 +70,86 @@ function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {
 }
 
 describe('tracked recipe execution', () => {
+  test('persists Compose ownership before spawning up', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-compose-ownership-'))
+    directories.push(repoRoot)
+    git(['init', '--initial-branch=main'], repoRoot)
+    writeFileSync(
+      join(repoRoot, `${PLATFORM_SLUG}.jsonc`),
+      JSON.stringify({ worktree: { compose: { files: ['compose.yaml'] }, create: [] } }),
+    )
+    writeFileSync(join(repoRoot, 'compose.yaml'), 'services: {}\n')
+    git(['add', '.'], repoRoot)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '-m',
+        'fixture',
+      ],
+      repoRoot,
+    )
+
+    const database = db()
+    const projectId = Number(
+      database
+        .query("INSERT INTO project(name,path,canon) VALUES ('compose-owner',?,1)")
+        .run(repoRoot).lastInsertRowid,
+    )
+    const runId = Number(
+      database
+        .query(
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+           VALUES (?,'codex','implement','sha',1,'compose ownership','running',?,1)`,
+        )
+        .run(nowIso(), projectId).lastInsertRowid,
+    )
+    const originalSpawnSync = Bun.spawnSync
+    spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[], options?: object) => {
+      if (argv[0] !== 'docker') return originalSpawnSync(argv, options as never)
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+        success: true,
+        exitedDueToTimeout: false,
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+
+    const composeSpawn: ComposeSpawn = (argv) => {
+      if (argv.includes('up')) {
+        const row = database.query('SELECT recipe_snapshot FROM run WHERE id=?').get(runId) as {
+          recipe_snapshot: string
+        }
+        expect(JSON.parse(row.recipe_snapshot).composeOwnership).toBeTrue()
+      }
+      return { exitCode: 0, stdout: new Uint8Array(), stderr: '' }
+    }
+    const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+    createTrackedRecipe(
+      {
+        tool: { recipePath: `${PLATFORM_SLUG}.jsonc` },
+        repoRoot,
+        runId,
+        branch: `DEV-1067-orch-${runId}`,
+        name: `orch-${runId}`,
+        path,
+        attribute() {},
+        verify() {},
+        remove: () => ({ removed: false, detail: 'unused' }),
+        removeProvisioned: () => ({ removed: false, detail: 'unused' }),
+      },
+      undefined,
+      undefined,
+      undefined,
+      composeSpawn,
+    )
+  })
+
   test('a missing required provision removes the partial tree and settles only its run claims', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'orch-required-provision-'))
     directories.push(repoRoot)

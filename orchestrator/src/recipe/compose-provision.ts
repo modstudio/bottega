@@ -1,6 +1,9 @@
 // concern: built-in Compose lifecycle adapter
 /** Inventories and executes the pure Compose plan on the host with bounded commands. */
 
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { type ComposeCommandPlan, composeCommandPlan } from './compose-provision-plan.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { StepResult } from './recipe-step.ts'
@@ -187,6 +190,7 @@ export function createCompose(
   recipe: TrackedRecipe,
   context: ComposeContext,
   spawn: ComposeSpawn = defaultSpawn,
+  recordOwnership: () => void = () => {},
 ): { step: StepResult; owned: boolean } {
   const prepared = preparedPlan(recipe, context)
   if (!prepared.ok) return { step: prepared.failure, owned: false }
@@ -204,6 +208,7 @@ export function createCompose(
       owned: false,
     }
   }
+  recordOwnership()
   const executed = run(plan.up, context.treeRoot, COMPOSE_OPERATION_TIMEOUT_MS, spawn)
   if (executed.timedOut) {
     return {
@@ -249,10 +254,16 @@ export function downCompose(
         : `Compose project ${plan.projectName} has no recorded ownership and was kept`,
     )
   }
-  const argv = context.treeExists === false ? plan.downWithoutFiles : plan.down
-  const cwd = context.commandRoot ?? context.treeRoot
-  const executed = run(argv, cwd, COMPOSE_OPERATION_TIMEOUT_MS, spawn)
-  const remaining = inventory(plan.projectName, cwd, spawn)
+  const argv = plan.down
+  const cwd = mkdtempSync(join(tmpdir(), 'orch-compose-down-'))
+  let executed: ComposeProcessOutput
+  let remaining: ReturnType<typeof inventory>
+  try {
+    executed = run(argv, cwd, COMPOSE_OPERATION_TIMEOUT_MS, spawn)
+    remaining = inventory(plan.projectName, cwd, spawn)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
   if ('failure' in remaining) return remaining.failure
   if (remaining.resources.length) {
     return result(

@@ -46,5 +46,14 @@ describe('Compose provision planning', () => {
       '-d',
       '--wait',
     ])
+    expect(planned.down).toEqual([
+      'docker',
+      'compose',
+      '-p',
+      'app-orch-7',
+      'down',
+      '--volumes',
+      '--remove-orphans',
+    ])
   })
 })
