@@ -18,6 +18,57 @@ import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('orch MCP', () => {
+  test('workflow ruling tools return the durable question id', async () => {
+    db()
+      .query(
+        `INSERT INTO workflow_cursor
+        (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+         total_steps,created_at,updated_at,enforcement)
+       VALUES ('fixture','ship','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
+               0,'rebase','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
+      )
+      .run()
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const awaited = await client.callTool({
+        name: 'await_workflow_ruling',
+        arguments: {
+          slug: 'ship',
+          project: 'fixture',
+          mode: 'default',
+          args: { key: 'DEV-1069' },
+          question: 'Proceed?',
+        },
+      })
+      const awaitResult = JSON.parse((awaited.content as { text: string }[])[0]!.text) as {
+        questionId: number
+      }
+      const ruled = await client.callTool({
+        name: 'rule_workflow',
+        arguments: {
+          slug: 'ship',
+          project: 'fixture',
+          mode: 'default',
+          args: { key: 'DEV-1069' },
+          ruling: 'Proceed.',
+          from_operator: true,
+        },
+      })
+      expect(awaitResult.questionId).toBeGreaterThan(0)
+      expect(JSON.parse((ruled.content as { text: string }[])[0]!.text)).toMatchObject({
+        questionId: awaitResult.questionId,
+      })
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('serves the same tools to legacy initialize and a pinned 2026 client', async () => {
     const [legacyClientTransport, legacyServerTransport] = InMemoryTransport.createLinkedPair()
     const legacyServer = serveStdio(createDocsMcpServer, { transport: legacyServerTransport })

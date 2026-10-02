@@ -605,6 +605,23 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
   }
 }
 
+function gatheredCommandEvidence(
+  kind: 'probe' | 'exec',
+  id: number,
+  row: { exit_code: number; session_id: string | null; created_at: string },
+  identity: CursorIdentity,
+): Pick<ValidatedEvidence, 'probe' | 'exec'> {
+  if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
+  return {
+    exec: {
+      id,
+      exitCode: row.exit_code,
+      sessionMatches: identity.session !== null && row.session_id === identity.session,
+      createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
+    },
+  }
+}
+
 export function gatherValidatedEvidence(input: {
   cursorId: number
   identity: CursorIdentity
@@ -647,15 +664,7 @@ export function gatherValidatedEvidence(input: {
           'SELECT exit_code,session_id,created_at FROM probe WHERE id=?',
         )
         .get(parsed.id)!
-      if (parsed.kind === 'exec') {
-        gathered.exec = {
-          id: parsed.id,
-          exitCode: row.exit_code,
-          sessionMatches:
-            input.identity.session !== null && row.session_id === input.identity.session,
-          createdAfterStepActivation: row.created_at >= input.identity.stepActivatedAt,
-        }
-      } else gathered.probe = { id: parsed.id, exitCode: row.exit_code }
+      Object.assign(gathered, gatheredCommandEvidence(parsed.kind, parsed.id, row, input.identity))
     }
   }
   if (input.evidence.task?.trim())

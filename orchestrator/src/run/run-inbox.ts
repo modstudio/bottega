@@ -304,6 +304,21 @@ function presentFiled(
   log(`        filed: ${question.filed_as} ${question.filed_ref}`)
 }
 
+function presentWorkflowQuestions(
+  rows: WorkflowInboxQuestion[],
+  log: (...values: unknown[]) => void,
+): void {
+  for (const q of rows) {
+    log(
+      `\nworkflow ${q.workflow} · ${q.project} · mode ${q.mode} · step ${q.step.n} ${q.step.slug}`,
+    )
+    log(`  [q${q.question_id}] ${q.question}`)
+    log(`        answer: ${q.answer_command}`)
+    if (!q.can_answer)
+      log(`        owner ${q.session_id ?? 'unknown'} · visible only; authority is not transferred`)
+  }
+}
+
 async function presentJsonInbox(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -461,15 +476,7 @@ export async function runInboxCommand(
     log(emptyInboxMessage(project, mine))
     return
   }
-  for (const q of workflowRows) {
-    log(
-      `\nworkflow ${q.workflow} · ${q.project} · mode ${q.mode} · step ${q.step.n} ${q.step.slug}`,
-    )
-    log(`  [q${q.question_id}] ${q.question}`)
-    log(`        answer: ${q.answer_command}`)
-    if (!q.can_answer)
-      log(`        owner ${q.session_id ?? 'unknown'} · visible only; authority is not transferred`)
-  }
+  presentWorkflowQuestions(workflowRows, log)
   let lastRun = -1
   let lastRoot = -1
   for (const q of answerable) {

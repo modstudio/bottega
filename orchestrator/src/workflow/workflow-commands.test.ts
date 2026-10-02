@@ -254,8 +254,8 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
   await command('await', '--question', 'which ruling applies?')
   await command('abandon', '--reason', 'operator stopped')
 
-  expect(lines.join('\n')).toContain(
-    `workflow ${slug} is awaiting ruling question 1 at step 2 score`,
+  expect(lines.join('\n')).toMatch(
+    new RegExp(`workflow ${slug} is awaiting ruling question \\d+ at step 2 score`),
   )
   expect(lines.join('\n')).toContain(`Workflow ${slug} for ${key} was abandoned at step 2 score`)
 })

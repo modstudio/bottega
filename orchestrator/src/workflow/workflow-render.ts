@@ -1,4 +1,4 @@
-import { type FloorKind, floorGuidance, floorKinds } from './workflow-floor.ts'
+import { type FloorKind, floorGuidance } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
@@ -95,8 +95,4 @@ export function renderWorkflowStep(step: WorkflowStep): string {
     (kind) => `Evidence for ${kind}: ${floorGuidance[kind as FloorKind]}.`,
   )
   return `facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
-}
-
-export function missingFloorGuidance(): FloorKind[] {
-  return floorKinds.filter((kind) => !floorGuidance[kind]?.trim())
 }
