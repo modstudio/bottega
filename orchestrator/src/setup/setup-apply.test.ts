@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { applySetupActions } from './setup-apply.ts'
@@ -93,6 +101,56 @@ test('removes the recipe it created when project registration is refused', async
   expect(results[0]?.status).toBe('refused')
   expect(results[0]?.message).toContain('project registration refused')
   expect(existsSync(join(path, INFERRED_RECIPE_PATH))).toBe(false)
+})
+
+test('keeps a replacement when registration is refused after another writer replaced the recipe', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'setup-apply-replaced-'))
+  temporary.push(path)
+  const recipePath = join(path, INFERRED_RECIPE_PATH)
+  const candidate: SetupAction = {
+    kind: 'set',
+    currentName: 'project',
+    path,
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+    settingsDiff: {},
+    recipeFile: { path: INFERRED_RECIPE_PATH, content: 'created by setup' },
+  }
+  const results = await applySetupActions([candidate], {
+    add: async () => {},
+    fillAbsent: async () => {
+      unlinkSync(recipePath)
+      writeFileSync(recipePath, 'replacement')
+      throw new Error('registration refused')
+    },
+  })
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toContain('identity or content changed')
+  expect(readFileSync(recipePath, 'utf8')).toBe('replacement')
+})
+
+test('keeps the recipe when a hosted failure follows the committed local fill', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'setup-apply-hosted-'))
+  temporary.push(path)
+  const candidate: SetupAction = {
+    kind: 'set',
+    currentName: 'project',
+    path,
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+    settingsDiff: {},
+    recipeFile: { path: INFERRED_RECIPE_PATH, content: 'created by setup' },
+  }
+  let locallyCommitted = false
+  const results = await applySetupActions([candidate], {
+    add: async () => {},
+    fillAbsent: async () => {
+      locallyCommitted = true
+      throw new Error('hosted write failed')
+    },
+    currentRecipePath: () => (locallyCommitted ? INFERRED_RECIPE_PATH : null),
+  })
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toContain('committed locally')
+  expect(readFileSync(join(path, INFERRED_RECIPE_PATH), 'utf8')).toBe('created by setup')
 })
 
 test('refuses a symlinked recipe directory and writes nothing outside the repository', async () => {

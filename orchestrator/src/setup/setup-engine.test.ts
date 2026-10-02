@@ -10,7 +10,7 @@ import {
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
-import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
+import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
 
 function proposeSetup(
   facts: SetupFacts,
@@ -76,7 +76,7 @@ function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
     test: null,
     ci: false,
     defaultConfigExists: false,
-    inferredRecipeExists: false,
+    inferredRecipeFile: { status: 'absent', content: null, reason: null },
     ...overrides,
   }
 }
@@ -304,13 +304,18 @@ test.each(satisfiedLifecycleCases)(
 )
 
 test('recovers an existing inferred recipe by filling only its pointer', () => {
+  const detected = repository({ packageManager: 'bun', test: 'bun run test' })
   const plan = proposeSetup(
     machine,
     [
       repository({
         packageManager: 'bun',
         test: 'bun run test',
-        inferredRecipeExists: true,
+        inferredRecipeFile: {
+          status: 'regular',
+          content: inferredRecipeContent(detected)!,
+          reason: null,
+        },
       }),
     ],
     [
@@ -330,6 +335,64 @@ test('recovers an existing inferred recipe by filling only its pointer', () => {
     fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
   })
   expect(planSetupActions(plan, recommendedAnswers(plan))[0]).not.toHaveProperty('recipeFile')
+})
+
+test('requires review before activating a modified inferred recipe', () => {
+  const plan = proposeSetup(
+    machine,
+    [
+      repository({
+        packageManager: 'bun',
+        test: 'bun run test',
+        inferredRecipeFile: {
+          status: 'regular',
+          content:
+            '{"worktree":{"create":[{"name":"custom","run":{"command":"sh","args":["custom.sh"]}}]}}\n',
+          reason: null,
+        },
+      }),
+    ],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        tracker: { kind: 'hub', protocol: 'hub' },
+        trunk: 'main',
+        gate: 'bun run test',
+      }),
+    ],
+    [],
+  )
+  const question = plan.questions.find((candidate) => candidate.id.endsWith(':worktree-recipe'))!
+  expect(question.recommendation).toBe('keep-inactive')
+  expect(question.question).toContain('custom.sh')
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+
+  const activate = { ...recommendedAnswers(plan), [question.id]: 'activate' }
+  expect(planSetupActions(plan, activate)[0]).toMatchObject({
+    kind: 'set',
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+  })
+  expect(planSetupActions(plan, activate)[0]).not.toHaveProperty('recipeFile')
+})
+
+test('refuses an unsafe inferred recipe without offering activation', () => {
+  const plan = proposeSetup(
+    machine,
+    [
+      repository({
+        packageManager: 'bun',
+        inferredRecipeFile: {
+          status: 'unsafe',
+          content: null,
+          reason: `${INFERRED_RECIPE_PATH} parent is a symbolic link`,
+        },
+      }),
+    ],
+    [],
+    [],
+  )
+  expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+  expect(plan.notices.some((notice) => notice.message.includes('symbolic link'))).toBe(true)
 })
 
 test('derives bounded unique prefixes and excludes TASK', () => {

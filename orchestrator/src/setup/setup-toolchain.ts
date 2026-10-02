@@ -26,7 +26,10 @@ export type ToolchainFacts = {
   test: string | null
   ci: boolean
   defaultConfigExists: boolean
-  inferredRecipeExists: boolean
+  inferredRecipeFile:
+    | { status: 'absent'; content: null; reason: null }
+    | { status: 'regular'; content: string; reason: null }
+    | { status: 'unsafe'; content: null; reason: string }
 }
 
 const INSTALL: Record<DetectedPackageManager, string[]> = {

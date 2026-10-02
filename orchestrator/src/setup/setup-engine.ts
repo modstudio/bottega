@@ -40,6 +40,7 @@ export type SetupProposal = {
   prefixQuestionId: string | null
   trunkQuestionId: string | null
   recipeQuestionId: string | null
+  recipeActivationAnswer: 'write' | 'activate' | null
   recipeContent: string | null
 }
 type SetupRegistrationProposal = {
@@ -272,6 +273,7 @@ function proposeProjectToolchain(
   recipeQuestionId: string | null
   recipeContent: string | null
   recoverRecipePointer: boolean
+  recipeActivationAnswer: 'write' | 'activate' | null
 } {
   const gate = current?.settings.gate ?? proposedGate(repository)
   if (!current?.settings.gate && !gate) {
@@ -283,10 +285,72 @@ function proposeProjectToolchain(
   const recipeContent = inferredRecipeContent(repository)
   const lifecycle = resolveLifecycle(current?.settings.worktree, repository.defaultConfigExists)
   if (lifecycle.form !== 'none' || !recipeContent) {
-    return { gate, recipeQuestionId: null, recipeContent, recoverRecipePointer: false }
+    return {
+      gate,
+      recipeQuestionId: null,
+      recipeContent,
+      recoverRecipePointer: false,
+      recipeActivationAnswer: null,
+    }
   }
-  if (repository.inferredRecipeExists) {
-    return { gate, recipeQuestionId: null, recipeContent, recoverRecipePointer: true }
+  if (repository.inferredRecipeFile.status === 'unsafe') {
+    notices.push({
+      message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${repository.inferredRecipeFile.reason}`,
+      fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
+    })
+    return {
+      gate,
+      recipeQuestionId: null,
+      recipeContent,
+      recoverRecipePointer: false,
+      recipeActivationAnswer: null,
+    }
+  }
+  if (repository.inferredRecipeFile.status === 'regular') {
+    if (repository.inferredRecipeFile.content === recipeContent) {
+      return {
+        gate,
+        recipeQuestionId: null,
+        recipeContent,
+        recoverRecipePointer: true,
+        recipeActivationAnswer: null,
+      }
+    }
+    const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
+    let createSteps = 'could not be parsed'
+    try {
+      const parsed = Bun.JSONC.parse(repository.inferredRecipeFile.content) as {
+        worktree?: { create?: unknown }
+      }
+      createSteps = JSON.stringify(parsed?.worktree?.create ?? [], null, 2)
+    } catch {
+      // The question still says that its create steps could not be reviewed structurally.
+    }
+    questions.push({
+      id: recipeQuestionId,
+      question: `${INFERRED_RECIPE_PATH} already exists for ${repository.name}. Activate it as written?\nCreate steps: ${createSteps}`,
+      options: [
+        {
+          id: 'keep-inactive',
+          label: 'Keep inactive',
+          why: 'Leaves the existing file present without registering it as the worktree recipe.',
+        },
+        {
+          id: 'activate',
+          label: 'Activate as written',
+          why: `Registers ${INFERRED_RECIPE_PATH}; its create steps will run when worktrees are created.`,
+        },
+      ],
+      recommendation: 'keep-inactive',
+      why: 'The existing file differs from the recipe setup would generate now and must be reviewed before activation.',
+    })
+    return {
+      gate,
+      recipeQuestionId,
+      recipeContent,
+      recoverRecipePointer: false,
+      recipeActivationAnswer: 'activate',
+    }
   }
   const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
   questions.push({
@@ -307,7 +371,13 @@ function proposeProjectToolchain(
     recommendation: 'write',
     why: 'A tracked recipe gives writing worktrees the project dependencies without adding environment, database, or serve access.',
   })
-  return { gate, recipeQuestionId, recipeContent, recoverRecipePointer: false }
+  return {
+    gate,
+    recipeQuestionId,
+    recipeContent,
+    recoverRecipePointer: false,
+    recipeActivationAnswer: 'write',
+  }
 }
 
 function recoveredWorktreeSettings(
@@ -419,13 +489,8 @@ export function proposeSetup(
         fix: null,
       })
     }
-    const { gate, recipeQuestionId, recipeContent, recoverRecipePointer } = proposeProjectToolchain(
-      repository,
-      current,
-      questions,
-      notices,
-      resolveLifecycle,
-    )
+    const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
+      proposeProjectToolchain(repository, current, questions, notices, resolveLifecycle)
     const settings: ProjectSettings = {
       ...current?.settings,
       ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
@@ -448,6 +513,7 @@ export function proposeSetup(
       prefixQuestionId,
       trunkQuestionId,
       recipeQuestionId,
+      recipeActivationAnswer,
       recipeContent,
     }
   })

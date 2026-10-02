@@ -1,7 +1,7 @@
 // concern: setup-apply
 /** Applies planned project actions in order through the project register service boundary. */
 
-import { lstat, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, readFile, realpath, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import {
@@ -36,7 +36,13 @@ export type SetupProjectService = {
     allowIncomplete: boolean
   }): Promise<unknown>
   fillAbsent(input: { name: string; fill: SetAction['fill'] }): Promise<unknown>
+  currentRecipePath?(name: string): string | null
 }
+
+type CreatedRecipe = { path: string; device: number; inode: number; contentHash: string }
+
+const contentHash = (content: string | Uint8Array): string =>
+  new Bun.CryptoHasher('sha256').update(content).digest('hex')
 
 function rendered(argv: string[]): string {
   return argv.map((part) => JSON.stringify(part)).join(' ')
@@ -80,7 +86,7 @@ async function ensureRecipeDirectory(path: string): Promise<void> {
   }
 }
 
-async function writeRecipe(action: AddAction | SetAction): Promise<string | null> {
+async function writeRecipe(action: AddAction | SetAction): Promise<CreatedRecipe | null> {
   if (!action.recipeFile) return null
   const root = await realpath(action.path)
   const path = resolve(root, action.recipeFile.path)
@@ -94,8 +100,19 @@ async function writeRecipe(action: AddAction | SetAction): Promise<string | null
     throw new Error(`refusing worktree recipe parent outside repository ${root}`)
   }
   try {
-    await writeFile(path, action.recipeFile.content, { encoding: 'utf8', flag: 'wx' })
-    return path
+    const handle = await open(path, 'wx')
+    try {
+      await handle.writeFile(action.recipeFile.content, 'utf8')
+      const state = await handle.stat()
+      return {
+        path,
+        device: state.dev,
+        inode: state.ino,
+        contentHash: contentHash(action.recipeFile.content),
+      }
+    } finally {
+      await handle.close()
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       throw new Error(`refusing to overwrite worktree recipe ${path}; re-run orch setup plan`)
@@ -243,17 +260,36 @@ async function applySetAction(action: SetAction, service: SetupProjectService): 
   try {
     await service.fillAbsent({ name: action.currentName, fill: action.fill })
   } catch (error) {
+    const currentRecipePath = service.currentRecipePath?.(action.currentName)
+    const requestedRecipePath = action.fill.settings.worktree?.recipePath
+    if (requestedRecipePath && currentRecipePath === requestedRecipePath) {
+      throw new Error(
+        `hosted write failed after recipePath was committed locally; recipe file was kept: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
     await compensateRecipe(error, createdRecipe)
   }
 }
 
-async function compensateRecipe(error: unknown, createdRecipe: string | null): Promise<never> {
+async function compensateRecipe(
+  error: unknown,
+  createdRecipe: CreatedRecipe | null,
+): Promise<never> {
   if (!createdRecipe) throw error
   try {
-    await rm(createdRecipe)
+    const state = await lstat(createdRecipe.path)
+    const hash = state.isFile() ? contentHash(await readFile(createdRecipe.path)) : null
+    const stillOurs =
+      state.dev === createdRecipe.device &&
+      state.ino === createdRecipe.inode &&
+      hash === createdRecipe.contentHash
+    if (!stillOurs) {
+      throw new Error('file identity or content changed after creation; left it in place')
+    }
+    await rm(createdRecipe.path)
   } catch (cleanupError) {
     throw new Error(
-      `${error instanceof Error ? error.message : String(error)}; could not remove recipe created by this apply: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+      `${error instanceof Error ? error.message : String(error)}; could not remove recipe created by this apply at ${createdRecipe.path}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
     )
   }
   throw error

@@ -85,7 +85,10 @@ function resolvedSettings(
     if (effect?.trunk === null) delete settings.trunk
     else if (effect) settings.trunk = effect.trunk
   }
-  if (proposal.recipeQuestionId && answers[proposal.recipeQuestionId] === 'write') {
+  if (
+    proposal.recipeQuestionId &&
+    answers[proposal.recipeQuestionId] === proposal.recipeActivationAnswer
+  ) {
     settings.worktree = { ...settings.worktree, recipePath: INFERRED_RECIPE_PATH }
   }
   return settings

@@ -1,7 +1,17 @@
 // concern: setup-repository-toolchain
-/** Reads only repository manifests to detect package-manager and gate facts. */
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+/** Reads repository declarations without executing project code or installing dependencies. */
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { detect } from 'package-manager-detector'
 import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree/worktree-lifecycle.ts'
 import {
@@ -132,11 +142,64 @@ function pythonCommands(root: string, manager: 'uv' | 'poetry' | 'pip'): Command
     .join('\n')
   return {
     lint:
-      /^\[tool\.ruff\]\s*$/m.test(pyproject) || has(root, 'ruff.toml')
+      /^\[tool\.ruff(?:\.[^\]]+)?\]\s*$/m.test(pyproject) || has(root, 'ruff.toml')
         ? `${prefix}ruff check .`
         : null,
     typecheck: null,
     test: /\bpytest\b/i.test(`${pyproject}\n${requirementsText}`) ? `${prefix}pytest` : null,
+  }
+}
+
+function isBeneath(root: string, path: string): boolean {
+  const offset = relative(root, path)
+  return offset === '' || (!offset.startsWith(`..${sep}`) && offset !== '..' && !isAbsolute(offset))
+}
+
+function inspectInferredRecipe(root: string): ToolchainFacts['inferredRecipeFile'] {
+  const canonicalRoot = realpathSync(root)
+  const path = resolve(canonicalRoot, INFERRED_RECIPE_PATH)
+  if (!isBeneath(canonicalRoot, path)) {
+    return { status: 'unsafe', content: null, reason: 'path is outside the repository' }
+  }
+  let current = canonicalRoot
+  for (const component of relative(canonicalRoot, path).split(sep).filter(Boolean)) {
+    current = resolve(current, component)
+    let state: ReturnType<typeof lstatSync>
+    try {
+      state = lstatSync(current)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { status: 'absent', content: null, reason: null }
+      }
+      return { status: 'unsafe', content: null, reason: String(error) }
+    }
+    if (state.isSymbolicLink()) {
+      return { status: 'unsafe', content: null, reason: `${current} is a symbolic link` }
+    }
+    if (current !== path && !state.isDirectory()) {
+      return { status: 'unsafe', content: null, reason: `${current} is not a directory` }
+    }
+  }
+  const state = lstatSync(path)
+  if (!state.isFile()) {
+    return { status: 'unsafe', content: null, reason: `${path} is not a regular file` }
+  }
+  if (!isBeneath(canonicalRoot, realpathSync(dirname(path)))) {
+    return { status: 'unsafe', content: null, reason: 'parent resolves outside the repository' }
+  }
+  let descriptor: number
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    return { status: 'unsafe', content: null, reason: String(error) }
+  }
+  try {
+    if (!fstatSync(descriptor).isFile()) {
+      return { status: 'unsafe', content: null, reason: `${path} is not a regular file` }
+    }
+    return { status: 'regular', content: readFileSync(descriptor, 'utf8'), reason: null }
+  } finally {
+    closeSync(descriptor)
   }
 }
 
@@ -172,6 +235,6 @@ export async function detectRepositoryToolchain(root: string): Promise<Toolchain
     ...commands,
     ci,
     defaultConfigExists: has(root, DEFAULT_PROJECT_CONFIG_PATH),
-    inferredRecipeExists: has(root, INFERRED_RECIPE_PATH),
+    inferredRecipeFile: inspectInferredRecipe(root),
   }
 }

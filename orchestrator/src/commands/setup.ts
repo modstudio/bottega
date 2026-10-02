@@ -6,7 +6,7 @@ import type { Command } from 'commander'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
-import { projects } from '../project/projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { gatherRepositoryFactsReport } from '../setup/repository-facts.ts'
 import { applySetupActions } from '../setup/setup-apply.ts'
@@ -106,6 +106,7 @@ export function register(program: Command): void {
       const results = await applySetupActions(actions, {
         add: (input) => addProject(input, requireRecordSpaceMembership),
         fillAbsent: fillAbsentProjectSettings,
+        currentRecipePath: (name) => projectByName(name)?.settings.worktree?.recipePath ?? null,
       })
       if (results.some((result) => result.status === 'refused')) process.exitCode = 1
       log(

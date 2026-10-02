@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { configDocumentSchema } from '../recipe/recipe-schema.ts'
 import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree/worktree-lifecycle.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
@@ -162,6 +162,25 @@ test('distinguishes the auto-discovered default config from the inferred recipe'
   })
   expect(await detectRepositoryToolchain(root)).toMatchObject({
     defaultConfigExists: true,
-    inferredRecipeExists: true,
+    inferredRecipeFile: { status: 'regular', content: '{}', reason: null },
+  })
+})
+
+test('recognizes a nested Ruff table as Ruff configuration', async () => {
+  const root = fixture({
+    'uv.lock': '',
+    'pyproject.toml': '[tool.ruff.lint]\nselect = ["E"]\n',
+  })
+  expect((await detectRepositoryToolchain(root)).lint).toBe('uv run ruff check .')
+})
+
+test('marks a symlinked inferred recipe path unsafe without reading outside', async () => {
+  const root = fixture({ 'bun.lock': '', 'package.json': '{"packageManager":"bun@1"}' })
+  const outside = mkdtempSync(join(tmpdir(), 'setup-toolchain-outside-'))
+  roots.push(outside)
+  writeFileSync(join(outside, 'worktree-recipe.jsonc'), 'outside')
+  symlinkSync(outside, join(root, dirname(INFERRED_RECIPE_PATH)))
+  expect(await detectRepositoryToolchain(root)).toMatchObject({
+    inferredRecipeFile: { status: 'unsafe', content: null },
   })
 })
