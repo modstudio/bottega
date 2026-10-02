@@ -39,7 +39,7 @@ const cases = [
       typecheck: 'pnpm typecheck',
       test: 'pnpm test',
       ci: true,
-      install: 'pnpm',
+      install: ['pnpm', 'install', '--frozen-lockfile'],
     },
   },
   {
@@ -51,7 +51,7 @@ const cases = [
       typecheck: null,
       test: 'make test',
       ci: false,
-      install: 'bundle',
+      install: ['bundle', 'install'],
     },
   },
   {
@@ -66,7 +66,7 @@ const cases = [
       typecheck: null,
       test: 'composer test',
       ci: false,
-      install: 'composer',
+      install: ['composer', 'install'],
     },
   },
   {
@@ -81,7 +81,7 @@ const cases = [
       typecheck: null,
       test: 'uv run pytest',
       ci: false,
-      install: 'uv',
+      install: ['uv', 'sync', '--frozen'],
     },
   },
   {
@@ -93,7 +93,7 @@ const cases = [
       typecheck: null,
       test: 'go test ./...',
       ci: false,
-      install: 'go',
+      install: ['go', 'mod', 'download'],
     },
   },
   {
@@ -105,7 +105,7 @@ const cases = [
       typecheck: null,
       test: 'bun run test',
       ci: false,
-      install: 'bun',
+      install: ['bun', 'install', '--frozen-lockfile'],
     },
   },
   {
@@ -122,7 +122,7 @@ const cases = [
       typecheck: null,
       test: null,
       ci: false,
-      install: 'npm',
+      install: ['npm', 'ci'],
     },
   },
 ] as const
@@ -145,6 +145,9 @@ for (const entry of cases) {
     const content = inferredRecipeContent(facts)
     expect(content).not.toBeNull()
     const parsed = configDocumentSchema.parse(Bun.JSONC.parse(content!))
-    expect(parsed.worktree?.create[0]?.run.command).toBe(entry.expected.install)
+    expect(parsed.worktree?.create[0]?.run).toEqual({
+      command: entry.expected.install[0],
+      args: entry.expected.install.slice(1),
+    })
   })
 }

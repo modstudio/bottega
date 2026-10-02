@@ -1,7 +1,8 @@
 // concern: setup-toolchain
 /** Pure toolchain proposals from repository facts. Must not read files or know setup persistence. */
-import { configDocumentSchema } from '../recipe/recipe-schema.ts'
+
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { configDocumentSchema } from '../recipe/recipe-schema.ts'
 
 export const INFERRED_RECIPE_PATH = `.${PLATFORM_SLUG}/worktree-recipe.jsonc`
 

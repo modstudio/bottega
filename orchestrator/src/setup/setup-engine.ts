@@ -257,6 +257,45 @@ function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] 
   return notices
 }
 
+function proposeProjectToolchain(
+  repository: RepositoryFacts,
+  current: Project | null,
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+): { gate: string | null; recipeQuestionId: string | null; recipeContent: string | null } {
+  const gate = current?.settings.gate ?? proposedGate(repository)
+  if (!current?.settings.gate && !gate) {
+    notices.push({
+      message: `no gate was detected for ${repository.name}`,
+      fix: `orch project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+    })
+  }
+  const recipeContent = inferredRecipeContent(repository)
+  if (current?.settings.worktree?.recipePath || repository.recipeFileExists || !recipeContent) {
+    return { gate, recipeQuestionId: null, recipeContent }
+  }
+  const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
+  questions.push({
+    id: recipeQuestionId,
+    question: `Write an inferred Files-level worktree recipe for ${repository.name}?`,
+    options: [
+      {
+        id: 'write',
+        label: 'Write recipe',
+        why: `Creates ${INFERRED_RECIPE_PATH} with a frozen dependency install step.`,
+      },
+      {
+        id: 'skip',
+        label: 'Skip',
+        why: 'Leaves the repository and its worktree recipe setting unchanged.',
+      },
+    ],
+    recommendation: 'write',
+    why: 'A tracked recipe gives writing worktrees the project dependencies without adding environment, database, or serve access.',
+  })
+  return { gate, recipeQuestionId, recipeContent }
+}
+
 export function proposeSetup(
   machine: SetupFacts,
   repositories: RepositoryFacts[],
@@ -352,36 +391,12 @@ export function proposeSetup(
         fix: null,
       })
     }
-    const gate = current?.settings.gate ?? proposedGate(repository)
-    if (!current?.settings.gate && !gate) {
-      notices.push({
-        message: `no gate was detected for ${repository.name}`,
-        fix: `orch project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
-      })
-    }
-    const recipeContent = inferredRecipeContent(repository)
-    let recipeQuestionId: string | null = null
-    if (!current?.settings.worktree?.recipePath && !repository.recipeFileExists && recipeContent) {
-      recipeQuestionId = questionId(repository.path, 'worktree-recipe')
-      questions.push({
-        id: recipeQuestionId,
-        question: `Write an inferred Files-level worktree recipe for ${repository.name}?`,
-        options: [
-          {
-            id: 'write',
-            label: 'Write recipe',
-            why: `Creates ${INFERRED_RECIPE_PATH} with a frozen dependency install step.`,
-          },
-          {
-            id: 'skip',
-            label: 'Skip',
-            why: 'Leaves the repository and its worktree recipe setting unchanged.',
-          },
-        ],
-        recommendation: 'write',
-        why: 'A tracked recipe gives writing worktrees the project dependencies without adding environment, database, or serve access.',
-      })
-    }
+    const { gate, recipeQuestionId, recipeContent } = proposeProjectToolchain(
+      repository,
+      current,
+      questions,
+      notices,
+    )
     const settings: ProjectSettings = {
       ...current?.settings,
       ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),

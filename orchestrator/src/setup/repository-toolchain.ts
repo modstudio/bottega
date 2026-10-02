@@ -39,9 +39,7 @@ function ciFiles(root: string): string[] {
   const files = ['.gitlab-ci.yml', '.circleci/config.yml'].filter((name) => has(root, name))
   try {
     files.push(
-      ...readdirSync(join(root, '.github/workflows'))
-        .filter((name) => /\.ya?ml$/i.test(name))
-        .map((name) => `.github/workflows/${name}`),
+      ...readdirSync(join(root, '.github/workflows')).map((name) => `.github/workflows/${name}`),
     )
   } catch {
     // No GitHub workflows directory.
@@ -82,30 +80,39 @@ function makeTargets(source: string): Set<string> {
 type Commands = Pick<ToolchainFacts, 'lint' | 'typecheck' | 'test'>
 const noCommands = (): Commands => ({ lint: null, typecheck: null, test: null })
 
-function manifestCommands(root: string, manager: DetectedPackageManager | null): Commands {
+function javascriptCommands(root: string, manager: DetectedPackageManager): Commands {
   const commands = noCommands()
-  if (manager && ['bun', 'npm', 'pnpm', 'yarn'].includes(manager)) {
-    const value = scripts(read(join(root, 'package.json')))
-    if (typeof value.lint === 'string') commands.lint = command(manager, 'lint')
-    const typeScript =
-      typeof value.typecheck === 'string'
-        ? 'typecheck'
-        : typeof value['type-check'] === 'string'
-          ? 'type-check'
-          : null
-    if (typeScript) commands.typecheck = command(manager, typeScript)
-    if (
-      typeof value.test === 'string' &&
-      value.test.trim() !== 'echo "Error: no test specified" && exit 1'
-    )
-      commands.test = command(manager, 'test')
-  } else if (manager === 'composer') {
-    const value = scripts(read(join(root, 'composer.json')))
-    const lintScript = ['lint', 'analyse', 'stan'].find((name) => typeof value[name] === 'string')
-    if (lintScript) commands.lint = `composer ${lintScript}`
-    if (typeof value.test === 'string') commands.test = 'composer test'
-  }
+  const value = scripts(read(join(root, 'package.json')))
+  if (typeof value.lint === 'string') commands.lint = command(manager, 'lint')
+  const typeScript =
+    typeof value.typecheck === 'string'
+      ? 'typecheck'
+      : typeof value['type-check'] === 'string'
+        ? 'type-check'
+        : null
+  if (typeScript) commands.typecheck = command(manager, typeScript)
+  if (
+    typeof value.test === 'string' &&
+    value.test.trim() !== 'echo "Error: no test specified" && exit 1'
+  )
+    commands.test = command(manager, 'test')
   return commands
+}
+
+function composerCommands(root: string): Commands {
+  const value = scripts(read(join(root, 'composer.json')))
+  const lintScript = ['lint', 'analyse', 'stan'].find((name) => typeof value[name] === 'string')
+  return {
+    lint: lintScript ? `composer ${lintScript}` : null,
+    typecheck: null,
+    test: typeof value.test === 'string' ? 'composer test' : null,
+  }
+}
+
+function manifestCommands(root: string, manager: DetectedPackageManager | null): Commands {
+  if (manager && ['bun', 'npm', 'pnpm', 'yarn'].includes(manager))
+    return javascriptCommands(root, manager)
+  return manager === 'composer' ? composerCommands(root) : noCommands()
 }
 
 function makeCommands(root: string): Commands {
@@ -138,8 +145,7 @@ function ecosystemCommands(
   manager: DetectedPackageManager | null,
   ciPaths: string[],
 ): Commands | null {
-  if (manager === 'go')
-    return { lint: 'go vet ./...', typecheck: null, test: 'go test ./...' }
+  if (manager === 'go') return { lint: 'go vet ./...', typecheck: null, test: 'go test ./...' }
   if (manager !== 'cargo') return null
   const clippy =
     [read(join(root, 'Cargo.toml')), ...ciPaths.map((name) => read(join(root, name)))].some(
