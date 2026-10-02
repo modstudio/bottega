@@ -9,8 +9,6 @@ import {
 } from './database-identity.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 
-export { databaseNameProblem, quotedDatabaseName } from './database-identity.ts'
-
 export type DatabaseCommand = {
   argv: string[]
   input?: 'dump'

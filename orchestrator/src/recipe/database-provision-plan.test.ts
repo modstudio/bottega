@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  databaseCommandPlan,
-  databaseNameProblem,
-  outputHasExactDatabase,
-  quotedDatabaseName,
-} from './database-provision-plan.ts'
+import { databaseNameProblem, quotedDatabaseName } from './database-identity.ts'
+import { databaseCommandPlan, outputHasExactDatabase } from './database-provision-plan.ts'
 
 const plan = (engine: 'postgres' | 'mysql' | 'mariadb' | 'sqlite', overrides = {}) =>
   databaseCommandPlan({

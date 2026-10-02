@@ -47,8 +47,6 @@ import {
 } from './recipe-step.ts'
 import { writeTrackedEnvFiles } from './tracked-env-files.ts'
 
-export { writeTrackedEnvFiles } from './tracked-env-files.ts'
-
 export type RecipeSnapshot = {
   source: { path: string; commit: string }
   recipe: TrackedRecipe

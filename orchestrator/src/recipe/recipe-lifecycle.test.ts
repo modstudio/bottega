@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   compensationPlan,
-  creationOrder,
+  creationPlan,
   destroyPlan,
   lifecycleFailure,
   serveUndoPlan,
@@ -22,7 +22,7 @@ const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create:
 describe('tracked recipe lifecycle planning', () => {
   test('orders built-in databases after env files and before project create steps', () => {
     expect(
-      creationOrder({
+      creationPlan({
         allocate: {
           databases: {
             app: {
@@ -37,8 +37,8 @@ describe('tracked recipe lifecycle planning', () => {
           },
         },
         create: [step('migrate')],
-      }),
-    ).toEqual(['env files', 'database app', 'migrate'])
+      }).map((phase) => `${phase.kind}:${phase.name}`),
+    ).toEqual(['env:env files', 'database:app', 'step:migrate'])
   })
   test('renders shared declarations without adding them to destroy planning', () => {
     const plain = recipe({ create: [step('create')] })

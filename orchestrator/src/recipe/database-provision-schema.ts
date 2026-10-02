@@ -7,12 +7,9 @@ import { execContextSchema } from './recipe-exec-schema.ts'
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
   z.strictObject(shape, { error: 'unknown-key rule: objects may not contain unknown keys' })
 
-const relativePath = z
-  .string()
-  .min(1)
-  .refine(relativeDatabasePath, {
-    error: 'database provision path must be relative and contain no .. segment',
-  })
+const relativePath = z.string().min(1).refine(relativeDatabasePath, {
+  error: 'database provision path must be relative and contain no .. segment',
+})
 
 const connectionSchema = strictObject({
   key: z
@@ -28,6 +25,41 @@ const provisionSchema = strictObject({
   exec: execContextSchema.optional(),
 })
 
+type AllocationInput = {
+  engine: 'postgres' | 'mysql' | 'mariadb' | 'sqlite' | 'other'
+  name: string
+  provision?: { from: string }
+}
+
+function sourceProblem(allocation: AllocationInput): string | null {
+  if (!allocation.provision || allocation.engine === 'other') return null
+  const source = allocation.provision.from.replace(/\{[^{}]+\}/g, 'x')
+  if (allocation.engine !== 'sqlite') return databaseNameProblem(allocation.engine, source)
+  return relativeDatabasePath(source)
+    ? null
+    : 'sqlite source must be relative to the project root with no .. segment'
+}
+
+function allocationProblems(allocation: AllocationInput): { path: string[]; message: string }[] {
+  const problems: { path: string[]; message: string }[] = []
+  if (allocation.engine === 'other') {
+    if (allocation.provision) {
+      problems.push({
+        path: ['provision'],
+        message:
+          'database engine "other" cannot use built-in provision; add a project create step with undo and verifyDown',
+      })
+    }
+    return problems
+  }
+  const name = allocation.name.replace(/\{[^{}]+\}/g, 'x')
+  const nameProblem = databaseNameProblem(allocation.engine, name)
+  if (nameProblem) problems.push({ path: ['name'], message: nameProblem })
+  const fromProblem = sourceProblem(allocation)
+  if (fromProblem) problems.push({ path: ['provision', 'from'], message: fromProblem })
+  return problems
+}
+
 export const databaseAllocationSchema = strictObject({
   engine: z.enum(['postgres', 'mysql', 'mariadb', 'sqlite', 'other']),
   name: z
@@ -38,29 +70,8 @@ export const databaseAllocationSchema = strictObject({
     ),
   provision: provisionSchema.optional(),
 }).superRefine((allocation, context) => {
-  if (allocation.engine === 'other' && allocation.provision) {
-    context.addIssue({
-      code: 'custom',
-      path: ['provision'],
-      message:
-        'database engine "other" cannot use built-in provision; add a project create step with undo and verifyDown',
-    })
-  }
-  if (allocation.engine !== 'other') {
-    const template = allocation.name.replace(/\{[^{}]+\}/g, 'x')
-    const problem = databaseNameProblem(allocation.engine, template)
-    if (problem) context.addIssue({ code: 'custom', path: ['name'], message: problem })
-    if (allocation.provision) {
-      const source = allocation.provision.from.replace(/\{[^{}]+\}/g, 'x')
-      const sourceProblem =
-        allocation.engine === 'sqlite'
-          ? relativeDatabasePath(source)
-            ? null
-            : 'sqlite source must be relative to the project root with no .. segment'
-          : databaseNameProblem(allocation.engine, source)
-      if (sourceProblem)
-        context.addIssue({ code: 'custom', path: ['provision', 'from'], message: sourceProblem })
-    }
+  for (const problem of allocationProblems(allocation)) {
+    context.addIssue({ code: 'custom', ...problem })
   }
 })
 

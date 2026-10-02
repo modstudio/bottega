@@ -17,6 +17,7 @@ import { git } from '../git/git-environment.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
+import { writeTrackedEnvFiles } from './tracked-env-files.ts'
 import {
   type AllocationAttempt,
   createTrackedRecipe,
@@ -32,7 +33,6 @@ import {
   trackedRecipeEnvironment,
   trackedRecipeVars,
   trackedWorktreeAddArgv,
-  writeTrackedEnvFiles,
 } from './tracked-recipe.ts'
 
 const command = { command: 'true', args: [] }

@@ -9,6 +9,7 @@ import {
   outputHasExactDatabase,
   provisionedDatabases,
 } from './database-provision-plan.ts'
+import { creationPlan } from './recipe-lifecycle.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { type ExecContext, executionArgv, type StepResult } from './recipe-step.ts'
 
@@ -188,7 +189,7 @@ function preparedPlan(
       engine: allocation.engine as DatabaseCommandPlan['engine'],
       name: context.allocations[key]!,
       from: provision.from,
-      reuse: provision.reuse,
+      reuse: provision.reuse ?? false,
       projectRoot: context.projectRoot,
       treeRoot: context.treeRoot,
     })
@@ -196,7 +197,11 @@ function preparedPlan(
     return result(key, 'run', 'refused', String((error as Error)?.message ?? error))
   }
   if (plan.engine === 'sqlite') return { plan, connection: null }
-  const resolved = connectionValue(context.projectRoot, provision.connection)
+  const connectionDeclaration = {
+    key: provision.connection.key,
+    file: provision.connection.file ?? '.env',
+  }
+  const resolved = connectionValue(context.projectRoot, connectionDeclaration)
   if (!resolved.ok) return result(key, 'run', 'refused', resolved.detail)
   try {
     return { plan, connection: clientConnection(plan.engine, resolved.value) }
@@ -205,7 +210,7 @@ function preparedPlan(
       key,
       'run',
       'refused',
-      `database connection key ${provision.connection.key} in ${provision.connection.file} is unusable: ${String((error as Error)?.message ?? error)}`,
+      `database connection key ${connectionDeclaration.key} in ${connectionDeclaration.file} is unusable: ${String((error as Error)?.message ?? error)}`,
     )
   }
 }
@@ -301,7 +306,11 @@ export function createProvisionedDatabases(
   context: ProvisionContext,
   spawn?: DatabaseSpawn,
 ): { failure: StepResult | null; compensation: StepResult[] } {
-  const entries = provisionedDatabases(recipe)
+  const declarations = new Map(provisionedDatabases(recipe))
+  const entries = creationPlan(recipe).flatMap((phase) => {
+    const allocation = phase.kind === 'database' ? declarations.get(phase.name) : undefined
+    return allocation ? ([[phase.name, allocation]] as [string, Allocation][]) : []
+  })
   for (const [index, [key, allocation]] of entries.entries()) {
     const created = createDatabase(key, allocation, context, spawn)
     if (created.status !== 'ok') {
