@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Project } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
-import { deriveKeyPrefix, proposeSetup } from './setup-engine.ts'
+import { deriveKeyPrefix, proposeSetup, type SetupAgent } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 
@@ -62,19 +62,19 @@ function registered(settings: Project['settings'], overrides: Partial<Project> =
 }
 
 test('plans add, set, and unchanged from fixture facts', () => {
-  const addPlan = proposeSetup(machine, [repository()], [])
+  const addPlan = proposeSetup(machine, [repository()], [], [])
   expect(planSetupActions(addPlan, recommendedAnswers(addPlan))[0]?.kind).toBe('add')
   const currentSettings = {
     keyPrefixes: ['ALPHA'],
     tracker: { kind: 'hub', protocol: 'hub' } as const,
     trunk: 'main',
   }
-  const unchangedPlan = proposeSetup(machine, [repository()], [registered(currentSettings)])
+  const unchangedPlan = proposeSetup(machine, [repository()], [registered(currentSettings)], [])
   expect(planSetupActions(unchangedPlan, recommendedAnswers(unchangedPlan))[0]).toMatchObject({
     kind: 'unchanged',
     settingsDiff: {},
   })
-  const setPlan = proposeSetup(machine, [repository()], [registered({})])
+  const setPlan = proposeSetup(machine, [repository()], [registered({})], [])
   expect(planSetupActions(setPlan, recommendedAnswers(setPlan))[0]).toMatchObject({
     kind: 'set',
     settingsDiff: {
@@ -98,6 +98,7 @@ test('preserves every configured value for an existing project', () => {
     machine,
     [repository({ currentBranch: 'feature', remoteDefaultBranch: 'main', stack: 'node' })],
     [current],
+    [],
   )
   expect(plan.questions).toEqual([])
   expect(plan.notices).toEqual([])
@@ -113,7 +114,7 @@ test('fills only a missing prefix without changing the registered name', () => {
     { tracker: { kind: 'linear', team: 'existing' }, trunk: 'main' },
     { name: 'registered-name' },
   )
-  const plan = proposeSetup(machine, [repository()], [current])
+  const plan = proposeSetup(machine, [repository()], [current], [])
   expect(plan.questions).toHaveLength(1)
   expect(plan.questions[0]?.id).toEndWith(':key-prefix')
   const action = planSetupActions(plan, recommendedAnswers(plan))[0]
@@ -128,12 +129,13 @@ test('fills only a missing prefix without changing the registered name', () => {
 })
 
 test('asks about trunk only when known branches disagree', () => {
-  const same = proposeSetup(machine, [repository()], [])
+  const same = proposeSetup(machine, [repository()], [], [])
   expect(same.questions.filter((question) => question.id.endsWith(':trunk'))).toHaveLength(0)
   expect(same.proposals[0]?.project.settings.trunk).toBe('main')
   const differing = proposeSetup(
     machine,
     [repository({ currentBranch: 'feature', remoteDefaultBranch: 'main' })],
+    [],
     [],
   )
   expect(differing.questions.find((question) => question.id.endsWith(':trunk'))).toMatchObject({
@@ -143,13 +145,13 @@ test('asks about trunk only when known branches disagree', () => {
   const differingAction = planSetupActions(differing, recommendedAnswers(differing))[0]
   expect(differingAction?.kind).toBe('add')
   if (differingAction?.kind === 'add') expect(differingAction.settings).not.toHaveProperty('trunk')
-  const detached = proposeSetup(machine, [repository({ currentBranch: null })], [])
+  const detached = proposeSetup(machine, [repository({ currentBranch: null })], [], [])
   expect(detached.questions.filter((question) => question.id.endsWith(':trunk'))).toHaveLength(0)
   expect(detached.notices[0]?.message).toContain('detached HEAD')
 })
 
 test('reports a bounded git inspection timeout as a repository notice', () => {
-  const plan = proposeSetup(machine, [repository({ inspectionTimedOut: true })], [])
+  const plan = proposeSetup(machine, [repository({ inspectionTimedOut: true })], [], [])
   expect(plan.notices).toContainEqual(
     expect.objectContaining({ message: expect.stringContaining('alpha-project') }),
   )
@@ -165,7 +167,7 @@ test('derives bounded unique prefixes and excludes TASK', () => {
 })
 
 test('answers validation refuses unknown, missing, and invalid options', () => {
-  const plan = proposeSetup(machine, [repository()], [])
+  const plan = proposeSetup(machine, [repository()], [], [])
   expect(() => validateSetupAnswers(plan.questions, {})).toThrow('missing answer')
   expect(() =>
     validateSetupAnswers(plan.questions, { ...recommendedAnswers(plan), unknown: 'value' }),
@@ -187,6 +189,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     [],
     [],
     [],
+    [],
     [orchServer],
   )
   expect(absent.questions).toHaveLength(1)
@@ -203,6 +206,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     [],
     [],
     [],
+    [],
     [orchServer],
   )
   expect(same.questions).toEqual([])
@@ -213,6 +217,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
       support: 'automatic',
       registrations: { orch: { status: 'registered', command: '/old/orch', args: ['mcp'] } },
     }),
+    [],
     [],
     [],
     [],
@@ -235,6 +240,7 @@ test('recommends skipping an absent registration when the harness is signed out'
     [],
     [],
     [],
+    [],
     [orchServer],
   )
   expect(plan.questions[0]?.recommendation).toBe('skip')
@@ -246,6 +252,7 @@ test('emits manual MCP instructions for an installed harness without CLI support
     machineWithMcp('goose', { support: 'manual', registrations: {} }),
     [],
     [],
+    [{ name: 'goose', harness: 'goose', enabled: true }],
     [],
     [orchServer],
   )
@@ -254,4 +261,122 @@ test('emits manual MCP instructions for an installed harness without CLI support
     message: expect.stringContaining('goose'),
     fix: expect.stringContaining('orch mcp --config'),
   })
+})
+
+function machineWithHarness(
+  name: keyof SetupFacts['harnesses'],
+  path: string | null,
+  auth: SetupFacts['harnesses']['codex']['auth'],
+): SetupFacts {
+  return {
+    ...machine,
+    harnesses: {
+      claude: { path: null, version: null, auth: 'unknown', mcp: null },
+      codex: { path: null, version: null, auth: 'unknown', mcp: null },
+      grok: { path: null, version: null, auth: 'unknown', mcp: null },
+      opencode: { path: null, version: null, auth: 'unknown', mcp: null },
+      goose: { path: null, version: null, auth: 'unknown', mcp: null },
+      [name]: { path, version: path ? '1' : null, auth, mcp: null },
+    },
+  } as SetupFacts
+}
+
+const agent = (name: string, enabled = true, harness = name): SetupAgent => ({
+  name,
+  harness,
+  enabled,
+})
+
+test('notices when an enabled built-in agent harness is absent', () => {
+  const plan = proposeSetup(machineWithHarness('codex', null, 'unknown'), [], [], [agent('codex')])
+  expect(plan.questions).toEqual([])
+  expect(plan.notices).toEqual([
+    {
+      message: 'codex agent is enabled but the codex harness is not installed',
+      fix: 'install codex, or orch agent set codex --enabled false --reason "codex is not installed on this machine"',
+    },
+  ])
+})
+
+test('notices when an enabled built-in agent harness is not signed in', () => {
+  const plan = proposeSetup(
+    machineWithHarness('grok', '/bin/grok', 'signed-out'),
+    [],
+    [],
+    [agent('grok')],
+  )
+  expect(plan.notices).toEqual([
+    {
+      message: 'grok agent is enabled but the grok harness is not signed in',
+      fix: 'sign in to grok, or orch agent set grok --enabled false --reason "grok is not signed in on this machine"',
+    },
+  ])
+})
+
+test('notices separately when an enabled built-in harness sign-in state is unknown', () => {
+  const plan = proposeSetup(
+    machineWithHarness('codex', '/bin/codex', 'unknown'),
+    [],
+    [],
+    [agent('codex')],
+  )
+  expect(plan.notices).toEqual([
+    {
+      message: 'the sign-in state of codex could not be established',
+      fix: 'check codex sign-in and re-run orch setup plan',
+    },
+  ])
+})
+
+test('does not notice a disabled built-in agent when harness sign-in state is unknown', () => {
+  const plan = proposeSetup(
+    machineWithHarness('grok', '/bin/grok', 'unknown'),
+    [],
+    [],
+    [agent('grok', false)],
+  )
+  expect(plan.notices).toEqual([])
+})
+
+test('notices when a ready built-in harness has a disabled agent', () => {
+  const plan = proposeSetup(
+    machineWithHarness('codex', '/bin/codex', 'signed-in'),
+    [],
+    [],
+    [agent('codex', false)],
+  )
+  expect(plan.notices).toEqual([
+    {
+      message: 'codex harness is installed and signed in but the codex agent is disabled',
+      fix: 'orch agent set codex --enabled true',
+    },
+  ])
+})
+
+test('does not notice a ready enabled built-in agent', () => {
+  const plan = proposeSetup(
+    machineWithHarness('codex', '/bin/codex', 'signed-in'),
+    [],
+    [],
+    [agent('codex')],
+  )
+  expect(plan.notices).toEqual([])
+})
+
+test('notices an installed unregistered non-built-in harness without guessing a model', () => {
+  const plan = proposeSetup(machineWithHarness('goose', '/bin/goose', 'unknown'), [], [], [])
+  expect(plan.notices).toEqual([
+    {
+      message: 'goose harness is installed but unregistered',
+      fix: 'orch agent add <name> --harness goose --backend <backend> --model <model>',
+    },
+  ])
+})
+
+test('treats absent harness facts as absent built-in CLIs', () => {
+  const plan = proposeSetup(machine, [], [], [agent('codex'), agent('grok')])
+  expect(plan.notices.map((notice) => notice.message)).toEqual([
+    'codex agent is enabled but the codex harness is not installed',
+    'grok agent is enabled but the grok harness is not installed',
+  ])
 })
