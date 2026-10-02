@@ -126,7 +126,7 @@ export type RefreshOwner = {
   rootRunId: number
 }
 
-const SNAPSHOT_STATIC_PLACEHOLDERS = new Set(['key', 'seed', 'index', 'label'])
+const SNAPSHOT_STATIC_PLACEHOLDERS = new Set(['key', 'seed', 'index', 'label', 'compose.project'])
 
 export function snapshotlessRefreshPlaceholder(recipe: TrackedRecipe): {
   step: string
@@ -157,6 +157,8 @@ export function requireRefreshSnapshot(
 export function refreshStepContext(input: {
   treeRoot: string
   main: string
+  projectName: string
+  recipe: TrackedRecipe
   branch: string
   head: string
   owner: RefreshOwner | null
@@ -189,6 +191,9 @@ export function refreshStepContext(input: {
       label: orchRunLabel(owner.rootRunId),
       treeExists: true,
       allocations: owner.snapshot.allocations,
+      compose: input.recipe.compose
+        ? { projectName: input.projectName, rootRunId: owner.rootRunId }
+        : undefined,
     }),
   }
 }
@@ -296,6 +301,8 @@ function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): st
     refreshStepContext({
       treeRoot,
       main: project.path,
+      projectName: project.name,
+      recipe: loaded.recipe,
       branch,
       head: git(['rev-parse', 'HEAD'], treeRoot),
       owner,

@@ -187,9 +187,12 @@ const STATIC_PLACEHOLDERS = new Set([
   'index',
   'label',
   'tree_exists',
+  'compose.project',
 ])
 const ALLOCATION_STATIC_PLACEHOLDERS = new Set(
-  [...STATIC_PLACEHOLDERS].filter((name) => name !== 'label' && name !== 'tree_exists'),
+  [...STATIC_PLACEHOLDERS].filter(
+    (name) => name !== 'label' && name !== 'tree_exists' && name !== 'compose.project',
+  ),
 )
 const ALLOCATION_PLACEHOLDER = /^(ports|db|alloc)\.([^{}.]+)$/
 const DATABASE_URL_PLACEHOLDER = /^db\.([^{}.]+)\.url$/
@@ -245,6 +248,11 @@ function databaseUrlPlaceholderRule(name: string): string {
 }
 
 function placeholderProblem(name: string, recipe: RecipeInput): string | null {
+  if (name === 'compose.project') {
+    return recipe.compose
+      ? null
+      : 'placeholder rule: {compose.project} is valid only when the recipe declares compose'
+  }
   if (STATIC_PLACEHOLDERS.has(name)) return null
   if (DATABASE_URL_PLACEHOLDER.test(name)) return databaseUrlPlaceholderRule(name)
   const allocation = name.match(ALLOCATION_PLACEHOLDER)

@@ -82,6 +82,8 @@ function reseedTree(path: string, requestedSeed: string | undefined): string[] {
   const context = refreshStepContext({
     treeRoot,
     main: project.path,
+    projectName: project.name,
+    recipe: loaded.recipe,
     branch,
     head: git(['rev-parse', 'HEAD'], treeRoot),
     owner,

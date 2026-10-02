@@ -155,6 +155,23 @@ describe('tracked recipe refusal rules', () => {
     expect(recipeSchema.safeParse(recipe).success).toBe(true)
   })
 
+  test('accepts compose.project only when the recipe declares Compose', () => {
+    const step = {
+      name: 'probe',
+      run: { command: 'docker', args: ['compose', '-p', '{compose.project}', 'ps'] },
+    }
+    expect(messages({ create: [step] }).join('\n')).toContain(
+      'placeholder rule: {compose.project} is valid only when the recipe declares compose',
+    )
+    expect(
+      recipeSchema.safeParse({
+        compose: { files: ['compose.yaml'] },
+        env: [{ path: '.env', contents: 'COMPOSE_PROJECT={compose.project}\n' }],
+        create: [step],
+      }).success,
+    ).toBe(true)
+  })
+
   test('accepts the ownership label in tracked steps but not allocation templates', () => {
     expect(
       recipeSchema.safeParse({

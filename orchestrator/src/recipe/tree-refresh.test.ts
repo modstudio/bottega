@@ -83,6 +83,7 @@ describe('tree refresh decision', () => {
 
 describe('tree refresh recipe context', () => {
   const recipe = {
+    compose: { files: ['compose.yaml'], wait: true },
     create: [],
     refresh: [
       {
@@ -104,6 +105,8 @@ describe('tree refresh recipe context', () => {
       refreshStepContext({
         treeRoot: '/trees/orch-42',
         main: '/projects/example',
+        projectName: 'Example App',
+        recipe,
         branch: 'DEV-675-tree-refresh',
         head: 'new-head',
         owner: { snapshot, key: 'DEV-675', seed: 'small', rootRunId: 42 },
@@ -127,6 +130,7 @@ describe('tree refresh recipe context', () => {
     expect(vars.seed).toBe('small')
     expect(vars.base).toBe('source-base')
     expect(vars.label).toBe('orch.run=42')
+    expect(vars['compose.project']).toBe('example-app-orch-42')
     expect(vars.index).toBe('4')
     expect(vars['ports.web']).toBe('21404')
   })

@@ -541,18 +541,20 @@ describe('tracked recipe execution', () => {
     })
   })
 
-  test('creation variables carry the conversation root label', () => {
+  test('creation variables carry the conversation root label and derived Compose project', () => {
     expect(
       trackedRecipeVars(
         { branch: 'DEV-596', path: '/tree' },
         { index: 6, ports: { hub: 21005 }, databases: {}, strings: {} },
         17,
+        { projectName: 'My Project' },
       ),
     ).toMatchObject({
       branch: 'DEV-596',
       path: '/tree',
       index: '6',
       label: 'orch.run=17',
+      'compose.project': 'my-project-orch-17',
       'ports.hub': '21005',
     })
   })
