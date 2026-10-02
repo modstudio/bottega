@@ -12,6 +12,7 @@ import {
   manualMcpInstructions,
   sameMcpRegistration,
 } from './setup-mcp.ts'
+import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
   id: string
@@ -34,6 +35,8 @@ export type SetupProposal = {
   project: { name: string; path: string; stack: string | null; settings: ProjectSettings }
   prefixQuestionId: string | null
   trunkQuestionId: string | null
+  recipeQuestionId: string | null
+  recipeContent: string | null
 }
 type SetupRegistrationProposal = {
   harness: keyof SetupFacts['harnesses']
@@ -349,6 +352,36 @@ export function proposeSetup(
         fix: null,
       })
     }
+    const gate = current?.settings.gate ?? proposedGate(repository)
+    if (!current?.settings.gate && !gate) {
+      notices.push({
+        message: `no gate was detected for ${repository.name}`,
+        fix: `orch project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+      })
+    }
+    const recipeContent = inferredRecipeContent(repository)
+    let recipeQuestionId: string | null = null
+    if (!current?.settings.worktree?.recipePath && !repository.recipeFileExists && recipeContent) {
+      recipeQuestionId = questionId(repository.path, 'worktree-recipe')
+      questions.push({
+        id: recipeQuestionId,
+        question: `Write an inferred Files-level worktree recipe for ${repository.name}?`,
+        options: [
+          {
+            id: 'write',
+            label: 'Write recipe',
+            why: `Creates ${INFERRED_RECIPE_PATH} with a frozen dependency install step.`,
+          },
+          {
+            id: 'skip',
+            label: 'Skip',
+            why: 'Leaves the repository and its worktree recipe setting unchanged.',
+          },
+        ],
+        recommendation: 'write',
+        why: 'A tracked recipe gives writing worktrees the project dependencies without adding environment, database, or serve access.',
+      })
+    }
     const settings: ProjectSettings = {
       ...current?.settings,
       ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
@@ -356,6 +389,7 @@ export function proposeSetup(
         ? { tracker: current.settings.tracker }
         : { tracker: { kind: 'hub', protocol: 'hub' } }),
       ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
+      ...(gate ? { gate } : {}),
     }
     return {
       repository,
@@ -368,6 +402,8 @@ export function proposeSetup(
       },
       prefixQuestionId,
       trunkQuestionId,
+      recipeQuestionId,
+      recipeContent,
     }
   })
   return { facts: { machine, repositories }, proposals, registrations, questions, notices }

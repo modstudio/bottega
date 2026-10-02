@@ -1,0 +1,170 @@
+// concern: setup-repository-toolchain
+/** Reads only repository manifests to detect package-manager and gate facts. */
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { detect } from 'package-manager-detector'
+import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree/worktree-lifecycle.ts'
+import {
+  type DetectedPackageManager,
+  INFERRED_RECIPE_PATH,
+  type ToolchainFacts,
+} from './setup-toolchain.ts'
+
+const read = (path: string): string => {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+const has = (root: string, name: string) => existsSync(join(root, name))
+const command = (manager: DetectedPackageManager, script: string) =>
+  manager === 'bun'
+    ? `bun run ${script}`
+    : manager === 'npm'
+      ? `npm run ${script}`
+      : manager === 'pnpm' || manager === 'yarn'
+        ? `${manager} ${script}`
+        : ''
+
+function requirements(root: string): string[] {
+  try {
+    return readdirSync(root).filter((name) => /^requirements.*\.txt$/i.test(name))
+  } catch {
+    return []
+  }
+}
+
+function ciFiles(root: string): string[] {
+  const files = ['.gitlab-ci.yml', '.circleci/config.yml'].filter((name) => has(root, name))
+  try {
+    files.push(
+      ...readdirSync(join(root, '.github/workflows'))
+        .filter((name) => /\.ya?ml$/i.test(name))
+        .map((name) => `.github/workflows/${name}`),
+    )
+  } catch {
+    // No GitHub workflows directory.
+  }
+  return files
+}
+
+async function packageManager(root: string): Promise<DetectedPackageManager | null> {
+  if (has(root, 'composer.lock') || has(root, 'composer.json')) return 'composer'
+  if (has(root, 'Gemfile.lock')) return 'bundler'
+  if (has(root, 'uv.lock')) return 'uv'
+  if (has(root, 'poetry.lock')) return 'poetry'
+  if (requirements(root).length) return 'pip'
+  if (has(root, 'go.mod')) return 'go'
+  if (has(root, 'Cargo.toml')) return 'cargo'
+  if (!has(root, 'package.json')) return null
+  const found = await detect({ cwd: root, stopDir: root })
+  return found && ['bun', 'npm', 'pnpm', 'yarn'].includes(found.name)
+    ? (found.name as DetectedPackageManager)
+    : null
+}
+
+function scripts(source: string): Record<string, unknown> {
+  try {
+    const value = JSON.parse(source) as { scripts?: unknown }
+    return value.scripts && typeof value.scripts === 'object'
+      ? (value.scripts as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function makeTargets(source: string): Set<string> {
+  return new Set([...source.matchAll(/^([A-Za-z0-9_.-]+)\s*:/gm)].map((match) => match[1]!))
+}
+
+type Commands = Pick<ToolchainFacts, 'lint' | 'typecheck' | 'test'>
+const noCommands = (): Commands => ({ lint: null, typecheck: null, test: null })
+
+function manifestCommands(root: string, manager: DetectedPackageManager | null): Commands {
+  const commands = noCommands()
+  if (manager && ['bun', 'npm', 'pnpm', 'yarn'].includes(manager)) {
+    const value = scripts(read(join(root, 'package.json')))
+    if (typeof value.lint === 'string') commands.lint = command(manager, 'lint')
+    const typeScript =
+      typeof value.typecheck === 'string'
+        ? 'typecheck'
+        : typeof value['type-check'] === 'string'
+          ? 'type-check'
+          : null
+    if (typeScript) commands.typecheck = command(manager, typeScript)
+    if (
+      typeof value.test === 'string' &&
+      value.test.trim() !== 'echo "Error: no test specified" && exit 1'
+    )
+      commands.test = command(manager, 'test')
+  } else if (manager === 'composer') {
+    const value = scripts(read(join(root, 'composer.json')))
+    const lintScript = ['lint', 'analyse', 'stan'].find((name) => typeof value[name] === 'string')
+    if (lintScript) commands.lint = `composer ${lintScript}`
+    if (typeof value.test === 'string') commands.test = 'composer test'
+  }
+  return commands
+}
+
+function makeCommands(root: string): Commands {
+  const targets = makeTargets(read(join(root, 'Makefile')))
+  return {
+    lint: targets.has('lint') ? 'make lint' : null,
+    typecheck: null,
+    test: targets.has('test') ? 'make test' : null,
+  }
+}
+
+function pythonCommands(root: string, manager: 'uv' | 'poetry' | 'pip'): Commands {
+  const pyproject = read(join(root, 'pyproject.toml'))
+  const prefix = manager === 'uv' ? 'uv run ' : manager === 'poetry' ? 'poetry run ' : ''
+  const requirementsText = requirements(root)
+    .map((name) => read(join(root, name)))
+    .join('\n')
+  return {
+    lint:
+      /^\[tool\.ruff\]\s*$/m.test(pyproject) || has(root, 'ruff.toml')
+        ? `${prefix}ruff check .`
+        : null,
+    typecheck: null,
+    test: /\bpytest\b/i.test(`${pyproject}\n${requirementsText}`) ? `${prefix}pytest` : null,
+  }
+}
+
+function ecosystemCommands(
+  root: string,
+  manager: DetectedPackageManager | null,
+  ciPaths: string[],
+): Commands | null {
+  if (manager === 'go')
+    return { lint: 'go vet ./...', typecheck: null, test: 'go test ./...' }
+  if (manager !== 'cargo') return null
+  const clippy =
+    [read(join(root, 'Cargo.toml')), ...ciPaths.map((name) => read(join(root, name)))].some(
+      (source) => /clippy/i.test(source),
+    ) || has(root, 'clippy.toml')
+  return { lint: clippy ? 'cargo clippy' : null, typecheck: null, test: 'cargo test' }
+}
+
+export async function detectRepositoryToolchain(root: string): Promise<ToolchainFacts> {
+  const manager = await packageManager(root)
+  const ciPaths = ciFiles(root)
+  const ci = ciPaths.length > 0
+  let commands = manifestCommands(root, manager)
+  if (!commands.lint && !commands.typecheck && !commands.test) commands = makeCommands(root)
+  if (
+    !commands.lint &&
+    !commands.test &&
+    (manager === 'uv' || manager === 'poetry' || manager === 'pip')
+  )
+    commands = pythonCommands(root, manager)
+  commands = ecosystemCommands(root, manager, ciPaths) ?? commands
+  return {
+    packageManager: manager,
+    ...commands,
+    ci,
+    recipeFileExists: has(root, DEFAULT_PROJECT_CONFIG_PATH) || has(root, INFERRED_RECIPE_PATH),
+  }
+}

@@ -4,6 +4,7 @@ import type { RepositoryFacts } from './repository-facts.ts'
 import { deriveKeyPrefix, proposeSetup, type SetupAgent } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
+import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 const machine = {
   git: { path: '/bin/git', version: '1' },
@@ -44,6 +45,12 @@ function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
     remoteDefaultBranch: 'main',
     stack: 'node',
     inspectionTimedOut: false,
+    packageManager: null,
+    lint: null,
+    typecheck: null,
+    test: null,
+    ci: false,
+    recipeFileExists: false,
     ...overrides,
   }
 }
@@ -101,7 +108,9 @@ test('preserves every configured value for an existing project', () => {
     [],
   )
   expect(plan.questions).toEqual([])
-  expect(plan.notices).toEqual([])
+  expect(plan.notices).toEqual([
+    expect.objectContaining({ message: 'no gate was detected for alpha-project' }),
+  ])
   expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
     kind: 'unchanged',
     name: 'registered-name',
@@ -156,6 +165,69 @@ test('reports a bounded git inspection timeout as a repository notice', () => {
     expect.objectContaining({ message: expect.stringContaining('alpha-project') }),
   )
   expect(plan.notices[0]?.message).toContain('timed out')
+})
+
+test('proposes a detected gate and Files-level recipe through fill-absent planning', () => {
+  const facts = repository({
+    packageManager: 'pnpm',
+    lint: 'pnpm lint',
+    typecheck: 'pnpm typecheck',
+    test: 'pnpm test',
+  })
+  const plan = proposeSetup(
+    machine,
+    [facts],
+    [registered({ keyPrefixes: ['ALPHA'], trunk: 'main' })],
+    [],
+  )
+  const recipeQuestion = plan.questions.find((question) => question.id.endsWith(':worktree-recipe'))
+  expect(recipeQuestion).toMatchObject({ recommendation: 'write' })
+  const action = planSetupActions(plan, recommendedAnswers(plan))[0]
+  expect(action).toMatchObject({
+    kind: 'set',
+    fill: {
+      settings: {
+        gate: 'pnpm lint && pnpm typecheck && pnpm test',
+        worktree: { recipePath: INFERRED_RECIPE_PATH },
+      },
+    },
+    recipeFile: { path: INFERRED_RECIPE_PATH },
+  })
+})
+
+test('does not propose an existing gate or ask for an existing recipe', () => {
+  const current = registered({
+    keyPrefixes: ['ALPHA'],
+    tracker: { kind: 'hub', protocol: 'hub' },
+    trunk: 'main',
+    gate: 'make check',
+    worktree: { recipePath: 'custom.jsonc' },
+  })
+  const plan = proposeSetup(
+    machine,
+    [repository({ packageManager: 'bun', test: 'bun run test' })],
+    [current],
+    [],
+  )
+  expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+
+  const filePlan = proposeSetup(
+    machine,
+    [repository({ packageManager: 'bun', test: 'bun run test', recipeFileExists: true })],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        tracker: { kind: 'hub', protocol: 'hub' },
+        trunk: 'main',
+        gate: 'make check',
+      }),
+    ],
+    [],
+  )
+  expect(filePlan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(
+    false,
+  )
 })
 
 test('derives bounded unique prefixes and excludes TASK', () => {

@@ -26,7 +26,7 @@ async function setupPlan(inputs: string[]) {
     gatherSetupFacts(),
     Promise.resolve(readSetupState()),
   ])
-  const repositories = gatherRepositoryFactsReport(inputs)
+  const repositories = await gatherRepositoryFactsReport(inputs)
   const orch = bottegaEntryArgv('orch')
   const ask = bottegaEntryArgv('ask-server')
   return proposeSetup(

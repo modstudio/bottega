@@ -43,7 +43,7 @@ function fakeGit(origins: Map<string, string>, timedOutPath: string): Repository
   }
 }
 
-test('strips every origin credential form and reports an injected inspection timeout', () => {
+test('strips every origin credential form and reports an injected inspection timeout', async () => {
   const repositories = ['https-origin', 'ssh-origin', 'scp-origin'].map((name) => {
     const path = join(directory, name)
     mkdirSync(path)
@@ -54,7 +54,7 @@ test('strips every origin credential form and reports an injected inspection tim
     [repositories[1]!, 'ssh://fake-token@example.com/owner/repo.git'],
     [repositories[2]!, 'fake-token@example.com:owner/repo.git'],
   ])
-  const report = gatherRepositoryFactsReport(
+  const report = await gatherRepositoryFactsReport(
     repositories,
     fakeGit(origins, repositories[1]!),
     () => null,
@@ -72,8 +72,8 @@ test('strips every origin credential form and reports an injected inspection tim
   for (const path of repositories) rmSync(path, { recursive: true })
 })
 
-test('reports a timed out repository discovery instead of silently omitting it', () => {
-  const report = gatherRepositoryFactsReport([directory], (_path, args) => ({
+test('reports a timed out repository discovery instead of silently omitting it', async () => {
+  const report = await gatherRepositoryFactsReport([directory], (_path, args) => ({
     exitCode: 1,
     stdout: '',
     timedOut: args.join(' ') === 'rev-parse --show-toplevel',
@@ -84,8 +84,8 @@ test('reports a timed out repository discovery instead of silently omitting it',
 })
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-test('detects facts from a temporary git repository', () => {
-  expect(gatherRepositoryFactsReport([directory]).repositories).toEqual([
+test('detects facts from a temporary git repository', async () => {
+  expect((await gatherRepositoryFactsReport([directory])).repositories).toEqual([
     expect.objectContaining({
       path: realpathSync(directory),
       currentBranch: 'main',

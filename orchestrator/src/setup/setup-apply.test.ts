@@ -1,6 +1,10 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { applySetupActions } from './setup-apply.ts'
 import type { SetupAction } from './setup-planner.ts'
+import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 const action = (name: string): SetupAction => ({
   kind: 'add',
@@ -9,6 +13,40 @@ const action = (name: string): SetupAction => ({
   stack: null,
   settings: {},
   settingsDiff: {},
+})
+
+const temporary: string[] = []
+afterEach(() => {
+  for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
+})
+
+test('writes an inferred recipe before filling its absent register pointer and never overwrites', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'setup-apply-'))
+  temporary.push(path)
+  const candidate: SetupAction = {
+    kind: 'set',
+    currentName: 'project',
+    path,
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+    settingsDiff: {},
+    recipeFile: { path: INFERRED_RECIPE_PATH, content: '{"worktree":{"create":[]}}\n' },
+  }
+  let filled = false
+  const service = {
+    add: async () => {},
+    fillAbsent: async () => {
+      expect(existsSync(join(path, INFERRED_RECIPE_PATH))).toBe(true)
+      filled = true
+    },
+  }
+  expect((await applySetupActions([candidate], service))[0]?.status).toBe('applied')
+  expect(filled).toBe(true)
+  expect(readFileSync(join(path, INFERRED_RECIPE_PATH), 'utf8')).toContain('create')
+
+  writeFileSync(join(path, INFERRED_RECIPE_PATH), 'owned by user')
+  const repeated = await applySetupActions([candidate], service)
+  expect(repeated[0]?.status).toBe('refused')
+  expect(readFileSync(join(path, INFERRED_RECIPE_PATH), 'utf8')).toBe('owned by user')
 })
 
 test('stops at the first refusal and marks remaining actions not attempted', async () => {

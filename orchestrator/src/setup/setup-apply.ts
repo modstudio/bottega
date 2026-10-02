@@ -1,6 +1,9 @@
 // concern: setup-apply
 /** Applies planned project actions in order through the project register service boundary. */
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+
 import {
   commandFailureReason,
   mcpAddArgv,
@@ -37,6 +40,20 @@ export type SetupProjectService = {
 
 function rendered(argv: string[]): string {
   return argv.map((part) => JSON.stringify(part)).join(' ')
+}
+
+async function writeRecipe(action: AddAction | SetAction): Promise<void> {
+  if (!action.recipeFile) return
+  const path = resolve(action.path, action.recipeFile.path)
+  await mkdir(dirname(path), { recursive: true })
+  try {
+    await writeFile(path, action.recipeFile.content, { encoding: 'utf8', flag: 'wx' })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`refusing to overwrite worktree recipe ${path}; re-run orch setup plan`)
+    }
+    throw error
+  }
 }
 
 export function applyMcpRegistration(
@@ -132,6 +149,7 @@ export async function applySetupActions(
         results.push({ ...action, status, message: null })
         continue
       } else if (action.kind === 'add') {
+        await writeRecipe(action)
         await service.add({
           path: action.path,
           name: action.name,
@@ -141,6 +159,7 @@ export async function applySetupActions(
           allowIncomplete: false,
         })
       } else if (action.kind === 'set') {
+        await writeRecipe(action)
         await service.fillAbsent({ name: action.currentName, fill: action.fill })
       }
       results.push({ ...action, status: 'applied', message: null })
