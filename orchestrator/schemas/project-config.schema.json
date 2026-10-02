@@ -45,7 +45,81 @@
                   "name": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Claimed database name. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide. The project create step makes the database and its undo drops it."
+                    "description": "Claimed database name. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide."
+                  },
+                  "provision": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "connection": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "file": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": ["key"],
+                        "additionalProperties": false
+                      },
+                      "reuse": {
+                        "type": "boolean"
+                      },
+                      "exec": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "where": {
+                                "type": "string",
+                                "const": "host"
+                              }
+                            },
+                            "required": ["where"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "where": {
+                                "type": "string",
+                                "const": "container"
+                              },
+                              "service": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": ["where", "service"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "where": {
+                                "type": "string",
+                                "const": "as-user"
+                              },
+                              "user": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": ["where", "user"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["from", "connection"],
+                    "additionalProperties": false
                   }
                 },
                 "required": ["engine", "name"],

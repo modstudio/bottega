@@ -37,6 +37,30 @@ export type StepProcessResult = SpawnResult & {
   error?: string
 }
 
+/** Apply the execution context shared by recipe steps and built-in lifecycle commands. */
+export function executionArgv(
+  argv: string[],
+  exec: ExecContext,
+  environmentNames: string[] = [],
+): string[] {
+  if (exec?.where === 'as-user') {
+    const preserve = environmentNames.length ? [`--preserve-env=${environmentNames.join(',')}`] : []
+    return ['sudo', '-n', ...preserve, '-u', exec.user, '--', ...argv]
+  }
+  if (exec?.where === 'container') {
+    return [
+      'docker',
+      'compose',
+      'exec',
+      '-T',
+      ...environmentNames.flatMap((name) => ['-e', name]),
+      exec.service,
+      ...argv,
+    ]
+  }
+  return argv
+}
+
 const PLACEHOLDER = /\{([^{}]+)\}/g
 
 function unavailablePlaceholder(value: string, vars: Record<string, string>): string | null {
@@ -102,18 +126,11 @@ export function stepCommandPlan(
       args.push(fill(arg.value, context.vars))
     }
   }
-  const argv = [fill(command.command, context.vars), ...args]
-  if (exec?.where === 'as-user') {
-    return { ok: true, argv: ['sudo', '-n', '-u', exec.user, '--', ...argv], cwd }
+  return {
+    ok: true,
+    argv: executionArgv([fill(command.command, context.vars), ...args], exec),
+    cwd,
   }
-  if (exec?.where === 'container') {
-    return {
-      ok: true,
-      argv: ['docker', 'compose', 'exec', '-T', exec.service, ...argv],
-      cwd,
-    }
-  }
-  return { ok: true, argv, cwd }
 }
 
 function failureDetail(result: StepProcessResult): string {

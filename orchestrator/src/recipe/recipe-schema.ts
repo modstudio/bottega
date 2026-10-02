@@ -1,6 +1,11 @@
 // concern: tracked worktree recipe schema
 /** Knows only the stored recipe grammar and its refusal rules. Must not read files, execute steps, or know the project register. */
 import { z } from 'zod'
+import {
+  databaseAllocationDefaults,
+  databaseAllocationSchema,
+} from './database-provision-schema.ts'
+import { execContextSchema } from './recipe-exec-schema.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
   z.strictObject(shape, { error: 'unknown-key rule: objects may not contain unknown keys' })
@@ -40,12 +45,6 @@ const commandSchema = strictObject({
   cwd: z.string().optional(),
 })
 
-const execContextSchema = z.discriminatedUnion('where', [
-  strictObject({ where: z.literal('host') }),
-  strictObject({ where: z.literal('container'), service: z.string().min(1) }),
-  strictObject({ where: z.literal('as-user'), user: z.string().min(1) }),
-])
-
 const stepFields = {
   name: z.string().min(1),
   run: commandSchema,
@@ -60,16 +59,6 @@ const stepFields = {
 
 const stepSchema = strictObject(stepFields)
 const refreshStepSchema = stepSchema.omit({ undo: true })
-
-const databaseAllocationSchema = strictObject({
-  engine: z.enum(['postgres', 'mysql', 'mariadb', 'sqlite', 'other']),
-  name: z
-    .string()
-    .min(1)
-    .describe(
-      'Claimed database name. Templates may use only {branch} {name} {base} {key} {seed} {path} {main} {index}; include {index} when simultaneous worktrees could otherwise collide. The project create step makes the database and its undo drops it.',
-    ),
-})
 
 const allocationsSchema = strictObject({
   ports: z.array(z.string().min(1)).optional(),
@@ -498,6 +487,14 @@ const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
 
 export const recipeSchema = validatedRecipeSchema.transform((recipe) => ({
   ...recipe,
+  ...(recipe.allocate?.databases === undefined
+    ? {}
+    : {
+        allocate: {
+          ...recipe.allocate,
+          databases: databaseAllocationDefaults(recipe.allocate.databases),
+        },
+      }),
   ...(recipe.provision === undefined
     ? {}
     : {

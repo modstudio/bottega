@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   compensationPlan,
+  creationOrder,
   destroyPlan,
   lifecycleFailure,
   serveUndoPlan,
@@ -19,6 +20,26 @@ const step = (name: string, undo = true): Step => ({
 const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create: [], ...extra })
 
 describe('tracked recipe lifecycle planning', () => {
+  test('orders built-in databases after env files and before project create steps', () => {
+    expect(
+      creationOrder({
+        allocate: {
+          databases: {
+            app: {
+              engine: 'postgres',
+              name: 'app',
+              provision: {
+                from: 'base',
+                connection: { key: 'DATABASE_URL', file: '.env' },
+                reuse: false,
+              },
+            },
+          },
+        },
+        create: [step('migrate')],
+      }),
+    ).toEqual(['env files', 'database app', 'migrate'])
+  })
   test('renders shared declarations without adding them to destroy planning', () => {
     const plain = recipe({ create: [step('create')] })
     const shared = recipe({
