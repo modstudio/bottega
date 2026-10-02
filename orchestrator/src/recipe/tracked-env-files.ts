@@ -1,5 +1,5 @@
 // concern: tracked recipe environment-file writing
-/** Writes validated env declarations atomically without exposing their contents in failures. */
+/** Writes validated env declarations atomically to untracked gitignored paths without exposing their contents in failures. */
 import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
@@ -13,10 +13,16 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { gitOk } from '../git/git-environment.ts'
 import { connectionUrlForAllocatedDatabase, readConnectionValue } from './database-connection.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { StepContext, StepResult } from './recipe-step.ts'
+
+export type EnvFileGitCheck = (
+  treeRoot: string,
+  relativePath: string,
+) => { tracked: boolean; ignored: boolean }
 
 type EnvTextPlan = { ok: true; text: string } | { ok: false; reason: string }
 type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
@@ -91,6 +97,40 @@ function envFileFailure(path: string, detail: string): StepResult {
   }
 }
 
+function defaultEnvFileGitCheck(
+  treeRoot: string,
+  relativePath: string,
+): { tracked: boolean; ignored: boolean } {
+  return {
+    tracked: gitOk(['ls-files', '--error-unmatch', '--', relativePath], treeRoot) !== null,
+    ignored: gitOk(['check-ignore', '-q', '--', relativePath], treeRoot) !== null,
+  }
+}
+
+function envFileGitProblem(
+  treeRoot: string,
+  relativePath: string,
+  gitCheck: EnvFileGitCheck,
+): string | null {
+  const status = gitCheck(treeRoot, relativePath)
+  if (status.tracked || !status.ignored) {
+    return `"${relativePath}" is tracked or not ignored by git; add it to the project's .gitignore or choose an ignored path`
+  }
+  return null
+}
+
+function refuseUnwritableEnvPaths(
+  envFiles: NonNullable<TrackedRecipe['env']>,
+  treeRoot: string,
+  gitCheck: EnvFileGitCheck,
+): StepResult | null {
+  for (const envFile of envFiles) {
+    const problem = envFileGitProblem(treeRoot, envFile.path, gitCheck)
+    if (problem) return envFileFailure(envFile.path, problem)
+  }
+  return null
+}
+
 function provisionedUrlAllocation(allocation: Allocation | undefined): Allocation | undefined {
   if (!allocation?.provision || !DATABASE_URL_ENGINES.has(allocation.engine)) return undefined
   return allocation
@@ -161,8 +201,11 @@ export function writeTrackedEnvFiles(
   context: StepContext,
   projectRoot: string,
   secrets: Record<string, string> = {},
+  gitCheck: EnvFileGitCheck = defaultEnvFileGitCheck,
 ): StepResult | null {
   const envFiles = recipe.env ?? []
+  const gitRefusal = refuseUnwritableEnvPaths(envFiles, context.treeRoot, gitCheck)
+  if (gitRefusal) return gitRefusal
   const filledContents: string[] = []
   const vars = { ...context.vars, ...secrets }
   for (const envFile of envFiles) {

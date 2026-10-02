@@ -5,8 +5,14 @@ import { join } from 'node:path'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { recipeSchema } from './recipe-schema.ts'
 import { stepCommandPlan } from './recipe-step.ts'
-import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
+import {
+  databaseUrlSecrets,
+  type EnvFileGitCheck,
+  writeTrackedEnvFiles,
+} from './tracked-env-files.ts'
 import { trackedRecipeVars } from './tracked-recipe.ts'
+
+const ignoredUntracked: EnvFileGitCheck = () => ({ tracked: false, ignored: true })
 
 const directories: string[] = []
 
@@ -38,6 +44,7 @@ function writeEnv(
     },
     project,
     urls.secrets,
+    ignoredUntracked,
   )
 }
 
@@ -107,5 +114,53 @@ describe('tracked recipe database URL env placeholders', () => {
     expect(failure?.detail).not.toContain('super-secret')
     expect(failure?.detail).not.toContain('postgres://')
     expect(existsSync(join(tree, '.env'))).toBeFalse()
+  })
+})
+
+describe('tracked recipe env files stay out of git', () => {
+  const recipe = recipeSchema.parse({
+    create: [],
+    env: [
+      { path: '.first', mode: 'replace', contents: 'FIRST=yes' },
+      { path: '.env', mode: 'replace', contents: 'SECRET=yes' },
+    ],
+  })
+
+  test('a tracked target refuses and writes nothing', () => {
+    const { project, tree } = temporaryTree()
+    const failure = writeTrackedEnvFiles(
+      recipe,
+      { treeRoot: tree, vars: {} },
+      project,
+      {},
+      (_tree, path) =>
+        path === '.env' ? { tracked: true, ignored: false } : { tracked: false, ignored: true },
+    )
+    expect(failure?.detail).toContain('.env')
+    expect(failure?.detail).toContain('.gitignore')
+    expect(existsSync(join(tree, '.first'))).toBeFalse()
+    expect(existsSync(join(tree, '.env'))).toBeFalse()
+  })
+
+  test('an un-ignored untracked target refuses', () => {
+    const { project, tree } = temporaryTree()
+    const failure = writeTrackedEnvFiles(recipe, { treeRoot: tree, vars: {} }, project, {}, () => ({
+      tracked: false,
+      ignored: false,
+    }))
+    expect(failure?.status).toBe('refused')
+    expect(failure?.detail).toContain('.first')
+    expect(failure?.detail).toContain('.gitignore')
+    expect(existsSync(join(tree, '.first'))).toBeFalse()
+    expect(existsSync(join(tree, '.env'))).toBeFalse()
+  })
+
+  test('an ignored target writes', () => {
+    const { project, tree } = temporaryTree()
+    expect(
+      writeTrackedEnvFiles(recipe, { treeRoot: tree, vars: {} }, project, {}, ignoredUntracked),
+    ).toBeNull()
+    expect(readFileSync(join(tree, '.first'), 'utf8')).toBe('FIRST=yes')
+    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe('SECRET=yes')
   })
 })

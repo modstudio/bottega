@@ -417,6 +417,71 @@ describe('tracked recipe refusal rules', () => {
     expect(allocationEnvironmentVariable('ports', 'api-v2')).toBe('ORCH_PORTS_API_V2')
     expect(allocationEnvironmentVariable('db', 'app-v2')).toBe('ORCH_DB_APP_V2')
   })
+
+  test('accepts {db.app.url} only in env contents for a provisioned postgres allocation', () => {
+    expect(
+      recipeSchema.safeParse({
+        allocate: {
+          databases: {
+            app: {
+              engine: 'postgres',
+              name: 'app_{index}',
+              provision: { from: 'base', connection: { key: 'DATABASE_URL' } },
+            },
+          },
+        },
+        env: [{ path: '.env', contents: 'DATABASE_URL={db.app.url}' }],
+        create: [],
+      }).success,
+    ).toBe(true)
+  })
+
+  test('refuses {db.app.url} in a step argument', () => {
+    const errors = messages({
+      allocate: {
+        databases: {
+          app: {
+            engine: 'postgres',
+            name: 'app',
+            provision: { from: 'base', connection: { key: 'DATABASE_URL' } },
+          },
+        },
+      },
+      create: [{ name: 'migrate', run: { command: 'psql', args: ['{db.app.url}'] } }],
+    }).join('\n')
+    expect(errors).toContain('{db.app.url}')
+    expect(errors).toContain('env[].contents')
+  })
+
+  test('refuses {db.app.url} for a sqlite allocation', () => {
+    const errors = messages({
+      allocate: {
+        databases: {
+          app: {
+            engine: 'sqlite',
+            name: 'app.db',
+            provision: { from: 'base.db', connection: { key: 'DATABASE_URL' } },
+          },
+        },
+      },
+      env: [{ path: '.env', contents: 'DATABASE_URL={db.app.url}' }],
+      create: [],
+    }).join('\n')
+    expect(errors).toContain('{db.app.url}')
+    expect(errors).toContain('env[].contents')
+  })
+
+  test('refuses {db.app.url} for an unprovisioned allocation', () => {
+    const errors = messages({
+      allocate: {
+        databases: { app: { engine: 'postgres', name: 'app' } },
+      },
+      env: [{ path: '.env', contents: 'DATABASE_URL={db.app.url}' }],
+      create: [],
+    }).join('\n')
+    expect(errors).toContain('{db.app.url}')
+    expect(errors).toContain('env[].contents')
+  })
 })
 
 describe('project config document', () => {
