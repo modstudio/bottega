@@ -20,9 +20,10 @@ const step = (name: string, undo = true): Step => ({
 const recipe = (extra: Partial<TrackedRecipe> = {}): TrackedRecipe => ({ create: [], ...extra })
 
 describe('tracked recipe lifecycle planning', () => {
-  test('orders built-in databases after env files and before project create steps', () => {
+  test('orders Compose and built-in databases after env files and before project create steps', () => {
     expect(
       creationPlan({
+        compose: { files: ['compose.yaml'], wait: true },
         allocate: {
           databases: {
             app: {
@@ -38,7 +39,7 @@ describe('tracked recipe lifecycle planning', () => {
         },
         create: [step('migrate')],
       }).map((phase) => `${phase.kind}:${phase.name}`),
-    ).toEqual(['env:env files', 'database:app', 'step:migrate'])
+    ).toEqual(['env:env files', 'compose:compose', 'database:app', 'step:migrate'])
   })
   test('renders shared declarations without adding them to destroy planning', () => {
     const plain = recipe({ create: [step('create')] })

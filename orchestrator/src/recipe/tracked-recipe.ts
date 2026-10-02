@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { git, gitOk } from '../git/git-environment.ts'
-import type { WorktreeTool } from '../project/projects.ts'
-import { orchRunLabel } from '../resources/docker-resources.ts'
+import { projects, type WorktreeTool } from '../project/projects.ts'
+import { dockerRunResources, orchRunLabel } from '../resources/docker-resources.ts'
 import {
   claimDatabaseName,
   claimIndex,
@@ -22,6 +22,7 @@ import {
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
 import {
   createProvisionedDatabases,
   type DatabaseOwnership,
@@ -56,6 +57,7 @@ export type RecipeSnapshot = {
   recipe: TrackedRecipe
   allocations?: RecipeAllocations
   databaseOwnership?: DatabaseOwnership
+  composeOwnership?: boolean
 }
 export type RecipeAllocations = {
   index: number
@@ -73,6 +75,78 @@ export type TrackedAllocator = {
   release(attempt: AllocationAttempt, reason: string): void
 }
 type StepRunner = (step: Step, context: StepContext) => StepResult
+
+function composeContext(input: {
+  runId: number
+  treeRoot: string
+  commandRoot?: string
+  treeExists?: boolean
+}):
+  | {
+      ok: true
+      context: {
+        treeRoot: string
+        commandRoot?: string
+        treeExists?: boolean
+        projectName: string
+        rootRunId: number
+        mainComposeProjects: string[]
+      }
+    }
+  | { ok: false; failure: StepResult } {
+  const owner = db()
+    .query(
+      `SELECT COALESCE(r.parent_run_id,r.id) root_run_id,p.name project_name
+       FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+    )
+    .get(input.runId) as { root_run_id: number; project_name: string } | null
+  if (!owner) {
+    return {
+      ok: false,
+      failure: {
+        name: 'compose',
+        phase: 'verify',
+        status: 'refused',
+        exitCode: null,
+        argv: null,
+        detail: `run ${input.runId} has no registered project; attach it to a project and retry`,
+        durationMs: 0,
+      },
+    }
+  }
+  const inventory = dockerRunResources(projects().map((project) => project.path))
+  if (!inventory.ascertainable) {
+    return {
+      ok: false,
+      failure: {
+        name: 'compose',
+        phase: 'verify',
+        status: 'failed',
+        exitCode: null,
+        argv: null,
+        detail: `${inventory.reason}; restore Docker access and retry`,
+        durationMs: 0,
+      },
+    }
+  }
+  const mainComposeProjects = new Set(
+    inventory.resources.flatMap((resource) =>
+      resource.mainCheckout && resource.composeProject ? [resource.composeProject] : [],
+    ),
+  )
+  for (const container of inventory.composeContainers ?? []) {
+    if (container.mainCheckout) mainComposeProjects.add(container.composeProject)
+  }
+  return {
+    ok: true,
+    context: {
+      ...input,
+      projectName: owner.project_name,
+      rootRunId: owner.root_run_id,
+      mainComposeProjects: [...mainComposeProjects],
+    },
+  }
+}
 
 export const trackedAllocator: TrackedAllocator = {
   allocate(input) {
@@ -518,6 +592,58 @@ function failTrackedCreation(input: {
   )
 }
 
+type PreparedComposeContext = Extract<ReturnType<typeof composeContext>, { ok: true }>['context']
+
+function createTrackedCompose(input: {
+  createInput: TrackedCreateInput
+  worktree: Worktree
+  recipe: TrackedRecipe
+  snapshot: RecipeSnapshot
+  allocationAttempt: AllocationAttempt
+  allocator: TrackedAllocator
+  spawn?: ComposeSpawn
+}): PreparedComposeContext | null {
+  if (!input.recipe.compose) {
+    input.snapshot.composeOwnership = false
+    return null
+  }
+  const prepared = composeContext({
+    runId: input.createInput.runId,
+    treeRoot: input.createInput.path,
+  })
+  if (!prepared.ok) {
+    failTrackedCreation({
+      createInput: input.createInput,
+      worktree: input.worktree,
+      snapshot: input.snapshot,
+      allocationAttempt: input.allocationAttempt,
+      allocator: input.allocator,
+      creation: { failure: prepared.failure, compensation: [] },
+    })
+  }
+  const compose = createCompose(input.recipe, prepared.context, input.spawn, () => {
+    input.snapshot.composeOwnership = true
+    writeSnapshot(input.createInput.runId, input.snapshot)
+  })
+  input.snapshot.composeOwnership = compose.owned
+  if (compose.step.status !== 'ok') {
+    failTrackedCreation({
+      createInput: input.createInput,
+      worktree: input.worktree,
+      snapshot: input.snapshot,
+      allocationAttempt: input.allocationAttempt,
+      allocator: input.allocator,
+      creation: {
+        failure: compose.step,
+        compensation: compose.owned
+          ? [downCompose(input.recipe, prepared.context, compose.owned)]
+          : [],
+      },
+    })
+  }
+  return prepared.context
+}
+
 /** Build the one git worktree-add shape used by every tracked creation form. */
 export function trackedWorktreeAddArgv(input: {
   branch: string
@@ -542,6 +668,7 @@ export function createTrackedRecipe(
   runStep: StepRunner = kernelRunStep,
   runUndo: StepRunner = kernelRunUndo,
   allocator: TrackedAllocator = trackedAllocator,
+  composeSpawn?: ComposeSpawn,
 ): Worktree {
   const { branch, path } = input
   if (existsSync(path))
@@ -635,6 +762,15 @@ export function createTrackedRecipe(
       creation: { failure: envFailure, compensation: [] },
     })
   }
+  const preparedComposeContext = createTrackedCompose({
+    createInput: input,
+    worktree,
+    recipe: prepared.recipe,
+    snapshot,
+    allocationAttempt: prepared.allocationAttempt,
+    allocator,
+    spawn: composeSpawn,
+  })
   const databaseContext = {
     projectRoot: input.repoRoot,
     treeRoot: path,
@@ -649,7 +785,15 @@ export function createTrackedRecipe(
       snapshot,
       allocationAttempt: prepared.allocationAttempt,
       allocator,
-      creation: { failure: databases.failure, compensation: databases.compensation },
+      creation: {
+        failure: databases.failure,
+        compensation: [
+          ...databases.compensation,
+          ...(preparedComposeContext
+            ? [downCompose(prepared.recipe, preparedComposeContext, snapshot.composeOwnership)]
+            : []),
+        ],
+      },
     })
   }
   const creation = executeTrackedCreateSteps(prepared.recipe, context, runStep, runUndo)
@@ -665,6 +809,9 @@ export function createTrackedRecipe(
         compensation: [
           ...creation.compensation,
           ...dropProvisionedDatabases(prepared.recipe, databaseContext, snapshot.databaseOwnership),
+          ...(preparedComposeContext
+            ? [downCompose(prepared.recipe, preparedComposeContext, snapshot.composeOwnership)]
+            : []),
         ],
       },
     })
@@ -745,6 +892,23 @@ export function teardownTrackedRecipe(
         stored.snapshot.databaseOwnership,
       ),
     )
+    if (stored.snapshot.recipe.compose) {
+      const preparedComposeContext = composeContext({
+        runId: input.runId,
+        treeRoot: input.worktree.path,
+        commandRoot: context.treeRoot,
+        treeExists,
+      })
+      results.push(
+        preparedComposeContext.ok
+          ? downCompose(
+              stored.snapshot.recipe,
+              preparedComposeContext.context,
+              stored.snapshot.composeOwnership,
+            )
+          : preparedComposeContext.failure,
+      )
+    }
     for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
   } finally {
     if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })

@@ -17,6 +17,20 @@ function messages(value: unknown): string[] {
 }
 
 describe('tracked recipe refusal rules', () => {
+  test('accepts Compose defaults and refuses empty or escaping paths and unknown keys', () => {
+    expect(
+      recipeSchema.parse({ compose: { files: ['compose.yaml'] }, create: [] }).compose,
+    ).toEqual({ files: ['compose.yaml'], wait: true })
+    for (const compose of [
+      { files: [] },
+      { files: ['../compose.yaml'] },
+      { files: ['compose.yaml'], envFile: '/tmp/env' },
+      { files: ['compose.yaml'], extra: true },
+    ]) {
+      expect(recipeSchema.safeParse({ compose, create: [] }).success).toBeFalse()
+    }
+  })
+
   test('accepts refresh steps and refuses undo in a refresh step', () => {
     expect(
       recipeSchema.safeParse({
