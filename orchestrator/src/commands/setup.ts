@@ -10,7 +10,7 @@ import { projects } from '../project/projects.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { gatherRepositoryFactsReport } from '../setup/repository-facts.ts'
 import { applySetupActions } from '../setup/setup-apply.ts'
-import { proposeSetup } from '../setup/setup-engine.ts'
+import { proposeSetup, type SetupAgent } from '../setup/setup-engine.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import {
   planSetupActions,
@@ -22,24 +22,36 @@ import { collect, log } from './support.ts'
 type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: string }
 
 async function setupPlan(inputs: string[]) {
-  const [machine, register] = await Promise.all([
+  const [machine, state] = await Promise.all([
     gatherSetupFacts(),
-    Promise.resolve(readSetupProjects()),
+    Promise.resolve(readSetupState()),
   ])
   const repositories = gatherRepositoryFactsReport(inputs)
   const orch = bottegaEntryArgv('orch')
   const ask = bottegaEntryArgv('ask-server')
-  return proposeSetup(machine, repositories.repositories, register, repositories.notices, [
-    { name: 'orch', command: orch[0]!, args: [...orch.slice(1), 'mcp'] },
-    { name: 'orch-ask', command: ask[0]!, args: ask.slice(1) },
-  ])
+  return proposeSetup(
+    machine,
+    repositories.repositories,
+    state.projects,
+    state.agents,
+    repositories.notices,
+    [
+      { name: 'orch', command: orch[0]!, args: [...orch.slice(1), 'mcp'] },
+      { name: 'orch-ask', command: ask[0]!, args: ask.slice(1) },
+    ],
+  )
 }
 
-function readSetupProjects() {
-  if (!existsSync(DB_PATH)) return []
+function readSetupState(): { projects: ReturnType<typeof projects>; agents: SetupAgent[] } {
+  if (!existsSync(DB_PATH)) return { projects: [], agents: [] }
   const database = new Database(DB_PATH, { readonly: true })
   try {
-    return projects(undefined, database)
+    return {
+      projects: projects(undefined, database),
+      agents: database
+        .query('SELECT name,harness,enabled FROM agent ORDER BY name')
+        .all() as SetupAgent[],
+    }
   } finally {
     database.close()
   }

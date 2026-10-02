@@ -27,6 +27,7 @@ export type SetupQuestion = {
 }
 
 export type SetupNotice = { message: string; fix: string | null }
+export type SetupAgent = { name: string; harness: string; enabled: number | boolean }
 export type SetupProposal = {
   repository: RepositoryFacts
   current: Project | null
@@ -191,10 +192,56 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
   return notices
 }
 
+const UNREGISTERED_HARNESSES = [
+  { fact: 'claude', harness: 'claude-code' },
+  { fact: 'opencode', harness: 'opencode' },
+  { fact: 'goose', harness: 'goose' },
+] as const
+
+function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] {
+  const notices: SetupNotice[] = []
+  for (const name of ['codex', 'grok'] as const) {
+    const agent = agents.find((candidate) => candidate.name === name)
+    if (!agent) continue
+    const harness = machine.harnesses?.[name]
+    if (agent.enabled) {
+      if (!harness?.path) {
+        notices.push({
+          message: `${name} agent is enabled but the ${name} harness is not installed`,
+          fix: `install ${name}, or orch agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+        })
+      } else if (harness.auth !== 'signed-in') {
+        notices.push({
+          message: `${name} agent is enabled but the ${name} harness is not signed in`,
+          fix: `sign in to ${name}, or orch agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
+        })
+      }
+    } else if (harness?.path && harness.auth === 'signed-in') {
+      notices.push({
+        message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
+        fix: `orch agent set ${name} --enabled true`,
+      })
+    }
+  }
+  for (const candidate of UNREGISTERED_HARNESSES) {
+    if (
+      machine.harnesses?.[candidate.fact]?.path &&
+      !agents.some((agent) => agent.harness === candidate.harness)
+    ) {
+      notices.push({
+        message: `${candidate.harness} harness is installed but unregistered`,
+        fix: `orch agent add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
+      })
+    }
+  }
+  return notices
+}
+
 export function proposeSetup(
   machine: SetupFacts,
   repositories: RepositoryFacts[],
   register: Project[],
+  agents: SetupAgent[],
   repositoryNotices: SetupNotice[] = [],
   servers: McpServer[] = [],
 ): SetupPlan {
@@ -204,7 +251,11 @@ export function proposeSetup(
       .map((prefix) => prefix.toUpperCase()),
   )
   const questions: SetupQuestion[] = []
-  const notices = [...machineNotices(machine), ...repositoryNotices]
+  const notices = [
+    ...machineNotices(machine),
+    ...agentNotices(machine, agents),
+    ...repositoryNotices,
+  ]
   const registrations = proposeMcpRegistrations(machine, servers, questions, notices)
   const proposals = repositories.map((repository) => {
     if (repository.inspectionTimedOut) {
