@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { projectAt } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
@@ -68,6 +68,7 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
 
 export function registerWorkflowPrompts(server: McpServer): void {
   for (const prompt of workflowPromptDefinitions(productionWorkflows())) {
+    /* @mcp-codemod-error Could not verify `argsSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
     server.registerPrompt(
       prompt.name,
       {

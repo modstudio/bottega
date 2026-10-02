@@ -30,8 +30,8 @@
  */
 
 import { createConnection, createServer, type Socket } from 'node:net'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
+import { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
@@ -411,7 +411,7 @@ export function createAskMcpServer(
         'Ask the architect to rule on a design decision that is not yours to make. ' +
         'Blocks until they answer. Use this the moment you are unsure: asking is free ' +
         'and expected, guessing is not. Ask everything you need in one call where you can.',
-      inputSchema: {
+      inputSchema: z.object({
         question: requiredTextReachingHandler.describe('The decision you need made.'),
         options: z
           .preprocess(
@@ -425,7 +425,7 @@ export function createAskMcpServer(
         why: z
           .preprocess((value) => (value ? String(value) : undefined), z.string().optional())
           .describe('What this changes about the implementation.'),
-      },
+      }),
     },
     async ({ question, options, recommendation, why }) => {
       if (!question.trim()) return missing('question')
@@ -500,7 +500,7 @@ export function createAskMcpServer(
         'File an observation about a defect outside your assigned task. Keep findings about ' +
         'your own task in your final reply. The orchestrator derives the project and run anchors; ' +
         'you may optionally anchor the observation to a relative path and line.',
-      inputSchema: {
+      inputSchema: z.object({
         text: requiredTextReachingHandler.describe('One non-empty line describing the defect.'),
         file: z
           .preprocess(
@@ -508,7 +508,7 @@ export function createAskMcpServer(
             z.string().optional(),
           )
           .describe('Optional relative path:line inside this run tree.'),
-      },
+      }),
     },
     async ({ text: noteText, file }) => {
       try {
@@ -538,9 +538,9 @@ export function createAskMcpServer(
       description:
         'Send the architect a non-blocking progress or context message and keep working. ' +
         'This is not a question and does not request or wait for a ruling.',
-      inputSchema: {
+      inputSchema: z.object({
         body: requiredTextReachingHandler.describe('The context to put on this run.'),
-      },
+      }),
     },
     async ({ body }) => {
       if (!body.trim()) return missing('body')

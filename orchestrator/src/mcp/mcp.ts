@@ -1,5 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
+import { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
@@ -381,7 +381,7 @@ export function createDocsMcpServer(): McpServer {
     'compose_workflow',
     {
       description: 'Compose a workflow index without returning step bodies.',
-      inputSchema: {
+      inputSchema: z.object({
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
@@ -389,7 +389,7 @@ export function createDocsMcpServer(): McpServer {
         version: z.number().int().positive().optional(),
         catalogue_version: z.number().int().positive().optional(),
         autonomy: z.string().optional(),
-      },
+      }),
     },
     async ({ slug, project, mode, args, version, catalogue_version, autonomy }) => {
       const selection = { version, catalogueVersion: catalogue_version }
@@ -410,14 +410,14 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Fetch one workflow step body with argument substitutions applied. Step accepts a slug or a 1-based position from compose_workflow. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
-      inputSchema: {
+      inputSchema: z.object({
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         step: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         autonomy: z.string().optional(),
-      },
+      }),
     },
     async ({ slug, project, step, mode, args, autonomy }) => {
       const preliminary = composeWorkflow(slug, project, mode, args ?? {})
@@ -456,7 +456,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
-      inputSchema: {
+      inputSchema: z.object({
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
@@ -470,7 +470,7 @@ export function createDocsMcpServer(): McpServer {
         task: z.string().trim().min(1).optional(),
         defer: z.string().trim().min(1).optional(),
         satisfies: z.number().int().positive().optional(),
-      },
+      }),
     },
     async ({
       slug,
@@ -516,13 +516,13 @@ export function createDocsMcpServer(): McpServer {
     'await_workflow_ruling',
     {
       description: 'Record that the workflow is paused on a question for the operator.',
-      inputSchema: {
+      inputSchema: z.object({
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         question: z.string().trim().min(1),
-      },
+      }),
     },
     async ({ slug, project, mode, args, question }) => {
       const workflowArgs = args ?? {}
@@ -552,14 +552,14 @@ export function createDocsMcpServer(): McpServer {
     'rule_workflow',
     {
       description: 'Record a ruling and resume the workflow on the same step.',
-      inputSchema: {
+      inputSchema: z.object({
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         ruling: z.string().trim().min(1),
         from_operator: z.boolean().optional(),
-      },
+      }),
     },
     async ({ slug, project, mode, args, ruling, from_operator }) => {
       const workflowArgs = args ?? {}
@@ -600,7 +600,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Get one resolved sealed lens core and the selected profile names for a registered project.',
-      inputSchema: { id: z.string().trim().min(1), project: z.string().trim().min(1) },
+      inputSchema: z.object({ id: z.string().trim().min(1), project: z.string().trim().min(1) }),
     },
     async ({ id, project }) => {
       if (!projectByName(project)) throw new Error(`unknown project "${project}"`)
@@ -614,12 +614,12 @@ export function createDocsMcpServer(): McpServer {
     'list_reviews',
     {
       description: 'List review records, findings counts, and current branch coverage.',
-      inputSchema: {
+      inputSchema: z.object({
         open: z.boolean().optional(),
         complete: z.boolean().optional(),
         project: z.string().trim().min(1).optional(),
         since: z.iso.datetime().optional(),
-      },
+      }),
     },
     async ({ open, complete, project, since }) => {
       if (open && complete) throw new Error('open and complete are mutually exclusive')
@@ -634,7 +634,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Get one review with all lenses, grading flags, findings, evidence, and pin state.',
-      inputSchema: { id: z.number().int().positive() },
+      inputSchema: z.object({ id: z.number().int().positive() }),
     },
     async ({ id }) => text(getReview(id)),
   )
@@ -643,7 +643,7 @@ export function createDocsMcpServer(): McpServer {
     'project_brief',
     {
       description: 'Get a registered project row and its operator documents.',
-      inputSchema: { name: z.string() },
+      inputSchema: z.object({ name: z.string() }),
     },
     async ({ name }) => {
       const project = projectByName(name)
@@ -659,7 +659,7 @@ export function createDocsMcpServer(): McpServer {
     'inspect_port_baseline',
     {
       description: 'Inspect scan progress for one registered source-to-target project pair.',
-      inputSchema: { source: z.string(), target: z.string() },
+      inputSchema: z.object({ source: z.string(), target: z.string() }),
     },
     async ({ source, target }) => {
       const { pair } = registeredPair(source, target)
@@ -671,11 +671,11 @@ export function createDocsMcpServer(): McpServer {
     'set_port_baseline',
     {
       description: 'Set or clear scan progress for one registered source-to-target project pair.',
-      inputSchema: {
+      inputSchema: z.object({
         source: z.string(),
         target: z.string(),
         source_commit: z.string().nullable(),
-      },
+      }),
     },
     async ({ source, target, source_commit }) => {
       const { pair } = registeredPair(source, target, true)
@@ -687,7 +687,7 @@ export function createDocsMcpServer(): McpServer {
     'list_port_skips',
     {
       description: 'List declined candidates and reasons for a registered project pair.',
-      inputSchema: { source: z.string(), target: z.string() },
+      inputSchema: z.object({ source: z.string(), target: z.string() }),
     },
     async ({ source, target }) => {
       const { pair } = registeredPair(source, target)
@@ -699,12 +699,12 @@ export function createDocsMcpServer(): McpServer {
     'record_port_skip',
     {
       description: 'Record a declined candidate and its reason for an existing project pair.',
-      inputSchema: {
+      inputSchema: z.object({
         source: z.string(),
         target: z.string(),
         candidate: z.string(),
         reason: z.string(),
-      },
+      }),
     },
     async ({ source, target, candidate, reason }) => {
       const { pair } = registeredPair(source, target)
@@ -718,7 +718,7 @@ export function createDocsMcpServer(): McpServer {
     'list_port_ledger_refs',
     {
       description: 'List unresolved port ledger refs; include resolved refs only when requested.',
-      inputSchema: { include_resolved: z.boolean().optional() },
+      inputSchema: z.object({ include_resolved: z.boolean().optional() }),
     },
     async ({ include_resolved }) => text(listLedgerRefs(include_resolved ?? false)),
   )
@@ -727,7 +727,7 @@ export function createDocsMcpServer(): McpServer {
     'get_port_ledger_ref',
     {
       description: 'Look up the source provenance recorded for a target task key.',
-      inputSchema: { project: z.string(), task_key: z.string() },
+      inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) => text(ledgerRef(registeredProject(project).id, task_key)),
   )
@@ -736,12 +736,12 @@ export function createDocsMcpServer(): McpServer {
     'set_port_ledger_ref',
     {
       description: 'Record source projects, commits, paths, and notes for a staged target task.',
-      inputSchema: {
+      inputSchema: z.object({
         task_key: z.string(),
         project: z.string(),
         note: z.string(),
         sources: z.array(ledgerSourceSchema).min(1),
-      },
+      }),
     },
     async ({ project, task_key, note, sources }) =>
       text(
@@ -763,7 +763,7 @@ export function createDocsMcpServer(): McpServer {
     'resolve_port_ledger_ref',
     {
       description: 'Mark a staged target task resolved while preserving its source provenance.',
-      inputSchema: { project: z.string(), task_key: z.string() },
+      inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) => {
       const ref = resolveLedgerRef(registeredProject(project).id, task_key)
@@ -777,7 +777,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Correction only: permanently delete a port ledger ref that was recorded in error.',
-      inputSchema: { project: z.string(), task_key: z.string() },
+      inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) =>
       text({ removed: removeLedgerRef(registeredProject(project).id, task_key) }),
@@ -788,7 +788,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'List active doctrine rules; include retired stable numbers only when requested.',
-      inputSchema: { include_retired: z.boolean().optional() },
+      inputSchema: z.object({ include_retired: z.boolean().optional() }),
     },
     async ({ include_retired }) => text(listDoctrineRules(include_retired ?? false)),
   )
@@ -797,7 +797,11 @@ export function createDocsMcpServer(): McpServer {
     'add_port_doctrine_rule',
     {
       description: 'Add a numbered porting doctrine rule. Retired numbers cannot be reused.',
-      inputSchema: { number: z.number().int().positive(), title: z.string(), body: z.string() },
+      inputSchema: z.object({
+        number: z.number().int().positive(),
+        title: z.string(),
+        body: z.string(),
+      }),
     },
     async ({ number, title, body }) => text(addDoctrineRule(number, title, body)),
   )
@@ -806,7 +810,7 @@ export function createDocsMcpServer(): McpServer {
     'retire_port_doctrine_rule',
     {
       description: 'Retire a doctrine rule without freeing its stable number.',
-      inputSchema: { number: z.number().int().positive() },
+      inputSchema: z.object({ number: z.number().int().positive() }),
     },
     async ({ number }) => text({ retired: retireDoctrineRule(number) }),
   )
@@ -897,11 +901,11 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'File one cwd-bound suggestion-box note. If duplicate candidates are returned, retry with same_as or new.',
-      inputSchema: {
+      inputSchema: z.object({
         text: z.string().trim().min(1),
         same_as: z.number().int().positive().optional(),
         new: z.boolean().optional(),
-      },
+      }),
     },
     async (input) => {
       if (process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH) {

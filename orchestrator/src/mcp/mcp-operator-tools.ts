@@ -1,7 +1,7 @@
 // concern: operator-waiting
 /** Registers MCP adapters for operator-ruling mutations. */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { FILING_DOC_SCOPES } from '../../../shared/docs.ts'
 import {
@@ -51,6 +51,7 @@ const rulingFileStores: RulingFileStores = {
 }
 
 export function registerOperatorTools(server: McpServer): void {
+  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'list_open_questions',
     {
@@ -62,11 +63,12 @@ export function registerOperatorTools(server: McpServer): void {
     async () => structured(await listOpenQuestions()),
   )
 
+  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'answer_questions',
     {
       description: 'Answer every open question on a run and resume it detached by default.',
-      inputSchema: {
+      inputSchema: z.object({
         run_id: z.number().int().positive(),
         rulings: z
           .array(
@@ -80,7 +82,7 @@ export function registerOperatorTools(server: McpServer): void {
           .min(1),
         from_operator: z.boolean().optional(),
         record_only: z.boolean().optional(),
-      },
+      }),
       outputSchema: AnswerWaitingResultSchema,
     },
     async ({ run_id, rulings, from_operator, record_only }) => {
@@ -103,16 +105,17 @@ export function registerOperatorTools(server: McpServer): void {
     },
   )
 
+  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'overturn_ruling',
     {
       description: 'Overturn an existing ruling with the same authority as the orch CLI.',
-      inputSchema: {
+      inputSchema: z.object({
         question_id: z.number().int().positive(),
         because: z.string().trim().min(1),
         replacement: z.string().trim().min(1).optional(),
         from_operator: z.boolean().optional(),
-      },
+      }),
       outputSchema: OverturnRulingResultSchema,
     },
     async ({ question_id, because, replacement, from_operator }) =>
@@ -126,18 +129,19 @@ export function registerOperatorTools(server: McpServer): void {
       ),
   )
 
+  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'file_ruling',
     {
       description: 'File an answered ruling as a doc or as a canon proposal note.',
-      inputSchema: {
+      inputSchema: z.object({
         question_id: z.number().int().positive(),
         as: z.enum(['doc', 'canon']),
         scope: z.enum(FILING_DOC_SCOPES).optional(),
         subject: z.string().trim().min(1).optional(),
         title: z.string().trim().min(1).optional(),
         from_operator: z.boolean().optional(),
-      },
+      }),
       outputSchema: FileRulingResultSchema,
     },
     async ({ question_id, as, scope, subject, title, from_operator }) =>
@@ -161,11 +165,11 @@ export function registerOperatorTools(server: McpServer): void {
     'relay_question',
     {
       description: 'Mark an open run question as waiting on the operator.',
-      inputSchema: {
+      inputSchema: z.object({
         run_id: z.number().int().positive(),
         question_id: z.number().int().positive().optional(),
         note: z.string().trim().min(1),
-      },
+      }),
     },
     async ({ run_id, question_id, note }) =>
       text({ question_id: relayQuestion(run_id, question_id, note) }),

@@ -27,7 +27,6 @@
     "@ast-grep/napi": "0.45.3",
     "@aws-sdk/client-sesv2": "^3.1135.0",
     "@better-auth/drizzle-adapter": "1.7.5",
-    "@modelcontextprotocol/sdk": "^1.30.0",
     "ajv": "^8.20.0",
     "better-auth": "1.7.5",
     "commander": "15.0.0",
@@ -35,6 +34,8 @@
     "execa": "10.0.1",
     "github-slugger": "^2.0.0",
     "hono": "4.13.8",
-    "zod": "^4"
+    "zod": "^4",
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@modelcontextprotocol/server": "^2.2.0"
   }
 }

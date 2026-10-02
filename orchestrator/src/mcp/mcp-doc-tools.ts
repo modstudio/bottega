@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
@@ -49,7 +49,7 @@ export function registerDocTools(server: McpServer): void {
     'list_docs',
     {
       description: 'List operator document metadata without bodies. Use get_doc to fetch one body.',
-      inputSchema: {
+      inputSchema: z.object({
         scope: z.string().optional().describe('Exact scope match.'),
         subject: z.string().nullable().optional().describe('Exact subject match.'),
         scopes: z.array(z.string()).optional().describe('Exact match against any of these scopes.'),
@@ -66,7 +66,7 @@ export function registerDocTools(server: McpServer): void {
           .optional()
           .describe('Order by updated_at; omit for scope, subject, slug order.'),
         user: z.boolean().optional(),
-      },
+      }),
     },
     async ({ scope, subject, scopes, match, body_match, updated_at_order, user }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
@@ -89,12 +89,12 @@ export function registerDocTools(server: McpServer): void {
     'get_doc',
     {
       description: 'Get one operator document.',
-      inputSchema: {
+      inputSchema: z.object({
         scope: z.string().optional(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
         user: z.boolean().optional(),
-      },
+      }),
     },
     async ({ scope, subject, slug, user }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
@@ -115,7 +115,7 @@ export function registerDocTools(server: McpServer): void {
     'set_doc',
     {
       description: 'Create or replace an operator document.',
-      inputSchema: {
+      inputSchema: z.object({
         scope: z.string(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
@@ -137,7 +137,7 @@ export function registerDocTools(server: McpServer): void {
         author: z.string().trim().min(1).optional(),
         expected_revision: z.string().trim().min(1).optional(),
         cwd: z.string().trim().min(1).optional(),
-      },
+      }),
     },
     async ({
       scope,
@@ -183,7 +183,7 @@ export function registerDocTools(server: McpServer): void {
     'remove_doc',
     {
       description: 'Remove an operator document.',
-      inputSchema: {
+      inputSchema: z.object({
         scope: z.string(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
@@ -194,7 +194,7 @@ export function registerDocTools(server: McpServer): void {
         author: z.string().trim().min(1).optional(),
         expected_revision: z.string().trim().min(1).optional(),
         cwd: z.string().trim().min(1).optional(),
-      },
+      }),
     },
     async ({ scope, subject, slug, reason, author, expected_revision, cwd }) => {
       const refusal = decideMcpDocWrite('remove_doc', scope)
@@ -217,11 +217,11 @@ export function registerDocTools(server: McpServer): void {
     {
       description:
         'Mark an operator document consumed by rewriting its YAML status/stamps and updated_at.',
-      inputSchema: {
+      inputSchema: z.object({
         scope: z.string(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
-      },
+      }),
     },
     async ({ scope, subject, slug }) => {
       const refusal = decideMcpDocWrite('consume_doc', scope)
@@ -235,12 +235,12 @@ export function registerDocTools(server: McpServer): void {
     {
       description:
         'List revision metadata for one operator document, newest first; bodies are omitted.',
-      inputSchema: {
+      inputSchema: z.object({
         scope: z.string().optional(),
         subject: z.string().nullable().optional(),
         slug: z.string(),
         user: z.boolean().optional(),
-      },
+      }),
     },
     async ({ scope, subject, slug, user }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
@@ -260,7 +260,7 @@ export function registerDocTools(server: McpServer): void {
     'get_doc_revision',
     {
       description: 'Get one operator document revision, including its body.',
-      inputSchema: { id: z.number().int().positive(), user: z.boolean().optional() },
+      inputSchema: z.object({ id: z.number().int().positive(), user: z.boolean().optional() }),
     },
     async ({ id, user }) => {
       const revision = getDocRevision(id, user ? await signedInDocOwner() : null)
