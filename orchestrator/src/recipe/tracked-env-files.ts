@@ -131,6 +131,50 @@ function refuseUnwritableEnvPaths(
   return null
 }
 
+function envFileTextPlan(
+  envFile: NonNullable<TrackedRecipe['env']>[number],
+  base: string,
+  contents: string,
+  treeName: string,
+): EnvTextPlan {
+  const mode = envFile.mode ?? 'managed-block'
+  if (mode === 'replace') return { ok: true, text: contents }
+  if (mode === 'append') return { ok: true, text: `${base}${contents}` }
+  return managedBlockPlan(base, treeName, contents)
+}
+
+function applyTrackedEnvFiles(
+  envFiles: NonNullable<TrackedRecipe['env']>,
+  context: StepContext,
+  projectRoot: string,
+  secrets: Record<string, string>,
+): StepResult | null {
+  const filledContents: string[] = []
+  const vars = { ...context.vars, ...secrets }
+  for (const envFile of envFiles) {
+    const filled = fillEnvContents(envFile.contents, vars)
+    if (!filled.ok) return envFileFailure(envFile.path, filled.reason)
+    filledContents.push(filled.text)
+  }
+  for (const [index, envFile] of envFiles.entries()) {
+    const base = readEnvBase(envFile, context.treeRoot, projectRoot)
+    if (!base.ok) return envFileFailure(envFile.path, base.reason)
+    const plan = envFileTextPlan(
+      envFile,
+      base.text,
+      filledContents[index]!,
+      basename(context.treeRoot),
+    )
+    if (!plan.ok) return envFileFailure(envFile.path, plan.reason)
+    try {
+      atomicEnvWrite(join(context.treeRoot, envFile.path), plan.text)
+    } catch {
+      return envFileFailure(envFile.path, 'atomic write failed')
+    }
+  }
+  return null
+}
+
 function provisionedUrlAllocation(allocation: Allocation | undefined): Allocation | undefined {
   if (!allocation?.provision || !DATABASE_URL_ENGINES.has(allocation.engine)) return undefined
   return allocation
@@ -206,30 +250,5 @@ export function writeTrackedEnvFiles(
   const envFiles = recipe.env ?? []
   const gitRefusal = refuseUnwritableEnvPaths(envFiles, context.treeRoot, gitCheck)
   if (gitRefusal) return gitRefusal
-  const filledContents: string[] = []
-  const vars = { ...context.vars, ...secrets }
-  for (const envFile of envFiles) {
-    const filled = fillEnvContents(envFile.contents, vars)
-    if (!filled.ok) return envFileFailure(envFile.path, filled.reason)
-    filledContents.push(filled.text)
-  }
-  for (const [index, envFile] of envFiles.entries()) {
-    const base = readEnvBase(envFile, context.treeRoot, projectRoot)
-    if (!base.ok) return envFileFailure(envFile.path, base.reason)
-    const contents = filledContents[index]!
-    const mode = envFile.mode ?? 'managed-block'
-    const plan =
-      mode === 'replace'
-        ? { ok: true as const, text: contents }
-        : mode === 'append'
-          ? { ok: true as const, text: `${base.text}${contents}` }
-          : managedBlockPlan(base.text, basename(context.treeRoot), contents)
-    if (!plan.ok) return envFileFailure(envFile.path, plan.reason)
-    try {
-      atomicEnvWrite(join(context.treeRoot, envFile.path), plan.text)
-    } catch {
-      return envFileFailure(envFile.path, 'atomic write failed')
-    }
-  }
-  return null
+  return applyTrackedEnvFiles(envFiles, context, projectRoot, secrets)
 }
