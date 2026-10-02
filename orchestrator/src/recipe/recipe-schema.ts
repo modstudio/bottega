@@ -225,6 +225,12 @@ export function stepPlaceholders(step: unknown): { name: string; allocation: boo
 
 function placeholderProblem(name: string, recipe: RecipeInput): string | null {
   if (STATIC_PLACEHOLDERS.has(name)) return null
+  const databaseUrl = name.match(/^db\.([^{}.]+)\.url$/)
+  if (databaseUrl) {
+    return Object.hasOwn(recipe.allocate?.databases ?? {}, databaseUrl[1]!)
+      ? null
+      : `placeholder rule: {${name}} names an undeclared database`
+  }
   const allocation = name.match(ALLOCATION_PLACEHOLDER)
   if (!allocation) return `placeholder rule: unknown placeholder {${name}}`
   const [, kind, declaredName] = allocation

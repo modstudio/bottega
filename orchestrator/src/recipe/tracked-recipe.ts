@@ -49,7 +49,7 @@ import {
   type StepContext,
   type StepResult,
 } from './recipe-step.ts'
-import { writeTrackedEnvFiles } from './tracked-env-files.ts'
+import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
 
 export type RecipeSnapshot = {
   source: { path: string; commit: string }
@@ -609,7 +609,22 @@ export function createTrackedRecipe(
       },
     })
   }
-  const envFailure = writeTrackedEnvFiles(prepared.recipe, context, input.repoRoot)
+  const urls = databaseUrlSecrets(
+    prepared.recipe,
+    prepared.snapshot.allocations?.databases ?? {},
+    input.repoRoot,
+  )
+  if (!urls.ok) {
+    failTrackedCreation({
+      createInput: input,
+      worktree,
+      snapshot,
+      allocationAttempt: prepared.allocationAttempt,
+      allocator,
+      creation: { failure: urls.result, compensation: [] },
+    })
+  }
+  const envFailure = writeTrackedEnvFiles(prepared.recipe, context, input.repoRoot, urls.secrets)
   if (envFailure) {
     failTrackedCreation({
       createInput: input,

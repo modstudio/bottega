@@ -13,12 +13,16 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { connectionUrlForAllocatedDatabase, readConnectionValue } from './database-connection.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { StepContext, StepResult } from './recipe-step.ts'
 
 type EnvTextPlan = { ok: true; text: string } | { ok: false; reason: string }
+type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
 const ENV_PLACEHOLDER = /\{([^{}]+)\}/g
+const DATABASE_URL_PLACEHOLDER = /^db\.([^{}.]+)\.url$/
+const DATABASE_URL_ENGINES = new Set(['postgres', 'mysql', 'mariadb'])
 
 function fillEnvContents(contents: string, vars: Record<string, string>): EnvTextPlan {
   for (const match of contents.matchAll(ENV_PLACEHOLDER)) {
@@ -87,15 +91,68 @@ function envFileFailure(path: string, detail: string): StepResult {
   }
 }
 
+function provisionedUrlAllocation(allocation: Allocation | undefined): Allocation | undefined {
+  if (!allocation?.provision || !DATABASE_URL_ENGINES.has(allocation.engine)) return undefined
+  return allocation
+}
+
+function allocatedDatabaseUrl(
+  key: string,
+  allocation: Allocation,
+  allocatedName: string,
+  projectRoot: string,
+): { ok: true; value: string } | { ok: false; detail: string } {
+  const connection = {
+    key: allocation.provision!.connection.key,
+    file: allocation.provision!.connection.file ?? '.env',
+  }
+  const resolved = readConnectionValue(projectRoot, connection)
+  if (!resolved.ok) return { ok: false, detail: `database "${key}" ${resolved.detail}` }
+  try {
+    return { ok: true, value: connectionUrlForAllocatedDatabase(resolved.value, allocatedName) }
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `database "${key}" connection key ${connection.key} in ${connection.file} is unusable: ${String((error as Error)?.message ?? error)}`,
+    }
+  }
+}
+
+export function databaseUrlSecrets(
+  recipe: TrackedRecipe,
+  allocations: Record<string, string>,
+  projectRoot: string,
+): { ok: true; secrets: Record<string, string> } | { ok: false; result: StepResult } {
+  const secrets: Record<string, string> = {}
+  for (const envFile of recipe.env ?? []) {
+    for (const match of envFile.contents.matchAll(ENV_PLACEHOLDER)) {
+      const placeholder = match[1]!
+      if (placeholder in secrets) continue
+      const key = placeholder.match(DATABASE_URL_PLACEHOLDER)?.[1]
+      const allocation = key
+        ? provisionedUrlAllocation(recipe.allocate?.databases?.[key])
+        : undefined
+      const allocatedName = key ? allocations[key] : undefined
+      if (!key || !allocation || !allocatedName) continue
+      const resolved = allocatedDatabaseUrl(key, allocation, allocatedName, projectRoot)
+      if (!resolved.ok) return { ok: false, result: envFileFailure(envFile.path, resolved.detail) }
+      secrets[placeholder] = resolved.value
+    }
+  }
+  return { ok: true, secrets }
+}
+
 export function writeTrackedEnvFiles(
   recipe: TrackedRecipe,
   context: StepContext,
   projectRoot: string,
+  secrets: Record<string, string> = {},
 ): StepResult | null {
   const envFiles = recipe.env ?? []
   const filledContents: string[] = []
+  const vars = { ...context.vars, ...secrets }
   for (const envFile of envFiles) {
-    const filled = fillEnvContents(envFile.contents, context.vars)
+    const filled = fillEnvContents(envFile.contents, vars)
     if (!filled.ok) return envFileFailure(envFile.path, filled.reason)
     filledContents.push(filled.text)
   }
