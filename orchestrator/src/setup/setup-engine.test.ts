@@ -177,7 +177,16 @@ test('proposes a detected gate and Files-level recipe through fill-absent planni
   const plan = proposeSetup(
     machine,
     [facts],
-    [registered({ keyPrefixes: ['ALPHA'], trunk: 'main' })],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        trunk: 'main',
+        worktree: {
+          branch: 'orch/{id}',
+          readonly_provision: [{ path: 'node_modules', method: 'link' }],
+        },
+      }),
+    ],
     [],
   )
   const recipeQuestion = plan.questions.find((question) => question.id.endsWith(':worktree-recipe'))
@@ -193,6 +202,10 @@ test('proposes a detected gate and Files-level recipe through fill-absent planni
     },
     recipeFile: { path: INFERRED_RECIPE_PATH },
   })
+  expect(action?.kind).toBe('set')
+  if (action?.kind === 'set') {
+    expect(action.fill.settings.worktree).toEqual({ recipePath: INFERRED_RECIPE_PATH })
+  }
 })
 
 test('does not propose an existing gate or ask for an existing recipe', () => {

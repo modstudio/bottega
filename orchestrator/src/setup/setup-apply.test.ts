@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { applySetupActions } from './setup-apply.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
@@ -47,6 +47,54 @@ test('writes an inferred recipe before filling its absent register pointer and n
   const repeated = await applySetupActions([candidate], service)
   expect(repeated[0]?.status).toBe('refused')
   expect(readFileSync(join(path, INFERRED_RECIPE_PATH), 'utf8')).toBe('owned by user')
+})
+
+test('removes the recipe it created when the register fill is refused', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'setup-apply-refused-'))
+  temporary.push(path)
+  const candidate: SetupAction = {
+    kind: 'set',
+    currentName: 'project',
+    path,
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+    settingsDiff: {},
+    recipeFile: { path: INFERRED_RECIPE_PATH, content: '{"worktree":{"create":[]}}\n' },
+  }
+  const results = await applySetupActions([candidate], {
+    add: async () => {},
+    fillAbsent: async () => {
+      throw new Error('recipePath is no longer absent')
+    },
+  })
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toContain('recipePath is no longer absent')
+  expect(existsSync(join(path, INFERRED_RECIPE_PATH))).toBe(false)
+})
+
+test('refuses a symlinked recipe directory and writes nothing outside the repository', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'setup-apply-symlink-'))
+  const outside = mkdtempSync(join(tmpdir(), 'setup-apply-outside-'))
+  temporary.push(path, outside)
+  symlinkSync(outside, join(path, dirname(INFERRED_RECIPE_PATH)))
+  const candidate: SetupAction = {
+    kind: 'set',
+    currentName: 'project',
+    path,
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+    settingsDiff: {},
+    recipeFile: { path: INFERRED_RECIPE_PATH, content: '{"worktree":{"create":[]}}\n' },
+  }
+  let filled = false
+  const results = await applySetupActions([candidate], {
+    add: async () => {},
+    fillAbsent: async () => {
+      filled = true
+    },
+  })
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toContain('symbolic link')
+  expect(filled).toBe(false)
+  expect(existsSync(join(outside, 'worktree-recipe.jsonc'))).toBe(false)
 })
 
 test('stops at the first refusal and marks remaining actions not attempted', async () => {

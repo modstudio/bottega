@@ -132,15 +132,19 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       }
     }
     if (metadataDiffers || Object.keys(settingsDiff).length) {
+      const fillSettings = Object.fromEntries(
+        Object.entries(settingsDiff).map(([key, change]) => [
+          key,
+          key === 'worktree' && recipeFile ? { recipePath: INFERRED_RECIPE_PATH } : change.to,
+        ]),
+      ) as ProjectSettings
       return {
         kind: 'set',
         currentName: proposal.current.name,
         path: proposal.project.path,
         fill: {
           ...(metadataDiffers && proposal.project.stack ? { stack: proposal.project.stack } : {}),
-          settings: Object.fromEntries(
-            Object.entries(settingsDiff).map(([key, change]) => [key, change.to]),
-          ) as ProjectSettings,
+          settings: fillSettings,
         },
         settingsDiff,
         ...(recipeFile ? { recipeFile } : {}),
