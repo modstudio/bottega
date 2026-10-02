@@ -7,6 +7,7 @@ import {
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client'
 import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
+import { containsSecretShaped } from '../../shared/secret-shaped.ts'
 
 class McpError extends Error {
   override name = 'McpError'
@@ -38,12 +39,15 @@ export function failureDetail(error: unknown, token: string): string {
   const firstLine =
     (error instanceof Error ? error.message : String(error)).split(/\r?\n/, 1)[0] ?? ''
   const withoutToken = token ? firstLine.replaceAll(token, '[redacted]') : firstLine
-  return withoutToken
-    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
-    .replace(
-      /\b(authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^,;]+/gi,
-      '$1: [redacted]',
-    )
+  return containsSecretShaped(withoutToken) || namesAuthBearingHeader(withoutToken)
+    ? '[redacted]'
+    : withoutToken
+}
+
+function namesAuthBearingHeader(text: string): boolean {
+  return /(?:^|[^\w-])["']?(?:authorization|proxy-authorization|cookie|set-cookie|[\w-]*(?:token|secret|api-key))["']?\s*[:=]/i.test(
+    text,
+  )
 }
 
 type McpTransportHeaders = {
@@ -185,6 +189,7 @@ export class Mcp {
       answeredProtocolVersion:
         message.method === 'initialize' ? initializeProtocolVersion(parsed) : null,
     })
+    if (message.method === 'server/discover') return response
     if (!response.ok) throw new McpError(`HTTP ${response.status}: ${raw.slice(0, 200)}`)
     if (raw && responseBodyFormat(raw, response.headers.get('content-type')) === 'unknown') {
       throw new McpError('unparseable response')

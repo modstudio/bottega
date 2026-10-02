@@ -40,6 +40,19 @@ describe('Mcp tool discovery', () => {
     expect(detail).not.toContain('Authorization')
   })
 
+  test('withholds secret-shaped failure details instead of partially redacting them', () => {
+    expect(
+      failureDetail(new Error('failure data: {"authorization":"Basic c2VjcmV0"}'), 'other'),
+    ).toBe('[redacted]')
+    expect(failureDetail(new Error('proxy-authorization: fixture-value'), 'other')).toBe(
+      '[redacted]',
+    )
+    expect(failureDetail(new Error('Authorization: Basic c2VjcmV0'), 'other')).toBe('[redacted]')
+    expect(failureDetail(new Error('server refused the requested protocol version'), 'other')).toBe(
+      'server refused the requested protocol version',
+    )
+  })
+
   test('observes modern discovery and exposes its negotiated protocol version', async () => {
     const exchanges: McpExchange[] = []
     globalThis.fetch = (async (_input, init) => {
@@ -66,6 +79,45 @@ describe('Mcp tool discovery', () => {
     expect(client.negotiatedProtocolVersion()).toBe('2026-07-28')
     expect(exchanges.map((exchange) => exchange.method)).toEqual(['server/discover'])
     expect(exchanges[0]?.answeredProtocolVersion).toBeNull()
+    await client.close()
+  })
+
+  test('falls back to legacy initialization when discovery returns 404', async () => {
+    const exchanges: McpExchange[] = []
+    const methods: string[] = []
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      methods.push(message.method)
+      if (message.method === 'server/discover') {
+        return new Response('not found', { status: 404 })
+      }
+      if (message.method === 'notifications/initialized') return new Response(null)
+      expect(message.method).toBe('initialize')
+      return Response.json({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: {
+          protocolVersion: '2025-11-25',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'fixture', version: '1' },
+        },
+      })
+    }) as typeof fetch
+    const client = new Mcp('https://fixture.invalid/mcp', 'fixture', 30_000, (event) =>
+      exchanges.push(event),
+    )
+
+    await client.initialize()
+
+    expect(client.negotiatedProtocolVersion()).toBe('2025-11-25')
+    expect(methods).toEqual(['server/discover', 'initialize', 'notifications/initialized'])
+    expect(exchanges.map((exchange) => exchange.method)).toEqual([
+      'server/discover',
+      'initialize',
+      'notifications/initialized',
+    ])
+    expect(exchanges[0]?.response.status).toBe(404)
+    expect(exchanges[1]?.answeredProtocolVersion).toBe('2025-11-25')
     await client.close()
   })
 
