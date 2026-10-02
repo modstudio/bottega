@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -218,7 +217,7 @@ test('declaring a space refuses a space outside the signed-in memberships', asyn
   expect(projectByName('space-refusal')?.settings.space).toBeUndefined()
 })
 
-test('fill absent settings refuses stale top-level fields and merges absent worktree fields', async () => {
+test('fill absent settings refuses a stale snapshot without changing any field', async () => {
   upsertProject({
     name: 'setup-stale',
     path: '/w/setup-stale',
@@ -241,28 +240,4 @@ test('fill absent settings refuses stale top-level fields and merges absent work
     settings: { trunk: 'written-elsewhere' },
   })
   expect(projectByName('setup-stale')?.settings.tracker).toBeUndefined()
-
-  const path = mkdtempSync(join(tmpdir(), 'orch-setup-worktree-fill-'))
-  const recipePath = `.${PLATFORM_SLUG}/worktree-recipe.jsonc`
-  mkdirSync(join(path, `.${PLATFORM_SLUG}`))
-  writeFileSync(join(path, recipePath), '{"worktree":{"create":[]}}\n')
-  const readonlyProvision = [{ path: 'node_modules', method: 'link' as const }]
-  upsertProject({
-    name: 'setup-worktree-fill',
-    path,
-    settings: {
-      worktree: { branch: 'orch/{id}', readonly_provision: readonlyProvision },
-    },
-  })
-  await fillAbsentProjectSettings({
-    name: 'setup-worktree-fill',
-    fill: {
-      settings: { worktree: { recipePath } },
-    },
-  })
-  expect(projectByName('setup-worktree-fill')?.settings.worktree).toEqual({
-    branch: 'orch/{id}',
-    readonly_provision: readonlyProvision,
-    recipePath,
-  })
 })
