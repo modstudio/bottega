@@ -600,7 +600,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'recipe-loader-boundary',
     'orchestrator/src/recipe/recipe-loader.ts',
-    ['node:fs', 'node:path', './recipe-schema.ts'],
+    ['node:fs', 'node:path', '../git/git-environment.ts', './recipe-schema.ts'],
     'Keep tracked recipe loading independent of execution, persistence, and CLI concerns.',
   ),
   boundary(

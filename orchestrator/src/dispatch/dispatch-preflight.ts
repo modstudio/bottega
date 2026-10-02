@@ -23,7 +23,7 @@ import {
   resolvedWorktreeTool,
   validateStoredProjectSettings,
 } from '../project/projects.ts'
-import { loadTrackedRecipe } from '../recipe/recipe-loader.ts'
+import { loadRecipeAtBase } from '../recipe/recipe-loader.ts'
 import {
   implicitReviewRefusal,
   measureImplicitReviewTarget,
@@ -42,7 +42,9 @@ export function seedPreflight(input: {
   requested: string | undefined
   registerChoices: string[] | undefined
   recipeSeeds: { choices: string[]; default?: string } | undefined
+  writesRepo?: boolean
 }): { seed: string | undefined; refusal: string | null } {
+  if (input.writesRepo === false) return { seed: undefined, refusal: null }
   const choices = input.recipeSeeds?.choices ?? input.registerChoices
   const seed = input.requested ?? input.recipeSeeds?.default
   return {
@@ -59,12 +61,33 @@ export function seedPreflight(input: {
 function trackedRecipeSeeds(
   project: ReturnType<typeof projectAt>,
   tool: ReturnType<typeof resolvedWorktreeTool>,
+  baseRef?: string,
 ): { choices: string[]; default?: string } | undefined {
   if (!project) return undefined
   const lifecycle = resolveWorktreeLifecycle(tool)
   if (lifecycle.form !== 'tracked-recipe') return undefined
-  const loaded = loadTrackedRecipe(project.path, lifecycle.recipePath)
-  return loaded.ok ? loaded.recipe?.seeds : undefined
+  return loadRecipeAtBase({
+    recipePath: lifecycle.recipePath,
+    repoRoot: project.path,
+    baseRef,
+  }).recipe.seeds
+}
+
+function projectSeedPreflight(input: {
+  requested: string | undefined
+  writesRepo: boolean
+  project: ReturnType<typeof projectAt>
+  tool: ReturnType<typeof resolvedWorktreeTool>
+  baseRef?: string
+}) {
+  return seedPreflight({
+    requested: input.requested,
+    registerChoices: input.tool?.seeds,
+    recipeSeeds: input.writesRepo
+      ? trackedRecipeSeeds(input.project, input.tool, input.baseRef)
+      : undefined,
+    writesRepo: input.writesRepo,
+  })
 }
 
 /** Stable lens question and exclusions for a findings dispatch that named --lens. */
@@ -149,7 +172,7 @@ export function preflight(
   cwd: string,
   seed?: string,
   key?: string,
-  _baseRef?: string,
+  baseRef?: string,
   reusesWorktree = false,
   seedAlreadyValidated = false,
   lens?: string,
@@ -226,10 +249,12 @@ export function preflight(
     const malformed = validateStoredProjectSettings(project.settings, project.path)
     if (malformed.length) throw new Error(malformed.join('\n'))
   }
-  const seedDecision = seedPreflight({
+  const seedDecision = projectSeedPreflight({
     requested: seed,
-    registerChoices: tool?.seeds,
-    recipeSeeds: trackedRecipeSeeds(project, tool),
+    writesRepo: writesJob,
+    project,
+    tool,
+    baseRef,
   })
   const effectiveSeed = seedDecision.seed
   const keyPattern = tool?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'

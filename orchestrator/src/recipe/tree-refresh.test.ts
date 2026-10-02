@@ -9,7 +9,7 @@ import {
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
 } from './tree-refresh.ts'
-import { reseedSeed, reseedStep } from './tree-reseed.ts'
+import { reseedLivenessRefusal, reseedSeed, reseedStep } from './tree-reseed.ts'
 
 describe('tree refresh path collisions', () => {
   test('returns incoming paths that already exist as ignored or untracked files', () => {
@@ -158,5 +158,17 @@ describe('tree reseed seed selection', () => {
     expect(() => reseedStep({ create: [] }, '.orch/worktree.jsonc')).toThrow(
       'add worktree.seeds.reseed to the recipe',
     )
+  })
+
+  test('refuses while a participant in the owning chain is live', () => {
+    expect(
+      reseedLivenessRefusal([
+        { id: 41, status: 'ok' },
+        { id: 42, status: 'asking' },
+      ]),
+    ).toBe(
+      "run 42 is asking in this tree's owning chain; wait for it to finish or stop it before reseeding",
+    )
+    expect(reseedLivenessRefusal([{ id: 41, status: 'ok' }])).toBeNull()
   })
 })

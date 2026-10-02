@@ -1,15 +1,11 @@
 // concern: worktree-caller
 import { cpSync, mkdirSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { git, gitBytes, gitInput, gitOk, repoRootOf } from '../git/git-environment.ts'
+import { git, gitBytes, gitInput, gitOk } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import type { Worktree } from './worktree-types.ts'
 
-export function resolveBase(cwd: string, ref: string): string {
-  const repoRoot = repoRootOf(cwd)
-  if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
-  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], repoRoot)
-}
+export { resolveBase } from '../git/git-environment.ts'
 
 /** Keep fresh lookup at the caller; move failover lookup to a durable registered checkout. */
 export function readOnlyBaseResolutionDirectory(

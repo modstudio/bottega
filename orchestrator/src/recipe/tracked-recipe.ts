@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { git, gitOk } from '../git/git-environment.ts'
+import { git } from '../git/git-environment.ts'
 import { projects, type WorktreeTool } from '../project/projects.ts'
 import { dockerRunResources, orchRunLabel } from '../resources/docker-resources.ts'
 import {
@@ -19,7 +19,6 @@ import {
   releaseRecipeAllocationClaims,
   settleClaims,
 } from '../resources/resource-claims.ts'
-import { resolveBase } from '../worktree/worktree-caller.ts'
 import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
@@ -37,7 +36,7 @@ import {
   snapshotlessTeardown,
   teardownVars,
 } from './recipe-lifecycle.ts'
-import { parseTrackedRecipe } from './recipe-loader.ts'
+import { loadRecipeAtBase } from './recipe-loader.ts'
 import {
   allocationEnvironmentVariable,
   hookBranchName,
@@ -214,38 +213,6 @@ export const trackedAllocator: TrackedAllocator = {
   },
 }
 
-function loadRecipeAtBase(input: { tool: WorktreeTool; repoRoot: string; baseRef?: string }): {
-  base: string
-  recipe: TrackedRecipe
-  snapshot: RecipeSnapshot
-} {
-  const pointer = input.tool.recipePath!
-  let base = input.baseRef
-    ? resolveBase(input.repoRoot, input.baseRef)
-    : git(['rev-parse', 'HEAD'], input.repoRoot)
-  const read = () => {
-    let source: string
-    try {
-      source = git(['show', `${base}:${pointer}`], input.repoRoot)
-    } catch (error) {
-      throw new Error(
-        `tracked recipe ${pointer} at ${base} could not be read: ${String((error as Error)?.message ?? error)}`,
-      )
-    }
-    const loaded = parseTrackedRecipe(source, `${pointer} at ${base}`)
-    if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
-    return loaded.recipe ?? { create: [] }
-  }
-  let recipe = read()
-  if (!input.baseRef && recipe.baseRef) {
-    base =
-      gitOk(['rev-parse', recipe.baseRef], input.repoRoot) ??
-      git(['rev-parse', 'HEAD'], input.repoRoot)
-    recipe = read()
-  }
-  return { base, recipe, snapshot: { source: { path: pointer, commit: base }, recipe } }
-}
-
 /** Read the same tracked config used by creation and decide its hook branch. */
 export function trackedHookBranch(input: {
   tool: WorktreeTool
@@ -253,7 +220,7 @@ export function trackedHookBranch(input: {
   baseRef?: string
   name: string
 }): string {
-  const { recipe } = loadRecipeAtBase(input)
+  const { recipe } = loadRecipeAtBase({ ...input, recipePath: input.tool.recipePath! })
   return hookBranchName(recipe.hookBranch, input.name)
 }
 
@@ -319,7 +286,7 @@ export function renderTrackedRecipeNotes(recipe: TrackedRecipe, main: string): s
 export function trackedRecipeNotes(tool: WorktreeTool, repoRoot: string): string {
   if (!tool.recipePath) return ''
   try {
-    const loaded = loadRecipeAtBase({ tool, repoRoot })
+    const loaded = loadRecipeAtBase({ recipePath: tool.recipePath, repoRoot })
     return renderTrackedRecipeNotes(loaded.recipe, repoRoot)
   } catch {
     return ''
@@ -507,7 +474,11 @@ function prepareTrackedCreate(
   vars: Record<string, string>
   allocationAttempt: AllocationAttempt
 } {
-  const loaded = loadRecipeAtBase(input)
+  const loaded = loadRecipeAtBase({
+    recipePath: input.tool.recipePath!,
+    repoRoot: input.repoRoot,
+    baseRef: input.baseRef,
+  })
   const staticVars = {
     branch: input.branch,
     name: input.name,

@@ -2,8 +2,10 @@
 /** Resolves one existing tree's recorded owner and runs its project-defined reseed hook. */
 
 import { resolvedPathsEqual } from '../../../shared/git.ts'
+import { db, sessionId } from '../database/db.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git } from '../git/git-environment.ts'
+import { withWorktreeLease } from '../project/project-lock.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { runStep } from './recipe-step.ts'
@@ -31,6 +33,27 @@ export function reseedSeed(
   )
 }
 
+export type ReseedChainParticipant = { id: number; status: string }
+
+export function reseedLivenessRefusal(participants: ReseedChainParticipant[]): string | null {
+  const live = participants.find(
+    (participant) => participant.status === 'running' || participant.status === 'asking',
+  )
+  return live
+    ? `run ${live.id} is ${live.status} in this tree's owning chain; wait for it to finish or stop it before reseeding`
+    : null
+}
+
+function owningChainParticipants(rootRunId: number): ReseedChainParticipant[] {
+  return db()
+    .query(
+      `SELECT id,status FROM run
+       WHERE id=? OR parent_run_id=?
+       ORDER BY id`,
+    )
+    .all(rootRunId, rootRunId) as ReseedChainParticipant[]
+}
+
 function reseedTree(path: string, requestedSeed: string | undefined): string[] {
   const registered = registeredRefreshTarget(path)
   if (resolvedPathsEqual(registered.treeRoot, registered.main)) {
@@ -46,6 +69,8 @@ function reseedTree(path: string, requestedSeed: string | undefined): string[] {
     )
   }
   const owner = readSnapshot(roots[0]!)
+  const livenessRefusal = reseedLivenessRefusal(owningChainParticipants(roots[0]!))
+  if (livenessRefusal) throw new Error(livenessRefusal)
   const loaded = loadTrackedRecipe(treeRoot, recipePath)
   if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
   if (!loaded.recipe) {
@@ -76,5 +101,16 @@ export function treeReseedCommand(
   seed: string | undefined,
   presentation: { log(message: string): void },
 ): void {
-  for (const message of reseedTree(path, seed)) presentation.log(message)
+  const registered = registeredRefreshTarget(path)
+  if (resolvedPathsEqual(registered.treeRoot, registered.main)) {
+    throw new Error(`orch tree reseed refuses the main checkout ${registered.treeRoot}`)
+  }
+  withWorktreeLease(
+    registered.project.path,
+    registered.treeRoot,
+    { session: sessionId(), what: `reseed worktree ${registered.treeRoot}` },
+    () => {
+      for (const message of reseedTree(registered.treeRoot, seed)) presentation.log(message)
+    },
+  )
 }
