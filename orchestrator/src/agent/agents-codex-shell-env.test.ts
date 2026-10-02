@@ -25,28 +25,33 @@ describe('codex worker shell environment', () => {
       out: '/tmp/out',
       sandbox: 'workspace-write',
       sandboxWorkspaceWriteNetworkAccess: true,
+      write: true,
     })
     expect(argv).toContain('sandbox_workspace_write.network_access=true')
     expect(argv).toContain('--approve-for-me')
     expect(argv).not.toContain('-s')
   })
 
-  test('workspace-write readers get MCP approval while no-repo readers stay read-only', () => {
+  test('no-repository jobs limit workspace-write to the isolate and scratch', () => {
     const repositoryReader = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
       sandbox: 'workspace-write',
+      write: true,
     })
-    const noRepositoryReader = BUILTIN_AGENTS.codex!.argv({
+    const noRepositoryJob = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
-      sandbox: 'read-only',
+      sandbox: 'workspace-write',
+      writableRoots: ['/runs/42/scratch'],
     })
     expect(repositoryReader).toContain('--approve-for-me')
     expect(repositoryReader).not.toContain('-s')
-    expect(noRepositoryReader).not.toContain('--approve-for-me')
-    expect(noRepositoryReader).toContain('-s')
-    expect(noRepositoryReader).toContain('read-only')
+    expect(noRepositoryJob).not.toContain('--approve-for-me')
+    expect(noRepositoryJob).toContain('-s')
+    expect(noRepositoryJob).toContain('workspace-write')
+    expect(noRepositoryJob).toContain('sandbox_workspace_write.writable_roots=["/runs/42/scratch"]')
+    expect(noRepositoryJob).not.toContain('sandbox_workspace_write.network_access=true')
   })
 
   test('MCP writers continue to use approval without an explicit sandbox', () => {

@@ -9,8 +9,14 @@ export type CodexSandboxRuling = {
 
 /** Decide Codex's native sandbox separately from the srt/host outer seam. */
 export function decideCodexSandbox(facts: CodexSandboxFacts): CodexSandboxRuling {
+  if (facts.readsRepo) {
+    return {
+      sandbox: 'workspace-write',
+      workspaceWriteNetworkAccess: false,
+    }
+  }
   return {
-    sandbox: facts.readsRepo ? 'workspace-write' : 'read-only',
+    sandbox: 'workspace-write',
     workspaceWriteNetworkAccess: false,
   }
 }

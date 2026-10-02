@@ -9,9 +9,9 @@ describe('Codex sandbox decision', () => {
     })
   })
 
-  test('a no-repository job keeps the native read-only sandbox', () => {
+  test('a no-repository job can write inside its isolated workspace without network access', () => {
     expect(decideCodexSandbox({ readsRepo: false })).toEqual({
-      sandbox: 'read-only',
+      sandbox: 'workspace-write',
       workspaceWriteNetworkAccess: false,
     })
   })

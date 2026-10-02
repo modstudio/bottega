@@ -33,8 +33,9 @@ export type TransportName = 'cli' | 'acp'
  * from an anecdote into a decision worth making.
  *
  * The boundary is the JOB. A repository job gets workspace-write in a
- * disposable worktree; a job that does not read a repository stays read-only.
- * Isolation is the worktree, not a per-project vendor-sandbox knob.
+ * disposable worktree. A no-repository Codex job gets workspace-write only in
+ * its run isolate; other no-repository jobs stay read-only. Isolation is the
+ * worktree or run isolate, not a per-project vendor-sandbox knob.
  */
 type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
 
@@ -66,9 +67,9 @@ export type ArgvOpts = {
   /**
    * How much of the machine this run may use.
    *
-   * Repository jobs get workspace-write in their disposable worktree. Anything
-   * else is read-only. `exec` remains available when a non-repository job
-   * passes it explicitly.
+   * Repository jobs get workspace-write in their disposable worktree. Codex
+   * no-repository jobs get workspace-write in their isolate so they can write
+   * run artifacts. `exec` remains available when a job passes it explicitly.
    */
   sandbox?: SandboxLevel
   /** Open outbound network in Codex's workspace-write sandbox. */
