@@ -275,8 +275,11 @@ function codexShellEnvironmentArgs(
 function codexSandboxArgs(
   mcp: boolean | undefined,
   sandbox: 'read-only' | 'workspace-write' | typeof CODEX_EXEC_SANDBOX,
+  repository: boolean | undefined,
 ): string[] {
-  return mcp || sandbox === 'workspace-write' ? ['--approve-for-me'] : ['-s', sandbox]
+  return mcp || (repository && sandbox === 'workspace-write')
+    ? ['--approve-for-me']
+    : ['-s', sandbox]
 }
 
 function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
@@ -299,8 +302,8 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * with `--sandbox`; it implies the same workspace-write sandbox repository
    * jobs already receive. Every repository job therefore uses it for the
    * always-present orch-ask channel, whether or not project MCP was requested.
-   * No-repository jobs retain `-s read-only`; only orch-ask tools annotated as
-   * read-only can run there without approval.
+   * No-repository jobs use an explicit workspace-write sandbox, so orch-ask
+   * tools without a read-only annotation still cannot run without approval.
    */
   if (o.writableRoots?.length) {
     a.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(o.writableRoots)}`)
@@ -318,7 +321,15 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
       : o.write || o.sandbox === 'workspace-write'
         ? 'workspace-write'
         : 'read-only'
-  a.push(...codexSandboxArgs(o.mcp, sandbox))
+  if (!o.write && sandbox === 'workspace-write') {
+    a.push(
+      '-c',
+      'sandbox_workspace_write.exclude_slash_tmp=true',
+      '-c',
+      'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+    )
+  }
+  a.push(...codexSandboxArgs(o.mcp, sandbox, o.write))
   if (o.schema) a.push('--output-schema', o.schema)
   return a
 }
