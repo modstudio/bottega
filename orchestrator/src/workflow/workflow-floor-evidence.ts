@@ -613,13 +613,31 @@ function gatheredCommandEvidence(
   id: number,
   row: { exit_code: number; session_id: string | null; created_at: string },
   identity: CursorIdentity,
+  cursorId: number,
+  d: Database,
 ): Pick<ValidatedEvidence, 'probe' | 'exec'> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
+  const adoption =
+    identity.session !== null && row.session_id !== null
+      ? `adopted from gone owner ${identity.session} by ${row.session_id}`
+      : null
+  const sessionAdoptedCursor = Boolean(
+    adoption &&
+      d
+        .query<{ reason: string | null }, [number, string]>(
+          `SELECT a.reason
+             FROM question q JOIN question_mutation_audit a ON a.question_id=q.id
+            WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
+        )
+        .all(cursorId, row.session_id!)
+        .some(({ reason }) => reason === adoption || reason?.startsWith(`${adoption}; `)),
+  )
   return {
     exec: {
       id,
       exitCode: row.exit_code,
       sessionMatches: identity.session !== null && row.session_id === identity.session,
+      sessionAdoptedCursor,
       createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
     },
   }
@@ -667,7 +685,10 @@ export function gatherValidatedEvidence(input: {
           'SELECT exit_code,session_id,created_at FROM probe WHERE id=?',
         )
         .get(parsed.id)!
-      Object.assign(gathered, gatheredCommandEvidence(parsed.kind, parsed.id, row, input.identity))
+      Object.assign(
+        gathered,
+        gatheredCommandEvidence(parsed.kind, parsed.id, row, input.identity, input.cursorId, d),
+      )
     }
   }
   if (input.evidence.task?.trim())

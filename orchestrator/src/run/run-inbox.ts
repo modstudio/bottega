@@ -52,7 +52,8 @@ type WorkflowInboxQuestion = {
   session_id: string | null
   can_answer: boolean
   question: string
-  answer_command: string
+  answer_command: string | null
+  ownership_notice: string | null
 }
 
 const shellWord = (value: string) =>
@@ -94,6 +95,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     const flags = Object.entries(JSON.parse(row.args) as Record<string, string>)
       .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
       .join('')
+    const canAnswer = row.session_id === null || (sid !== null && row.session_id === sid)
     return {
       kind: 'workflow',
       question_id: row.id,
@@ -103,11 +105,15 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
       step: { n: row.ordinal + 1, slug: row.step_slug },
       asked_at: row.asked_at,
       session_id: row.session_id,
-      can_answer: row.session_id === null || (sid !== null && row.session_id === sid),
+      can_answer: canAnswer,
       question: row.question,
-      answer_command:
-        `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
-        `--mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
+      answer_command: canAnswer
+        ? `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
+          `--mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>"`
+        : null,
+      ownership_notice: canAnswer
+        ? null
+        : `owned by session ${row.session_id ?? 'unknown'}; only that session, or the operator relaying a decision, may answer it`,
     }
   })
 }
@@ -313,9 +319,8 @@ function presentWorkflowQuestions(
       `\nworkflow ${q.workflow} · ${q.project} · mode ${q.mode} · step ${q.step.n} ${q.step.slug}`,
     )
     log(`  [q${q.question_id}] ${q.question}`)
-    log(`        answer: ${q.answer_command}`)
-    if (!q.can_answer)
-      log(`        owner ${q.session_id ?? 'unknown'} · visible only; authority is not transferred`)
+    if (q.answer_command) log(`        answer: ${q.answer_command}`)
+    if (q.ownership_notice) log(`        ${q.ownership_notice}`)
   }
 }
 

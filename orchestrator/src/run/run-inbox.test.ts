@@ -182,8 +182,9 @@ test('inbox lists workflow questions with their identity and answer command', as
   const shown = await inbox({ all: true })
   expect(shown).toContain('workflow ship · fixture · mode default · step 3 fix')
   expect(shown).toContain(
-    'orch workflow rule ship --project fixture --mode default --arg key=DEV-1069 --ruling "<ruling>" --from-operator',
+    'orch workflow rule ship --project fixture --mode default --arg key=DEV-1069 --ruling "<ruling>"',
   )
+  expect(shown).not.toContain('--from-operator')
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
     expect.objectContaining({
       kind: 'workflow',
@@ -192,6 +193,45 @@ test('inbox lists workflow questions with their identity and answer command', as
       project: 'fixture',
       mode: 'default',
       step: { n: 3, slug: 'fix' },
+      can_answer: true,
+      answer_command:
+        'orch workflow rule ship --project fixture --mode default --arg key=DEV-1069 --ruling "<ruling>"',
+      ownership_notice: null,
+    }),
+  )
+})
+test('inbox gives no answer command for a foreign-owned workflow question', async () => {
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+       total_steps,created_at,updated_at,enforcement)
+     VALUES ('fixture','ship','default','DEV-1069','','foreign-session',1,1,
+             '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
+             '2026-10-01','2026-10-01','floors')`,
+    )
+    .run()
+  db()
+    .query(
+      `INSERT INTO question
+      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES (1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
+    )
+    .run()
+
+  const notice =
+    'owned by session foreign-session; only that session, or the operator relaying a decision, may answer it'
+  const shown = await inbox({ all: true })
+  expect(shown).toContain(notice)
+  expect(shown).not.toContain('answer: orch workflow rule')
+  expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
+    expect.objectContaining({
+      kind: 'workflow',
+      can_answer: false,
+      answer_command: null,
+      ownership_notice: notice,
+      session_id: 'foreign-session',
     }),
   )
 })

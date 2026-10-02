@@ -402,6 +402,35 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   )
 })
 
+test("exec evidence recognizes only a cursor's recorded adopting session", () => {
+  const d = database()
+  d.query(
+    `INSERT INTO question
+      (workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
+     VALUES (1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
+  ).run()
+  d.query(
+    `INSERT INTO question_mutation_audit (question_id,action,actor_session,at,reason)
+     VALUES (1,'rule','adopting-session','2026-09-01',
+             'adopted from gone owner s by adopting-session; Proceed.')`,
+  ).run()
+  d.query(
+    `INSERT INTO probe
+      (command,cwd,head_commit,exit_code,output_tail,created_at,kind,session_id)
+     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-02','exec','adopting-session'),
+            ('["true"]','/fixture/work','abc',0,'','2026-09-02','exec','unrelated-session')`,
+  ).run()
+
+  expect(gather(d, { artifact: 'exec:1' }).exec).toMatchObject({
+    sessionMatches: false,
+    sessionAdoptedCursor: true,
+  })
+  expect(gather(d, { artifact: 'exec:2' }).exec).toMatchObject({
+    sessionMatches: false,
+    sessionAdoptedCursor: false,
+  })
+})
+
 test('a foreign doc is refused and a matching doc is allowed', () => {
   const d = database()
   d.query(

@@ -69,6 +69,7 @@ export type ValidatedEvidence = {
     id: number
     exitCode: number
     sessionMatches: boolean
+    sessionAdoptedCursor: boolean
     createdAfterStepActivation: boolean
   }
   artifact?: { ref: string; exists: boolean }
@@ -171,7 +172,7 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const probeOk = evidence.probe?.exitCode === floor.expectedExitCode
   const execOk = Boolean(
     evidence.exec?.exitCode === floor.expectedExitCode &&
-      evidence.exec.sessionMatches &&
+      (evidence.exec.sessionMatches || evidence.exec.sessionAdoptedCursor) &&
       evidence.exec.createdAfterStepActivation,
   )
   return gateOk || runOk || probeOk || execOk
@@ -222,7 +223,7 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   if (!exec) return null
   const remedy =
     'run the command again with `orch workflow exec <command>` in this session after the step started'
-  if (!exec.sessionMatches)
+  if (!exec.sessionMatches && !exec.sessionAdoptedCursor)
     return `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}`
   if (!exec.createdAfterStepActivation)
     return `command-exit evidence exec:${exec.id} predates this step becoming active; ${remedy}`

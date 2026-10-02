@@ -35,7 +35,13 @@ const passingGate: ValidatedEvidence = { gate: { id: 2, finished: true, exitCode
 const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
-  exec: { id: 4, exitCode: 0, sessionMatches: true, createdAfterStepActivation: true },
+  exec: {
+    id: 4,
+    exitCode: 0,
+    sessionMatches: true,
+    sessionAdoptedCursor: false,
+    createdAfterStepActivation: true,
+  },
 }
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
 const closedTask: ValidatedEvidence = {
@@ -110,7 +116,13 @@ test('an exec with the expected exit satisfies command-exit', () => {
     decide({
       floors: [commandExit],
       evidence: {
-        exec: { id: 4, exitCode: 1, sessionMatches: true, createdAfterStepActivation: true },
+        exec: {
+          id: 4,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
       },
     }).action,
   ).toBe('refuse')
@@ -120,7 +132,13 @@ test('an exec from another session is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
     evidence: {
-      exec: { id: 4, exitCode: 0, sessionMatches: false, createdAfterStepActivation: true },
+      exec: {
+        id: 4,
+        exitCode: 0,
+        sessionMatches: false,
+        sessionAdoptedCursor: false,
+        createdAfterStepActivation: true,
+      },
     },
   })
   expect(decision).toEqual({
@@ -130,11 +148,34 @@ test('an exec from another session is refused with the rerun remedy', () => {
   })
 })
 
+test("an adopting session's exec satisfies command-exit", () => {
+  expect(
+    decide({
+      floors: [commandExit],
+      evidence: {
+        exec: {
+          id: 4,
+          exitCode: 0,
+          sessionMatches: false,
+          sessionAdoptedCursor: true,
+          createdAfterStepActivation: true,
+        },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
 test('an exec older than the active step is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
     evidence: {
-      exec: { id: 4, exitCode: 0, sessionMatches: true, createdAfterStepActivation: false },
+      exec: {
+        id: 4,
+        exitCode: 0,
+        sessionMatches: true,
+        sessionAdoptedCursor: false,
+        createdAfterStepActivation: false,
+      },
     },
   })
   expect(decision).toEqual({
