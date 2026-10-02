@@ -1,17 +1,54 @@
 import {
   Client,
+  type ClientOptions,
   type FetchLike,
   LATEST_PROTOCOL_VERSION,
   ProtocolError,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client'
 import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
+import { containsSecretShaped } from '../../shared/secret-shaped.ts'
 
 class McpError extends Error {
   override name = 'McpError'
 }
 
 export const MCP_PROTOCOL_VERSION = LATEST_PROTOCOL_VERSION
+const FIRST_MODERN_PROTOCOL_VERSION = '2026-07-28'
+
+export function mcpClientOptions(requestProtocolVersion?: string): ClientOptions {
+  if (requestProtocolVersion === undefined) {
+    return {
+      supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
+      versionNegotiation: { mode: 'auto' },
+    }
+  }
+  if (requestProtocolVersion >= FIRST_MODERN_PROTOCOL_VERSION) {
+    return {
+      supportedProtocolVersions: [requestProtocolVersion],
+      versionNegotiation: { mode: { pin: requestProtocolVersion } },
+    }
+  }
+  return {
+    supportedProtocolVersions: [requestProtocolVersion],
+    versionNegotiation: { mode: 'legacy' },
+  }
+}
+
+export function failureDetail(error: unknown, token: string): string {
+  const firstLine =
+    (error instanceof Error ? error.message : String(error)).split(/\r?\n/, 1)[0] ?? ''
+  const withoutToken = token ? firstLine.replaceAll(token, '[redacted]') : firstLine
+  return containsSecretShaped(withoutToken) || namesAuthBearingHeader(withoutToken)
+    ? '[redacted]'
+    : withoutToken
+}
+
+function namesAuthBearingHeader(text: string): boolean {
+  return /(?:^|[^\w-])["']?(?:authorization|proxy-authorization|cookie|set-cookie|[\w-]*(?:token|secret|api-key))["']?\s*[:=]/i.test(
+    text,
+  )
+}
 
 type McpTransportHeaders = {
   accept: string | null
@@ -44,21 +81,21 @@ export class Mcp {
   private transport: StreamableHTTPClientTransport
   private timeoutMs: number
   private observe: ((exchange: McpExchange) => void) | null
+  private token: string
 
   constructor(
     url: string,
     token: string,
     timeoutMs = 30_000,
     observe: ((exchange: McpExchange) => void) | null = null,
-    requestProtocolVersion = MCP_PROTOCOL_VERSION,
+    requestProtocolVersion?: string,
   ) {
     this.timeoutMs = timeoutMs
     this.observe = observe
+    this.token = token
     this.client = new Client(
       { name: 'hub', version: '0.1' },
-      requestProtocolVersion === MCP_PROTOCOL_VERSION
-        ? undefined
-        : { supportedProtocolVersions: [requestProtocolVersion] },
+      mcpClientOptions(requestProtocolVersion),
     )
     this.transport = new StreamableHTTPClientTransport(new URL(url), {
       requestInit: { headers: { authorization: `Bearer ${token}` } },
@@ -72,6 +109,14 @@ export class Mcp {
     } catch (error) {
       throw mappedFailure('initialize', error)
     }
+  }
+
+  negotiatedProtocolVersion(): string | null {
+    return this.client.getNegotiatedProtocolVersion() ?? null
+  }
+
+  failureDetail(error: unknown): string {
+    return failureDetail(error, this.token)
   }
 
   async listTools(): Promise<McpTool[]> {
@@ -144,6 +189,7 @@ export class Mcp {
       answeredProtocolVersion:
         message.method === 'initialize' ? initializeProtocolVersion(parsed) : null,
     })
+    if (message.method === 'server/discover') return response
     if (!response.ok) throw new McpError(`HTTP ${response.status}: ${raw.slice(0, 200)}`)
     if (raw && responseBodyFormat(raw, response.headers.get('content-type')) === 'unknown') {
       throw new McpError('unparseable response')
