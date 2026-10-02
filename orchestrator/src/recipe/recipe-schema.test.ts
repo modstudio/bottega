@@ -172,6 +172,41 @@ describe('tracked recipe refusal rules', () => {
     ).toBe(true)
   })
 
+  test('refuses compose.project in literal Compose paths', () => {
+    expect(
+      messages({
+        compose: { files: ['compose.{compose.project}.yaml'] },
+        create: [],
+      }).join('\n'),
+    ).toContain('compose.files cannot use {compose.project}')
+    expect(
+      messages({
+        compose: { files: ['compose.yaml'], envFile: '.env.{compose.project}' },
+        create: [],
+      }).join('\n'),
+    ).toContain('compose.envFile cannot use {compose.project}')
+  })
+
+  test('refuses compose.project in serve declarations because notes have no run identity', () => {
+    expect(
+      messages({
+        compose: { files: ['compose.yaml'] },
+        create: [],
+        serve: {
+          default: [
+            {
+              name: 'web',
+              run: { command: 'docker', args: ['compose', '-p', '{compose.project}', 'up'] },
+              undo: { command: 'docker', args: ['compose', '-p', '{compose.project}', 'down'] },
+            },
+          ],
+        },
+      }).join('\n'),
+    ).toContain(
+      'serve declarations cannot use {compose.project} because rendered serve notes have no run identity',
+    )
+  })
+
   test('accepts the ownership label in tracked steps but not allocation templates', () => {
     expect(
       recipeSchema.safeParse({

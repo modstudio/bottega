@@ -334,6 +334,40 @@ function validatePlaceholders(recipe: RecipeInput, context: z.RefinementCtx): vo
   }
 }
 
+function hasComposeProjectPlaceholder(value: unknown): boolean {
+  return stringsIn(value).some((text) =>
+    [...text.matchAll(/\{([^{}]+)\}/g)].some((match) => match[1] === 'compose.project'),
+  )
+}
+
+function validateComposeProjectLocations(recipe: RecipeInput, context: z.RefinementCtx): void {
+  for (const [index, file] of (recipe.compose?.files ?? []).entries()) {
+    if (!hasComposeProjectPlaceholder(file)) continue
+    context.addIssue({
+      code: 'custom',
+      path: ['compose', 'files', index],
+      message:
+        'compose placeholder rule: compose.files cannot use {compose.project} because Compose file paths are passed literally',
+    })
+  }
+  if (hasComposeProjectPlaceholder(recipe.compose?.envFile)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['compose', 'envFile'],
+      message:
+        'compose placeholder rule: compose.envFile cannot use {compose.project} because the Compose env-file path is passed literally',
+    })
+  }
+  if (hasComposeProjectPlaceholder(recipe.serve)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['serve'],
+      message:
+        'serve placeholder rule: serve declarations cannot use {compose.project} because rendered serve notes have no run identity',
+    })
+  }
+}
+
 function validateAllocationTemplate(
   allocation: 'string' | 'database',
   name: string,
@@ -564,6 +598,7 @@ const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
   validateSeedDefault(recipe, context)
   validateStepNames(recipe, context)
   validatePlaceholders(recipe, context)
+  validateComposeProjectLocations(recipe, context)
   validateStringAllocationTemplates(recipe, context)
   validateAllocationUndo(recipe, context)
   validateServeUndo(recipe, context)
