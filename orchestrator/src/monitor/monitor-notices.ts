@@ -1,8 +1,11 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { requireRealSession } from '../board/board-policy.ts'
-import { claimInterruptNotices, markInterruptNoticesDelivered } from '../board/board-service.ts'
+import {
+  claimInterruptNotices,
+  markInterruptNoticesDelivered,
+  requireRealSession,
+} from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {

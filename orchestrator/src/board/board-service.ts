@@ -23,6 +23,8 @@ import {
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
 
+export { requireRealSession } from './board-policy.ts'
+
 type Environment = Record<string, string | undefined>
 type Actor = { kind: 'operator'; session: null } | { kind: 'architect'; session: string }
 type MessageRow = {
@@ -137,6 +139,59 @@ export type PostNoticeInput = {
   expiresMs?: number
 }
 
+function resolvePostAudience(expression: string, machine: string) {
+  const audience = parseAudience(expression)
+  if (audience.kind !== 'machine') return { audience, expression }
+  const value = audience.value === 'this' ? machine : audience.value
+  return { audience: { kind: 'machine' as const, value }, expression: `machine:${value}` }
+}
+
+function resolvePostOrigin(actor: Actor, env: Environment, cwd: string) {
+  if (actor.kind === 'operator') return { harness: null, project: null }
+  const project = projectAt(cwd)
+  if (!project)
+    throw new Error(
+      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
+    )
+  return { harness: architectIdentity(env)!.harness, project: project.name }
+}
+
+function refreshPostingPresence(
+  database: ReturnType<typeof writableDb>,
+  actor: Actor,
+  origin: ReturnType<typeof resolvePostOrigin>,
+  machine: string,
+  cwd: string,
+  at: string,
+): void {
+  if (actor.kind !== 'architect') return
+  const current = database
+    .query(
+      `SELECT launch_key FROM run
+       WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(actor.session) as { launch_key: string } | null
+  database
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
+       VALUES (?,?,'architect',?,?,?,?,?)
+       ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
+         machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
+         current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
+    )
+    .run(
+      actor.session,
+      origin.harness,
+      machine,
+      origin.project,
+      cwd,
+      current?.launch_key ?? null,
+      at,
+    )
+}
+
 export function postNotice(
   input: PostNoticeInput,
   env: Environment = process.env,
@@ -150,14 +205,11 @@ export function postNotice(
   if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
     throw new Error('board notice contains secret-shaped text; remove the credential and retry')
   const actor = boardActor(env)
-  const parsedAudience = parseAudience(input.audience)
   const postingMachine = hostname()
-  const audience =
-    parsedAudience.kind === 'machine' && parsedAudience.value === 'this'
-      ? ({ kind: 'machine', value: postingMachine } as const)
-      : parsedAudience
-  const audienceExpression =
-    audience.kind === 'machine' ? `machine:${audience.value}` : input.audience
+  const { audience, expression: audienceExpression } = resolvePostAudience(
+    input.audience,
+    postingMachine,
+  )
   const refusal = audienceRefusal(audience, actor.kind)
   if (refusal) throw new Error(refusal)
   if (!input.title.trim() || !input.body.trim())
@@ -171,17 +223,7 @@ export function postNotice(
       `ack deadline ${deadlineMs}ms is later than expiry ${expiresMs}ms; set --deadline no later than --expires`,
     )
   const authorSession = actor.session
-  let authorHarness: string | null = null
-  let authorProject: string | null = null
-  if (actor.kind === 'architect') {
-    const postingProject = projectAt(cwd)
-    if (!postingProject)
-      throw new Error(
-        `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
-      )
-    authorHarness = architectIdentity(env)!.harness
-    authorProject = postingProject.name
-  }
+  const origin = resolvePostOrigin(actor, env, cwd)
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
   const recentPosts = (
@@ -219,33 +261,7 @@ export function postNotice(
   const database = writableDb()
   let id = 0
   writeTransaction(() => {
-    if (actor.kind === 'architect') {
-      const current = database
-        .query(
-          `SELECT launch_key FROM run
-           WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
-           ORDER BY id DESC LIMIT 1`,
-        )
-        .get(actor.session) as { launch_key: string } | null
-      database
-        .query(
-          `INSERT INTO presence
-           (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-           VALUES (?,?,'architect',?,?,?,?,?)
-           ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
-             machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
-             current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
-        )
-        .run(
-          actor.session,
-          authorHarness,
-          postingMachine,
-          authorProject,
-          cwd,
-          current?.launch_key ?? null,
-          createdAt,
-        )
-    }
+    refreshPostingPresence(database, actor, origin, postingMachine, cwd, createdAt)
     const inserted = database
       .query(
         `INSERT INTO board_message
@@ -256,8 +272,8 @@ export function postNotice(
       .run(
         actor.kind,
         authorSession,
-        authorHarness,
-        authorProject,
+        origin.harness,
+        origin.project,
         audienceExpression,
         input.title,
         input.body,
