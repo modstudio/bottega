@@ -62,7 +62,7 @@ Writing runs checkpoint on schedule and at limits or stop. Update `$ORCH_SCRATCH
 
 # A worktree belongs to the project
 
-A project declares its lifecycle in the register and orch shells out to it; a project that declares none gets the built-in git worktree.
+A project's lifecycle is managed with hooks, fully managed or plugged in (root entry); one that declares none gets the built-in git worktree.
 
 `orch tree refresh` fast-forwards a clean worktree to trunk and runs the recipe's repeatable `refresh` steps; it never rebases, and its refusal is a failure to report.
 

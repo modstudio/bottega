@@ -31,8 +31,13 @@ code does not duplicate it.
 
 Workflow and lifecycle capability belongs here and is exposed through `orch`,
 the MCP surface and the project register. Do not copy a Bottega mechanism into
-a project when that project can call Bottega. Worktree scripts remain project
-owned because the register's create recipe is their interface.
+a project when that project can call Bottega. A project's worktree lifecycle
+takes one of three modes. Managed with project hooks is the default: Bottega
+runs every common step and the tracked recipe calls the project only for steps
+that are truly its own. Fully managed runs an inferred recipe for a project with
+no such steps. Plugged in calls the project's own create, sweep and remove. A
+recipe step that runs project code runs the tree's own copy, never the main
+checkout's, so the recipe and the code it calls are one version.
 
 A project may keep its own task tracker, doc store, workflows or review
 pipeline. The project register, read with `orch project list --json`, is the
