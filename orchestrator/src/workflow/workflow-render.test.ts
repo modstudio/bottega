@@ -36,7 +36,7 @@ describe('workflow rendering', () => {
         getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
-      'Evidence for command-exit: run it with `orch workflow exec <command>` and pass `--artifact exec:<id>`.',
+      'Evidence for command-exit: run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`.',
     )
   })
 

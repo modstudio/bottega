@@ -6,7 +6,14 @@ import {
   classifyCheckoutEvidence,
   type FloorEvidencePorts,
   gatherValidatedEvidence,
+  hubTaskReadRefusal,
 } from './workflow-floor-evidence.ts'
+
+test('missing hub task refusal names collection lag and its remedy', () => {
+  expect(hubTaskReadRefusal('DEV-1070', 1, 'no task DEV-1070\n', '')).toBe(
+    '--task DEV-1070 could not be read through hub: no task DEV-1070; hub may not have collected a recently created task yet; run hub collect --only tasks, then retry',
+  )
+})
 
 test('checkout evidence accepts a commit from the cursor branch', () => {
   expect(

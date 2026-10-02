@@ -79,7 +79,10 @@ function branchRunIdentity(branch: string): { project: Project; taskKey: string 
         WHERE r.minted_branch=?`,
     )
     .all(branch) as BranchRunIdentity[]
-  if (matches.length === 0) throw new Error(`branch ${branch} is not a recorded run branch`)
+  if (matches.length === 0)
+    throw new Error(
+      `branch ${branch} is not a recorded run branch; there is nothing to record for a branch no run minted; name a run's own branch instead`,
+    )
   if (matches.length !== 1) {
     throw new Error(`branch ${branch} belongs to more than one recorded project or task key`)
   }

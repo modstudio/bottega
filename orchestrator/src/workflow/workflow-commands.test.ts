@@ -76,14 +76,26 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
 })
 
 test('workflow probe refuses a missing command', async () => {
-  expect(workflowCommand(['workflow', 'probe'], presentation([]))).rejects.toThrow(
+  expect(workflowCommand(['workflow', 'probe', '--'], presentation([]))).rejects.toThrow(
     'orch workflow probe needs a command after --',
   )
 })
 
 test('workflow exec refuses a missing command', async () => {
-  expect(workflowCommand(['workflow', 'exec'], presentation([]))).rejects.toThrow(
+  expect(workflowCommand(['workflow', 'exec', '--'], presentation([]))).rejects.toThrow(
     'orch workflow exec needs a command after --',
+  )
+})
+
+test('workflow probe requires a separator before the child command', async () => {
+  expect(workflowCommand(['workflow', 'probe', '/usr/bin/true'], presentation([]))).rejects.toThrow(
+    'orch workflow probe requires -- before the child command; use orch workflow probe [--cwd <dir>] -- <command…>',
+  )
+})
+
+test('workflow exec requires a separator before the child command', async () => {
+  expect(workflowCommand(['workflow', 'exec', '/usr/bin/true'], presentation([]))).rejects.toThrow(
+    'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
   )
 })
 
@@ -121,6 +133,90 @@ test('Commander preserves an embedded separator in workflow exec child argv', as
     ).toEqual({
       command: JSON.stringify(['/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail']),
       output_tail: '[first]\n[--]\n[tail]\n',
+    })
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('Commander refuses workflow exec without a separator before running the child', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const before = (db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n
+
+    await expect(
+      program.parseAsync([
+        'bun',
+        'orch',
+        'workflow',
+        'exec',
+        '/usr/bin/printf',
+        '%s',
+        '--cwd',
+        'child-dir',
+        '--json',
+      ]),
+    ).rejects.toThrow(
+      'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
+    )
+
+    expect((db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n).toBe(before)
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('workflow exec keeps its cwd option out of the child argv', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const cwd = process.cwd()
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    upsertProject({
+      name: 'workflow-exec-cwd-adapter',
+      path: process.cwd(),
+      stack: 'bun',
+      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    })
+
+    await program.parseAsync([
+      'bun',
+      'orch',
+      'workflow',
+      'exec',
+      '--cwd',
+      '.',
+      '--',
+      '/usr/bin/printf',
+      '%s%s%s%s',
+      '--x',
+      '--cwd',
+      'child-dir',
+      '--json',
+    ])
+
+    expect(
+      db().query("SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1").get(),
+    ).toEqual({
+      command: JSON.stringify([
+        '/usr/bin/printf',
+        '%s%s%s%s',
+        '--x',
+        '--cwd',
+        'child-dir',
+        '--json',
+      ]),
+      cwd,
     })
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH
