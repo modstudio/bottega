@@ -3,10 +3,26 @@
 
 import { createConnection } from 'node:net'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { recordTunnelCondition } from './monitor-conditions.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const RECORD_TUNNEL_PROBE_TIMEOUT_MS = 500
+
+/** Classify the configured record tunnel from already-observed endpoint facts. */
+export function recordTunnelCondition(facts: {
+  app: string
+  port: number
+  reachable: boolean
+}): MonitorCondition | null {
+  if (!facts.app || facts.reachable) return null
+  return {
+    kind: 'record-tunnel-down',
+    subject: `127.0.0.1:${facts.port}`,
+    since: null,
+    ageMs: null,
+    detail: `record tunnel com.user.record-tunnel is not accepting TCP connections on 127.0.0.1:${facts.port}`,
+    action: 'run launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel',
+  }
+}
 
 function tcpEndpointReachable(port: number): Promise<boolean> {
   return new Promise((resolveReachable) => {

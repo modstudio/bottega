@@ -245,6 +245,15 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
   module('orchestrator/src/recipe/env-file.ts', []),
+  module('orchestrator/src/recipe/database-allocation-matcher.ts', []),
+  module('orchestrator/src/recipe/database-inventory.ts', [
+    './database-allocation-matcher.ts',
+    './database-connection.ts',
+    './database-provision.ts',
+    './database-provision-plan.ts',
+    './recipe-loader.ts',
+    './recipe-schema.ts',
+  ]),
   module('orchestrator/src/hook-tree/hook-tree.ts', ['../run/synthetic-lifecycle-job.ts']),
   module('orchestrator/src/landing-tree/landing-tree.ts', [
     '../run/synthetic-lifecycle-job.ts',
@@ -310,7 +319,6 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
     'node:net',
     '../../../shared/machine-config.ts',
-    './monitor-conditions.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [

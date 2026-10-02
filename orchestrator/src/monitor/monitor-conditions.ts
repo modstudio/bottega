@@ -37,7 +37,11 @@ import {
   SYNTHETIC_LIFECYCLE_JOBS,
 } from '../run/synthetic-lifecycle-job.ts'
 import { idleStallMs } from '../stalled-run.ts'
-import type { MonitorCondition } from './monitor-types.ts'
+import type {
+  MonitorCondition,
+  RecipeDatabaseClaim,
+  RecipeDatabaseNamespace,
+} from './monitor-types.ts'
 
 const ASKING_RUN_WHERE = `parent_run_id IS NULL
    AND (
@@ -54,23 +58,31 @@ const ASKING_RUN_WHERE = `parent_run_id IS NULL
 
 type AddressedRun = { id: number; started_at: string; session_id: string | null }
 
-type RecordTunnelFacts = {
-  app: string
-  port: number
-  reachable: boolean
-}
-
-/** Classify the configured record tunnel from already-observed endpoint facts. */
-export function recordTunnelCondition(facts: RecordTunnelFacts): MonitorCondition | null {
-  if (!facts.app || facts.reachable) return null
-  return {
-    kind: 'record-tunnel-down',
-    subject: `127.0.0.1:${facts.port}`,
-    since: null,
-    ageMs: null,
-    detail: `record tunnel com.user.record-tunnel is not accepting TCP connections on 127.0.0.1:${facts.port}`,
-    action: 'run launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel',
-  }
+/** Compare observed namespaces with live claims and map unaccounted names to conditions. */
+export function orphanRecipeDatabaseConditions(
+  namespace: RecipeDatabaseNamespace,
+  claims: readonly RecipeDatabaseClaim[],
+): MonitorCondition[] {
+  const accounted = new Set(
+    claims
+      .filter((claim) => claim.state === 'claimed' || claim.state === 'retained')
+      .map((claim) => claim.allocationKey),
+  )
+  const excluded = new Set([
+    namespace.sourceName,
+    ...(namespace.mainName ? [namespace.mainName] : []),
+  ])
+  return namespace.names
+    .filter((name) => !excluded.has(name) && !accounted.has(`${namespace.engine}:${name}`))
+    .map((name) => ({
+      kind: 'orphan-recipe-database',
+      subject: `${namespace.project}:${namespace.allocationKey}:${namespace.engine}:${name}`,
+      since: null,
+      ageMs: null,
+      detail: `${namespace.project} allocation ${namespace.allocationKey} has unclaimed ${namespace.engine} database ${name}`,
+      action: 'report only; verify nothing uses it, then drop it by hand',
+      affectedProject: namespace.project,
+    }))
 }
 
 export function askingRuns(database = db()): AddressedRun[] {

@@ -13,11 +13,13 @@ import { projectLockState } from '../project/project-lock.ts'
 import {
   absentTreeTeardownPlan,
   isProjectRepository,
+  type Project,
   projectAt,
   projectByName,
   projects,
   resolvedWorktreeTool,
 } from '../project/projects.ts'
+import { observeRecipeDatabases } from '../recipe/database-inventory.ts'
 import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import {
   classifiedDockerResources,
@@ -42,6 +44,7 @@ import {
   hookTreeConditions,
   idleRunConditions,
   orphanDockerNetworkConditions,
+  orphanRecipeDatabaseConditions,
   orphanSandboxDirectoryConditions,
   reconcileHub,
   refGuardConditions,
@@ -79,6 +82,33 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
+
+function recipeDatabaseObservations(
+  project: Project,
+  database: ReturnType<typeof db>,
+): { conditions: MonitorCondition[]; errors: string[] } {
+  const recipePath = resolvedWorktreeTool(project)?.recipePath
+  if (!recipePath) return { conditions: [], errors: [] }
+  const inventory = observeRecipeDatabases({
+    project: project.name,
+    projectRoot: project.path,
+    recipePath,
+  })
+  const claims = (
+    database
+      .query(
+        `SELECT allocation_key,state FROM resource_claim
+         WHERE project_id=? AND kind='database'`,
+      )
+      .all(project.id) as { allocation_key: string; state: string }[]
+  ).map((claim) => ({ allocationKey: claim.allocation_key, state: claim.state }))
+  return {
+    conditions: inventory.observations.flatMap((namespace) =>
+      orphanRecipeDatabaseConditions(namespace, claims),
+    ),
+    errors: inventory.errors,
+  }
+}
 
 function worktreesWithoutLiveRuns(input: {
   project: { name: string; path: string }
@@ -555,6 +585,9 @@ export async function monitor(
   for (const project of projects().filter(isProjectRepository)) {
     conditions.push(...observeProjectCanonDrift(project))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
+    const recipeDatabases = recipeDatabaseObservations(project, database)
+    conditions.push(...recipeDatabases.conditions)
+    errors.push(...recipeDatabases.errors)
     for (const lockName of ['create', 'cleanup']) {
       try {
         const state = projectLockState(project.path, lockName)

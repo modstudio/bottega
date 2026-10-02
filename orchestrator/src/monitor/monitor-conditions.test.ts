@@ -8,10 +8,10 @@ import {
   deadRunningProcessConditions,
   idleRunCondition,
   orphanDockerNetworkConditions,
+  orphanRecipeDatabaseConditions,
   orphanSandboxDirectoryConditions,
   pidBornAfterRun,
   reconcileHub,
-  recordTunnelCondition,
   rulingConditions,
   staleTrustEntryConditions,
   stalledRunConditions,
@@ -23,6 +23,7 @@ import {
   unsettledClaimInventory,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices } from './monitor-notices.ts'
+import { recordTunnelCondition } from './monitor-record-tunnel.ts'
 
 describe('record tunnel monitor condition', () => {
   test('is absent when the tunnel is not configured', () => {
@@ -42,6 +43,37 @@ describe('record tunnel monitor condition', () => {
 
   test('is absent when the configured endpoint is reachable', () => {
     expect(recordTunnelCondition({ app: 'record-app', port: 15432, reachable: true })).toBeNull()
+  })
+})
+
+describe('tracked recipe database comparison', () => {
+  const namespace = {
+    project: 'stopal',
+    allocationKey: 'app',
+    engine: 'postgres' as const,
+    names: ['stopal_orch_1', 'stopal_orch_2', 'stopal_orch_3', 'stopal_orch_4'],
+    sourceName: 'stopal_orch_3',
+    mainName: 'stopal_orch_4',
+  }
+
+  test('claimed and retained keys account for names while a released key does not', () => {
+    const claims = [
+      { allocationKey: 'postgres:stopal_orch_1', state: 'claimed' },
+      { allocationKey: 'postgres:stopal_orch_2', state: 'retained' },
+    ]
+    expect(orphanRecipeDatabaseConditions(namespace, claims)).toEqual([])
+
+    const afterRelease = [
+      { allocationKey: 'postgres:stopal_orch_1', state: 'claimed' },
+      { allocationKey: 'postgres:stopal_orch_2', state: 'released' },
+    ]
+    expect(orphanRecipeDatabaseConditions(namespace, afterRelease)).toEqual([
+      expect.objectContaining({
+        kind: 'orphan-recipe-database',
+        subject: 'stopal:app:postgres:stopal_orch_2',
+        action: 'report only; verify nothing uses it, then drop it by hand',
+      }),
+    ])
   })
 })
 
