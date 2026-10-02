@@ -2,6 +2,7 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { reapBoardMessages } from '../board/board-service.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
@@ -53,6 +54,10 @@ import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
 import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
+
+function reapExpiredBoardMessages(dryRun: boolean): void {
+  if (!dryRun) reapBoardMessages()
+}
 
 export type SweepOptions = {
   dryRun: boolean
@@ -485,6 +490,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     isProjectRepository,
   )
   if (!dry) writableDb()
+  reapExpiredBoardMessages(dry)
   const archiveRetention = pruneReaderCloneArchives({
     dryRun: dry,
     presentation: options.presentation,

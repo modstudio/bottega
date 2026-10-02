@@ -60,6 +60,17 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/board/board-policy.ts', []),
+  module('orchestrator/src/board/board-render.ts', ['./board-policy.ts']),
+  module('orchestrator/src/board/board-service.ts', [
+    'node:os',
+    '../../../shared/secret-shaped.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './board-policy.ts',
+    './board-render.ts',
+  ]),
+  module('orchestrator/src/board/board-commands.ts', ['commander', './board-service.ts']),
   ...releaseModules,
   ...retrievalModules,
   ...operatorWaitingModules,
@@ -303,6 +314,7 @@ export const modules: ArchitectureModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
+    '../board/board-service.ts',
     '../database/db.ts',
     './monitor-conditions.ts',
     './monitor-types.ts',

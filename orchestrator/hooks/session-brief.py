@@ -11,13 +11,14 @@ import tempfile
 import time
 
 
-def _start(orch, *args, env=None):
+def _start(orch, *args, env=None, cwd=None):
     return subprocess.Popen(
         [orch, *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        cwd=cwd,
     )
 
 
@@ -134,14 +135,15 @@ def _resume_sentence(source, open_briefs):
 HOOK_CONTEXT_MAX_CHARS = 9000
 HOOK_CONTEXT_TRUNCATION_MARKER = "…"
 
-# Least important first. Display order of the rest is resume table, inbox, issues, extra.
+# Least important first. Board notices are separately droppable at lowest priority.
 _HOOK_CONTEXT_DROPPABLE = (
+    ("board", "board notices", "orch board read --all"),
     ("issues", "filed issues", "orch fix-defect --waiting"),
     ("inbox", "inbox detail", "orch inbox"),
     ("extra", "heartbeat and monitor extra", "orch monitor"),
     ("resume_table", "resume table", "orch doc resumes"),
 )
-_HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra")
+_HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra", "board")
 
 
 def _join_sections(*sections):
@@ -166,6 +168,32 @@ def _fit_to_budget(text, budget):
     return text[: budget - len(marker)] + marker
 
 
+def _board_slice(completed):
+    if completed is None or completed.returncode != 0:
+        return "", []
+    try:
+        rows = json.loads(completed.stdout)
+        if not isinstance(rows, list) or not all(
+            isinstance(row, dict)
+            and isinstance(row.get("id"), int)
+            and row["id"] > 0
+            and isinstance(row.get("text"), str)
+            for row in rows
+        ):
+            raise ValueError("invalid board notice response")
+        return "\n\n".join(row["text"] for row in rows), [row["id"] for row in rows]
+    except Exception:
+        return "", []
+
+
+def _emitted_board_ids(output, board_text, board_ids):
+    emitted_context = (
+        output.get("hookSpecificOutput", {}).get("additionalContext", "")
+        if isinstance(output, dict) else ""
+    )
+    return list(board_ids) if board_ids and board_text and board_text in emitted_context else []
+
+
 def assemble_additional_context(
     autonomy="",
     resume_offer="",
@@ -173,6 +201,7 @@ def assemble_additional_context(
     inbox="",
     issues="",
     extra="",
+    board="",
     budget=HOOK_CONTEXT_MAX_CHARS,
 ):
     sections = {
@@ -182,6 +211,7 @@ def assemble_additional_context(
         "inbox": inbox.strip(),
         "issues": issues.strip(),
         "extra": extra.strip(),
+        "board": board.strip(),
     }
     included = {key: sections[key] for key, _, _ in _HOOK_CONTEXT_DROPPABLE}
     dropped = []
@@ -253,12 +283,16 @@ def orch_worker_session(env=None):
 def main() -> int:
     if orch_worker_session():
         return 0
-    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = board_p = None
     settings_log_path = settings_log_offset = None
     settings_start_failure = None
     settings_read_failure = None
     capability_dir = None
     output = None
+    board_text = ""
+    board_ids = []
+    cwd = None
+    orch = None
     monitor_notices = []
     inbox_env = None
     notice_timeout = 1.0
@@ -285,6 +319,11 @@ def main() -> int:
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
+            subprocess.run(
+                [orch, "board", "presence"], env=inbox_env, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
+            )
+            board_p = _start(orch, "board", "read", "--claim", env=inbox_env, cwd=cwd)
         inbox_p = _start(
             orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )
@@ -314,6 +353,8 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
+        board = _wait(board_p, deadline) if board_p is not None else None
+        board_text, board_ids = _board_slice(board)
         settings_apply = None
         if settings_p is not None:
             try:
@@ -622,6 +663,7 @@ def main() -> int:
             "inbox": "\n".join(inbox_lines),
             "issues": "\n".join(issues_lines),
             "extra": extra_section,
+            "board": board_text,
         }
         health_context = assemble_additional_context(**health_sections)
         health_notices = list(notices)
@@ -645,7 +687,7 @@ def main() -> int:
                         and isinstance(item.get("subject"), str)
                         and isinstance(item.get("detail"), str)
                         and isinstance(item.get("noticeId"), str)
-                        and item["noticeId"].partition(":")[0] in ("condition", "landing")
+                        and item["noticeId"].partition(":")[0] in ("condition", "landing", "board")
                         and item["noticeId"].partition(":")[1] == ":"
                         and item["noticeId"].partition(":")[2].isdigit()
                         and int(item["noticeId"].partition(":")[2]) > 0
@@ -701,6 +743,20 @@ def main() -> int:
         if output is not None:
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
+        emitted_board_ids = _emitted_board_ids(output, board_text, board_ids)
+        if emitted_board_ids and inbox_env is not None and orch is not None:
+            try:
+                subprocess.run(
+                    [orch, "board", "delivered", ",".join(str(item) for item in emitted_board_ids)],
+                    env=inbox_env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=acknowledgement_timeout,
+                    check=False,
+                    cwd=cwd,
+                )
+            except Exception:
+                pass
         if monitor_notices and inbox_env is not None:
             try:
                 subprocess.run(
@@ -720,6 +776,7 @@ def main() -> int:
         _kill(waiting_p)
         _kill(context_p)
         _kill(monitor_p)
+        _kill(board_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)
     return 0

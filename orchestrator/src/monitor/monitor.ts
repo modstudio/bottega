@@ -5,6 +5,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { boardEscalations } from '../board/board-service.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { fileIssue } from '../mcp/mcp.ts'
@@ -453,6 +454,7 @@ export async function monitor(
 
   conditions.push(...outboxQuarantineConditions(database))
   conditions.push(...outboxRetiredParentConditions(database))
+  conditions.push(...boardEscalations(clock))
 
   conditions.push(...abandonedBootstrapConditions(clock))
   conditions.push(...deadRunningProcessConditions(clock))

@@ -26,6 +26,39 @@ class AssembleAdditionalContext(unittest.TestCase):
     def test_budget_constant_stays_under_the_harness_cap(self):
         self.assertEqual(session_brief.HOOK_CONTEXT_MAX_CHARS, 9000)
 
+    def test_board_notices_drop_before_other_unprotected_sections(self):
+        text = self.assemble(
+            100,
+            autonomy="protected",
+            board="b" * 200,
+            issues="filed issue",
+        )
+        self.assertNotIn("b" * 200, text)
+        self.assertIn("filed issue", text)
+        self.assertIn("Dropped board notices (orch board read --all).", text)
+
+    def test_board_slice_preserves_ids_for_post_emit_delivery(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{"id": 7, "text": "notice one"}, {"id": 8, "text": "notice two"}]),
+        )
+        self.assertEqual(
+            session_brief._board_slice(completed),
+            ("notice one\n\nnotice two", [7, 8]),
+        )
+
+    def test_board_dropped_for_budget_has_no_post_emit_delivery_ids(self):
+        board = "board notice " * 30
+        context = self.assemble(100, autonomy="protected", board=board, issues="filed issue")
+        output = {"hookSpecificOutput": {"additionalContext": context}}
+        self.assertEqual(session_brief._emitted_board_ids(output, board, [7]), [])
+
+    def test_included_board_is_stamped_only_after_emission(self):
+        board = "board notice"
+        context = self.assemble(100, autonomy="protected", board=board)
+        output = {"hookSpecificOutput": {"additionalContext": context}}
+        self.assertEqual(session_brief._emitted_board_ids(output, board, [7]), [7])
+
     def test_keeps_every_section_when_under_budget(self):
         text = self.assemble(
             200,

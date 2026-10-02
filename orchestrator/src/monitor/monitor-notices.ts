@@ -1,6 +1,11 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
+import {
+  claimInterruptNotices,
+  markInterruptNoticesDelivered,
+  requireRealSession,
+} from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
@@ -143,7 +148,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
 
 /** Read addressed findings without consuming them. A failed consumer gets them again. */
 export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
-  if (!ownerSession.trim()) throw new Error('monitor notices require a session id')
+  requireRealSession(ownerSession, 'monitor notices')
   const rows = db()
     .query(
       `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
@@ -209,6 +214,17 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   }[]
   return [
     ...conditions,
+    ...claimInterruptNotices(ownerSession).map(
+      (notice): MonitorNotice => ({
+        noticeId: notice.noticeId,
+        kind: 'board-notice',
+        subject: notice.noticeId,
+        since: null,
+        ageMs: null,
+        detail: notice.detail,
+        ownerSession,
+      }),
+    ),
     ...landings.map(
       (row): MonitorNotice => ({
         noticeId: `landing:${row.id}`,
@@ -229,12 +245,12 @@ export function markMonitorNoticesDelivered(
   ids: MonitorNotice['noticeId'][],
   deliveredAt = nowIso(),
 ): void {
-  if (!ownerSession.trim()) throw new Error('monitor notice acknowledgement requires a session id')
+  requireRealSession(ownerSession, 'monitor notice acknowledgement')
   const parsed = ids.map((token) => {
-    const match = /^(condition|landing):([1-9]\d*)$/.exec(token)
+    const match = /^(condition|landing|board):([1-9]\d*)$/.exec(token)
     if (!match)
       throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
-    return { source: match[1] as 'condition' | 'landing', id: Number(match[2]) }
+    return { source: match[1] as 'condition' | 'landing' | 'board', id: Number(match[2]) }
   })
   if (!parsed.length || parsed.some(({ id }) => !Number.isSafeInteger(id))) {
     throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
@@ -250,6 +266,7 @@ export function markMonitorNoticesDelivered(
     const landings = new Set(
       parsed.filter(({ source }) => source === 'landing').map(({ id }) => id),
     )
+    const board = new Set(parsed.filter(({ source }) => source === 'board').map(({ id }) => id))
     // A receipt may stamp a landing only when that source-qualified landing token
     // came from the claim that produced the emission. Equal ids in other sources do not qualify.
     for (const id of conditions) mark.run(deliveredAt, id, ownerSession)
@@ -259,5 +276,6 @@ export function markMonitorNoticesDelivered(
           AND status IN ('refused','rebase_required','install_failed')`,
     )
     for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)
+    markInterruptNoticesDelivered(ownerSession, [...board], deliveredAt)
   }, database)
 }

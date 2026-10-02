@@ -83,6 +83,44 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
   }
 })
 
+test('board origin snapshot migration backfills an existing architect notice', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-board-origin-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const snapshotMigration = journal.findIndex((entry) => entry.tag === '0074_board_origin_snapshot')
+  const prior = journal.slice(0, snapshotMigration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    database
+      .query(
+        `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
+         VALUES ('author','claude-code','architect','test','posting-project','/tmp','2026-10-02')`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO board_message
+         (kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at)
+         VALUES ('notice','architect','author','operator','Title','Body',0,'2026-10-03','2026-10-02')`,
+      )
+      .run()
+    expect(applyMigrations(database)).toEqual(['0074_board_origin_snapshot'])
+    expect(database.query('SELECT author_harness,author_project FROM board_message').get()).toEqual(
+      { author_harness: 'claude-code', author_project: 'posting-project' },
+    )
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('workflow question migration preserves run questions and backfills an awaiting cursor', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-workflow-questions-'))
   mkdirSync(join(folder, 'meta'))
@@ -305,6 +343,8 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
+      '0074_board_origin_snapshot',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -413,6 +453,8 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
+      '0074_board_origin_snapshot',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -503,6 +545,8 @@ test('project task identity migration backfills ledger project relationships', (
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
+      '0074_board_origin_snapshot',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -574,6 +618,8 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
+      '0074_board_origin_snapshot',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',
