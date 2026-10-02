@@ -99,6 +99,10 @@ describe('inherited resume launch', () => {
     ).toBe('956304fe')
   })
 
+  test('a reader with a clone commit but no launch base resumes without a base', () => {
+    expect(resumeLaunchFromStored({ ...stored, base_commit: '956304fe' }).base).toBeUndefined()
+  })
+
   test('falls back to the launch branch for an old row without a base commit', () => {
     expect(resumeLaunchFromStored({ ...stored, launch_base: 'DEV-1042-orch-8083' }).base).toBe(
       'DEV-1042-orch-8083',

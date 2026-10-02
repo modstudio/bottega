@@ -17,7 +17,9 @@ export function liveBaseClaim(project: Project, branch: string): LiveBaseClaim |
             WHERE member.id=root.id OR member.parent_run_id=root.id
             ORDER BY member.turn DESC,member.id DESC LIMIT 1
          )
-        WHERE root.parent_run_id IS NULL AND root.launch_base=?
+        WHERE root.parent_run_id IS NULL
+          AND CASE WHEN root.launch_base LIKE 'refs/heads/%'
+                   THEN substr(root.launch_base,12) ELSE root.launch_base END=?
           AND (root.project_id=? OR (root.project_id IS NULL AND root.repo=?))
           AND latest.status IN ('reserved','attached','running','asking')
         ORDER BY latest.id DESC LIMIT 1`,

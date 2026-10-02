@@ -330,7 +330,7 @@ export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOpt
   return {
     seed: row.launch_seed ?? undefined,
     key: row.launch_key ?? undefined,
-    base: row.base_commit ?? row.launch_base ?? undefined,
+    base: row.launch_base ? (row.base_commit ?? row.launch_base) : undefined,
     noFailover: !!row.no_failover,
     mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
     lens: row.lens ?? undefined,
