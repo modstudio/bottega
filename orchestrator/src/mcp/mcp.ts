@@ -1,5 +1,5 @@
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { McpServer } from '@modelcontextprotocol/server'
+import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
@@ -925,5 +925,5 @@ export function createDocsMcpServer(): McpServer {
 }
 
 export async function serveDocsMcp(): Promise<void> {
-  await createDocsMcpServer().connect(new StdioServerTransport())
+  serveStdio(createDocsMcpServer)
 }

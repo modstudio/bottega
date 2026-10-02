@@ -30,8 +30,8 @@
  */
 
 import { createConnection, createServer, type Socket } from 'node:net'
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { McpServer } from '@modelcontextprotocol/server'
+import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
@@ -591,12 +591,13 @@ export async function startAskLoopback(runId: number, token: string): Promise<As
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
-    const mcp = createAskMcpServer(runId, token)
+    const mcp = serveStdio(() => createAskMcpServer(runId, token), {
+      transport: new StdioServerTransport(socket, socket),
+    })
     socket.once('close', () => {
       sockets.delete(socket)
       void mcp.close()
     })
-    void mcp.connect(new StdioServerTransport(socket, socket)).catch(() => socket.destroy())
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -644,5 +645,5 @@ export async function serveAsk(): Promise<void> {
   if (loopback) return proxyAsk(loopback)
   const runId = Number(process.env.ORCH_RUN_ID ?? 0)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
-  await createAskMcpServer(runId, token).connect(new StdioServerTransport())
+  serveStdio(() => createAskMcpServer(runId, token))
 }

@@ -3,8 +3,9 @@
  * Lists every tools/list page through the standard MCP transports. The caller
  * owns scope policy and interpretation of the returned pages.
  */
-import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
+
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 
 const MCP_TOOL_LIST_TIMEOUT_MS = 8_000
 

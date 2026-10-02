@@ -51,19 +51,17 @@ const rulingFileStores: RulingFileStores = {
 }
 
 export function registerOperatorTools(server: McpServer): void {
-  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'list_open_questions',
     {
       description:
         'List open questions this session owns or may answer, plus items waiting on the operator.',
-      outputSchema: ListOpenQuestionsResultSchema,
+      outputSchema: z.object(ListOpenQuestionsResultSchema.shape).strict(),
       annotations: { readOnlyHint: true },
     },
     async () => structured(await listOpenQuestions()),
   )
 
-  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'answer_questions',
     {
@@ -83,7 +81,7 @@ export function registerOperatorTools(server: McpServer): void {
         from_operator: z.boolean().optional(),
         record_only: z.boolean().optional(),
       }),
-      outputSchema: AnswerWaitingResultSchema,
+      outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
     },
     async ({ run_id, rulings, from_operator, record_only }) => {
       const result = await answerRun(
@@ -105,7 +103,6 @@ export function registerOperatorTools(server: McpServer): void {
     },
   )
 
-  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'overturn_ruling',
     {
@@ -116,7 +113,7 @@ export function registerOperatorTools(server: McpServer): void {
         replacement: z.string().trim().min(1).optional(),
         from_operator: z.boolean().optional(),
       }),
-      outputSchema: OverturnRulingResultSchema,
+      outputSchema: z.object(OverturnRulingResultSchema.shape).strict(),
     },
     async ({ question_id, because, replacement, from_operator }) =>
       structured(
@@ -129,7 +126,6 @@ export function registerOperatorTools(server: McpServer): void {
       ),
   )
 
-  /* @mcp-codemod-error Could not verify `outputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
   server.registerTool(
     'file_ruling',
     {
@@ -142,7 +138,7 @@ export function registerOperatorTools(server: McpServer): void {
         title: z.string().trim().min(1).optional(),
         from_operator: z.boolean().optional(),
       }),
-      outputSchema: FileRulingResultSchema,
+      outputSchema: z.object(FileRulingResultSchema.shape).strict(),
     },
     async ({ question_id, as, scope, subject, title, from_operator }) =>
       structured(

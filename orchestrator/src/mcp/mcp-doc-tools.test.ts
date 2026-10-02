@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { Client } from '@modelcontextprotocol/client'
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { gitToplevel } from '../../../shared/git.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { upsertProject } from '../project/projects.ts'

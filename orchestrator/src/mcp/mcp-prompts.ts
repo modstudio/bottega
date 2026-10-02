@@ -68,13 +68,12 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
 
 export function registerWorkflowPrompts(server: McpServer): void {
   for (const prompt of workflowPromptDefinitions(productionWorkflows())) {
-    /* @mcp-codemod-error Could not verify `argsSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
     server.registerPrompt(
       prompt.name,
       {
         title: prompt.title,
         description: prompt.description,
-        argsSchema: promptArgsSchema(prompt),
+        argsSchema: z.object(promptArgsSchema(prompt)),
       },
       async (input) => {
         // A client may send an unfilled argument as a blank string; it counts as omitted.
