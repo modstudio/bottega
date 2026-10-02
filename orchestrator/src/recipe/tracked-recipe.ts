@@ -22,7 +22,11 @@ import {
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { createProvisionedDatabases, dropProvisionedDatabases } from './database-provision.ts'
+import {
+  createProvisionedDatabases,
+  type DatabaseOwnership,
+  dropProvisionedDatabases,
+} from './database-provision.ts'
 import {
   compensationPlan,
   destroyPlan,
@@ -51,6 +55,7 @@ export type RecipeSnapshot = {
   source: { path: string; commit: string }
   recipe: TrackedRecipe
   allocations?: RecipeAllocations
+  databaseOwnership?: DatabaseOwnership
 }
 export type RecipeAllocations = {
   index: number
@@ -621,6 +626,7 @@ export function createTrackedRecipe(
     allocations: prepared.snapshot.allocations!.databases,
   }
   const databases = createProvisionedDatabases(prepared.recipe, databaseContext)
+  snapshot.databaseOwnership = databases.ownership
   if (databases.failure) {
     failTrackedCreation({
       createInput: input,
@@ -643,7 +649,7 @@ export function createTrackedRecipe(
         failure: creation.failure,
         compensation: [
           ...creation.compensation,
-          ...dropProvisionedDatabases(prepared.recipe, databaseContext),
+          ...dropProvisionedDatabases(prepared.recipe, databaseContext, snapshot.databaseOwnership),
         ],
       },
     })
@@ -713,12 +719,16 @@ export function teardownTrackedRecipe(
     for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
       results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
     results.push(
-      ...dropProvisionedDatabases(stored.snapshot.recipe, {
-        projectRoot: input.worktree.repoRoot,
-        treeRoot: input.worktree.path,
-        commandRoot: context.treeRoot,
-        allocations: stored.snapshot.allocations?.databases ?? {},
-      }),
+      ...dropProvisionedDatabases(
+        stored.snapshot.recipe,
+        {
+          projectRoot: input.worktree.repoRoot,
+          treeRoot: input.worktree.path,
+          commandRoot: context.treeRoot,
+          allocations: stored.snapshot.allocations?.databases ?? {},
+        },
+        stored.snapshot.databaseOwnership,
+      ),
     )
     for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
   } finally {

@@ -1,6 +1,7 @@
 // concern: built-in database lifecycle adapter
 /** Reads one declared connection at use time and executes pure database plans without exposing secrets. */
-import { readFileSync } from 'node:fs'
+import { lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { parseEnv } from 'node:util'
 import {
   type DatabaseCommand,
@@ -175,7 +176,48 @@ type ProvisionContext = {
   commandRoot?: string
   allocations: Record<string, string>
 }
+export type DatabaseOwnership = Record<string, boolean>
 type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
+
+function isBeneath(root: string, path: string): boolean {
+  const offset = relative(root, path)
+  return offset === '' || (!offset.startsWith(`..${sep}`) && offset !== '..' && !isAbsolute(offset))
+}
+
+function confinedPath(root: string, path: string): string | null {
+  let canonicalRoot: string
+  try {
+    canonicalRoot = realpathSync(root)
+  } catch {
+    return `${root} could not be resolved; restore the declared root and retry`
+  }
+  const confined = resolve(canonicalRoot, relative(root, path))
+  if (!isBeneath(canonicalRoot, confined))
+    return `${path} is outside ${canonicalRoot}; choose a path inside the declared root`
+  let current = canonicalRoot
+  const components = relative(canonicalRoot, confined).split(sep).filter(Boolean)
+  for (const [index, component] of components.entries()) {
+    current = resolve(current, component)
+    let state: ReturnType<typeof lstatSync>
+    try {
+      state = lstatSync(current)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      return `${current} could not be inspected; repair that path and retry`
+    }
+    if (state.isSymbolicLink()) return `${current} is a symbolic link; replace it and retry`
+    if (index < components.length - 1 && !state.isDirectory())
+      return `${current} is not a directory; replace it and retry`
+  }
+  return null
+}
+
+function sqlitePathProblem(plan: DatabaseCommandPlan, context: ProvisionContext): string | null {
+  if (plan.engine !== 'sqlite') return null
+  const source = plan.create[0]!.argv.at(-2)!
+  const target = plan.create[0]!.argv.at(-1)!
+  return confinedPath(context.projectRoot, source) ?? confinedPath(context.treeRoot, target)
+}
 
 function preparedPlan(
   key: string,
@@ -215,18 +257,13 @@ function preparedPlan(
   }
 }
 
-export function createDatabase(
+type CreateOutcome = { step: StepResult; owned: boolean }
+
+function inspectedCreateOutcome(
   key: string,
-  allocation: Allocation,
-  context: ProvisionContext,
-  spawn: DatabaseSpawn = defaultSpawn,
-): { step: StepResult; created: boolean } {
-  const prepared = preparedPlan(key, allocation, context)
-  if ('status' in prepared) return { step: prepared, created: false }
-  const { plan, connection } = prepared
-  const exec = allocation.provision!.exec
-  const cwd = context.commandRoot ?? context.treeRoot
-  const exists = inspectExists(plan, exec, connection, cwd, spawn)
+  plan: DatabaseCommandPlan,
+  exists: boolean | null,
+): CreateOutcome | null {
   if (exists === null)
     return {
       step: result(
@@ -235,42 +272,80 @@ export function createDatabase(
         'failed',
         'database existence could not be checked; verify the declared client and admin connection',
       ),
-      created: false,
+      owned: false,
     }
-  if (exists)
-    return {
-      step: plan.reuse
-        ? result(key, 'run', 'ok')
-        : result(
-            key,
-            'run',
-            'refused',
-            `database ${plan.name} already exists; set provision.reuse true to keep it or remove it`,
-          ),
-      created: false,
-    }
+  if (!exists) return null
+  return {
+    step: plan.reuse
+      ? result(key, 'run', 'ok')
+      : result(
+          key,
+          'run',
+          'refused',
+          `database ${plan.name} already exists; set provision.reuse true to keep it or remove it`,
+        ),
+    owned: false,
+  }
+}
+
+function runCreatePlan(input: {
+  key: string
+  plan: DatabaseCommandPlan
+  context: ProvisionContext
+  exec: ExecContext
+  connection: Connection | null
+  cwd: string
+  spawn: DatabaseSpawn
+}): CreateOutcome {
   let dump: Uint8Array | undefined
-  for (const command of plan.create) {
-    const executed = runCommand(command, exec, connection, cwd, spawn, dump)
+  let owned = false
+  for (const [index, command] of input.plan.create.entries()) {
+    const mutationProblem = sqlitePathProblem(input.plan, input.context)
+    if (mutationProblem)
+      return { step: result(input.key, 'run', 'refused', mutationProblem), owned }
+    const executed = runCommand(command, input.exec, input.connection, input.cwd, input.spawn, dump)
     if (executed.exitCode !== 0) {
       const busy =
-        plan.engine === 'postgres' &&
+        input.plan.engine === 'postgres' &&
         /being accessed by other users|source database .* is being accessed/i.test(executed.stderr)
       return {
         step: result(
-          key,
+          input.key,
           'run',
           'failed',
           busy
-            ? `postgres template ${plan.from} has other connections; disconnect them and retry worktree creation`
+            ? `postgres template ${input.plan.from} has other connections; disconnect them and retry worktree creation`
             : `database create client failed; verify the declared client and admin connection`,
         ),
-        created: true,
+        owned,
       }
     }
+    if (index === 0) owned = true
     if (command.output === 'dump') dump = executed.stdout
   }
-  return { step: result(key, 'run', 'ok'), created: true }
+  return { step: result(input.key, 'run', 'ok'), owned }
+}
+
+export function createDatabase(
+  key: string,
+  allocation: Allocation,
+  context: ProvisionContext,
+  spawn: DatabaseSpawn = defaultSpawn,
+): CreateOutcome {
+  const prepared = preparedPlan(key, allocation, context)
+  if ('status' in prepared) return { step: prepared, owned: false }
+  const { plan, connection } = prepared
+  const exec = allocation.provision!.exec
+  const cwd = context.commandRoot ?? context.treeRoot
+  const inspectProblem = sqlitePathProblem(plan, context)
+  if (inspectProblem)
+    return { step: result(key, 'verify', 'refused', inspectProblem), owned: false }
+  const inspected = inspectedCreateOutcome(
+    key,
+    plan,
+    inspectExists(plan, exec, connection, cwd, spawn),
+  )
+  return inspected ?? runCreatePlan({ key, plan, context, exec, connection, cwd, spawn })
 }
 
 export function dropAndVerifyDatabase(
@@ -284,6 +359,8 @@ export function dropAndVerifyDatabase(
   const { plan, connection } = prepared
   const exec = allocation.provision!.exec
   const cwd = context.commandRoot ?? context.treeRoot
+  const dropProblem = sqlitePathProblem(plan, context)
+  if (dropProblem) return result(key, 'undo', 'refused', dropProblem)
   const dropped = runCommand(plan.drop, exec, connection, cwd, spawn)
   if (dropped.exitCode !== 0)
     return result(
@@ -292,6 +369,8 @@ export function dropAndVerifyDatabase(
       'failed',
       'database drop client failed; verify the declared client and admin connection',
     )
+  const verifyProblem = sqlitePathProblem(plan, context)
+  if (verifyProblem) return result(key, 'verify', 'refused', verifyProblem)
   const exists = inspectExists(plan, exec, connection, cwd, spawn)
   if (exists === null)
     return result(
@@ -314,34 +393,53 @@ export function createProvisionedDatabases(
   recipe: TrackedRecipe,
   context: ProvisionContext,
   spawn?: DatabaseSpawn,
-): { failure: StepResult | null; compensation: StepResult[] } {
+): {
+  failure: StepResult | null
+  compensation: StepResult[]
+  ownership: DatabaseOwnership
+} {
   const declarations = new Map(provisionedDatabases(recipe))
   const entries = creationPlan(recipe).flatMap((phase) => {
     const allocation = phase.kind === 'database' ? declarations.get(phase.name) : undefined
     return allocation ? ([[phase.name, allocation]] as [string, Allocation][]) : []
   })
-  const createdEntries: [string, Allocation][] = []
+  const ownedEntries: [string, Allocation][] = []
+  const ownership: DatabaseOwnership = {}
   for (const [key, allocation] of entries) {
     const outcome = createDatabase(key, allocation, context, spawn)
-    if (outcome.created) createdEntries.push([key, allocation])
+    ownership[key] = outcome.owned
+    if (outcome.owned) ownedEntries.push([key, allocation])
     if (outcome.step.status !== 'ok') {
       return {
         failure: outcome.step,
-        compensation: createdEntries
+        compensation: ownedEntries
           .reverse()
           .map(([undoKey, undo]) => dropAndVerifyDatabase(undoKey, undo, context, spawn)),
+        ownership,
       }
     }
   }
-  return { failure: null, compensation: [] }
+  return { failure: null, compensation: [], ownership }
 }
 
 export function dropProvisionedDatabases(
   recipe: TrackedRecipe,
   context: ProvisionContext,
+  ownership?: DatabaseOwnership,
   spawn?: DatabaseSpawn,
 ): StepResult[] {
   return provisionedDatabases(recipe)
     .reverse()
-    .map(([key, allocation]) => dropAndVerifyDatabase(key, allocation, context, spawn))
+    .map(([key, allocation]) => {
+      if (ownership?.[key]) return dropAndVerifyDatabase(key, allocation, context, spawn)
+      const name = context.allocations[key] ?? key
+      return result(
+        key,
+        'undo',
+        'ok',
+        Object.hasOwn(ownership ?? {}, key)
+          ? `database ${name} was not created by this lifecycle and was kept`
+          : `database ${name} has no recorded ownership and was kept`,
+      )
+    })
 }

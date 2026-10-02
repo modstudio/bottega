@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -7,6 +7,7 @@ import {
   createProvisionedDatabases,
   type DatabaseSpawn,
   dropAndVerifyDatabase,
+  dropProvisionedDatabases,
 } from './database-provision.ts'
 import { recipeSchema } from './recipe-schema.ts'
 
@@ -82,7 +83,7 @@ describe('database provision adapter', () => {
     }
     expect(createDatabase('app', allocation, context, spawn)).toMatchObject({
       step: { status: 'ok' },
-      created: false,
+      owned: false,
     })
     expect(calls).toBe(1)
   })
@@ -169,5 +170,138 @@ describe('database provision adapter', () => {
     expect(calls.filter((call) => call.includes('DROP DATABASE'))).toEqual([
       expect.stringContaining('DROP DATABASE IF EXISTS "created"'),
     ])
+  })
+
+  test('owns only a successful initial create command', () => {
+    const postgres = fixture('postgres')
+    const postgresCalls: string[] = []
+    const postgresOutcome = createProvisionedDatabases(
+      recipeSchema.parse({
+        allocate: { databases: { app: postgres.allocation } },
+        create: [],
+      }),
+      postgres.context,
+      (argv) => {
+        const command = argv.join(' ')
+        postgresCalls.push(command)
+        return command.includes('CREATE DATABASE') ? output('', 1) : output()
+      },
+    )
+    expect(postgresOutcome.ownership).toEqual({ app: false })
+    expect(postgresCalls.some((call) => call.includes('DROP DATABASE'))).toBeFalse()
+
+    const mysql = fixture('mysql')
+    const mysqlCalls: string[] = []
+    const mysqlOutcome = createProvisionedDatabases(
+      recipeSchema.parse({
+        allocate: { databases: { app: mysql.allocation } },
+        create: [],
+      }),
+      mysql.context,
+      (argv) => {
+        const command = argv.join(' ')
+        mysqlCalls.push(command)
+        return command.includes('mysqldump') ? output('', 1) : output()
+      },
+    )
+    expect(mysqlOutcome.ownership).toEqual({ app: true })
+    expect(mysqlCalls.some((call) => call.includes('DROP DATABASE'))).toBeTrue()
+  })
+
+  test('project-step compensation and teardown drop owned databases but keep reused ones', () => {
+    const { context } = fixture('postgres')
+    const provision = {
+      from: 'base',
+      connection: { key: 'DATABASE_URL' },
+    }
+    const recipe = recipeSchema.parse({
+      allocate: {
+        databases: {
+          reused: { engine: 'postgres', name: 'reused', provision: { ...provision, reuse: true } },
+          owned: { engine: 'postgres', name: 'owned', provision },
+        },
+      },
+      create: [],
+    })
+    const calls: string[] = []
+    const spawn: DatabaseSpawn = (argv) => {
+      calls.push(argv.join(' '))
+      return output()
+    }
+    const databaseContext = {
+      ...context,
+      allocations: { reused: 'reused', owned: 'owned' },
+    }
+
+    const compensate = dropProvisionedDatabases(
+      recipe,
+      databaseContext,
+      { reused: false, owned: true },
+      spawn,
+    )
+    const teardown = dropProvisionedDatabases(
+      recipe,
+      databaseContext,
+      { reused: false, owned: true },
+      spawn,
+    )
+    const legacy = dropProvisionedDatabases(recipe, databaseContext, undefined, spawn)
+
+    expect([...compensate, ...teardown].filter((step) => step.name === 'database reused')).toEqual([
+      expect.objectContaining({ status: 'ok', detail: expect.stringContaining('kept') }),
+      expect.objectContaining({ status: 'ok', detail: expect.stringContaining('kept') }),
+    ])
+    expect(calls.filter((call) => call.includes('DROP DATABASE'))).toEqual([
+      expect.stringContaining('DROP DATABASE IF EXISTS "owned"'),
+      expect.stringContaining('DROP DATABASE IF EXISTS "owned"'),
+    ])
+    expect(legacy).toEqual([
+      expect.objectContaining({
+        status: 'ok',
+        detail: expect.stringContaining('no recorded ownership'),
+      }),
+      expect.objectContaining({
+        status: 'ok',
+        detail: expect.stringContaining('no recorded ownership'),
+      }),
+    ])
+  })
+
+  test('refuses a symlinked sqlite target ancestor at create and teardown', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'orch-db-main-'))
+    const treeRoot = mkdtempSync(join(tmpdir(), 'orch-db-tree-'))
+    const outside = mkdtempSync(join(tmpdir(), 'orch-db-outside-'))
+    roots.push(projectRoot, treeRoot, outside)
+    mkdirSync(join(projectRoot, 'fixtures'))
+    writeFileSync(join(projectRoot, 'fixtures', 'base.sqlite'), 'source')
+    writeFileSync(join(outside, 'app.sqlite'), 'outside')
+    symlinkSync(outside, join(treeRoot, 'data'))
+    const recipe = recipeSchema.parse({
+      allocate: {
+        databases: {
+          app: {
+            engine: 'sqlite',
+            name: 'data/app.sqlite',
+            provision: { from: 'fixtures/base.sqlite', connection: { key: 'UNUSED' } },
+          },
+        },
+      },
+      create: [],
+    })
+    const allocation = recipe.allocate!.databases!.app!
+    const context = { projectRoot, treeRoot, allocations: { app: 'data/app.sqlite' } }
+    const spawn: DatabaseSpawn = () => {
+      throw new Error('unsafe sqlite command reached spawn')
+    }
+
+    expect(createDatabase('app', allocation, context, spawn).step).toMatchObject({
+      status: 'refused',
+      detail: expect.stringContaining('symbolic link'),
+    })
+    expect(dropAndVerifyDatabase('app', allocation, context, spawn)).toMatchObject({
+      status: 'refused',
+      detail: expect.stringContaining('symbolic link'),
+    })
+    expect(existsSync(join(outside, 'app.sqlite'))).toBeTrue()
   })
 })
