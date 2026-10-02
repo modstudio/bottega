@@ -13,6 +13,13 @@ import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
+  type ArgumentReboundEvent,
+  type ClosedStep,
+  type CursorTrailEntry,
+  currentStepActivatedAt,
+  isClosedStep,
+} from './workflow-cursor-trail.ts'
+import {
   type CursorState,
   type CursorValue,
   decideCursorStart,
@@ -49,24 +56,6 @@ export type WorkflowCursorContext = {
   instance?: string
 }
 
-type ClosedStep = {
-  n: number
-  slug: string
-  note: string
-  at: string
-  review?: true
-  evidence?: Array<{ flag: string; value: string }>
-  deferred?: { id: number; floor: string; reason: string }
-  satisfied?: number
-}
-type ArgumentReboundEvent = {
-  event: 'argument-rebound'
-  name: string
-  oldValue: string
-  newValue: string
-  at: string
-}
-type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 type CursorRow = {
   id: number
   project: string
@@ -228,8 +217,6 @@ export function decideCursorArguments(
   }
   return { action: 'merge', args: merged, rebindings }
 }
-
-const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
 function cursorRebindableArguments(row: CursorRow, d: Database): Set<string> {
   const current = productionWorkflows(d).find(({ slug }) => slug === row.workflow_slug)
@@ -585,6 +572,11 @@ function applyFloorDecision(
       workflowKey: row.workflow_key,
       branch: args.branch?.trim() || null,
       worktree: args.worktree?.trim() || null,
+      session: row.session_id,
+      stepActivatedAt: currentStepActivatedAt(
+        row,
+        cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
+      ),
     },
     stepOrdinal: row.ordinal + 1,
     stepSlug: row.step_slug,
@@ -850,7 +842,7 @@ function awaitWorkflowRulingImpl(
   question: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
-): { summary: CursorSummary; cursorId: number } {
+): { summary: CursorSummary & { questionId: number }; cursorId: number } {
   if (!question?.trim()) throw new Error('--question is required')
   const row = findCursor(project, slug, mode, args, context, d)
   if (!row)
@@ -871,12 +863,14 @@ function awaitWorkflowRulingImpl(
        WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .get(row.id) as { id: number } | null
+  let questionId: number
   if (open) {
     d.query(
       `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
        revision=revision+1 WHERE id=?`,
     ).run(question.trim(), row.workflow_key || null, row.ordinal + 1, row.step_slug, open.id)
     enqueueQuestionRecord(d, open.id)
+    questionId = open.id
   } else {
     const inserted = d
       .query(
@@ -895,9 +889,10 @@ function awaitWorkflowRulingImpl(
         row.step_slug,
       ) as { id: number }
     enqueueQuestionRecord(d, inserted.id)
+    questionId = inserted.id
   }
   return {
-    summary: { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling' },
+    summary: { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling', questionId },
     cursorId: row.id,
   }
 }
@@ -912,7 +907,7 @@ export function ruleWorkflow(
   channel: 'cli' | 'mcp',
   context: WorkflowCursorContext,
   d: Database = writableDb(),
-): string {
+): { summary: string; questionId: number } {
   if (!ruling?.trim()) throw new Error('--ruling is required')
   return writeTransaction(() => {
     const row = findCursor(project, slug, mode, args, context, d)
@@ -955,7 +950,10 @@ export function ruleWorkflow(
       `UPDATE workflow_cursor SET state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(adoptionReason ? null : (context.session ?? null), at, row.id)
-    return `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`
+    return {
+      summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
+      questionId: question.id,
+    }
   }, d)
 }
 
@@ -968,7 +966,7 @@ export function awaitWorkflowRuling(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
   notify: typeof notifyWaitingItem = notifyWaitingItem,
-): CursorSummary {
+): CursorSummary & { questionId: number } {
   const result = writeTransaction(
     () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d),
     d,

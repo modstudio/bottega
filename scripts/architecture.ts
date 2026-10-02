@@ -274,7 +274,7 @@ export const modules: ArchitectureModule[] = [
     './agents.ts',
     '../database/db.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-render.ts', ['./workflows.ts']),
+  module('orchestrator/src/workflow/workflow-render.ts', ['./workflow-floor.ts', './workflows.ts']),
   module('orchestrator/src/workflow/autonomy.ts', [
     '../../../shared/autonomy.ts',
     '../../../shared/release-autonomy.ts',

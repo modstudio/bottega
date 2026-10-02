@@ -37,6 +37,8 @@ export type CursorIdentity = {
   workflowKey: string
   branch: string | null
   worktree: string | null
+  session: string | null
+  stepActivatedAt: string
 }
 
 type CheckoutResolution = {
@@ -68,6 +70,7 @@ type PullRequestMergeView = { state: string; mergedAt: string | null }
 type HubTaskRead = {
   key: string
   status: string | null
+  statusCategory: string | null
   commentIds: number[]
 }
 
@@ -97,13 +100,14 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     )
   }
   const parsed = JSON.parse(result.stdout) as {
-    task?: { key?: string; status_category?: string | null }
+    task?: { key?: string; status?: string | null; status_category?: string | null }
     comments?: Array<{ id?: number }>
   }
   if (!parsed.task?.key) throw new Error(`--task ${key} was not a hub task show record`)
   return {
     key: parsed.task.key,
-    status: parsed.task.status_category ?? null,
+    status: parsed.task.status ?? null,
+    statusCategory: parsed.task.status_category ?? null,
     commentIds: (parsed.comments ?? [])
       .map((comment) => comment.id)
       .filter((id): id is number => Number.isInteger(id)),
@@ -491,9 +495,16 @@ function resolveArtifact(
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
       .query<
-        { cwd: string; head_commit: string | null; exit_code: number; kind: string },
+        {
+          cwd: string
+          head_commit: string | null
+          exit_code: number
+          kind: string
+          session_id: string | null
+          created_at: string
+        },
         [number]
-      >('SELECT cwd,head_commit,exit_code,kind FROM probe WHERE id=?')
+      >('SELECT cwd,head_commit,exit_code,kind,session_id,created_at FROM probe WHERE id=?')
       .get(ref.id)
     const flag = `--artifact ${ref.kind}:${ref.id}`
     if (!row) throw new Error(`${flag} does not exist`)
@@ -551,6 +562,7 @@ function gatherTask(
   return {
     key: task.key,
     status: task.status,
+    statusCategory: task.statusCategory,
     mergedPullRequest,
   }
 }
@@ -596,6 +608,41 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
   }
 }
 
+function gatheredCommandEvidence(
+  kind: 'probe' | 'exec',
+  id: number,
+  row: { exit_code: number; session_id: string | null; created_at: string },
+  identity: CursorIdentity,
+  cursorId: number,
+  d: Database,
+): Pick<ValidatedEvidence, 'probe' | 'exec'> {
+  if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
+  const adoption =
+    identity.session !== null && row.session_id !== null
+      ? `adopted from gone owner ${identity.session} by ${row.session_id}`
+      : null
+  const sessionAdoptedCursor = Boolean(
+    adoption &&
+      d
+        .query<{ reason: string | null }, [number, string]>(
+          `SELECT a.reason
+             FROM question q JOIN question_mutation_audit a ON a.question_id=q.id
+            WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
+        )
+        .all(cursorId, row.session_id!)
+        .some(({ reason }) => reason === adoption || reason?.startsWith(`${adoption}; `)),
+  )
+  return {
+    exec: {
+      id,
+      exitCode: row.exit_code,
+      sessionMatches: identity.session !== null && row.session_id === identity.session,
+      sessionAdoptedCursor,
+      createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
+    },
+  }
+}
+
 export function gatherValidatedEvidence(input: {
   cursorId: number
   identity: CursorIdentity
@@ -634,9 +681,14 @@ export function gatherValidatedEvidence(input: {
     )
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
-        .query<{ exit_code: number }, [number]>('SELECT exit_code FROM probe WHERE id=?')
+        .query<{ exit_code: number; session_id: string | null; created_at: string }, [number]>(
+          'SELECT exit_code,session_id,created_at FROM probe WHERE id=?',
+        )
         .get(parsed.id)!
-      gathered[parsed.kind] = { id: parsed.id, exitCode: row.exit_code }
+      Object.assign(
+        gathered,
+        gatheredCommandEvidence(parsed.kind, parsed.id, row, input.identity, input.cursorId, d),
+      )
     }
   }
   if (input.evidence.task?.trim())

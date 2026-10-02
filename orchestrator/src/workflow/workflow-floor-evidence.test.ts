@@ -68,6 +68,8 @@ const identity: CursorIdentity = {
   workflowKey: 'DEV-977',
   branch: 'DEV-977-work',
   worktree: '/fixture/work',
+  session: 's',
+  stepActivatedAt: '2026-09-01',
 }
 
 const matchingCheckout = {
@@ -77,7 +79,7 @@ const matchingCheckout = {
 }
 
 const ports: FloorEvidencePorts = {
-  readTask: (key) => ({ key, status: 'done', commentIds: [4] }),
+  readTask: (key) => ({ key, status: 'done', statusCategory: 'done', commentIds: [4] }),
   runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
@@ -186,7 +188,12 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
   expect(gathered.probe).toEqual({ id: 1, exitCode: 0 })
-  expect(gathered.task).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: true })
+  expect(gathered.task).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    mergedPullRequest: true,
+  })
 })
 
 test('a missing gate id names the flag', () => {
@@ -395,6 +402,35 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   )
 })
 
+test("exec evidence recognizes only a cursor's recorded adopting session", () => {
+  const d = database()
+  d.query(
+    `INSERT INTO question
+      (workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
+     VALUES (1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
+  ).run()
+  d.query(
+    `INSERT INTO question_mutation_audit (question_id,action,actor_session,at,reason)
+     VALUES (1,'rule','adopting-session','2026-09-01',
+             'adopted from gone owner s by adopting-session; Proceed.')`,
+  ).run()
+  d.query(
+    `INSERT INTO probe
+      (command,cwd,head_commit,exit_code,output_tail,created_at,kind,session_id)
+     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-02','exec','adopting-session'),
+            ('["true"]','/fixture/work','abc',0,'','2026-09-02','exec','unrelated-session')`,
+  ).run()
+
+  expect(gather(d, { artifact: 'exec:1' }).exec).toMatchObject({
+    sessionMatches: false,
+    sessionAdoptedCursor: true,
+  })
+  expect(gather(d, { artifact: 'exec:2' }).exec).toMatchObject({
+    sessionMatches: false,
+    sessionAdoptedCursor: false,
+  })
+})
+
 test('a foreign doc is refused and a matching doc is allowed', () => {
   const d = database()
   d.query(
@@ -432,6 +468,7 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   expect(gather(d, { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
     status: 'done',
+    statusCategory: 'done',
     mergedPullRequest: true,
   })
 })
@@ -446,13 +483,19 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   expect(
     gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
       .task,
-  ).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: false })
+  ).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    mergedPullRequest: false,
+  })
 })
 
 test('no pull request record is gathered as an unmerged tracker fact', () => {
   expect(gather(database(), { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
     status: 'done',
+    statusCategory: 'done',
     mergedPullRequest: false,
   })
 })
@@ -474,7 +517,12 @@ test('an unavailable pull request read is gathered as unmerged', () => {
         },
       },
     ).task,
-  ).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: false })
+  ).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    mergedPullRequest: false,
+  })
 })
 
 test('a missing obligation is gathered as not-found without a floor', () => {

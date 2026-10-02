@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import { floorGuidance, floorKinds } from './workflow-floor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { composeWorkflow, getWorkflowStep, promoteWorkflow, setWorkflow } from './workflows.ts'
@@ -27,6 +28,18 @@ const database = () => {
 const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 
 describe('workflow rendering', () => {
+  test('every floor kind has generated evidence guidance', () => {
+    expect(floorKinds.filter((kind) => !floorGuidance[kind]?.trim())).toEqual([])
+    const d = database()
+    expect(
+      renderWorkflowStep(
+        getWorkflowStep('ship', 'fixture', 'rebase', args, d, { mode: 'default' }),
+      ),
+    ).toContain(
+      'Evidence for command-exit: run it with `orch workflow exec <command>` and pass `--artifact exec:<id>`.',
+    )
+  })
+
   test('a composed mode tells the agent how to fetch and finish every step', () => {
     const rendered = renderWorkflowComposition(
       composeWorkflow('ship', 'fixture', 'default', args, database()),

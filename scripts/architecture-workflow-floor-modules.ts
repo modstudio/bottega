@@ -13,6 +13,7 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 
 export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
   module('orchestrator/src/workflow/workflow-floor.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
@@ -57,6 +58,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-render.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
+    './workflow-cursor-trail.ts',
     './workflow-step-reference.ts',
   ]),
 ]

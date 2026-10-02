@@ -34,10 +34,18 @@ const gradedReview: ValidatedEvidence = {
 const passingGate: ValidatedEvidence = { gate: { id: 2, finished: true, exitCode: 0 } }
 const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
-const passingExec: ValidatedEvidence = { exec: { id: 4, exitCode: 0 } }
+const passingExec: ValidatedEvidence = {
+  exec: {
+    id: 4,
+    exitCode: 0,
+    sessionMatches: true,
+    sessionAdoptedCursor: false,
+    createdAfterStepActivation: true,
+  },
+}
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
 const closedTask: ValidatedEvidence = {
-  task: { key: 'DEV-977', status: 'done', mergedPullRequest: true },
+  task: { key: 'DEV-977', status: 'done', statusCategory: 'closed', mergedPullRequest: true },
 }
 
 const decide = (input: Partial<FloorSatisfactionInput> & Pick<FloorSatisfactionInput, 'floors'>) =>
@@ -104,9 +112,77 @@ test('a probe with the expected exit satisfies command-exit', () => {
 
 test('an exec with the expected exit satisfies command-exit', () => {
   expect(decide({ floors: [commandExit], evidence: passingExec }).action).toBe('allow')
-  expect(decide({ floors: [commandExit], evidence: { exec: { id: 4, exitCode: 1 } } }).action).toBe(
-    'refuse',
-  )
+  expect(
+    decide({
+      floors: [commandExit],
+      evidence: {
+        exec: {
+          id: 4,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }).action,
+  ).toBe('refuse')
+})
+
+test('an exec from another session is refused with the rerun remedy', () => {
+  const decision = decide({
+    floors: [commandExit],
+    evidence: {
+      exec: {
+        id: 4,
+        exitCode: 0,
+        sessionMatches: false,
+        sessionAdoptedCursor: false,
+        createdAfterStepActivation: true,
+      },
+    },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'command-exit evidence exec:4 belongs to another session; run the command again with `orch workflow exec <command>` in this session after the step started',
+  })
+})
+
+test("an adopting session's exec satisfies command-exit", () => {
+  expect(
+    decide({
+      floors: [commandExit],
+      evidence: {
+        exec: {
+          id: 4,
+          exitCode: 0,
+          sessionMatches: false,
+          sessionAdoptedCursor: true,
+          createdAfterStepActivation: true,
+        },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('an exec older than the active step is refused with the rerun remedy', () => {
+  const decision = decide({
+    floors: [commandExit],
+    evidence: {
+      exec: {
+        id: 4,
+        exitCode: 0,
+        sessionMatches: true,
+        sessionAdoptedCursor: false,
+        createdAfterStepActivation: false,
+      },
+    },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'command-exit evidence exec:4 predates this step becoming active; run the command again with `orch workflow exec <command>` in this session after the step started',
+  })
 })
 
 test('a non-zero gate fails unless the floor states otherwise', () => {
@@ -131,33 +207,67 @@ test('a recorded artifact satisfies that floor', () => {
   })
 })
 
-test('tracker-transition requires the stated status and a merged pull request when asked', () => {
+test('tracker-transition accepts a raw status match', () => {
   expect(decide({ floors: [tracker], evidence: closedTask }).action).toBe('allow')
+})
+
+test('tracker-transition accepts a category match and requires a merged pull request when asked', () => {
   expect(
     decide({
       floors: [tracker],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'complete',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }).action,
   ).toBe('refuse')
   expect(
     decide({
       floors: [{ ...tracker, requirePullRequest: false }],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'complete',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }).action,
   ).toBe('allow')
-  expect(
-    decide({
-      floors: [tracker],
-      evidence: { task: { key: 'DEV-977', status: 'active', mergedPullRequest: true } },
-    }).action,
-  ).toBe('refuse')
+  const refused = decide({
+    floors: [tracker],
+    evidence: {
+      task: {
+        key: 'ADN-1039',
+        status: 'in_progress',
+        statusCategory: 'active',
+        mergedPullRequest: true,
+      },
+    },
+  })
+  expect(refused).toMatchObject({ action: 'refuse' })
+  if (refused.action === 'refuse')
+    expect(refused.message).toContain(
+      'ADN-1039 reads back as in_progress (category active); expected done',
+    )
 })
 
 test('start closes on the active tracker state without a pull request', () => {
   expect(
     decide({
       floors: [{ ...tracker, expectedStatus: 'active', requirePullRequest: false }],
-      evidence: { task: { key: 'DEV-977', status: 'active', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'in_progress',
+          statusCategory: 'active',
+          mergedPullRequest: false,
+        },
+      },
     }),
   ).toMatchObject({ action: 'allow' })
 })
@@ -166,7 +276,14 @@ test('close refuses without a merged pull request', () => {
   expect(
     decide({
       floors: [{ ...tracker, expectedStatus: 'done', requirePullRequest: true }],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'done',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }),
   ).toMatchObject({ action: 'refuse' })
 })
@@ -175,7 +292,14 @@ test('a done task does not satisfy start', () => {
   expect(
     decide({
       floors: [{ ...tracker, expectedStatus: 'active', requirePullRequest: false }],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'done',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }),
   ).toMatchObject({ action: 'refuse' })
 })

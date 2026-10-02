@@ -40,7 +40,12 @@ const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
 
 const testPorts = {
-  readTask: (key: string) => ({ key, status: 'done' as const, commentIds: [1] }),
+  readTask: (key: string) => ({
+    key,
+    status: 'done' as const,
+    statusCategory: 'done' as const,
+    commentIds: [1],
+  }),
   runHasArtifacts: () => true,
   resolveCheckout: () => ({
     project: 'fixture',
@@ -580,11 +585,33 @@ describe('workflow cursor adapter', () => {
   test('re-ask is idempotent and rule records the answer before resuming the same step', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
-    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'First?', context, d, () => {})
-    awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Updated?', context, d, () => {})
+    const first = awaitWorkflowRuling(
+      'ship',
+      'fixture',
+      'default',
+      args,
+      'First?',
+      context,
+      d,
+      () => {},
+    )
+    const updated = awaitWorkflowRuling(
+      'ship',
+      'fixture',
+      'default',
+      args,
+      'Updated?',
+      context,
+      d,
+      () => {},
+    )
+    expect(first.questionId).toBe(1)
+    expect(updated.questionId).toBe(1)
     expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
 
-    ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d)
+    expect(
+      ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d),
+    ).toMatchObject({ questionId: 1 })
     expect(d.query('SELECT state,ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       state: 'running',
       ordinal: 0,
