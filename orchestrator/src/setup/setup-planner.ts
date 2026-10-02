@@ -3,12 +3,14 @@
 import type { ProjectSettings } from '../project/projects.ts'
 import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
 import type { HarnessName, McpServer } from './setup-mcp.ts'
+import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 export type SetupAnswers = Record<string, string>
 type SettingsDiff = Record<string, { from: unknown; to: unknown }>
 type SetupActionBase = {
   path: string
   settingsDiff: SettingsDiff
+  recipeFile?: { path: string; content: string }
 }
 export type SetupAction =
   | (SetupActionBase & {
@@ -83,6 +85,12 @@ function resolvedSettings(
     if (effect?.trunk === null) delete settings.trunk
     else if (effect) settings.trunk = effect.trunk
   }
+  if (
+    proposal.recipeQuestionId &&
+    answers[proposal.recipeQuestionId] === proposal.recipeActivationAnswer
+  ) {
+    settings.worktree = { ...settings.worktree, recipePath: INFERRED_RECIPE_PATH }
+  }
   return settings
 }
 
@@ -109,6 +117,12 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     const metadataDiffers = Boolean(
       proposal.current && proposal.current.stack === null && proposal.project.stack !== null,
     )
+    const recipeFile =
+      proposal.recipeQuestionId &&
+      answers[proposal.recipeQuestionId] === 'write' &&
+      proposal.recipeContent
+        ? { path: INFERRED_RECIPE_PATH, content: proposal.recipeContent }
+        : undefined
     if (!proposal.current) {
       return {
         kind: 'add',
@@ -117,20 +131,32 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
         stack: proposal.project.stack,
         settings,
         settingsDiff,
+        ...(recipeFile ? { recipeFile } : {}),
       }
     }
     if (metadataDiffers || Object.keys(settingsDiff).length) {
+      const fillSettings = Object.fromEntries(
+        Object.entries(settingsDiff).map(([key, change]) => [
+          key,
+          key === 'worktree' &&
+          (recipeFile ||
+            (change.to as ProjectSettings['worktree'] | undefined)?.recipePath ===
+              INFERRED_RECIPE_PATH) &&
+          !proposal.current?.settings.worktree?.recipePath
+            ? { recipePath: INFERRED_RECIPE_PATH }
+            : change.to,
+        ]),
+      ) as ProjectSettings
       return {
         kind: 'set',
         currentName: proposal.current.name,
         path: proposal.project.path,
         fill: {
           ...(metadataDiffers && proposal.project.stack ? { stack: proposal.project.stack } : {}),
-          settings: Object.fromEntries(
-            Object.entries(settingsDiff).map(([key, change]) => [key, change.to]),
-          ) as ProjectSettings,
+          settings: fillSettings,
         },
         settingsDiff,
+        ...(recipeFile ? { recipeFile } : {}),
       }
     }
     return {

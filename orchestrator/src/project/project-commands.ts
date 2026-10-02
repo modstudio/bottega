@@ -213,6 +213,33 @@ export type FillAbsentProjectInput = {
   fill: { stack?: string; settings: ProjectSettings }
 }
 
+function fillAbsentSettings(current: Project, input: FillAbsentProjectInput): ProjectSettings {
+  const settings = { ...current.settings }
+  for (const key of Object.keys(input.fill.settings) as (keyof ProjectSettings)[]) {
+    const value = input.fill.settings[key]
+    if (key === 'worktree') {
+      const currentWorktree = current.settings.worktree ?? {}
+      const fillWorktree = value as NonNullable<ProjectSettings['worktree']>
+      for (const worktreeKey of Object.keys(fillWorktree) as (keyof NonNullable<
+        ProjectSettings['worktree']
+      >)[]) {
+        if (currentWorktree[worktreeKey] !== undefined) {
+          throw new Error(
+            `cannot fill worktree.${String(worktreeKey)} for ${input.name}: field is no longer absent`,
+          )
+        }
+      }
+      settings.worktree = { ...currentWorktree, ...fillWorktree }
+      continue
+    }
+    if (current.settings[key] !== undefined) {
+      throw new Error(`cannot fill ${String(key)} for ${input.name}: field is no longer absent`)
+    }
+    Object.assign(settings, { [key]: value })
+  }
+  return settings
+}
+
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
 export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
   let candidate: Project | null = null
@@ -222,12 +249,7 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
     if (input.fill.stack !== undefined && current.stack !== null) {
       throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
     }
-    for (const key of Object.keys(input.fill.settings) as (keyof ProjectSettings)[]) {
-      if (current.settings[key] !== undefined) {
-        throw new Error(`cannot fill ${String(key)} for ${input.name}: field is no longer absent`)
-      }
-    }
-    const settings = { ...current.settings, ...input.fill.settings }
+    const settings = fillAbsentSettings(current, input)
     const malformed = validateProjectSettings(settings, current.path, {
       validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
       currentProjectName: current.name,

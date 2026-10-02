@@ -1,9 +1,35 @@
 import { expect, test } from 'bun:test'
-import type { Project } from '../project/projects.ts'
+import type { Project, ProjectSettings } from '../project/projects.ts'
+import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
-import { deriveKeyPrefix, proposeSetup, type SetupAgent } from './setup-engine.ts'
+import {
+  deriveKeyPrefix,
+  proposeSetup as proposeSetupEngine,
+  type SetupAgent,
+  type SetupNotice,
+} from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
+import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
+
+function proposeSetup(
+  facts: SetupFacts,
+  repositories: RepositoryFacts[],
+  register: Project[],
+  agents: SetupAgent[],
+  notices: SetupNotice[] = [],
+  servers: Parameters<typeof proposeSetupEngine>[6] = [],
+) {
+  return proposeSetupEngine(
+    resolveWorktreeLifecycle,
+    facts,
+    repositories,
+    register,
+    agents,
+    notices,
+    servers,
+  )
+}
 
 const machine = {
   git: { path: '/bin/git', version: '1' },
@@ -44,6 +70,13 @@ function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
     remoteDefaultBranch: 'main',
     stack: 'node',
     inspectionTimedOut: false,
+    packageManager: null,
+    lint: null,
+    typecheck: null,
+    test: null,
+    ci: false,
+    defaultConfigExists: false,
+    inferredRecipeFile: { status: 'absent', content: null, reason: null },
     ...overrides,
   }
 }
@@ -101,7 +134,9 @@ test('preserves every configured value for an existing project', () => {
     [],
   )
   expect(plan.questions).toEqual([])
-  expect(plan.notices).toEqual([])
+  expect(plan.notices).toEqual([
+    expect.objectContaining({ message: 'no gate was detected for alpha-project' }),
+  ])
   expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
     kind: 'unchanged',
     name: 'registered-name',
@@ -156,6 +191,208 @@ test('reports a bounded git inspection timeout as a repository notice', () => {
     expect.objectContaining({ message: expect.stringContaining('alpha-project') }),
   )
   expect(plan.notices[0]?.message).toContain('timed out')
+})
+
+test('proposes a detected gate and Files-level recipe through fill-absent planning', () => {
+  const facts = repository({
+    packageManager: 'pnpm',
+    lint: 'pnpm lint',
+    typecheck: 'pnpm typecheck',
+    test: 'pnpm test',
+  })
+  const plan = proposeSetup(
+    machine,
+    [facts],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        trunk: 'main',
+        worktree: {
+          branch: 'orch/{id}',
+          readonly_provision: [{ path: 'node_modules', method: 'link' }],
+        },
+      }),
+    ],
+    [],
+  )
+  const recipeQuestion = plan.questions.find((question) => question.id.endsWith(':worktree-recipe'))
+  expect(recipeQuestion).toMatchObject({ recommendation: 'write' })
+  const action = planSetupActions(plan, recommendedAnswers(plan))[0]
+  expect(action).toMatchObject({
+    kind: 'set',
+    fill: {
+      settings: {
+        gate: 'pnpm lint && pnpm typecheck && pnpm test',
+        worktree: { recipePath: INFERRED_RECIPE_PATH },
+      },
+    },
+    recipeFile: { path: INFERRED_RECIPE_PATH },
+  })
+  expect(action?.kind).toBe('set')
+  if (action?.kind === 'set') {
+    expect(action.fill.settings.worktree).toEqual({ recipePath: INFERRED_RECIPE_PATH })
+  }
+})
+
+test('does not propose an existing gate or ask for an existing recipe', () => {
+  const current = registered({
+    keyPrefixes: ['ALPHA'],
+    tracker: { kind: 'hub', protocol: 'hub' },
+    trunk: 'main',
+    gate: 'make check',
+    worktree: { recipePath: 'custom.jsonc' },
+  })
+  const plan = proposeSetup(
+    machine,
+    [repository({ packageManager: 'bun', test: 'bun run test' })],
+    [current],
+    [],
+  )
+  expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+
+  const filePlan = proposeSetup(
+    machine,
+    [repository({ packageManager: 'bun', test: 'bun run test', defaultConfigExists: true })],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        tracker: { kind: 'hub', protocol: 'hub' },
+        trunk: 'main',
+        gate: 'make check',
+      }),
+    ],
+    [],
+  )
+  expect(filePlan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(
+    false,
+  )
+})
+
+const satisfiedLifecycleCases: [string, ProjectSettings['worktree'] | undefined, boolean][] = [
+  ['command templates', { create: { command: 'make', args: ['worktree'] } }, false],
+  ['inline recipe', { recipe: {} }, false],
+  ['default config', undefined, true],
+]
+
+test.each(satisfiedLifecycleCases)(
+  'treats %s lifecycle as already satisfied',
+  (_name, worktree, defaultConfigExists) => {
+    const plan = proposeSetup(
+      machine,
+      [
+        repository({
+          packageManager: 'bun',
+          test: 'bun run test',
+          defaultConfigExists,
+        }),
+      ],
+      [
+        registered({
+          keyPrefixes: ['ALPHA'],
+          tracker: { kind: 'hub', protocol: 'hub' },
+          trunk: 'main',
+          gate: 'bun run test',
+          ...(worktree ? { worktree } : {}),
+        }),
+      ],
+      [],
+    )
+    expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+    expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+  },
+)
+
+test('recovers an existing inferred recipe by filling only its pointer', () => {
+  const detected = repository({ packageManager: 'bun', test: 'bun run test' })
+  const plan = proposeSetup(
+    machine,
+    [
+      repository({
+        packageManager: 'bun',
+        test: 'bun run test',
+        inferredRecipeFile: {
+          status: 'regular',
+          content: inferredRecipeContent(detected)!,
+          reason: null,
+        },
+      }),
+    ],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        tracker: { kind: 'hub', protocol: 'hub' },
+        trunk: 'main',
+        gate: 'bun run test',
+        worktree: { branch: 'orch/{id}' },
+      }),
+    ],
+    [],
+  )
+  expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+    kind: 'set',
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+  })
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).not.toHaveProperty('recipeFile')
+})
+
+test('requires review before activating a modified inferred recipe', () => {
+  const plan = proposeSetup(
+    machine,
+    [
+      repository({
+        packageManager: 'bun',
+        test: 'bun run test',
+        inferredRecipeFile: {
+          status: 'regular',
+          content:
+            '{"worktree":{"create":[{"name":"custom","run":{"command":"sh","args":["custom.sh"]}}]}}\n',
+          reason: null,
+        },
+      }),
+    ],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        tracker: { kind: 'hub', protocol: 'hub' },
+        trunk: 'main',
+        gate: 'bun run test',
+      }),
+    ],
+    [],
+  )
+  const question = plan.questions.find((candidate) => candidate.id.endsWith(':worktree-recipe'))!
+  expect(question.recommendation).toBe('keep-inactive')
+  expect(question.question).toContain('custom.sh')
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+
+  const activate = { ...recommendedAnswers(plan), [question.id]: 'activate' }
+  expect(planSetupActions(plan, activate)[0]).toMatchObject({
+    kind: 'set',
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+  })
+  expect(planSetupActions(plan, activate)[0]).not.toHaveProperty('recipeFile')
+})
+
+test('refuses an unsafe inferred recipe without offering activation', () => {
+  const plan = proposeSetup(
+    machine,
+    [
+      repository({
+        packageManager: 'bun',
+        inferredRecipeFile: {
+          status: 'unsafe',
+          content: null,
+          reason: `${INFERRED_RECIPE_PATH} parent is a symbolic link`,
+        },
+      }),
+    ],
+    [],
+    [],
+  )
+  expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+  expect(plan.notices.some((notice) => notice.message.includes('symbolic link'))).toBe(true)
 })
 
 test('derives bounded unique prefixes and excludes TASK', () => {

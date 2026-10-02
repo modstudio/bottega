@@ -4,8 +4,10 @@ import { readdirSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { sniffStack } from '../project/projects.ts'
+import { detectRepositoryToolchain } from './repository-toolchain.ts'
+import type { ToolchainFacts } from './setup-toolchain.ts'
 
-export type RepositoryFacts = {
+export type RepositoryFacts = ToolchainFacts & {
   name: string
   path: string
   currentBranch: string | null
@@ -78,11 +80,11 @@ function originHost(url: string | null): string | null {
   return url.match(/^([^:]+):/)?.[1] ?? null
 }
 
-function inspectRepository(
+async function inspectRepository(
   path: string,
   runGit: RepositoryGitRunner,
   sniff: (path: string) => string | null,
-): RepositoryFacts {
+): Promise<RepositoryFacts> {
   const branch = runGit(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
   const status = runGit(path, ['status', '--porcelain'])
   const origin = runGit(path, ['remote', 'get-url', 'origin'])
@@ -109,15 +111,16 @@ function inspectRepository(
         : null,
     stack: sniff(path),
     inspectionTimedOut: [branch, status, origin, remoteHead].some((capture) => capture.timedOut),
+    ...(await detectRepositoryToolchain(path)),
   }
 }
 
 /** Find a repository at each input and among only its immediate child directories. */
-export function gatherRepositoryFactsReport(
+export async function gatherRepositoryFactsReport(
   folders: string[],
   runGit: RepositoryGitRunner = git,
   sniff: (path: string) => string | null = sniffStack,
-): RepositoryFactsReport {
+): Promise<RepositoryFactsReport> {
   const repositories = new Map<string, RepositoryFacts>()
   const notices: RepositoryFactsNotice[] = []
   for (const folder of folders) {
@@ -142,7 +145,7 @@ export function gatherRepositoryFactsReport(
       }
       const top = inspected.root
       if (!top || top !== realpathOrNull(candidate) || repositories.has(top)) continue
-      repositories.set(top, inspectRepository(top, runGit, sniff))
+      repositories.set(top, await inspectRepository(top, runGit, sniff))
     }
   }
   return { repositories: [...repositories.values()], notices }

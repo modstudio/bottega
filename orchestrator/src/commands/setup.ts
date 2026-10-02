@@ -6,7 +6,7 @@ import type { Command } from 'commander'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
-import { projects } from '../project/projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { gatherRepositoryFactsReport } from '../setup/repository-facts.ts'
 import { applySetupActions } from '../setup/setup-apply.ts'
@@ -17,6 +17,7 @@ import {
   recommendedAnswers,
   validateSetupAnswers,
 } from '../setup/setup-planner.ts'
+import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { collect, log } from './support.ts'
 
 type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: string }
@@ -26,10 +27,11 @@ async function setupPlan(inputs: string[]) {
     gatherSetupFacts(),
     Promise.resolve(readSetupState()),
   ])
-  const repositories = gatherRepositoryFactsReport(inputs)
+  const repositories = await gatherRepositoryFactsReport(inputs)
   const orch = bottegaEntryArgv('orch')
   const ask = bottegaEntryArgv('ask-server')
   return proposeSetup(
+    resolveWorktreeLifecycle,
     machine,
     repositories.repositories,
     state.projects,
@@ -104,6 +106,7 @@ export function register(program: Command): void {
       const results = await applySetupActions(actions, {
         add: (input) => addProject(input, requireRecordSpaceMembership),
         fillAbsent: fillAbsentProjectSettings,
+        currentRecipePath: (name) => projectByName(name)?.settings.worktree?.recipePath ?? null,
       })
       if (results.some((result) => result.status === 'refused')) process.exitCode = 1
       log(

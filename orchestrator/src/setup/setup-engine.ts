@@ -12,6 +12,7 @@ import {
   manualMcpInstructions,
   sameMcpRegistration,
 } from './setup-mcp.ts'
+import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
   id: string
@@ -28,12 +29,19 @@ export type SetupQuestion = {
 
 export type SetupNotice = { message: string; fix: string | null }
 export type SetupAgent = { name: string; harness: string; enabled: number | boolean }
+export type SetupLifecycleResolver = (
+  worktree: ProjectSettings['worktree'] | null | undefined,
+  defaultConfigExists: boolean,
+) => { form: 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none' }
 export type SetupProposal = {
   repository: RepositoryFacts
   current: Project | null
   project: { name: string; path: string; stack: string | null; settings: ProjectSettings }
   prefixQuestionId: string | null
   trunkQuestionId: string | null
+  recipeQuestionId: string | null
+  recipeActivationAnswer: 'write' | 'activate' | null
+  recipeContent: string | null
 }
 type SetupRegistrationProposal = {
   harness: keyof SetupFacts['harnesses']
@@ -254,7 +262,139 @@ function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] 
   return notices
 }
 
+function proposeProjectToolchain(
+  repository: RepositoryFacts,
+  current: Project | null,
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+  resolveLifecycle: SetupLifecycleResolver,
+): {
+  gate: string | null
+  recipeQuestionId: string | null
+  recipeContent: string | null
+  recoverRecipePointer: boolean
+  recipeActivationAnswer: 'write' | 'activate' | null
+} {
+  const gate = current?.settings.gate ?? proposedGate(repository)
+  if (!current?.settings.gate && !gate) {
+    notices.push({
+      message: `no gate was detected for ${repository.name}`,
+      fix: `orch project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+    })
+  }
+  const recipeContent = inferredRecipeContent(repository)
+  const lifecycle = resolveLifecycle(current?.settings.worktree, repository.defaultConfigExists)
+  if (lifecycle.form !== 'none' || !recipeContent) {
+    return {
+      gate,
+      recipeQuestionId: null,
+      recipeContent,
+      recoverRecipePointer: false,
+      recipeActivationAnswer: null,
+    }
+  }
+  if (repository.inferredRecipeFile.status === 'unsafe') {
+    notices.push({
+      message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${repository.inferredRecipeFile.reason}`,
+      fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
+    })
+    return {
+      gate,
+      recipeQuestionId: null,
+      recipeContent,
+      recoverRecipePointer: false,
+      recipeActivationAnswer: null,
+    }
+  }
+  if (repository.inferredRecipeFile.status === 'regular') {
+    if (repository.inferredRecipeFile.content === recipeContent) {
+      return {
+        gate,
+        recipeQuestionId: null,
+        recipeContent,
+        recoverRecipePointer: true,
+        recipeActivationAnswer: null,
+      }
+    }
+    const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
+    let createSteps = 'could not be parsed'
+    try {
+      const parsed = Bun.JSONC.parse(repository.inferredRecipeFile.content) as {
+        worktree?: { create?: unknown }
+      }
+      createSteps = JSON.stringify(parsed?.worktree?.create ?? [], null, 2)
+    } catch {
+      // The question still says that its create steps could not be reviewed structurally.
+    }
+    questions.push({
+      id: recipeQuestionId,
+      question: `${INFERRED_RECIPE_PATH} already exists for ${repository.name}. Activate it as written?\nCreate steps: ${createSteps}`,
+      options: [
+        {
+          id: 'keep-inactive',
+          label: 'Keep inactive',
+          why: 'Leaves the existing file present without registering it as the worktree recipe.',
+        },
+        {
+          id: 'activate',
+          label: 'Activate as written',
+          why: `Registers ${INFERRED_RECIPE_PATH}; its create steps will run when worktrees are created.`,
+        },
+      ],
+      recommendation: 'keep-inactive',
+      why: 'The existing file differs from the recipe setup would generate now and must be reviewed before activation.',
+    })
+    return {
+      gate,
+      recipeQuestionId,
+      recipeContent,
+      recoverRecipePointer: false,
+      recipeActivationAnswer: 'activate',
+    }
+  }
+  const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
+  questions.push({
+    id: recipeQuestionId,
+    question: `Write an inferred Files-level worktree recipe for ${repository.name}?`,
+    options: [
+      {
+        id: 'write',
+        label: 'Write recipe',
+        why: `Creates ${INFERRED_RECIPE_PATH} with a frozen dependency install step.`,
+      },
+      {
+        id: 'skip',
+        label: 'Skip',
+        why: 'Leaves the repository and its worktree recipe setting unchanged.',
+      },
+    ],
+    recommendation: 'write',
+    why: 'A tracked recipe gives writing worktrees the project dependencies without adding environment, database, or serve access.',
+  })
+  return {
+    gate,
+    recipeQuestionId,
+    recipeContent,
+    recoverRecipePointer: false,
+    recipeActivationAnswer: 'write',
+  }
+}
+
+function recoveredWorktreeSettings(
+  current: Project | null,
+  recoverRecipePointer: boolean,
+): Pick<ProjectSettings, 'worktree'> | Record<string, never> {
+  if (!recoverRecipePointer) return {}
+  return {
+    worktree: {
+      ...current?.settings.worktree,
+      recipePath: INFERRED_RECIPE_PATH,
+    },
+  }
+}
+
 export function proposeSetup(
+  resolveLifecycle: SetupLifecycleResolver,
   machine: SetupFacts,
   repositories: RepositoryFacts[],
   register: Project[],
@@ -349,6 +489,8 @@ export function proposeSetup(
         fix: null,
       })
     }
+    const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
+      proposeProjectToolchain(repository, current, questions, notices, resolveLifecycle)
     const settings: ProjectSettings = {
       ...current?.settings,
       ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
@@ -356,6 +498,8 @@ export function proposeSetup(
         ? { tracker: current.settings.tracker }
         : { tracker: { kind: 'hub', protocol: 'hub' } }),
       ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
+      ...(gate ? { gate } : {}),
+      ...recoveredWorktreeSettings(current, recoverRecipePointer),
     }
     return {
       repository,
@@ -368,6 +512,9 @@ export function proposeSetup(
       },
       prefixQuestionId,
       trunkQuestionId,
+      recipeQuestionId,
+      recipeActivationAnswer,
+      recipeContent,
     }
   })
   return { facts: { machine, repositories }, proposals, registrations, questions, notices }

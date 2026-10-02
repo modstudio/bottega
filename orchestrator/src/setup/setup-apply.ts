@@ -1,6 +1,9 @@
 // concern: setup-apply
 /** Applies planned project actions in order through the project register service boundary. */
 
+import { lstat, mkdir, open, readFile, realpath, rm } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+
 import {
   commandFailureReason,
   mcpAddArgv,
@@ -33,10 +36,89 @@ export type SetupProjectService = {
     allowIncomplete: boolean
   }): Promise<unknown>
   fillAbsent(input: { name: string; fill: SetAction['fill'] }): Promise<unknown>
+  currentRecipePath?(name: string): string | null
 }
+
+type CreatedRecipe = { path: string; device: number; inode: number; contentHash: string }
+
+const contentHash = (content: string | Uint8Array): string =>
+  new Bun.CryptoHasher('sha256').update(content).digest('hex')
 
 function rendered(argv: string[]): string {
   return argv.map((part) => JSON.stringify(part)).join(' ')
+}
+
+function isBeneath(root: string, path: string): boolean {
+  const offset = relative(root, path)
+  return offset === '' || (!offset.startsWith(`..${sep}`) && offset !== '..' && !isAbsolute(offset))
+}
+
+async function ensureRecipeParent(root: string, parent: string): Promise<void> {
+  const offset = relative(root, parent)
+  if (!isBeneath(root, parent)) {
+    throw new Error(`refusing worktree recipe path outside repository ${root}`)
+  }
+  let current = root
+  for (const component of offset.split(sep).filter(Boolean)) {
+    current = resolve(current, component)
+    await ensureRecipeDirectory(current)
+  }
+}
+
+async function ensureRecipeDirectory(path: string): Promise<void> {
+  let state: Awaited<ReturnType<typeof lstat>>
+  try {
+    state = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    try {
+      await mkdir(path)
+    } catch (mkdirError) {
+      if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError
+    }
+    state = await lstat(path)
+  }
+  if (state.isSymbolicLink()) {
+    throw new Error(`refusing worktree recipe path: ${path} is a symbolic link`)
+  }
+  if (!state.isDirectory()) {
+    throw new Error(`refusing worktree recipe path: ${path} is not a directory`)
+  }
+}
+
+async function writeRecipe(action: AddAction | SetAction): Promise<CreatedRecipe | null> {
+  if (!action.recipeFile) return null
+  const root = await realpath(action.path)
+  const path = resolve(root, action.recipeFile.path)
+  if (!isBeneath(root, path)) {
+    throw new Error(`refusing worktree recipe path outside repository ${root}`)
+  }
+  const parent = dirname(path)
+  await ensureRecipeParent(root, parent)
+  const canonicalParent = await realpath(parent)
+  if (!isBeneath(root, canonicalParent)) {
+    throw new Error(`refusing worktree recipe parent outside repository ${root}`)
+  }
+  try {
+    const handle = await open(path, 'wx')
+    try {
+      await handle.writeFile(action.recipeFile.content, 'utf8')
+      const state = await handle.stat()
+      return {
+        path,
+        device: state.dev,
+        inode: state.ino,
+        contentHash: contentHash(action.recipeFile.content),
+      }
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`refusing to overwrite worktree recipe ${path}; re-run orch setup plan`)
+    }
+    throw error
+  }
 }
 
 export function applyMcpRegistration(
@@ -118,32 +200,9 @@ export async function applySetupActions(
       results.push({ ...action, status: 'not-attempted', message: null })
       continue
     }
-    if (
-      action.kind === 'unchanged' ||
-      action.kind === 'mcp-unchanged' ||
-      action.kind === 'mcp-skipped'
-    ) {
-      results.push({ ...action, status: 'unchanged', message: null })
-      continue
-    }
     try {
-      if (action.kind === 'register-mcp') {
-        const status = applyMcpRegistration(action, runner)
-        results.push({ ...action, status, message: null })
-        continue
-      } else if (action.kind === 'add') {
-        await service.add({
-          path: action.path,
-          name: action.name,
-          stack: action.stack,
-          canon: true,
-          settings: action.settings,
-          allowIncomplete: false,
-        })
-      } else if (action.kind === 'set') {
-        await service.fillAbsent({ name: action.currentName, fill: action.fill })
-      }
-      results.push({ ...action, status: 'applied', message: null })
+      const status = await applySetupAction(action, service, runner)
+      results.push({ ...action, status, message: null })
     } catch (error) {
       refused = true
       results.push({
@@ -154,4 +213,84 @@ export async function applySetupActions(
     }
   }
   return results
+}
+
+async function applySetupAction(
+  action: SetupAction,
+  service: SetupProjectService,
+  runner: SetupCommandRunner,
+): Promise<'applied' | 'unchanged'> {
+  if (
+    action.kind === 'unchanged' ||
+    action.kind === 'mcp-unchanged' ||
+    action.kind === 'mcp-skipped'
+  ) {
+    return 'unchanged'
+  }
+  if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)
+  if (action.kind === 'add') {
+    await applyAddAction(action, service)
+    return 'applied'
+  }
+  if (action.kind === 'set') {
+    await applySetAction(action, service)
+    return 'applied'
+  }
+  return 'unchanged'
+}
+
+async function applyAddAction(action: AddAction, service: SetupProjectService): Promise<void> {
+  const createdRecipe = await writeRecipe(action)
+  try {
+    await service.add({
+      path: action.path,
+      name: action.name,
+      stack: action.stack,
+      canon: true,
+      settings: action.settings,
+      allowIncomplete: false,
+    })
+  } catch (error) {
+    await compensateRecipe(error, createdRecipe)
+  }
+}
+
+async function applySetAction(action: SetAction, service: SetupProjectService): Promise<void> {
+  const createdRecipe = await writeRecipe(action)
+  try {
+    await service.fillAbsent({ name: action.currentName, fill: action.fill })
+  } catch (error) {
+    const currentRecipePath = service.currentRecipePath?.(action.currentName)
+    const requestedRecipePath = action.fill.settings.worktree?.recipePath
+    if (requestedRecipePath && currentRecipePath === requestedRecipePath) {
+      throw new Error(
+        `hosted write failed after recipePath was committed locally; recipe file was kept: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    await compensateRecipe(error, createdRecipe)
+  }
+}
+
+async function compensateRecipe(
+  error: unknown,
+  createdRecipe: CreatedRecipe | null,
+): Promise<never> {
+  if (!createdRecipe) throw error
+  try {
+    const state = await lstat(createdRecipe.path)
+    const hash = state.isFile() ? contentHash(await readFile(createdRecipe.path)) : null
+    const stillOurs =
+      state.dev === createdRecipe.device &&
+      state.ino === createdRecipe.inode &&
+      hash === createdRecipe.contentHash
+    if (!stillOurs) {
+      throw new Error('file identity or content changed after creation; left it in place')
+    }
+    await rm(createdRecipe.path)
+  } catch (cleanupError) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; could not remove recipe created by this apply at ${createdRecipe.path}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+    )
+  }
+  throw error
 }
