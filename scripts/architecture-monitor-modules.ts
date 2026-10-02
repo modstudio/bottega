@@ -43,6 +43,7 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
+    '../recipe/database-inventory.ts',
     '../reclaim/reclaim.ts',
     '../sandbox/grok-trust.ts',
     '../idle-kill.ts',

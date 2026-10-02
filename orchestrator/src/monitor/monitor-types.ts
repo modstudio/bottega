@@ -47,6 +47,17 @@ export type UnaddressedMonitorCondition = MonitorConditionFields & {
 
 export type MonitorCondition = AddressedMonitorCondition | UnaddressedMonitorCondition
 
+export type RecipeDatabaseNamespace = {
+  project: string
+  allocationKey: string
+  engine: 'postgres' | 'mysql' | 'mariadb'
+  names: string[]
+  sourceName: string
+  mainName: string | null
+}
+
+export type RecipeDatabaseClaim = { allocationKey: string; state: string }
+
 export type MonitorResult = {
   id: number
   startedAt: string

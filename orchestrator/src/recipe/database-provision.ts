@@ -14,12 +14,16 @@ import { creationPlan } from './recipe-lifecycle.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { type ExecContext, executionArgv, type StepResult } from './recipe-step.ts'
 
-type ProcessOutput = { exitCode: number | null; stdout: Uint8Array; stderr: string }
+export type DatabaseProcessOutput = {
+  exitCode: number | null
+  stdout: Uint8Array
+  stderr: string
+}
 export type DatabaseSpawn = (
   argv: string[],
   cwd: string,
   options: { env: Record<string, string>; stdin?: Uint8Array },
-) => ProcessOutput
+) => DatabaseProcessOutput
 
 const defaultSpawn: DatabaseSpawn = (argv, cwd, options) => {
   const result = Bun.spawnSync(argv, {
@@ -116,13 +120,33 @@ function runCommand(
   cwd: string,
   spawn: DatabaseSpawn,
   dump?: Uint8Array,
-): ProcessOutput {
+): DatabaseProcessOutput {
   const call = invocation(command, exec, connection)
   try {
     return spawn(call.argv, cwd, { env: call.environment, stdin: command.input ? dump : undefined })
   } catch {
     return { exitCode: null, stdout: new Uint8Array(), stderr: '' }
   }
+}
+
+/** Run an administrative database command through the lifecycle's connection and exec adapter. */
+export function runDatabaseClient(
+  input: {
+    command: DatabaseCommand
+    engine: Exclude<DatabaseCommandPlan['engine'], 'sqlite'>
+    connectionValue: string
+    exec: ExecContext
+    cwd: string
+  },
+  spawn: DatabaseSpawn = defaultSpawn,
+): DatabaseProcessOutput {
+  return runCommand(
+    input.command,
+    input.exec,
+    clientConnection(input.engine, input.connectionValue),
+    input.cwd,
+    spawn,
+  )
 }
 
 function inspectExists(
