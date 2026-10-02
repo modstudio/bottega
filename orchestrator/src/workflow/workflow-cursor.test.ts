@@ -40,7 +40,12 @@ const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
 
 const testPorts = {
-  readTask: (key: string) => ({ key, status: 'done' as const, commentIds: [1] }),
+  readTask: (key: string) => ({
+    key,
+    status: 'done' as const,
+    statusCategory: 'done' as const,
+    commentIds: [1],
+  }),
   runHasArtifacts: () => true,
   resolveCheckout: () => ({
     project: 'fixture',

@@ -39,7 +39,7 @@ const passingExec: ValidatedEvidence = {
 }
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
 const closedTask: ValidatedEvidence = {
-  task: { key: 'DEV-977', status: 'done', mergedPullRequest: true },
+  task: { key: 'DEV-977', status: 'done', statusCategory: 'closed', mergedPullRequest: true },
 }
 
 const decide = (input: Partial<FloorSatisfactionInput> & Pick<FloorSatisfactionInput, 'floors'>) =>
@@ -166,33 +166,67 @@ test('a recorded artifact satisfies that floor', () => {
   })
 })
 
-test('tracker-transition requires the stated status and a merged pull request when asked', () => {
+test('tracker-transition accepts a raw status match', () => {
   expect(decide({ floors: [tracker], evidence: closedTask }).action).toBe('allow')
+})
+
+test('tracker-transition accepts a category match and requires a merged pull request when asked', () => {
   expect(
     decide({
       floors: [tracker],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'complete',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }).action,
   ).toBe('refuse')
   expect(
     decide({
       floors: [{ ...tracker, requirePullRequest: false }],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'complete',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }).action,
   ).toBe('allow')
-  expect(
-    decide({
-      floors: [tracker],
-      evidence: { task: { key: 'DEV-977', status: 'active', mergedPullRequest: true } },
-    }).action,
-  ).toBe('refuse')
+  const refused = decide({
+    floors: [tracker],
+    evidence: {
+      task: {
+        key: 'ADN-1039',
+        status: 'in_progress',
+        statusCategory: 'active',
+        mergedPullRequest: true,
+      },
+    },
+  })
+  expect(refused).toMatchObject({ action: 'refuse' })
+  if (refused.action === 'refuse')
+    expect(refused.message).toContain(
+      'ADN-1039 reads back as in_progress (category active); expected done',
+    )
 })
 
 test('start closes on the active tracker state without a pull request', () => {
   expect(
     decide({
       floors: [{ ...tracker, expectedStatus: 'active', requirePullRequest: false }],
-      evidence: { task: { key: 'DEV-977', status: 'active', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'in_progress',
+          statusCategory: 'active',
+          mergedPullRequest: false,
+        },
+      },
     }),
   ).toMatchObject({ action: 'allow' })
 })
@@ -201,7 +235,14 @@ test('close refuses without a merged pull request', () => {
   expect(
     decide({
       floors: [{ ...tracker, expectedStatus: 'done', requirePullRequest: true }],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'done',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }),
   ).toMatchObject({ action: 'refuse' })
 })
@@ -210,7 +251,14 @@ test('a done task does not satisfy start', () => {
   expect(
     decide({
       floors: [{ ...tracker, expectedStatus: 'active', requirePullRequest: false }],
-      evidence: { task: { key: 'DEV-977', status: 'done', mergedPullRequest: false } },
+      evidence: {
+        task: {
+          key: 'DEV-977',
+          status: 'done',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+        },
+      },
     }),
   ).toMatchObject({ action: 'refuse' })
 })

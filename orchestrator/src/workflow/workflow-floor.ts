@@ -72,7 +72,12 @@ export type ValidatedEvidence = {
     createdAfterStepActivation: boolean
   }
   artifact?: { ref: string; exists: boolean }
-  task?: { key: string; status: string | null; mergedPullRequest: boolean }
+  task?: {
+    key: string
+    status: string | null
+    statusCategory: string | null
+    mergedPullRequest: boolean
+  }
   deferReason?: string
   satisfy?: ValidatedSatisfy
 }
@@ -174,7 +179,11 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
 
 function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const task = evidence.task
-  if (!task || task.status !== floor.expectedStatus) return false
+  if (
+    !task ||
+    (task.status !== floor.expectedStatus && task.statusCategory !== floor.expectedStatus)
+  )
+    return false
   return !floor.requirePullRequest || task.mergedPullRequest
 }
 
@@ -186,7 +195,11 @@ function floorIsMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   throw new Error(`unknown floor kind "${String(floor.kind)}"`)
 }
 
-function unmetMessage(floors: Floor[]): string {
+function trackerReadback(task: NonNullable<ValidatedEvidence['task']>): string {
+  return `${task.key} reads back as ${task.status ?? 'unset'} (category ${task.statusCategory ?? 'unset'})`
+}
+
+function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {
   return floors
     .map(
       (floor) =>
@@ -194,8 +207,11 @@ function unmetMessage(floors: Floor[]): string {
         (floor.kind === 'command-exit'
           ? ` with exit code ${floor.expectedExitCode}`
           : floor.kind === 'tracker-transition'
-            ? ` reading back as ${floor.expectedStatus}` +
-              (floor.requirePullRequest ? ' with a merged pull request for the task key' : '')
+            ? evidence.task
+              ? `; ${trackerReadback(evidence.task)}; expected ${floor.expectedStatus}` +
+                (floor.requirePullRequest ? ' with a merged pull request for the task key' : '')
+              : ` reading back as ${floor.expectedStatus}` +
+                (floor.requirePullRequest ? ' with a merged pull request for the task key' : '')
             : ''),
     )
     .join('; ')
@@ -229,7 +245,7 @@ function refuseDefer(floors: Floor[]): FloorDecision {
     action: 'refuse',
     message:
       `this step's floors are not deferrable (${floors.map((floor) => floor.kind).join('|')}); ` +
-      `pass evidence instead: ${unmetMessage(floors)}`,
+      `pass evidence instead: ${unmetMessage(floors, {})}`,
   }
 }
 
@@ -336,7 +352,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const deferred = deferralOf(input.floors, input.evidence, met.length > 0)
   if ('action' in deferred) return deferred
   if (met.length === 0 && !deferred.defer)
-    return { action: 'refuse', message: unmetMessage(input.floors) }
+    return { action: 'refuse', message: unmetMessage(input.floors, input.evidence) }
   const satisfied = satisfyOf(input.evidence)
   if ('action' in satisfied) return satisfied
   const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)

@@ -79,7 +79,7 @@ const matchingCheckout = {
 }
 
 const ports: FloorEvidencePorts = {
-  readTask: (key) => ({ key, status: 'done', commentIds: [4] }),
+  readTask: (key) => ({ key, status: 'done', statusCategory: 'done', commentIds: [4] }),
   runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
@@ -188,7 +188,12 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
   expect(gathered.probe).toEqual({ id: 1, exitCode: 0 })
-  expect(gathered.task).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: true })
+  expect(gathered.task).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    mergedPullRequest: true,
+  })
 })
 
 test('a missing gate id names the flag', () => {
@@ -434,6 +439,7 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   expect(gather(d, { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
     status: 'done',
+    statusCategory: 'done',
     mergedPullRequest: true,
   })
 })
@@ -448,13 +454,19 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   expect(
     gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
       .task,
-  ).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: false })
+  ).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    mergedPullRequest: false,
+  })
 })
 
 test('no pull request record is gathered as an unmerged tracker fact', () => {
   expect(gather(database(), { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
     status: 'done',
+    statusCategory: 'done',
     mergedPullRequest: false,
   })
 })
@@ -476,7 +488,12 @@ test('an unavailable pull request read is gathered as unmerged', () => {
         },
       },
     ).task,
-  ).toEqual({ key: 'DEV-977', status: 'done', mergedPullRequest: false })
+  ).toEqual({
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    mergedPullRequest: false,
+  })
 })
 
 test('a missing obligation is gathered as not-found without a floor', () => {

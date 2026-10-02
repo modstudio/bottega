@@ -70,6 +70,7 @@ type PullRequestMergeView = { state: string; mergedAt: string | null }
 type HubTaskRead = {
   key: string
   status: string | null
+  statusCategory: string | null
   commentIds: number[]
 }
 
@@ -99,13 +100,14 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     )
   }
   const parsed = JSON.parse(result.stdout) as {
-    task?: { key?: string; status_category?: string | null }
+    task?: { key?: string; status?: string | null; status_category?: string | null }
     comments?: Array<{ id?: number }>
   }
   if (!parsed.task?.key) throw new Error(`--task ${key} was not a hub task show record`)
   return {
     key: parsed.task.key,
-    status: parsed.task.status_category ?? null,
+    status: parsed.task.status ?? null,
+    statusCategory: parsed.task.status_category ?? null,
     commentIds: (parsed.comments ?? [])
       .map((comment) => comment.id)
       .filter((id): id is number => Number.isInteger(id)),
@@ -560,6 +562,7 @@ function gatherTask(
   return {
     key: task.key,
     status: task.status,
+    statusCategory: task.statusCategory,
     mergedPullRequest,
   }
 }
