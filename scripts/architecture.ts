@@ -194,6 +194,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
   ]),
   module('orchestrator/src/branch/branches.ts', [
+    './branch-base-claim.ts',
     './branch-landing-match.ts',
     './branch-landing-record.ts',
     './branch-landing-service.ts',

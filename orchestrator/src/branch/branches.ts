@@ -6,6 +6,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
+import { liveBaseClaim } from './branch-base-claim.ts'
 import { matchAutomaticBranchLandingForTip, matchBranchLandings } from './branch-landing-match.ts'
 import {
   type AutomaticLandingPreview,
@@ -171,6 +172,16 @@ function projectRuns(project: Project): RunRow[] {
         ORDER BY id`,
     )
     .all(project.id, project.name) as RunRow[]
+}
+
+function keepLiveBaseClaim(project: Project, branch: string, report: BranchPruneReport): boolean {
+  const claim = liveBaseClaim(project, branch)
+  if (!claim) return false
+  report.kept.push({
+    branch,
+    reason: `base of live run ${claim.run_id} (${claim.status})`,
+  })
+  return true
 }
 
 function localBranches(project: Project): Map<string, string> {
@@ -639,6 +650,7 @@ function tipStillEligible(
   row: BranchReportRow,
   report: BranchPruneReport,
 ): boolean {
+  if (keepLiveBaseClaim(project, row.branch, report)) return false
   let currentTip: string | undefined
   try {
     currentTip = localBranches(project).get(row.branch)
@@ -685,6 +697,7 @@ function deleteAndSettleBranch(
   let deleted = false
   try {
     withWorktreeCreateLock(project.path, () => {
+      if (keepLiveBaseClaim(project, row.branch, report)) return
       const currentTip = localBranches(project).get(row.branch)
       const checkedOut = checkedOutBranches(project).has(row.branch)
       const liveRun = projectRuns(project).some(
@@ -840,6 +853,7 @@ function otherTipStillEligible(
   row: OtherBranchReportRow,
   report: BranchPruneReport,
 ): boolean {
+  if (keepLiveBaseClaim(project, row.branch, report)) return false
   let currentTip: string | undefined
   try {
     currentTip = localBranches(project).get(row.branch)
@@ -881,15 +895,18 @@ function deleteOtherBranch(
   report: BranchPruneReport,
 ): void {
   try {
-    command(
-      project.path,
-      ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
-      `delete branch ${row.branch}`,
-    )
-    if (localBranches(project).has(row.branch)) {
-      throw new Error('branch still exists after compare-at-tip deletion')
-    }
-    report.deleted.push(row.branch)
+    withWorktreeCreateLock(project.path, () => {
+      if (keepLiveBaseClaim(project, row.branch, report)) return
+      command(
+        project.path,
+        ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
+        `delete branch ${row.branch}`,
+      )
+      if (localBranches(project).has(row.branch)) {
+        throw new Error('branch still exists after compare-at-tip deletion')
+      }
+      report.deleted.push(row.branch)
+    })
   } catch (error) {
     report.kept.push({ branch: row.branch, reason: 'deletion failed' })
     report.errors.push(`${row.branch}: ${error instanceof Error ? error.message : String(error)}`)

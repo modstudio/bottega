@@ -354,6 +354,7 @@ export async function retryRun(
       ? `${originalPrompt}\n\n---\n\n${renderedRulings}`
       : originalPrompt
   const dispatchState = readDispatchState(row.root_id)
+  const resumeLaunch = resumeLaunchForRoot(row.root_id)
   let newId: number
   try {
     newId = await (helpers.dispatch ?? detach)(
@@ -370,7 +371,8 @@ export async function retryRun(
         cwd: workspace?.cwd ?? row.launch_cwd ?? row.cwd ?? undefined,
         seed: row.launch_seed ?? undefined,
         key: row.launch_key ?? undefined,
-        base: row.launch_base ?? undefined,
+        base: resumeLaunch.base,
+        launchBase: row.launch_base ?? undefined,
         noFailover: !!row.no_failover,
         transport: chainTransport(row.root_id) ?? undefined,
         keepTree: row.keep_tree

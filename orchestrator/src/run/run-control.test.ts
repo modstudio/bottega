@@ -54,6 +54,7 @@ describe('inherited resume launch', () => {
     launch_seed: null as string | null,
     launch_key: null as string | null,
     launch_base: null as string | null,
+    base_commit: null as string | null,
     no_failover: 0,
     mcp: null as number | null,
     mcp_error: null as string | null,
@@ -86,6 +87,22 @@ describe('inherited resume launch', () => {
       mcp: undefined,
       lens: undefined,
     })
+  })
+
+  test('resumes from the recorded base commit after the launch branch is gone', () => {
+    expect(
+      resumeLaunchFromStored({
+        ...stored,
+        launch_base: 'DEV-1042-orch-8083',
+        base_commit: '956304fe',
+      }).base,
+    ).toBe('956304fe')
+  })
+
+  test('falls back to the launch branch for an old row without a base commit', () => {
+    expect(resumeLaunchFromStored({ ...stored, launch_base: 'DEV-1042-orch-8083' }).base).toBe(
+      'DEV-1042-orch-8083',
+    )
   })
 })
 

@@ -309,6 +309,7 @@ type StoredResumeLaunch = {
   launch_seed: string | null
   launch_key: string | null
   launch_base: string | null
+  base_commit: string | null
   no_failover: number
   mcp: number | null
   mcp_error: string | null
@@ -329,7 +330,7 @@ export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOpt
   return {
     seed: row.launch_seed ?? undefined,
     key: row.launch_key ?? undefined,
-    base: row.launch_base ?? undefined,
+    base: row.base_commit ?? row.launch_base ?? undefined,
     noFailover: !!row.no_failover,
     mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
     lens: row.lens ?? undefined,
@@ -340,7 +341,7 @@ export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOpt
 export function resumeLaunchForRoot(rootId: number): ResumeLaunchOptions {
   const row = db()
     .query(
-      `SELECT launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
+      `SELECT launch_seed, launch_key, launch_base, base_commit, no_failover, mcp, mcp_error, lens
        FROM run WHERE id=?`,
     )
     .get(rootId) as StoredResumeLaunch | null
