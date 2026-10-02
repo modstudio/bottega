@@ -47,6 +47,23 @@ test('records command, cwd, commit, exit and a bounded tail', async () => {
   })
 })
 
+test('records the selected cwd and its head commit', async () => {
+  const d = database()
+  const cwd = process.cwd()
+  d.query("INSERT INTO project (name,path,settings) VALUES ('cwd-project',?,'{}')").run(cwd)
+  const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd, stdout: 'pipe' })
+    .stdout.toString()
+    .trim()
+
+  await recordWorkflowProbe(['true'], {
+    cwd,
+    d,
+    runner: () => ({ exitCode: 0, output: '' }),
+  })
+
+  expect(d.query('SELECT cwd,head_commit FROM probe').get()).toEqual({ cwd, head_commit: head })
+})
+
 test('withholds secret-shaped output', async () => {
   const d = database()
   const result = await recordWorkflowProbe(['env'], {

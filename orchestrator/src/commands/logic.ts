@@ -186,9 +186,16 @@ export function register(program: Command): void {
     .option('--arg <value>', '', collect, [])
     .option('--autonomy <value>', '', collect, [])
     .option('--json')
-    .action((args, options) =>
-      workflowCommand(productArgv('workflow', args, options), presentation),
-    )
+    .action((args, options) => {
+      const commandOwnsChildArgv = args[0] === 'exec' || args[0] === 'probe'
+      return workflowCommand(
+        commandOwnsChildArgv ? ['workflow', ...args] : productArgv('workflow', args, options),
+        presentation,
+        commandOwnsChildArgv
+          ? { cwd: typeof options.cwd === 'string' ? options.cwd : undefined, json: options.json }
+          : undefined,
+      )
+    })
   program
     .command('lens [args...]')
     .option('--title <value>')

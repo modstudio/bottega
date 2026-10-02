@@ -37,7 +37,10 @@ export function parseAudience(expression: string): Audience {
   if (expression === 'operator') return { kind: 'operator' }
   if (expression === 'architects') return { kind: 'architects' }
   const match = /^(project|machine|session):(.+)$/.exec(expression)
-  if (!match?.[2]?.trim()) throw new Error(`unsupported board audience ${expression}`)
+  if (!match?.[2]?.trim())
+    throw new Error(
+      `unsupported board audience ${expression}; use operator, architects, project:<name>, machine:<name>, or session:<id>`,
+    )
   if (match[1] === 'session' && match[2] === OPERATOR_READER)
     throw new Error(`session:${OPERATOR_READER} is reserved; use audience operator`)
   return { kind: match[1] as 'project' | 'machine' | 'session', value: match[2] }

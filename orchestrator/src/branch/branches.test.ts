@@ -10,7 +10,14 @@ import {
 } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { recordBranchLanding } from './branch-landing-service.ts'
 import { pruneBranches, renderBranchPruneReport } from './branches.ts'
+
+test('landing refusal explains that only a run-minted branch can be recorded', () => {
+  expect(() => recordBranchLanding('DEV-1070-shipping', 1070)).toThrow(
+    "branch DEV-1070-shipping is not a recorded run branch; there is nothing to record for a branch no run minted; name a run's own branch instead",
+  )
+})
 
 test('dry-run previews automatic landing repair without writing, then non-dry prune records it', () => {
   const repository = gitRepository('automatic-repair')

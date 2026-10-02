@@ -130,6 +130,49 @@ test('Commander preserves an embedded separator in workflow exec child argv', as
   }
 })
 
+test('workflow exec keeps its cwd option out of the child argv', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const cwd = import.meta.dir
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    upsertProject({
+      name: 'workflow-exec-cwd-adapter',
+      path: process.cwd(),
+      stack: 'bun',
+      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    })
+
+    await program.parseAsync([
+      'bun',
+      'orch',
+      'workflow',
+      'exec',
+      '--cwd',
+      cwd,
+      '--',
+      '/usr/bin/printf',
+      '%s%s%s',
+      '--x',
+      '--cwd',
+      'child-dir',
+    ])
+
+    expect(
+      db().query("SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1").get(),
+    ).toEqual({
+      command: JSON.stringify(['/usr/bin/printf', '%s%s%s', '--x', '--cwd', 'child-dir']),
+      cwd,
+    })
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
 test('next resolves an omitted mode to the composed cursor default', async () => {
   const slug = 'cursor-default-next'
   const project = 'cursor-default-next-project'

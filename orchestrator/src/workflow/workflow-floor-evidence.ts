@@ -93,11 +93,7 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     env: process.env,
   })
   if (result.status !== 0) {
-    throw new Error(
-      `--task ${key} could not be read through hub: ${
-        result.stderr?.trim() || result.stdout?.trim() || `hub exited ${result.status}`
-      }`,
-    )
+    throw new Error(hubTaskReadRefusal(key, result.status, result.stderr, result.stdout))
   }
   const parsed = JSON.parse(result.stdout) as {
     task?: { key?: string; status?: string | null; status_category?: string | null }
@@ -112,6 +108,18 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
       .map((comment) => comment.id)
       .filter((id): id is number => Number.isInteger(id)),
   }
+}
+
+export function hubTaskReadRefusal(
+  key: string,
+  status: number | null,
+  stderr: string,
+  stdout: string,
+): string {
+  const detail = stderr.trim() || stdout.trim() || `hub exited ${status}`
+  if (detail.split('\n').some((line) => line.trim() === `no task ${key}`))
+    return `--task ${key} could not be read through hub: no task ${key}; hub may not have collected a recently created task yet; run hub collect --only tasks, then retry`
+  return `--task ${key} could not be read through hub: ${detail}`
 }
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({

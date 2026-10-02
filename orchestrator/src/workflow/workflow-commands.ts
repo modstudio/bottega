@@ -52,6 +52,7 @@ import {
 } from './workflows.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
+type WorkflowCommandOptions = { cwd?: string; json?: boolean }
 const positive = (value: string | undefined, label: string): number | undefined => {
   if (value === undefined) return undefined
   const n = Number(value)
@@ -59,9 +60,13 @@ const positive = (value: string | undefined, label: string): number | undefined 
   return n
 }
 
-export async function workflowCommand(argv: string[], presentation: Presentation): Promise<void> {
+export async function workflowCommand(
+  argv: string[],
+  presentation: Presentation,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
   const sub = argv[1]
-  const json = argv.includes('--json')
+  const json = options.json ?? argv.includes('--json')
   const flag = (name: string) => flagValue(argv, name)
   const print = (value: unknown, line?: string) =>
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
@@ -88,7 +93,7 @@ export async function workflowCommand(argv: string[], presentation: Presentation
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
   else if (sub === 'step') await stepCommand(argv, print)
-  else if (await cursorCommand(sub, argv, print)) return
+  else if (await cursorCommand(sub, argv, print, options)) return
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
   else if (sub === 'import') importCommand(argv, print)
   else
@@ -101,14 +106,15 @@ async function cursorCommand(
   sub: string | undefined,
   argv: string[],
   print: (value: unknown, line?: string) => void,
+  options: WorkflowCommandOptions,
 ): Promise<boolean> {
   if (sub === 'next') nextCommand(argv, print)
   else if (sub === 'await') awaitCommand(argv, print)
   else if (sub === 'rule') ruleCommand(argv, print)
   else if (sub === 'abandon') abandonCommand(argv, print)
   else if (sub === 'cursors') cursorsCommand(argv, print)
-  else if (sub === 'probe') await probeCommand(argv, print)
-  else if (sub === 'exec') await execCommand(argv, print)
+  else if (sub === 'probe') await probeCommand(argv, print, options.cwd)
+  else if (sub === 'exec') await execCommand(argv, print, options.cwd)
   else return false
   return true
 }
@@ -116,23 +122,24 @@ async function cursorCommand(
 async function execCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
+  cwd = process.cwd(),
 ): Promise<void> {
   const command = argv[2] === '--' ? argv.slice(3) : argv.slice(2)
   if (!command.length) throw new Error('orch workflow exec needs a command after --')
-  const cwd = process.cwd()
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
   )
-  const result = await recordWorkflowExec(command, { registeredProject })
+  const result = await recordWorkflowExec(command, { cwd, registeredProject })
   print(result, String(result.id))
 }
 
 async function probeCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
+  cwd = process.cwd(),
 ): Promise<void> {
   const command = argv[2] === '--' ? argv.slice(3) : argv.slice(2)
-  const result = await recordWorkflowProbe(command)
+  const result = await recordWorkflowProbe(command, { cwd })
   print({ id: result.id, withheld: result.withheld }, String(result.id))
 }
 

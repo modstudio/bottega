@@ -48,6 +48,12 @@ test('machine audiences resolve by live presence', () => {
   expect(parseAudience('machine:this')).toEqual({ kind: 'machine', value: 'this' })
 })
 
+test('unsupported audience refusal lists every accepted form', () => {
+  expect(() => parseAudience('everyone')).toThrow(
+    'unsupported board audience everyone; use operator, architects, project:<name>, machine:<name>, or session:<id>',
+  )
+})
+
 test('operator and machine ack-required notices interrupt', () => {
   expect(
     shouldInterrupt({ authorKind: 'operator', audienceKind: 'architects', ackRequired: true }),
