@@ -2,6 +2,7 @@
 /** Knows how to resolve, read, parse, and validate one tracked recipe. Must not execute it or know register persistence. */
 import { readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
+import { git, gitOk, resolveBase } from '../git/git-environment.ts'
 import { configDocumentSchema, type TrackedRecipe } from './recipe-schema.ts'
 
 export type LoadTrackedRecipeResult =
@@ -39,7 +40,7 @@ export function loadTrackedRecipe(
   return parseTrackedRecipe(source, path)
 }
 
-export function parseTrackedRecipe(source: string, label: string): LoadTrackedRecipeResult {
+function parseTrackedRecipe(source: string, label: string): LoadTrackedRecipeResult {
   let parsed: unknown
   try {
     parsed = Bun.JSONC.parse(source)
@@ -64,4 +65,40 @@ export function parseTrackedRecipe(source: string, label: string): LoadTrackedRe
       return `tracked recipe ${label}: ${at}${message}`
     }),
   }
+}
+
+export function loadRecipeAtBase(input: {
+  recipePath: string
+  repoRoot: string
+  baseRef?: string
+}): {
+  base: string
+  recipe: TrackedRecipe
+  snapshot: { source: { path: string; commit: string }; recipe: TrackedRecipe }
+} {
+  const pointer = input.recipePath
+  let base = input.baseRef
+    ? resolveBase(input.repoRoot, input.baseRef)
+    : git(['rev-parse', 'HEAD'], input.repoRoot)
+  const read = () => {
+    let source: string
+    try {
+      source = git(['show', `${base}:${pointer}`], input.repoRoot)
+    } catch (error) {
+      throw new Error(
+        `tracked recipe ${pointer} at ${base} could not be read: ${String((error as Error)?.message ?? error)}`,
+      )
+    }
+    const loaded = parseTrackedRecipe(source, `${pointer} at ${base}`)
+    if (!loaded.ok) throw new Error(loaded.errors.join('\n'))
+    return loaded.recipe ?? { create: [] }
+  }
+  let recipe = read()
+  if (!input.baseRef && recipe.baseRef) {
+    base =
+      gitOk(['rev-parse', recipe.baseRef], input.repoRoot) ??
+      git(['rev-parse', 'HEAD'], input.repoRoot)
+    recipe = read()
+  }
+  return { base, recipe, snapshot: { source: { path: pointer, commit: base }, recipe } }
 }

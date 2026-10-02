@@ -283,8 +283,10 @@ export const importBoundaries: ImportBoundary[] = [
       '../jobs/jobs.ts',
       '../lens/lenses.ts',
       '../project/projects.ts',
+      '../recipe/recipe-loader.ts',
       '../review/review-target.ts',
       '../worktree/worktree-caller.ts',
+      '../worktree/worktree-lifecycle.ts',
       '../worktree/worktree-preflight.ts',
       '../worktree/worktree-template.ts',
     ],
@@ -598,7 +600,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'recipe-loader-boundary',
     'orchestrator/src/recipe/recipe-loader.ts',
-    ['node:fs', 'node:path', './recipe-schema.ts'],
+    ['node:fs', 'node:path', '../git/git-environment.ts', './recipe-schema.ts'],
     'Keep tracked recipe loading independent of execution, persistence, and CLI concerns.',
   ),
   boundary(

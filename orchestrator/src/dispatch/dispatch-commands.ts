@@ -22,6 +22,17 @@ import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.
 
 type TransportName = 'cli' | 'acp'
 
+function reportDefaultSeed(
+  requested: string | undefined,
+  effective: string | undefined,
+  porcelain: boolean,
+  report: (...values: unknown[]) => void,
+): void {
+  if (!porcelain && requested === undefined && effective !== undefined) {
+    report(`! using tracked recipe default seed ${JSON.stringify(effective)}`)
+  }
+}
+
 type DispatchOptions = {
   agent: string | undefined
   transport: TransportName
@@ -260,6 +271,7 @@ export async function dispatchCommand(
     has('carry'),
     explicitRepo,
   )
+  reportDefaultSeed(flag('seed'), seed, porcelain, error)
   const taskKeyWarning = await taskKeyWarningForDispatch(
     { explicitRepo, callerCwd, key: flag('key') },
     lookupTaskKey,

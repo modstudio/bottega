@@ -313,6 +313,12 @@ export function repoRootOf(cwd: string): string | null {
   return mainCheckoutOf(cwd, targetGitEnvironment(cwd))
 }
 
+export function resolveBase(cwd: string, ref: string): string {
+  const repoRoot = repoRootOf(cwd)
+  if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
+  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], repoRoot)
+}
+
 /** The main checkout whose objects this independent clone borrows, if any. */
 export function borrowedCheckoutOf(cwd: string): string | null {
   return sharedBorrowedCheckoutOf(cwd)
