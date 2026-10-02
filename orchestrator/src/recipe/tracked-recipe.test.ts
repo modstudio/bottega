@@ -17,7 +17,7 @@ import { git } from '../git/git-environment.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
-import { writeTrackedEnvFiles } from './tracked-env-files.ts'
+import { type EnvFileGitCheck, writeTrackedEnvFiles } from './tracked-env-files.ts'
 import {
   type AllocationAttempt,
   createTrackedRecipe,
@@ -61,8 +61,10 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
+const ignoredUntracked: EnvFileGitCheck = () => ({ tracked: false, ignored: true })
+
 function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {}) {
-  return writeTrackedEnvFiles(recipe, { treeRoot: tree, vars }, project)
+  return writeTrackedEnvFiles(recipe, { treeRoot: tree, vars }, project, {}, ignoredUntracked)
 }
 
 describe('tracked recipe execution', () => {

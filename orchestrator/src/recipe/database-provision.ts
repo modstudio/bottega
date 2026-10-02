@@ -1,8 +1,8 @@
 // concern: built-in database lifecycle adapter
 /** Reads one declared connection at use time and executes pure database plans without exposing secrets. */
-import { lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { lstatSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { parseEnv } from 'node:util'
+import { parseConnectionUrl, readConnectionValue } from './database-connection.ts'
 import {
   type DatabaseCommand,
   type DatabaseCommandPlan,
@@ -50,12 +50,7 @@ function decode(value: string): string {
 }
 
 function clientConnection(engine: DatabaseCommandPlan['engine'], value: string): Connection {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error('connection value is not a valid URL')
-  }
+  const url = parseConnectionUrl(value)
   if (engine === 'postgres') {
     if (!['postgres:', 'postgresql:'].includes(url.protocol))
       throw new Error('connection URL must use postgres or postgresql')
@@ -80,29 +75,6 @@ function clientConnection(engine: DatabaseCommandPlan['engine'], value: string):
       `--user=${decode(url.username)}`,
     ],
   }
-}
-
-function connectionValue(
-  projectRoot: string,
-  connection: { key: string; file: string },
-): { ok: true; value: string } | { ok: false; detail: string } {
-  const file = `${projectRoot}/${connection.file}`
-  let values: Record<string, string | undefined>
-  try {
-    values = parseEnv(readFileSync(file, 'utf8'))
-  } catch {
-    return {
-      ok: false,
-      detail: `could not read database connection key ${connection.key} from ${connection.file}; add the key to that main-checkout env file`,
-    }
-  }
-  if (!values[connection.key]) {
-    return {
-      ok: false,
-      detail: `database connection key ${connection.key} is missing from ${connection.file}; add it to that main-checkout env file`,
-    }
-  }
-  return { ok: true, value: values[connection.key]! }
 }
 
 function result(
@@ -252,7 +224,7 @@ function preparedPlan(
     key: provision.connection.key,
     file: provision.connection.file ?? '.env',
   }
-  const resolved = connectionValue(context.projectRoot, connectionDeclaration)
+  const resolved = readConnectionValue(context.projectRoot, connectionDeclaration)
   if (!resolved.ok) return result(key, 'run', 'refused', resolved.detail)
   try {
     return { plan, connection: clientConnection(plan.engine, resolved.value) }

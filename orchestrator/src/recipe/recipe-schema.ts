@@ -178,6 +178,8 @@ const ALLOCATION_STATIC_PLACEHOLDERS = new Set(
   [...STATIC_PLACEHOLDERS].filter((name) => name !== 'label' && name !== 'tree_exists'),
 )
 const ALLOCATION_PLACEHOLDER = /^(ports|db|alloc)\.([^{}.]+)$/
+const DATABASE_URL_PLACEHOLDER = /^db\.([^{}.]+)\.url$/
+const DATABASE_URL_ENGINES = new Set(['postgres', 'mysql', 'mariadb'])
 
 function allSteps(recipe: RecipeInput): StepInput[] {
   return [
@@ -223,8 +225,13 @@ export function stepPlaceholders(step: unknown): { name: string; allocation: boo
   return [...names].map(([name, allocation]) => ({ name, allocation }))
 }
 
+function databaseUrlPlaceholderRule(name: string): string {
+  return `placeholder rule: {${name}} is valid only inside env[].contents for a provisioned postgres, mysql, or mariadb allocation`
+}
+
 function placeholderProblem(name: string, recipe: RecipeInput): string | null {
   if (STATIC_PLACEHOLDERS.has(name)) return null
+  if (DATABASE_URL_PLACEHOLDER.test(name)) return databaseUrlPlaceholderRule(name)
   const allocation = name.match(ALLOCATION_PLACEHOLDER)
   if (!allocation) return `placeholder rule: unknown placeholder {${name}}`
   const [, kind, declaredName] = allocation
@@ -237,6 +244,25 @@ function placeholderProblem(name: string, recipe: RecipeInput): string | null {
   return declared
     ? null
     : `placeholder rule: {${name}} names an undeclared ${kind === 'db' ? 'database' : kind === 'alloc' ? 'string allocation' : 'port'}`
+}
+
+function envContentsPlaceholderProblem(name: string, recipe: RecipeInput): string | null {
+  const key = name.match(DATABASE_URL_PLACEHOLDER)?.[1]
+  if (!key) return placeholderProblem(name, recipe)
+  const allocation = recipe.allocate?.databases?.[key]
+  if (allocation?.provision && DATABASE_URL_ENGINES.has(allocation.engine)) return null
+  return databaseUrlPlaceholderRule(name)
+}
+
+function addPlaceholderIssues(
+  text: string,
+  problemFor: (name: string) => string | null,
+  context: z.RefinementCtx,
+): void {
+  for (const match of text.matchAll(/\{([^{}]+)\}/g)) {
+    const problem = problemFor(match[1]!)
+    if (problem) context.addIssue({ code: 'custom', message: problem })
+  }
 }
 
 function hasAllocationPlaceholder(value: unknown): boolean {
@@ -259,11 +285,19 @@ function validateStepNames(recipe: RecipeInput, context: z.RefinementCtx): void 
 }
 
 function validatePlaceholders(recipe: RecipeInput, context: z.RefinementCtx): void {
-  for (const text of stringsIn(recipe)) {
-    for (const match of text.matchAll(/\{([^{}]+)\}/g)) {
-      const problem = placeholderProblem(match[1]!, recipe)
-      if (problem) context.addIssue({ code: 'custom', message: problem })
-    }
+  const withoutEnvContents = {
+    ...recipe,
+    env: recipe.env?.map((envFile) => ({ ...envFile, contents: '' })),
+  }
+  for (const text of stringsIn(withoutEnvContents)) {
+    addPlaceholderIssues(text, (name) => placeholderProblem(name, recipe), context)
+  }
+  for (const envFile of recipe.env ?? []) {
+    addPlaceholderIssues(
+      envFile.contents,
+      (name) => envContentsPlaceholderProblem(name, recipe),
+      context,
+    )
   }
 }
 

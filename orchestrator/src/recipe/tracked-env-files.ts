@@ -1,5 +1,5 @@
 // concern: tracked recipe environment-file writing
-/** Writes validated env declarations atomically without exposing their contents in failures. */
+/** Writes validated env declarations atomically to untracked gitignored paths without exposing their contents in failures. */
 import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
@@ -13,12 +13,22 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { gitOk } from '../git/git-environment.ts'
+import { connectionUrlForAllocatedDatabase, readConnectionValue } from './database-connection.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { StepContext, StepResult } from './recipe-step.ts'
 
+export type EnvFileGitCheck = (
+  treeRoot: string,
+  relativePath: string,
+) => { tracked: boolean; ignored: boolean }
+
 type EnvTextPlan = { ok: true; text: string } | { ok: false; reason: string }
+type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
 const ENV_PLACEHOLDER = /\{([^{}]+)\}/g
+const DATABASE_URL_PLACEHOLDER = /^db\.([^{}.]+)\.url$/
+const DATABASE_URL_ENGINES = new Set(['postgres', 'mysql', 'mariadb'])
 
 function fillEnvContents(contents: string, vars: Record<string, string>): EnvTextPlan {
   for (const match of contents.matchAll(ENV_PLACEHOLDER)) {
@@ -87,29 +97,74 @@ function envFileFailure(path: string, detail: string): StepResult {
   }
 }
 
-export function writeTrackedEnvFiles(
-  recipe: TrackedRecipe,
+function defaultEnvFileGitCheck(
+  treeRoot: string,
+  relativePath: string,
+): { tracked: boolean; ignored: boolean } {
+  return {
+    tracked: gitOk(['ls-files', '--error-unmatch', '--', relativePath], treeRoot) !== null,
+    ignored: gitOk(['check-ignore', '-q', '--', relativePath], treeRoot) !== null,
+  }
+}
+
+function envFileGitProblem(
+  treeRoot: string,
+  relativePath: string,
+  gitCheck: EnvFileGitCheck,
+): string | null {
+  const status = gitCheck(treeRoot, relativePath)
+  if (status.tracked || !status.ignored) {
+    return `"${relativePath}" is tracked or not ignored by git; add it to the project's .gitignore or choose an ignored path`
+  }
+  return null
+}
+
+function refuseUnwritableEnvPaths(
+  envFiles: NonNullable<TrackedRecipe['env']>,
+  treeRoot: string,
+  gitCheck: EnvFileGitCheck,
+): StepResult | null {
+  for (const envFile of envFiles) {
+    const problem = envFileGitProblem(treeRoot, envFile.path, gitCheck)
+    if (problem) return envFileFailure(envFile.path, problem)
+  }
+  return null
+}
+
+function envFileTextPlan(
+  envFile: NonNullable<TrackedRecipe['env']>[number],
+  base: string,
+  contents: string,
+  treeName: string,
+): EnvTextPlan {
+  const mode = envFile.mode ?? 'managed-block'
+  if (mode === 'replace') return { ok: true, text: contents }
+  if (mode === 'append') return { ok: true, text: `${base}${contents}` }
+  return managedBlockPlan(base, treeName, contents)
+}
+
+function applyTrackedEnvFiles(
+  envFiles: NonNullable<TrackedRecipe['env']>,
   context: StepContext,
   projectRoot: string,
+  secrets: Record<string, string>,
 ): StepResult | null {
-  const envFiles = recipe.env ?? []
   const filledContents: string[] = []
+  const vars = { ...context.vars, ...secrets }
   for (const envFile of envFiles) {
-    const filled = fillEnvContents(envFile.contents, context.vars)
+    const filled = fillEnvContents(envFile.contents, vars)
     if (!filled.ok) return envFileFailure(envFile.path, filled.reason)
     filledContents.push(filled.text)
   }
   for (const [index, envFile] of envFiles.entries()) {
     const base = readEnvBase(envFile, context.treeRoot, projectRoot)
     if (!base.ok) return envFileFailure(envFile.path, base.reason)
-    const contents = filledContents[index]!
-    const mode = envFile.mode ?? 'managed-block'
-    const plan =
-      mode === 'replace'
-        ? { ok: true as const, text: contents }
-        : mode === 'append'
-          ? { ok: true as const, text: `${base.text}${contents}` }
-          : managedBlockPlan(base.text, basename(context.treeRoot), contents)
+    const plan = envFileTextPlan(
+      envFile,
+      base.text,
+      filledContents[index]!,
+      basename(context.treeRoot),
+    )
     if (!plan.ok) return envFileFailure(envFile.path, plan.reason)
     try {
       atomicEnvWrite(join(context.treeRoot, envFile.path), plan.text)
@@ -118,4 +173,82 @@ export function writeTrackedEnvFiles(
     }
   }
   return null
+}
+
+function provisionedUrlAllocation(allocation: Allocation | undefined): Allocation | undefined {
+  if (!allocation?.provision || !DATABASE_URL_ENGINES.has(allocation.engine)) return undefined
+  return allocation
+}
+
+function urlPlaceholderTarget(
+  placeholder: string,
+  recipe: TrackedRecipe,
+  allocations: Record<string, string>,
+): { key: string; allocation: Allocation; allocatedName: string } | null {
+  const key = placeholder.match(DATABASE_URL_PLACEHOLDER)?.[1]
+  if (!key) return null
+  const allocation = provisionedUrlAllocation(recipe.allocate?.databases?.[key])
+  const allocatedName = allocations[key]
+  if (!allocation || !allocatedName) return null
+  return { key, allocation, allocatedName }
+}
+
+function allocatedDatabaseUrl(
+  key: string,
+  allocation: Allocation,
+  allocatedName: string,
+  projectRoot: string,
+): { ok: true; value: string } | { ok: false; detail: string } {
+  const connection = {
+    key: allocation.provision!.connection.key,
+    file: allocation.provision!.connection.file ?? '.env',
+  }
+  const resolved = readConnectionValue(projectRoot, connection)
+  if (!resolved.ok) return { ok: false, detail: `database "${key}" ${resolved.detail}` }
+  try {
+    return { ok: true, value: connectionUrlForAllocatedDatabase(resolved.value, allocatedName) }
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `database "${key}" connection key ${connection.key} in ${connection.file} is unusable: ${String((error as Error)?.message ?? error)}`,
+    }
+  }
+}
+
+export function databaseUrlSecrets(
+  recipe: TrackedRecipe,
+  allocations: Record<string, string>,
+  projectRoot: string,
+): { ok: true; secrets: Record<string, string> } | { ok: false; result: StepResult } {
+  const secrets: Record<string, string> = {}
+  for (const envFile of recipe.env ?? []) {
+    for (const match of envFile.contents.matchAll(ENV_PLACEHOLDER)) {
+      const placeholder = match[1]!
+      if (placeholder in secrets) continue
+      const target = urlPlaceholderTarget(placeholder, recipe, allocations)
+      if (!target) continue
+      const resolved = allocatedDatabaseUrl(
+        target.key,
+        target.allocation,
+        target.allocatedName,
+        projectRoot,
+      )
+      if (!resolved.ok) return { ok: false, result: envFileFailure(envFile.path, resolved.detail) }
+      secrets[placeholder] = resolved.value
+    }
+  }
+  return { ok: true, secrets }
+}
+
+export function writeTrackedEnvFiles(
+  recipe: TrackedRecipe,
+  context: StepContext,
+  projectRoot: string,
+  secrets: Record<string, string> = {},
+  gitCheck: EnvFileGitCheck = defaultEnvFileGitCheck,
+): StepResult | null {
+  const envFiles = recipe.env ?? []
+  const gitRefusal = refuseUnwritableEnvPaths(envFiles, context.treeRoot, gitCheck)
+  if (gitRefusal) return gitRefusal
+  return applyTrackedEnvFiles(envFiles, context, projectRoot, secrets)
 }
