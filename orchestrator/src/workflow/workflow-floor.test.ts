@@ -144,7 +144,7 @@ test('an exec from another session is refused with the rerun remedy', () => {
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'command-exit evidence exec:4 belongs to another session; run the command again with `orch workflow exec <command>` in this session after the step started',
+      'command-exit evidence exec:4 belongs to another session; run the command again with `orch workflow exec -- <command>` in this session after the step started',
   })
 })
 
@@ -181,7 +181,7 @@ test('an exec older than the active step is refused with the rerun remedy', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'command-exit evidence exec:4 predates this step becoming active; run the command again with `orch workflow exec <command>` in this session after the step started',
+      'command-exit evidence exec:4 predates this step becoming active; run the command again with `orch workflow exec -- <command>` in this session after the step started',
   })
 })
 

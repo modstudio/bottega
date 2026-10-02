@@ -124,8 +124,13 @@ async function execCommand(
   print: (value: unknown, line?: string) => void,
   cwd = process.cwd(),
 ): Promise<void> {
-  const command = argv[2] === '--' ? argv.slice(3) : argv.slice(2)
+  if (argv[2] !== '--')
+    throw new Error(
+      'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
+    )
+  const command = argv.slice(3)
   if (!command.length) throw new Error('orch workflow exec needs a command after --')
+  cwd = resolve(process.cwd(), cwd)
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
   )
@@ -138,7 +143,12 @@ async function probeCommand(
   print: (value: unknown, line?: string) => void,
   cwd = process.cwd(),
 ): Promise<void> {
-  const command = argv[2] === '--' ? argv.slice(3) : argv.slice(2)
+  if (argv[2] !== '--')
+    throw new Error(
+      'orch workflow probe requires -- before the child command; use orch workflow probe [--cwd <dir>] -- <command…>',
+    )
+  const command = argv.slice(3)
+  cwd = resolve(process.cwd(), cwd)
   const result = await recordWorkflowProbe(command, { cwd })
   print({ id: result.id, withheld: result.withheld }, String(result.id))
 }

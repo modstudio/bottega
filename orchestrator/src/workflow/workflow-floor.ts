@@ -13,7 +13,7 @@ export type EnforcementMode = 'note-only' | 'floors'
 export const floorGuidance = {
   ruling:
     'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`',
-  'command-exit': 'run it with `orch workflow exec <command>` and pass `--artifact exec:<id>`',
+  'command-exit': 'run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`',
   'recorded-artifact':
     'record the artifact and pass `--artifact <doc id | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id>>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
@@ -222,7 +222,7 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   const exec = evidence.exec
   if (!exec) return null
   const remedy =
-    'run the command again with `orch workflow exec <command>` in this session after the step started'
+    'run the command again with `orch workflow exec -- <command>` in this session after the step started'
   if (!exec.sessionMatches && !exec.sessionAdoptedCursor)
     return `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}`
   if (!exec.createdAfterStepActivation)

@@ -186,10 +186,15 @@ export function register(program: Command): void {
     .option('--arg <value>', '', collect, [])
     .option('--autonomy <value>', '', collect, [])
     .option('--json')
-    .action((args, options) => {
+    .action((args, options, command) => {
       const commandOwnsChildArgv = args[0] === 'exec' || args[0] === 'probe'
+      const invocation = command.parent?.rawArgs ?? []
+      const separator = invocation.indexOf('--')
+      const childArgv = separator < 0 ? [] : invocation.slice(separator + 1)
       return workflowCommand(
-        commandOwnsChildArgv ? ['workflow', ...args] : productArgv('workflow', args, options),
+        commandOwnsChildArgv
+          ? ['workflow', args[0]!, ...(separator < 0 ? [] : ['--', ...childArgv])]
+          : productArgv('workflow', args, options),
         presentation,
         commandOwnsChildArgv
           ? {
