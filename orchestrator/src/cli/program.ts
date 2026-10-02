@@ -1,6 +1,7 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
+import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
 import { register as registerCode } from '../commands/code.ts'
@@ -41,6 +42,7 @@ registerReview(program)
 registerPullRequest(program)
 registerCode(program)
 registerBranches(program)
+registerBoardCommands(program)
 registerRecordAuth(program)
 registerRelease(program)
 registerDocs(program)

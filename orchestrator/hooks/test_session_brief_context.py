@@ -26,6 +26,17 @@ class AssembleAdditionalContext(unittest.TestCase):
     def test_budget_constant_stays_under_the_harness_cap(self):
         self.assertEqual(session_brief.HOOK_CONTEXT_MAX_CHARS, 9000)
 
+    def test_board_notices_drop_before_other_unprotected_sections(self):
+        text = self.assemble(
+            100,
+            autonomy="protected",
+            board="b" * 200,
+            issues="filed issue",
+        )
+        self.assertNotIn("b" * 200, text)
+        self.assertIn("filed issue", text)
+        self.assertIn("Dropped board notices (orch board read).", text)
+
     def test_keeps_every_section_when_under_budget(self):
         text = self.assemble(
             200,

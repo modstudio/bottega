@@ -134,14 +134,15 @@ def _resume_sentence(source, open_briefs):
 HOOK_CONTEXT_MAX_CHARS = 9000
 HOOK_CONTEXT_TRUNCATION_MARKER = "…"
 
-# Least important first. Display order of the rest is resume table, inbox, issues, extra.
+# Least important first. Board notices are separately droppable at lowest priority.
 _HOOK_CONTEXT_DROPPABLE = (
+    ("board", "board notices", "orch board read"),
     ("issues", "filed issues", "orch fix-defect --waiting"),
     ("inbox", "inbox detail", "orch inbox"),
     ("extra", "heartbeat and monitor extra", "orch monitor"),
     ("resume_table", "resume table", "orch doc resumes"),
 )
-_HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra")
+_HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra", "board")
 
 
 def _join_sections(*sections):
@@ -173,6 +174,7 @@ def assemble_additional_context(
     inbox="",
     issues="",
     extra="",
+    board="",
     budget=HOOK_CONTEXT_MAX_CHARS,
 ):
     sections = {
@@ -182,6 +184,7 @@ def assemble_additional_context(
         "inbox": inbox.strip(),
         "issues": issues.strip(),
         "extra": extra.strip(),
+        "board": board.strip(),
     }
     included = {key: sections[key] for key, _, _ in _HOOK_CONTEXT_DROPPABLE}
     dropped = []
@@ -253,7 +256,7 @@ def orch_worker_session(env=None):
 def main() -> int:
     if orch_worker_session():
         return 0
-    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = board_p = None
     settings_log_path = settings_log_offset = None
     settings_start_failure = None
     settings_read_failure = None
@@ -285,6 +288,11 @@ def main() -> int:
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
+            subprocess.run(
+                [orch, "board", "presence"], env=inbox_env, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=1, check=False
+            )
+            board_p = _start(orch, "board", "read", env=inbox_env)
         inbox_p = _start(
             orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )
@@ -314,6 +322,7 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
+        board = _wait(board_p, deadline) if board_p is not None else None
         settings_apply = None
         if settings_p is not None:
             try:
@@ -622,6 +631,7 @@ def main() -> int:
             "inbox": "\n".join(inbox_lines),
             "issues": "\n".join(issues_lines),
             "extra": extra_section,
+            "board": board.stdout.strip() if board is not None and board.returncode == 0 else "",
         }
         health_context = assemble_additional_context(**health_sections)
         health_notices = list(notices)
@@ -645,7 +655,7 @@ def main() -> int:
                         and isinstance(item.get("subject"), str)
                         and isinstance(item.get("detail"), str)
                         and isinstance(item.get("noticeId"), str)
-                        and item["noticeId"].partition(":")[0] in ("condition", "landing")
+                        and item["noticeId"].partition(":")[0] in ("condition", "landing", "board")
                         and item["noticeId"].partition(":")[1] == ":"
                         and item["noticeId"].partition(":")[2].isdigit()
                         and int(item["noticeId"].partition(":")[2]) > 0
@@ -720,6 +730,7 @@ def main() -> int:
         _kill(waiting_p)
         _kill(context_p)
         _kill(monitor_p)
+        _kill(board_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)
     return 0

@@ -305,6 +305,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -413,6 +414,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -503,6 +505,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -574,6 +577,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0070_question_delivery_retired',
       '0071_worker_note_request',
       '0072_release_ledger',
+      '0073_board_notices',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',

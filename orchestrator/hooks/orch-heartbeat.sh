@@ -165,6 +165,7 @@ for ((i = 1; i <= MAX; i++)); do
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
   fi
+  CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" board presence >/dev/null 2>&1 || true
   # The heartbeat is session-scoped, not checkout-scoped. Ask for the complete
   # visible set, and make the explicit SID the identity used to derive
   # `can_answer`; the inherited environment may name a different session.
@@ -442,7 +443,7 @@ for row in rows:
     if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
         raise SystemExit(2)
     source, separator, identifier = row["noticeId"].partition(":")
-    if source not in ("condition", "landing") or separator != ":" or not identifier.isdigit() or int(identifier) < 1:
+    if source not in ("condition", "landing", "board") or separator != ":" or not identifier.isdigit() or int(identifier) < 1:
         raise SystemExit(2)
     if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):
         raise SystemExit(2)
