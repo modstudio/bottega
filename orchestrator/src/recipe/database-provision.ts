@@ -219,6 +219,15 @@ function sqlitePathProblem(plan: DatabaseCommandPlan, context: ProvisionContext)
   return confinedPath(context.projectRoot, source) ?? confinedPath(context.treeRoot, target)
 }
 
+function rootIsMissing(root: string): boolean {
+  try {
+    lstatSync(root)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+  }
+}
+
 function preparedPlan(
   key: string,
   allocation: Allocation,
@@ -359,6 +368,13 @@ export function dropAndVerifyDatabase(
   const { plan, connection } = prepared
   const exec = allocation.provision!.exec
   const cwd = context.commandRoot ?? context.treeRoot
+  if (plan.engine === 'sqlite' && rootIsMissing(context.treeRoot))
+    return result(
+      key,
+      'verify',
+      'ok',
+      `tree ${context.treeRoot} is gone, so its SQLite database is gone`,
+    )
   const dropProblem = sqlitePathProblem(plan, context)
   if (dropProblem) return result(key, 'undo', 'refused', dropProblem)
   const dropped = runCommand(plan.drop, exec, connection, cwd, spawn)

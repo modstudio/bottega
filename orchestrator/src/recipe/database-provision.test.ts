@@ -304,4 +304,40 @@ describe('database provision adapter', () => {
     })
     expect(existsSync(join(outside, 'app.sqlite'))).toBeTrue()
   })
+
+  test('treats an owned sqlite database as gone when its tree root is gone', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'orch-db-main-'))
+    const treeRoot = mkdtempSync(join(tmpdir(), 'orch-db-tree-'))
+    roots.push(projectRoot, treeRoot)
+    mkdirSync(join(projectRoot, 'fixtures'))
+    writeFileSync(join(projectRoot, 'fixtures', 'base.sqlite'), 'source')
+    const recipe = recipeSchema.parse({
+      allocate: {
+        databases: {
+          app: {
+            engine: 'sqlite',
+            name: 'data/app.sqlite',
+            provision: { from: 'fixtures/base.sqlite', connection: { key: 'UNUSED' } },
+          },
+        },
+      },
+      create: [],
+    })
+    rmSync(treeRoot, { recursive: true })
+
+    const dropped = dropAndVerifyDatabase(
+      'app',
+      recipe.allocate!.databases!.app!,
+      { projectRoot, treeRoot, allocations: { app: 'data/app.sqlite' } },
+      () => {
+        throw new Error('sqlite command reached spawn after the tree was gone')
+      },
+    )
+
+    expect(dropped).toMatchObject({
+      status: 'ok',
+      phase: 'verify',
+      detail: expect.stringContaining('tree'),
+    })
+  })
 })
