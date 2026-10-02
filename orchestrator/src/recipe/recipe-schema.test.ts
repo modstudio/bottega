@@ -198,6 +198,66 @@ describe('tracked recipe refusal rules', () => {
     ).toContain('unknown-key rule')
   })
 
+  test('accepts built-in database provision and applies safe defaults', () => {
+    const parsed = recipeSchema.parse({
+      allocate: {
+        databases: {
+          app: {
+            engine: 'postgres',
+            name: 'app_{index}',
+            provision: {
+              from: 'app_base',
+              connection: { key: 'DATABASE_URL' },
+              exec: { where: 'container', service: 'database' },
+            },
+          },
+        },
+      },
+      create: [],
+    })
+    expect(parsed.allocate?.databases?.app?.provision).toMatchObject({
+      connection: { key: 'DATABASE_URL', file: '.env' },
+      reuse: false,
+      exec: { where: 'container', service: 'database' },
+    })
+  })
+
+  test('refuses other provisioners, literal connections, and escaping connection files', () => {
+    expect(
+      messages({
+        allocate: {
+          databases: {
+            app: {
+              engine: 'other',
+              name: 'app',
+              provision: { from: 'base', connection: { key: 'DATABASE_URL' } },
+            },
+          },
+        },
+        create: [],
+      }).join('\n'),
+    ).toContain('add a project create step')
+    for (const connection of [
+      'postgres://admin:secret@localhost/app',
+      { key: 'DATABASE_URL', file: '../secret.env' },
+    ]) {
+      expect(
+        recipeSchema.safeParse({
+          allocate: {
+            databases: {
+              app: {
+                engine: 'postgres',
+                name: 'app',
+                provision: { from: 'base', connection },
+              },
+            },
+          },
+          create: [],
+        }).success,
+      ).toBeFalse()
+    }
+  })
+
   test('refuses absolute and parent-traversing command working directories', () => {
     for (const cwd of ['/tmp/app', 'packages/../other']) {
       const recipe = minimal()

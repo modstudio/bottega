@@ -1,23 +1,9 @@
 // concern: tracked recipe execution
 /** Executes validated tracked lifecycle plans and records the immutable recipe used by a tree. */
 
-import { randomUUID } from 'node:crypto'
-import {
-  chmodSync,
-  closeSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { git, gitOk } from '../git/git-environment.ts'
@@ -36,7 +22,11 @@ import {
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { managedBlockPlan, omitKeys } from './env-file.ts'
+import {
+  createProvisionedDatabases,
+  type DatabaseOwnership,
+  dropProvisionedDatabases,
+} from './database-provision.ts'
 import {
   compensationPlan,
   destroyPlan,
@@ -59,11 +49,13 @@ import {
   type StepContext,
   type StepResult,
 } from './recipe-step.ts'
+import { writeTrackedEnvFiles } from './tracked-env-files.ts'
 
 export type RecipeSnapshot = {
   source: { path: string; commit: string }
   recipe: TrackedRecipe
   allocations?: RecipeAllocations
+  databaseOwnership?: DatabaseOwnership
 }
 export type RecipeAllocations = {
   index: number
@@ -81,113 +73,6 @@ export type TrackedAllocator = {
   release(attempt: AllocationAttempt, reason: string): void
 }
 type StepRunner = (step: Step, context: StepContext) => StepResult
-
-const ENV_PLACEHOLDER = /\{([^{}]+)\}/g
-
-function fillEnvContents(contents: string, vars: Record<string, string>): EnvTextPlan {
-  for (const match of contents.matchAll(ENV_PLACEHOLDER)) {
-    if (!(match[1]! in vars)) {
-      return { ok: false, reason: `unavailable placeholder {${match[1]}}` }
-    }
-  }
-  return {
-    ok: true,
-    text: contents.replace(ENV_PLACEHOLDER, (_placeholder, name: string) => vars[name]!),
-  }
-}
-
-type EnvTextPlan = { ok: true; text: string } | { ok: false; reason: string }
-
-function readEnvBase(
-  envFile: NonNullable<TrackedRecipe['env']>[number],
-  treeRoot: string,
-  projectRoot: string,
-): EnvTextPlan {
-  const inherited = envFile.inherit !== undefined
-  const source = inherited ? join(projectRoot, envFile.inherit!) : join(treeRoot, envFile.path)
-  if (!existsSync(source)) {
-    return inherited
-      ? { ok: false, reason: `could not read inherited path "${envFile.inherit}"` }
-      : { ok: true, text: '' }
-  }
-  try {
-    const text = readFileSync(source, 'utf8')
-    return { ok: true, text: inherited ? omitKeys(text, envFile.omit ?? []) : text }
-  } catch {
-    return {
-      ok: false,
-      reason: inherited
-        ? `could not read inherited path "${envFile.inherit}"`
-        : `could not read existing target`,
-    }
-  }
-}
-
-function atomicEnvWrite(target: string, text: string): void {
-  const existingMode = existsSync(target) ? statSync(target).mode & 0o7777 : 0o600
-  const temporary = join(dirname(target), `.${basename(target)}.orch-${randomUUID()}`)
-  let descriptor: number | null = null
-  try {
-    descriptor = openSync(temporary, 'wx', 0o600)
-    writeFileSync(descriptor, text, 'utf8')
-    closeSync(descriptor)
-    descriptor = null
-    chmodSync(temporary, existingMode)
-    renameSync(temporary, target)
-  } catch (error) {
-    if (descriptor !== null) closeSync(descriptor)
-    try {
-      unlinkSync(temporary)
-    } catch {}
-    throw error
-  }
-}
-
-/** Write declared env files in order without exposing their contents in failures. */
-export function writeTrackedEnvFiles(
-  recipe: TrackedRecipe,
-  context: StepContext,
-  projectRoot: string,
-): StepResult | null {
-  const envFiles = recipe.env ?? []
-  const filledContents: string[] = []
-  for (const envFile of envFiles) {
-    const filled = fillEnvContents(envFile.contents, context.vars)
-    if (!filled.ok) return envFileFailure(envFile.path, filled.reason)
-    filledContents.push(filled.text)
-  }
-  for (const [index, envFile] of envFiles.entries()) {
-    const base = readEnvBase(envFile, context.treeRoot, projectRoot)
-    if (!base.ok) return envFileFailure(envFile.path, base.reason)
-    const contents = filledContents[index]!
-    const mode = envFile.mode ?? 'managed-block'
-    const plan =
-      mode === 'replace'
-        ? { ok: true as const, text: contents }
-        : mode === 'append'
-          ? { ok: true as const, text: `${base.text}${contents}` }
-          : managedBlockPlan(base.text, basename(context.treeRoot), contents)
-    if (!plan.ok) return envFileFailure(envFile.path, plan.reason)
-    try {
-      atomicEnvWrite(join(context.treeRoot, envFile.path), plan.text)
-    } catch {
-      return envFileFailure(envFile.path, 'atomic write failed')
-    }
-  }
-  return null
-}
-
-function envFileFailure(path: string, detail: string): StepResult {
-  return {
-    name: `env ${path}`,
-    phase: 'run',
-    status: 'refused',
-    exitCode: null,
-    argv: null,
-    detail: `env file "${path}" refused: ${detail}`,
-    durationMs: 0,
-  }
-}
 
 export const trackedAllocator: TrackedAllocator = {
   allocate(input) {
@@ -735,6 +620,23 @@ export function createTrackedRecipe(
       creation: { failure: envFailure, compensation: [] },
     })
   }
+  const databaseContext = {
+    projectRoot: input.repoRoot,
+    treeRoot: path,
+    allocations: prepared.snapshot.allocations!.databases,
+  }
+  const databases = createProvisionedDatabases(prepared.recipe, databaseContext)
+  snapshot.databaseOwnership = databases.ownership
+  if (databases.failure) {
+    failTrackedCreation({
+      createInput: input,
+      worktree,
+      snapshot,
+      allocationAttempt: prepared.allocationAttempt,
+      allocator,
+      creation: { failure: databases.failure, compensation: databases.compensation },
+    })
+  }
   const creation = executeTrackedCreateSteps(prepared.recipe, context, runStep, runUndo)
   if (creation.failure) {
     failTrackedCreation({
@@ -743,7 +645,13 @@ export function createTrackedRecipe(
       snapshot,
       allocationAttempt: prepared.allocationAttempt,
       allocator,
-      creation: { failure: creation.failure, compensation: creation.compensation },
+      creation: {
+        failure: creation.failure,
+        compensation: [
+          ...creation.compensation,
+          ...dropProvisionedDatabases(prepared.recipe, databaseContext, snapshot.databaseOwnership),
+        ],
+      },
     })
   }
   writeSnapshot(input.runId, snapshot)
@@ -810,6 +718,18 @@ export function teardownTrackedRecipe(
     results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
     for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
       results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
+    results.push(
+      ...dropProvisionedDatabases(
+        stored.snapshot.recipe,
+        {
+          projectRoot: input.worktree.repoRoot,
+          treeRoot: input.worktree.path,
+          commandRoot: context.treeRoot,
+          allocations: stored.snapshot.allocations?.databases ?? {},
+        },
+        stored.snapshot.databaseOwnership,
+      ),
+    )
     for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
   } finally {
     if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })

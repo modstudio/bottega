@@ -11,6 +11,20 @@ export function sharedDeclarations(recipe: TrackedRecipe): string[] {
   )
 }
 
+/** Plan creation phases in execution order without performing them. */
+export function creationPlan(
+  recipe: TrackedRecipe,
+): { kind: 'env' | 'database' | 'step'; name: string }[] {
+  const databases = Object.entries(recipe.allocate?.databases ?? {})
+    .filter(([, allocation]) => allocation.provision)
+    .map(([name]) => ({ kind: 'database' as const, name }))
+  return [
+    { kind: 'env', name: 'env files' },
+    ...databases,
+    ...recipe.create.map((step) => ({ kind: 'step' as const, name: step.name })),
+  ]
+}
+
 export function compensationPlan(recipe: TrackedRecipe, failedIndex: number): Step[] {
   return recipe.create
     .slice(0, failedIndex + 1)
