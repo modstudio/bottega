@@ -11,13 +11,14 @@ import tempfile
 import time
 
 
-def _start(orch, *args, env=None):
+def _start(orch, *args, env=None, cwd=None):
     return subprocess.Popen(
         [orch, *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        cwd=cwd,
     )
 
 
@@ -290,9 +291,9 @@ def main() -> int:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
             subprocess.run(
                 [orch, "board", "presence"], env=inbox_env, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, timeout=1, check=False
+                stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
             )
-            board_p = _start(orch, "board", "read", env=inbox_env)
+            board_p = _start(orch, "board", "read", env=inbox_env, cwd=cwd)
         inbox_p = _start(
             orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )

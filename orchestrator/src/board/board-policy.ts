@@ -88,12 +88,11 @@ export const needsAckEscalation = (input: {
   ackRequired: boolean
   deadline: number | null
   acknowledgedAt: number | null
-  audienceMemberLastSeen: number | null
-  createdAt: number
+  audienceAtPosting: boolean
   now: number
 }) =>
   input.ackRequired &&
   input.deadline !== null &&
   input.deadline <= input.now &&
   input.acknowledgedAt === null &&
-  (input.audienceMemberLastSeen === null || input.audienceMemberLastSeen <= input.createdAt)
+  input.audienceAtPosting

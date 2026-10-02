@@ -29,6 +29,7 @@ CREATE TABLE board_message (
 CREATE TABLE board_receipt (
   message_id INTEGER NOT NULL REFERENCES board_message(id) ON DELETE CASCADE,
   reader_session TEXT NOT NULL,
+  audience_at_posting INTEGER NOT NULL CHECK (audience_at_posting IN (0,1)),
   delivered_at TEXT,
   acknowledged_at TEXT,
   PRIMARY KEY (message_id, reader_session)

@@ -192,7 +192,8 @@ export function postNotice(
     id = Number(inserted.lastInsertRowid)
     const add = database.query(
       `INSERT OR IGNORE INTO board_receipt
-       (message_id,reader_session,delivered_at,acknowledged_at) VALUES (?,?,NULL,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,1,NULL,NULL)`,
     )
     for (const reader of recipients(input.audience, clock)) add.run(id, reader)
   }, database)
@@ -263,8 +264,9 @@ export function readNotices(
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
     const stamp = database.query(
-      `INSERT INTO board_receipt(message_id,reader_session,delivered_at,acknowledged_at)
-       VALUES (?,?,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+      `INSERT INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
     for (const row of rows) stamp.run(row.id, reader, deliveredAt)
@@ -279,8 +281,9 @@ export function acknowledgeNotice(id: number, env: Environment = process.env, cl
     throw new Error(`live board notice ${id} is not addressed to this reader`)
   writableDb()
     .query(
-      `INSERT INTO board_receipt(message_id,reader_session,delivered_at,acknowledged_at)
-       VALUES (?,?,?,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+      `INSERT INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,0,?,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at),
        acknowledged_at=excluded.acknowledged_at`,
     )
@@ -292,11 +295,12 @@ export function noticeStatus(id: number) {
   if (!row) throw new Error(`no board notice ${id}`)
   const receipts = db()
     .query(
-      `SELECT reader_session,delivered_at,acknowledged_at FROM board_receipt
+      `SELECT reader_session,audience_at_posting,delivered_at,acknowledged_at FROM board_receipt
        WHERE message_id=? ORDER BY reader_session`,
     )
     .all(id) as {
     reader_session: string
+    audience_at_posting: number
     delivered_at: string | null
     acknowledged_at: string | null
   }[]
@@ -341,8 +345,9 @@ export function markInterruptNoticesDelivered(session: string, ids: number[], at
   for (const id of ids)
     database
       .query(
-        `INSERT INTO board_receipt(message_id,reader_session,delivered_at,acknowledged_at)
-         VALUES (?,?,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+        `INSERT INTO board_receipt
+         (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+         VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
       )
       .run(id, session, at)
@@ -351,20 +356,18 @@ export function markInterruptNoticesDelivered(session: string, ids: number[], at
 export function boardEscalations(clock = Date.now()) {
   const rows = db()
     .query(
-      `SELECT m.id,m.created_at,m.ack_required,m.ack_deadline,r.reader_session,
-              r.acknowledged_at,p.last_seen
+      `SELECT m.id,m.ack_required,m.ack_deadline,r.reader_session,
+              r.acknowledged_at,r.audience_at_posting
        FROM board_message m JOIN board_receipt r ON r.message_id=m.id
-       LEFT JOIN presence p ON p.session_id=r.reader_session
        WHERE m.withdrawn_at IS NULL`,
     )
     .all() as {
     id: number
-    created_at: string
     ack_required: number
     ack_deadline: string | null
     reader_session: string
     acknowledged_at: string | null
-    last_seen: string | null
+    audience_at_posting: number
   }[]
   return rows
     .filter((row) =>
@@ -372,8 +375,7 @@ export function boardEscalations(clock = Date.now()) {
         ackRequired: row.ack_required === 1,
         deadline: row.ack_deadline ? Date.parse(row.ack_deadline) : null,
         acknowledgedAt: row.acknowledged_at ? Date.parse(row.acknowledged_at) : null,
-        audienceMemberLastSeen: row.last_seen ? Date.parse(row.last_seen) : null,
-        createdAt: Date.parse(row.created_at),
+        audienceAtPosting: row.audience_at_posting === 1,
         now: clock,
       }),
     )

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   architectIdentity,
   audienceRefusal,
@@ -22,12 +23,12 @@ test('architect identity is a table with only the ruled Claude entry', () => {
 
 test('audiences resolve at delivery, including a late joiner', () => {
   const audience = parseAudience('architects')
-  const original = [{ session: 'one', project: 'bottega', lastSeen: 900 }]
+  const original = [{ session: 'one', project: PLATFORM_SLUG, lastSeen: 900 }]
   expect(resolveAudience(audience, original, 1_000, 200)).toEqual(['one'])
   expect(
     resolveAudience(
       audience,
-      [...original, { session: 'late', project: 'bottega', lastSeen: 1_050 }],
+      [...original, { session: 'late', project: PLATFORM_SLUG, lastSeen: 1_050 }],
       1_100,
       200,
     ),
@@ -62,8 +63,7 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
       ackRequired: true,
       deadline: 20,
       acknowledgedAt: null,
-      audienceMemberLastSeen: 9,
-      createdAt: 10,
+      audienceAtPosting: true,
       now: 21,
     }),
   ).toBe(true)
@@ -72,8 +72,7 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
       ackRequired: true,
       deadline: 20,
       acknowledgedAt: null,
-      audienceMemberLastSeen: 11,
-      createdAt: 10,
+      audienceAtPosting: false,
       now: 21,
     }),
   ).toBe(false)
