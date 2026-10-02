@@ -71,6 +71,30 @@ test('removes the recipe it created when the register fill is refused', async ()
   expect(existsSync(join(path, INFERRED_RECIPE_PATH))).toBe(false)
 })
 
+test('removes the recipe it created when project registration is refused', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'setup-apply-add-refused-'))
+  temporary.push(path)
+  const candidate: SetupAction = {
+    kind: 'add',
+    name: 'project',
+    path,
+    stack: 'node',
+    settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } },
+    settingsDiff: {},
+    recipeFile: { path: INFERRED_RECIPE_PATH, content: '{"worktree":{"create":[]}}\n' },
+  }
+  const results = await applySetupActions([candidate], {
+    add: async () => {
+      expect(existsSync(join(path, INFERRED_RECIPE_PATH))).toBe(true)
+      throw new Error('project registration refused')
+    },
+    fillAbsent: async () => {},
+  })
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toContain('project registration refused')
+  expect(existsSync(join(path, INFERRED_RECIPE_PATH))).toBe(false)
+})
+
 test('refuses a symlinked recipe directory and writes nothing outside the repository', async () => {
   const path = mkdtempSync(join(tmpdir(), 'setup-apply-symlink-'))
   const outside = mkdtempSync(join(tmpdir(), 'setup-apply-outside-'))

@@ -29,6 +29,10 @@ export type SetupQuestion = {
 
 export type SetupNotice = { message: string; fix: string | null }
 export type SetupAgent = { name: string; harness: string; enabled: number | boolean }
+export type SetupLifecycleResolver = (
+  worktree: ProjectSettings['worktree'] | null | undefined,
+  defaultConfigExists: boolean,
+) => { form: 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none' }
 export type SetupProposal = {
   repository: RepositoryFacts
   current: Project | null
@@ -262,7 +266,13 @@ function proposeProjectToolchain(
   current: Project | null,
   questions: SetupQuestion[],
   notices: SetupNotice[],
-): { gate: string | null; recipeQuestionId: string | null; recipeContent: string | null } {
+  resolveLifecycle: SetupLifecycleResolver,
+): {
+  gate: string | null
+  recipeQuestionId: string | null
+  recipeContent: string | null
+  recoverRecipePointer: boolean
+} {
   const gate = current?.settings.gate ?? proposedGate(repository)
   if (!current?.settings.gate && !gate) {
     notices.push({
@@ -271,8 +281,12 @@ function proposeProjectToolchain(
     })
   }
   const recipeContent = inferredRecipeContent(repository)
-  if (current?.settings.worktree?.recipePath || repository.recipeFileExists || !recipeContent) {
-    return { gate, recipeQuestionId: null, recipeContent }
+  const lifecycle = resolveLifecycle(current?.settings.worktree, repository.defaultConfigExists)
+  if (lifecycle.form !== 'none' || !recipeContent) {
+    return { gate, recipeQuestionId: null, recipeContent, recoverRecipePointer: false }
+  }
+  if (repository.inferredRecipeExists) {
+    return { gate, recipeQuestionId: null, recipeContent, recoverRecipePointer: true }
   }
   const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
   questions.push({
@@ -293,10 +307,24 @@ function proposeProjectToolchain(
     recommendation: 'write',
     why: 'A tracked recipe gives writing worktrees the project dependencies without adding environment, database, or serve access.',
   })
-  return { gate, recipeQuestionId, recipeContent }
+  return { gate, recipeQuestionId, recipeContent, recoverRecipePointer: false }
+}
+
+function recoveredWorktreeSettings(
+  current: Project | null,
+  recoverRecipePointer: boolean,
+): Pick<ProjectSettings, 'worktree'> | Record<string, never> {
+  if (!recoverRecipePointer) return {}
+  return {
+    worktree: {
+      ...current?.settings.worktree,
+      recipePath: INFERRED_RECIPE_PATH,
+    },
+  }
 }
 
 export function proposeSetup(
+  resolveLifecycle: SetupLifecycleResolver,
   machine: SetupFacts,
   repositories: RepositoryFacts[],
   register: Project[],
@@ -391,11 +419,12 @@ export function proposeSetup(
         fix: null,
       })
     }
-    const { gate, recipeQuestionId, recipeContent } = proposeProjectToolchain(
+    const { gate, recipeQuestionId, recipeContent, recoverRecipePointer } = proposeProjectToolchain(
       repository,
       current,
       questions,
       notices,
+      resolveLifecycle,
     )
     const settings: ProjectSettings = {
       ...current?.settings,
@@ -405,6 +434,7 @@ export function proposeSetup(
         : { tracker: { kind: 'hub', protocol: 'hub' } }),
       ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
       ...(gate ? { gate } : {}),
+      ...recoveredWorktreeSettings(current, recoverRecipePointer),
     }
     return {
       repository,

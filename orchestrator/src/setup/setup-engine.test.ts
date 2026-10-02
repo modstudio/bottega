@@ -1,10 +1,35 @@
 import { expect, test } from 'bun:test'
-import type { Project } from '../project/projects.ts'
+import type { Project, ProjectSettings } from '../project/projects.ts'
+import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
-import { deriveKeyPrefix, proposeSetup, type SetupAgent } from './setup-engine.ts'
+import {
+  deriveKeyPrefix,
+  proposeSetup as proposeSetupEngine,
+  type SetupAgent,
+  type SetupNotice,
+} from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
+
+function proposeSetup(
+  facts: SetupFacts,
+  repositories: RepositoryFacts[],
+  register: Project[],
+  agents: SetupAgent[],
+  notices: SetupNotice[] = [],
+  servers: Parameters<typeof proposeSetupEngine>[6] = [],
+) {
+  return proposeSetupEngine(
+    resolveWorktreeLifecycle,
+    facts,
+    repositories,
+    register,
+    agents,
+    notices,
+    servers,
+  )
+}
 
 const machine = {
   git: { path: '/bin/git', version: '1' },
@@ -50,7 +75,8 @@ function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
     typecheck: null,
     test: null,
     ci: false,
-    recipeFileExists: false,
+    defaultConfigExists: false,
+    inferredRecipeExists: false,
     ...overrides,
   }
 }
@@ -227,7 +253,7 @@ test('does not propose an existing gate or ask for an existing recipe', () => {
 
   const filePlan = proposeSetup(
     machine,
-    [repository({ packageManager: 'bun', test: 'bun run test', recipeFileExists: true })],
+    [repository({ packageManager: 'bun', test: 'bun run test', defaultConfigExists: true })],
     [
       registered({
         keyPrefixes: ['ALPHA'],
@@ -241,6 +267,69 @@ test('does not propose an existing gate or ask for an existing recipe', () => {
   expect(filePlan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(
     false,
   )
+})
+
+const satisfiedLifecycleCases: [string, ProjectSettings['worktree'] | undefined, boolean][] = [
+  ['command templates', { create: { command: 'make', args: ['worktree'] } }, false],
+  ['inline recipe', { recipe: {} }, false],
+  ['default config', undefined, true],
+]
+
+test.each(satisfiedLifecycleCases)(
+  'treats %s lifecycle as already satisfied',
+  (_name, worktree, defaultConfigExists) => {
+    const plan = proposeSetup(
+      machine,
+      [
+        repository({
+          packageManager: 'bun',
+          test: 'bun run test',
+          defaultConfigExists,
+        }),
+      ],
+      [
+        registered({
+          keyPrefixes: ['ALPHA'],
+          tracker: { kind: 'hub', protocol: 'hub' },
+          trunk: 'main',
+          gate: 'bun run test',
+          ...(worktree ? { worktree } : {}),
+        }),
+      ],
+      [],
+    )
+    expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+    expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+  },
+)
+
+test('recovers an existing inferred recipe by filling only its pointer', () => {
+  const plan = proposeSetup(
+    machine,
+    [
+      repository({
+        packageManager: 'bun',
+        test: 'bun run test',
+        inferredRecipeExists: true,
+      }),
+    ],
+    [
+      registered({
+        keyPrefixes: ['ALPHA'],
+        tracker: { kind: 'hub', protocol: 'hub' },
+        trunk: 'main',
+        gate: 'bun run test',
+        worktree: { branch: 'orch/{id}' },
+      }),
+    ],
+    [],
+  )
+  expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+    kind: 'set',
+    fill: { settings: { worktree: { recipePath: INFERRED_RECIPE_PATH } } },
+  })
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).not.toHaveProperty('recipeFile')
 })
 
 test('derives bounded unique prefixes and excludes TASK', () => {

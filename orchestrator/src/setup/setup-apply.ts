@@ -212,15 +212,7 @@ async function applySetupAction(
   }
   if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)
   if (action.kind === 'add') {
-    await writeRecipe(action)
-    await service.add({
-      path: action.path,
-      name: action.name,
-      stack: action.stack,
-      canon: true,
-      settings: action.settings,
-      allowIncomplete: false,
-    })
+    await applyAddAction(action, service)
     return 'applied'
   }
   if (action.kind === 'set') {
@@ -230,19 +222,39 @@ async function applySetupAction(
   return 'unchanged'
 }
 
+async function applyAddAction(action: AddAction, service: SetupProjectService): Promise<void> {
+  const createdRecipe = await writeRecipe(action)
+  try {
+    await service.add({
+      path: action.path,
+      name: action.name,
+      stack: action.stack,
+      canon: true,
+      settings: action.settings,
+      allowIncomplete: false,
+    })
+  } catch (error) {
+    await compensateRecipe(error, createdRecipe)
+  }
+}
+
 async function applySetAction(action: SetAction, service: SetupProjectService): Promise<void> {
   const createdRecipe = await writeRecipe(action)
   try {
     await service.fillAbsent({ name: action.currentName, fill: action.fill })
   } catch (error) {
-    if (!createdRecipe) throw error
-    try {
-      await rm(createdRecipe)
-    } catch (cleanupError) {
-      throw new Error(
-        `${error instanceof Error ? error.message : String(error)}; could not remove recipe created by this apply: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
-      )
-    }
-    throw error
+    await compensateRecipe(error, createdRecipe)
   }
+}
+
+async function compensateRecipe(error: unknown, createdRecipe: string | null): Promise<never> {
+  if (!createdRecipe) throw error
+  try {
+    await rm(createdRecipe)
+  } catch (cleanupError) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; could not remove recipe created by this apply: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+    )
+  }
+  throw error
 }

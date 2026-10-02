@@ -171,6 +171,7 @@ export async function detectRepositoryToolchain(root: string): Promise<Toolchain
     packageManager: manager,
     ...commands,
     ci,
-    recipeFileExists: has(root, DEFAULT_PROJECT_CONFIG_PATH) || has(root, INFERRED_RECIPE_PATH),
+    defaultConfigExists: has(root, DEFAULT_PROJECT_CONFIG_PATH),
+    inferredRecipeExists: has(root, INFERRED_RECIPE_PATH),
   }
 }

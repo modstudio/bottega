@@ -135,7 +135,13 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       const fillSettings = Object.fromEntries(
         Object.entries(settingsDiff).map(([key, change]) => [
           key,
-          key === 'worktree' && recipeFile ? { recipePath: INFERRED_RECIPE_PATH } : change.to,
+          key === 'worktree' &&
+          (recipeFile ||
+            (change.to as ProjectSettings['worktree'] | undefined)?.recipePath ===
+              INFERRED_RECIPE_PATH) &&
+          !proposal.current?.settings.worktree?.recipePath
+            ? { recipePath: INFERRED_RECIPE_PATH }
+            : change.to,
         ]),
       ) as ProjectSettings
       return {

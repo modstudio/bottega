@@ -25,7 +25,8 @@ export type ToolchainFacts = {
   typecheck: string | null
   test: string | null
   ci: boolean
-  recipeFileExists: boolean
+  defaultConfigExists: boolean
+  inferredRecipeExists: boolean
 }
 
 const INSTALL: Record<DetectedPackageManager, string[]> = {

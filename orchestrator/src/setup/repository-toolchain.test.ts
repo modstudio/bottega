@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { configDocumentSchema } from '../recipe/recipe-schema.ts'
+import { DEFAULT_PROJECT_CONFIG_PATH } from '../worktree/worktree-lifecycle.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
-import { inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
+import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -151,3 +152,16 @@ for (const entry of cases) {
     })
   })
 }
+
+test('distinguishes the auto-discovered default config from the inferred recipe', async () => {
+  const root = fixture({
+    'package.json': JSON.stringify({ packageManager: 'bun@1.3.1' }),
+    'bun.lock': '',
+    [DEFAULT_PROJECT_CONFIG_PATH]: '{}',
+    [INFERRED_RECIPE_PATH]: '{}',
+  })
+  expect(await detectRepositoryToolchain(root)).toMatchObject({
+    defaultConfigExists: true,
+    inferredRecipeExists: true,
+  })
+})

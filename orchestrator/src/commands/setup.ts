@@ -17,6 +17,7 @@ import {
   recommendedAnswers,
   validateSetupAnswers,
 } from '../setup/setup-planner.ts'
+import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { collect, log } from './support.ts'
 
 type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: string }
@@ -30,6 +31,7 @@ async function setupPlan(inputs: string[]) {
   const orch = bottegaEntryArgv('orch')
   const ask = bottegaEntryArgv('ask-server')
   return proposeSetup(
+    resolveWorktreeLifecycle,
     machine,
     repositories.repositories,
     state.projects,
