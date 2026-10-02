@@ -1,5 +1,6 @@
 // concern: tracked recipe lifecycle planning
 /** Plans tracked recipe lifecycle order and failure selection without executing or persisting anything. */
+import { composeProjectName } from './compose-provision-plan.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step, StepResult } from './recipe-step.ts'
 
@@ -55,6 +56,7 @@ export function teardownVars(input: {
   main: string
   label: string
   treeExists: boolean
+  compose?: { projectName: string; rootRunId: number }
   allocations?: {
     index: number
     ports: Record<string, number>
@@ -72,6 +74,11 @@ export function teardownVars(input: {
     main: input.main,
     label: input.label,
     tree_exists: String(input.treeExists),
+    ...(input.compose
+      ? {
+          'compose.project': composeProjectName(input.compose.projectName, input.compose.rootRunId),
+        }
+      : {}),
   }
   if (!input.allocations) return vars
   vars.index = String(input.allocations.index)

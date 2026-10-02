@@ -187,9 +187,12 @@ const STATIC_PLACEHOLDERS = new Set([
   'index',
   'label',
   'tree_exists',
+  'compose.project',
 ])
 const ALLOCATION_STATIC_PLACEHOLDERS = new Set(
-  [...STATIC_PLACEHOLDERS].filter((name) => name !== 'label' && name !== 'tree_exists'),
+  [...STATIC_PLACEHOLDERS].filter(
+    (name) => name !== 'label' && name !== 'tree_exists' && name !== 'compose.project',
+  ),
 )
 const ALLOCATION_PLACEHOLDER = /^(ports|db|alloc)\.([^{}.]+)$/
 const DATABASE_URL_PLACEHOLDER = /^db\.([^{}.]+)\.url$/
@@ -245,6 +248,11 @@ function databaseUrlPlaceholderRule(name: string): string {
 }
 
 function placeholderProblem(name: string, recipe: RecipeInput): string | null {
+  if (name === 'compose.project') {
+    return recipe.compose
+      ? null
+      : 'placeholder rule: {compose.project} is valid only when the recipe declares compose'
+  }
   if (STATIC_PLACEHOLDERS.has(name)) return null
   if (DATABASE_URL_PLACEHOLDER.test(name)) return databaseUrlPlaceholderRule(name)
   const allocation = name.match(ALLOCATION_PLACEHOLDER)
@@ -323,6 +331,40 @@ function validatePlaceholders(recipe: RecipeInput, context: z.RefinementCtx): vo
       (name) => envContentsPlaceholderProblem(name, recipe),
       context,
     )
+  }
+}
+
+function hasComposeProjectPlaceholder(value: unknown): boolean {
+  return stringsIn(value).some((text) =>
+    [...text.matchAll(/\{([^{}]+)\}/g)].some((match) => match[1] === 'compose.project'),
+  )
+}
+
+function validateComposeProjectLocations(recipe: RecipeInput, context: z.RefinementCtx): void {
+  for (const [index, file] of (recipe.compose?.files ?? []).entries()) {
+    if (!hasComposeProjectPlaceholder(file)) continue
+    context.addIssue({
+      code: 'custom',
+      path: ['compose', 'files', index],
+      message:
+        'compose placeholder rule: compose.files cannot use {compose.project} because Compose file paths are passed literally',
+    })
+  }
+  if (hasComposeProjectPlaceholder(recipe.compose?.envFile)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['compose', 'envFile'],
+      message:
+        'compose placeholder rule: compose.envFile cannot use {compose.project} because the Compose env-file path is passed literally',
+    })
+  }
+  if (hasComposeProjectPlaceholder(recipe.serve)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['serve'],
+      message:
+        'serve placeholder rule: serve declarations cannot use {compose.project} because rendered serve notes have no run identity',
+    })
   }
 }
 
@@ -556,6 +598,7 @@ const validatedRecipeSchema = recipeShape.superRefine((recipe, context) => {
   validateSeedDefault(recipe, context)
   validateStepNames(recipe, context)
   validatePlaceholders(recipe, context)
+  validateComposeProjectLocations(recipe, context)
   validateStringAllocationTemplates(recipe, context)
   validateAllocationUndo(recipe, context)
   validateServeUndo(recipe, context)

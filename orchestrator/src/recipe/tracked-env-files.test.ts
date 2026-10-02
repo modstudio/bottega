@@ -164,3 +164,21 @@ describe('tracked recipe env files stay out of git', () => {
     expect(readFileSync(join(tree, '.env'), 'utf8')).toBe('SECRET=yes')
   })
 })
+
+describe('tracked recipe Compose env placeholders', () => {
+  test('writes the derived Compose project into env contents', () => {
+    const { project, tree } = temporaryTree()
+    const recipe = recipeSchema.parse({
+      compose: { files: ['compose.yaml'] },
+      create: [],
+      env: [{ path: '.env', mode: 'replace', contents: 'COMPOSE_PROJECT={compose.project}\n' }],
+    })
+    const vars = trackedRecipeVars({}, { index: 4, ports: {}, databases: {}, strings: {} }, 42, {
+      projectName: 'Example App',
+    })
+    expect(
+      writeTrackedEnvFiles(recipe, { treeRoot: tree, vars }, project, {}, ignoredUntracked),
+    ).toBeNull()
+    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe('COMPOSE_PROJECT=example-app-orch-42\n')
+  })
+})

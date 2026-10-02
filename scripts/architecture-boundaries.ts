@@ -594,7 +594,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'recipe-lifecycle-boundary',
     'orchestrator/src/recipe/recipe-lifecycle.ts',
-    ['./recipe-schema.ts', './recipe-step.ts'],
+    ['./compose-provision-plan.ts', './recipe-schema.ts', './recipe-step.ts'],
     'Keep lifecycle planning pure and independent of execution, persistence, filesystem, and the register.',
   ),
   boundary(

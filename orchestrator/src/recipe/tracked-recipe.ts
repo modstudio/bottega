@@ -22,6 +22,7 @@ import {
 import { provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
+import { composeProjectName } from './compose-provision-plan.ts'
 import {
   createProvisionedDatabases,
   type DatabaseOwnership,
@@ -317,12 +318,14 @@ export function trackedRecipeVars(
   staticVars: Record<string, string>,
   allocations: RecipeAllocations,
   rootRunId: number,
+  compose?: { projectName: string },
 ): Record<string, string> {
   const vars: Record<string, string> = {
     ...staticVars,
     index: String(allocations.index),
     label: orchRunLabel(rootRunId),
     tree_exists: 'true',
+    ...(compose ? { 'compose.project': composeProjectName(compose.projectName, rootRunId) } : {}),
   }
   for (const [portName, port] of Object.entries(allocations.ports)) {
     vars[`ports.${portName}`] = String(port)
@@ -334,6 +337,15 @@ export function trackedRecipeVars(
     vars[`alloc.${allocationName}`] = value
   }
   return vars
+}
+
+function composeVariableIdentity(
+  recipe: TrackedRecipe,
+  projectName: string | null | undefined,
+  rootRunId: number | undefined,
+): { projectName: string; rootRunId: number } | undefined {
+  if (!recipe.compose || !projectName || rootRunId === undefined) return undefined
+  return { projectName, rootRunId }
 }
 
 export function trackedRecipeEnvironment(runId: number): Record<string, string> {
@@ -425,23 +437,28 @@ export function readSnapshot(runId: number): {
   key: string | null
   seed: string | null
   rootRunId: number
+  projectName: string | null
 } {
   const row = db()
     .query(
-      `SELECT id root_run_id,recipe_snapshot snapshot,launch_key key,launch_seed seed FROM run
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+      `SELECT r.id root_run_id,r.recipe_snapshot snapshot,r.launch_key key,r.launch_seed seed,
+              p.name project_name
+       FROM run r LEFT JOIN project p ON p.id=r.project_id
+       WHERE r.id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
     )
     .get(runId) as {
     root_run_id: number
     snapshot: string | null
     key: string | null
     seed: string | null
+    project_name: string | null
   } | null
   return {
     snapshot: row?.snapshot ? (JSON.parse(row.snapshot) as RecipeSnapshot) : null,
     key: row?.key ?? null,
     seed: row?.seed ?? null,
     rootRunId: row?.root_run_id ?? runId,
+    projectName: row?.project_name ?? null,
   }
 }
 
@@ -494,7 +511,15 @@ function prepareTrackedCreate(
     staticVars,
   })
   const { allocations } = allocationAttempt
-  const vars = trackedRecipeVars(staticVars, allocations, readSnapshot(input.runId).rootRunId)
+  const owner = readSnapshot(input.runId)
+  const compose = composeVariableIdentity(loaded.recipe, owner.projectName, owner.rootRunId)
+  if (loaded.recipe.compose && !compose) {
+    allocator.release(allocationAttempt, `run ${input.runId} has no registered project`)
+    throw new Error(
+      `run ${input.runId} has no registered project; attach it to a project and retry`,
+    )
+  }
+  const vars = trackedRecipeVars(staticVars, allocations, owner.rootRunId, compose)
   executeTrackedPreSteps(
     loaded.recipe,
     { treeRoot: input.repoRoot, vars: { ...vars, tree_exists: 'false' } },
@@ -808,6 +833,7 @@ export function teardownTrackedRecipe(
       key: string | null
       seed: string | null
       rootRunId?: number
+      projectName?: string | null
     }
     treeExists?: boolean
     liveDatabaseClaims?: number
@@ -843,6 +869,7 @@ export function teardownTrackedRecipe(
     label: orchRunLabel(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
     treeExists,
     allocations: stored.snapshot.allocations,
+    compose: composeVariableIdentity(stored.snapshot.recipe, stored.projectName, stored.rootRunId),
   })
   const temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
   const context = { treeRoot: temporaryCwd ?? input.worktree.path, vars }
