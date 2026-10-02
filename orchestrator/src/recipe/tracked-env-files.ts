@@ -96,6 +96,19 @@ function provisionedUrlAllocation(allocation: Allocation | undefined): Allocatio
   return allocation
 }
 
+function urlPlaceholderTarget(
+  placeholder: string,
+  recipe: TrackedRecipe,
+  allocations: Record<string, string>,
+): { key: string; allocation: Allocation; allocatedName: string } | null {
+  const key = placeholder.match(DATABASE_URL_PLACEHOLDER)?.[1]
+  if (!key) return null
+  const allocation = provisionedUrlAllocation(recipe.allocate?.databases?.[key])
+  const allocatedName = allocations[key]
+  if (!allocation || !allocatedName) return null
+  return { key, allocation, allocatedName }
+}
+
 function allocatedDatabaseUrl(
   key: string,
   allocation: Allocation,
@@ -128,13 +141,14 @@ export function databaseUrlSecrets(
     for (const match of envFile.contents.matchAll(ENV_PLACEHOLDER)) {
       const placeholder = match[1]!
       if (placeholder in secrets) continue
-      const key = placeholder.match(DATABASE_URL_PLACEHOLDER)?.[1]
-      const allocation = key
-        ? provisionedUrlAllocation(recipe.allocate?.databases?.[key])
-        : undefined
-      const allocatedName = key ? allocations[key] : undefined
-      if (!key || !allocation || !allocatedName) continue
-      const resolved = allocatedDatabaseUrl(key, allocation, allocatedName, projectRoot)
+      const target = urlPlaceholderTarget(placeholder, recipe, allocations)
+      if (!target) continue
+      const resolved = allocatedDatabaseUrl(
+        target.key,
+        target.allocation,
+        target.allocatedName,
+        projectRoot,
+      )
       if (!resolved.ok) return { ok: false, result: envFileFailure(envFile.path, resolved.detail) }
       secrets[placeholder] = resolved.value
     }
