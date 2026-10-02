@@ -68,6 +68,13 @@ export function recordArchitectRead(
   if (!branch) throw new Error('orch review read requires a checked-out branch, not detached HEAD')
   const caller = requireBranchRunOwner(database, project.name, branch, sessionId())
   const tip = runGit(input.cwd, ['rev-parse', '--verify', `${input.sha ?? 'HEAD'}^{commit}`])
+  try {
+    runGit(input.cwd, ['merge-base', '--is-ancestor', tip, 'HEAD'])
+  } catch {
+    throw new Error(
+      `orch review read could not reconcile branch ${branch} with tip ${tip}; run orch review read from the worktree that has the branch containing that commit checked out (orch tree open <run> opens one)`,
+    )
+  }
   const measured = measureChangeGroup(input.cwd, project, branch, tip)
   if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
   return writeTransaction(() => {
