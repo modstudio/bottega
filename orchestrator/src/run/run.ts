@@ -102,7 +102,7 @@ import {
   runFilePaths,
   runScratchDir,
 } from './run-artifacts.ts'
-import { resolveRunBase } from './run-base-resolution.ts'
+import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { decideCodexSandbox } from './run-codex-sandbox.ts'
@@ -350,13 +350,6 @@ export async function run(opts: {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
-  if (opts.base)
-    resolveRunBase({
-      cwd: callerCwd,
-      base: opts.base,
-      resumeParent: opts.resume?.parent,
-      launchBase: opts.launchBase,
-    })
   const requestedReadOnlyBase = reviewTarget?.commit ?? opts.base ?? 'HEAD'
   const readOnlyBase =
     repoJob && !writesJob && !opts.resume?.worktree
@@ -367,6 +360,13 @@ export async function run(opts: {
           readOnlyBaseProjectPath(opts.repo, callerCwd),
         )
       : null
+  if (shouldResolveRunBase(opts.base, readOnlyBase))
+    resolveRunBase({
+      cwd: callerCwd,
+      base: opts.base,
+      resumeParent: opts.resume?.parent,
+      launchBase: opts.launchBase,
+    })
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
   // that makes it one. `available()` had only ever checked that an endpoint was
   // CONFIGURED, which stayed true while the local model host was powered off

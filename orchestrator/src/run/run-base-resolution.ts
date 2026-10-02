@@ -5,6 +5,13 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { resolveBase } from '../git/git-environment.ts'
 
+export function shouldResolveRunBase(
+  base: string | undefined,
+  readOnlyBase: string | null,
+): base is string {
+  return base !== undefined && readOnlyBase === null
+}
+
 export function resolveRunBase(
   input: { cwd: string; base: string; resumeParent?: number; launchBase?: string },
   database: Database = db(),
