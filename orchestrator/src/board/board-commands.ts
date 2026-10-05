@@ -10,6 +10,13 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
+import {
+  acceptAnswer,
+  askQuestion,
+  fileAnswerNote,
+  readThread,
+  replyToThread,
+} from './board-thread-service.ts'
 
 function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
@@ -56,6 +63,51 @@ export function registerBoardCommands(program: Command): void {
       })
       console.log(JSON.stringify(posted))
     })
+  board
+    .command('ask')
+    .requiredOption('--audience <expr>')
+    .requiredOption('--title <text>')
+    .requiredOption('--body <text>')
+    .option('--task <key>')
+    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
+    .option('--topic <name>', 'add a controlled board topic', collect, [])
+    .option('--expires <duration>')
+    .action((options) => {
+      console.log(
+        JSON.stringify(
+          askQuestion({
+            audience: options.audience,
+            title: options.title,
+            body: options.body,
+            task: options.task,
+            paths: options.path,
+            topics: options.topic,
+            expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
+          }),
+        ),
+      )
+    })
+  board
+    .command('reply <root-id>')
+    .requiredOption('--body <text>')
+    .action((id, options) => console.log(JSON.stringify(replyToThread(Number(id), options.body))))
+  board
+    .command('thread <id>')
+    .action((id) => console.log(JSON.stringify(readThread(Number(id)))))
+  board.command('accept <question-id> <reply-id>').action(async (questionId, replyId) => {
+    const accepted = await acceptAnswer(Number(questionId), Number(replyId))
+    console.log(
+      JSON.stringify({
+        ...accepted,
+        retry: accepted.notePendingError
+          ? `orch board file-note ${Number(questionId)}`
+          : null,
+      }),
+    )
+  })
+  board.command('file-note <question-id>').action(async (questionId) => {
+    console.log(JSON.stringify(await fileAnswerNote(Number(questionId))))
+  })
   board
     .command('read')
     .option('--all')
