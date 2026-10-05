@@ -67,7 +67,7 @@ type CollectorMirrorSkip = {
 export type CollectorMirrorPass = {
   mirrorTasks(rows: readonly CollectedTaskRow[]): Promise<void>
   mirrorStatusEvents(rows: readonly HostedStatusEvent[]): Promise<void>
-  reportSkipped(): void
+  reportSkipped(formatError?: (error: Error) => string): void
 }
 
 /** Load hosted identity once and apply the task project-space rule for one collection pass. */
@@ -151,14 +151,14 @@ export async function createCollectorMirrorPass(
         if (!refuseChangedSpace(error, selected, 'statusEvents')) throw error
       }
     },
-    reportSkipped() {
+    reportSkipped(formatError = (error) => error.message) {
       for (const entry of [...skipped.values()].sort(
         (a, b) => a.project.localeCompare(b.project) || a.reason.localeCompare(b.reason),
       ))
         console.error(
           `hub: ${label} mirror skipped project=${entry.project} reason=${entry.reason} tasks=${entry.tasks} statusEvents=${entry.statusEvents}${
             entry.reason === 'identity-unreadable' && identityError
-              ? ` error=${identityError.message}`
+              ? ` error=${formatError(identityError)}`
               : ''
           }`,
         )

@@ -1,6 +1,7 @@
 import { type ToolCaller, type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
 import { withLease } from './collect.ts'
-import { observeTrackerTask } from './ingest/trackers.ts'
+import { createCollectorMirrorPass } from './ingest/collector-mirror.ts'
+import { mirrorTrackerObservation, observeTrackerTask } from './ingest/trackers.ts'
 import { credentials, failureDetail, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { DuplicateTaskError, duplicateCandidates, listTasks, showTask } from './task.ts'
@@ -24,6 +25,7 @@ type FreshTaskDependencies = {
   readCredentials?: typeof credentials
   connect?: (url: string, token: string) => Promise<ToolCaller & { close(): Promise<void> }>
   observe?: typeof observeTrackerTask
+  createMirror?: typeof createCollectorMirrorPass
   readBack?: typeof showTask
   lease?: typeof withLease
   leaseWaitMs?: number
@@ -89,7 +91,14 @@ export async function refreshTrackerTask(
           throw new Error(
             `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
           )
-        ;(dependencies.observe ?? observeTrackerTask)(task)
+        const observation = (dependencies.observe ?? observeTrackerTask)(task)
+        try {
+          const mirror = await (dependencies.createMirror ?? createCollectorMirrorPass)('tracker')
+          await mirrorTrackerObservation(mirror, task, observation)
+          mirror.reportSkipped((error) => failureDetail(error, resolved.token))
+        } catch (error) {
+          console.error(`hub: tracker task mirror skipped: ${failureDetail(error, resolved.token)}`)
+        }
         return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
       },
       dependencies.leaseWaitMs,

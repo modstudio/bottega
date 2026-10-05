@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, releaseLease, withLease } from './collect.ts'
 import { db } from './db.ts'
+import type { CollectorMirrorPass } from './ingest/collector-mirror.ts'
 import { observeTrackerTask, writeTrackerCache } from './ingest/trackers.ts'
 import type { RegisteredProject } from './projects.ts'
 import { showTask } from './task.ts'
@@ -42,6 +43,12 @@ const shown = {
   documents: [],
 } as unknown as ReturnType<typeof import('./task.ts')['showTask']>
 
+const noOpMirror = async (): Promise<CollectorMirrorPass> => ({
+  mirrorTasks: async () => {},
+  mirrorStatusEvents: async () => {},
+  reportSkipped: () => {},
+})
+
 const dependencies = (lookup: TrackerSource['lookup']) => ({
   registeredProjects: () => [project],
   sourceFor: () => source(lookup),
@@ -54,6 +61,7 @@ const dependencies = (lookup: TrackerSource['lookup']) => ({
     ran: true as const,
     value: await fn(),
   }),
+  createMirror: noOpMirror,
   readBack: () => shown,
 })
 
@@ -66,7 +74,12 @@ describe('fresh tracker task read', () => {
       ...dependencies(async () => task),
       observe: (value) => {
         observed.push(value)
-        return false
+        return {
+          at: '2026-10-05T00:00:00.000Z',
+          taskRecordId: null,
+          taskKey: value.key,
+          event: null,
+        }
       },
     })
     expect(observed).toEqual([task])
@@ -178,7 +191,12 @@ describe('fresh tracker task read', () => {
         return task
       }),
       lease: withLease,
-      observe: () => false,
+      observe: (value) => ({
+        at: '2026-10-05T00:00:00.000Z',
+        taskRecordId: null,
+        taskKey: value.key,
+        event: null,
+      }),
     })
     await started
 
@@ -190,7 +208,7 @@ describe('fresh tracker task read', () => {
   })
 
   test('records one first-observed category change and the following collect records none', async () => {
-    expect(observeTrackerTask({ ...task, status: 'Open', category: 'open' })).toBeFalse()
+    expect(observeTrackerTask({ ...task, status: 'Open', category: 'open' }).event).toBeNull()
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
@@ -209,8 +227,114 @@ describe('fresh tracker task read', () => {
     ).toBe(1)
   })
 
+  test('mirrors a fresh task and exactly the transition it records', async () => {
+    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
+    const taskRows: Parameters<CollectorMirrorPass['mirrorTasks']>[0][number][] = []
+    const eventRows: Parameters<CollectorMirrorPass['mirrorStatusEvents']>[0][number][] = []
+
+    await refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => task),
+      lease: withLease,
+      observe: observeTrackerTask,
+      readBack: showTask,
+      createMirror: async () => ({
+        mirrorTasks: async (rows) => {
+          taskRows.push(...rows)
+        },
+        mirrorStatusEvents: async (rows) => {
+          eventRows.push(...rows)
+        },
+        reportSkipped: () => {},
+      }),
+    })
+
+    const localEvent = db()
+      .query<{ record_id: string; task_record_id: string }, []>(
+        'SELECT record_id,task_record_id FROM task_status_event',
+      )
+      .get()!
+    expect(taskRows).toHaveLength(1)
+    expect(taskRows[0]).toMatchObject({
+      record_id: localEvent.task_record_id,
+      key: 'FIX-1',
+      project: 'fixture',
+      status_category: 'active',
+    })
+    expect(eventRows).toEqual([
+      expect.objectContaining({
+        id: localEvent.record_id,
+        task_key: 'FIX-1',
+        task_id: localEvent.task_record_id,
+        project_name: 'fixture',
+        from_status: 'open',
+        to_status: 'active',
+      }),
+    ])
+
+    expect(writeTrackerCache([task], '2026-10-05T00:00:00.000Z')).toBe(0)
+    expect(eventRows).toHaveLength(1)
+  })
+
+  test('mirrors an unchanged fresh task without a status event', async () => {
+    observeTrackerTask(task)
+    const taskRows: Parameters<CollectorMirrorPass['mirrorTasks']>[0][number][] = []
+    const eventRows: Parameters<CollectorMirrorPass['mirrorStatusEvents']>[0][number][] = []
+
+    await refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => task),
+      lease: withLease,
+      observe: observeTrackerTask,
+      readBack: showTask,
+      createMirror: async () => ({
+        mirrorTasks: async (rows) => {
+          taskRows.push(...rows)
+        },
+        mirrorStatusEvents: async (rows) => {
+          eventRows.push(...rows)
+        },
+        reportSkipped: () => {},
+      }),
+    })
+
+    expect(taskRows).toHaveLength(1)
+    expect(eventRows).toHaveLength(0)
+  })
+
+  test('a mirror failure keeps the fresh read and local transition successful', async () => {
+    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await refreshTrackerTask('FIX-1', undefined, {
+        ...dependencies(async () => task),
+        lease: withLease,
+        observe: observeTrackerTask,
+        readBack: showTask,
+        createMirror: async () => ({
+          mirrorTasks: async () => {
+            throw new Error('Authorization: Bearer secret-value')
+          },
+          mirrorStatusEvents: async () => {},
+          reportSkipped: () => {},
+        }),
+      })
+
+      expect(result.shown?.task.key).toBe('FIX-1')
+      expect(
+        db().query<{ count: number }, []>('SELECT count(*) count FROM task_status_event').get()
+          ?.count,
+      ).toBe(1)
+      const detail = errors.mock.calls.map((call) => String(call[0])).join('\n')
+      expect(detail).toContain('tracker task mirror skipped')
+      expect(detail).toContain('[redacted]')
+      expect(detail).not.toContain('secret-value')
+      expect(detail).not.toContain('Authorization')
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
   test('an unchanged fresh task records no category event', async () => {
-    expect(observeTrackerTask(task)).toBeFalse()
+    expect(observeTrackerTask(task).event).toBeNull()
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
