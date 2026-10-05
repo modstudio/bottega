@@ -1,18 +1,8 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { BOARD_MONITOR_REFRESH_BUDGET_MS } from '../board/board-delivery.ts'
-import {
-  claimCachedHostedInterrupts,
-  markCachedHostedDelivered,
-  refreshHostedBoard,
-  takeHostedBoardVerificationTransition,
-} from '../board/board-hosted-cache.ts'
-import {
-  claimInterruptNotices,
-  markInterruptNoticesDelivered,
-  requireRealSession,
-} from '../board/board-service.ts'
+import { claimBoardInterrupts, markBoardInterruptsDelivered } from '../board/board-delivery.ts'
+import { requireRealSession } from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
@@ -221,17 +211,6 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   }[]
   return [
     ...conditions,
-    ...claimInterruptNotices(ownerSession).map(
-      (notice): MonitorNotice => ({
-        noticeId: notice.noticeId,
-        kind: 'board-notice',
-        subject: notice.noticeId,
-        since: null,
-        ageMs: null,
-        detail: notice.detail,
-        ownerSession,
-      }),
-    ),
     ...landings.map(
       (row): MonitorNotice => ({
         noticeId: `landing:${row.id}`,
@@ -248,13 +227,13 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
 
 export async function claimMonitorNoticesWithHosted(
   ownerSession: string,
+  input: { refreshBoard?: boolean } = {},
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
-  const refreshed = await refreshHostedBoard({ budgetMs: BOARD_MONITOR_REFRESH_BUDGET_MS })
-  if (refreshed === 'local') return { notices: claimMonitorNotices(ownerSession), warning: null }
+  const board = await claimBoardInterrupts(ownerSession, { refresh: input.refreshBoard })
   return {
     notices: [
       ...claimMonitorNotices(ownerSession),
-      ...claimCachedHostedInterrupts(ownerSession).map(
+      ...board.notices.map(
         (notice): MonitorNotice => ({
           noticeId: notice.noticeId,
           kind: 'board-notice',
@@ -266,7 +245,7 @@ export async function claimMonitorNoticesWithHosted(
         }),
       ),
     ],
-    warning: takeHostedBoardVerificationTransition(),
+    warning: board.warning,
   }
 }
 
@@ -300,11 +279,6 @@ export function markMonitorNoticesDelivered(
     const landings = new Set(
       parsed.filter(({ source }) => source === 'landing').map(({ id }) => Number(id)),
     )
-    const localBoard = new Set(
-      parsed
-        .filter(({ source, id }) => source === 'board' && /^[1-9]\d*$/.test(id))
-        .map(({ id }) => Number(id)),
-    )
     // A receipt may stamp a landing only when that source-qualified landing token
     // came from the claim that produced the emission. Equal ids in other sources do not qualify.
     for (const id of conditions) mark.run(deliveredAt, id, ownerSession)
@@ -314,7 +288,6 @@ export function markMonitorNoticesDelivered(
           AND status IN ('refused','rebase_required','install_failed')`,
     )
     for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)
-    markInterruptNoticesDelivered(ownerSession, [...localBoard], deliveredAt)
   }, database)
 }
 
@@ -324,8 +297,6 @@ export async function markMonitorNoticesDeliveredWithHosted(
   deliveredAt = nowIso(),
 ): Promise<void> {
   markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
-  const hosted = ids
-    .map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '')
-    .filter((id) => id !== '' && !/^[1-9]\d*$/.test(id))
-  await markCachedHostedDelivered(ownerSession, hosted, { clock: Date.parse(deliveredAt) })
+  const board = ids.map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '').filter((id) => id !== '')
+  await markBoardInterruptsDelivered(ownerSession, board, deliveredAt)
 }

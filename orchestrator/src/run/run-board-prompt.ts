@@ -12,7 +12,7 @@ type RunNotice = Awaited<ReturnType<typeof claimRunBoardNotices>>['notices'][num
 
 export function renderRunBoardSection(notices: RunNotice[]): {
   text: string
-  includedIds: Array<number | string>
+  includedIds: string[]
 } {
   if (!notices.length) return { text: '', includedIds: [] }
   const ordered = [...notices].sort(
@@ -46,7 +46,7 @@ export function renderRunBoardSection(notices: RunNotice[]): {
 export async function appendInitialRunBoardPrompt(
   prompt: string,
   runId: number,
-): Promise<{ prompt: string; noticeIds: Array<number | string> }> {
+): Promise<{ prompt: string; noticeIds: string[] }> {
   const delivery = await claimRunBoardNotices(runId)
   const section = renderRunBoardSection(delivery.notices)
   const boardText = [section.text, delivery.warning].filter(Boolean).join('\n\n')
@@ -61,7 +61,7 @@ export async function prepareRunBoard(
   promptPath: string,
   runId: number,
   firstTurn: boolean,
-): Promise<{ prompt: string; noticeIds: Array<number | string> }> {
+): Promise<{ prompt: string; noticeIds: string[] }> {
   const result = firstTurn
     ? await appendInitialRunBoardPrompt(prompt, runId)
     : { prompt, noticeIds: [] }

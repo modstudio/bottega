@@ -428,6 +428,7 @@ export function register(program: Command): void {
     .option('--history')
     .option('--lock-holder')
     .option('--notices')
+    .option('--skip-board-refresh')
     .option('--json')
     .allowExcessArguments(false)
     .action((options) =>
@@ -440,6 +441,7 @@ export function register(program: Command): void {
           backstop: Boolean(options.backstop),
           limit: Number(options.limit ?? 20),
           json: Boolean(options.json),
+          skipBoardRefresh: Boolean(options.skipBoardRefresh),
         },
         { ...presentation, write: writeStdout },
       ),

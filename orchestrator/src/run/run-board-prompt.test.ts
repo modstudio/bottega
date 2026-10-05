@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 const notice = (id: number, ackRequired: boolean, createdAt: string, text = `notice ${id}`) => ({
-  id,
+  id: String(id),
   ackRequired,
   createdAt,
   text,
@@ -52,7 +52,7 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
     clock,
   )
   const bound = await appendInitialRunBoardPrompt('PROMPT', run.id)
-  expect(bound.noticeIds).toEqual([posted.id])
+  expect(bound.noticeIds).toEqual([String(posted.id)])
   markLocalRunNoticesDelivered(run.id, bound.noticeIds.map(Number), clock + 1)
   expect(claimRunNotices(run.id, false, clock + 2)).toEqual([])
 })
@@ -118,7 +118,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     Date.parse('2026-10-05T12:00:00.000Z'),
   )
   const initial = await appendInitialRunBoardPrompt('PROMPT', root.id)
-  expect(initial.noticeIds).toEqual([firstLocal.id, firstHosted.id])
+  expect(initial.noticeIds).toEqual([String(firstLocal.id), firstHosted.id])
   expect(initial.prompt).toContain('local prompt body')
   expect(initial.prompt).toContain('hosted prompt body')
   expect(initial.prompt).toContain('prompt refresh offline')
@@ -136,7 +136,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     Date.parse('2026-10-05T12:00:01.000Z'),
   )
   const later = await prepareLaterRunBoardPrompt(root.id, true, [], 'NEXT')
-  expect(later.notices.map((row) => row.id)).toEqual([laterLocal.id, laterHosted.id])
+  expect(later.notices.map((row) => row.id)).toEqual([String(laterLocal.id), laterHosted.id])
   expect(later.prompt).toContain('local later body')
   expect(later.prompt).toContain('hosted prompt body')
   expect(later.prompt).toContain('prompt refresh offline')
@@ -157,7 +157,7 @@ test('dispatch board section orders acknowledgements first, then newest, and rep
     notice(6, false, '2026-10-06T00:00:00.000Z'),
   ]
   const rendered = renderRunBoardSection(notices)
-  expect(rendered.includedIds).toEqual([2, 6, 5, 4, 3])
+  expect(rendered.includedIds).toEqual(['2', '6', '5', '4', '3'])
   expect(rendered.includedIds).toHaveLength(BOARD_PACK_MAX_NOTICES)
   expect(rendered.text).toContain(
     '1 more notice omitted; check_orchestrator_messages returns them.',

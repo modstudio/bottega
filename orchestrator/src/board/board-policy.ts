@@ -167,6 +167,16 @@ export function validatePostNoticeInput(input: {
   ackRequired?: boolean
   deadlineMs?: number
 }): void {
+  const lineBreak = /[\r\n\u2028\u2029]/
+  const headerFields: Array<[string, string | undefined]> = [
+    ['title', input.title],
+    ['task tag', input.task],
+    ...(input.paths ?? []).map((value) => ['path tag', value] as [string, string]),
+    ...(input.topics ?? []).map((value) => ['topic', value] as [string, string]),
+  ]
+  for (const [field, value] of headerFields)
+    if (value !== undefined && lineBreak.test(value))
+      throw new Error(`board notice ${field} contains a line break; remove it and retry`)
   if (input.title.length > BOARD_TITLE_MAX_CHARS)
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
   if (input.body.length > BOARD_BODY_MAX_CHARS)

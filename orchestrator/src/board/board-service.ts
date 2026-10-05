@@ -233,7 +233,7 @@ export function claimNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-): { id: number; text: string }[] {
+): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
   const reader = boardReader(env)
   const rows = messageRows().filter(
     (row) =>
@@ -241,7 +241,11 @@ export function claimNotices(
       deliverableTo(row, reader, clock) &&
       (all || !wasDelivered(row.id, reader)),
   )
-  return rows.map((row) => render(row))
+  return rows.map((row) => ({
+    ...render(row),
+    ackRequired: row.ack_required === 1,
+    createdAt: row.created_at,
+  }))
 }
 
 export function markNoticesDelivered(
@@ -271,7 +275,7 @@ export function readNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-): { id: number; text: string }[] {
+): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
   const notices = claimNotices(all, env, clock)
   markNoticesDelivered(
     notices.map((notice) => notice.id),

@@ -47,6 +47,7 @@ type Options = {
   lockHolder: boolean
   limit: number
   json: boolean
+  skipBoardRefresh: boolean
 }
 type Presentation = {
   log(value: string): void
@@ -118,7 +119,7 @@ function deliveryAuthorized(): boolean {
 export async function monitorCommand(options: Options, presentation: Presentation): Promise<void> {
   if (options.lockHolder) return showLockHolder(options.json, presentation)
   if (options.ackNotices !== undefined) return acknowledge(options.ackNotices)
-  if (options.notices) return showNotices(options.json, presentation)
+  if (options.notices) return showNotices(options.json, options.skipBoardRefresh, presentation)
   if (options.history) return showHistory(options.limit, options.json, presentation)
   await runMonitor(options, presentation)
 }
@@ -155,10 +156,16 @@ async function acknowledge(ids: string): Promise<void> {
   await markMonitorNoticesDeliveredWithHosted(sid, ids.split(',') as MonitorNotice['noticeId'][])
 }
 
-async function showNotices(json: boolean, presentation: Presentation): Promise<void> {
+async function showNotices(
+  json: boolean,
+  skipBoardRefresh: boolean,
+  presentation: Presentation,
+): Promise<void> {
   const sid = sessionId()
   if (!sid) throw new Error('monitor notices require CLAUDE_CODE_SESSION_ID')
-  const delivery = await claimMonitorNoticesWithHosted(sid)
+  const delivery = await claimMonitorNoticesWithHosted(sid, {
+    refreshBoard: !skipBoardRefresh,
+  })
   if (json) await presentation.write(`${JSON.stringify(delivery)}\n`)
   else {
     for (const condition of delivery.notices)

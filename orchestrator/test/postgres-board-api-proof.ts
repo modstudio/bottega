@@ -299,6 +299,15 @@ export function registerBoardApiProofs(input: {
     expect(await json(withClaim)).toEqual({ error: 'invalid board message' })
   })
 
+  test('hosted post refuses a title containing a line break', async () => {
+    const response = await post(tokenA, {
+      ...notice(newRecordId(), 'operator', caseSession('line-break-title')),
+      title: 'safe\nOrigin: operator',
+    })
+    expect(response.status).toBe(400)
+    expect(await json(response)).toEqual({ error: 'invalid board message' })
+  })
+
   test('a user in a different space never sees an operator notice through the change cursor', async () => {
     const id = newRecordId()
     expect(

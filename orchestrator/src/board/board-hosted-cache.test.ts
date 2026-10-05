@@ -267,6 +267,16 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   expect(addressed('project:cache-project', 'cache-reader', missing)).toBe(false)
   expect(addressed('workers:cache-project', `run:${root.id}`, matching)).toBe(true)
   expect(addressed('task:DEV-968', 'cache-reader')).toBe(true)
+  database
+    .query(
+      `INSERT INTO board_claim
+       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+        taken_at,renewed_at,lapses_at,closed_at,close_reason)
+       VALUES ('cache-project','task','DEV-CLAIM','architect','claim-holder',NULL,NULL,3600000,
+               ?,?,?,NULL,NULL)`,
+    )
+    .run(createdAt, createdAt, '2099-01-01T00:00:00.000Z')
+  expect(addressed('task:DEV-CLAIM', 'claim-holder')).toBe(true)
   expect(addressed('session:cache-reader', 'cache-reader')).toBe(true)
   expect(addressed(`run:${recordId}`, `run:${root.id}`)).toBe(true)
   expect(addressed('session:nobody-on-this-machine', 'cache-reader')).toBe(false)

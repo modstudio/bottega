@@ -103,3 +103,26 @@ test('monitor notice and interrupt claims emit hosted beside local once with a f
   )
   expect((await claimMonitorNoticesWithHosted(session)).notices).toEqual([])
 })
+
+test('session-start monitor skips hosted refresh while the heartbeat monitor refreshes', async () => {
+  const session = 'monitor-refresh-reader'
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
+  let changesCalls = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => {
+      changesCalls++
+      return { items: [], highestRevision: null }
+    },
+  })
+  await claimMonitorNoticesWithHosted(session, { refreshBoard: false })
+  expect(changesCalls).toBe(0)
+  await claimMonitorNoticesWithHosted(session)
+  expect(changesCalls).toBe(1)
+})

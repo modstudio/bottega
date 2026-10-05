@@ -261,6 +261,50 @@ class WorkerSessionSkip(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
 
 
+class MonitorDelivery(unittest.TestCase):
+    def notice(self):
+        return {
+            "kind": "board-notice",
+            "subject": "board:7",
+            "detail": "notice",
+            "noticeId": "board:7",
+            "ownerSession": "session-1",
+        }
+
+    def test_accepts_old_list_shape(self):
+        self.assertEqual(
+            session_brief._monitor_delivery(json.dumps([self.notice()]), "session-1"),
+            ([self.notice()], None),
+        )
+
+    def test_accepts_new_envelope_shape(self):
+        self.assertEqual(
+            session_brief._monitor_delivery(
+                json.dumps({"notices": [self.notice()], "warning": "cache unverified"}),
+                "session-1",
+            ),
+            ([self.notice()], "cache unverified"),
+        )
+
+    def test_warning_only_has_no_notice_to_acknowledge(self):
+        self.assertEqual(
+            session_brief._monitor_delivery(
+                json.dumps({"notices": [], "warning": "cache unverified"}), "session-1"
+            ),
+            ([], "cache unverified"),
+        )
+
+    def test_rejects_invalid_shape(self):
+        with self.assertRaisesRegex(ValueError, "invalid monitor notice JSON"):
+            session_brief._monitor_delivery(json.dumps({"warning": "missing notices"}), "session-1")
+
+    def test_session_start_monitor_explicitly_skips_board_refresh(self):
+        self.assertEqual(
+            session_brief._monitor_notice_command("/bin/orch", skip_board_refresh=True),
+            ["/bin/orch", "monitor", "--notices", "--json", "--skip-board-refresh"],
+        )
+
+
 class SettingsApplyNotice(unittest.TestCase):
     def completed(self, returncode=0, stdout="", stderr=""):
         return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)

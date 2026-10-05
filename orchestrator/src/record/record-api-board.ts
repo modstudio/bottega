@@ -28,19 +28,20 @@ type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
 const sessionSchema = z.string().min(1).nullable().optional()
+const headerValueSchema = z.string().refine((value) => !/[\r\n\u2028\u2029]/.test(value))
 const postSchema = z
   .object({
     id: idSchema,
     kind: z.enum(['notice', 'question']),
     audience: z.string().min(1),
-    title: z.string(),
+    title: headerValueSchema,
     body: z.string(),
     ackRequired: z.boolean().optional(),
     ackDeadline: isoSchema.nullable().optional(),
     expiresAt: isoSchema,
-    task: z.string().optional(),
-    paths: z.array(z.string()).optional(),
-    topics: z.array(z.string()).optional(),
+    task: headerValueSchema.optional(),
+    paths: z.array(headerValueSchema).optional(),
+    topics: z.array(headerValueSchema).optional(),
     authorSession: sessionSchema,
     authorHarness: z.string().min(1).nullable().optional(),
     authorMachineId: idSchema.nullable().optional(),
@@ -78,10 +79,10 @@ const takeClaimSchema = z
   .object({
     id: idSchema,
     project: z.string().min(1),
-    subject: z.string().min(1),
+    subject: headerValueSchema.min(1),
     durationMs: z.number().int().positive().optional(),
     runId: idSchema.nullable().optional(),
-    note: z.string().optional(),
+    note: headerValueSchema.optional(),
     holderSession: sessionSchema,
   })
   .strict()

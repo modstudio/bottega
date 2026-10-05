@@ -19,15 +19,12 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-hosted-cache.ts', [
     'bun:sqlite',
-    'node:os',
     '../database/db.ts',
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',
-    './board-context.ts',
     './board-mode.ts',
     './board-policy.ts',
     './board-render.ts',
-    './board-routing.ts',
     './board-store.ts',
     './board-tags.ts',
     './board-thread-render.ts',
@@ -69,7 +66,10 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-render.ts', ['./board-policy.ts', './board-tags.ts']),
   module('orchestrator/src/board/board-thread-policy.ts', ['./board-policy.ts']),
-  module('orchestrator/src/board/board-thread-render.ts', ['./board-policy.ts']),
+  module('orchestrator/src/board/board-thread-render.ts', [
+    './board-policy.ts',
+    './board-render.ts',
+  ]),
   module('orchestrator/src/board/board-answer-note.ts', ['../mcp/hub-notes.ts']),
   module('orchestrator/src/board/board-store.ts', [
     'node:os',

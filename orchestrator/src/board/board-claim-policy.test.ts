@@ -58,6 +58,10 @@ test('claim subject, note, and duration refusals match the local adapter rules',
   expect(claimNote(undefined)).toBeUndefined()
   expect(claimNote('  ')).toBeNull()
   expect(claimNote(' held ')).toBe('held')
+  expect(() => parseClaimSubject('task:DEV-1\nforged')).toThrow(
+    /claim subject contains a line break/,
+  )
+  expect(() => claimNote('held\u2028forged')).toThrow(/claim note contains a line break/)
   expect(claimDurationRefusal(0)).toContain('positive')
   expect(claimDurationRefusal(BOARD_CLAIM_DEFAULT_MS)).toBeNull()
 })

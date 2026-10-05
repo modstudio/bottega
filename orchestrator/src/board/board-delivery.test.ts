@@ -95,7 +95,11 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   const hostedClaim = hosted('session:delivery-reader')
   installFailedRefreshWithCached(hostedClaim)
   const claimed = await claimBoardNotices(false, { env })
-  expect(claimed.notices.map((row) => row.id)).toEqual([localClaim.id, hostedClaim.id])
+  expect(claimed.notices.map((row) => row.id)).toEqual([String(localClaim.id), hostedClaim.id])
+  expect(claimed.notices.map((row) => Object.keys(row).sort())).toEqual([
+    ['ackRequired', 'createdAt', 'id', 'text'],
+    ['ackRequired', 'createdAt', 'id', 'text'],
+  ])
   expect(claimed.warning).toContain('offline for warning proof')
   await markBoardNoticesDelivered(
     claimed.notices.map((row) => row.id),
@@ -115,7 +119,7 @@ test('board read and read --claim deliver hosted beside local once and retain a 
     )
     .run(hostedRead.id, hostedRead.kind, null, hostedRead.revision, JSON.stringify(hostedRead))
   const read = await readBoardNotices(false, { env })
-  expect(read.notices.map((row) => row.id)).toEqual([localRead.id, hostedRead.id])
+  expect(read.notices.map((row) => row.id)).toEqual([String(localRead.id), hostedRead.id])
   expect(read.warning).toContain('offline for warning proof')
   expect((await readBoardNotices(false, { env })).notices).toEqual([])
 })
@@ -142,7 +146,7 @@ test('a second chain turn claims and marks hosted and local notices through its 
   const remote = hosted(`run:${recordId}`)
   installFailedRefreshWithCached(remote)
   const delivery = await claimRunBoardNotices(turn.id)
-  expect(delivery.notices.map((row) => row.id)).toEqual([local.id, remote.id])
+  expect(delivery.notices.map((row) => row.id)).toEqual([String(local.id), remote.id])
   expect(delivery.warning).toContain('offline for warning proof')
   await markRunBoardNoticesDelivered(
     turn.id,

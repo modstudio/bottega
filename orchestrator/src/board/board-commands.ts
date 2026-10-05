@@ -125,9 +125,7 @@ export function registerBoardCommands(program: Command): void {
       )
     })
   board.command('delivered <ids>').action(async (ids) => {
-    const parsed = String(ids)
-      .split(',')
-      .map((id) => (/^[1-9]\d*$/.test(id) ? localBoardId(id) : id))
+    const parsed = String(ids).split(',')
     if (!parsed.length) throw new Error('board delivered ids are required')
     await markBoardNoticesDelivered(parsed)
   })

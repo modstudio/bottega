@@ -1,8 +1,7 @@
 // concern: hosted-board-read-cache
 /** Refreshes the hosted read cache and narrows visible rows to this machine's readers. */
 import type { Database } from 'bun:sqlite'
-import { hostname } from 'node:os'
-import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -13,19 +12,15 @@ import {
   type HostedBoardChange,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
-import { boardContext, boardRunContext } from './board-context.ts'
 import { boardMode } from './board-mode.ts'
 import {
   messageCanBeReaped,
   OPERATOR_READER,
-  type PresenceFact,
   parseAudience,
-  resolveAudience,
   shouldInterrupt,
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
-import { boardNoticeMatches } from './board-routing.ts'
-import { originText } from './board-store.ts'
+import { originText, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
@@ -258,51 +253,6 @@ function cachedRows(database: Database): Array<{ message: HostedBoardMessage; ta
   }))
 }
 
-function localPresence(database: Database): PresenceFact[] {
-  const architects = (
-    database
-      .query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence')
-      .all() as Array<{
-      session_id: string
-      project: string
-      machine: string
-      last_seen: string
-      current_task_key: string | null
-    }>
-  ).map((row) => ({
-    reader: row.session_id,
-    role: 'architect' as const,
-    project: row.project,
-    machine: row.machine,
-    lastSeen: Date.parse(row.last_seen),
-    taskKeys: new Set(row.current_task_key ? [row.current_task_key] : []),
-  }))
-  const roots = database
-    .query(
-      `SELECT root.id,root.record_id,root.repo,root.launch_key FROM run root
-     JOIN run latest ON latest.id=(SELECT id FROM run WHERE id=root.id OR parent_run_id=root.id ORDER BY turn DESC,id DESC LIMIT 1)
-     WHERE root.parent_run_id IS NULL AND latest.status IN ('running','asking')`,
-    )
-    .all() as Array<{
-    id: number
-    record_id: string | null
-    repo: string | null
-    launch_key: string | null
-  }>
-  return [
-    ...architects,
-    ...roots.map((row) => ({
-      reader: `run:${row.id}`,
-      role: 'worker' as const,
-      project: row.repo ?? '',
-      machine: hostname(),
-      live: true,
-      runIds: new Set<number | string>([row.id, ...(row.record_id ? [row.record_id] : [])]),
-      taskKeys: new Set(row.launch_key ? [row.launch_key] : []),
-    })),
-  ]
-}
-
 const readerMatchesAuthor = (message: HostedBoardMessage, reader: string, database: Database) => {
   if (message.authorUserId !== meta(database, BOARD_REFRESH_USER_KEY)) return false
   if (reader === OPERATOR_READER) return message.authorSession === null
@@ -355,23 +305,8 @@ export function cachedMessageAddressed(
     message.authorUserId !== signedIn
   )
     return false
-  const addressed = resolveAudience(
-    audience,
-    localPresence(database),
-    clock,
-    SESSION_LIVE_MS,
-  ).includes(reader)
+  const addressed = recipients(message.audience, clock, tags, database).includes(reader)
   if (!addressed) return false
-  if (
-    (audience.kind === 'project' || audience.kind === 'workers') &&
-    !boardNoticeMatches(
-      tags,
-      reader.startsWith('run:')
-        ? boardRunContext(Number(reader.slice(4)), database)
-        : boardContext(reader, clock, database),
-    )
-  )
-    return false
   if (message.kind === 'question' && reader.startsWith('run:')) return false
   return true
 }

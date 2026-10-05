@@ -65,6 +65,8 @@ export const mayReleaseClaim = (actor: ClaimActor, holder: ClaimActor): boolean 
 export const mayForceClaim = (actor: ClaimActor): boolean => actor.kind === 'operator'
 
 export function parseClaimSubject(expression: string): ClaimSubject {
+  if (/[\r\n\u2028\u2029]/.test(expression))
+    throw new Error('claim subject contains a line break; remove it and retry')
   const match = /^(task|path|resource):(.*)$/.exec(expression)
   if (!match)
     throw new Error(
@@ -92,6 +94,8 @@ export function claimNote(note: string | undefined): string | null | undefined {
   if (note === undefined) return undefined
   const value = note.trim()
   if (!value) return null
+  if (/[\r\n\u2028\u2029]/.test(note))
+    throw new Error('claim note contains a line break; remove it and retry')
   if (value.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`claim note exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
   if (containsSecretShaped(value))

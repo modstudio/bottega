@@ -107,7 +107,7 @@ export function boardActor(env: Environment = process.env): BoardActor {
   return { kind: 'operator', session: null }
 }
 
-function presenceFacts(database = db(), at = Date.now()) {
+export function presenceFacts(database = db(), at = Date.now()) {
   const architects = (
     database
       .query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence')
@@ -137,25 +137,39 @@ function presenceFacts(database = db(), at = Date.now()) {
        ), live_roots AS (
          SELECT root_id FROM ranked WHERE rank=1 AND status IN ('running','asking')
        )
-       SELECT run.id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn,
-              root.launch_key
+       SELECT run.id,run.record_id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn,
+              root.launch_key,root.record_id root_record_id
        FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_id,run.id)
        JOIN run root ON root.id=COALESCE(run.parent_run_id,run.id)
        ORDER BY root_id,run.turn DESC`,
     )
     .all() as {
     id: number
+    record_id: string | null
     root_id: number
     repo: string | null
     status: string
     turn: number
     launch_key: string | null
+    root_record_id: string | null
   }[]
-  const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number> }>()
+  const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number | string> }>()
   for (const row of liveTurns) {
     const current = workers.get(row.root_id)
-    if (!current) workers.set(row.root_id, { ...row, runIds: new Set([row.id, row.root_id]) })
-    else current.runIds.add(row.id)
+    if (!current)
+      workers.set(row.root_id, {
+        ...row,
+        runIds: new Set([
+          row.id,
+          row.root_id,
+          ...(row.record_id ? [row.record_id] : []),
+          ...(row.root_record_id ? [row.root_record_id] : []),
+        ]),
+      })
+    else {
+      current.runIds.add(row.id)
+      if (row.record_id) current.runIds.add(row.record_id)
+    }
   }
   const claims = database
     .query(
