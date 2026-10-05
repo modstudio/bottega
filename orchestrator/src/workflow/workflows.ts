@@ -2,8 +2,10 @@ import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
 import {
   composeIndexSources,
+  type InjectionSource,
   resolveDeclaredFacts,
   unresolvedTrackerActionPlaceholder,
+  type WorkflowFactSource,
 } from '../project/project-injection.ts'
 import {
   type AutonomyPreset,
@@ -13,6 +15,7 @@ import {
   catalogueStepsForAutonomy,
   resolveAutonomy,
 } from './autonomy.ts'
+import { decideShipToReach } from './ship-to-reach.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
@@ -419,6 +422,46 @@ type WorkflowNeeds = {
   arguments?: { name: string; description: string }[]
 }
 type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
+const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
+  needs.filter((source): source is InjectionSource => source !== 'ship-to')
+
+function shipToFact(
+  project: { name: string; settings: { release?: { rungs: { name: string }[] } } },
+  needs: readonly WorkflowFactSource[],
+  args: Record<string, string>,
+  autonomy: AutonomyResolution,
+  projectFacts: Record<string, unknown>,
+) {
+  if (!needs.includes('ship-to')) return {}
+  const decision = decideShipToReach(
+    autonomy.shipTo.value,
+    project.settings.release?.rungs.map(({ name }) => name) ?? [],
+    args.depth,
+  )
+  if (!decision.allowed) throw new Error(decision.refusal)
+  const tracker = needs.includes('tracker')
+    ? (projectFacts.tracker as { states: Partial<Record<'review' | 'done', string>> })
+    : undefined
+  if (tracker && decision.remaining.length && !tracker.states.review)
+    throw new Error(
+      `project ${project.name} tracker is missing workflow state "review"; set it with: orch project set ${project.name} --settings '{"tracker":{"states":{"<state-name>":"review"}}}'`,
+    )
+  return {
+    shipTo: {
+      level: autonomy.shipTo.value,
+      scope: autonomy.shipTo.scope,
+      mayMerge: decision.mayMerge ? 'yes' : 'no',
+      reach: decision.reach,
+      remaining: decision.remaining,
+      reachText: decision.reach.join(', ') || 'none',
+      remainingText: decision.remaining.join(', ') || 'none',
+      ...(tracker
+        ? { closeState: decision.remaining.length ? tracker.states.review : tracker.states.done }
+        : {}),
+    },
+  }
+}
+
 const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
   version === undefined
     ? parseVersion(productionVersionRow(slug, d))
@@ -510,12 +553,17 @@ export function composeWorkflow(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
-  const { resolved, facts } = resolveDeclaredFacts(
+  const allNeeds = selected.flatMap((step) => step.needs)
+  const { resolved, facts: projectFacts } = resolveDeclaredFacts(
     project,
-    selected.flatMap((step) => step.needs),
+    projectInjectionNeeds(allNeeds),
     args,
     composeIndexSources,
   )
+  const facts = {
+    ...projectFacts,
+    ...shipToFact(project, allNeeds, args, effectiveAutonomy, projectFacts),
+  }
   return {
     workflow: {
       slug,
@@ -601,7 +649,6 @@ export function getWorkflowStep(
     stack: projectRow.stack,
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
-  const { facts } = resolveDeclaredFacts(project, step.needs, args)
   const effectiveAutonomy =
     autonomy ??
     resolveAutonomy(
@@ -609,6 +656,15 @@ export function getWorkflowStep(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
+  const { facts: projectFacts } = resolveDeclaredFacts(
+    project,
+    projectInjectionNeeds(step.needs),
+    args,
+  )
+  const facts = {
+    ...projectFacts,
+    ...shipToFact(project, step.needs, args, effectiveAutonomy, projectFacts),
+  }
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   const resolve = (template: string) =>
     template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {

@@ -200,6 +200,111 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  const publishShipToFixture = (d: Database, needs: string[] = ['tracker', 'ship-to']) => {
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'ship-to-fixture',
+            stage: 'ship',
+            title: 'Ship-to fixture',
+            body: needs.includes('tracker')
+              ? 'Close at {{shipTo.closeState}} with {{shipTo.remainingText}} remaining.'
+              : 'Ship to {{shipTo.level}}.',
+            ...(needs.includes('tracker') ? { expectedStatus: '{{shipTo.closeState}}' } : {}),
+            floor: ['tracker-transition'],
+            job: null,
+            autonomy: 'auto',
+            needs,
+          },
+        ],
+      },
+      'ship-to fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'ship-to-fixture',
+      {
+        title: 'Ship-to fixture',
+        description: 'Ship.',
+        arguments: [{ name: 'depth', required: false, description: 'Last rung.' }],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['ship-to-fixture'],
+          },
+        ],
+      },
+      'ship-to fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('ship-to-fixture', workflow.n, 'publish', 'test', d)
+  }
+
+  const shipToAutonomy = (level: 'branch' | 'trunk' | 'production') => ({
+    steps: { 'ship-to-fixture': { value: 'auto' as const, scope: 'test' } },
+    rulings: { value: 'agent' as const, scope: 'test' },
+    shipTo: { value: level, scope: 'session' },
+  })
+
+  test.each([
+    ['trunk', [{ name: 'production', branch: 'production' }], 'review'],
+    ['trunk', [], 'done'],
+    ['production', [{ name: 'production', branch: 'production' }], 'done'],
+  ] as const)('ship-to %s resolves close state %s', (level, rungs, expected) => {
+    const d = database()
+    publishShipToFixture(d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        release: { rungs, mergeMethod: 'squash', requiredChecks: [] },
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+    const autonomy = shipToAutonomy(level)
+    const composed = composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy)
+    const served = getWorkflowStep(
+      'ship-to-fixture',
+      'fixture',
+      'ship-to-fixture',
+      {},
+      d,
+      {},
+      autonomy,
+    )
+
+    expect(composed.facts.shipTo!.closeState).toBe(expected)
+    expect(composed.steps[0]!.expectedStatus).toBe(expected)
+    expect(served.facts.shipTo!.closeState).toBe(expected)
+    expect(served.expectedStatus).toBe(expected)
+  })
+
+  test('a project without release settings composes a step needing ship-to', () => {
+    const d = database()
+    publishShipToFixture(d, ['ship-to'])
+
+    expect(
+      composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, shipToAutonomy('trunk'))
+        .facts.shipTo,
+    ).toEqual({
+      level: 'trunk',
+      scope: 'session',
+      mayMerge: 'yes',
+      reach: [],
+      remaining: [],
+      reachText: 'none',
+      remainingText: 'none',
+    })
+  })
+
   test('renders the registered name through the built-in project placeholder', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
