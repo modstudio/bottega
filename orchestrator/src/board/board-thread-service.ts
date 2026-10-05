@@ -10,24 +10,29 @@ import {
   architectIdentity,
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
-  BOARD_POST_RATE_WINDOW_MS,
   OPERATOR_READER,
   parseAudience,
-  postDecision,
 } from './board-policy.ts'
 import {
   addressed,
+  authorWindowDecision,
   boardActor,
   hasReceipt,
+  insertRootMessage,
   type MessageRow,
   messageRows,
   messageTags,
   originText,
   type PostNoticeInput,
-  postQuestionRoot,
   rowIsLive,
-} from './board-service.ts'
-import { acceptRefusal, replyRefusal, threadParticipants } from './board-thread-policy.ts'
+} from './board-store.ts'
+import {
+  acceptRefusal,
+  BOARD_NOTE_FILING_LEASE_MS,
+  noteFilingLeaseDecision,
+  replyRefusal,
+  threadParticipants,
+} from './board-thread-policy.ts'
 
 type Environment = Record<string, string | undefined>
 
@@ -66,7 +71,11 @@ export function askQuestion(
   clock = Date.now(),
   cwd = process.cwd(),
 ) {
-  return postQuestionRoot(input, env, clock, cwd)
+  const database = writableDb()
+  return writeTransaction(
+    () => insertRootMessage('question', input, env, clock, cwd, database),
+    database,
+  )
 }
 
 export function replyToThread(
@@ -100,15 +109,6 @@ export function replyToThread(
       hasReceipt: hasReceipt(root.id, reader),
     })
     if (refusal) throw new Error(refusal)
-    const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
-    const recentPosts = (
-      database
-        .query(
-          `SELECT COUNT(*) n FROM board_message
-           WHERE author_kind=? AND author_session IS ? AND created_at>=?`,
-        )
-        .get(actor.kind, actor.session, since) as { n: number }
-    ).n
     const duplicate = database
       .query(
         `SELECT id FROM board_message
@@ -123,7 +123,7 @@ export function replyToThread(
         body,
         new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
       ) as { id: number } | null
-    const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
+    const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
     if (decision === 'drop-duplicate') {
       const reached = (
         database
@@ -231,12 +231,56 @@ export function readThread(id: number, env: Environment = process.env, clock = D
   }
 }
 
+function retryHint(questionId: number, pendingError: string | null): string | null {
+  return pendingError ? `orch board file-note ${questionId}` : null
+}
+
+function filingLeaseRefusal(question: MessageRow, clock: number): string | null {
+  const decision = noteFilingLeaseDecision(question.note_id, question.note_filing_started_at, clock)
+  if (decision.kind === 'filed')
+    return `board question ${question.id} already filed note ${decision.noteId}`
+  if (decision.kind === 'in-progress')
+    return `board question ${question.id} note filing is in progress; retry with orch board file-note ${question.id} after ${new Date(decision.retryAt).toISOString()}`
+  return null
+}
+
+function takeFilingLease(
+  questionId: number,
+  clock: number,
+): { question: MessageRow; reply: MessageRow; startedAt: string } {
+  const database = writableDb()
+  return writeTransaction(() => {
+    const current = message(questionId)
+    const refusal = filingLeaseRefusal(current, clock)
+    if (refusal) throw new Error(refusal)
+    const startedAt = new Date(clock).toISOString()
+    const staleBefore = new Date(clock - BOARD_NOTE_FILING_LEASE_MS).toISOString()
+    const taken = database
+      .query(
+        `UPDATE board_message SET note_filing_started_at=?
+         WHERE id=? AND note_id IS NULL
+           AND (note_filing_started_at IS NULL OR note_filing_started_at<=?)`,
+      )
+      .run(startedAt, questionId, staleBefore)
+    if (taken.changes !== 1) {
+      const raced = message(questionId)
+      throw new Error(
+        filingLeaseRefusal(raced, clock) ??
+          `board question ${questionId} note filing is in progress; retry with orch board file-note ${questionId}`,
+      )
+    }
+    const question = message(questionId)
+    return { question, reply: message(question.accepted_reply_id!), startedAt }
+  }, database)
+}
+
 async function filePendingNote(
-  question: MessageRow,
-  reply: MessageRow,
+  questionId: number,
   cwd: string,
   filer: AnswerNoteFiler,
-): Promise<{ noteId: number | null; notePendingError: string | null }> {
+  clock: number,
+): Promise<{ noteId: number | null; notePendingError: string | null; retry: string | null }> {
+  const { question, reply, startedAt } = takeFilingLease(questionId, clock)
   try {
     const filed = await filer(
       {
@@ -254,19 +298,27 @@ async function filePendingNote(
     const database = writableDb()
     writeTransaction(() => {
       database
-        .query('UPDATE board_message SET note_id=?,note_pending_error=NULL WHERE id=?')
-        .run(filed.noteId, question.id)
+        .query(
+          `UPDATE board_message
+           SET note_id=?,note_pending_error=NULL,note_filing_started_at=NULL
+           WHERE id=? AND note_filing_started_at=?`,
+        )
+        .run(filed.noteId, question.id, startedAt)
     }, database)
-    return { noteId: filed.noteId, notePendingError: null }
+    return { noteId: filed.noteId, notePendingError: null, retry: null }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     const database = writableDb()
     writeTransaction(() => {
       database
-        .query('UPDATE board_message SET note_pending_error=? WHERE id=?')
-        .run(detail, question.id)
+        .query(
+          `UPDATE board_message
+           SET note_pending_error=?,note_filing_started_at=NULL
+           WHERE id=? AND note_filing_started_at=?`,
+        )
+        .run(detail, question.id, startedAt)
     }, database)
-    return { noteId: null, notePendingError: detail }
+    return { noteId: null, notePendingError: detail, retry: retryHint(question.id, detail) }
   }
 }
 
@@ -309,7 +361,7 @@ export async function acceptAnswer(
       )
     return { question: message(question.id), reply }
   }, database)
-  const note = await filePendingNote(question, reply, cwd, filer)
+  const note = await filePendingNote(question.id, cwd, filer, clock)
   return { accepted: reply.id, questionId: question.id, ...note }
 }
 
@@ -318,6 +370,7 @@ export async function fileAnswerNote(
   env: Environment = process.env,
   cwd = process.cwd(),
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
+  clock = Date.now(),
 ) {
   const actor = boardActor(env)
   const question = message(questionId)
@@ -327,9 +380,8 @@ export async function fileAnswerNote(
     throw new Error(
       `only the question author or operator may file the answer note for board question ${questionId}`,
     )
-  if (question.note_id !== null)
-    throw new Error(`board question ${questionId} already filed note ${question.note_id}`)
-  const reply = message(question.accepted_reply_id)
-  const note = await filePendingNote(question, reply, cwd, filer)
+  const refusal = filingLeaseRefusal(question, clock)
+  if (refusal) throw new Error(refusal)
+  const note = await filePendingNote(question.id, cwd, filer, clock)
   return { questionId, ...note }
 }

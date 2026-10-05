@@ -80,13 +80,7 @@ export function registerBoardTools(server: McpServer): void {
         reply_id: z.number().int().positive(),
       }),
     },
-    async ({ question_id, reply_id }) => {
-      const accepted = await acceptAnswer(question_id, reply_id)
-      return result({
-        ...accepted,
-        retry: accepted.notePendingError ? `orch board file-note ${question_id}` : null,
-      })
-    },
+    async ({ question_id, reply_id }) => result(await acceptAnswer(question_id, reply_id)),
   )
   server.registerTool(
     'board_file_note',

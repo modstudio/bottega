@@ -28,6 +28,7 @@ CREATE TABLE board_message (
   accepted_at TEXT,
   note_id INTEGER,
   note_pending_error TEXT,
+  note_filing_started_at TEXT,
   CHECK (
     (author_kind = 'operator' AND author_session IS NULL AND author_run_id IS NULL) OR
     (author_kind = 'architect' AND author_session IS NOT NULL AND author_session <> 'operator') OR
@@ -44,7 +45,10 @@ CREATE TABLE board_message (
     (kind = 'question' AND accepted_reply_id IS NOT NULL AND accepted_by IS NOT NULL
       AND accepted_at IS NOT NULL)
   ),
-  CHECK (kind = 'question' OR (note_id IS NULL AND note_pending_error IS NULL))
+  CHECK (
+    kind = 'question' OR
+    (note_id IS NULL AND note_pending_error IS NULL AND note_filing_started_at IS NULL)
+  )
 );
 
 INSERT INTO board_message

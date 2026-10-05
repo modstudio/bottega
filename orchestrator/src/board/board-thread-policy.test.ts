@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { acceptRefusal, replyRefusal, threadParticipants } from './board-thread-policy.ts'
+import {
+  acceptRefusal,
+  BOARD_NOTE_FILING_LEASE_MS,
+  noteFilingLeaseDecision,
+  replyRefusal,
+  threadParticipants,
+} from './board-thread-policy.ts'
 
 const root = {
   id: 7,
@@ -106,4 +112,24 @@ test('participants are unique, ordered, and exclude the replier', () => {
     'asker',
     'first',
   ])
+})
+
+test('note filing lease decisions distinguish filed, active, and stale leases', () => {
+  const clock = Date.parse('2026-10-05T12:00:00.000Z')
+  expect(noteFilingLeaseDecision(42, null, clock)).toEqual({ kind: 'filed', noteId: 42 })
+  expect(noteFilingLeaseDecision(null, null, clock)).toEqual({ kind: 'take' })
+  expect(
+    noteFilingLeaseDecision(
+      null,
+      new Date(clock - BOARD_NOTE_FILING_LEASE_MS + 1).toISOString(),
+      clock,
+    ),
+  ).toEqual({ kind: 'in-progress', retryAt: clock + 1 })
+  expect(
+    noteFilingLeaseDecision(
+      null,
+      new Date(clock - BOARD_NOTE_FILING_LEASE_MS).toISOString(),
+      clock,
+    ),
+  ).toEqual({ kind: 'take' })
 })

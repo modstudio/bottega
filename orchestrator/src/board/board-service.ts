@@ -1,96 +1,40 @@
 import { hostname } from 'node:os'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { db, nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { boardContext, boardRunContext } from './board-context.ts'
 import {
   architectIdentity,
-  audienceRefusal,
-  BOARD_BODY_MAX_CHARS,
-  BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
-  BOARD_DUPLICATE_WINDOW_MS,
-  BOARD_POST_RATE_WINDOW_MS,
-  BOARD_TITLE_MAX_CHARS,
   messageCanBeReaped,
-  messageIsLive,
   needsAckEscalation,
   OPERATOR_READER,
   parseAudience,
-  postDecision,
   requireRealSession,
-  resolveAudience,
-  runAudienceRefusal,
   shouldInterrupt,
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
-import { boardNoticeMatches } from './board-routing.ts'
 import {
-  type BoardTag,
-  inferredBoardTags,
-  type SenderBoardTags,
-  senderBoardTags,
-  senderTagKey,
-} from './board-tags.ts'
+  addressed,
+  type BoardActor,
+  boardActor,
+  type Environment,
+  hasReceipt,
+  insertRootMessage,
+  type MessageRow,
+  messageRows,
+  messageTags,
+  originText,
+  type PostNoticeInput,
+  type PostNoticeResult,
+  recipients,
+  rowIsLive,
+} from './board-store.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
 export { requireRealSession } from './board-policy.ts'
 
-type Environment = Record<string, string | undefined>
-export type BoardActor =
-  | { kind: 'operator'; session: null }
-  | { kind: 'architect'; session: string }
-export type PostNoticeResult = { id: number; dropped: boolean; reached: number; warning?: string }
-export type MessageRow = {
-  id: number
-  kind: string
-  author_kind: string
-  author_session: string | null
-  audience: string | null
-  title: string | null
-  body: string
-  ack_required: number
-  ack_deadline: string | null
-  expires_at: string | null
-  created_at: string
-  withdrawn_at: string | null
-  author_harness: string | null
-  author_project: string | null
-  author_run_id: number | null
-  thread_root_id: number | null
-  accepted_reply_id: number | null
-  accepted_by: string | null
-  accepted_at: string | null
-  note_id: number | null
-  note_pending_error: string | null
-}
-
-const NO_REACH_WARNING = 'reached no live session; re-address it or wait for a matching session'
-
 const workerMarked = (env: Environment) => Boolean(env.ORCH_RUN_ID || env.ORCH_DEPTH)
-const unrecognizedSessionMarked = (env: Environment) =>
-  Object.entries(env).some(
-    ([key, value]) => Boolean(value?.trim()) && /(?:SESSION_ID|THREAD_ID)$/.test(key),
-  )
 
-export function boardActor(env: Environment = process.env): BoardActor {
-  if (workerMarked(env))
-    throw new Error('workers cannot use the architect notice board in this slice')
-  if (
-    env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
-    env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')
-  )
-    throw new Error(
-      'operator and run:<id> readers are reserved; use a real architect session id or address the worker with run:<id>',
-    )
-  const identity = architectIdentity(env)
-  if (identity) return { kind: 'architect', session: identity.session }
-  if (unrecognizedSessionMarked(env))
-    throw new Error(
-      'this harness has no recognized architect identity; use a supported architect harness or post from an operator terminal',
-    )
-  return { kind: 'operator', session: null }
-}
+export type { BoardActor, PostNoticeInput, PostNoticeResult }
+export { boardActor }
 
 function boardReader(env: Environment = process.env): string {
   const actor = boardActor(env)
@@ -146,176 +90,6 @@ export function recordPresence(
   return true
 }
 
-function presenceFacts(database = db()) {
-  const architects = (
-    database.query('SELECT session_id,project,machine,last_seen FROM presence').all() as {
-      session_id: string
-      project: string
-      machine: string
-      last_seen: string
-    }[]
-  ).map((row) => ({
-    reader: row.session_id,
-    role: 'architect' as const,
-    project: row.project,
-    machine: row.machine,
-    lastSeen: Date.parse(row.last_seen),
-  }))
-  const liveTurns = database
-    .query(
-      `WITH ranked AS (
-         SELECT id,COALESCE(parent_run_id,id) root_id,status,
-                ROW_NUMBER() OVER (
-                  PARTITION BY COALESCE(parent_run_id,id) ORDER BY turn DESC,id DESC
-                ) rank
-         FROM run
-       ), live_roots AS (
-         SELECT root_id FROM ranked WHERE rank=1 AND status IN ('running','asking')
-       )
-       SELECT run.id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn
-       FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_id,run.id)
-       ORDER BY root_id,turn DESC`,
-    )
-    .all() as { id: number; root_id: number; repo: string | null; status: string; turn: number }[]
-  const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number> }>()
-  for (const row of liveTurns) {
-    const current = workers.get(row.root_id)
-    if (!current) workers.set(row.root_id, { ...row, runIds: new Set([row.id, row.root_id]) })
-    else current.runIds.add(row.id)
-  }
-  return [
-    ...architects,
-    ...[...workers.values()].map((row) => ({
-      reader: `run:${row.root_id}`,
-      role: 'worker' as const,
-      project: row.repo ?? '',
-      machine: hostname(),
-      live: true,
-      runIds: row.runIds,
-    })),
-  ]
-}
-
-function recipients(
-  audienceExpression: string,
-  at: number,
-  tags: BoardTag[],
-  database = db(),
-): string[] {
-  const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, presenceFacts(database), at, SESSION_LIVE_MS)
-  if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
-  return coarse.filter((reader) => {
-    const run = /^run:(\d+)$/.exec(reader)
-    return boardNoticeMatches(
-      tags,
-      run ? boardRunContext(Number(run[1]), database) : boardContext(reader, at, database),
-    )
-  })
-}
-
-export type PostNoticeInput = SenderBoardTags & {
-  audience: string
-  title: string
-  body: string
-  ackRequired?: boolean
-  deadlineMs?: number
-  expiresMs?: number
-  suggestingRunId?: number
-}
-
-function resolvePostAudience(expression: string, machine: string) {
-  const audience = parseAudience(expression)
-  if (audience.kind !== 'machine') return { audience, expression }
-  const value = audience.value === 'this' ? machine : audience.value
-  return { audience: { kind: 'machine' as const, value }, expression: `machine:${value}` }
-}
-
-function resolvePostOrigin(actor: BoardActor, env: Environment, cwd: string) {
-  if (actor.kind === 'operator') return { harness: null, project: null }
-  const project = projectAt(cwd)
-  if (!project)
-    throw new Error(
-      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
-    )
-  return { harness: architectIdentity(env)!.harness, project: project.name }
-}
-
-function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
-  const row = database
-    .query(
-      `SELECT root.session_id
-       FROM run turn JOIN run root ON root.id=COALESCE(turn.parent_run_id,turn.id)
-       WHERE turn.id=?`,
-    )
-    .get(runId) as { session_id: string | null } | null
-  return row?.session_id ?? null
-}
-
-function validatePostNoticeInput(input: PostNoticeInput): void {
-  if (input.title.length > BOARD_TITLE_MAX_CHARS)
-    throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
-  if (input.body.length > BOARD_BODY_MAX_CHARS)
-    throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
-    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
-  if (
-    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
-  if (!input.title.trim() || !input.body.trim())
-    throw new Error('board notice title and body are required')
-  if (input.deadlineMs !== undefined && !input.ackRequired)
-    throw new Error('a board notice deadline requires acknowledgement to be required')
-}
-
-function postNoticeResult(id: number, dropped: boolean, reached: number): PostNoticeResult {
-  return {
-    id,
-    dropped,
-    reached,
-    ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}),
-  }
-}
-
-function refreshPostingPresence(
-  database: ReturnType<typeof writableDb>,
-  actor: BoardActor,
-  origin: ReturnType<typeof resolvePostOrigin>,
-  machine: string,
-  cwd: string,
-  at: string,
-): void {
-  if (actor.kind !== 'architect') return
-  const current = database
-    .query(
-      `SELECT launch_key FROM run
-       WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
-       ORDER BY id DESC LIMIT 1`,
-    )
-    .get(actor.session) as { launch_key: string } | null
-  database
-    .query(
-      `INSERT INTO presence
-       (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,?,'architect',?,?,?,?,?)
-       ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
-         machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
-         current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
-    )
-    .run(
-      actor.session,
-      origin.harness,
-      machine,
-      origin.project,
-      cwd,
-      current?.launch_key ?? null,
-      at,
-    )
-}
-
 export function postNotice(
   input: PostNoticeInput,
   env: Environment = process.env,
@@ -333,176 +107,7 @@ export function postNoticeInTransaction(
   cwd: string,
   database: ReturnType<typeof writableDb>,
 ): PostNoticeResult {
-  return postRootMessageInTransaction('notice', input, env, clock, cwd, database)
-}
-
-export function postQuestionRoot(
-  input: Omit<PostNoticeInput, 'ackRequired' | 'deadlineMs'>,
-  env: Environment = process.env,
-  clock = Date.now(),
-  cwd = process.cwd(),
-): PostNoticeResult {
-  const database = writableDb()
-  return writeTransaction(
-    () => postRootMessageInTransaction('question', input, env, clock, cwd, database),
-    database,
-  )
-}
-
-function postRootMessageInTransaction(
-  kind: 'notice' | 'question',
-  input: PostNoticeInput,
-  env: Environment,
-  clock: number,
-  cwd: string,
-  database: ReturnType<typeof writableDb>,
-): PostNoticeResult {
-  validatePostNoticeInput(input)
-  const actor = boardActor(env)
-  const postingMachine = hostname()
-  const { audience, expression: audienceExpression } = resolvePostAudience(
-    input.audience,
-    postingMachine,
-  )
-  const refusal = audienceRefusal(audience, actor.kind)
-  if (refusal) throw new Error(refusal)
-  const runRefusal = runAudienceRefusal(
-    audience,
-    actor.kind,
-    actor.session,
-    audience.kind === 'run' ? runOwnerSession(audience.value, database) : null,
-  )
-  if (runRefusal) throw new Error(runRefusal)
-  const senderTags = senderBoardTags(input)
-  const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
-  const expiresMs = input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS
-  if (input.ackRequired && deadlineMs > expiresMs)
-    throw new Error(
-      `ack deadline ${deadlineMs}ms is later than expiry ${expiresMs}ms; set --deadline no later than --expires`,
-    )
-  const authorSession = actor.session
-  const origin = resolvePostOrigin(actor, env, cwd)
-  const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
-  const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
-  const recentPosts = (
-    database
-      .query(
-        `SELECT COUNT(*) n FROM board_message
-         WHERE author_kind=? AND author_session IS ? AND created_at>=?`,
-      )
-      .get(actor.kind, authorSession, since) as { n: number }
-  ).n
-  const duplicateCandidates = database
-    .query(
-      `SELECT id FROM board_message
-       WHERE kind=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
-         AND audience=? AND title=? AND body=?
-         AND created_at>=? ORDER BY id DESC`,
-    )
-    .all(
-      kind,
-      actor.kind,
-      authorSession,
-      input.suggestingRunId ?? null,
-      audienceExpression,
-      input.title,
-      input.body,
-      duplicateSince,
-    ) as { id: number }[]
-  const senderTagsKey = senderTagKey(senderTags)
-  const duplicate = duplicateCandidates.find((candidate) => {
-    const storedTags = database
-      .query(
-        `SELECT kind,value FROM board_message_tag
-         WHERE message_id=? AND origin='sender'`,
-      )
-      .all(candidate.id) as Pick<BoardTag, 'kind' | 'value'>[]
-    return senderTagKey(storedTags) === senderTagsKey
-  })
-  const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
-  if (decision === 'drop-duplicate') {
-    const reached = (
-      database
-        .query(
-          'SELECT COUNT(*) count FROM board_receipt WHERE message_id=? AND audience_at_posting=1',
-        )
-        .get(duplicate!.id) as { count: number }
-    ).count
-    return postNoticeResult(duplicate!.id, true, reached)
-  }
-  if (decision === 'rate-limited')
-    throw new Error('board post rate limit reached; retry after the ten-minute author window')
-  const createdAt = new Date(clock).toISOString()
-  const ackRequired = input.ackRequired ?? false
-  const deadline = ackRequired ? new Date(clock + deadlineMs).toISOString() : null
-  const expiresAt = new Date(clock + expiresMs).toISOString()
-  let id = 0
-  let reached = 0
-  refreshPostingPresence(database, actor, origin, postingMachine, cwd, createdAt)
-  const currentTaskKey = actor.session
-    ? ((
-        database
-          .query('SELECT current_task_key FROM presence WHERE session_id=?')
-          .get(actor.session) as { current_task_key: string | null } | null
-      )?.current_task_key ?? null)
-    : null
-  const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, currentTaskKey)]
-  const inserted = database
-    .query(
-      `INSERT INTO board_message
-       (kind,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
-        ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
-    )
-    .run(
-      kind,
-      actor.kind,
-      authorSession,
-      input.suggestingRunId ?? null,
-      origin.harness,
-      origin.project,
-      audienceExpression,
-      input.title,
-      input.body,
-      ackRequired ? 1 : 0,
-      deadline,
-      expiresAt,
-      createdAt,
-    )
-  id = Number(inserted.lastInsertRowid)
-  const addTag = database.query(
-    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin)
-     VALUES (?,?,?,?)`,
-  )
-  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin)
-  const add = database.query(
-    `INSERT OR IGNORE INTO board_receipt
-     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,1,NULL,NULL)`,
-  )
-  const postingRecipients = recipients(audienceExpression, clock, tags, database).filter(
-    (reader) => kind !== 'question' || !reader.startsWith('run:'),
-  )
-  reached = postingRecipients.length
-  for (const reader of postingRecipients) add.run(id, reader)
-  return postNoticeResult(id, false, reached)
-}
-
-export function messageRows(): MessageRow[] {
-  return db().query(`SELECT * FROM board_message ORDER BY id`).all() as MessageRow[]
-}
-
-export function messageTags(messageId: number): BoardTag[] {
-  return db()
-    .query('SELECT kind,value,origin FROM board_message_tag WHERE message_id=? ORDER BY rowid')
-    .all(messageId) as BoardTag[]
-}
-
-export function addressed(message: MessageRow, reader: string, clock: number): boolean {
-  return (
-    message.audience !== null &&
-    recipients(message.audience, clock, messageTags(message.id)).includes(reader)
-  )
+  return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
 function runReader(runId: number): string {
@@ -513,21 +118,6 @@ function runReader(runId: number): string {
   return `run:${row.root_id}`
 }
 
-export function rowIsLive(message: MessageRow, clock: number): boolean {
-  if (message.kind === 'reply') {
-    const root = messageRows().find((candidate) => candidate.id === message.thread_root_id)
-    return root ? rowIsLive(root, clock) : false
-  }
-  if (message.expires_at === null) return false
-  return messageIsLive(
-    {
-      expiresAt: Date.parse(message.expires_at),
-      withdrawnAt: message.withdrawn_at ? Date.parse(message.withdrawn_at) : null,
-    },
-    clock,
-  )
-}
-
 function wasDelivered(messageId: number, reader: string): boolean {
   const receipt = db()
     .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
@@ -535,24 +125,10 @@ function wasDelivered(messageId: number, reader: string): boolean {
   return Boolean(receipt?.delivered_at)
 }
 
-export function hasReceipt(messageId: number, reader: string): boolean {
-  return Boolean(
-    db()
-      .query('SELECT 1 FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(messageId, reader),
-  )
-}
-
 function deliverableTo(message: MessageRow, reader: string, clock: number): boolean {
   return message.kind === 'reply'
     ? hasReceipt(message.id, reader)
     : addressed(message, reader, clock)
-}
-
-export function originText(message: MessageRow): string {
-  if (message.author_kind === 'operator') return 'operator'
-  if (message.author_kind === 'worker') return `worker run ${message.author_run_id ?? 'unknown'}`
-  return `architect ${message.author_session ?? 'unknown'} (${message.author_harness ?? 'unknown harness'}, ${message.author_project ?? 'unknown project'})`
 }
 
 function render(message: MessageRow, worker = false) {

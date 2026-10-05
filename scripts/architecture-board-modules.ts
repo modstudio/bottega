@@ -24,7 +24,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-thread-policy.ts', ['./board-policy.ts']),
   module('orchestrator/src/board/board-thread-render.ts', ['./board-policy.ts']),
   module('orchestrator/src/board/board-answer-note.ts', ['../mcp/hub-notes.ts']),
-  module('orchestrator/src/board/board-service.ts', [
+  module('orchestrator/src/board/board-store.ts', [
     'node:os',
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
@@ -34,6 +34,14 @@ export const boardModules: BoardModule[] = [
     './board-render.ts',
     './board-routing.ts',
     './board-tags.ts',
+  ]),
+  module('orchestrator/src/board/board-service.ts', [
+    'node:os',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './board-policy.ts',
+    './board-render.ts',
+    './board-store.ts',
     './board-thread-render.ts',
   ]),
   module('orchestrator/src/board/board-thread-service.ts', [
@@ -42,7 +50,7 @@ export const boardModules: BoardModule[] = [
     '../project/projects.ts',
     './board-answer-note.ts',
     './board-policy.ts',
-    './board-service.ts',
+    './board-store.ts',
     './board-thread-policy.ts',
   ]),
   module('orchestrator/src/board/board-suggestions.ts', [

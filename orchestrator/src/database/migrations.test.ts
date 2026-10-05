@@ -226,7 +226,10 @@ test('board thread migration preserves existing messages, receipts, and tags', (
     expect(applyMigrations(database)).toEqual(['0077_board_threads'])
     expect(
       database
-        .query('SELECT kind,title,thread_root_id,accepted_reply_id,note_id FROM board_message')
+        .query(
+          `SELECT kind,title,thread_root_id,accepted_reply_id,note_id,note_filing_started_at
+           FROM board_message`,
+        )
         .get(),
     ).toEqual({
       kind: 'notice',
@@ -234,6 +237,7 @@ test('board thread migration preserves existing messages, receipts, and tags', (
       thread_root_id: null,
       accepted_reply_id: null,
       note_id: null,
+      note_filing_started_at: null,
     })
     expect(database.query('SELECT reader_session FROM board_receipt').get()).toEqual({
       reader_session: 'operator',

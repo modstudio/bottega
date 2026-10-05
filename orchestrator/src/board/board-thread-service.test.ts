@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { claimNotices, claimRunNotices, reapBoardMessages } from './board-service.ts'
+import { BOARD_NOTE_FILING_LEASE_MS } from './board-thread-policy.ts'
 import {
   acceptAnswer,
   askQuestion,
@@ -239,4 +240,92 @@ test('accepted threads survive retention while unaccepted expired questions are 
   expect(db().query('SELECT id FROM board_message WHERE id=?').get(accepted.id)).toBeDefined()
   expect(db().query('SELECT id FROM board_message WHERE id=?').get(reply.id)).toBeDefined()
   expect(db().query('SELECT id FROM board_message WHERE id=?').get(expired.id)).toBeNull()
+})
+
+test('a retry while acceptance is filing is refused and files exactly one note', async () => {
+  ensurePostingProject()
+  const clock = Date.now() + 600_000
+  const project = 'thread-filing-lease'
+  addArchitect('lease-asker', project, clock)
+  addArchitect('lease-answerer', project, clock)
+  const question = askQuestion(
+    { audience: `project:${project}`, title: 'Lease', body: 'File once?' },
+    architect('lease-asker'),
+    clock,
+    cwd,
+  )
+  const reply = replyToThread(question.id, 'Only once', architect('lease-answerer'), clock + 1, cwd)
+  let release!: () => void
+  let signalStarted!: () => void
+  const started = new Promise<void>((resolve) => {
+    signalStarted = resolve
+  })
+  const waitForRelease = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let filings = 0
+  const accepting = acceptAnswer(
+    question.id,
+    reply.id,
+    architect('lease-asker'),
+    clock + 2,
+    cwd,
+    async () => {
+      filings += 1
+      signalStarted()
+      await waitForRelease
+      return { noteId: 202 }
+    },
+  )
+  await started
+  await expect(
+    fileAnswerNote(
+      question.id,
+      architect('lease-asker'),
+      cwd,
+      async () => {
+        filings += 1
+        return { noteId: 203 }
+      },
+      clock + 3,
+    ),
+  ).rejects.toThrow(/filing is in progress.*file-note.*after/)
+  release()
+  expect(await accepting).toMatchObject({ noteId: 202, retry: null })
+  expect(filings).toBe(1)
+})
+
+test('a stale note filing lease can be taken over', async () => {
+  ensurePostingProject()
+  const clock = Date.now() + 700_000
+  const project = 'thread-stale-lease'
+  addArchitect('stale-asker', project, clock)
+  addArchitect('stale-answerer', project, clock)
+  const question = askQuestion(
+    { audience: `project:${project}`, title: 'Stale', body: 'Recover filing?' },
+    architect('stale-asker'),
+    clock,
+    cwd,
+  )
+  const reply = replyToThread(
+    question.id,
+    'Recover it',
+    architect('stale-answerer'),
+    clock + 1,
+    cwd,
+  )
+  await acceptAnswer(question.id, reply.id, architect('stale-asker'), clock + 2, cwd, async () => {
+    throw new Error('first filing failed')
+  })
+  db()
+    .query('UPDATE board_message SET note_filing_started_at=? WHERE id=?')
+    .run(new Date(clock + 3).toISOString(), question.id)
+  const retried = await fileAnswerNote(
+    question.id,
+    architect('stale-asker'),
+    cwd,
+    async () => ({ noteId: 204 }),
+    clock + 3 + BOARD_NOTE_FILING_LEASE_MS,
+  )
+  expect(retried).toMatchObject({ noteId: 204, notePendingError: null, retry: null })
 })

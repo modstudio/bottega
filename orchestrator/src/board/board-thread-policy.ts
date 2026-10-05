@@ -1,5 +1,23 @@
 import type { Audience } from './board-policy.ts'
 
+export const BOARD_NOTE_FILING_LEASE_MS = 2 * 60 * 1_000
+
+export type NoteFilingLeaseDecision =
+  | { kind: 'take' }
+  | { kind: 'filed'; noteId: number }
+  | { kind: 'in-progress'; retryAt: number }
+
+export function noteFilingLeaseDecision(
+  noteId: number | null,
+  filingStartedAt: string | null,
+  clock: number,
+): NoteFilingLeaseDecision {
+  if (noteId !== null) return { kind: 'filed', noteId }
+  if (filingStartedAt === null) return { kind: 'take' }
+  const retryAt = Date.parse(filingStartedAt) + BOARD_NOTE_FILING_LEASE_MS
+  return retryAt <= clock ? { kind: 'take' } : { kind: 'in-progress', retryAt }
+}
+
 export type ThreadActor =
   | { kind: 'operator'; reader: string }
   | { kind: 'architect'; reader: string }
