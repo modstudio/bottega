@@ -18,9 +18,9 @@ import type {
   HostedBoardReceiptInput,
   HostedBoardReplyInput,
   HostedBoardSessionInput,
+  HostedBoardStatus,
   HostedBoardTakeClaimInput,
   HostedBoardThread,
-  HostedBoardStatus,
 } from './record-board-contract.ts'
 import { storedRecordToken } from './record-session.ts'
 import type {

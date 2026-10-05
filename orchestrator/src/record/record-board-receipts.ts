@@ -7,7 +7,7 @@ import {
   type HostedBoardStatus,
   RecordBoardError,
 } from './record-board-contract.ts'
-import { loadHostedBoardMessage } from './record-board-messages.ts'
+import { hostedBoardMessageView, loadHostedBoardMessage } from './record-board-messages.ts'
 import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
@@ -34,7 +34,10 @@ export async function hostedBoardStatus(
       WHERE message_id=${input.id}::uuid
       ORDER BY reader_user_id, reader_session
     `) as Record<string, unknown>[]
-    return { message, receipts: rows.map(hostedBoardReceiptView) }
+    return {
+      message: hostedBoardMessageView(message.row, message.tags),
+      receipts: rows.map(hostedBoardReceiptView),
+    }
   })
 }
 

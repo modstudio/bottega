@@ -29,7 +29,7 @@ test('board_status MCP tool refuses worker callers', async () => {
   process.env.ORCH_RUN_ID = 'mcp-board-worker'
   try {
     const result = await withBoardClient((client) =>
-      client.callTool({ name: 'board_status', arguments: { id: posted.id } }),
+      client.callTool({ name: 'board_status', arguments: { id: String(posted.id) } }),
     )
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([

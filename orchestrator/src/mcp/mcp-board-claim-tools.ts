@@ -1,12 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import {
-  listClaims,
-  releaseClaim,
-  releaseTaskClaims,
-  renewClaim,
-  takeClaim,
-} from '../board/board-claim-service.ts'
+  boardClaimList,
+  boardClaimRelease,
+  boardClaimReleaseTask,
+  boardClaimRenew,
+  boardClaimTake,
+} from '../board/board-operations.ts'
 
 const result = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
@@ -28,7 +28,7 @@ export function registerBoardClaimTools(server: McpServer): void {
     },
     async (input) =>
       result(
-        takeClaim({
+        await boardClaimTake({
           subject: input.subject,
           durationMs: input.duration_ms,
           runId: input.run_id,
@@ -42,17 +42,17 @@ export function registerBoardClaimTools(server: McpServer): void {
     'board_claim_renew',
     {
       description: 'Renew a live coordination claim.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.string().min(1) }),
     },
-    async ({ id }) => result(renewClaim(id)),
+    async ({ id }) => result(await boardClaimRenew(id)),
   )
   server.registerTool(
     'board_claim_release',
     {
       description: 'Release a live coordination claim.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.string().min(1) }),
     },
-    async ({ id }) => result(releaseClaim(id)),
+    async ({ id }) => result(await boardClaimRelease(id)),
   )
   server.registerTool(
     'board_claim_list',
@@ -61,7 +61,7 @@ export function registerBoardClaimTools(server: McpServer): void {
       inputSchema: z.object({ project: z.string().min(1).optional(), all: z.boolean().optional() }),
       annotations: { readOnlyHint: true },
     },
-    async ({ project, all }) => result(listClaims(project, all ?? false)),
+    async ({ project, all }) => result(await boardClaimList(project, all ?? false)),
   )
   server.registerTool(
     'board_claim_release_task',
@@ -69,6 +69,6 @@ export function registerBoardClaimTools(server: McpServer): void {
       description: 'Release live claims for a closed task.',
       inputSchema: z.object({ key: z.string().min(1), project: z.string().min(1) }),
     },
-    async ({ key, project }) => result(releaseTaskClaims(key, project)),
+    async ({ key, project }) => result(await boardClaimReleaseTask(key, project)),
   )
 }

@@ -1,0 +1,148 @@
+import { beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { db } from '../database/db.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
+import {
+  boardAcknowledge,
+  boardPost,
+  boardReply,
+  boardStatus,
+  boardThread,
+  boardWithdraw,
+} from './board-operations.ts'
+
+const env = {
+  CLAUDE_CODE_SESSION_ID: 'board-route-session',
+  ORCH_RECORD_API_URL: 'https://record.test',
+}
+
+beforeEach(() => {
+  db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+  db().query('DELETE FROM board_message').run()
+})
+
+test('an unadopted install keeps a post local and renders its id as a string', async () => {
+  const result = await boardPost(
+    { audience: 'operator', title: 'Local', body: 'unchanged' },
+    {
+      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+      clock: Date.parse('2026-10-05T12:00:00Z'),
+      cwd: process.cwd(),
+    },
+  )
+  expect(result.id).toBeString()
+  expect(
+    db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
+  ).toBe(1)
+})
+
+test('an adopted install routes hosted-capable message verbs only to the injected client', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const id = newRecordId()
+  const calls: string[] = []
+  const message = {
+    id,
+    kind: 'notice',
+    title: 'Hosted',
+    body: 'body',
+    audience: 'operator',
+    origin: {
+      kind: 'architect',
+      session: 'board-route-session',
+      harness: 'claude',
+      project: null,
+      runId: null,
+    },
+    senderTags: [],
+    createdAt: '2026-10-05T12:00:00.000Z',
+    expiresAt: '2026-10-06T12:00:00.000Z',
+    withdrawnAt: null,
+    state: 'open',
+    acceptedReplyId: null,
+    acceptedBy: null,
+    acceptedAt: null,
+    noteId: null,
+    notePendingError: null,
+    revision: '1',
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    claimId: null,
+    authorUserId: newRecordId(),
+    authorSession: 'board-route-session',
+    ackRequired: false,
+    ackDeadline: null,
+  }
+  const client = {
+    ...createMemoryRecordApiClient(),
+    postBoardMessage: async (input: { id: string }) => {
+      calls.push('post')
+      return { ...message, id: input.id }
+    },
+    replyBoardMessage: async () => {
+      calls.push('reply')
+      return message
+    },
+    withdrawBoardMessage: async () => {
+      calls.push('withdraw')
+      return message
+    },
+    getBoardThread: async () => {
+      calls.push('thread')
+      return { root: message, replies: [] }
+    },
+    getBoardStatus: async () => {
+      calls.push('status')
+      return { message, receipts: [] }
+    },
+    putBoardReceipt: async (input: {
+      messageId: string
+      readerSession: string
+      audienceAtPosting: boolean
+    }) => {
+      calls.push('ack')
+      return {
+        messageId: input.messageId,
+        readerUserId: newRecordId(),
+        readerSession: input.readerSession,
+        audienceAtPosting: input.audienceAtPosting,
+        deliveredAt: null,
+        acknowledgedAt: '2026-10-05T12:00:00.000Z',
+      }
+    },
+  }
+  await boardPost({ audience: 'operator', title: 'Hosted', body: 'body' }, { env, client })
+  await boardReply(id, 'reply', { env, client })
+  await boardWithdraw(id, { env, client })
+  await boardThread(id, { env, client })
+  await boardStatus(id, { env, client })
+  await boardAcknowledge(id, { env, client })
+  expect(calls).toEqual(['post', 'reply', 'withdraw', 'thread', 'status', 'ack'])
+  expect(
+    db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
+  ).toBe(0)
+})
+
+test('machine audiences stay local after adoption and ids are validated for the selected mode', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const client = createMemoryRecordApiClient()
+  const local = await boardPost(
+    { audience: 'machine:host', title: 'Machine', body: 'local' },
+    { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL }, client },
+  )
+  expect(local.id).toMatch(/^\d+$/)
+  await expect(boardThread('7', { env, client })).rejects.toThrow('must be a UUID in hosted mode')
+})
+
+test('an adopted install without hosted configuration refuses instead of writing locally', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  await expect(
+    boardPost(
+      { audience: 'operator', title: 'No fallback', body: 'body' },
+      { env: { CLAUDE_CODE_SESSION_ID: 'board-route-session' } },
+    ),
+  ).rejects.toThrow('ORCH_RECORD_API_URL')
+  expect(
+    db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
+  ).toBe(0)
+})

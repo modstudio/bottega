@@ -12,6 +12,27 @@ const module = (file: string, allowed: string[]): BoardModule => ({
 })
 
 export const boardModules: BoardModule[] = [
+  module('orchestrator/src/board/board-mode.ts', [
+    'bun:sqlite',
+    '../../../shared/board-mode.ts',
+    '../database/db.ts',
+  ]),
+  module('orchestrator/src/board/board-operations.ts', [
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../record/machine-identity.ts',
+    '../record/record-api-client.ts',
+    '../record/record-board-contract.ts',
+    './board-answer-note.ts',
+    './board-claim-policy.ts',
+    './board-claim-service.ts',
+    './board-mode.ts',
+    './board-policy.ts',
+    './board-service.ts',
+    './board-store.ts',
+    './board-thread-service.ts',
+  ]),
   module('orchestrator/src/board/board-claim-policy.ts', [
     '../../../shared/secret-shaped.ts',
     './board-policy.ts',
@@ -56,10 +77,7 @@ export const boardModules: BoardModule[] = [
     './board-service.ts',
     './board-store.ts',
   ]),
-  module('orchestrator/src/board/board-claim-commands.ts', [
-    'commander',
-    './board-claim-service.ts',
-  ]),
+  module('orchestrator/src/board/board-claim-commands.ts', ['commander', './board-operations.ts']),
   module('orchestrator/src/board/board-thread-service.ts', [
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
@@ -79,9 +97,9 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-commands.ts', [
     'commander',
     './board-claim-commands.ts',
+    './board-operations.ts',
     './board-service.ts',
     './board-suggestions.ts',
-    './board-thread-service.ts',
   ]),
   module('orchestrator/src/ask/ask-board-tools.ts', [
     '@modelcontextprotocol/server',

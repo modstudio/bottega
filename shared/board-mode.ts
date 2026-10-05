@@ -3,9 +3,7 @@
 
 export type BoardLocality = 'machine-audience' | 'suggestion' | 'own-architect' | 'shared'
 
-export type BoardModeDecision =
-  | { mode: 'local' | 'hosted' }
-  | { mode: 'refused'; reason: string }
+export type BoardModeDecision = { mode: 'local' | 'hosted' } | { mode: 'refused'; reason: string }
 
 export function decideBoardMode(facts: {
   adopted: boolean
