@@ -34,6 +34,7 @@ export type PresenceFact = {
   live?: boolean
   runIds?: ReadonlySet<number>
   taskKeys?: ReadonlySet<string>
+  taskAudienceOnly?: boolean
 }
 export type Audience =
   | { kind: 'operator' }
@@ -95,32 +96,26 @@ export function resolveAudience(
   liveWindowMs: number,
 ): string[] {
   if (audience.kind === 'operator') return [OPERATOR_READER]
-  const live = presence.filter((row) =>
-    row.live !== undefined
-      ? row.live
-      : row.lastSeen !== undefined && now - row.lastSeen <= liveWindowMs && row.lastSeen <= now,
+  const live = presence.filter(
+    (row) =>
+      (audience.kind === 'task' || !row.taskAudienceOnly) &&
+      (row.live !== undefined
+        ? row.live
+        : row.lastSeen !== undefined && now - row.lastSeen <= liveWindowMs && row.lastSeen <= now),
   )
-  if (audience.kind === 'architects')
-    return live.filter((row) => row.role === 'architect').map((row) => row.reader)
+  const readers = (facts: PresenceFact[]) => [...new Set(facts.map((row) => row.reader))]
+  if (audience.kind === 'architects') return readers(live.filter((row) => row.role === 'architect'))
   if (audience.kind === 'project')
-    return live.filter((row) => row.project === audience.value).map((row) => row.reader)
+    return readers(live.filter((row) => row.project === audience.value))
   if (audience.kind === 'workers')
-    return live
-      .filter((row) => row.role === 'worker' && row.project === audience.value)
-      .map((row) => row.reader)
+    return readers(live.filter((row) => row.role === 'worker' && row.project === audience.value))
   if (audience.kind === 'task')
-    return [
-      ...new Set(live.filter((row) => row.taskKeys?.has(audience.value)).map((row) => row.reader)),
-    ]
+    return readers(live.filter((row) => row.taskKeys?.has(audience.value)))
   if (audience.kind === 'run')
-    return live
-      .filter((row) => row.role === 'worker' && row.runIds?.has(audience.value))
-      .map((row) => row.reader)
+    return readers(live.filter((row) => row.role === 'worker' && row.runIds?.has(audience.value)))
   if (audience.kind === 'machine')
-    return live.filter((row) => row.machine === audience.value).map((row) => row.reader)
-  return live
-    .filter((row) => row.role === 'architect' && row.reader === audience.value)
-    .map((row) => row.reader)
+    return readers(live.filter((row) => row.machine === audience.value))
+  return readers(live.filter((row) => row.role === 'architect' && row.reader === audience.value))
 }
 
 export const shouldInterrupt = (message: {

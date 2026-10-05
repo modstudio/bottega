@@ -203,6 +203,7 @@ function presenceFacts(database = db(), at = Date.now()) {
       machine: hostname(),
       live: true,
       taskKeys: fact.taskKeys,
+      taskAudienceOnly: true,
     })),
   ]
 }

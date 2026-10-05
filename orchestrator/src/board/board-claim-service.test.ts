@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
-import { db } from '../database/db.ts'
+import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import {
   listClaims,
   releaseClaim,
@@ -8,6 +8,7 @@ import {
   renewClaim,
   takeClaim,
 } from './board-claim-service.ts'
+import { BOARD_POST_RATE_LIMIT } from './board-policy.ts'
 import { claimInterruptNotices, postNotice, reapBoardMessages } from './board-service.ts'
 
 function fixtureProject() {
@@ -50,7 +51,7 @@ test('a lapsed claim is taken over, linked, closed, and its holder is told', () 
   expect(next.previousClaimIds).toEqual([first.id])
   expect(listClaims(undefined, true, env('holder'), clock + 2, cwd).claims[0]).toMatchObject({
     id: first.id,
-    closeReason: 'taken-over',
+    closeReason: 'lapsed',
     supersededByClaimId: next.id,
   })
   expect(claimInterruptNotices('holder', clock + 3)).toHaveLength(1)
@@ -114,6 +115,13 @@ test('a tied claim follows the chain latest turn and renewal restarts its lease'
   expect(Date.parse(renewed.lapsesAt)).toBe(Date.parse(claim.lapsesAt) + 100)
   db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
   expect(listClaims(undefined, false, env('holder'), clock + 101, cwd).claims).toEqual([])
+  const next = takeClaim({ subject: 'task:DEV-1' }, env('other'), clock + 101, cwd)
+  expect(next.action).toBe('taken-over')
+  expect(listClaims(undefined, true, env('holder'), clock + 101, cwd).claims[0]).toMatchObject({
+    id: claim.id,
+    closeReason: 'run-ended',
+    supersededByClaimId: next.id,
+  })
 })
 
 test('a foreign architect cannot release, and release-task closes only that task key', () => {
@@ -127,6 +135,35 @@ test('a foreign architect cannot release, and release-task closes only that task
     expect.objectContaining({ id: first.id, closeReason: 'task-closed' }),
     expect.objectContaining({ subject: { kind: 'task', value: 'DEV-2' }, live: true }),
   ])
+})
+
+test('an architect environment may release task claims', () => {
+  const { cwd, project } = fixtureProject()
+  const clock = Date.now()
+  const claim = takeClaim({ subject: 'task:DEV-1' }, env('holder'), clock, cwd)
+  expect(releaseTaskClaims('DEV-1', project, env('architect'), clock + 1)).toEqual({ released: 1 })
+  expect(listClaims(undefined, true, env('architect'), clock + 1, cwd).claims[0]).toMatchObject({
+    id: claim.id,
+    closeReason: 'task-closed',
+  })
+})
+
+test('a rate-limited claim notice does not replace the conflict refusal', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('holder', null, clock)
+  takeClaim({ subject: 'resource:gpu' }, env('holder'), clock, cwd)
+  for (let index = 0; index < BOARD_POST_RATE_LIMIT; index++)
+    postNotice(
+      { audience: 'operator', title: `Notice ${index}`, body: `Rate-cap fixture ${index}.` },
+      env('requester'),
+      clock,
+      cwd,
+    )
+  expect(() => takeClaim({ subject: 'resource:gpu' }, env('requester'), clock + 1, cwd)).toThrow(
+    /claim conflicts with: session holder/,
+  )
+  expect(claimInterruptNotices('holder', clock + 2)).toEqual([])
 })
 
 test('claims survive board message reaping', () => {
@@ -170,4 +207,26 @@ test('task audience reaches its claim holder, current architect, and live launch
     { reader_session: 'current-task' },
     { reader_session: `run:${Number(run.lastInsertRowid)}` },
   ])
+})
+
+test('a stale architect presence with a live task claim reaches only that task audience', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('stale-holder', null, clock - SESSION_LIVE_MS - 1)
+  takeClaim({ subject: 'task:DEV-9' }, env('stale-holder'), clock, cwd)
+  const task = postNotice(
+    { audience: 'task:DEV-9', title: 'Task notice', body: 'For the live task claim.' },
+    {},
+    clock + 1,
+    cwd,
+  )
+  expect(task.reached).toBe(1)
+  for (const [audience, title] of [
+    ['architects', 'Architect notice'],
+    ['machine:test', 'Machine notice'],
+    ['session:stale-holder', 'Session notice'],
+  ] as const)
+    expect(
+      postNotice({ audience, title, body: 'Not for a stale session.' }, {}, clock + 1, cwd).reached,
+    ).toBe(0)
 })

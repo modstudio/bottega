@@ -205,7 +205,19 @@ function linkClaimNotice(
   cwd: string,
   database: ReturnType<typeof writableDb>,
 ): void {
-  const notice = postNoticeInTransaction({ audience, title, body }, env, clock, cwd, database)
+  const notice = (() => {
+    try {
+      return postNoticeInTransaction({ audience, title, body }, env, clock, cwd, database)
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'board post rate limit reached; retry after the ten-minute author window'
+      )
+        return null
+      throw error
+    }
+  })()
+  if (!notice) return
   database.query('UPDATE board_message SET claim_id=? WHERE id=?').run(claimId, notice.id)
 }
 
@@ -340,10 +352,16 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
     )
   const row = claimById(Number(inserted.lastInsertRowid), context.database)
   const close = context.database.query(
-    "UPDATE board_claim SET closed_at=?,close_reason='taken-over',superseded_by_claim_id=? WHERE id=?",
+    'UPDATE board_claim SET closed_at=?,close_reason=?,superseded_by_claim_id=? WHERE id=?',
   )
   for (const conflict of conflicts) {
-    close.run(now, row.id, conflict.id)
+    const endedReason = claimCloseReason({
+      closed: false,
+      lapsesAt: Date.parse(conflict.lapses_at),
+      runStatus: latestRunStatus(conflict.run_id, context.database),
+      now: context.clock,
+    })
+    close.run(now, endedReason ?? 'taken-over', row.id, conflict.id)
     tellTakenOverHolder(conflict, context)
   }
   return { row, action: conflicts.length ? 'taken-over' : 'taken', refusal: null }
@@ -461,11 +479,7 @@ export function releaseTaskClaims(
   env: Environment = process.env,
   clock = Date.now(),
 ): { released: number } {
-  const actor = claimActor(env)
-  if (actor.kind !== 'operator')
-    throw new Error(
-      'release-task is an operator integration verb; run it outside an architect session',
-    )
+  claimActor(env)
   if (!projectByName(project)) throw new Error(`unknown project ${project}; run orch project list`)
   const database = writableDb()
   return writeTransaction(() => {
