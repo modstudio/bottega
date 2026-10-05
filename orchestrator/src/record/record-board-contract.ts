@@ -22,7 +22,7 @@ export function asBoardError<T>(run: () => T, status: 400 | 403 | 404 | 409 | 42
   }
 }
 
-export type HostedBoardOrigin = {
+type HostedBoardOrigin = {
   kind: string
   session: string | null
   harness: string | null
@@ -30,9 +30,9 @@ export type HostedBoardOrigin = {
   runId: string | null
 }
 
-export type HostedBoardSenderTag = { kind: string; value: string }
+type HostedBoardSenderTag = { kind: 'task' | 'path' | 'topic'; value: string }
 
-export type HostedBoardTag = HostedBoardSenderTag & { origin: 'sender' | 'inferred' }
+type HostedBoardTag = HostedBoardSenderTag & { origin: 'sender' | 'inferred' }
 
 export type HostedBoardMessage = {
   id: string

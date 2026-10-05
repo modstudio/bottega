@@ -15,17 +15,20 @@ import {
   claimTakeDecision,
   parseClaimSubject,
 } from '../board/board-claim-policy.ts'
+import { requireRealSession } from '../board/board-policy.ts'
 import {
+  asBoardError,
   type HostedBoardClaim,
   type HostedBoardPostInput,
   type HostedBoardTakeClaimInput,
   RecordBoardError,
-  asBoardError,
 } from './record-board-contract.ts'
-import { postHostedBoardNoticeInTransaction, resolveVisibleProjectId } from './record-board-messages.ts'
+import {
+  postHostedBoardNoticeInTransaction,
+  resolveVisibleProjectId,
+} from './record-board-messages.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
 import { type BoardTenant, isUniqueViolation, withBoardTenant } from './record-board-tx.ts'
-import { requireRealSession } from '../board/board-policy.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
@@ -44,7 +47,7 @@ async function previousIds(tx: SQL, id: string): Promise<string[]> {
   const rows = await tx`
     SELECT id FROM board_claim WHERE superseded_by_claim_id=${id}::uuid ORDER BY taken_at, id
   `
-  return rows.map((row) => String(row.id))
+  return (rows as { id: unknown }[]).map((row) => String(row.id))
 }
 
 async function claimView(
@@ -152,6 +155,95 @@ async function postClaimNotice(
   return result
 }
 
+function takeOverlaps(
+  open: ClaimRow[],
+  subject: ClaimSubject,
+  userId: string,
+  clock: number,
+): { exactHeld: ClaimRow | undefined; conflicts: ClaimRow[]; foreignLive: ClaimRow[] } {
+  const overlaps = open.filter((row) =>
+    claimSubjectsConflict(subject, {
+      kind: String(row.subject_kind) as ClaimSubject['kind'],
+      value: String(row.subject_value),
+    }),
+  )
+  const exactHeld = overlaps.find(
+    (row) =>
+      hostedLive(row, clock) &&
+      String(row.subject_kind) === subject.kind &&
+      String(row.subject_value) === subject.value &&
+      String(row.holder_user_id) === userId,
+  )
+  const conflicts = overlaps.filter((row) => String(row.holder_user_id) !== userId)
+  return { exactHeld, conflicts, foreignLive: conflicts.filter((row) => hostedLive(row, clock)) }
+}
+
+async function tellConflicts(
+  tx: SQL,
+  conflicts: ClaimRow[],
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  projectId: string,
+  session: string | null,
+  clock: number,
+  title: string,
+): Promise<void> {
+  for (const conflict of conflicts) {
+    await tellHolder(tx, {
+      userId: input.userId,
+      projectId,
+      projectName: input.project,
+      claimId: String(conflict.id),
+      holderUserId: String(conflict.holder_user_id),
+      holderSession: conflict.holder_session == null ? null : String(conflict.holder_session),
+      title,
+      body: `User ${input.userId} ${title === 'Claim taken over' ? 'took over' : 'attempted to claim'} ${title === 'Claim taken over' ? `claim ${String(conflict.id)} with ${input.subject}` : input.subject} in ${input.project}${title === 'Claim taken over' ? '.' : `; it conflicts with claim ${String(conflict.id)}.`}`,
+      authorSession: session,
+      clock,
+    })
+  }
+}
+
+async function supersedeConflicts(
+  tx: SQL,
+  conflicts: ClaimRow[],
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  projectId: string,
+  session: string | null,
+  clock: number,
+  now: string,
+): Promise<void> {
+  for (const conflict of conflicts) {
+    const ended =
+      claimCloseReason({
+        closed: false,
+        lapsesAt: Date.parse(String(conflict.lapses_at)),
+        runStatus: null,
+        now: clock,
+      }) ?? 'taken-over'
+    await tx`
+      UPDATE board_claim
+      SET closed_at=${now}::timestamptz,
+          close_reason=${ended},
+          superseded_by_claim_id=${input.id}::uuid
+      WHERE id=${String(conflict.id)}::uuid
+    `
+  }
+  await tellConflicts(tx, conflicts, input, projectId, session, clock, 'Claim taken over')
+}
+
+function differentRenewalTerms(
+  row: ClaimRow,
+  input: HostedBoardTakeClaimInput,
+  duration: number,
+  note: string | null | undefined,
+): boolean {
+  return (
+    (input.durationMs !== undefined && Number(row.duration_ms) !== duration) ||
+    (input.runId !== undefined && String(row.run_id ?? '') !== String(input.runId ?? '')) ||
+    (note !== undefined && (row.note == null ? null : String(row.note)) !== note)
+  )
+}
+
 export async function takeHostedBoardClaim(
   input: BoardTenant & HostedBoardTakeClaimInput,
 ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }> {
@@ -162,146 +254,154 @@ export async function takeHostedBoardClaim(
   if (durationRefusal) throw new RecordBoardError(durationRefusal, 400)
   const session = sessionOrNull(input.holderSession)
   const clock = Date.now()
-  return withBoardTenant(input, true, async (tx) => {
-    const existing = await loadClaim(tx, input.id)
-    if (existing) {
-      const name = await projectNameById(tx, String(existing.project_id))
-      const sameSubject =
-        String(existing.subject_kind) === subject.kind &&
-        String(existing.subject_value) === subject.value &&
-        String(existing.holder_user_id) === input.userId
-      if (!sameSubject) {
-        throw new RecordBoardError(
-          `board claim ${input.id} already exists with different content; mint a new id`,
-          409,
-        )
-      }
-      return { ...(await claimView(tx, existing, clock, name)), action: hostedLive(existing, clock) ? 'renewed' : 'taken' }
-    }
-    const projectId = await resolveVisibleProjectId(tx, input.project)
-    const open = (await tx`
-      SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
-      ORDER BY taken_at, id
-    `) as ClaimRow[]
-    const overlaps = open.filter((row) =>
-      claimSubjectsConflict(subject, {
-        kind: String(row.subject_kind) as ClaimSubject['kind'],
-        value: String(row.subject_value),
-      }),
+  return withBoardTenant(input, true, (tx) =>
+    takeClaimInTx(tx, input, subject, note, duration, session, clock),
+  )
+}
+
+async function replayExistingTake(
+  tx: SQL,
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  existing: ClaimRow,
+  subject: ClaimSubject,
+  clock: number,
+): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }> {
+  const name = await projectNameById(tx, String(existing.project_id))
+  const sameSubject =
+    String(existing.subject_kind) === subject.kind &&
+    String(existing.subject_value) === subject.value &&
+    String(existing.holder_user_id) === input.userId
+  if (!sameSubject) {
+    throw new RecordBoardError(
+      `board claim ${input.id} already exists with different content; mint a new id`,
+      409,
     )
-    const exactHeld = overlaps.find(
-      (row) =>
-        hostedLive(row, clock) &&
-        String(row.subject_kind) === subject.kind &&
-        String(row.subject_value) === subject.value &&
-        String(row.holder_user_id) === input.userId,
+  }
+  return {
+    ...(await claimView(tx, existing, clock, name)),
+    action: hostedLive(existing, clock) ? 'renewed' : 'taken',
+  }
+}
+
+async function renewOpenClaim(
+  tx: SQL,
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  exactHeld: ClaimRow,
+  duration: number,
+  note: string | null | undefined,
+  clock: number,
+): Promise<HostedBoardClaim & { action: 'renewed' }> {
+  if (differentRenewalTerms(exactHeld, input, duration, note)) {
+    throw new RecordBoardError(
+      `claim ${String(exactHeld.id)} already holds this subject with different terms; release it and take it again`,
+      409,
     )
-    const conflicts = overlaps.filter((row) => String(row.holder_user_id) !== input.userId)
-    const foreignLive = conflicts.filter((row) => hostedLive(row, clock))
-    const decision = claimTakeDecision({
-      sameHolderSameSubject: exactHeld !== undefined,
-      conflictingClaim: conflicts.length > 0,
-      foreignLiveConflict: foreignLive.length > 0,
-      force: false,
-      actorKind: 'architect',
-    })
-    if (decision === 'renew' && exactHeld) {
-      if (
-        (input.durationMs !== undefined && Number(exactHeld.duration_ms) !== duration) ||
-        (input.runId !== undefined && String(exactHeld.run_id ?? '') !== String(input.runId ?? '')) ||
-        (note !== undefined && (exactHeld.note == null ? null : String(exactHeld.note)) !== note)
-      ) {
-        throw new RecordBoardError(
-          `claim ${String(exactHeld.id)} already holds this subject with different terms; release it and take it again`,
-          409,
-        )
-      }
-      const renewedAt = new Date(clock).toISOString()
-      await tx`
-        UPDATE board_claim
-        SET renewed_at=${renewedAt}::timestamptz,
-            lapses_at=${new Date(clock + Number(exactHeld.duration_ms)).toISOString()}::timestamptz
-        WHERE id=${String(exactHeld.id)}::uuid
-      `
-      const row = await loadClaim(tx, String(exactHeld.id))
-      return { ...(await claimView(tx, row!, clock, input.project)), action: 'renewed' }
+  }
+  const renewedAt = new Date(clock).toISOString()
+  await tx`
+    UPDATE board_claim
+    SET renewed_at=${renewedAt}::timestamptz,
+        lapses_at=${new Date(clock + Number(exactHeld.duration_ms)).toISOString()}::timestamptz
+    WHERE id=${String(exactHeld.id)}::uuid
+  `
+  const row = await loadClaim(tx, String(exactHeld.id))
+  return { ...(await claimView(tx, row!, clock, input.project)), action: 'renewed' }
+}
+
+async function insertTakenClaim(
+  tx: SQL,
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  subject: ClaimSubject,
+  note: string | null | undefined,
+  duration: number,
+  session: string | null,
+  projectId: string,
+  conflicts: ClaimRow[],
+  clock: number,
+): Promise<HostedBoardClaim & { action: 'taken' | 'taken-over' }> {
+  const now = new Date(clock).toISOString()
+  await supersedeConflicts(tx, conflicts, input, projectId, session, clock, now)
+  try {
+    await tx`
+      INSERT INTO board_claim (
+        id, project_id, subject_kind, subject_value, holder_user_id, holder_session, note, run_id,
+        duration_ms, taken_at, renewed_at, lapses_at
+      ) VALUES (
+        ${input.id}::uuid, ${projectId}::uuid, ${subject.kind}, ${subject.value},
+        ${input.userId}::uuid, ${session}, ${note ?? null}, ${input.runId ?? null}::uuid,
+        ${duration}, ${now}::timestamptz, ${now}::timestamptz,
+        ${new Date(clock + duration).toISOString()}::timestamptz
+      )
+    `
+  } catch (error) {
+    if (
+      isUniqueViolation(error, 'board_claim_pkey') ||
+      isUniqueViolation(error, 'board_claim_live_subject_unique')
+    ) {
+      const row = await loadClaim(tx, input.id)
+      if (row) return { ...(await claimView(tx, row, clock, input.project)), action: 'taken' }
     }
-    if (decision === 'refuse') {
-      for (const conflict of foreignLive) {
-        await tellHolder(tx, {
-          userId: input.userId,
-          projectId,
-          projectName: input.project,
-          claimId: String(conflict.id),
-          holderUserId: String(conflict.holder_user_id),
-          holderSession: conflict.holder_session == null ? null : String(conflict.holder_session),
-          title: 'Conflicting claim attempt',
-          body: `User ${input.userId} attempted to claim ${input.subject} in ${input.project}; it conflicts with claim ${String(conflict.id)}.`,
-          authorSession: session,
-          clock,
-        })
-      }
-      const details = foreignLive.map((conflict) => {
-        const until = iso(conflict.lapses_at)
-        return `user ${String(conflict.holder_user_id)} until ${until}`
-      })
-      throw new RecordBoardError(`claim conflicts with: ${details.join('; ')}`, 409)
-    }
-    const now = new Date(clock).toISOString()
-    const closing = decision === 'take-over' ? conflicts : []
-    for (const conflict of closing) {
-      const ended =
-        claimCloseReason({
-          closed: false,
-          lapsesAt: Date.parse(String(conflict.lapses_at)),
-          runStatus: null,
-          now: clock,
-        }) ?? 'taken-over'
-      await tx`
-        UPDATE board_claim
-        SET closed_at=${now}::timestamptz,
-            close_reason=${ended},
-            superseded_by_claim_id=${input.id}::uuid
-        WHERE id=${String(conflict.id)}::uuid
-      `
-      await tellHolder(tx, {
-        userId: input.userId,
-        projectId,
-        projectName: input.project,
-        claimId: String(conflict.id),
-        holderUserId: String(conflict.holder_user_id),
-        holderSession: conflict.holder_session == null ? null : String(conflict.holder_session),
-        title: 'Claim taken over',
-        body: `User ${input.userId} took over claim ${String(conflict.id)} with ${input.subject} in ${input.project}.`,
-        authorSession: session,
-        clock,
-      })
-    }
-    try {
-      await tx`
-        INSERT INTO board_claim (
-          id, project_id, subject_kind, subject_value, holder_user_id, holder_session, note, run_id,
-          duration_ms, taken_at, renewed_at, lapses_at
-        ) VALUES (
-          ${input.id}::uuid, ${projectId}::uuid, ${subject.kind}, ${subject.value},
-          ${input.userId}::uuid, ${session}, ${note ?? null}, ${input.runId ?? null}::uuid,
-          ${duration}, ${now}::timestamptz, ${now}::timestamptz,
-          ${new Date(clock + duration).toISOString()}::timestamptz
-        )
-      `
-    } catch (error) {
-      if (isUniqueViolation(error, 'board_claim_pkey') || isUniqueViolation(error, 'board_claim_live_subject_unique')) {
-        const row = await loadClaim(tx, input.id)
-        if (row) return { ...(await claimView(tx, row, clock, input.project)), action: 'taken' }
-      }
-      throw error
-    }
-    const row = await loadClaim(tx, input.id)
-    return {
-      ...(await claimView(tx, row!, clock, input.project)),
-      action: closing.length ? 'taken-over' : 'taken',
-    }
+    throw error
+  }
+  const row = await loadClaim(tx, input.id)
+  return {
+    ...(await claimView(tx, row!, clock, input.project)),
+    action: conflicts.length ? 'taken-over' : 'taken',
+  }
+}
+
+async function takeClaimInTx(
+  tx: SQL,
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  subject: ClaimSubject,
+  note: string | null | undefined,
+  duration: number,
+  session: string | null,
+  clock: number,
+): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }> {
+  const existing = await loadClaim(tx, input.id)
+  if (existing) return replayExistingTake(tx, input, existing, subject, clock)
+  const projectId = await resolveVisibleProjectId(tx, input.project)
+  const open = (await tx`
+    SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+    ORDER BY taken_at, id
+  `) as ClaimRow[]
+  const { exactHeld, conflicts, foreignLive } = takeOverlaps(open, subject, input.userId, clock)
+  const decision = claimTakeDecision({
+    sameHolderSameSubject: exactHeld !== undefined,
+    conflictingClaim: conflicts.length > 0,
+    foreignLiveConflict: foreignLive.length > 0,
+    force: false,
+    actorKind: 'architect',
   })
+  if (decision === 'renew' && exactHeld)
+    return renewOpenClaim(tx, input, exactHeld, duration, note, clock)
+  if (decision === 'refuse') {
+    await tellConflicts(
+      tx,
+      foreignLive,
+      input,
+      projectId,
+      session,
+      clock,
+      'Conflicting claim attempt',
+    )
+    throw new RecordBoardError(
+      `claim conflicts with: ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
+      409,
+    )
+  }
+  return insertTakenClaim(
+    tx,
+    input,
+    subject,
+    note,
+    duration,
+    session,
+    projectId,
+    decision === 'take-over' ? conflicts : [],
+    clock,
+  )
 }
 
 export async function renewHostedBoardClaim(
@@ -338,7 +438,8 @@ export async function releaseHostedBoardClaim(
   return withBoardTenant(input, false, async (tx) => {
     const row = await loadClaim(tx, input.id)
     if (!row) throw new RecordBoardError(`no board claim ${input.id}`, 404)
-    if (!hostedLive(row, clock)) throw new RecordBoardError(`claim ${input.id} is no longer live`, 400)
+    if (!hostedLive(row, clock))
+      throw new RecordBoardError(`claim ${input.id} is no longer live`, 400)
     if (String(row.holder_user_id) !== input.userId) {
       throw new RecordBoardError(`only the claim holder may release claim ${input.id}`, 403)
     }

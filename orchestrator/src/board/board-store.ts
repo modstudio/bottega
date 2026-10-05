@@ -348,7 +348,9 @@ export function insertRootMessage(
     audience,
     actor.kind,
     actor.session,
-    audience.kind === 'run' ? runOwnerSession(audience.value, database) : null,
+    audience.kind === 'run' && typeof audience.value === 'number'
+      ? runOwnerSession(audience.value, database)
+      : null,
   )
   if (runRefusal) throw new Error(runRefusal)
   const senderTags = senderBoardTags(input)

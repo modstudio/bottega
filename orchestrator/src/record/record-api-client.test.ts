@@ -4,7 +4,10 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { installRecordSessionRunner, memoryRecordSession } from '../../test/fixtures/record-session.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
 import { recordApiClient } from './record-api-client.ts'
 
 describe('record API client test safety', () => {

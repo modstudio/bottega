@@ -1,4 +1,7 @@
 import { beforeAll, expect, test } from 'bun:test'
+
+export { registerBoardApiProofs } from './postgres-board-api-proof.ts'
+
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import type { PsqlResult } from './fixtures/postgres-rls.ts'
 

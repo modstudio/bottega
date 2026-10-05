@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseAudience } from '../board/board-policy.ts'
+import type { HostedBoardCreateContent } from './record-board-contract.ts'
 import {
   hostedBoardActor,
   hostedBoardPostRefusal,
@@ -8,7 +9,7 @@ import {
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
 
-const empty = {
+const empty: HostedBoardCreateContent = {
   kind: 'notice',
   audience: 'operator',
   title: 'Title',
@@ -17,10 +18,10 @@ const empty = {
   ackDeadline: null,
   expiresAt: '2026-10-06T00:00:00.000Z',
   threadRootId: null,
-  scopeProjectIds: [] as string[],
-  recipientUserIds: [] as string[],
+  scopeProjectIds: [],
+  recipientUserIds: [],
   claimId: null,
-  senderTags: [] as Array<{ kind: string; value: string }>,
+  senderTags: [],
 }
 
 test('hosted actor is the operator without a session and an architect with one', () => {
@@ -68,12 +69,12 @@ test('operator, architects, session, and run audiences have empty scope and reci
     scopeProjectIds: [],
     recipientUserIds: [],
   })
-  expect(
-    hostedBoardScope(parseAudience('run:01990000-0000-7000-8000-0000000000aa'), null),
-  ).toEqual({
-    scopeProjectIds: [],
-    recipientUserIds: [],
-  })
+  expect(hostedBoardScope(parseAudience('run:01990000-0000-7000-8000-0000000000aa'), null)).toEqual(
+    {
+      scopeProjectIds: [],
+      recipientUserIds: [],
+    },
+  )
 })
 
 test('idempotent create content ignores author identity and treats equal timestamps as the same', () => {

@@ -7,8 +7,8 @@ import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
   type HostedBoardAcceptInput,
-  type HostedBoardClaim,
   type HostedBoardChange,
+  type HostedBoardClaim,
   type HostedBoardFilingCompleteInput,
   type HostedBoardFilingFailInput,
   type HostedBoardMessage,
@@ -19,7 +19,6 @@ import {
   type HostedBoardSessionInput,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
-  RecordBoardError,
 } from './record-board-contract.ts'
 import type { BoardTenant } from './record-board-tx.ts'
 
@@ -64,7 +63,9 @@ const replySchema = z
 const sessionBody = z.object({ authorSession: sessionSchema }).strict()
 const acceptSchema = z.object({ replyId: idSchema, authorSession: sessionSchema }).strict()
 const filingCompleteSchema = z.object({ noteId: idSchema, authorSession: sessionSchema }).strict()
-const filingFailSchema = z.object({ error: z.string().min(1), authorSession: sessionSchema }).strict()
+const filingFailSchema = z
+  .object({ error: z.string().min(1), authorSession: sessionSchema })
+  .strict()
 const receiptSchema = z
   .object({
     messageId: idSchema,
@@ -86,9 +87,7 @@ const takeClaimSchema = z
   })
   .strict()
 const holderBody = z.object({ holderSession: sessionSchema }).strict()
-const releaseTaskSchema = z
-  .object({ project: z.string().min(1), key: z.string().min(1) })
-  .strict()
+const releaseTaskSchema = z.object({ project: z.string().min(1), key: z.string().min(1) }).strict()
 
 export type RecordBoardDeps = {
   postBoardMessage(input: BoardTenant & HostedBoardPostInput): Promise<HostedBoardMessage>
@@ -140,29 +139,6 @@ function boardTenant(recordUrl: string, identity: RecordIdentity): BoardTenant |
   }
 }
 
-export function idleBoardDeps(): RecordBoardDeps {
-  const unused = async () => {
-    throw new RecordBoardError('hosted board is not configured', 400)
-  }
-  return {
-    postBoardMessage: unused,
-    replyBoardMessage: unused,
-    withdrawBoardMessage: unused,
-    acceptBoardAnswer: unused,
-    takeBoardFilingLease: unused,
-    completeBoardFilingLease: unused,
-    failBoardFilingLease: unused,
-    readBoardThread: unused,
-    putBoardReceipt: unused,
-    listBoardChanges: unused,
-    takeBoardClaim: unused,
-    renewBoardClaim: unused,
-    releaseBoardClaim: unused,
-    listBoardClaims: unused,
-    releaseBoardTaskClaims: unused,
-  }
-}
-
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
   deps: { recordUrl: string } & RecordBoardDeps,
@@ -173,8 +149,7 @@ export function registerRecordBoardRoutes(
 ): void {
   const tenantOf = (context: Context<ApiEnvironment>) =>
     boardTenant(deps.recordUrl, context.get('identity'))
-  const readJson = async (context: Context<ApiEnvironment>) =>
-    context.req.json().catch(() => null)
+  const readJson = async (context: Context<ApiEnvironment>) => context.req.json().catch(() => null)
 
   app.put('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
@@ -208,9 +183,7 @@ export function registerRecordBoardRoutes(
     const body = sessionBody.safeParse((await readJson(context)) ?? {})
     if (!id.success || !body.success) return context.json({ error: 'invalid board withdraw' }, 400)
     try {
-      return context.json(
-        await deps.withdrawBoardMessage({ ...tenant, id: id.data, ...body.data }),
-      )
+      return context.json(await deps.withdrawBoardMessage({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
       return helpers.writeError(context, error)
     }
@@ -263,9 +236,7 @@ export function registerRecordBoardRoutes(
     if (!id.success || !body.success)
       return context.json({ error: 'invalid board filing lease' }, 400)
     try {
-      return context.json(
-        await deps.takeBoardFilingLease({ ...tenant, id: id.data, ...body.data }),
-      )
+      return context.json(await deps.takeBoardFilingLease({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
       return helpers.writeError(context, error)
     }
@@ -335,7 +306,8 @@ export function registerRecordBoardRoutes(
     if (!tenant) return helpers.noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = holderBody.safeParse((await readJson(context)) ?? {})
-    if (!id.success || !body.success) return context.json({ error: 'invalid board claim renew' }, 400)
+    if (!id.success || !body.success)
+      return context.json({ error: 'invalid board claim renew' }, 400)
     try {
       return context.json(await deps.renewBoardClaim({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {

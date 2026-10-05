@@ -6,15 +6,10 @@ import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
-import { storedRecordToken } from './record-session.ts'
-import type {
-  RecordSettingsPermissionInput,
-  RecordSettingsPermissionResult,
-} from './record-settings.ts'
 import type {
   HostedBoardAcceptInput,
-  HostedBoardClaim,
   HostedBoardChange,
+  HostedBoardClaim,
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
   HostedBoardMessage,
@@ -26,6 +21,11 @@ import type {
   HostedBoardTakeClaimInput,
   HostedBoardThread,
 } from './record-board-contract.ts'
+import { storedRecordToken } from './record-session.ts'
+import type {
+  RecordSettingsPermissionInput,
+  RecordSettingsPermissionResult,
+} from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
@@ -188,7 +188,10 @@ export type RecordApiClient = {
     input: HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
   renewBoardClaim(id: string, input?: { holderSession?: string | null }): Promise<HostedBoardClaim>
-  releaseBoardClaim(id: string, input?: { holderSession?: string | null }): Promise<HostedBoardClaim>
+  releaseBoardClaim(
+    id: string,
+    input?: { holderSession?: string | null },
+  ): Promise<HostedBoardClaim>
   listBoardClaims(project: string): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(input: { project: string; key: string }): Promise<{ released: number }>
 }

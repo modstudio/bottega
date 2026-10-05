@@ -49,7 +49,8 @@ export async function putHostedBoardReceipt(
         acknowledged_at = COALESCE(board_receipt.acknowledged_at, EXCLUDED.acknowledged_at)
       RETURNING *
     `
-    if (!rows[0]) throw new RecordBoardError(`board receipt for ${input.messageId} was not stored`, 409)
+    if (!rows[0])
+      throw new RecordBoardError(`board receipt for ${input.messageId} was not stored`, 409)
     return view(rows[0] as Record<string, unknown>)
   })
 }

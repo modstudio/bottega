@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { idleBoardDeps } from './record-api-board.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { idleBoardDeps } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
 
 const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -14,10 +14,7 @@ const identity: RecordIdentity = {
   ],
 }
 
-function appWith(
-  session: RecordIdentity | null,
-  overrides: Record<string, unknown> = {},
-) {
+function appWith(session: RecordIdentity | null, overrides: Record<string, unknown> = {}) {
   return recordApi({
     recordUrl: 'postgres://record.test/record',
     auth: { handler: () => Response.json({ handled: true }) },

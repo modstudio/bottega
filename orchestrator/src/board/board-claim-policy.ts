@@ -3,8 +3,8 @@ import { BOARD_BODY_MAX_CHARS } from './board-policy.ts'
 import { pathTagRefusal } from './board-tags.ts'
 
 export const BOARD_CLAIM_DEFAULT_MS = 4 * 60 * 60 * 1000
-export const BOARD_CLAIM_MAX_MS = 24 * 60 * 60 * 1000
-export const BOARD_CLAIM_RESOURCE_MAX_CHARS = 200
+const BOARD_CLAIM_MAX_MS = 24 * 60 * 60 * 1000
+const BOARD_CLAIM_RESOURCE_MAX_CHARS = 200
 
 export type ClaimActor =
   | { kind: 'operator'; session: null }

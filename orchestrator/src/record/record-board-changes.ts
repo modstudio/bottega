@@ -1,13 +1,13 @@
 // concern: record-board-changes
 /** Owns the hosted board change cursor. Must not know HTTP or local stores. */
 
+import type { BoardTag } from '../board/board-tags.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
   type HostedBoardChange,
   RecordBoardError,
 } from './record-board-contract.ts'
 import { hostedBoardMessageView } from './record-board-messages.ts'
-import type { BoardTag } from '../board/board-tags.ts'
 import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())

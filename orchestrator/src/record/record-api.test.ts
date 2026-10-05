@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { idleBoardDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
-import { idleBoardDeps } from './record-api-board.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,

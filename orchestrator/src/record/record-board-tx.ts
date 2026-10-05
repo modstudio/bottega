@@ -39,8 +39,3 @@ export function isUniqueViolation(error: unknown, constraint: string): boolean {
     message.includes(constraint)
   return named && (postgres.code === '23505' || message.includes('duplicate key value'))
 }
-
-export function isRowLevelRefusal(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.includes('row-level security') || message.includes('board claim')
-}

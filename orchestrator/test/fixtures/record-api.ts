@@ -5,12 +5,37 @@ import {
   decideDocRevisionWrite,
   refuseDocWrite,
 } from '../../src/doc/doc-write-allowed.ts'
+import type { RecordBoardDeps } from '../../src/record/record-api-board.ts'
 import type {
   RecordApiClient,
   RecordCanonImportInput,
   RecordDocImportInput,
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
+import { RecordBoardError } from '../../src/record/record-board-contract.ts'
+
+export function idleBoardDeps(): RecordBoardDeps {
+  const unused = async () => {
+    throw new RecordBoardError('hosted board is not configured', 400)
+  }
+  return {
+    postBoardMessage: unused,
+    replyBoardMessage: unused,
+    withdrawBoardMessage: unused,
+    acceptBoardAnswer: unused,
+    takeBoardFilingLease: unused,
+    completeBoardFilingLease: unused,
+    failBoardFilingLease: unused,
+    readBoardThread: unused,
+    putBoardReceipt: unused,
+    listBoardChanges: unused,
+    takeBoardClaim: unused,
+    renewBoardClaim: unused,
+    releaseBoardClaim: unused,
+    listBoardClaims: unused,
+    releaseBoardTaskClaims: unused,
+  }
+}
 
 type StoredDoc = {
   id: string

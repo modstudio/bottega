@@ -2,26 +2,31 @@
 /** Owns hosted board message writes and thread reads. Must not know HTTP or local stores. */
 
 import type { SQL } from 'bun'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
+  type Audience,
   BOARD_BODY_MAX_CHARS,
-  BOARD_DEFAULT_ACK_DEADLINE_MS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
-  type Audience,
   messageIsLive,
   postDecision,
   requireRealSession,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
 import {
-  BOARD_NOTE_FILING_LEASE_MS,
+  type BoardTag,
+  inferredBoardTags,
+  senderBoardTags,
+  senderTagKey,
+} from '../board/board-tags.ts'
+import {
   acceptRefusal,
+  BOARD_NOTE_FILING_LEASE_MS,
   noteFilingLeaseDecision,
   replyRefusal,
 } from '../board/board-thread-policy.ts'
-import { inferredBoardTags, senderBoardTags, senderTagKey, type BoardTag } from '../board/board-tags.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
+  asBoardError,
   type HostedBoardCreateContent,
   type HostedBoardMessage,
   type HostedBoardPostInput,
@@ -30,7 +35,6 @@ import {
   type HostedBoardSessionInput,
   type HostedBoardThread,
   RecordBoardError,
-  asBoardError,
 } from './record-board-contract.ts'
 import {
   hostedBoardActor,
@@ -64,7 +68,7 @@ function asTags(rows: Record<string, unknown>[]): BoardTag[] {
   }))
 }
 
-export function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
+function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
   return {
     kind: row.author_session ? 'architect' : 'operator',
     session: row.author_session == null ? null : String(row.author_session),
@@ -118,7 +122,7 @@ export function hostedBoardMessageView(
   }
 }
 
-export function hostedBoardReplyView(row: Record<string, unknown>): HostedBoardReply {
+function hostedBoardReplyView(row: Record<string, unknown>): HostedBoardReply {
   return {
     id: String(row.id),
     body: String(row.body),
@@ -127,10 +131,7 @@ export function hostedBoardReplyView(row: Record<string, unknown>): HostedBoardR
   }
 }
 
-function createContent(
-  row: Record<string, unknown>,
-  tags: BoardTag[],
-): HostedBoardCreateContent {
+function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBoardCreateContent {
   return {
     kind: String(row.kind),
     audience: row.audience == null ? null : String(row.audience),
@@ -174,7 +175,8 @@ async function viewById(tx: SQL, id: string, clock: number): Promise<HostedBoard
 
 export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<string> {
   const rows = await tx`SELECT id FROM project WHERE name=${name} AND retired_at IS NULL`
-  if (rows.length !== 1) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+  if (rows.length !== 1)
+    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
   return String(rows[0]!.id)
 }
 
@@ -200,6 +202,43 @@ async function authorWindow(
       AND created_at>=${since}::timestamptz
   `
   return postDecision({ recentPosts: Number(rows[0]?.n ?? 0), duplicate })
+}
+
+async function duplicateRootId(
+  tx: SQL,
+  input: {
+    kind: string
+    userId: string
+    session: string | null
+    audience: string
+    title: string
+    body: string
+  },
+  senderTags: BoardTag[],
+  clock: number,
+): Promise<string | null> {
+  const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
+  const candidates = (await tx`
+    SELECT id FROM board_message
+    WHERE kind=${input.kind} AND author_user_id=${input.userId}::uuid
+      AND author_session IS NOT DISTINCT FROM ${input.session}
+      AND audience IS NOT DISTINCT FROM ${input.audience}
+      AND title IS NOT DISTINCT FROM ${input.title}
+      AND body=${input.body}
+      AND created_at>=${duplicateSince}::timestamptz
+    ORDER BY created_at DESC
+  `) as { id: string }[]
+  for (const candidate of candidates) {
+    const loaded = await loadHostedBoardMessage(tx, String(candidate.id))
+    if (!loaded) continue
+    if (
+      senderTagKey(loaded.tags.filter((tag) => tag.origin === 'sender')) ===
+      senderTagKey(senderTags)
+    ) {
+      return String(candidate.id)
+    }
+  }
+  return null
 }
 
 async function insertTags(tx: SQL, messageId: string, tags: BoardTag[]): Promise<void> {
@@ -310,11 +349,17 @@ export async function postHostedBoardMessage(
     throw new RecordBoardError('an acknowledged board notice requires ackDeadline', 400)
   }
   if (ackDeadline && Date.parse(ackDeadline) > Date.parse(expiresAt)) {
-    throw new RecordBoardError('ack deadline is later than expiry; set ackDeadline no later than expiresAt', 400)
+    throw new RecordBoardError(
+      'ack deadline is later than expiry; set ackDeadline no later than expiresAt',
+      400,
+    )
   }
   const session = sessionOrNull(input.authorSession)
   const senderTags = asBoardError(() => senderBoardTags(input))
-  const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null)]
+  const tags = [
+    ...senderTags,
+    ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null),
+  ]
   const clock = Date.now()
   const requested: HostedBoardCreateContent = {
     kind: input.kind,
@@ -338,29 +383,20 @@ export async function postHostedBoardMessage(
     requested.recipientUserIds = input.recipientUserIds ?? derived.recipientUserIds
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
-    const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
-    const candidates = (await tx`
-      SELECT id FROM board_message
-      WHERE kind=${input.kind} AND author_user_id=${input.userId}::uuid
-        AND author_session IS NOT DISTINCT FROM ${session}
-        AND audience IS NOT DISTINCT FROM ${input.audience}
-        AND title IS NOT DISTINCT FROM ${input.title}
-        AND body=${input.body}
-        AND created_at>=${duplicateSince}::timestamptz
-      ORDER BY created_at DESC
-    `) as { id: string }[]
-    let duplicate = false
-    let duplicateId: string | null = null
-    for (const candidate of candidates) {
-      const loaded = await loadHostedBoardMessage(tx, String(candidate.id))
-      if (!loaded) continue
-      if (senderTagKey(loaded.tags.filter((tag) => tag.origin === 'sender')) === senderTagKey(senderTags)) {
-        duplicate = true
-        duplicateId = String(candidate.id)
-        break
-      }
-    }
-    const decision = await authorWindow(tx, input.userId, session, clock, duplicate)
+    const duplicateId = await duplicateRootId(
+      tx,
+      {
+        kind: input.kind,
+        userId: input.userId,
+        session,
+        audience: input.audience,
+        title: input.title,
+        body: input.body,
+      },
+      senderTags,
+      clock,
+    )
+    const decision = await authorWindow(tx, input.userId, session, clock, duplicateId !== null)
     if (decision === 'drop-duplicate' && duplicateId) return viewById(tx, duplicateId, clock)
     if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
     try {
@@ -395,11 +431,22 @@ export async function postHostedBoardNoticeInTransaction(
   asBoardError(() => validatePostNoticeInput(input))
   const session = sessionOrNull(input.authorSession)
   const senderTags = asBoardError(() => senderBoardTags(input))
-  const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null)]
+  const tags = [
+    ...senderTags,
+    ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null),
+  ]
   const decision = await authorWindow(tx, input.userId, session, clock, false)
   if (decision === 'rate-limited') return 'rate-limited'
   try {
-    await insertRoot(tx, { ...input, authorSession: session }, input.userId, session, audience, tags, clock)
+    await insertRoot(
+      tx,
+      { ...input, authorSession: session },
+      input.userId,
+      session,
+      audience,
+      tags,
+      clock,
+    )
   } catch (error) {
     if (isUniqueViolation(error, 'board_message_pkey')) {
       const loaded = await loadHostedBoardMessage(tx, input.id)
@@ -457,9 +504,10 @@ export async function replyHostedBoardMessage(
     if (sameId) return sameId
     const root = await loadHostedBoardMessage(tx, input.rootId)
     if (!root) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
-    const rootRow = root.row.kind === 'reply'
-      ? await loadHostedBoardMessage(tx, String(root.row.thread_root_id))
-      : root
+    const rootRow =
+      root.row.kind === 'reply'
+        ? await loadHostedBoardMessage(tx, String(root.row.thread_root_id))
+        : root
     if (!rootRow) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
     const audienceKind = rootRow.row.audience
       ? parseHostedAudience(String(rootRow.row.audience)).kind
@@ -491,7 +539,8 @@ export async function replyHostedBoardMessage(
       ORDER BY created_at DESC LIMIT 1
     `) as { id: string }[]
     const decision = await authorWindow(tx, input.userId, session, clock, duplicate.length > 0)
-    if (decision === 'drop-duplicate' && duplicate[0]) return viewById(tx, String(duplicate[0].id), clock)
+    if (decision === 'drop-duplicate' && duplicate[0])
+      return viewById(tx, String(duplicate[0].id), clock)
     if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
     const createdAt = new Date(clock).toISOString()
     try {
@@ -531,9 +580,13 @@ export async function withdrawHostedBoardMessage(
       throw new RecordBoardError(`only the author may withdraw board message ${input.id}`, 403)
     }
     if (String(loaded.row.kind) === 'reply') {
-      throw new RecordBoardError(`board message ${input.id} is a reply; withdraw its root instead`, 400)
+      throw new RecordBoardError(
+        `board message ${input.id} is a reply; withdraw its root instead`,
+        400,
+      )
     }
-    if (loaded.row.withdrawn_at != null) return hostedBoardMessageView(loaded.row, loaded.tags, clock)
+    if (loaded.row.withdrawn_at != null)
+      return hostedBoardMessageView(loaded.row, loaded.tags, clock)
     await tx`
       UPDATE board_message SET withdrawn_at=${new Date(clock).toISOString()}::timestamptz
       WHERE id=${input.id}::uuid
@@ -560,7 +613,11 @@ export async function acceptHostedBoardAnswer(
     })
     if (refusal) throw new RecordBoardError(refusal, 400)
     const reply = await loadHostedBoardMessage(tx, input.replyId)
-    if (!reply || String(reply.row.kind) !== 'reply' || String(reply.row.thread_root_id) !== input.id) {
+    if (
+      !reply ||
+      String(reply.row.kind) !== 'reply' ||
+      String(reply.row.thread_root_id) !== input.id
+    ) {
       throw new RecordBoardError(
         `board reply ${input.replyId} does not belong to board question ${input.id}`,
         400,
@@ -696,5 +753,3 @@ export async function failHostedBoardFilingLease(
     return viewById(tx, input.id, Date.now())
   })
 }
-
-export { BOARD_DEFAULT_ACK_DEADLINE_MS }

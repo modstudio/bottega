@@ -7,12 +7,12 @@ import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
 import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
-import { registerRecordBoardRoutes, type RecordBoardDeps } from './record-api-board.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
-import { RecordBoardError } from './record-board-contract.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+import { RecordBoardError } from './record-board-contract.ts'
 import type {
   ConfigEntry,
   ConfigScope,

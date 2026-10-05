@@ -25,7 +25,6 @@ import {
   latestRunStatus,
 } from './board-store.ts'
 
-
 type ClaimRow = {
   id: number
   project: string
