@@ -13,6 +13,8 @@ import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
+import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
+import { postgresBoardCacheClient } from './postgres-board-cache-client.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
 
@@ -174,27 +176,17 @@ export function registerBoardApiProofs(input: {
     return store
   }
 
-  const cacheClient = (token: string): RecordApiClient =>
-    ({
-      whoami: async () => json(await fetch(`${origin}/v1/whoami`, { headers: headers(token) })),
-      listBoardChanges: async ({
-        after,
-        limit,
-      }: Parameters<RecordApiClient['listBoardChanges']>[0]) =>
-        json(
-          await fetch(`${origin}/v1/board/changes?after=${after ?? '0'}&limit=${limit ?? 100}`, {
-            headers: headers(token),
-          }),
-        ),
-      putBoardReceipt: async (body: Parameters<RecordApiClient['putBoardReceipt']>[0]) =>
-        json(
-          await fetch(`${origin}/v1/board/receipts`, {
-            method: 'PUT',
-            headers: headers(token),
-            body: JSON.stringify(body),
-          }),
-        ),
-    }) as unknown as RecordApiClient
+  const cacheClient = (token: string): RecordApiClient => postgresBoardCacheClient(origin, token)
+
+  registerBoardAdoptionProof({
+    origin: () => origin,
+    token: () => tokenA,
+    userId: () => userA,
+    project: PROJECT,
+    expiresAt,
+    caseSession,
+    succeeds: input.succeeds,
+  })
 
   test('two machine caches deliver a shared notice once and keep another user operator notice out', async () => {
     const sessionA = caseSession('machine-a')

@@ -9,6 +9,15 @@ import {
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
+import {
+  type AdoptionCandidate as Candidate,
+  type AdoptionCandidateFact as CandidateFact,
+  type AdoptionClaimRow as ClaimRow,
+  type LedgerState,
+  type LocalKind,
+  mayMarkBoardHostedAdopted,
+  selectBoardAdoptionCandidates,
+} from './board-adoption-policy.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
 import { parseAudience } from './board-policy.ts'
@@ -20,8 +29,6 @@ import {
   rowIsLive,
 } from './board-store.ts'
 
-type LocalKind = 'notice' | 'question' | 'reply' | 'claim'
-type LedgerState = 'pending' | 'uploaded' | 'refused'
 type LedgerRow = {
   local_kind: LocalKind
   local_id: number
@@ -29,29 +36,8 @@ type LedgerRow = {
   state: LedgerState
   refusal: string | null
 }
-type ClaimRow = {
-  id: number
-  project: string
-  subject_kind: 'task' | 'path' | 'resource'
-  subject_value: string
-  holder_session: string | null
-  note: string | null
-  run_id: number | null
-  lapses_at: string
-  closed_at: string | null
-}
-type Candidate =
-  | { kind: Exclude<LocalKind, 'claim'>; id: number; createdAt: string; row: MessageRow }
-  | { kind: 'claim'; id: number; createdAt: string; row: ClaimRow }
-type CandidateFact = {
-  candidate: Candidate
-  live: boolean
-  accepted: boolean
-  machine: boolean
-  recorded: boolean
-}
 
-export type BoardAdoptionPlan = {
+type BoardAdoptionPlan = {
   total: number
   counts: Record<LocalKind, number>
   stays: Array<{ kind: LocalKind; id: number; reason: string }>
@@ -71,31 +57,6 @@ const emptyCounts = (): Record<LocalKind, number> => ({
   reply: 0,
   claim: 0,
 })
-
-/** Pure candidate ordering: roots, then replies in thread order, then claims. */
-export function orderBoardAdoptionCandidates(rows: Candidate[]): Candidate[] {
-  const phase = (row: Candidate) => (row.kind === 'reply' ? 1 : row.kind === 'claim' ? 2 : 0)
-  return [...rows].sort(
-    (left, right) =>
-      phase(left) - phase(right) ||
-      left.createdAt.localeCompare(right.createdAt) ||
-      left.id - right.id,
-  )
-}
-
-/** Pure final-mark decision. */
-export function mayMarkBoardHostedAdopted(states: LedgerState[]): boolean {
-  return states.every((state) => state === 'uploaded' || state === 'refused')
-}
-
-/** Pure candidate decision over facts gathered by the local adapter. */
-export function selectBoardAdoptionCandidates(facts: CandidateFact[]): Candidate[] {
-  return orderBoardAdoptionCandidates(
-    facts
-      .filter((fact) => (fact.recorded || fact.live) && !fact.accepted && !fact.machine)
-      .map((fact) => fact.candidate),
-  )
-}
 
 function ledger(database: Database): Map<string, LedgerRow> {
   return new Map(
@@ -342,17 +303,138 @@ async function uploadClaim(
   })
 }
 
-const rateLimited = (error: unknown) =>
-  error instanceof RecordApiRequestError && error.message.includes('board post rate limit reached')
-const unregisteredMachine = (error: unknown) =>
-  error instanceof RecordApiRequestError &&
-  error.message.includes('board authorMachineId is missing, invisible, or not owned by this user')
-const lastingServiceRefusal = (error: unknown) =>
-  error instanceof RecordApiRequestError &&
-  error.kind === 'refused' &&
-  (error.message.includes('unknown or invisible board project') ||
-    error.message.includes('row-level security') ||
-    error.message.includes('not started by this user'))
+function uploadErrorDisposition(error: unknown): 'rate' | 'machine' | 'lasting' | 'unexpected' {
+  if (!(error instanceof RecordApiRequestError)) return 'unexpected'
+  if (error.message.includes('board post rate limit reached')) return 'rate'
+  if (
+    error.message.includes('board authorMachineId is missing, invisible, or not owned by this user')
+  )
+    return 'machine'
+  if (
+    error.kind === 'refused' &&
+    ['unknown or invisible board project', 'row-level security', 'not started by this user'].some(
+      (text) => error.message.includes(text),
+    )
+  )
+    return 'lasting'
+  return 'unexpected'
+}
+
+type UploadContext = {
+  candidates: Candidate[]
+  messages: Array<Extract<Candidate, { kind: 'notice' | 'question' | 'reply' }>>
+  claims: Array<Extract<Candidate, { kind: 'claim' }>>
+  roots: Map<number, MessageRow>
+  hostedRoots: Map<number, string>
+  client: RecordApiClient
+  database: Database
+  clock: number
+  at: string
+  plan: BoardAdoptionPlan
+}
+
+function stoppedAtRateCap(context: UploadContext): BoardAdoptionResult {
+  const rows = ledger(context.database)
+  const remaining = context.candidates.filter((row) => {
+    const state = rows.get(`${row.kind}:${row.id}`)?.state
+    return state !== 'uploaded' && state !== 'refused'
+  }).length
+  return {
+    ...planFor(context.candidates, rows, context.database),
+    status: 'stopped',
+    uploaded: context.plan.total - remaining,
+    refused: 0,
+    remaining,
+    message: `hosted board post rate cap reached; ${remaining} rows remain; rerun the same command after the window to resume`,
+  }
+}
+
+async function uploadOneMessage(
+  candidate: UploadContext['messages'][number],
+  context: UploadContext,
+): Promise<'continue' | 'rate'> {
+  const recorded = ledger(context.database).get(`${candidate.kind}:${candidate.id}`)
+  if (recorded?.state === 'uploaded' || recorded?.state === 'refused') {
+    if (candidate.kind !== 'reply') context.hostedRoots.set(candidate.id, recorded.hosted_id)
+    return 'continue'
+  }
+  const pending = pendingLedger(candidate, context.at, context.database)
+  try {
+    await uploadMessage(
+      candidate,
+      pending.hosted_id,
+      context.roots,
+      context.hostedRoots,
+      context.client,
+      context.database,
+    )
+    retireCandidate(candidate, pending.hosted_id, context.at, context.database)
+    if (candidate.kind !== 'reply') context.hostedRoots.set(candidate.id, pending.hosted_id)
+    return 'continue'
+  } catch (error) {
+    const disposition = uploadErrorDisposition(error)
+    if (disposition === 'rate') return 'rate'
+    if (disposition === 'machine')
+      throw new Error(
+        'this machine is not registered under the signed-in user; run orch sync on this machine, then rerun the same orch board adopt command',
+        { cause: error },
+      )
+    if (disposition === 'lasting') {
+      refuseCandidate(
+        candidate,
+        pending.hosted_id,
+        (error as Error).message,
+        context.at,
+        context.database,
+      )
+      return 'continue'
+    }
+    throw error
+  }
+}
+
+async function uploadMessages(context: UploadContext): Promise<BoardAdoptionResult | null> {
+  for (const candidate of context.messages) {
+    if ((await uploadOneMessage(candidate, context)) === 'rate') return stoppedAtRateCap(context)
+  }
+  for (const candidate of context.messages) {
+    const recorded = ledger(context.database).get(`${candidate.kind}:${candidate.id}`)
+    if (recorded?.state === 'uploaded')
+      await uploadReceipts(candidate.id, recorded.hosted_id, context.client, context.database)
+  }
+  return null
+}
+
+async function uploadOneClaim(
+  candidate: UploadContext['claims'][number],
+  context: UploadContext,
+): Promise<void> {
+  const recorded = ledger(context.database).get(`claim:${candidate.id}`)
+  if (recorded?.state === 'uploaded' || recorded?.state === 'refused') return
+  const pending = pendingLedger(candidate, context.at, context.database)
+  const localRefusal = lastingLocalRefusal(candidate, context.database)
+  if (localRefusal) {
+    refuseCandidate(candidate, pending.hosted_id, localRefusal, context.at, context.database)
+    return
+  }
+  try {
+    await uploadClaim(candidate, pending.hosted_id, context.clock, context.client, context.database)
+    retireCandidate(candidate, pending.hosted_id, context.at, context.database)
+  } catch (error) {
+    if (uploadErrorDisposition(error) !== 'lasting') throw error
+    refuseCandidate(
+      candidate,
+      pending.hosted_id,
+      (error as Error).message,
+      context.at,
+      context.database,
+    )
+  }
+}
+
+async function uploadClaims(context: UploadContext): Promise<void> {
+  for (const candidate of context.claims) await uploadOneClaim(candidate, context)
+}
 
 export async function adoptHostedBoard(
   input: { confirm?: number; clock?: number; database?: Database; client?: RecordApiClient } = {},
@@ -384,90 +466,21 @@ export async function adoptHostedBoard(
   const claims = candidates.filter(
     (candidate): candidate is Extract<Candidate, { kind: 'claim' }> => candidate.kind === 'claim',
   )
-  for (const candidate of messages) {
-    const recorded = ledger(database).get(`${candidate.kind}:${candidate.id}`)
-    if (recorded?.state === 'uploaded' || recorded?.state === 'refused') {
-      if (candidate.kind === 'notice' || candidate.kind === 'question')
-        hostedRoots.set(candidate.id, recorded.hosted_id)
-      continue
-    }
-    const pending = pendingLedger(candidate, at, database)
-    const localRefusal = lastingLocalRefusal(candidate, database)
-    if (localRefusal) {
-      refuseCandidate(candidate, pending.hosted_id, localRefusal, at, database)
-      continue
-    }
-    try {
-      await uploadMessage(candidate, pending.hosted_id, roots, hostedRoots, client, database)
-      retireCandidate(candidate, pending.hosted_id, at, database)
-      if (candidate.kind === 'notice' || candidate.kind === 'question')
-        hostedRoots.set(candidate.id, pending.hosted_id)
-    } catch (error) {
-      if (unregisteredMachine(error))
-        throw new Error(
-          `this machine is not registered under the signed-in user; run orch sync on this machine, then rerun the same orch board adopt command`,
-          { cause: error },
-        )
-      if (rateLimited(error)) {
-        const remaining = candidates.filter((row) => {
-          const state = ledger(database).get(`${row.kind}:${row.id}`)?.state
-          return state !== 'uploaded' && state !== 'refused'
-        }).length
-        return {
-          ...planFor(candidates, ledger(database), database),
-          status: 'stopped',
-          uploaded: plan.total - remaining,
-          refused: 0,
-          remaining,
-          message: `hosted board post rate cap reached; ${remaining} rows remain; rerun the same command after the window to resume`,
-        }
-      }
-      if (lastingServiceRefusal(error)) {
-        refuseCandidate(
-          candidate,
-          pending.hosted_id,
-          error instanceof Error ? error.message : String(error),
-          at,
-          database,
-        )
-        continue
-      }
-      throw error
-    }
+  const uploadContext = {
+    candidates,
+    messages,
+    claims,
+    roots,
+    hostedRoots,
+    client,
+    database,
+    clock,
+    at,
+    plan,
   }
-
-  for (const candidate of messages) {
-    const recorded = ledger(database).get(`${candidate.kind}:${candidate.id}`)
-    if (recorded?.state === 'uploaded')
-      await uploadReceipts(candidate.id, recorded.hosted_id, client, database)
-  }
-
-  for (const candidate of claims) {
-    const recorded = ledger(database).get(`claim:${candidate.id}`)
-    if (recorded?.state === 'uploaded' || recorded?.state === 'refused') continue
-    const pending = pendingLedger(candidate, at, database)
-    const localRefusal = lastingLocalRefusal(candidate, database)
-    if (localRefusal) {
-      refuseCandidate(candidate, pending.hosted_id, localRefusal, at, database)
-      continue
-    }
-    try {
-      await uploadClaim(candidate, pending.hosted_id, clock, client, database)
-      retireCandidate(candidate, pending.hosted_id, at, database)
-    } catch (error) {
-      if (lastingServiceRefusal(error)) {
-        refuseCandidate(
-          candidate,
-          pending.hosted_id,
-          error instanceof Error ? error.message : String(error),
-          at,
-          database,
-        )
-        continue
-      }
-      throw error
-    }
-  }
+  const stopped = await uploadMessages(uploadContext)
+  if (stopped) return stopped
+  await uploadClaims(uploadContext)
 
   const finalRows = ledger(database)
   const states = candidates.map((row) => finalRows.get(`${row.kind}:${row.id}`)?.state ?? 'pending')

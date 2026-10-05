@@ -18,11 +18,13 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../record/machine-identity.ts',
     '../record/record-api-client.ts',
+    './board-adoption-policy.ts',
     './board-claim-policy.ts',
     './board-mode.ts',
     './board-policy.ts',
     './board-store.ts',
   ]),
+  module('orchestrator/src/board/board-adoption-policy.ts', ['./board-store.ts']),
   module('orchestrator/src/board/board-mode.ts', [
     'bun:sqlite',
     '../../../shared/board-mode.ts',

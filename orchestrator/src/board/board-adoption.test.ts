@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -6,11 +7,11 @@ import {
 import { db } from '../database/db.ts'
 import { type RecordApiClient, RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardMessage, HostedBoardReceipt } from '../record/record-board-contract.ts'
+import { adoptHostedBoard } from './board-adoption.ts'
 import {
-  adoptHostedBoard,
   mayMarkBoardHostedAdopted,
   selectBoardAdoptionCandidates,
-} from './board-adoption.ts'
+} from './board-adoption-policy.ts'
 import { claimBoardNotices } from './board-delivery.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { postNotice } from './board-service.ts'
@@ -24,9 +25,9 @@ function presence() {
     .query(
       `INSERT INTO presence
        (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('reader','claude','architect','machine','bottega','/tmp',NULL,?,?)`,
+       VALUES ('reader','claude','architect','machine',?,'/tmp',NULL,?,?)`,
     )
-    .run(new Date(NOW - 1_000).toISOString(), new Date(NOW).toISOString())
+    .run(PLATFORM_SLUG, new Date(NOW - 1_000).toISOString(), new Date(NOW).toISOString())
 }
 
 function claim(runId: number | null = null) {
@@ -35,10 +36,11 @@ function claim(runId: number | null = null) {
       `INSERT INTO board_claim
        (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
         taken_at,renewed_at,lapses_at)
-       VALUES ('bottega','task','DEV-968','architect','reader','moving',?,3600000,?,?,?)
+       VALUES (?,'task','DEV-968','architect','reader','moving',?,3600000,?,?,?)
        RETURNING id`,
     )
     .get(
+      PLATFORM_SLUG,
       runId,
       new Date(NOW - 1_000).toISOString(),
       new Date(NOW - 1_000).toISOString(),
@@ -282,7 +284,10 @@ test('a lasting hosted refusal leaves the message local and live and still sets 
   const client: RecordApiClient = {
     ...base,
     async postBoardMessage() {
-      throw new RecordApiRequestError('unknown or invisible board project bottega', 'refused')
+      throw new RecordApiRequestError(
+        `unknown or invisible board project ${PLATFORM_SLUG}`,
+        'refused',
+      )
     },
   }
   const result = await adoptHostedBoard({ confirm: 1, clock: NOW, client })
