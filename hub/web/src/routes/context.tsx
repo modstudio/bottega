@@ -2,7 +2,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { MachineOverride, MachinePermissionOverlay } from '@/components/machine-override'
+import { MachineOverride } from '@/components/machine-override'
+import { MachinePermissionEditor } from '@/components/machine-permission-editor'
 import { Markdown } from '@/components/markdown'
 import { isHostedMode } from '@/lib/hub-mode'
 import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
@@ -726,7 +727,7 @@ function ManagedSettingsSection({
             />
           ))}
           <PermissionEditor address={address} revision={settings.data.revision} />
-          <MachinePermissionOverlay machine={userMachineOverlay(target, localSettings.data)} />
+          <MachinePermissionEditor machine={userMachineOverlay(target, localSettings.data)} />
           {hosted ? null : (
             <SettingBlock
               label="Apply now from a terminal"
