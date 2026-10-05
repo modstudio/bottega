@@ -52,7 +52,7 @@ const cachedFixture: CachedSessionContext = {
   project: 'cached-fixture',
   hosted: {
     user: { preset: 'autonomous', rulings: 'agent' },
-    space: { release: 'promote' },
+    space: { shipTo: 'production' },
   },
 }
 
@@ -65,8 +65,8 @@ const resolvedFixture = {
     { stage: 'review', agreed: true, value: 'ask', scope: 'project', steps: 1 },
     { stage: 'docs', agreed: true, value: 'review', scope: 'local user', steps: 1 },
   ],
-  release: {
-    value: 'promote',
+  shipTo: {
+    value: 'production',
     scope: 'hosted space',
     landing: 'main',
     production: 'production',
@@ -83,7 +83,7 @@ test('only cached hosted winners are marked stale and hosted auto is downgraded'
     { stage: 'docs', agreed: true, value: 'review', scope: 'local user', steps: 1 },
   ])
   expect(slice.rulings).toEqual({ value: 'agent', scope: 'hosted user (stale)' })
-  expect(slice.release).toEqual({ ...resolvedFixture.release, scope: 'hosted space (stale)' })
+  expect(slice.shipTo).toEqual({ ...resolvedFixture.shipTo, scope: 'hosted space (stale)' })
 })
 
 test('stale cached context starts with the stale header', () => {
@@ -128,8 +128,8 @@ test('a registered project reports rulings and one value when a stage agrees', a
   expect(slice.registered).toBe(true)
   expect(slice.project).toBe('session-context-agree')
   expect(slice.rulings).toEqual({ value: 'user', scope: 'project' })
-  expect(slice.release).toEqual({
-    value: 'land',
+  expect(slice.shipTo).toEqual({
+    value: 'trunk',
     scope: 'built-in',
     landing: 'main',
     production: null,
@@ -144,37 +144,37 @@ test('a registered project reports rulings and one value when a stage agrees', a
   )
   expect(text).toContain('rulings: user (project)')
   expect(text).toContain('plan: review (project)')
-  expect(text).toContain('release: land (land to main) (built-in)')
-  expect(text.split('\n').at(-1)).toBe('release: land (land to main) (built-in)')
+  expect(text).toContain('ship to: trunk (merge into main) (built-in)')
+  expect(text.split('\n').at(-1)).toBe('ship to: trunk (merge into main) (built-in)')
   expect(text.split('\n').filter((line) => line.startsWith('plan:'))).toHaveLength(1)
   expect(await contextText(join(path, 'tree'))).toBe(text)
 })
 
-test('release renders every register branch phrase', async () => {
+test('ship-to renders every register branch phrase', async () => {
   const cases = [
     {
       name: 'session-context-push',
-      autonomy: { release: 'push' as const },
+      autonomy: { shipTo: 'branch' as const },
       productionBranch: 'production',
-      line: 'release: push (push the branch only) (project)',
+      line: 'ship to: branch (push the branch only; nothing is merged) (project)',
     },
     {
       name: 'session-context-land',
-      autonomy: { release: 'land' as const },
+      autonomy: { shipTo: 'trunk' as const },
       productionBranch: 'production',
-      line: 'release: land (land to develop) (project)',
+      line: 'ship to: trunk (merge into develop) (project)',
     },
     {
       name: 'session-context-promote',
-      autonomy: { release: 'promote' as const },
+      autonomy: { shipTo: 'production' as const },
       productionBranch: 'production',
-      line: 'release: promote (land to develop, then promote to production) (project)',
+      line: 'ship to: production (merge into develop, then promote to production) (project)',
     },
     {
       name: 'session-context-promote-missing',
-      autonomy: { release: 'promote' as const },
+      autonomy: { shipTo: 'production' as const },
       productionBranch: undefined,
-      line: 'release: promote (no production branch declared; lands to develop) (project)',
+      line: 'ship to: production (no production branch declared; merges into develop) (project)',
     },
   ]
   for (const item of cases) {
@@ -192,8 +192,8 @@ test('release renders every register branch phrase', async () => {
       },
     })
     const slice = await contextJson(path)
-    expect(slice.release).toEqual({
-      value: item.autonomy.release,
+    expect(slice.shipTo).toEqual({
+      value: item.autonomy.shipTo,
       scope: 'project',
       landing: 'develop',
       production: item.productionBranch ?? null,
@@ -203,8 +203,8 @@ test('release renders every register branch phrase', async () => {
 })
 
 test('a missing landing branch is nullable and never renders undefined', async () => {
-  for (const release of ['land', 'promote'] as const) {
-    const name = `session-context-${release}-missing-landing`
+  for (const shipTo of ['trunk', 'production'] as const) {
+    const name = `session-context-${shipTo}-missing-landing`
     const path = repository(name)
     upsertProject({
       name,
@@ -214,23 +214,23 @@ test('a missing landing branch is nullable and never renders undefined', async (
         gate: 'bun run check',
         productionBranch: 'production',
         docs: { protocol: 'orch-docs' },
-        autonomy: { release },
+        autonomy: { shipTo },
       },
     })
     const slice = await contextJson(path)
-    expect(slice.release).toEqual({
-      value: release,
+    expect(slice.shipTo).toEqual({
+      value: shipTo,
       scope: 'project',
       landing: null,
       production: 'production',
     })
-    expect(slice.text).toContain(`release: ${release} (no landing branch declared) (project)`)
+    expect(slice.text).toContain(`ship to: ${shipTo} (no landing branch declared) (project)`)
     expect(slice.text).not.toContain('undefined')
   }
 })
 
-test('context warns about an ignored invalid release and keeps the scope stage', async () => {
-  const name = 'session-context-invalid-release'
+test('context warns about an ignored invalid ship-to and keeps the scope stage', async () => {
+  const name = 'session-context-invalid-ship-to'
   const path = repository(name)
   upsertProject({
     name,
@@ -250,15 +250,15 @@ test('context warns about an ignored invalid release and keeps the scope stage',
         gate: 'bun run check',
         trunk: 'main',
         docs: { protocol: 'orch-docs' },
-        autonomy: { stages: { plan: 'auto' }, release: 'automatic' },
+        autonomy: { stages: { plan: 'auto' }, 'ship-to': 'automatic' },
       }),
       name,
     )
   const slice = await contextJson(path)
-  expect(slice.release).toMatchObject({ value: 'land', scope: 'built-in' })
+  expect(slice.shipTo).toMatchObject({ value: 'trunk', scope: 'built-in' })
   expect(slice.text).toContain('plan: auto (project)')
   expect(slice.text).toContain(
-    'warning: ignored invalid autonomy setting at project key release: automatic',
+    'warning: ignored invalid autonomy setting at project key ship-to: automatic',
   )
 })
 
@@ -374,6 +374,16 @@ test('a hosted-read failure combines live local layers with cached hosted layers
       }) as never,
     now: () => resolvedAt,
   })
+  const cacheFile = join(
+    stateRoot,
+    'orchestrator',
+    'autonomy-context',
+    `${Buffer.from(name).toString('base64url')}.json`,
+  )
+  const oldCache = JSON.parse(readFileSync(cacheFile, 'utf8'))
+  expect(oldCache.hosted.space).toEqual({ 'ship-to': 'branch' })
+  oldCache.hosted.space = { release: 'push' }
+  writeFileSync(cacheFile, `${JSON.stringify(oldCache)}\n`)
 
   const stale = await contextJson(path, {
     clientFactory: () =>
@@ -392,7 +402,9 @@ test('a hosted-read failure combines live local layers with cached hosted layers
   expect(stale.text).toContain('plan: auto (project)')
   expect(stale.text).toContain('review: review (hosted user (stale))')
   expect(stale.text).toContain('rulings: user (hosted user (stale))')
-  expect(stale.text).toContain('release: push (push the branch only) (hosted space (stale))')
+  expect(stale.text).toContain(
+    'ship to: branch (push the branch only; nothing is merged) (hosted space (stale))',
+  )
 })
 
 test('a machine auto winner stays auto and does not make the context stale', async () => {
@@ -461,7 +473,7 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
   expect(degraded.text).toStartWith(`Autonomy for ${name}, resolved now from ${PLATFORM_NAME}`)
 })
 
-test('an earlier-shape cache without hosted inputs is ignored', async () => {
+test('a cache carrying the internal shipTo shape is ignored', async () => {
   const name = 'session-context-ignores-old-cache'
   const path = repository(name)
   upsertProject({
@@ -483,7 +495,7 @@ test('an earlier-shape cache without hosted inputs is ignored', async () => {
     `${Buffer.from(name).toString('base64url')}.json`,
   )
   const earlier = JSON.parse(readFileSync(cache, 'utf8')) as Record<string, unknown>
-  delete earlier.hosted
+  earlier.hosted = { user: { shipTo: 'branch' }, space: {} }
   writeFileSync(cache, `${JSON.stringify(earlier)}\n`)
 
   const slice = await contextJson(path, {

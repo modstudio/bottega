@@ -4,9 +4,11 @@ import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import type { ConfigScope } from '../../../shared/config-client.ts'
 import {
-  isReleaseAutonomyValue,
-  RELEASE_AUTONOMY_VALUES,
-} from '../../../shared/release-autonomy.ts'
+  isShipToConfigKey,
+  SHIP_TO_CONFIG_KEY,
+  SHIP_TO_VALUES,
+  storedShipToLevel,
+} from '../../../shared/ship-to.ts'
 import {
   deleteEntry,
   deleteMachineEntry,
@@ -46,15 +48,19 @@ export function assertConfigWriteAllowed(
   pid = process.pid,
   inventory?: ProcessInventory,
 ): void {
+  const normalized = value === undefined ? { key, value } : shipToWrite(key, value)
   if (key.startsWith('autonomy.') && isOrchWorkerProcess(env, pid, inventory)) {
     throw new Error(
-      `refusing autonomy config write from an orch worker run; an operator must run orch config ${value === undefined ? `delete ${key}` : `set ${key} ${value}`}`,
+      `refusing autonomy config write from an orch worker run; an operator must run orch config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
     )
   }
-  if (value !== undefined && key === 'autonomy.release' && !isReleaseAutonomyValue(value))
-    throw new Error(
-      `invalid autonomy.release; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
-    )
+  if (value !== undefined && isShipToConfigKey(key) && storedShipToLevel(value) === undefined)
+    throw new Error(`invalid autonomy.ship-to; expected one of ${SHIP_TO_VALUES.join(', ')}`)
+}
+
+function shipToWrite(key: string, value: string): { key: string; value: string } {
+  if (!isShipToConfigKey(key)) return { key, value }
+  return { key: SHIP_TO_CONFIG_KEY, value: storedShipToLevel(value) ?? value }
 }
 
 export const configGetPresentation = (row: ConfigRow, json: boolean) =>
@@ -116,13 +122,14 @@ export function register(program: Command): void {
     .option('--expect <rowVersion>')
     .option('--json')
     .action(async (key, value, options) => {
-      assertConfigWriteAllowed(key, value)
+      const write = shipToWrite(key, value)
+      assertConfigWriteAllowed(write.key, write.value)
       if (options.machine) {
         if (options.space || options.expect)
           throw new Error(
             'refusing machine config set: --machine cannot be combined with --space or --expect',
           )
-        const row = setMachineEntry(key, value)
+        const row = setMachineEntry(write.key, write.value)
         if (options.json) log(JSON.stringify(row))
         else
           log(
@@ -130,7 +137,12 @@ export function register(program: Command): void {
           )
         return
       }
-      const row = await setEntry(key, value, scope(options), expectedRowVersion(options.expect))
+      const row = await setEntry(
+        write.key,
+        write.value,
+        scope(options),
+        expectedRowVersion(options.expect),
+      )
       if (options.json) log(configGetPresentation(row, true))
     })
   config
@@ -147,12 +159,12 @@ export function register(program: Command): void {
     .option('--machine')
     .option('--expect <rowVersion>')
     .action(async (key, options) => {
+      assertConfigWriteAllowed(key, undefined)
       if (options.machine) {
         if (options.space || options.expect)
           throw new Error(
             'refusing machine config delete: --machine cannot be combined with --space or --expect',
           )
-        assertConfigWriteAllowed(key, undefined)
         deleteMachineEntry(key)
         log(
           'machine settings take effect at the next session start (or after `orch settings apply`)',
@@ -162,7 +174,20 @@ export function register(program: Command): void {
       const expected = expectedRowVersion(options.expect)
       if (expected === null)
         throw new Error('delete expected row version must be a positive integer')
-      await deleteEntry(key, scope(options), expected)
+      if (isShipToConfigKey(key)) {
+        const selectedScope = scope(options)
+        const rows = (await listEntries()).filter(
+          (row) => row.scope === selectedScope && isShipToConfigKey(row.key),
+        )
+        if (!rows.length) await deleteEntry(key, selectedScope, expected)
+        for (const row of rows) {
+          await deleteEntry(
+            row.key,
+            selectedScope,
+            row.key === key ? (expected ?? row.rowVersion) : row.rowVersion,
+          )
+        }
+      } else await deleteEntry(key, scope(options), expected)
     })
 
   const secret = config.command('secret')

@@ -39,7 +39,7 @@ test('an orch worker run cannot write autonomy while an operator process can', (
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'promote', { ORCH_RUN_ID: '6731' }),
   ).toThrow(
-    'refusing autonomy config write from an orch worker run; an operator must run orch config set autonomy.release promote',
+    'refusing autonomy config write from an orch worker run; an operator must run orch config set autonomy.ship-to production',
   )
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'promote', {}, operatorPid, operatorInventory),
@@ -63,8 +63,8 @@ test('a descendant of an orch run executor cannot write autonomy after unsetting
   ).not.toThrow()
 })
 
-test('an explicit invalid release write is refused with the shared allowed list', () => {
+test('an explicit invalid ship-to write is refused with the shared allowed list', () => {
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'automatic', {}, operatorPid, operatorInventory),
-  ).toThrow('expected one of push, land, promote')
+  ).toThrow('expected one of branch, trunk, production')
 })

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { answerRulingRefusal, combineRulingsSnapshots } from './autonomy.ts'
+import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
   HOSTED_AUTONOMY_TIMEOUT_MS,
   resolveAnswerRulings,
@@ -139,26 +139,28 @@ test('workflow built-in defaults and local workflow overrides resolve every step
   })
 })
 
-test('session release is refused instead of overriding an operator-owned scope', async () => {
-  await expect(
-    resolveProjectAutonomy(
-      'fixture',
-      'fix-defect',
-      'guided',
-      steps,
-      { release: 'promote' },
-      () => {
-        throw new ConfigClientError('not-configured', '/v1/config')
-      },
-      database(JSON.stringify({ autonomy: { release: 'push' } })),
-      missingConfig,
-    ),
-  ).rejects.toThrow('use orch config set autonomy.release <value>')
+test('session ship-to aliases are refused instead of overriding an operator-owned scope', async () => {
+  for (const text of ['ship-to=branch,release=promote', 'release=promote,ship-to=branch']) {
+    await expect(
+      resolveProjectAutonomy(
+        'fixture',
+        'fix-defect',
+        'guided',
+        steps,
+        parseAutonomy(text, 'session'),
+        () => {
+          throw new ConfigClientError('not-configured', '/v1/config')
+        },
+        database(JSON.stringify({ autonomy: { 'ship-to': 'branch' } })),
+        missingConfig,
+      ),
+    ).rejects.toThrow('use orch config set autonomy.ship-to <value>')
+  }
 })
 
-test('an invalid project release falls through without discarding its stage setting', async () => {
+test('an invalid project ship-to falls through without discarding its stage setting', async () => {
   const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
-  writeFileSync(join(config, 'machine.toml'), '[autonomy]\nrelease = "push"\n')
+  writeFileSync(join(config, 'machine.toml'), '[autonomy]\nship-to = "branch"\n')
   const result = await resolveProjectAutonomy(
     'fixture',
     undefined,
@@ -168,12 +170,12 @@ test('an invalid project release falls through without discarding its stage sett
     () => {
       throw new ConfigClientError('not-configured', '/v1/config')
     },
-    database(JSON.stringify({ autonomy: { release: 'automatic', stages: { plan: 'auto' } } })),
+    database(JSON.stringify({ autonomy: { 'ship-to': 'automatic', stages: { plan: 'auto' } } })),
     { BOTTEGA_CONFIG_HOME: config },
   )
   expect(result.steps.design).toEqual({ value: 'auto', scope: 'project' })
-  expect(result.release).toEqual({ value: 'push', scope: 'local user' })
-  expect(result.warnings?.[0]).toContain('project key release: automatic')
+  expect(result.shipTo).toEqual({ value: 'branch', scope: 'local user' })
+  expect(result.warnings?.[0]).toContain('project key ship-to: automatic')
 })
 
 test('answer proceeds when hosted is not configured', async () => {

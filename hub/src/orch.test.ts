@@ -118,10 +118,10 @@ test('managed context wrappers build exact argv', () => {
     '--machine',
     '--json',
   ])
-  expect(machineConfigArgv('delete', 'autonomy.release')).toEqual([
+  expect(machineConfigArgv('delete', 'autonomy.ship-to')).toEqual([
     'config',
     'delete',
-    'autonomy.release',
+    'autonomy.ship-to',
     '--machine',
   ])
   expect(settingsCheckArgv({ user: true })).toEqual([
@@ -200,7 +200,7 @@ test('context accepts a null landing branch', async () => {
   writeFileSync(
     executable,
     `#!/bin/sh
-printf '%s\\n' '{"registered":true,"project":"fixture","rulings":{"value":"agent","scope":"built-in"},"release":{"value":"land","scope":"built-in","landing":null,"production":null},"stages":[],"text":"release: land (no landing branch declared) (built-in)"}'
+printf '%s\\n' '{"registered":true,"project":"fixture","rulings":{"value":"agent","scope":"built-in"},"shipTo":{"value":"trunk","scope":"built-in","landing":null,"production":null},"stages":[],"text":"ship to: trunk (no landing branch declared) (built-in)"}'
 `,
   )
   chmodSync(executable, 0o755)
@@ -208,7 +208,7 @@ printf '%s\\n' '{"registered":true,"project":"fixture","rulings":{"value":"agent
   try {
     process.env.HUB_ORCH = executable
     const result = await contextGet('/fixture')
-    expect(result.registered && result.release.landing).toBeNull()
+    expect(result.registered && result.shipTo.landing).toBeNull()
   } finally {
     if (prior === undefined) delete process.env.HUB_ORCH
     else process.env.HUB_ORCH = prior

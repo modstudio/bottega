@@ -15,7 +15,11 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
-import { type AutonomySettings, validateStoredAutonomySettings } from './autonomy.ts'
+import {
+  type AutonomySettings,
+  autonomySettingsForStorage,
+  validateStoredAutonomySettings,
+} from './autonomy.ts'
 
 export type CachedSessionContext = {
   version: 1
@@ -34,31 +38,33 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function validHostedSettings(value: unknown): value is AutonomySettings {
-  if (!object(value)) return false
+function normalizedHostedSettings(value: unknown): AutonomySettings | null {
+  if (!object(value) || Object.hasOwn(value, 'shipTo')) return null
   try {
-    validateStoredAutonomySettings(value, 'cached hosted autonomy')
-    return true
+    return validateStoredAutonomySettings(value, 'cached hosted autonomy').settings
   } catch {
-    return false
+    return null
   }
 }
 
-function validCache(value: unknown, project: string): value is CachedSessionContext {
-  if (!object(value) || value.version !== 1 || value.project !== project) return false
+function normalizedCache(value: unknown, project: string): CachedSessionContext | null {
+  if (!object(value) || value.version !== 1 || value.project !== project) return null
   if (
     typeof value.resolvedAt !== 'string' ||
     Number.isNaN(Date.parse(value.resolvedAt)) ||
     new Date(value.resolvedAt).toISOString() !== value.resolvedAt
   )
-    return false
-  if (
-    !object(value.hosted) ||
-    !validHostedSettings(value.hosted.user) ||
-    !validHostedSettings(value.hosted.space)
-  )
-    return false
-  return true
+    return null
+  if (!object(value.hosted)) return null
+  const user = normalizedHostedSettings(value.hosted.user)
+  const space = normalizedHostedSettings(value.hosted.space)
+  if (!user || !space) return null
+  return {
+    version: 1,
+    resolvedAt: value.resolvedAt,
+    project,
+    hosted: { user, space },
+  }
 }
 
 export function readSessionContextCache(
@@ -67,7 +73,7 @@ export function readSessionContextCache(
 ): CachedSessionContext | null {
   try {
     const parsed: unknown = JSON.parse(readFileSync(cachePath(project, env), 'utf8'))
-    return validCache(parsed, project) ? parsed : null
+    return normalizedCache(parsed, project)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     return null
@@ -86,7 +92,14 @@ export function writeSessionContextCache(value: CachedSessionContext, env: State
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
       0o600,
     )
-    writeFileSync(descriptor, `${JSON.stringify(value)}\n`)
+    const stored = {
+      ...value,
+      hosted: {
+        user: autonomySettingsForStorage(value.hosted.user),
+        space: autonomySettingsForStorage(value.hosted.space),
+      },
+    }
+    writeFileSync(descriptor, `${JSON.stringify(stored)}\n`)
     fsyncSync(descriptor)
     closeSync(descriptor)
     descriptor = null

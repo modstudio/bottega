@@ -246,6 +246,23 @@ describe('machine permission overlay', () => {
     }
   })
 
+  test('writing ship-to removes the stored release leaf in the same file write', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-ship-to-write-'))
+    const config = join(root, 'config')
+    const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+    try {
+      mkdirSync(config)
+      const file = join(config, 'machine.toml')
+      writeFileSync(file, '[autonomy]\nrelease = "push"\n')
+      setMachineAutonomy('autonomy.release', 'production', env)
+      const written = readFileSync(file, 'utf8')
+      expect(written).toContain('ship-to = "production"')
+      expect(written).not.toContain('release =')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('refuses secret-shaped rules on write without printing the rule', () => {
     const root = mkdtempSync(join(tmpdir(), 'machine-permissions-secret-write-'))
     const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }

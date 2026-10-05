@@ -39,7 +39,7 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
-import { validateAutonomySettings } from '../workflow/autonomy.ts'
+import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
   resolveWorktreeLifecycle,
@@ -57,7 +57,12 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
-import type { MainStackConsumer, ProjectSettings, WorktreeTool } from './project-settings.ts'
+import type {
+  MainStackConsumer,
+  ProjectSettings,
+  StoredProjectSettings,
+  WorktreeTool,
+} from './project-settings.ts'
 
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
@@ -88,7 +93,7 @@ export type Project = {
    * be another thing the code has to know about. The shapes that ARE relied on
    * are named in `ProjectSettings`, so the reliance is at least written down.
    */
-  settings: ProjectSettings
+  settings: StoredProjectSettings
 }
 
 export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
@@ -145,7 +150,7 @@ function parse(row: {
   settings: string | null
   retired_at?: string | null
 }): Project {
-  let settings: ProjectSettings = {}
+  let settings: StoredProjectSettings = {}
   try {
     settings = row.settings ? JSON.parse(row.settings) : {}
   } catch {
@@ -254,7 +259,17 @@ export function upsertProject(p: {
   settings?: ProjectSettings
 }): void {
   const database = writableDb()
-  writeProjectRegisterRow(database, p)
+  writeProjectRegisterRow(database, { ...p, settings: projectSettingsForStorage(p.settings) })
+}
+
+function projectSettingsForStorage(
+  settings: ProjectSettings | undefined,
+): StoredProjectSettings | undefined {
+  if (!settings?.autonomy) return settings
+  return {
+    ...settings,
+    autonomy: autonomySettingsForStorage(settings.autonomy),
+  }
 }
 
 export async function writeHostedProject(p: {
@@ -266,7 +281,7 @@ export async function writeHostedProject(p: {
   settings?: ProjectSettings
   retiredAt?: string | null
 }): Promise<void> {
-  await writeProjectToHostedRecord(p)
+  await writeProjectToHostedRecord({ ...p, settings: projectSettingsForStorage(p.settings) })
 }
 
 export async function pushProjects(): Promise<string[]> {
@@ -294,7 +309,9 @@ export function setProjectRecordSpace(name: string, space: string): void {
   const malformed = validateStoredProjectSettings(settings, project.path)
   if (malformed.length) throw new Error(malformed.join('\n'))
   writableDb()
-  db().query('UPDATE project SET settings=? WHERE id=?').run(JSON.stringify(settings), project.id)
+  db()
+    .query('UPDATE project SET settings=? WHERE id=?')
+    .run(JSON.stringify(projectSettingsForStorage(settings)), project.id)
 }
 
 /** Local rename preconditions: existence, a non-empty target, and a free name. */

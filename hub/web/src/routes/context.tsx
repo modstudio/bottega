@@ -21,10 +21,7 @@ import {
   type AutonomyPreset,
   type AutonomyValue,
 } from '../../../../shared/autonomy'
-import {
-  RELEASE_AUTONOMY_VALUES,
-  type ReleaseAutonomyValue,
-} from '../../../../shared/release-autonomy'
+import { isShipToValue, SHIP_TO_VALUES } from '../../../../shared/ship-to'
 
 export const Route = createFileRoute('/context')({ component: ManagedContextPage })
 
@@ -44,7 +41,7 @@ const stageValues = AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(
 
 const FROM_PRESET = { value: '', label: 'From preset', disabled: true }
 
-const releaseValues = RELEASE_AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(value) }))
+const shipToValues = SHIP_TO_VALUES.map((value) => ({ value, label: capitalized(value) }))
 
 const rulingsValues = (['agent', 'user'] as const).map((value) => ({
   value,
@@ -346,8 +343,8 @@ function AutonomySection({
         ),
     }),
   )
-  const updateRelease = useMutation(
-    trpc.context.autonomy.setRelease.mutationOptions({
+  const updateShipTo = useMutation(
+    trpc.context.autonomy.setShipTo.mutationOptions({
       onSuccess: (data) =>
         queryClient.setQueryData(
           trpc.context.autonomy.get.queryOptions({ project }).queryKey,
@@ -369,8 +366,8 @@ function AutonomySection({
   const setMachine = useMutation(trpc.context.autonomy.setMachine.mutationOptions(refreshed))
   const clearMachine = useMutation(trpc.context.autonomy.clearMachine.mutationOptions(refreshed))
   const machinePending = setMachine.isPending || clearMachine.isPending
-  const releaseLine = autonomy.data?.registered
-    ? autonomy.data.text.split('\n').find((line) => line.startsWith('release: '))
+  const shipToLine = autonomy.data?.registered
+    ? autonomy.data.text.split('\n').find((line) => line.startsWith('ship to: '))
     : undefined
   const userPreset = autonomy.data?.registered ? autonomy.data.userPreset : undefined
   return (
@@ -381,7 +378,7 @@ function AutonomySection({
       <Select label="Project" value={project} options={options} onChange={onProject} />
       {autonomy.error ? <ErrorText message={autonomy.error.message} /> : null}
       {update.error ? <ErrorText message={update.error.message} /> : null}
-      {updateRelease.error ? <ErrorText message={updateRelease.error.message} /> : null}
+      {updateShipTo.error ? <ErrorText message={updateShipTo.error.message} /> : null}
       {updatePreset.error ? <ErrorText message={updatePreset.error.message} /> : null}
       {clearStage.error ? <ErrorText message={clearStage.error.message} /> : null}
       {setMachine.error ? <ErrorText message={setMachine.error.message} /> : null}
@@ -431,37 +428,32 @@ function AutonomySection({
             }
           />
           <SettingBlock
-            label="release"
+            label="ship to"
             hint={
               <span className="flex flex-col gap-1.5">
-                <span>{releaseLine ?? `release: ${autonomy.data.release.value}`}</span>
+                <span>{shipToLine ?? `ship to: ${autonomy.data.shipTo.value}`}</span>
                 <MachineOverride
-                  label="release"
-                  value={autonomy.data.release.machineValue}
-                  options={releaseValues}
+                  label="ship to"
+                  value={autonomy.data.shipTo.machineValue}
+                  options={shipToValues}
                   pending={machinePending}
-                  onSet={(next) =>
-                    setMachine.mutate({
-                      project,
-                      kind: 'release',
-                      value: next as ReleaseAutonomyValue,
-                    })
-                  }
-                  onRemove={() => clearMachine.mutate({ project, kind: 'release' })}
+                  onSet={(next) => {
+                    if (isShipToValue(next)) {
+                      setMachine.mutate({ project, kind: 'shipTo', value: next })
+                    }
+                  }}
+                  onRemove={() => clearMachine.mutate({ project, kind: 'shipTo' })}
                 />
               </span>
             }
             control={
               <Select
-                label="release autonomy"
-                value={autonomy.data.release.value}
-                options={releaseValues}
-                onChange={(next) =>
-                  updateRelease.mutate({
-                    project,
-                    value: next as ReleaseAutonomyValue,
-                  })
-                }
+                label="ship to"
+                value={autonomy.data.shipTo.value}
+                options={shipToValues}
+                onChange={(next) => {
+                  if (isShipToValue(next)) updateShipTo.mutate({ project, value: next })
+                }}
               />
             }
           />
@@ -551,13 +543,13 @@ function HostedAutonomySection({
   })
   const refresh = { onSettled: () => queryClient.invalidateQueries({ queryKey: api.pathKey() }) }
   const update = useMutation(api.set.mutationOptions(refresh))
-  const updateRelease = useMutation(api.setRelease.mutationOptions(refresh))
+  const updateShipTo = useMutation(api.setShipTo.mutationOptions(refresh))
   const updatePreset = useMutation(api.setPreset.mutationOptions(refresh))
   const clearStage = useMutation(api.clearStage.mutationOptions(refresh))
   const user = autonomy.data?.user
   const space = autonomy.data?.space
   const error =
-    autonomy.error ?? update.error ?? updateRelease.error ?? updatePreset.error ?? clearStage.error
+    autonomy.error ?? update.error ?? updateShipTo.error ?? updatePreset.error ?? clearStage.error
   return (
     <FieldSection
       title="Autonomy"
@@ -590,20 +582,22 @@ function HostedAutonomySection({
             value={user.rulings?.value ?? space?.rulings?.value ?? 'not set'}
           />
           <SettingBlock
-            label="release"
-            hint={user.release ? 'Set in your profile.' : 'Not set; each machine uses its default.'}
+            label="ship to"
+            hint={user.shipTo ? 'Set in your profile.' : 'Not set; each machine uses its default.'}
             control={
               <Select
-                label="release autonomy"
-                value={user.release?.value ?? ''}
-                options={releaseValues}
-                onChange={(next) =>
-                  updateRelease.mutate({
-                    project,
-                    value: next as ReleaseAutonomyValue,
-                    expectedRowVersion: user.release?.rowVersion ?? null,
-                  })
-                }
+                label="ship to"
+                value={user.shipTo?.value ?? ''}
+                options={shipToValues}
+                onChange={(next) => {
+                  if (isShipToValue(next)) {
+                    updateShipTo.mutate({
+                      project,
+                      value: next,
+                      expectedRowVersion: user.shipTo?.rowVersion ?? null,
+                    })
+                  }
+                }}
               />
             }
           />

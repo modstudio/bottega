@@ -6,7 +6,7 @@ import {
   AUTONOMY_VALUES,
   type AutonomyPreset,
 } from '../../../../shared/autonomy.ts'
-import { RELEASE_AUTONOMY_VALUES } from '../../../../shared/release-autonomy.ts'
+import { SHIP_TO_CONFIG_KEY, SHIP_TO_VALUES } from '../../../../shared/ship-to.ts'
 import {
   configDelete,
   configList,
@@ -45,7 +45,7 @@ const slug = z.string().trim().min(1, 'Slug is required')
 const permissionList = z.enum(['allow', 'ask', 'deny'])
 const autonomyValue = z.enum(AUTONOMY_VALUES)
 const autonomyPreset = z.enum(AUTONOMY_PRESETS)
-const releaseValue = z.enum(RELEASE_AUTONOMY_VALUES)
+const shipToValue = z.enum(SHIP_TO_VALUES)
 const rulingsValue = z.enum(['agent', 'user'])
 const target = z.union([
   z.object({ user: z.literal(true) }),
@@ -111,44 +111,45 @@ async function localAutonomy(project: string) {
     }
   })
   const rulingsMachineValue = machineValue({ kind: 'rulings' }, ['agent', 'user'] as const)
-  const releaseMachineValue = machineValue({ kind: 'release' }, RELEASE_AUTONOMY_VALUES)
+  const shipToMachineValue = machineValue({ kind: 'shipTo' }, SHIP_TO_VALUES)
   return {
     ...resolved,
     rulings: {
       ...resolved.rulings,
       ...(rulingsMachineValue !== undefined ? { machineValue: rulingsMachineValue } : {}),
     },
-    release: {
-      ...resolved.release,
-      ...(releaseMachineValue !== undefined ? { machineValue: releaseMachineValue } : {}),
+    shipTo: {
+      ...resolved.shipTo,
+      ...(shipToMachineValue !== undefined ? { machineValue: shipToMachineValue } : {}),
     },
     userPreset,
     stages,
     ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
-  } as Omit<typeof resolved, 'stages' | 'rulings' | 'release'> & {
+  } as Omit<typeof resolved, 'stages' | 'rulings' | 'shipTo'> & {
     userPreset?: AutonomyPreset | null
     stages: typeof stages
     rulings: typeof resolved.rulings & { machineValue?: 'agent' | 'user' }
-    release: typeof resolved.release & {
-      machineValue?: (typeof RELEASE_AUTONOMY_VALUES)[number]
+    shipTo: typeof resolved.shipTo & {
+      machineValue?: (typeof SHIP_TO_VALUES)[number]
     }
   }
 }
 
 const machineKey = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('stage'), stage: z.enum(AUTONOMY_STAGES) }),
-  z.object({ kind: z.literal('release') }),
+  z.object({ kind: z.literal('shipTo') }),
   z.object({ kind: z.literal('rulings') }),
 ])
 
 const machineSet = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('stage'), stage: z.enum(AUTONOMY_STAGES), value: autonomyValue }),
-  z.object({ kind: z.literal('release'), value: releaseValue }),
+  z.object({ kind: z.literal('shipTo'), value: shipToValue }),
   z.object({ kind: z.literal('rulings'), value: rulingsValue }),
 ])
 
 function autonomyMachineKey(input: z.infer<typeof machineKey>): string {
-  return input.kind === 'stage' ? `autonomy.stage.${input.stage}` : `autonomy.${input.kind}`
+  if (input.kind === 'stage') return `autonomy.stage.${input.stage}`
+  return input.kind === 'shipTo' ? SHIP_TO_CONFIG_KEY : `autonomy.${input.kind}`
 }
 
 function configConflict(error: unknown): error is TRPCError {
@@ -251,17 +252,17 @@ export const contextRouter = t.router({
         await fromOrch(() => configSet(`autonomy.stage.${input.stage}`, input.value))
         return localAutonomy(input.project)
       }),
-    setRelease: mutation
+    setShipTo: mutation
       .input(
         z.object({
           project: z.string().min(1),
-          value: releaseValue,
+          value: shipToValue,
           expectedRowVersion: z.number().int().positive().nullable().optional(),
         }),
       )
       .mutation(async ({ input }) => {
         projectPath(input.project)
-        await fromOrch(() => configSet('autonomy.release', input.value))
+        await fromOrch(() => configSet(SHIP_TO_CONFIG_KEY, input.value))
         return localAutonomy(input.project)
       }),
     setPreset: mutation

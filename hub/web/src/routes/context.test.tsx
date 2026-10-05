@@ -40,9 +40,9 @@ function seedBase() {
     registered: true,
     project: 'alpha',
     rulings: { value: 'user', scope: 'hosted user' },
-    release: { value: 'land', scope: 'hosted user', landing: 'main', production: null },
+    shipTo: { value: 'trunk', scope: 'hosted user', landing: 'main', production: null },
     stages: [{ stage: 'review', agreed: true, value: 'review', scope: 'hosted user', steps: 2 }],
-    text: 'Autonomy for alpha\nrelease: land (land to main) (hosted user)',
+    text: 'Autonomy for alpha\nship to: trunk (merge into main) (hosted user)',
   }
   queryClient.setQueryData(autonomyOptions.queryKey, autonomy)
   queryClient.setQueryData(trpc.context.settings.get.queryOptions({ user: true }).queryKey, {
@@ -112,11 +112,11 @@ test('managed settings shows the apply command without a write control', () => {
   expect(html).not.toContain('>Write settings<')
 })
 
-test('autonomy shows the resolved release line and user-scope control', () => {
+test('autonomy shows the resolved ship-to line and user-scope control', () => {
   seedBase()
   const html = render()
-  expect(html).toContain('release: land (land to main) (hosted user)')
-  expect(html).toContain('release autonomy')
+  expect(html).toContain('ship to: trunk (merge into main) (hosted user)')
+  expect(html).toContain('ship to')
 })
 
 test('a machine override shows only on the row that has one', () => {

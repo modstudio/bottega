@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   answerRulingRefusal,
   parseAutonomy,
+  parseStoredAutonomy,
   resolveAutonomy,
   validateAutonomySettings,
 } from './autonomy.ts'
@@ -12,38 +13,68 @@ const steps = [
 ]
 
 describe('autonomy resolution', () => {
-  test('release parses its three values and refuses every other value with the allowed list', () => {
-    for (const release of ['push', 'land', 'promote'] as const) {
-      expect(parseAutonomy(`release=${release}`, 'session')).toEqual({ release })
+  test('ship-to parses its three values and refuses every other value with the allowed list', () => {
+    for (const shipTo of ['branch', 'trunk', 'production'] as const) {
+      expect(parseAutonomy(`ship-to=${shipTo}`, 'session')).toEqual({ shipTo })
     }
-    expect(() => parseAutonomy('release=automatic', 'session')).toThrow(
-      'expected one of push, land, promote',
+    expect(() => parseAutonomy('ship-to=automatic', 'session')).toThrow(
+      'expected one of branch, trunk, production',
     )
   })
 
-  test('release follows the stage scope order and defaults to land', () => {
+  test('ship-to follows the stage scope order and defaults to trunk', () => {
     expect(
       resolveAutonomy(steps, [
         { name: 'session', settings: {} },
-        { name: 'local project', settings: { release: 'push' } },
-        { name: 'project', settings: { release: 'promote' } },
-      ]).release,
-    ).toEqual({ value: 'push', scope: 'local project' })
-    expect(resolveAutonomy(steps, []).release).toEqual({ value: 'land', scope: 'built-in' })
+        { name: 'local project', settings: { 'ship-to': 'branch' } },
+        { name: 'project', settings: { 'ship-to': 'production' } },
+      ]).shipTo,
+    ).toEqual({ value: 'branch', scope: 'local project' })
+    expect(resolveAutonomy(steps, []).shipTo).toEqual({ value: 'trunk', scope: 'built-in' })
   })
 
-  test('an invalid stored release keeps the rest of its scope and falls through for release', () => {
+  test('an invalid stored ship-to keeps the rest of its scope and falls through', () => {
     const result = resolveAutonomy(steps, [
       {
         name: 'project',
-        settings: { stages: { plan: 'auto' }, release: 'automatic' },
+        settings: { stages: { plan: 'auto' }, 'ship-to': 'automatic' },
       },
-      { name: 'local user', settings: { release: 'push' } },
+      { name: 'local user', settings: { 'ship-to': 'branch' } },
     ])
     expect(result.steps.design).toEqual({ value: 'auto', scope: 'project' })
-    expect(result.release).toEqual({ value: 'push', scope: 'local user' })
+    expect(result.shipTo).toEqual({ value: 'branch', scope: 'local user' })
     expect(result.warnings).toEqual([
-      'warning: ignored invalid autonomy setting at project key release: automatic; expected one of push, land, promote',
+      'warning: ignored invalid autonomy setting at project key ship-to: automatic; expected one of branch, trunk, production',
+    ])
+  })
+
+  test('a stored release alias resolves and ship-to wins when both keys are present', () => {
+    expect(
+      resolveAutonomy(steps, [{ name: 'project', settings: { release: 'push' } }]).shipTo,
+    ).toEqual({ value: 'branch', scope: 'project' })
+    expect(
+      resolveAutonomy(steps, [
+        { name: 'project', settings: { release: 'promote', 'ship-to': 'trunk' } },
+      ]).shipTo,
+    ).toEqual({ value: 'trunk', scope: 'project' })
+  })
+
+  test('stored key=value input resolves both ship-to key orders', () => {
+    expect(parseStoredAutonomy('ship-to=branch,release=promote', 'hosted user')).toEqual({
+      settings: { shipTo: 'branch' },
+    })
+    expect(parseStoredAutonomy('release=promote,ship-to=branch', 'hosted user')).toEqual({
+      settings: { shipTo: 'branch' },
+    })
+  })
+
+  test('an invalid new stored value falls back to the valid alias and warns', () => {
+    const result = resolveAutonomy(steps, [
+      { name: 'project', settings: { release: 'push', 'ship-to': 'automatic' } },
+    ])
+    expect(result.shipTo).toEqual({ value: 'branch', scope: 'project' })
+    expect(result.warnings).toEqual([
+      'warning: ignored invalid autonomy setting at project key ship-to: automatic; expected one of branch, trunk, production',
     ])
   })
 

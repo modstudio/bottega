@@ -275,7 +275,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/workflow/autonomy.ts', [
     '../../../shared/autonomy.ts',
-    '../../../shared/release-autonomy.ts',
+    '../../../shared/ship-to.ts',
   ]),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
     'bun:sqlite',
@@ -373,7 +373,7 @@ export const modules: ArchitectureModule[] = [
     'zod',
     './autonomy.ts',
     './config-directory.ts',
-    './release-autonomy.ts',
+    './ship-to.ts',
     './secret-shaped.ts',
     './settings-summary.ts',
   ]),

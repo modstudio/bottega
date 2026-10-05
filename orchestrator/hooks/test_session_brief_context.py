@@ -186,7 +186,7 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertTrue(text.endswith(session_brief.HOOK_CONTEXT_TRUNCATION_MARKER))
 
     def test_autonomy_slice_keeps_the_release_line(self):
-        text = "plan: review (project)\nrelease: promote (land to main, then promote to production) (user)"
+        text = "plan: review (project)\nship to: production (merge into main, then promote to production) (user)"
         rendered, notice = session_brief._autonomy_slice(
             SimpleNamespace(returncode=0, stdout=json.dumps({"registered": True, "text": text}))
         )

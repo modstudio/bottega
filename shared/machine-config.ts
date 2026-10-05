@@ -12,9 +12,14 @@ import { patch as patchToml } from '@decimalturn/toml-patch'
 import { z } from 'zod'
 import { AUTONOMY_PRESETS, AUTONOMY_STAGES, AUTONOMY_VALUES } from './autonomy.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import { RELEASE_AUTONOMY_VALUES } from './release-autonomy.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
+import {
+  isShipToConfigKey,
+  readStoredShipTo,
+  SHIP_TO_CONFIG_KEY,
+  storedShipToLevel,
+} from './ship-to.ts'
 
 type MachineConfigEntry = {
   environment?: string
@@ -407,7 +412,7 @@ export function editMachinePermissionTable(
 }
 
 const MACHINE_AUTONOMY_KEYS =
-  'autonomy.preset, autonomy.rulings, autonomy.release, autonomy.stage.<stage>, autonomy.step.<slug>, autonomy.workflow.<slug>.(preset|rulings|stage.<stage>|step.<slug>)'
+  'autonomy.preset, autonomy.rulings, autonomy.ship-to, autonomy.stage.<stage>, autonomy.step.<slug>, autonomy.workflow.<slug>.(preset|rulings|stage.<stage>|step.<slug>)'
 
 function autonomyPath(key: string): string[] {
   const parts = key.split('.')
@@ -424,10 +429,13 @@ function autonomyPath(key: string): string[] {
   return mapped
 }
 
-function autonomyEntryKind(key: string): 'preset' | 'rulings' | 'release' | 'value' {
+function autonomyEntryKind(key: string): 'preset' | 'rulings' | 'ship-to' | 'value' {
   const path = autonomyPath(key)
-  if (path.length === 1 && ['preset', 'rulings', 'release'].includes(path[0]!))
-    return path[0] as 'preset' | 'rulings' | 'release'
+  if (
+    path.length === 1 &&
+    (['preset', 'rulings'].includes(path[0]!) || isShipToConfigKey(`autonomy.${path[0]}`))
+  )
+    return path[0] === 'release' ? 'ship-to' : (path[0] as 'preset' | 'rulings' | 'ship-to')
   if (
     path.length === 2 &&
     ((path[0] === 'stages' && AUTONOMY_STAGES.includes(path[1] as never)) ||
@@ -453,7 +461,7 @@ function validateAutonomyEntry(key: string, value: string): void {
   const valid =
     (kind === 'preset' && AUTONOMY_PRESETS.includes(value as never)) ||
     (kind === 'rulings' && ['agent', 'user'].includes(value)) ||
-    (kind === 'release' && RELEASE_AUTONOMY_VALUES.includes(value as never)) ||
+    (kind === 'ship-to' && storedShipToLevel(value) !== undefined) ||
     (kind === 'value' && AUTONOMY_VALUES.includes(value as never))
   if (!valid) throw new Error(`accepted machine keys: ${MACHINE_AUTONOMY_KEYS}`)
 }
@@ -464,7 +472,9 @@ export function setMachineAutonomy(
   env: ConfigEnvironment = process.env,
 ): void {
   validateAutonomyEntry(key, value)
-  const path = autonomyPath(key)
+  const shipTo = isShipToConfigKey(key)
+  const path = autonomyPath(shipTo ? SHIP_TO_CONFIG_KEY : key)
+  const storedValue = shipTo ? storedShipToLevel(value)! : value
   atomicPatch((root) => {
     if (root.autonomy === undefined) root.autonomy = {}
     let table = root.autonomy as Record<string, unknown>
@@ -472,13 +482,15 @@ export function setMachineAutonomy(
       if (table[part] === undefined) table[part] = {}
       table = table[part] as Record<string, unknown>
     }
-    table[path.at(-1)!] = value
+    table[path.at(-1)!] = storedValue
+    if (path.length === 1 && path[0] === 'ship-to') delete table.release
   }, env)
 }
 
 export function deleteMachineAutonomy(key: string, env: ConfigEnvironment = process.env): void {
   autonomyEntryKind(key)
-  const path = autonomyPath(key)
+  const shipTo = isShipToConfigKey(key)
+  const path = autonomyPath(shipTo ? SHIP_TO_CONFIG_KEY : key)
   atomicPatch((root) => {
     const stack: Record<string, unknown>[] = []
     let table = root.autonomy as Record<string, unknown> | undefined
@@ -491,6 +503,7 @@ export function deleteMachineAutonomy(key: string, env: ConfigEnvironment = proc
       stack.push(table)
     }
     delete table[path.at(-1)!]
+    if (shipTo) delete table.release
     for (let index = stack.length - 1; index > 0; index--) {
       const child = stack[index]!
       if (Object.keys(child).length) break
@@ -517,7 +530,21 @@ export function listMachineAutonomy(env: ConfigEnvironment = process.env): Machi
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return
     for (const [name, child] of Object.entries(value)) visit(child, [...path, name])
   }
-  visit(root.autonomy, [])
+  const autonomy = root.autonomy
+  if (typeof autonomy === 'object' && autonomy !== null && !Array.isArray(autonomy)) {
+    const table = { ...(autonomy as Record<string, unknown>) }
+    const stored = readStoredShipTo(
+      table['ship-to'],
+      table.release,
+      Object.hasOwn(table, 'ship-to'),
+      Object.hasOwn(table, 'release'),
+    )
+    delete table.release
+    if (stored.level !== undefined || stored.invalid !== undefined) {
+      table['ship-to'] = stored.level ?? stored.invalid
+    }
+    visit(table, [])
+  }
   return rows.sort((left, right) => left.key.localeCompare(right.key))
 }
 

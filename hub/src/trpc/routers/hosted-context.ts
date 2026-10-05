@@ -6,8 +6,13 @@ import {
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../../../shared/autonomy.ts'
-import { RELEASE_AUTONOMY_VALUES } from '../../../../shared/release-autonomy.ts'
 import { type StoredSettings, summarizeSettings } from '../../../../shared/settings-summary.ts'
+import {
+  readStoredShipTo,
+  SHIP_TO_CONFIG_KEY,
+  SHIP_TO_VALUES,
+  STORED_SHIP_TO_CONFIG_ALIAS,
+} from '../../../../shared/ship-to.ts'
 import {
   createRecordClient,
   type RecordClient,
@@ -84,13 +89,26 @@ async function userCanonRows(client: RecordClient) {
 const leaf = (entry: RecordConfigEntry | undefined) =>
   entry ? { value: entry.value, rowVersion: entry.rowVersion } : null
 
+const shipToLeaf = (
+  shipToEntry: RecordConfigEntry | undefined,
+  releaseEntry: RecordConfigEntry | undefined,
+) => {
+  const read = readStoredShipTo(
+    shipToEntry?.value,
+    releaseEntry?.value,
+    shipToEntry !== undefined,
+    releaseEntry !== undefined,
+  )
+  return read.level ? { value: read.level, rowVersion: shipToEntry?.rowVersion ?? null } : null
+}
+
 function scopedAutonomy(entries: RecordConfigEntry[], scope: 'user' | 'space') {
   const selected = entries.filter((entry) => entry.scope === scope)
   const entry = (key: string) => selected.find((candidate) => candidate.key === key)
   return {
     preset: leaf(entry('autonomy.preset')),
     rulings: leaf(entry('autonomy.rulings')),
-    release: leaf(entry('autonomy.release')),
+    shipTo: shipToLeaf(entry(SHIP_TO_CONFIG_KEY), entry(STORED_SHIP_TO_CONFIG_ALIAS)),
     stages: Object.fromEntries(
       AUTONOMY_STAGES.map((stage) => [stage, leaf(entry(`autonomy.stage.${stage}`))]),
     ) as Record<AutonomyStage, ReturnType<typeof leaf>>,
@@ -277,21 +295,29 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
           })
           return hostedAutonomy(client, input.project)
         }),
-      setRelease: t.procedure
+      setShipTo: t.procedure
         .input(
           z.object({
             project: z.string().min(1),
-            value: z.enum(RELEASE_AUTONOMY_VALUES),
+            value: z.enum(SHIP_TO_VALUES),
             expectedRowVersion,
           }),
         )
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          await client.putConfigEntry('autonomy.release', {
+          await client.putConfigEntry(SHIP_TO_CONFIG_KEY, {
             scope: 'user',
             value: input.value,
             expectedRowVersion: input.expectedRowVersion,
           })
+          const alias = (await client.configEntries()).find(
+            (entry) => entry.scope === 'user' && entry.key === STORED_SHIP_TO_CONFIG_ALIAS,
+          )
+          if (alias)
+            await client.deleteConfigEntry(STORED_SHIP_TO_CONFIG_ALIAS, {
+              scope: 'user',
+              expectedRowVersion: alias.rowVersion,
+            })
           return hostedAutonomy(client, input.project)
         }),
       setPreset: t.procedure
