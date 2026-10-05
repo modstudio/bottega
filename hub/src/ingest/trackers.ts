@@ -319,6 +319,7 @@ export type TrackerTaskObservation = {
 }
 
 const PENDING_TRACKER_STATUS_EVENTS_SETTING = 'tracker.status-events.pending-mirror'
+export const PENDING_TRACKER_STATUS_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
 
 export type PendingTrackerStatusEvent = {
   eventRecordId: string
@@ -389,7 +390,7 @@ function observeTrackerTaskOn(
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
   if (event && pendingMirror) {
     const pending = readPendingTrackerStatusEventsOn(conn)
-    pending.push({
+    const appended = {
       eventRecordId: event.recordId,
       taskRecordId: taskRecordId!,
       project: task.project,
@@ -397,8 +398,10 @@ function observeTrackerTaskOn(
       fromCategory: event.fromCategory,
       toCategory: event.toCategory,
       at,
-    })
-    writePendingTrackerStatusEventsOn(conn, pending)
+    }
+    writePendingTrackerStatusEventsOn(conn, [
+      ...new Map([...pending, appended].map((entry) => [entry.eventRecordId, entry])).values(),
+    ])
   }
   return {
     at,
@@ -520,13 +523,26 @@ function removePendingTrackerStatusEvents(recordIds: ReadonlySet<string>) {
 export async function mirrorPendingTrackerStatusEvents(
   mirror: CollectorMirrorPass,
   project: Project,
+  now = Date.now(),
 ): Promise<Error | null> {
-  const pending = pendingTrackerStatusEvents().filter((entry) => entry.project === project)
+  const projectPending = pendingTrackerStatusEvents().filter((entry) => entry.project === project)
+  const expired = projectPending.filter(
+    (entry) => now - Date.parse(entry.at) > PENDING_TRACKER_STATUS_EVENT_RETENTION_MS,
+  )
+  if (expired.length) {
+    removePendingTrackerStatusEvents(new Set(expired.map((entry) => entry.eventRecordId)))
+    for (const entry of expired)
+      console.error(
+        `hub: tracker status event mirror dropped project=${entry.project} event=${entry.eventRecordId}: pending event exceeded retention window`,
+      )
+  }
+  const expiredIds = new Set(expired.map((entry) => entry.eventRecordId))
+  const pending = projectPending.filter((entry) => !expiredIds.has(entry.eventRecordId))
   if (!pending.length) return null
   try {
-    const mirrored = await mirror.mirrorStatusEvents(pending.map(pendingStatusEventMirrorRow))
-    if (!mirrored) return null
-    removePendingTrackerStatusEvents(new Set(pending.map((entry) => entry.eventRecordId)))
+    const result = await mirror.mirrorStatusEvents(pending.map(pendingStatusEventMirrorRow))
+    if (result !== 'unreadable')
+      removePendingTrackerStatusEvents(new Set(pending.map((entry) => entry.eventRecordId)))
     return null
   } catch (error) {
     return error as Error

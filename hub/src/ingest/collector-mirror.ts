@@ -65,10 +65,12 @@ type CollectorMirrorSkip = {
 }
 
 export type CollectorMirrorPass = {
-  mirrorTasks(rows: readonly CollectedTaskRow[]): Promise<boolean>
-  mirrorStatusEvents(rows: readonly HostedStatusEvent[]): Promise<boolean>
+  mirrorTasks(rows: readonly CollectedTaskRow[]): Promise<CollectorMirrorResult>
+  mirrorStatusEvents(rows: readonly HostedStatusEvent[]): Promise<CollectorMirrorResult>
   reportSkipped(): void
 }
+
+export type CollectorMirrorResult = 'mirrored' | 'not-applicable' | 'unreadable'
 
 /** Load hosted identity once and apply the task project-space rule for one collection pass. */
 export async function createCollectorMirrorPass(
@@ -125,7 +127,7 @@ export async function createCollectorMirrorPass(
   return {
     async mirrorTasks(rows) {
       const selected = select(rows.map(hostedTaskBody), 'tasks')
-      if (!selected.length) return false
+      if (!selected.length) return identity ? 'not-applicable' : 'unreadable'
       try {
         const response = await hostedMirrorTasks({
           tasks: selected,
@@ -133,24 +135,24 @@ export async function createCollectorMirrorPass(
         })
         const adoptions: MirrorAdoption[] = response.adoptions ?? []
         persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
-        return true
+        return 'mirrored'
       } catch (error) {
-        if (refuseChangedSpace(error, selected, 'tasks')) return false
+        if (refuseChangedSpace(error, selected, 'tasks')) return 'unreadable'
         throw error
       }
     },
     async mirrorStatusEvents(rows) {
       const selected = select(rows, 'statusEvents')
-      if (!selected.length) return false
+      if (!selected.length) return identity ? 'not-applicable' : 'unreadable'
       try {
         await hostedMirrorTasks({
           tasks: [],
           statusEvents: selected,
           expectedSpaceId: identity!.activeSpaceId,
         })
-        return true
+        return 'mirrored'
       } catch (error) {
-        if (refuseChangedSpace(error, selected, 'statusEvents')) return false
+        if (refuseChangedSpace(error, selected, 'statusEvents')) return 'unreadable'
         throw error
       }
     },

@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import type { CollectorMirrorPass } from './ingest/collector-mirror.ts'
 import {
   mirrorPendingTrackerStatusEvents,
   observeTrackerTask,
+  PENDING_TRACKER_STATUS_EVENT_RETENTION_MS,
   pendingTrackerStatusEvents,
   writeTrackerCache,
 } from './ingest/trackers.ts'
@@ -292,12 +293,12 @@ describe('fresh tracker task read', () => {
 
     const events: Parameters<CollectorMirrorPass['mirrorStatusEvents']>[0][number][] = []
     const mirror = {
-      mirrorTasks: async () => true,
+      mirrorTasks: async () => 'mirrored' as const,
       mirrorStatusEvents: async (
         rows: Parameters<CollectorMirrorPass['mirrorStatusEvents']>[0],
       ) => {
         events.push(...rows)
-        return true
+        return 'mirrored' as const
       },
       reportSkipped: () => {},
     } satisfies CollectorMirrorPass
@@ -325,7 +326,7 @@ describe('fresh tracker task read', () => {
       readBack: showTask,
     })
     const failed = {
-      mirrorTasks: async () => true,
+      mirrorTasks: async () => 'mirrored' as const,
       mirrorStatusEvents: async () => {
         throw new Error('host unavailable')
       },
@@ -338,16 +339,83 @@ describe('fresh tracker task read', () => {
 
     let mirrored = 0
     const recovered = {
-      mirrorTasks: async () => true,
+      mirrorTasks: async () => 'mirrored' as const,
       mirrorStatusEvents: async () => {
         mirrored++
-        return true
+        return 'mirrored' as const
       },
       reportSkipped: () => {},
     } satisfies CollectorMirrorPass
     expect(await mirrorPendingTrackerStatusEvents(recovered, 'fixture')).toBeNull()
     expect(mirrored).toBe(1)
     expect(pendingTrackerStatusEvents()).toEqual([])
+  })
+
+  test('a not-applicable pending event is removed without a hosted write', async () => {
+    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
+    observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
+    const mirror = {
+      mirrorTasks: async () => 'not-applicable' as const,
+      mirrorStatusEvents: async () => 'not-applicable' as const,
+      reportSkipped: () => {},
+    } satisfies CollectorMirrorPass
+
+    expect(await mirrorPendingTrackerStatusEvents(mirror, 'fixture')).toBeNull()
+    expect(pendingTrackerStatusEvents()).toEqual([])
+  })
+
+  test('an unreadable pending event is kept, then dropped after the retention window', async () => {
+    const at = '2026-10-05T00:00:00.000Z'
+    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
+    observeTrackerTask(task, at, true)
+    const mirror = {
+      mirrorTasks: async () => 'unreadable' as const,
+      mirrorStatusEvents: async () => 'unreadable' as const,
+      reportSkipped: () => {},
+    } satisfies CollectorMirrorPass
+
+    expect(
+      await mirrorPendingTrackerStatusEvents(mirror, 'fixture', Date.parse(at) + 1_000),
+    ).toBeNull()
+    expect(pendingTrackerStatusEvents()).toHaveLength(1)
+
+    const errors: string[] = []
+    const originalError = console.error
+    console.error = (...args: unknown[]) => errors.push(args.map(String).join(' '))
+    try {
+      expect(
+        await mirrorPendingTrackerStatusEvents(
+          mirror,
+          'fixture',
+          Date.parse(at) + PENDING_TRACKER_STATUS_EVENT_RETENTION_MS + 1,
+        ),
+      ).toBeNull()
+    } finally {
+      console.error = originalError
+    }
+    expect(pendingTrackerStatusEvents()).toEqual([])
+    expect(errors).toEqual([expect.stringContaining('project=fixture event=')])
+  })
+
+  test('appending a pending event deduplicates the list by event record id', () => {
+    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
+    observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
+    const first = pendingTrackerStatusEvents()[0]!
+    writeTransaction((conn) =>
+      conn
+        .query(`UPDATE setting SET value=? WHERE key='tracker.status-events.pending-mirror'`)
+        .run(JSON.stringify([first, first])),
+    )
+
+    observeTrackerTask(
+      { ...task, status: 'Done', category: 'done' },
+      '2026-10-05T00:01:00.000Z',
+      true,
+    )
+
+    const pending = pendingTrackerStatusEvents()
+    expect(pending).toHaveLength(2)
+    expect(new Set(pending.map((entry) => entry.eventRecordId)).size).toBe(2)
   })
 
   test('an unchanged fresh task records no category event', async () => {
