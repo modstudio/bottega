@@ -119,6 +119,25 @@ test('autonomy shows the resolved release line and user-scope control', () => {
   expect(html).toContain('release autonomy')
 })
 
+test('a machine override shows only on the row that has one', () => {
+  seedBase()
+  const absent = render()
+  expect(absent).toContain('Override on this machine')
+  expect(absent).not.toContain('review on this machine')
+
+  const options = trpc.context.autonomy.get.queryOptions({ project: 'alpha' })
+  const seeded = queryClient.getQueryData(options.queryKey)!
+  if (!seeded.registered) throw new Error('expected a registered project')
+  queryClient.setQueryData(options.queryKey, {
+    ...seeded,
+    stages: seeded.stages.map((stage) => ({ ...stage, machineValue: 'ask' as const })),
+  } as typeof seeded)
+  const present = render()
+  expect(present).toContain('review on this machine')
+  expect(present).not.toContain('release on this machine')
+  expect(present).not.toContain('rulings on this machine')
+})
+
 test('user canon shows the signed-in refusal instead of an empty state', () => {
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
