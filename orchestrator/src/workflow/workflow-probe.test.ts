@@ -34,7 +34,7 @@ test('records command, cwd, commit, exit and a bounded tail', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'ok\n' }),
   })
-  expect(result).toEqual({ id: 1, withheld: false })
+  expect(result).toEqual({ id: 1, withheld: false, exitCode: 0, signal: null })
   expect(
     d.query('SELECT command,cwd,head_commit,exit_code,output_tail,withheld FROM probe').get(),
   ).toEqual({
@@ -137,7 +137,7 @@ test('exec records an architect command with its kind and session', async () => 
       commit: 'abc',
       runner: () => ({ exitCode: 0, output: 'ok\n' }),
     })
-    expect(result).toEqual({ id: 1, withheld: false, exitCode: 0 })
+    expect(result).toEqual({ id: 1, withheld: false, exitCode: 0, signal: null })
     expect(d.query('SELECT kind,session_id,exit_code FROM probe').get()).toEqual({
       kind: 'exec',
       session_id: 'architect-session',
@@ -239,6 +239,32 @@ test('exec refuses a checkout outside a registered project', async () => {
         registeredProject: false,
       }),
     ).rejects.toThrow('no registered project contains /outside/project')
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec reports a command that could not start without recording a row', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+
+    await expect(
+      recordWorkflowExec(['/command/that/does/not/exist'], {
+        cwd: probeRepository,
+        d,
+        commit: 'abc',
+        write: () => {},
+      }),
+    ).rejects.toThrow('command could not be started:')
+
+    expect(d.query('SELECT count(*) AS n FROM probe').get()).toEqual({ n: 0 })
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH
     else process.env.ORCH_DEPTH = priorDepth

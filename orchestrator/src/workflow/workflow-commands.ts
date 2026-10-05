@@ -1,6 +1,7 @@
 // concern: workflows
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
 import { readFileSync } from 'node:fs'
+import { constants } from 'node:os'
 import { resolve } from 'node:path'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
@@ -33,7 +34,7 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
-import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import { type ProbeRecord, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -52,8 +53,14 @@ import {
   workflowVersions,
 } from './workflows.ts'
 
-type Presentation = { log(value: string): void; setExitCode(code: number): void }
+type Presentation = {
+  log(value: string): void
+  error(value: string): void
+  setExitCode(code: number): void
+}
 type WorkflowCommandOptions = { cwd?: string; json?: boolean }
+type ProbePrintRecord = Pick<ProbeRecord, 'id' | 'withheld'>
+export type CommandOutcome = { exitCode: number; errorLine?: string }
 const positive = (value: string | undefined, label: string): number | undefined => {
   if (value === undefined) return undefined
   const n = Number(value)
@@ -94,7 +101,7 @@ export async function workflowCommand(
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
   else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
   else if (sub === 'step') await stepCommand(argv, print)
-  else if (await cursorCommand(sub, argv, print, options)) return
+  else if (await cursorCommand(sub, argv, print, presentation, options)) return
   else if (sub === 'hydrate') hydrateCommand(argv, presentation)
   else if (sub === 'import') importCommand(argv, print)
   else
@@ -107,6 +114,7 @@ async function cursorCommand(
   sub: string | undefined,
   argv: string[],
   print: (value: unknown, line?: string) => void,
+  presentation: Presentation,
   options: WorkflowCommandOptions,
 ): Promise<boolean> {
   if (sub === 'next') nextCommand(argv, print)
@@ -114,8 +122,8 @@ async function cursorCommand(
   else if (sub === 'rule') ruleCommand(argv, print)
   else if (sub === 'abandon') abandonCommand(argv, print)
   else if (sub === 'cursors') cursorsCommand(argv, print)
-  else if (sub === 'probe') await probeCommand(argv, print, options.cwd)
-  else if (sub === 'exec') await execCommand(argv, print, options.cwd)
+  else if (sub === 'probe') await probeCommand(argv, print, presentation, options)
+  else if (sub === 'exec') await execCommand(argv, print, presentation, options)
   else return false
   return true
 }
@@ -123,7 +131,8 @@ async function cursorCommand(
 async function execCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
-  cwd = process.cwd(),
+  presentation: Presentation,
+  options: WorkflowCommandOptions,
 ): Promise<void> {
   if (argv[2] !== '--')
     throw new Error(
@@ -131,27 +140,56 @@ async function execCommand(
     )
   const command = argv.slice(3)
   if (!command.length) throw new Error('orch workflow exec needs a command after --')
-  cwd = resolve(process.cwd(), cwd)
+  const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
   )
-  const result = await recordWorkflowExec(command, { cwd, registeredProject })
+  const result = await recordWorkflowExec(command, {
+    cwd,
+    registeredProject,
+  })
   print(result, String(result.id))
+  presentCommandOutcome('exec', result, presentation)
 }
 
 async function probeCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
-  cwd = process.cwd(),
+  presentation: Presentation,
+  options: WorkflowCommandOptions,
 ): Promise<void> {
   if (argv[2] !== '--')
     throw new Error(
       'orch workflow probe requires -- before the child command; use orch workflow probe [--cwd <dir>] -- <command…>',
     )
   const command = argv.slice(3)
-  cwd = resolve(process.cwd(), cwd)
+  const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
   const result = await recordWorkflowProbe(command, { cwd })
-  print({ id: result.id, withheld: result.withheld }, String(result.id))
+  print(probePrintRecord(result), String(result.id))
+  presentCommandOutcome('probe', result, presentation)
+}
+
+function probePrintRecord(result: ProbeRecord): ProbePrintRecord {
+  return { id: result.id, withheld: result.withheld }
+}
+
+export function commandOutcome(verb: 'exec' | 'probe', result: ProbeRecord): CommandOutcome {
+  if (result.signal)
+    return {
+      exitCode: 128 + constants.signals[result.signal],
+      errorLine: `orch workflow ${verb}: command was killed by ${result.signal}`,
+    }
+  return { exitCode: result.exitCode }
+}
+
+function presentCommandOutcome(
+  verb: 'exec' | 'probe',
+  result: ProbeRecord,
+  presentation: Presentation,
+): void {
+  const outcome = commandOutcome(verb, result)
+  if (outcome.errorLine) presentation.error(outcome.errorLine)
+  presentation.setExitCode(outcome.exitCode)
 }
 
 function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {

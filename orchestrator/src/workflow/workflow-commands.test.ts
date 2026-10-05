@@ -3,12 +3,14 @@ import { program } from '../cli/program.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { workflowCommand } from './workflow-commands.ts'
+import { commandOutcome, workflowCommand } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from './workflows.ts'
 
 const presentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),
+  error: () => {},
   setExitCode: () => {},
 })
 
@@ -68,6 +70,7 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
     ['workflow', 'step', 'mode-less-step', step.slug, '--project', 'mode-less-step'],
     {
       log: (line) => lines.push(line),
+      error: () => {},
       setExitCode: () => {},
     },
   )
@@ -224,6 +227,72 @@ test('workflow exec keeps its cwd option out of the child argv', async () => {
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
+})
+
+test('workflow exec service returns each child exit code after recording its row', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    upsertProject({
+      name: 'workflow-exec-status',
+      path: process.cwd(),
+      stack: 'bun',
+      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    })
+    const passing = await recordWorkflowExec(['passing'], {
+      registeredProject: true,
+      runner: () => ({ exitCode: 0, output: '' }),
+    })
+    const failing = await recordWorkflowExec(['failing'], {
+      registeredProject: true,
+      runner: () => ({ exitCode: 7, output: '' }),
+    })
+
+    expect(passing.exitCode).toBe(0)
+    expect(failing.exitCode).toBe(7)
+    expect(
+      db()
+        .query("SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 2")
+        .all()
+        .reverse(),
+    ).toEqual([
+      { command: '["passing"]', exit_code: 0 },
+      { command: '["failing"]', exit_code: 7 },
+    ])
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('command outcome maps a signal to its shell status and error line', () => {
+  expect(
+    commandOutcome('exec', { id: 1, withheld: false, exitCode: -1, signal: 'SIGTERM' }),
+  ).toEqual({
+    exitCode: 143,
+    errorLine: 'orch workflow exec: command was killed by SIGTERM',
+  })
+})
+
+test('workflow probe service returns the recorded child exit code', async () => {
+  upsertProject({
+    name: 'workflow-probe-status',
+    path: process.cwd(),
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+  const result = await recordWorkflowProbe(['failing'], {
+    runner: () => ({ exitCode: 9, output: '' }),
+  })
+
+  expect(commandOutcome('probe', result)).toEqual({ exitCode: 9 })
+  expect(
+    db().query("SELECT exit_code FROM probe WHERE kind='probe' ORDER BY id DESC LIMIT 1").get(),
+  ).toEqual({ exit_code: 9 })
 })
 
 test('next resolves an omitted mode to the composed cursor default', async () => {
