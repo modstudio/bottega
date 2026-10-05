@@ -88,31 +88,39 @@ async function localAutonomy(project: string) {
       userPreset?: AutonomyPreset | null
     }
   }
-  const machineValue = (key: string) => machineEntries.find((entry) => entry.key === key)?.value
+  const machineValue = <Value extends string>(
+    key: z.infer<typeof machineKey>,
+    values: readonly Value[],
+  ): Value | undefined => {
+    const value = machineEntries.find((entry) => entry.key === autonomyMachineKey(key))?.value
+    return values.includes(value as Value) ? (value as Value) : undefined
+  }
   const stages: Array<
-    (typeof resolved.stages)[number] & { overridden?: boolean | null; machineValue?: string }
-  > = resolved.stages.map((stage) => ({
-    ...stage,
-    ...(machineValue(`autonomy.stage.${stage.stage}`) !== undefined
-      ? { machineValue: machineValue(`autonomy.stage.${stage.stage}`) }
-      : {}),
-    overridden: configWarning
-      ? null
-      : user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
-  }))
+    (typeof resolved.stages)[number] & {
+      overridden?: boolean | null
+      machineValue?: (typeof AUTONOMY_VALUES)[number]
+    }
+  > = resolved.stages.map((stage) => {
+    const value = machineValue({ kind: 'stage', stage: stage.stage }, AUTONOMY_VALUES)
+    return {
+      ...stage,
+      ...(value !== undefined ? { machineValue: value } : {}),
+      overridden: configWarning
+        ? null
+        : user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
+    }
+  })
+  const rulingsMachineValue = machineValue({ kind: 'rulings' }, ['agent', 'user'] as const)
+  const releaseMachineValue = machineValue({ kind: 'release' }, RELEASE_AUTONOMY_VALUES)
   return {
     ...resolved,
     rulings: {
       ...resolved.rulings,
-      ...(machineValue('autonomy.rulings') !== undefined
-        ? { machineValue: machineValue('autonomy.rulings') }
-        : {}),
+      ...(rulingsMachineValue !== undefined ? { machineValue: rulingsMachineValue } : {}),
     },
     release: {
       ...resolved.release,
-      ...(machineValue('autonomy.release') !== undefined
-        ? { machineValue: machineValue('autonomy.release') }
-        : {}),
+      ...(releaseMachineValue !== undefined ? { machineValue: releaseMachineValue } : {}),
     },
     userPreset,
     stages,
@@ -120,8 +128,10 @@ async function localAutonomy(project: string) {
   } as Omit<typeof resolved, 'stages' | 'rulings' | 'release'> & {
     userPreset?: AutonomyPreset | null
     stages: typeof stages
-    rulings: typeof resolved.rulings & { machineValue?: string }
-    release: typeof resolved.release & { machineValue?: string }
+    rulings: typeof resolved.rulings & { machineValue?: 'agent' | 'user' }
+    release: typeof resolved.release & {
+      machineValue?: (typeof RELEASE_AUTONOMY_VALUES)[number]
+    }
   }
 }
 

@@ -24,7 +24,7 @@ import {
   decodeRunsJson,
   docArgv,
   fileRulingArgv,
-  MachineConfigEntrySchema,
+  MachineAutonomyEntrySchema,
   MachinePermissionOverlaySchema,
   MachinePermissionResultSchema,
   machineConfigArgv,
@@ -60,7 +60,7 @@ test('machine bridge schemas parse the CLI output shapes', () => {
     drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
   })
   expect(
-    MachineConfigEntrySchema.parse({
+    MachineAutonomyEntrySchema.parse({
       key: 'autonomy.stage.review',
       value: 'auto',
       scope: 'local user',

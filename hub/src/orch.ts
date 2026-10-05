@@ -21,6 +21,11 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { DOC_SCOPES, type DocScope, type FilingDocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
+import type {
+  MachineAutonomyEntry,
+  MachinePermissionOperation,
+  MachinePermissionOverlay,
+} from '../../shared/machine-config.ts'
 import {
   type AnswerWaitingResult,
   AnswerWaitingResultSchema,
@@ -49,6 +54,10 @@ import {
 } from '../../shared/orch-contract.ts'
 import { RELEASE_AUTONOMY_VALUES } from '../../shared/release-autonomy.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../shared/settings-summary.ts'
 
 export type {
   OperatorWaitingItem,
@@ -548,22 +557,22 @@ const ConfigEntrySchema = z.object({
   updatedAt: z.string(),
 })
 
-export const MachineConfigEntrySchema = z.object({
+export const MachineAutonomyEntrySchema = z.object({
   key: z.string(),
   value: z.string(),
   scope: z.literal('local user'),
-})
+}) satisfies z.ZodType<MachineAutonomyEntry>
 
-const PermissionListsSchema = z.object({
-  allow: z.array(z.string()),
-  ask: z.array(z.string()),
-  deny: z.array(z.string()),
-})
+const PermissionListsSchema = z.object(
+  Object.fromEntries(
+    SETTINGS_PERMISSION_LISTS.map((list) => [list, z.array(z.string())]),
+  ) as Record<SettingsPermissionList, z.ZodArray<z.ZodString>>,
+)
 
 export const MachinePermissionOverlaySchema = z.object({
   additions: PermissionListsSchema,
   drop: PermissionListsSchema,
-})
+}) satisfies z.ZodType<MachinePermissionOverlay>
 
 const ContextSchema = z.discriminatedUnion('registered', [
   z.object({ registered: z.literal(false), warnings: z.array(z.string()).optional() }),
@@ -741,9 +750,9 @@ export const configDelete = (key: string, expectedRowVersion?: number) =>
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const machineConfigList = () =>
-  json(machineConfigArgv('list'), z.array(MachineConfigEntrySchema))
+  json(machineConfigArgv('list'), z.array(MachineAutonomyEntrySchema))
 export const machineConfigSet = (key: string, value: string) =>
-  json(machineConfigArgv('set', key, value), MachineConfigEntrySchema, {
+  json(machineConfigArgv('set', key, value), MachineAutonomyEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const machineConfigDelete = (key: string) =>
@@ -785,8 +794,8 @@ export type SettingsPermissionInput = {
 }
 
 export type MachinePermissionInput = {
-  operation: 'add' | 'remove' | 'drop' | 'undrop'
-  list: 'allow' | 'ask' | 'deny'
+  operation: MachinePermissionOperation
+  list: SettingsPermissionList
   rule: string
 }
 

@@ -781,6 +781,16 @@ describe('managed context', () => {
     expect(read.registered && read.rulings.machineValue).toBe('agent')
 
     machineConfigList.mockResolvedValueOnce([
+      { key: 'autonomy.stage.review', value: 'invalid-stage', scope: 'local user' },
+      { key: 'autonomy.release', value: 'invalid-release', scope: 'local user' },
+      { key: 'autonomy.rulings', value: 'invalid-rulings', scope: 'local user' },
+    ])
+    const invalidRead = await caller.context.autonomy.get({ project: 'alpha' })
+    expect(invalidRead.registered && invalidRead.stages[0]?.machineValue).toBeUndefined()
+    expect(invalidRead.registered && invalidRead.release.machineValue).toBeUndefined()
+    expect(invalidRead.registered && invalidRead.rulings.machineValue).toBeUndefined()
+
+    machineConfigList.mockResolvedValueOnce([
       { key: 'autonomy.stage.review', value: 'review', scope: 'local user' },
     ])
     await caller.context.autonomy.setMachine({
