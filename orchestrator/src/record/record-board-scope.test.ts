@@ -112,4 +112,4 @@ test('hosted uuid lists decode Postgres array literals the JS array check misses
       { ...empty, scopeProjectIds: [id] },
     ),
   ).toBeTrue()
-}))
+})

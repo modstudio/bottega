@@ -8,7 +8,7 @@ import {
   RecordBoardError,
 } from './record-board-contract.ts'
 import { hostedBoardMessageView } from './record-board-messages.ts'
-import { boardUuidArray, type BoardTenant, withBoardTenant } from './record-board-tx.ts'
+import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 

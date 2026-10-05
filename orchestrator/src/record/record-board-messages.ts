@@ -46,8 +46,8 @@ import {
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
 import {
-  boardUuidArray,
   type BoardTenant,
+  boardUuidArray,
   isUniqueViolation,
   withBoardTenant,
 } from './record-board-tx.ts'
@@ -286,7 +286,8 @@ async function insertRoot(
   }
   const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
   const derived = forcedScope ?? hostedBoardScope(audience, projectId)
-  const recipients = forcedScope?.recipientUserIds ?? input.recipientUserIds ?? derived.recipientUserIds
+  const recipients =
+    forcedScope?.recipientUserIds ?? input.recipientUserIds ?? derived.recipientUserIds
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
   await tx`
@@ -505,6 +506,52 @@ function liveRoot(row: Record<string, unknown>, clock: number): boolean {
   )
 }
 
+async function loadThreadRoot(
+  tx: SQL,
+  id: string,
+): Promise<{ row: Record<string, unknown>; tags: BoardTag[] } | null> {
+  const loaded = await loadHostedBoardMessage(tx, id)
+  if (!loaded) return null
+  if (String(loaded.row.kind) !== 'reply') return loaded
+  return loadHostedBoardMessage(tx, String(loaded.row.thread_root_id))
+}
+
+async function insertReplyCopyingRoot(
+  tx: SQL,
+  input: BoardTenant & HostedBoardReplyInput & { rootId: string },
+  session: string | null,
+  rootId: string,
+  requested: HostedBoardCreateContent,
+  createdAt: string,
+  clock: number,
+): Promise<HostedBoardMessage> {
+  try {
+    const inserted = await tx`
+      INSERT INTO board_message (
+        id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
+        kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
+        created_at, claim_id, scope_project_ids, recipient_user_ids
+      )
+      SELECT
+        ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
+        ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
+        'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
+        ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids
+      FROM board_message AS root
+      WHERE root.id = ${rootId}::uuid
+      RETURNING id
+    `
+    if (!inserted[0]) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
+  } catch (error) {
+    if (isUniqueViolation(error, 'board_message_pkey')) {
+      const again = await existingOrConflict(tx, input.id, requested)
+      if (again) return again
+    }
+    throw error
+  }
+  return viewById(tx, input.id, clock)
+}
+
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
 ): Promise<HostedBoardMessage> {
@@ -530,12 +577,7 @@ export async function replyHostedBoardMessage(
   return withBoardTenant(input, true, async (tx) => {
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
-    const root = await loadHostedBoardMessage(tx, input.rootId)
-    if (!root) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
-    const rootRow =
-      root.row.kind === 'reply'
-        ? await loadHostedBoardMessage(tx, String(root.row.thread_root_id))
-        : root
+    const rootRow = await loadThreadRoot(tx, input.rootId)
     if (!rootRow) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
     const audienceKind = rootRow.row.audience
       ? parseHostedAudience(String(rootRow.row.audience)).kind
@@ -570,32 +612,15 @@ export async function replyHostedBoardMessage(
     if (decision === 'drop-duplicate' && duplicate[0])
       return viewById(tx, String(duplicate[0].id), clock)
     if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
-    const createdAt = new Date(clock).toISOString()
-    try {
-      const inserted = await tx`
-        INSERT INTO board_message (
-          id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
-          kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
-          created_at, claim_id, scope_project_ids, recipient_user_ids
-        )
-        SELECT
-          ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
-          ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
-          'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
-          ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids
-        FROM board_message AS root
-        WHERE root.id = ${String(rootRow.row.id)}::uuid
-        RETURNING id
-      `
-      if (!inserted[0]) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
-    } catch (error) {
-      if (isUniqueViolation(error, 'board_message_pkey')) {
-        const again = await existingOrConflict(tx, input.id, requested)
-        if (again) return again
-      }
-      throw error
-    }
-    return viewById(tx, input.id, clock)
+    return insertReplyCopyingRoot(
+      tx,
+      input,
+      session,
+      String(rootRow.row.id),
+      requested,
+      new Date(clock).toISOString(),
+      clock,
+    )
   })
 }
 
