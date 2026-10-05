@@ -548,7 +548,7 @@ const ConfigEntrySchema = z.object({
   updatedAt: z.string(),
 })
 
-const MachineConfigEntrySchema = z.object({
+export const MachineConfigEntrySchema = z.object({
   key: z.string(),
   value: z.string(),
   scope: z.literal('local user'),
@@ -560,7 +560,7 @@ const PermissionListsSchema = z.object({
   deny: z.array(z.string()),
 })
 
-const MachinePermissionOverlaySchema = z.object({
+export const MachinePermissionOverlaySchema = z.object({
   additions: PermissionListsSchema,
   drop: PermissionListsSchema,
 })
@@ -769,6 +769,12 @@ const SettingsPermissionResultSchema = z.object({
   message: z.string().optional(),
 })
 
+export const MachinePermissionResultSchema = z.object({
+  changed: z.boolean(),
+  counts: z.object({ allow: z.number(), ask: z.number(), deny: z.number() }),
+  message: z.string(),
+})
+
 export type SettingsPermissionInput = {
   target: { user: true } | { project: string }
   operation: 'add' | 'remove'
@@ -793,7 +799,7 @@ export const machinePermissions = () =>
   json(machinePermissionListArgv(), MachinePermissionOverlaySchema)
 
 export const machinePermission = (input: MachinePermissionInput) =>
-  json(machinePermissionArgv(input), SettingsPermissionResultSchema, {
+  json(machinePermissionArgv(input), MachinePermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 

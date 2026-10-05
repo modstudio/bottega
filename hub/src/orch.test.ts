@@ -24,6 +24,9 @@ import {
   decodeRunsJson,
   docArgv,
   fileRulingArgv,
+  MachineConfigEntrySchema,
+  MachinePermissionOverlaySchema,
+  MachinePermissionResultSchema,
   machineConfigArgv,
   machinePermissionArgv,
   machinePermissionListArgv,
@@ -34,6 +37,40 @@ import {
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('machine bridge schemas parse the CLI output shapes', () => {
+  expect(
+    MachinePermissionResultSchema.parse({
+      changed: true,
+      counts: { allow: 1, ask: 2, deny: 3 },
+      message: 'updated machine permissions',
+    }),
+  ).toEqual({
+    changed: true,
+    counts: { allow: 1, ask: 2, deny: 3 },
+    message: 'updated machine permissions',
+  })
+  expect(
+    MachinePermissionOverlaySchema.parse({
+      additions: { allow: ['Bash(orch *)'], ask: [], deny: [] },
+      drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
+    }),
+  ).toEqual({
+    additions: { allow: ['Bash(orch *)'], ask: [], deny: [] },
+    drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
+  })
+  expect(
+    MachineConfigEntrySchema.parse({
+      key: 'autonomy.stage.review',
+      value: 'auto',
+      scope: 'local user',
+    }),
+  ).toEqual({
+    key: 'autonomy.stage.review',
+    value: 'auto',
+    scope: 'local user',
+  })
+})
 
 test('managed context wrappers build exact argv', () => {
   expect(contextArgv('/work/project')).toEqual(['context', '--cwd', '/work/project', '--json'])
