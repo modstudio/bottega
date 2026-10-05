@@ -71,8 +71,8 @@ type HubTaskRead = {
   key: string
   status: string | null
   statusCategory: string | null
-  commentIds: string[]
-  commentsVerifiable: boolean
+  commentIds: Array<string | number>
+  commentsVerifiable?: boolean
 }
 
 export type FloorEvidencePorts = {
@@ -135,7 +135,7 @@ export function hubTaskReadRefusal(
 }
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
-  readTask: readHubTask,
+  readTask: (key) => readHubTask(key),
   runHasArtifacts: runHasRecordedArtifacts,
   viewPullRequest: (project, number) => {
     const row = projectByName(project)
@@ -550,11 +550,11 @@ function resolveArtifact(
     throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
   const task = readTask(ref.key, { fresh: true })
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
-  if (!task.commentsVerifiable)
+  if (task.commentsVerifiable === false)
     throw new Error(
       `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
     )
-  if (!task.commentIds.includes(ref.id))
+  if (!task.commentIds.map(String).includes(ref.id))
     throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
   return { ref: raw, exists: true }
 }

@@ -43,19 +43,25 @@ const dependencies = (lookup: TrackerSource['lookup']) => ({
 
 describe('fresh tracker task read', () => {
   test('upserts a task returned by the registered source lookup', async () => {
-    let upserted: TrackerTask | null = null
+    const upserted: TrackerTask[] = []
     const result = await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
       upsert: (value) => {
-        upserted = value
+        upserted.push(value)
       },
     })
-    expect(upserted).toEqual(task)
+    expect(upserted).toEqual([task])
     expect(result).toEqual({ trackerRead: true, commentsVerifiable: false })
   })
 
   test('refuses when the source lookup does not find the task', async () => {
-    await expect(refreshTrackerTask('FIX-404', undefined, dependencies(async () => null))).rejects.toThrow(
+    await expect(
+      refreshTrackerTask(
+        'FIX-404',
+        undefined,
+        dependencies(async () => null),
+      ),
+    ).rejects.toThrow(
       "task FIX-404 was not found in project fixture's tracker by its single-task lookup",
     )
   })

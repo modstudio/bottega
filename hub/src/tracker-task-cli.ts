@@ -1,12 +1,8 @@
-import {
-  trackerSourceFor,
-  type ToolCaller,
-  type TrackerSource,
-} from '../../shared/trackers.ts'
+import { type ToolCaller, type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
+import { upsertTrackerTask } from './ingest/trackers.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { DuplicateTaskError, duplicateCandidates, listTasks } from './task.ts'
-import { upsertTrackerTask } from './ingest/trackers.ts'
 import {
   createAdvertisedTrackerTaskKey,
   taskCreationDestination,
@@ -63,11 +59,7 @@ export async function refreshTrackerTask(
   projectName?: string,
   dependencies: FreshTaskDependencies = {},
 ): Promise<FreshTaskResult> {
-  const project = projectForTask(
-    key,
-    projectName,
-    (dependencies.registeredProjects ?? projects)(),
-  )
+  const project = projectForTask(key, projectName, (dependencies.registeredProjects ?? projects)())
   const source = (dependencies.sourceFor ?? trackerSourceFor)(project)
   if (!source) return { trackerRead: false, commentsVerifiable: true }
   if (!source.lookup)
@@ -75,15 +67,11 @@ export async function refreshTrackerTask(
 
   const resolved = await (dependencies.readCredentials ?? credentials)(source.env)
   if (!resolved) throw new Error(`credentials for ${project.name} tracker do not resolve`)
-  const connect =
-    dependencies.connect ??
-    (async (url: string, token: string) => {
-      const client = new Mcp(url, token)
-      await client.initialize()
-      return client
-    })
-  const client = await connect(resolved.url, resolved.token)
+  const client = dependencies.connect
+    ? await dependencies.connect(resolved.url, resolved.token)
+    : new Mcp(resolved.url, resolved.token)
   try {
+    if (!dependencies.connect) await (client as Mcp).initialize()
     const task = await source.lookup(client, key.toUpperCase())
     if (!task)
       throw new Error(

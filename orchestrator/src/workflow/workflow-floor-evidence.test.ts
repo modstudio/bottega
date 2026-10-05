@@ -470,8 +470,7 @@ test('a foreign task comment is refused and a matching comment is allowed', () =
     exists: true,
   })
   expect(
-    gather(d, { artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556' })
-      .artifact,
+    gather(d, { artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556' }).artifact,
   ).toEqual({
     ref: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
     exists: true,
