@@ -381,6 +381,7 @@ test('a hosted-read failure combines live local layers with cached hosted layers
     `${Buffer.from(name).toString('base64url')}.json`,
   )
   const oldCache = JSON.parse(readFileSync(cacheFile, 'utf8'))
+  expect(oldCache.hosted.space).toEqual({ 'ship-to': 'branch' })
   oldCache.hosted.space = { release: 'push' }
   writeFileSync(cacheFile, `${JSON.stringify(oldCache)}\n`)
 
@@ -472,7 +473,7 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
   expect(degraded.text).toStartWith(`Autonomy for ${name}, resolved now from ${PLATFORM_NAME}`)
 })
 
-test('an earlier-shape cache without hosted inputs is ignored', async () => {
+test('a cache carrying the internal shipTo shape is ignored', async () => {
   const name = 'session-context-ignores-old-cache'
   const path = repository(name)
   upsertProject({
@@ -494,7 +495,7 @@ test('an earlier-shape cache without hosted inputs is ignored', async () => {
     `${Buffer.from(name).toString('base64url')}.json`,
   )
   const earlier = JSON.parse(readFileSync(cache, 'utf8')) as Record<string, unknown>
-  delete earlier.hosted
+  earlier.hosted = { user: { shipTo: 'branch' }, space: {} }
   writeFileSync(cache, `${JSON.stringify(earlier)}\n`)
 
   const slice = await contextJson(path, {

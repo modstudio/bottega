@@ -186,26 +186,26 @@ describe('hosted context router', () => {
     expect(result.mode).toBe('hosted')
     expect(result.stages).toContain('review')
     expect(result.user.stages.review).toEqual({ value: 'auto', rowVersion: 3 })
-    expect(result.space.shipTo).toEqual({ value: 'trunk', rowVersion: 2 })
+    expect(result.space.shipTo).toEqual({ value: 'trunk', rowVersion: null })
   })
 
   test('autonomy.get gives the stored ship-to key precedence over its release alias', async () => {
     const client = fakeClient()
     client.configEntries = mock(async () => [
       {
-        key: 'autonomy.release',
-        environment: 'default',
-        scope: 'user' as const,
-        value: 'promote',
-        rowVersion: 2,
-        updatedAt: at,
-      },
-      {
         key: 'autonomy.ship-to',
         environment: 'default',
         scope: 'user' as const,
         value: 'trunk',
         rowVersion: 3,
+        updatedAt: at,
+      },
+      {
+        key: 'autonomy.release',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'promote',
+        rowVersion: 2,
         updatedAt: at,
       },
     ])
@@ -241,6 +241,31 @@ describe('hosted context router', () => {
       scope: 'user',
       value: 'production',
       expectedRowVersion: null,
+    })
+  })
+
+  test('autonomy.setShipTo succeeds from an alias-only leaf and removes that row', async () => {
+    const client = fakeClient()
+    client.configEntries = mock(async () => [
+      {
+        key: 'autonomy.release',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'land',
+        rowVersion: 7,
+        updatedAt: at,
+      },
+    ])
+    const current = await caller(client).autonomy.get({ project: 'alpha' })
+    expect(current.user.shipTo).toEqual({ value: 'trunk', rowVersion: null })
+    await caller(client).autonomy.setShipTo({
+      project: 'alpha',
+      value: 'production',
+      expectedRowVersion: current.user.shipTo?.rowVersion ?? null,
+    })
+    expect(client.deleteConfigEntry).toHaveBeenCalledWith('autonomy.release', {
+      scope: 'user',
+      expectedRowVersion: 7,
     })
   })
 

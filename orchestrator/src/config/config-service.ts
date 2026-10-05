@@ -43,6 +43,12 @@ import {
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import {
+  isShipToConfigKey,
+  SHIP_TO_CONFIG_KEY,
+  STORED_SHIP_TO_CONFIG_ALIAS,
+  storedShipToLevel,
+} from '../../../shared/ship-to.ts'
+import {
   pinTrustedMachine,
   readTrustList,
   type TrustList,
@@ -408,21 +414,33 @@ export async function setEntry(
   expectedRowVersion?: number | null,
   client = configClient(),
 ) {
+  const shipTo = isShipToConfigKey(key)
+  const storedKey = shipTo ? SHIP_TO_CONFIG_KEY : key
+  const storedValue = shipTo ? (storedShipToLevel(value) ?? value) : value
   let version = expectedRowVersion
   if (version === undefined) {
     version = null
     try {
-      version = (await getEntry(key, scope, client)).rowVersion
+      version = (await getEntry(storedKey, scope, client)).rowVersion
     } catch (error) {
       if (!isNotFound(error)) throw error
     }
   }
-  return client.putEntry(key, {
+  const written = await client.putEntry(storedKey, {
     scope,
     environment: HOSTED_CONFIG_ENVIRONMENT,
-    value,
+    value: storedValue,
     expectedRowVersion: version,
   })
+  if (shipTo) {
+    try {
+      const alias = await getEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, client)
+      await deleteEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, alias.rowVersion, client)
+    } catch (error) {
+      if (!isNotFound(error)) throw error
+    }
+  }
+  return written
 }
 
 export async function listEntries(client = configClient()) {
@@ -445,7 +463,7 @@ export async function deleteEntry(
 
 export function setMachineEntry(key: string, value: string) {
   setMachineAutonomy(key, value)
-  const storedKey = key === 'autonomy.release' ? 'autonomy.ship-to' : key
+  const storedKey = isShipToConfigKey(key) ? SHIP_TO_CONFIG_KEY : key
   return listMachineAutonomy().find((row) => row.key === storedKey)!
 }
 

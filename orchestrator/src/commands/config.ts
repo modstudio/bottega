@@ -3,7 +3,12 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import type { ConfigScope } from '../../../shared/config-client.ts'
-import { SHIP_TO_VALUES, storedShipToLevel } from '../../../shared/ship-to.ts'
+import {
+  isShipToConfigKey,
+  SHIP_TO_CONFIG_KEY,
+  SHIP_TO_VALUES,
+  storedShipToLevel,
+} from '../../../shared/ship-to.ts'
 import {
   deleteEntry,
   deleteMachineEntry,
@@ -49,17 +54,13 @@ export function assertConfigWriteAllowed(
       `refusing autonomy config write from an orch worker run; an operator must run orch config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
     )
   }
-  if (
-    value !== undefined &&
-    (key === 'autonomy.ship-to' || key === 'autonomy.release') &&
-    storedShipToLevel(value) === undefined
-  )
+  if (value !== undefined && isShipToConfigKey(key) && storedShipToLevel(value) === undefined)
     throw new Error(`invalid autonomy.ship-to; expected one of ${SHIP_TO_VALUES.join(', ')}`)
 }
 
 function shipToWrite(key: string, value: string): { key: string; value: string } {
-  if (key !== 'autonomy.ship-to' && key !== 'autonomy.release') return { key, value }
-  return { key: 'autonomy.ship-to', value: storedShipToLevel(value) ?? value }
+  if (!isShipToConfigKey(key)) return { key, value }
+  return { key: SHIP_TO_CONFIG_KEY, value: storedShipToLevel(value) ?? value }
 }
 
 export const configGetPresentation = (row: ConfigRow, json: boolean) =>
@@ -173,12 +174,10 @@ export function register(program: Command): void {
       const expected = expectedRowVersion(options.expect)
       if (expected === null)
         throw new Error('delete expected row version must be a positive integer')
-      if (key === 'autonomy.ship-to' || key === 'autonomy.release') {
+      if (isShipToConfigKey(key)) {
         const selectedScope = scope(options)
         const rows = (await listEntries()).filter(
-          (row) =>
-            row.scope === selectedScope &&
-            (row.key === 'autonomy.ship-to' || row.key === 'autonomy.release'),
+          (row) => row.scope === selectedScope && isShipToConfigKey(row.key),
         )
         if (!rows.length) await deleteEntry(key, selectedScope, expected)
         for (const row of rows) {

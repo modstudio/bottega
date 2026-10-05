@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { answerRulingRefusal, combineRulingsSnapshots } from './autonomy.ts'
+import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
   HOSTED_AUTONOMY_TIMEOUT_MS,
   resolveAnswerRulings,
@@ -140,20 +140,22 @@ test('workflow built-in defaults and local workflow overrides resolve every step
 })
 
 test('session ship-to aliases are refused instead of overriding an operator-owned scope', async () => {
-  await expect(
-    resolveProjectAutonomy(
-      'fixture',
-      'fix-defect',
-      'guided',
-      steps,
-      { shipTo: 'production' },
-      () => {
-        throw new ConfigClientError('not-configured', '/v1/config')
-      },
-      database(JSON.stringify({ autonomy: { 'ship-to': 'branch' } })),
-      missingConfig,
-    ),
-  ).rejects.toThrow('use orch config set autonomy.ship-to <value>')
+  for (const text of ['ship-to=branch,release=promote', 'release=promote,ship-to=branch']) {
+    await expect(
+      resolveProjectAutonomy(
+        'fixture',
+        'fix-defect',
+        'guided',
+        steps,
+        parseAutonomy(text, 'session'),
+        () => {
+          throw new ConfigClientError('not-configured', '/v1/config')
+        },
+        database(JSON.stringify({ autonomy: { 'ship-to': 'branch' } })),
+        missingConfig,
+      ),
+    ).rejects.toThrow('use orch config set autonomy.ship-to <value>')
+  }
 })
 
 test('an invalid project ship-to falls through without discarding its stage setting', async () => {

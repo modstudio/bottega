@@ -39,7 +39,7 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
-import { validateAutonomySettings } from '../workflow/autonomy.ts'
+import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
   resolveWorktreeLifecycle,
@@ -57,7 +57,12 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
-import type { MainStackConsumer, ProjectSettings, WorktreeTool } from './project-settings.ts'
+import type {
+  MainStackConsumer,
+  ProjectSettings,
+  StoredProjectSettings,
+  WorktreeTool,
+} from './project-settings.ts'
 
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
@@ -88,7 +93,7 @@ export type Project = {
    * be another thing the code has to know about. The shapes that ARE relied on
    * are named in `ProjectSettings`, so the reliance is at least written down.
    */
-  settings: ProjectSettings
+  settings: StoredProjectSettings
 }
 
 export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
@@ -145,7 +150,7 @@ function parse(row: {
   settings: string | null
   retired_at?: string | null
 }): Project {
-  let settings: ProjectSettings = {}
+  let settings: StoredProjectSettings = {}
   try {
     settings = row.settings ? JSON.parse(row.settings) : {}
   } catch {
@@ -259,15 +264,11 @@ export function upsertProject(p: {
 
 function projectSettingsForStorage(
   settings: ProjectSettings | undefined,
-): ProjectSettings | undefined {
+): StoredProjectSettings | undefined {
   if (!settings?.autonomy) return settings
-  const { shipTo, ...autonomy } = validateAutonomySettings(settings.autonomy, 'project')
   return {
     ...settings,
-    autonomy: {
-      ...autonomy,
-      ...(shipTo === undefined ? {} : { 'ship-to': shipTo }),
-    } as ProjectSettings['autonomy'],
+    autonomy: autonomySettingsForStorage(settings.autonomy),
   }
 }
 

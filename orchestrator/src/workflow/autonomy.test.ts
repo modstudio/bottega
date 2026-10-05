@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   answerRulingRefusal,
   parseAutonomy,
+  parseStoredAutonomy,
   resolveAutonomy,
   validateAutonomySettings,
 } from './autonomy.ts'
@@ -56,6 +57,25 @@ describe('autonomy resolution', () => {
         { name: 'project', settings: { release: 'promote', 'ship-to': 'trunk' } },
       ]).shipTo,
     ).toEqual({ value: 'trunk', scope: 'project' })
+  })
+
+  test('stored key=value input resolves both ship-to key orders', () => {
+    expect(parseStoredAutonomy('ship-to=branch,release=promote', 'hosted user')).toEqual({
+      settings: { shipTo: 'branch' },
+    })
+    expect(parseStoredAutonomy('release=promote,ship-to=branch', 'hosted user')).toEqual({
+      settings: { shipTo: 'branch' },
+    })
+  })
+
+  test('an invalid new stored value falls back to the valid alias and warns', () => {
+    const result = resolveAutonomy(steps, [
+      { name: 'project', settings: { release: 'push', 'ship-to': 'automatic' } },
+    ])
+    expect(result.shipTo).toEqual({ value: 'branch', scope: 'project' })
+    expect(result.warnings).toEqual([
+      'warning: ignored invalid autonomy setting at project key ship-to: automatic; expected one of branch, trunk, production',
+    ])
   })
 
   test('scope order and within-scope precedence resolve each step independently', () => {

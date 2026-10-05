@@ -9,7 +9,7 @@ import {
   type AutonomyStage,
   type AutonomyValue,
 } from '../../../shared/autonomy.ts'
-import { SHIP_TO_VALUES, type ShipToValue, storedShipToLevel } from '../../../shared/ship-to.ts'
+import { readStoredShipTo, SHIP_TO_VALUES, type ShipToValue } from '../../../shared/ship-to.ts'
 
 export const autonomyStages = AUTONOMY_STAGES
 export const autonomyValues = AUTONOMY_VALUES
@@ -30,6 +30,13 @@ type WorkflowAutonomySettings = {
 export type AutonomySettings = WorkflowAutonomySettings & {
   shipTo?: ShipTo
   workflows?: Record<string, WorkflowAutonomySettings>
+}
+export type StoredAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
+  'ship-to'?: unknown
+  release?: unknown
+}
+export type WrittenAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
+  'ship-to'?: ShipTo
 }
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
@@ -149,19 +156,14 @@ function validateWorkflows(value: unknown, scope: string): Pick<AutonomySettings
 export function validateAutonomySettings(value: unknown, scope: string): AutonomySettings {
   const settings = validateWorkflowSettings(value, scope)
   if (!object(value)) return settings
-  const storedValue = Object.hasOwn(value, 'ship-to')
-    ? value['ship-to']
-    : Object.hasOwn(value, 'shipTo')
-      ? value.shipTo
-      : value.release
-  const shipTo = storedValue === undefined ? undefined : storedShipToLevel(storedValue)
-  if (storedValue !== undefined && shipTo === undefined)
+  const shipTo = value.shipTo
+  if (shipTo !== undefined && !allowed(shipTo, SHIP_TO_VALUES))
     throw new Error(
-      `invalid autonomy setting at ${scope} key ship-to: ${String(storedValue)}; expected one of ${SHIP_TO_VALUES.join(', ')}`,
+      `invalid autonomy setting at ${scope} key ship-to: ${String(shipTo)}; expected one of ${SHIP_TO_VALUES.join(', ')}`,
     )
   return {
     ...settings,
-    ...(shipTo === undefined ? {} : { shipTo }),
+    ...(shipTo === undefined ? {} : { shipTo: shipTo as ShipTo }),
     ...validateWorkflows(value.workflows, scope),
   }
 }
@@ -171,18 +173,33 @@ export function validateStoredAutonomySettings(
   scope: string,
 ): { settings: AutonomySettings; ignoredShipTo?: unknown } {
   if (object(value)) {
-    const hasNew = Object.hasOwn(value, 'ship-to')
-    const storedValue = hasNew
-      ? value['ship-to']
-      : Object.hasOwn(value, 'shipTo')
-        ? value.shipTo
-        : value.release
-    if (storedValue !== undefined && storedShipToLevel(storedValue) === undefined) {
-      const { release: _release, 'ship-to': _shipTo, shipTo: _internalShipTo, ...rest } = value
-      return { settings: validateAutonomySettings(rest, scope), ignoredShipTo: storedValue }
+    if (Object.hasOwn(value, 'shipTo')) return { settings: validateAutonomySettings(value, scope) }
+    const hasShipTo = Object.hasOwn(value, 'ship-to')
+    const hasRelease = Object.hasOwn(value, 'release')
+    const read = readStoredShipTo(value['ship-to'], value.release, hasShipTo, hasRelease)
+    const { release: _release, 'ship-to': _shipTo, ...rest } = value
+    const settings = validateAutonomySettings(
+      read.level === undefined ? rest : { ...rest, shipTo: read.level },
+      scope,
+    )
+    return {
+      settings,
+      ...(read.invalid === undefined ? {} : { ignoredShipTo: read.invalid }),
     }
   }
   return { settings: validateAutonomySettings(value, scope) }
+}
+
+function ignoredShipToWarning(scope: string, value: unknown): string {
+  return `warning: ignored invalid autonomy setting at ${scope} key ship-to: ${String(value)}; expected one of ${SHIP_TO_VALUES.join(', ')}`
+}
+
+export function autonomySettingsForStorage(
+  settings: AutonomySettings | StoredAutonomySettings,
+): WrittenAutonomySettings {
+  const validated = validateStoredAutonomySettings(settings, 'stored autonomy').settings
+  const { shipTo, ...rest } = validated
+  return { ...rest, ...(shipTo === undefined ? {} : { 'ship-to': shipTo }) }
 }
 
 function resolvedAutonomyValue(
@@ -233,9 +250,7 @@ export function resolveAutonomy(
   const checked = scopes.map((scope) => {
     const { settings, ignoredShipTo } = validateStoredAutonomySettings(scope.settings, scope.name)
     if (ignoredShipTo !== undefined) {
-      warnings.push(
-        `warning: ignored invalid autonomy setting at ${scope.name} key ship-to: ${String(ignoredShipTo)}; expected one of ${SHIP_TO_VALUES.join(', ')}`,
-      )
+      warnings.push(ignoredShipToWarning(scope.name, ignoredShipTo))
     }
     return { name: scope.name, settings }
   })
@@ -328,17 +343,16 @@ function parseWorkflowAutonomySetting(
   return true
 }
 
-function parseAutonomyInput(text: string | undefined, source: string): AutonomySettings {
+function parseAutonomyInput(text: string | undefined, source: string): Record<string, unknown> {
   if (!text?.trim()) return {}
-  const result: AutonomySettings = {}
+  const result: AutonomySettings & { 'ship-to'?: string; release?: string } = {}
   for (const item of text.split(',')) {
     const at = item.indexOf('=')
     if (at < 1) throw new Error(`invalid ${source} autonomy ${JSON.stringify(item)}; use key=value`)
     const key = item.slice(0, at).trim()
     const value = item.slice(at + 1).trim()
     if (key === 'preset' || key === 'rulings') (result as Record<string, unknown>)[key] = value
-    else if (key === 'ship-to') result.shipTo = value as ShipTo
-    else if (key === 'release' && result.shipTo === undefined) result.shipTo = value as ShipTo
+    else if (key === 'ship-to' || key === 'release') result[key] = value
     else if (key.startsWith('stage.')) {
       result.stages ??= {}
       result.stages[key.slice(6) as AutonomyStage] = value as AutonomyValue
@@ -352,17 +366,37 @@ function parseAutonomyInput(text: string | undefined, source: string): AutonomyS
 }
 
 export function parseAutonomy(text: string | undefined, source: string): AutonomySettings {
-  return validateAutonomySettings(parseAutonomyInput(text, source), source)
+  const parsed = parseAutonomyInput(text, source)
+  const read = readStoredShipTo(
+    parsed['ship-to'],
+    parsed.release,
+    Object.hasOwn(parsed, 'ship-to'),
+    Object.hasOwn(parsed, 'release'),
+  )
+  if (read.invalid !== undefined)
+    throw new Error(
+      `invalid autonomy setting at ${source} key ship-to: ${String(read.invalid)}; expected one of ${SHIP_TO_VALUES.join(', ')}`,
+    )
+  const { release: _release, 'ship-to': _shipTo, ...rest } = parsed
+  return validateAutonomySettings(
+    read.level === undefined ? rest : { ...rest, shipTo: read.level },
+    source,
+  )
 }
 
 /** Stored settings are validated scope-by-scope so one bad ship-to value can be ignored. */
-export function parseStoredAutonomy(text: string | undefined, source: string): AutonomySettings {
+export function parseStoredAutonomy(
+  text: string | undefined,
+  source: string,
+): { settings: AutonomySettings; warning?: string } {
   const parsed = parseAutonomyInput(text, source)
-  if (parsed.shipTo !== undefined) {
-    const mapped = storedShipToLevel(parsed.shipTo)
-    if (mapped !== undefined) parsed.shipTo = mapped
+  const validated = validateStoredAutonomySettings(parsed, source)
+  return {
+    settings: validated.settings,
+    ...(validated.ignoredShipTo === undefined
+      ? {}
+      : { warning: ignoredShipToWarning(source, validated.ignoredShipTo) }),
   }
-  return parsed
 }
 
 export function answerRulingRefusal(

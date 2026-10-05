@@ -6,7 +6,7 @@ import {
   AUTONOMY_VALUES,
   type AutonomyPreset,
 } from '../../../../shared/autonomy.ts'
-import { SHIP_TO_VALUES } from '../../../../shared/ship-to.ts'
+import { SHIP_TO_CONFIG_KEY, SHIP_TO_VALUES } from '../../../../shared/ship-to.ts'
 import {
   configDelete,
   configList,
@@ -149,7 +149,7 @@ const machineSet = z.discriminatedUnion('kind', [
 
 function autonomyMachineKey(input: z.infer<typeof machineKey>): string {
   if (input.kind === 'stage') return `autonomy.stage.${input.stage}`
-  return input.kind === 'shipTo' ? 'autonomy.ship-to' : `autonomy.${input.kind}`
+  return input.kind === 'shipTo' ? SHIP_TO_CONFIG_KEY : `autonomy.${input.kind}`
 }
 
 function configConflict(error: unknown): error is TRPCError {
@@ -262,7 +262,7 @@ export const contextRouter = t.router({
       )
       .mutation(async ({ input }) => {
         projectPath(input.project)
-        await fromOrch(() => configSet('autonomy.ship-to', input.value))
+        await fromOrch(() => configSet(SHIP_TO_CONFIG_KEY, input.value))
         return localAutonomy(input.project)
       }),
     setPreset: mutation

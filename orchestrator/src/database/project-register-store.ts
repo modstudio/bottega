@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
-import type { ProjectSettings } from '../project/project-settings.ts'
+import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
 
 export const DEFAULT_LOCAL_PROJECT_NAME = 'tasks'
 const DEFAULT_LOCAL_PROJECT_PREFIX = 'TASK'
@@ -20,7 +20,7 @@ export type ProjectRegisterWrite = {
   path: string
   stack?: string | null
   canon?: boolean
-  settings?: ProjectSettings
+  settings?: ProjectSettings | StoredProjectSettings
 }
 
 /** The one local row writer used by project commands and store bootstrap. */

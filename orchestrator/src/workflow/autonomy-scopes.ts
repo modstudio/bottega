@@ -37,9 +37,21 @@ const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   )
 
 type HostedRead =
-  | { status: 'available'; user: AutonomySettings; space: AutonomySettings }
-  | { status: 'not-configured'; user: AutonomySettings; space: AutonomySettings; reason: string }
-  | { status: 'unavailable'; user: AutonomySettings; space: AutonomySettings; reason: string }
+  | { status: 'available'; user: AutonomySettings; space: AutonomySettings; warnings: string[] }
+  | {
+      status: 'not-configured'
+      user: AutonomySettings
+      space: AutonomySettings
+      reason: string
+      warnings: string[]
+    }
+  | {
+      status: 'unavailable'
+      user: AutonomySettings
+      space: AutonomySettings
+      reason: string
+      warnings: string[]
+    }
 
 async function readHosted(
   clientFactory: (signal: AbortSignal) => ConfigClient,
@@ -50,19 +62,24 @@ async function readHosted(
     rows = await clientFactory(AbortSignal.timeout(timeoutMs)).listEntries()
   } catch (error) {
     if (error instanceof ConfigClientError && error.reason === 'not-configured')
-      return { status: 'not-configured', user: {}, space: {}, reason: error.message }
+      return { status: 'not-configured', user: {}, space: {}, reason: error.message, warnings: [] }
     const reason =
       error instanceof DOMException && error.name === 'TimeoutError'
         ? `timed out after ${timeoutMs} ms`
         : error instanceof Error
           ? error.message
           : String(error)
-    return { status: 'unavailable', user: {}, space: {}, reason }
+    return { status: 'unavailable', user: {}, space: {}, reason, warnings: [] }
   }
+  const user = hostedSettings(rows, 'user')
+  const space = hostedSettings(rows, 'space')
   return {
     status: 'available',
-    user: hostedSettings(rows, 'user'),
-    space: hostedSettings(rows, 'space'),
+    user: user.settings,
+    space: space.settings,
+    warnings: [user.warning, space.warning].filter((warning): warning is string =>
+      Boolean(warning),
+    ),
   }
 }
 
@@ -93,7 +110,7 @@ export async function resolveProjectAutonomy(
     hosted.status === 'unavailable' && hostedFallback
       ? hostedFallback
       : { user: hosted.user, space: hosted.space }
-  const resolution = resolveAutonomy(
+  const resolved = resolveAutonomy(
     steps,
     [
       { name: 'session', settings: session },
@@ -107,6 +124,11 @@ export async function resolveProjectAutonomy(
     workflow,
     stages,
   )
+  const warnings = [...(resolved.warnings ?? []), ...hosted.warnings]
+  const resolution = {
+    ...resolved,
+    ...(warnings.length ? { warnings } : {}),
+  }
   if (hosted.status === 'available')
     return {
       ...resolution,

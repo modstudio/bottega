@@ -14,7 +14,12 @@ import { AUTONOMY_PRESETS, AUTONOMY_STAGES, AUTONOMY_VALUES } from './autonomy.t
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
-import { storedShipToLevel } from './ship-to.ts'
+import {
+  isShipToConfigKey,
+  readStoredShipTo,
+  SHIP_TO_CONFIG_KEY,
+  storedShipToLevel,
+} from './ship-to.ts'
 
 type MachineConfigEntry = {
   environment?: string
@@ -426,7 +431,10 @@ function autonomyPath(key: string): string[] {
 
 function autonomyEntryKind(key: string): 'preset' | 'rulings' | 'ship-to' | 'value' {
   const path = autonomyPath(key)
-  if (path.length === 1 && ['preset', 'rulings', 'ship-to', 'release'].includes(path[0]!))
+  if (
+    path.length === 1 &&
+    (['preset', 'rulings'].includes(path[0]!) || isShipToConfigKey(`autonomy.${path[0]}`))
+  )
     return path[0] === 'release' ? 'ship-to' : (path[0] as 'preset' | 'rulings' | 'ship-to')
   if (
     path.length === 2 &&
@@ -464,9 +472,9 @@ export function setMachineAutonomy(
   env: ConfigEnvironment = process.env,
 ): void {
   validateAutonomyEntry(key, value)
-  const alias = key === 'autonomy.release'
-  const path = autonomyPath(alias ? 'autonomy.ship-to' : key)
-  const storedValue = alias || key === 'autonomy.ship-to' ? storedShipToLevel(value)! : value
+  const shipTo = isShipToConfigKey(key)
+  const path = autonomyPath(shipTo ? SHIP_TO_CONFIG_KEY : key)
+  const storedValue = shipTo ? storedShipToLevel(value)! : value
   atomicPatch((root) => {
     if (root.autonomy === undefined) root.autonomy = {}
     let table = root.autonomy as Record<string, unknown>
@@ -481,8 +489,8 @@ export function setMachineAutonomy(
 
 export function deleteMachineAutonomy(key: string, env: ConfigEnvironment = process.env): void {
   autonomyEntryKind(key)
-  const shipTo = key === 'autonomy.ship-to' || key === 'autonomy.release'
-  const path = autonomyPath(shipTo ? 'autonomy.ship-to' : key)
+  const shipTo = isShipToConfigKey(key)
+  const path = autonomyPath(shipTo ? SHIP_TO_CONFIG_KEY : key)
   atomicPatch((root) => {
     const stack: Record<string, unknown>[] = []
     let table = root.autonomy as Record<string, unknown> | undefined
@@ -525,11 +533,15 @@ export function listMachineAutonomy(env: ConfigEnvironment = process.env): Machi
   const autonomy = root.autonomy
   if (typeof autonomy === 'object' && autonomy !== null && !Array.isArray(autonomy)) {
     const table = { ...(autonomy as Record<string, unknown>) }
-    const stored = Object.hasOwn(table, 'ship-to') ? table['ship-to'] : table.release
+    const stored = readStoredShipTo(
+      table['ship-to'],
+      table.release,
+      Object.hasOwn(table, 'ship-to'),
+      Object.hasOwn(table, 'release'),
+    )
     delete table.release
-    if (stored !== undefined) {
-      const mapped = storedShipToLevel(stored)
-      table['ship-to'] = mapped ?? stored
+    if (stored.level !== undefined || stored.invalid !== undefined) {
+      table['ship-to'] = stored.level ?? stored.invalid
     }
     visit(table, [])
   }

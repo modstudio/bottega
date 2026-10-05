@@ -15,7 +15,11 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
-import { type AutonomySettings, validateStoredAutonomySettings } from './autonomy.ts'
+import {
+  type AutonomySettings,
+  autonomySettingsForStorage,
+  validateStoredAutonomySettings,
+} from './autonomy.ts'
 
 export type CachedSessionContext = {
   version: 1
@@ -35,7 +39,7 @@ function object(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizedHostedSettings(value: unknown): AutonomySettings | null {
-  if (!object(value)) return null
+  if (!object(value) || Object.hasOwn(value, 'shipTo')) return null
   try {
     return validateStoredAutonomySettings(value, 'cached hosted autonomy').settings
   } catch {
@@ -88,7 +92,14 @@ export function writeSessionContextCache(value: CachedSessionContext, env: State
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
       0o600,
     )
-    writeFileSync(descriptor, `${JSON.stringify(value)}\n`)
+    const stored = {
+      ...value,
+      hosted: {
+        user: autonomySettingsForStorage(value.hosted.user),
+        space: autonomySettingsForStorage(value.hosted.space),
+      },
+    }
+    writeFileSync(descriptor, `${JSON.stringify(stored)}\n`)
     fsyncSync(descriptor)
     closeSync(descriptor)
     descriptor = null

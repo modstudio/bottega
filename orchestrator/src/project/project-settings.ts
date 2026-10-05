@@ -3,7 +3,7 @@
 
 import type { TrackerSettings } from '../../../shared/trackers.ts'
 import type { Recipe } from '../recipe/recipe.ts'
-import type { AutonomySettings } from '../workflow/autonomy.ts'
+import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import type { DocsSettings, ReleaseSettings } from './project-injection.ts'
@@ -189,4 +189,8 @@ export type ProjectSettings = {
    * instance.
    */
   worktree?: WorktreeTool
+}
+
+export type StoredProjectSettings = Omit<ProjectSettings, 'autonomy'> & {
+  autonomy?: StoredAutonomySettings
 }

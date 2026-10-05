@@ -3,7 +3,7 @@
 
 import { readRecordInstallBinding, rememberHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import type { ProjectSettings } from './project-settings.ts'
+import type { ProjectSettings, StoredProjectSettings } from './project-settings.ts'
 import { decideProjectWrite } from './project-write-decision.ts'
 
 const BOUND_PROJECT_WRITE_REFUSAL =
@@ -31,7 +31,7 @@ export async function writeProjectToHostedRecord(p: {
   path: string
   stack?: string | null
   canon?: boolean
-  settings?: ProjectSettings
+  settings?: ProjectSettings | StoredProjectSettings
   retiredAt?: string | null
 }): Promise<void> {
   await applyHostedProjectWrite(() =>

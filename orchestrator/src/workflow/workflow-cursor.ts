@@ -167,9 +167,7 @@ function insertCursor(
         ...(autonomy.session
           ? {
               session: Object.fromEntries(
-                Object.entries(autonomy.session).filter(
-                  ([key]) => key !== 'shipTo' && key !== 'release',
-                ),
+                Object.entries(autonomy.session).filter(([key]) => key !== 'shipTo'),
               ),
             }
           : {}),

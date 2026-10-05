@@ -97,6 +97,29 @@ test('entry writes and deletes pass explicit expected row versions without a pri
   ])
 })
 
+test('a hosted ship-to write removes the stored alias with its own row version', async () => {
+  const writes: unknown[] = []
+  const client = {
+    getEntry: async (key: string) => ({ key, rowVersion: 9 }),
+    putEntry: async (key: string, input: unknown) => {
+      writes.push(['put', key, input])
+      return { key }
+    },
+    deleteEntry: async (key: string, input: unknown) => {
+      writes.push(['delete', key, input])
+      return { deleted: true }
+    },
+  } as unknown as ConfigClient
+
+  await setEntry('autonomy.ship-to', 'production', 'user', null, client)
+
+  expect(writes.at(-1)).toEqual([
+    'delete',
+    'autonomy.release',
+    { scope: 'user', environment: 'default', expectedRowVersion: 9 },
+  ])
+})
+
 test('machine init converges with an existing key, pin, space, and registration', async () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-init-'))
   roots.push(root)
