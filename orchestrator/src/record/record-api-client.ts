@@ -8,7 +8,7 @@ import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
-  HostedBoardChange,
+  HostedBoardChanges,
   HostedBoardClaim,
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
@@ -182,10 +182,7 @@ export type RecordApiClient = {
   getBoardThread(id: string): Promise<HostedBoardThread>
   getBoardStatus(id: string): Promise<HostedBoardStatus>
   putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
-  listBoardChanges(query: {
-    after?: string
-    limit?: number
-  }): Promise<{ items: HostedBoardChange[]; highestRevision: string | null }>
+  listBoardChanges(query: { after?: string; limit?: number }): Promise<HostedBoardChanges>
   takeBoardClaim(
     input: HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>

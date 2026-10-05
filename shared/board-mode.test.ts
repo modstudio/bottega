@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test'
-import { decideBoardIdMode, decideBoardMode } from './board-mode.ts'
+import { classifyBoardId, decideBoardIdMode, decideBoardMode } from './board-mode.ts'
+
+test('board id shape classification is independent of install mode', () => {
+  expect(classifyBoardId('42')).toBe('local')
+  expect(classifyBoardId('01990000-0000-7000-8000-000000000001')).toBe('hosted')
+  expect(classifyBoardId('not-an-id')).toBe('invalid')
+  expect(classifyBoardId('0')).toBe('invalid')
+  expect(classifyBoardId(String(Number.MAX_SAFE_INTEGER + 1))).toBe('invalid')
+})
 
 test.each(['machine-audience', 'suggestion', 'own-architect'] as const)(
   '%s operations stay local even after adoption',

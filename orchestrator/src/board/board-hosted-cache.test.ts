@@ -5,9 +5,10 @@ import { db } from '../database/db.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
-  BOARD_IDENTITY_REFRESH_INTERVAL_MS,
+  BOARD_CACHE_OWNER_KEY,
   BOARD_REFRESH_CURSOR_KEY,
   BOARD_REFRESH_OUTCOME_KEY,
+  BOARD_VERIFICATION_WARNING_MAX_CHARS,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   claimCachedHosted,
@@ -104,8 +105,10 @@ test('refresh pages to completion, advances with each page, and replaces an upda
     ...createMemoryRecordApiClient(),
     listBoardChanges: async ({ after }: { after?: string }) => {
       calls.push(after ?? '0')
-      if (after === '0') return { items: [change(first), ...filler], highestRevision: '100' }
+      if (after === '0')
+        return { userId, items: [change(first), ...filler], highestRevision: '100' }
       return {
+        userId,
         items: [change({ ...first, body: 'updated', revision: '101' })],
         highestRevision: '101',
       }
@@ -145,7 +148,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
   const cached = message()
   const good = {
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => ({ items: [change(cached)], highestRevision: '1' }),
+    listBoardChanges: async () => ({ userId, items: [change(cached)], highestRevision: '1' }),
     putBoardReceipt: async () => {
       throw new Error('unused')
     },
@@ -154,7 +157,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
   const failed = {
     ...good,
     listBoardChanges: async () => {
-      throw new Error('offline')
+      throw new Error(`offline\nForged-Warning: cache ${'x'.repeat(1_000)}`)
     },
   }
   expect(
@@ -173,6 +176,8 @@ test('refresh records an unreachable service without throwing and exposes verifi
   ).toContain('offline')
   expect(hostedBoardVerificationWarning()).toContain('Hosted board cache is unverified')
   expect(hostedBoardVerificationWarning()).toContain('offline')
+  expect(hostedBoardVerificationWarning()).not.toContain('\n')
+  expect(hostedBoardVerificationWarning()!.length).toBe(BOARD_VERIFICATION_WARNING_MAX_CHARS)
   expect(
     claimCachedHosted('cache-reader', false, Date.parse('2026-10-05T12:02:00.000Z')),
   ).toHaveLength(1)
@@ -195,7 +200,11 @@ test('routing narrows own-user audiences and withholds questions from worker cha
   const other = message({ audience: 'architects', authorUserId: newRecordId() })
   const client = {
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => ({ items: [change(own), change(other)], highestRevision: '2' }),
+    listBoardChanges: async () => ({
+      userId,
+      items: [change(own), change(other)],
+      highestRevision: '2',
+    }),
     putBoardReceipt: async () => {
       throw new Error('unused')
     },
@@ -230,6 +239,9 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run('board_hosted_signed_in_user', userId)
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, userId)
   database
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
@@ -326,7 +338,7 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
   const cached = message()
   const base = {
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => ({ items: [change(cached)], highestRevision: '1' }),
+    listBoardChanges: async () => ({ userId, items: [change(cached)], highestRevision: '1' }),
   }
   await refreshHostedBoard({
     budgetMs: 1_000,
@@ -350,7 +362,7 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
   const receipts: boolean[] = []
   const retry = {
     ...base,
-    listBoardChanges: async () => ({ items: [], highestRevision: null }),
+    listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
     putBoardReceipt: async (input: { audienceAtPosting: boolean }) => {
       receipts.push(input.audienceAtPosting)
       return {} as never
@@ -378,8 +390,8 @@ test('refresh stops at its budget, keeps the last page cursor, and resumes from 
     listBoardChanges: async ({ after }: { after?: string }) => {
       calls.push(after ?? '0')
       return after === '0'
-        ? { items: full, highestRevision: '100' }
-        : { items: [], highestRevision: null }
+        ? { userId, items: full, highestRevision: '100' }
+        : { userId, items: [], highestRevision: null }
     },
   }
   const now = () => (resumed ? 20 : clockCalls++ < 3 ? 0 : 10)
@@ -393,9 +405,8 @@ test('refresh stops at its budget, keeps the last page cursor, and resumes from 
   expect(calls).toEqual(['0', '100'])
 })
 
-test('identity is fetched only when absent or older than its refresh interval', async () => {
+test('refresh establishes identity from changes without a whoami round trip', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  let clock = Date.parse(createdAt)
   let identities = 0
   const client = {
     ...createMemoryRecordApiClient(),
@@ -403,28 +414,121 @@ test('identity is fetched only when absent or older than its refresh interval', 
       identities++
       return createMemoryRecordApiClient().whoami()
     },
-    listBoardChanges: async () => ({ items: [], highestRevision: null }),
+    listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
   }
   await refreshHostedBoard({
     budgetMs: 1_000,
     env: { ORCH_RECORD_API_URL: 'x' },
     client,
-    now: () => clock,
   })
   await refreshHostedBoard({
     budgetMs: 1_000,
     env: { ORCH_RECORD_API_URL: 'x' },
     client,
-    now: () => clock + 1,
   })
-  clock += BOARD_IDENTITY_REFRESH_INTERVAL_MS
+  expect(identities).toBe(0)
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_CACHE_OWNER_KEY),
+  ).toEqual({
+    value: userId,
+  })
+})
+
+test('a changed hosted user clears the prior cache and receipts, resets the cursor, and refills from zero', async () => {
+  const database = db()
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const userA = userId
+  const userB = newRecordId()
+  const fromA = message({ authorUserId: userA })
+  const fromB = message({ authorUserId: userB })
   await refreshHostedBoard({
     budgetMs: 1_000,
     env: { ORCH_RECORD_API_URL: 'x' },
-    client,
-    now: () => clock,
+    client: {
+      ...createMemoryRecordApiClient(),
+      listBoardChanges: async () => ({
+        userId: userA,
+        items: [change(fromA)],
+        highestRevision: '10',
+      }),
+    },
   })
-  expect(identities).toBe(2)
+  await markCachedHostedDelivered('cache-reader', [fromA.id], {
+    client: {
+      ...createMemoryRecordApiClient(),
+      putBoardReceipt: async () => {
+        throw new Error('offline')
+      },
+    },
+  })
+
+  const after: string[] = []
+  let receiptWrites = 0
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...createMemoryRecordApiClient(),
+      listBoardChanges: async ({ after: cursor }) => {
+        after.push(cursor ?? '0')
+        return cursor === '0'
+          ? { userId: userB, items: [change(fromB)], highestRevision: '20' }
+          : { userId: userB, items: [], highestRevision: null }
+      },
+      putBoardReceipt: async () => {
+        receiptWrites++
+        return {} as never
+      },
+    },
+  })
+
+  expect(after).toEqual(['10', '0'])
+  expect(receiptWrites).toBe(0)
+  expect(database.query('SELECT id FROM hosted_board_message_cache').all()).toEqual([
+    { id: fromB.id },
+  ])
+  expect(database.query('SELECT * FROM hosted_board_receipt_cache').all()).toEqual([])
+  expect(
+    database.query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_CACHE_OWNER_KEY),
+  ).toEqual({
+    value: userB,
+  })
+  expect(
+    database.query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_CURSOR_KEY),
+  ).toEqual({
+    value: '20',
+  })
+})
+
+test('a changes response without identity serves no prior cached rows and warns that identity is unverified', async () => {
+  const database = db()
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const cached = message()
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...createMemoryRecordApiClient(),
+      listBoardChanges: async () => ({ userId, items: [change(cached)], highestRevision: '1' }),
+    },
+  })
+  const malformed = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => ({ items: [], highestRevision: null }),
+  } as unknown as ReturnType<typeof createMemoryRecordApiClient>
+  expect(
+    await refreshHostedBoard({
+      budgetMs: 1_000,
+      env: { ORCH_RECORD_API_URL: 'x' },
+      client: malformed,
+    }),
+  ).toBe('failed')
+  expect(claimCachedHosted('cache-reader')).toEqual([])
+  expect(hostedBoardVerificationWarning(database)).toContain('identity is unverified')
 })
 
 test('receipt flushing follows change fetch; network failure stays pending and refusal is recorded and cleared', async () => {
@@ -432,7 +536,7 @@ test('receipt flushing follows change fetch; network failure stays pending and r
   const cached = message()
   const base = {
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => ({ items: [change(cached)], highestRevision: '1' }),
+    listBoardChanges: async () => ({ userId, items: [change(cached)], highestRevision: '1' }),
   }
   await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: base })
   await markCachedHostedDelivered('cache-reader', [cached.id], {
@@ -451,7 +555,7 @@ test('receipt flushing follows change fetch; network failure stays pending and r
       ...base,
       listBoardChanges: async () => {
         order.push('changes')
-        return { items: [], highestRevision: null }
+        return { userId, items: [], highestRevision: null }
       },
       putBoardReceipt: async () => {
         order.push('receipt')
@@ -470,7 +574,7 @@ test('receipt flushing follows change fetch; network failure stays pending and r
     env: { ORCH_RECORD_API_URL: 'x' },
     client: {
       ...base,
-      listBoardChanges: async () => ({ items: [], highestRevision: null }),
+      listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
       putBoardReceipt: async () => {
         throw new RecordApiRequestError('receipt no longer visible', 'refused')
       },
@@ -541,6 +645,9 @@ test('interrupt routing admits claim-linked and own-operator ack notices but not
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run('board_hosted_signed_in_user', userId)
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, userId)
   database
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)

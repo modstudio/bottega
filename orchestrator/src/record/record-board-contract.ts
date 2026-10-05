@@ -89,6 +89,12 @@ export type HostedBoardChange = {
   receipts: HostedBoardReceipt[]
 }
 
+export type HostedBoardChanges = {
+  userId: string
+  items: HostedBoardChange[]
+  highestRevision: string | null
+}
+
 export type HostedBoardStatus = {
   message: HostedBoardMessage
   receipts: HostedBoardReceipt[]

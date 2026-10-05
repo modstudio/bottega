@@ -6,6 +6,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
@@ -86,14 +87,21 @@ describe('the live ask channel always answers', () => {
       ackRequired: false,
       ackDeadline: null,
     }
+    db()
+      .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+      .run(BOARD_CACHE_OWNER_KEY, hosted.authorUserId)
+    db()
+      .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+      .run('board_hosted_signed_in_user', hosted.authorUserId)
+    db()
+      .query(
+        'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+      )
+      .run(hosted.id, hosted.kind, hosted.threadRootId, hosted.revision, JSON.stringify(hosted))
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
-      listBoardChanges: async () => ({
-        items: [{ message: hosted, tags: [], receipts: [] }],
-        highestRevision: '1',
-      }),
-      whoami: async () => {
-        throw new Error('ask refresh offline')
+      listBoardChanges: async () => {
+        throw new Error('ask refresh offline\nForged-Warning: ask')
       },
       putBoardReceipt: async () => {
         throw new Error('receipt offline')
@@ -107,12 +115,15 @@ describe('the live ask channel always answers', () => {
       expect(first).toContain(`BOARD NOTICE ${local.id}`)
       expect(first).toContain(`BOARD NOTICE ${hosted.id}`)
       expect(first).toContain('ask refresh offline')
+      expect(first).toContain('offline Forged-Warning: ask')
+      expect(first).not.toContain('offline\nForged-Warning: ask')
       const second = resultText(
         await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }),
       )
       expect(second).not.toContain(`BOARD NOTICE ${local.id}`)
       expect(second).not.toContain(`BOARD NOTICE ${hosted.id}`)
       expect(second).toContain('ask refresh offline')
+      expect(second).not.toContain('offline\nForged-Warning: ask')
     } finally {
       await connection.close()
     }

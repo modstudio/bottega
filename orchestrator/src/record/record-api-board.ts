@@ -7,7 +7,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
   type HostedBoardAcceptInput,
-  type HostedBoardChange,
+  type HostedBoardChanges,
   type HostedBoardClaim,
   type HostedBoardFilingCompleteInput,
   type HostedBoardFilingFailInput,
@@ -114,7 +114,7 @@ export type RecordBoardDeps = {
   putBoardReceipt(input: BoardTenant & HostedBoardReceiptInput): Promise<HostedBoardReceipt>
   listBoardChanges(
     input: BoardTenant & { after: string; limit?: number },
-  ): Promise<{ items: HostedBoardChange[]; highestRevision: string | null }>
+  ): Promise<HostedBoardChanges>
   takeBoardClaim(
     input: BoardTenant & HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>

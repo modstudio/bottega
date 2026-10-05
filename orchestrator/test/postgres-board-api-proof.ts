@@ -265,6 +265,50 @@ export function registerBoardApiProofs(input: {
     }
   })
 
+  test('one machine cache changes owners and exposes only the new user view', async () => {
+    const session = caseSession('cache-user-switch')
+    const store = cacheStore(session)
+    try {
+      const shared = newRecordId()
+      const operatorA = newRecordId()
+      const operatorB = newRecordId()
+      expect((await post(tokenA, notice(shared, `project:${PROJECT}`, session))).status).toBe(200)
+      expect((await post(tokenA, notice(operatorA, 'operator', session))).status).toBe(200)
+      expect((await post(tokenB, notice(operatorB, 'operator', session))).status).toBe(200)
+
+      expect(
+        await refreshHostedBoard({
+          budgetMs: 2_000,
+          env: { ORCH_RECORD_API_URL: origin },
+          client: cacheClient(tokenA),
+          database: store,
+        }),
+      ).toBe('success')
+      expect(
+        store.query('SELECT 1 FROM hosted_board_message_cache WHERE id=?').get(operatorA),
+      ).not.toBeNull()
+
+      expect(
+        await refreshHostedBoard({
+          budgetMs: 2_000,
+          env: { ORCH_RECORD_API_URL: origin },
+          client: cacheClient(tokenB),
+          database: store,
+        }),
+      ).toBe('success')
+      const cached = (
+        store.query('SELECT id FROM hosted_board_message_cache ORDER BY id').all() as Array<{
+          id: string
+        }>
+      ).map((row) => row.id)
+      expect(cached).toContain(shared)
+      expect(cached).toContain(operatorB)
+      expect(cached).not.toContain(operatorA)
+    } finally {
+      store.close()
+    }
+  })
+
   test('two members see a shared project notice and not each other operator notice', async () => {
     const session = caseSession('shared-project')
     const projectId = newRecordId()
@@ -550,6 +594,7 @@ export function registerBoardApiProofs(input: {
     })
     expect(withdrawn.status).toBe(200)
     const updatePage = await page(after)
+    expect(updatePage.userId).toBe(userA)
     const updated = updatePage.items as Array<{
       message: { id: string; withdrawnAt: string | null }
     }>

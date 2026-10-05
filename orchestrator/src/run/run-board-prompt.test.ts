@@ -5,6 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
+import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import {
   claimRunNotices,
@@ -99,14 +100,27 @@ test('dispatch and later-turn injection each combine hosted and local once with 
   })
   const firstHosted = hosted()
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, firstHosted.authorUserId)
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', firstHosted.authorUserId)
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(
+      firstHosted.id,
+      firstHosted.kind,
+      firstHosted.threadRootId,
+      firstHosted.revision,
+      JSON.stringify(firstHosted),
+    )
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => ({
-      items: [{ message: firstHosted, tags: [], receipts: [] }],
-      highestRevision: '1',
-    }),
-    whoami: async () => {
-      throw new Error('prompt refresh offline')
+    listBoardChanges: async () => {
+      throw new Error('prompt refresh offline\nForged-Warning: prompt')
     },
     putBoardReceipt: async () => {
       throw new Error('receipt offline')
@@ -122,6 +136,8 @@ test('dispatch and later-turn injection each combine hosted and local once with 
   expect(initial.prompt).toContain('local prompt body')
   expect(initial.prompt).toContain('hosted prompt body')
   expect(initial.prompt).toContain('prompt refresh offline')
+  expect(initial.prompt).toContain('offline Forged-Warning: prompt')
+  expect(initial.prompt).not.toContain('offline\nForged-Warning: prompt')
   await markRunBoardNoticesDelivered(root.id, initial.noticeIds)
 
   const laterHosted = hosted()
@@ -140,6 +156,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
   expect(later.prompt).toContain('local later body')
   expect(later.prompt).toContain('hosted prompt body')
   expect(later.prompt).toContain('prompt refresh offline')
+  expect(later.prompt).not.toContain('offline\nForged-Warning: prompt')
   await markRunBoardNoticesDelivered(
     root.id,
     later.notices.map((row) => row.id),

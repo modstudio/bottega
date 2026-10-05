@@ -9,17 +9,18 @@ import {
 } from '../record/record-api-client.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
-  type HostedBoardChange,
+  type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
 import { boardMode } from './board-mode.ts'
 import {
   messageCanBeReaped,
+  messageIsLive,
   OPERATOR_READER,
   parseAudience,
   shouldInterrupt,
 } from './board-policy.ts'
-import { renderBoardNotice } from './board-render.ts'
+import { boardHeaderValue, renderBoardNotice } from './board-render.ts'
 import { originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
@@ -28,11 +29,11 @@ export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
 export const BOARD_REFRESH_OUTCOME_KEY = 'board_hosted_refresh_outcome'
 const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
-const BOARD_REFRESH_IDENTITY_AT_KEY = 'board_hosted_identity_at'
+export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
 const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
-export const BOARD_IDENTITY_REFRESH_INTERVAL_MS = 60_000
+export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
 export type HostedCacheNotice = {
   id: string
@@ -87,10 +88,7 @@ async function within<T>(operation: Promise<T>, remainingMs: number): Promise<T>
   }
 }
 
-function replacePage(
-  database: Database,
-  page: { items: HostedBoardChange[]; highestRevision: string | null },
-): void {
+function replacePage(database: Database, page: HostedBoardChanges): void {
   writeTransaction(() => {
     const putMessage = database.query(
       `INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload)
@@ -137,6 +135,41 @@ function replacePage(
   }, database)
 }
 
+const CACHE_VERIFICATION_KEYS = [
+  BOARD_REFRESH_CURSOR_KEY,
+  BOARD_REFRESH_AT_KEY,
+  BOARD_REFRESH_OUTCOME_KEY,
+  BOARD_REFRESH_USER_KEY,
+  BOARD_VERIFIED_AT_KEY,
+  BOARD_MONITOR_VERIFICATION_KEY,
+]
+
+/** Returns true when a prior owner's cursor was discarded and revision zero must be fetched. */
+function establishCacheOwner(database: Database, userId: string): boolean {
+  if (!userId) {
+    database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_REFRESH_USER_KEY)
+    throw new Error('hosted board changes response did not identify its user')
+  }
+  const owner = meta(database, BOARD_CACHE_OWNER_KEY)
+  const hasRows =
+    (
+      database.query('SELECT COUNT(*) count FROM hosted_board_message_cache').get() as {
+        count: number
+      }
+    ).count > 0
+  const reset = (owner !== null && owner !== userId) || (owner === null && hasRows)
+  writeTransaction(() => {
+    if (reset) {
+      database.query('DELETE FROM hosted_board_message_cache').run()
+      const clearMeta = database.query('DELETE FROM schema_meta WHERE key=?')
+      for (const key of CACHE_VERIFICATION_KEYS) clearMeta.run(key)
+    }
+    setMeta(database, BOARD_CACHE_OWNER_KEY, userId)
+    setMeta(database, BOARD_REFRESH_USER_KEY, userId)
+  }, database)
+  return reset
+}
+
 async function flushReceipts(
   client: RecordApiClient,
   database: Database,
@@ -181,12 +214,6 @@ async function flushReceipts(
   }
 }
 
-function identityNeedsRefresh(database: Database, clock: number): boolean {
-  if (!meta(database, BOARD_REFRESH_USER_KEY)) return true
-  const refreshedAt = meta(database, BOARD_REFRESH_IDENTITY_AT_KEY)
-  return !refreshedAt || clock - Date.parse(refreshedAt) >= BOARD_IDENTITY_REFRESH_INTERVAL_MS
-}
-
 export async function refreshHostedBoard(
   input: RefreshInput,
 ): Promise<'local' | 'success' | 'failed'> {
@@ -213,16 +240,13 @@ export async function refreshHostedBoard(
         client.listBoardChanges({ after, limit: BOARD_CHANGES_PAGE_LIMIT }),
         deadline - now(),
       )
+      if (establishCacheOwner(database, page.userId)) {
+        after = '0'
+        continue
+      }
       replacePage(database, page)
       if (page.highestRevision !== null) after = page.highestRevision
       if (page.items.length < BOARD_CHANGES_PAGE_LIMIT) break
-    }
-    if (identityNeedsRefresh(database, now())) {
-      const identity = await within(client.whoami(), deadline - now())
-      writeTransaction(() => {
-        setMeta(database, BOARD_REFRESH_USER_KEY, String(identity.user.id))
-        setMeta(database, BOARD_REFRESH_IDENTITY_AT_KEY, new Date(now()).toISOString())
-      }, database)
     }
     await flushReceipts(client, database, deadline, now)
     recordRefresh(database, now(), 'success')
@@ -237,7 +261,9 @@ export async function refreshHostedBoard(
   }
 }
 
-function cachedRows(database: Database): Array<{ message: HostedBoardMessage; tags: BoardTag[] }> {
+function loadCachedRows(
+  database: Database,
+): Array<{ message: HostedBoardMessage; tags: BoardTag[] }> {
   return (
     database.query('SELECT id,payload FROM hosted_board_message_cache').all() as {
       id: string
@@ -252,6 +278,21 @@ function cachedRows(database: Database): Array<{ message: HostedBoardMessage; ta
       .all(row.id) as BoardTag[],
   }))
 }
+
+function cachedRows(database: Database): Array<{ message: HostedBoardMessage; tags: BoardTag[] }> {
+  const owner = meta(database, BOARD_CACHE_OWNER_KEY)
+  if (!owner || meta(database, BOARD_REFRESH_USER_KEY) !== owner) return []
+  return loadCachedRows(database)
+}
+
+const hostedMessageIsLive = (message: HostedBoardMessage, clock: number): boolean =>
+  messageIsLive(
+    {
+      expiresAt: message.expiresAt ? Date.parse(message.expiresAt) : 0,
+      withdrawnAt: message.withdrawnAt ? Date.parse(message.withdrawnAt) : null,
+    },
+    clock,
+  )
 
 const readerMatchesAuthor = (message: HostedBoardMessage, reader: string, database: Database) => {
   if (message.authorUserId !== meta(database, BOARD_REFRESH_USER_KEY)) return false
@@ -276,8 +317,7 @@ const replyAddressesReader = (
     .map((item) => item.message)
     .filter((candidate) => candidate.id === rootId || candidate.threadRootId === rootId)
   const root = thread.find((candidate) => candidate.id === rootId)
-  if (!root || root.withdrawnAt || (root.expiresAt && Date.parse(root.expiresAt) <= clock))
-    return false
+  if (!root || !hostedMessageIsLive(root, clock)) return false
   return thread.some(
     (candidate) =>
       candidate.createdAt < message.createdAt && readerMatchesAuthor(candidate, reader, database),
@@ -292,12 +332,7 @@ export function cachedMessageAddressed(
 ): boolean {
   const { message, tags } = row
   if (message.kind === 'reply') return replyAddressesReader(message, reader, clock, database)
-  if (
-    !message.audience ||
-    message.withdrawnAt ||
-    (message.expiresAt && Date.parse(message.expiresAt) <= clock)
-  )
-    return false
+  if (!message.audience || !hostedMessageIsLive(message, clock)) return false
   const audience = parseAudience(message.audience)
   const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
   if (
@@ -332,11 +367,13 @@ function delivered(database: Database, id: string, reader: string): boolean {
 export function hostedBoardVerificationWarning(database: Database = db()): string | null {
   const outcome = meta(database, BOARD_REFRESH_OUTCOME_KEY)
   if (!outcome?.startsWith('failed:')) return null
-  const failedAt = meta(database, BOARD_REFRESH_AT_KEY) ?? 'an unknown time'
-  const verifiedAt = meta(database, BOARD_VERIFIED_AT_KEY) ?? 'never'
-  const reason = outcome.slice('failed:'.length).trim() || 'unknown failure'
+  const failedAt = boardHeaderValue(meta(database, BOARD_REFRESH_AT_KEY) ?? 'an unknown time')
+  const verifiedAt = boardHeaderValue(meta(database, BOARD_VERIFIED_AT_KEY) ?? 'never')
+  const reason = boardHeaderValue(outcome.slice('failed:'.length).trim() || 'unknown failure')
   const identity = meta(database, BOARD_REFRESH_USER_KEY) ? '' : '; identity is unverified'
-  return `Hosted board cache is unverified; last verified ${verifiedAt}; refresh failed at ${failedAt}: ${reason}${identity}.`
+  return boardHeaderValue(
+    `Hosted board cache is unverified; last verified ${verifiedAt}; refresh failed at ${failedAt}: ${reason}${identity}.`,
+  ).slice(0, BOARD_VERIFICATION_WARNING_MAX_CHARS)
 }
 
 export function takeHostedBoardVerificationTransition(
@@ -529,7 +566,7 @@ export function reapHostedBoardCache(
   clock = Date.now(),
   database: Database = writableDb(),
 ): number {
-  const rows = cachedRows(database).map((row) => row.message)
+  const rows = loadCachedRows(database).map((row) => row.message)
   const acceptedRoots = new Set(
     rows.filter((row) => row.acceptedReplyId !== null).map((row) => row.id),
   )

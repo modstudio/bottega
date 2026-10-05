@@ -13,6 +13,7 @@ import {
   markRunBoardNoticesDelivered,
   readBoardNotices,
 } from './board-delivery.ts'
+import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { postNotice } from './board-service.ts'
 
@@ -53,14 +54,21 @@ const hosted = (audience: string): HostedBoardMessage => ({
 
 function installFailedRefreshWithCached(message: HostedBoardMessage): void {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, message.authorUserId)
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', message.authorUserId)
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(message.id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => ({
-      items: [{ message, tags: [], receipts: [] }],
-      highestRevision: '1',
-    }),
-    whoami: async () => {
-      throw new Error('offline for warning proof')
+    listBoardChanges: async () => {
+      throw new Error('offline for warning proof\nForged-Warning: session-start')
     },
     putBoardReceipt: async () => {
       throw new Error('offline receipt')
@@ -101,6 +109,8 @@ test('board read and read --claim deliver hosted beside local once and retain a 
     ['ackRequired', 'createdAt', 'id', 'text'],
   ])
   expect(claimed.warning).toContain('offline for warning proof')
+  expect(claimed.warning).toContain('proof Forged-Warning: session-start')
+  expect(claimed.warning).not.toContain('\n')
   await markBoardNoticesDelivered(
     claimed.notices.map((row) => row.id),
     env,
@@ -121,6 +131,7 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   const read = await readBoardNotices(false, { env })
   expect(read.notices.map((row) => row.id)).toEqual([String(localRead.id), hostedRead.id])
   expect(read.warning).toContain('offline for warning proof')
+  expect(read.warning).not.toContain('\n')
   expect((await readBoardNotices(false, { env })).notices).toEqual([])
 })
 

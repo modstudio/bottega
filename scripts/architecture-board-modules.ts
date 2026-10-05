@@ -30,6 +30,7 @@ export const boardModules: BoardModule[] = [
     './board-thread-render.ts',
   ]),
   module('orchestrator/src/board/board-delivery.ts', [
+    '../../../shared/board-mode.ts',
     './board-hosted-cache.ts',
     './board-policy.ts',
     './board-service.ts',

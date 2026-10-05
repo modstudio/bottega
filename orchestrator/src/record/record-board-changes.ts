@@ -5,6 +5,7 @@ import type { BoardTag } from '../board/board-tags.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
   type HostedBoardChange,
+  type HostedBoardChanges,
   RecordBoardError,
 } from './record-board-contract.ts'
 import { hostedBoardMessageView, hostedBoardTags } from './record-board-messages.ts'
@@ -13,7 +14,7 @@ import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-boar
 
 export async function listHostedBoardChanges(
   input: BoardTenant & { after: string; limit?: number },
-): Promise<{ items: HostedBoardChange[]; highestRevision: string | null }> {
+): Promise<HostedBoardChanges> {
   if (!/^\d+$/.test(input.after)) {
     throw new RecordBoardError('board changes after must be a non-negative integer revision', 400)
   }
@@ -32,7 +33,7 @@ export async function listHostedBoardChanges(
       ORDER BY revision
       LIMIT ${limit}
     `) as Record<string, unknown>[]
-    if (messages.length === 0) return { items: [], highestRevision: null }
+    if (messages.length === 0) return { userId: input.userId, items: [], highestRevision: null }
     const ids = messages.map((row) => String(row.id))
     const tagRows = (await tx`
       SELECT message_id, kind, value, origin FROM board_message_tag
@@ -68,6 +69,7 @@ export async function listHostedBoardChanges(
       }
     })
     return {
+      userId: input.userId,
       items,
       highestRevision: items.at(-1)?.message.revision ?? null,
     }

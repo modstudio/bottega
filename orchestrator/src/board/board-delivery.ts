@@ -1,6 +1,8 @@
 // concern: board-delivery-seams
 /** Refreshes hosted state within each caller's budget, then combines it with local delivery. */
 
+import { classifyBoardId } from '../../../shared/board-mode.ts'
+
 import {
   claimCachedHosted,
   claimCachedHostedInterrupts,
@@ -34,6 +36,18 @@ type BoardDeliveryNotice = {
   text: string
   ackRequired: boolean
   createdAt: string
+}
+
+const splitBoardIds = (sourceIds: Array<string | number>) => {
+  const local: number[] = []
+  const hosted: string[] = []
+  for (const sourceId of sourceIds) {
+    const id = String(sourceId)
+    const shape = classifyBoardId(id)
+    if (shape === 'local') local.push(Number(id))
+    if (shape === 'hosted') hosted.push(id)
+  }
+  return { local, hosted }
 }
 
 const deliveryNotice = (notice: {
@@ -107,25 +121,19 @@ export async function markRunBoardNoticesDelivered(
   runId: number,
   sourceIds: Array<string | number>,
 ): Promise<void> {
-  const ids = sourceIds.map(String)
+  const ids = splitBoardIds(sourceIds)
   const reader = runReader(runId)
-  markRunNoticesDelivered(runId, ids.filter((id) => /^[1-9]\d*$/.test(id)).map(Number))
-  await markCachedHostedDelivered(
-    reader,
-    ids.filter((id) => !/^[1-9]\d*$/.test(id)),
-  )
+  markRunNoticesDelivered(runId, ids.local)
+  if (ids.hosted.length) await markCachedHostedDelivered(reader, ids.hosted)
 }
 
 export async function markBoardNoticesDelivered(
   sourceIds: Array<string | number>,
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
-  const ids = sourceIds.map(String)
-  markNoticesDelivered(ids.filter((id) => /^[1-9]\d*$/.test(id)).map(Number), env)
-  await markCachedHostedDelivered(
-    sessionReader(env),
-    ids.filter((id) => !/^[1-9]\d*$/.test(id)),
-  )
+  const ids = splitBoardIds(sourceIds)
+  markNoticesDelivered(ids.local, env)
+  if (ids.hosted.length) await markCachedHostedDelivered(sessionReader(env), ids.hosted)
 }
 
 export async function claimBoardInterrupts(
@@ -155,11 +163,10 @@ export async function markBoardInterruptsDelivered(
   ids: string[],
   deliveredAt: string,
 ): Promise<void> {
-  const local = ids.filter((id) => /^[1-9]\d*$/.test(id)).map(Number)
-  markInterruptNoticesDelivered(ownerSession, local, deliveredAt)
-  await markCachedHostedDelivered(
-    ownerSession,
-    ids.filter((id) => !/^[1-9]\d*$/.test(id)),
-    { clock: Date.parse(deliveredAt) },
-  )
+  const split = splitBoardIds(ids)
+  markInterruptNoticesDelivered(ownerSession, split.local, deliveredAt)
+  if (split.hosted.length)
+    await markCachedHostedDelivered(ownerSession, split.hosted, {
+      clock: Date.parse(deliveredAt),
+    })
 }
