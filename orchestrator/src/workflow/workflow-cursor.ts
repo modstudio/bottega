@@ -304,6 +304,27 @@ function cursorCompositionInput(row: CursorRow | null, args: Record<string, stri
   }
 }
 
+function isUntouchedCursor(row: CursorRow): boolean {
+  return row.ordinal === 0 && (JSON.parse(row.closed) as CursorTrailEntry[]).length === 0
+}
+
+function cursorForStepRequest(
+  handled: CursorRow | null,
+  candidate: CursorRow | null,
+  openingKeyless: boolean,
+): CursorRow | null {
+  if (handled) return handled
+  if (!openingKeyless) return candidate
+  return candidate && isUntouchedCursor(candidate) ? candidate : null
+}
+
+function refuseRetiredHandle(row: CursorRow, cursor: number | undefined): void {
+  if (cursor === undefined || (row.state !== 'done' && row.state !== 'abandoned')) return
+  throw new Error(
+    `cursor ${row.id} is ${row.state}; a new run is opened by fetching step 1 without a handle`,
+  )
+}
+
 function refuseInvalidServe(
   decision: ReturnType<typeof decideCursorTransition>,
   row: CursorRow | null,
@@ -326,6 +347,54 @@ function refuseInvalidServe(
   throw new Error(remedy(row!, composition))
 }
 
+function prepareStepServe(
+  slug: string,
+  project: string,
+  stepSlug: string,
+  args: Record<string, string>,
+  mode: string,
+  context: WorkflowCursorContext,
+  d: Database,
+  autonomy: AutonomyResolution | undefined,
+  cursor: number | undefined,
+) {
+  const handled =
+    cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
+  if (handled) refuseRetiredHandle(handled, cursor)
+  const preliminary = handled
+    ? cursorComposition(handled, d)
+    : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)
+  const preliminaryStepSlug = resolveWorkflowStepReference(stepSlug, [
+    { mode, steps: preliminary.steps.map((step) => step.slug) },
+  ])
+  const openingKeyless =
+    cursor === undefined && !keyOf(args) && preliminary.steps[0]?.slug === preliminaryStepSlug
+  const candidate = handled ?? findCursor(project, slug, mode, args, context, d, cursor)
+  let row = cursorForStepRequest(handled, candidate, openingKeyless)
+  const opensCursor = row === null
+  const startDecision = decideCursorStart(row?.state ?? null)
+  if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
+  const input = cursorCompositionInput(row, args, mode)
+  const composition = composeWorkflow(
+    slug,
+    project,
+    mode,
+    input.effectiveArgs,
+    d,
+    input.selection,
+    row ? cursorAutonomy(row) : autonomy,
+  )
+  const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
+    { mode, steps: composition.steps.map((step) => step.slug) },
+  ])
+  const index = composition.steps.findIndex((step) => step.slug === resolvedStepSlug)
+  if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
+  const requested = composition.steps[index]!
+  if (index === 0 && startDecision === 'retire')
+    row = insertCursor(composition, context, d, autonomy)
+  return { row, opensCursor, composition, requested, index, input }
+}
+
 function getWorkflowStepWithCursorImpl(
   slug: string,
   project: string,
@@ -337,41 +406,19 @@ function getWorkflowStepWithCursorImpl(
   autonomy?: AutonomyResolution,
   cursor?: number,
 ) {
-  const handled =
-    cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
-  const preliminary = handled
-    ? cursorComposition(handled, d)
-    : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)
-  const preliminaryStepSlug = resolveWorkflowStepReference(stepSlug, [
-    { mode, steps: preliminary.steps.map((step) => step.slug) },
-  ])
-  const openingKeyless =
-    cursor === undefined && !keyOf(args) && preliminary.steps[0]?.slug === preliminaryStepSlug
-  let row = openingKeyless
-    ? null
-    : (handled ?? findCursor(project, slug, mode, args, context, d, cursor))
-  const opensCursor = row === null
-  const startDecision = decideCursorStart(row?.state ?? null)
-  if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
-  const { effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
-  const composition = composeWorkflow(
+  const prepared = prepareStepServe(
     slug,
     project,
+    stepSlug,
+    args,
     mode,
-    effectiveArgs,
+    context,
     d,
-    selection,
-    row ? cursorAutonomy(row) : autonomy,
+    autonomy,
+    cursor,
   )
-  const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
-    { mode, steps: composition.steps.map((step) => step.slug) },
-  ])
-  const index = composition.steps.findIndex((step) => step.slug === resolvedStepSlug)
-  if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
-  const requested = composition.steps[index]!
-  if (index === 0 && startDecision === 'retire') {
-    row = insertCursor(composition, context, d, autonomy)
-  }
+  let { row } = prepared
+  const { opensCursor, composition, requested, index, input } = prepared
   const decision = decideCursorTransition(row ? cursorValue(row) : null, {
     kind: 'serve',
     ordinal: index,
@@ -392,9 +439,9 @@ function getWorkflowStepWithCursorImpl(
     slug,
     project,
     decision.slug,
-    effectiveArgs,
+    input.effectiveArgs,
     d,
-    selection,
+    input.selection,
     cursorAutonomy(row),
   )
   const key = row.workflow_key ? `for ${row.workflow_key}` : 'unassigned'
