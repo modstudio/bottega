@@ -13,13 +13,16 @@ import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 
 const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 
-export type ProbeRunResult = {
+type ProbeRunResult = {
   exitCode: number
   output: string
   secretFound?: boolean
   signal?: NodeJS.Signals | null
 }
-export type ProbeRunner = (input: { command: string[]; cwd: string }) => ProbeRunResult
+export type ProbeRunner = (input: {
+  command: string[]
+  cwd: string
+}) => ProbeRunResult | Promise<ProbeRunResult>
 
 export type ProbeRecord = {
   id: number
@@ -27,8 +30,11 @@ export type ProbeRecord = {
   exitCode: number
   signal: NodeJS.Signals | null
 }
-export type ExecRecord = ProbeRecord
 type RecordedArtifact = Pick<ProbeRecord, 'id' | 'withheld'>
+
+function finishRecord(recorded: RecordedArtifact, ran: ProbeRunResult): ProbeRecord {
+  return { ...recorded, exitCode: ran.exitCode, signal: ran.signal ?? null }
+}
 
 function probeEnv(scratch: string): NodeJS.ProcessEnv {
   return {
@@ -43,12 +49,7 @@ async function sandboxedRunner(
   command: string[],
   cwd: string,
   database: Database,
-): Promise<{
-  exitCode: number
-  output: string
-  secretFound: boolean
-  signal: NodeJS.Signals | null
-}> {
+): Promise<ProbeRunResult> {
   const runtime = sandboxRuntimeAvailability()
   if (!runtime.available) {
     throw new Error(
@@ -102,22 +103,17 @@ export async function recordWorkflowProbe(
   const database = input.d ?? db()
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
   const ran = input.runner
-    ? input.runner({ command, cwd })
+    ? await input.runner({ command, cwd })
     : await sandboxedRunner(command, cwd, database)
   const recorded = await recordWorkflowCommand(command, cwd, ran, 'probe', input)
-  return { ...recorded, exitCode: ran.exitCode, signal: ran.signal ?? null }
+  return finishRecord(recorded, ran)
 }
 
 async function execRunner(
   command: string[],
   cwd: string,
   write: (chunk: string) => void,
-): Promise<{
-  exitCode: number
-  output: string
-  secretFound: boolean
-  signal: NodeJS.Signals | null
-}> {
+): Promise<ProbeRunResult> {
   return streamingRunner(command, { cwd, env: process.env, stdin: 'inherit', write })
 }
 
@@ -129,12 +125,7 @@ async function streamingRunner(
     stdin: 'ignore' | 'inherit'
     write: (chunk: string) => void
   },
-): Promise<{
-  exitCode: number
-  output: string
-  secretFound: boolean
-  signal: NodeJS.Signals | null
-}> {
+): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command[0]!, command.slice(1), {
       cwd: input.cwd,
@@ -164,7 +155,7 @@ async function streamingRunner(
 async function recordWorkflowCommand(
   command: string[],
   cwd: string,
-  ran: { exitCode: number; output: string; secretFound?: boolean },
+  ran: ProbeRunResult,
   kind: 'probe' | 'exec',
   input: { d?: Database; commit?: string | null },
 ): Promise<RecordedArtifact> {
@@ -204,12 +195,12 @@ export async function recordWorkflowExec(
   input: {
     cwd?: string
     d?: Database
-    runner?: ProbeRunner | ((input: { command: string[]; cwd: string }) => Promise<ProbeRunResult>)
+    runner?: ProbeRunner
     commit?: string | null
     write?: (chunk: string) => void
     registeredProject?: boolean
   } = {},
-): Promise<ExecRecord> {
+): Promise<ProbeRecord> {
   if (!command.length) throw new Error('orch workflow exec needs a command after --')
   if (process.env.ORCH_DEPTH !== undefined)
     throw new Error('orch workflow exec is reserved for architect sessions; ORCH_DEPTH is set')
@@ -224,5 +215,5 @@ export async function recordWorkflowExec(
     ? await input.runner({ command, cwd })
     : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)))
   const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', input)
-  return { ...recorded, exitCode: ran.exitCode, signal: ran.signal ?? null }
+  return finishRecord(recorded, ran)
 }
