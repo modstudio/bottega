@@ -39,6 +39,22 @@ const database = () => {
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
 
+function installKeylessWorkflow(d: Database, slug: string): void {
+  const draft = setWorkflow(
+    slug,
+    {
+      title: 'Keyless fixture',
+      description: 'Exercises independent keyless runs.',
+      arguments: [{ name: 'key', required: false, description: 'Task key.' }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['score', 'complete'] }],
+    },
+    'test fixture',
+    'test',
+    d,
+  )
+  promoteWorkflow(slug, draft.n, 'test fixture', 'test', d)
+}
+
 const testPorts = {
   readTask: (key: string) => ({
     key,
@@ -337,18 +353,36 @@ describe('workflow cursor adapter', () => {
 
   test('two keyless runs in one session have distinct handles and advance independently', () => {
     const d = database()
-    const first = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', {}, 'default', context, d)
-    const second = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', {}, 'default', context, d)
+    installKeylessWorkflow(d, 'keyless-runs')
+    const keylessArgs = {}
+    const first = getWorkflowStepWithCursor(
+      'keyless-runs',
+      'fixture',
+      'score',
+      keylessArgs,
+      'default',
+      context,
+      d,
+    )
+    const second = getWorkflowStepWithCursor(
+      'keyless-runs',
+      'fixture',
+      'score',
+      keylessArgs,
+      'default',
+      context,
+      d,
+    )
     expect(first.cursor).not.toBe(second.cursor)
     expect(first.notice).toContain(`Cursor ${first.cursor} was opened`)
     expect(second.notice).toContain(`Cursor ${second.cursor} was opened`)
     d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
 
     nextWorkflowStep(
-      'ship',
+      'keyless-runs',
       'fixture',
       'default',
-      {},
+      keylessArgs,
       'first advanced',
       context,
       d,
@@ -363,7 +397,17 @@ describe('workflow cursor adapter', () => {
       ordinal: 0,
     })
     expect(() =>
-      nextWorkflowStep('ship', 'fixture', 'default', {}, 'ambiguous', context, d, {}, testPorts),
+      nextWorkflowStep(
+        'keyless-runs',
+        'fixture',
+        'default',
+        keylessArgs,
+        'ambiguous',
+        context,
+        d,
+        {},
+        testPorts,
+      ),
     ).toThrow(new RegExp(`cursor ${first.cursor}.*cursor ${second.cursor}`, 's'))
   })
 
@@ -421,12 +465,22 @@ describe('workflow cursor adapter', () => {
 
   test('closing with task adopts a key once and rekeys cursor questions', () => {
     const d = database()
-    const opened = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', {}, 'default', context, d)
+    installKeylessWorkflow(d, 'adopt-key')
+    const keylessArgs = {}
+    const opened = getWorkflowStepWithCursor(
+      'adopt-key',
+      'fixture',
+      'score',
+      keylessArgs,
+      'default',
+      context,
+      d,
+    )
     awaitWorkflowRuling(
-      'ship',
+      'adopt-key',
       'fixture',
       'default',
-      {},
+      keylessArgs,
       'Which task?',
       context,
       d,
@@ -435,10 +489,10 @@ describe('workflow cursor adapter', () => {
     )
     d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
     nextWorkflowStep(
-      'ship',
+      'adopt-key',
       'fixture',
       'default',
-      {},
+      keylessArgs,
       'task created',
       context,
       d,
@@ -456,10 +510,10 @@ describe('workflow cursor adapter', () => {
     })
     expect(() =>
       nextWorkflowStep(
-        'ship',
+        'adopt-key',
         'fixture',
         'default',
-        {},
+        keylessArgs,
         'different task',
         context,
         d,
@@ -686,7 +740,7 @@ describe('workflow cursor adapter', () => {
       )
 
     expect(output).toBe(
-      `Workflow keyless-fixture (agent) is finished: ${composition.steps.length} steps closed.`,
+      `Workflow keyless-fixture for DEV-822 is finished: ${composition.steps.length} steps closed.`,
     )
   })
 
