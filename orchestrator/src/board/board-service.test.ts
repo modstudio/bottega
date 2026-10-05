@@ -149,6 +149,88 @@ test('tagged project notice reaches a matching worker chain and withholds from a
   expect(claimRunNotices(other.id, false, clock + 1)).toEqual([])
 })
 
+test('run audience is owner-gated for architects and resolves a turn to its chain root', () => {
+  const clock = Date.now() + 13_000
+  const posting = postingProject()
+  const insertRun = db().query(
+    `INSERT INTO run
+     (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,parent_run_id,turn)
+     VALUES (?,'codex','implement','owned-run-project','sha',1,'prompt','running',?,?,?) RETURNING id`,
+  )
+  const root = insertRun.get(new Date(clock).toISOString(), 'run-owner', null, 1) as { id: number }
+  const turn = insertRun.get(new Date(clock + 1).toISOString(), 'run-owner', root.id, 2) as {
+    id: number
+  }
+
+  const owned = postNotice(
+    { audience: `run:${turn.id}`, title: 'Owner notice', body: 'Addressed through a turn.' },
+    { CLAUDE_CODE_SESSION_ID: 'run-owner' },
+    clock + 2,
+    posting.cwd,
+  )
+  expect(owned.reached).toBe(1)
+  expect(claimRunNotices(root.id, false, clock + 3).map((notice) => notice.id)).toContain(owned.id)
+
+  const before = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
+    .count
+  expect(() =>
+    postNotice(
+      { audience: `run:${turn.id}`, title: 'Foreign notice', body: 'Must not be stored.' },
+      { CLAUDE_CODE_SESSION_ID: 'foreign-architect' },
+      clock + 4,
+      posting.cwd,
+    ),
+  ).toThrow(
+    'run ' +
+      turn.id +
+      ' is owned by session run-owner; address project:<name> or workers:<project>, or ask the owner',
+  )
+  expect(db().query('SELECT COUNT(*) count FROM board_message').get()).toEqual({ count: before })
+
+  const operator = postNotice(
+    { audience: `run:${turn.id}`, title: 'Operator notice', body: 'Operator may address any run.' },
+    {},
+    clock + 5,
+  )
+  expect(operator.reached).toBe(1)
+})
+
+test('an unregistered live chain resolves for run and machine but not project audiences', () => {
+  const clock = Date.now() + 14_000
+  const run = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES (?,'codex','implement',NULL,'sha',1,'prompt','asking',1) RETURNING id`,
+    )
+    .get(new Date(clock).toISOString()) as { id: number }
+  const byMachine = postNotice(
+    { audience: `machine:${hostname()}`, title: 'Machine notice', body: 'Includes local runs.' },
+    {},
+    clock + 1,
+  )
+  const byRun = postNotice(
+    { audience: `run:${run.id}`, title: 'Run notice', body: 'Includes the exact chain.' },
+    {},
+    clock + 2,
+  )
+  const byProject = postNotice(
+    { audience: 'project:missing-project', title: 'Project notice', body: 'Must not match.' },
+    {},
+    clock + 3,
+  )
+  const byWorkers = postNotice(
+    { audience: 'workers:missing-project', title: 'Workers notice', body: 'Must not match.' },
+    {},
+    clock + 4,
+  )
+  const ids = claimRunNotices(run.id, false, clock + 5).map((notice) => notice.id)
+  expect(ids).toContain(byMachine.id)
+  expect(ids).toContain(byRun.id)
+  expect(ids).not.toContain(byProject.id)
+  expect(ids).not.toContain(byWorkers.id)
+})
+
 test('an untagged notice infers no tags', () => {
   const posted = postNotice(
     {

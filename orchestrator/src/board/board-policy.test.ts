@@ -10,6 +10,7 @@ import {
   parseAudience,
   postDecision,
   resolveAudience,
+  runAudienceRefusal,
   shouldInterrupt,
 } from './board-policy.ts'
 
@@ -115,6 +116,18 @@ test('worker audiences resolve projects, runs, and machines without leaking sess
 test('unsupported audience refusal lists every accepted form', () => {
   expect(() => parseAudience('everyone')).toThrow(
     'unsupported board audience everyone; use operator, architects, project:<name>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
+  )
+})
+
+test('run audience policy permits the owner and operator but identifies a foreign owner', () => {
+  const audience = parseAudience('run:42')
+  expect(runAudienceRefusal(audience, 'architect', 'owner', 'owner')).toBeNull()
+  expect(runAudienceRefusal(audience, 'operator', null, 'owner')).toBeNull()
+  expect(runAudienceRefusal(audience, 'architect', 'foreign', 'owner')).toBe(
+    'run 42 is owned by session owner; address project:<name> or workers:<project>, or ask the owner',
+  )
+  expect(runAudienceRefusal(audience, 'architect', 'foreign', null)).toContain(
+    'run 42 has no owning session',
   )
 })
 

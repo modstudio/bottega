@@ -20,6 +20,7 @@ import {
   postDecision,
   requireRealSession,
   resolveAudience,
+  runAudienceRefusal,
   shouldInterrupt,
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
@@ -164,10 +165,9 @@ function presenceFacts(database = db()) {
        )
        SELECT run.id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn
        FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_id,run.id)
-       WHERE run.repo IS NOT NULL
        ORDER BY root_id,turn DESC`,
     )
-    .all() as { id: number; root_id: number; repo: string; status: string; turn: number }[]
+    .all() as { id: number; root_id: number; repo: string | null; status: string; turn: number }[]
   const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number> }>()
   for (const row of liveTurns) {
     const current = workers.get(row.root_id)
@@ -179,7 +179,7 @@ function presenceFacts(database = db()) {
     ...[...workers.values()].map((row) => ({
       reader: `run:${row.root_id}`,
       role: 'worker' as const,
-      project: row.repo,
+      project: row.repo ?? '',
       machine: hostname(),
       live: true,
       runIds: row.runIds,
@@ -230,6 +230,17 @@ function resolvePostOrigin(actor: Actor, env: Environment, cwd: string) {
       `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
     )
   return { harness: architectIdentity(env)!.harness, project: project.name }
+}
+
+function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
+  const row = database
+    .query(
+      `SELECT root.session_id
+       FROM run turn JOIN run root ON root.id=COALESCE(turn.parent_run_id,turn.id)
+       WHERE turn.id=?`,
+    )
+    .get(runId) as { session_id: string | null } | null
+  return row?.session_id ?? null
 }
 
 function validatePostNoticeInput(input: PostNoticeInput): void {
@@ -322,6 +333,13 @@ export function postNoticeInTransaction(
   )
   const refusal = audienceRefusal(audience, actor.kind)
   if (refusal) throw new Error(refusal)
+  const runRefusal = runAudienceRefusal(
+    audience,
+    actor.kind,
+    actor.session,
+    audience.kind === 'run' ? runOwnerSession(audience.value, database) : null,
+  )
+  if (runRefusal) throw new Error(runRefusal)
   const senderTags = senderBoardTags(input)
   const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
   const expiresMs = input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS

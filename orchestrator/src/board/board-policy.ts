@@ -74,6 +74,18 @@ export function audienceRefusal(
     : null
 }
 
+export function runAudienceRefusal(
+  audience: Audience,
+  author: 'operator' | 'architect',
+  authorSession: string | null,
+  ownerSession: string | null,
+): string | null {
+  if (audience.kind !== 'run' || author === 'operator' || authorSession === ownerSession)
+    return null
+  const owner = ownerSession ? `is owned by session ${ownerSession}` : 'has no owning session'
+  return `run ${audience.value} ${owner}; address project:<name> or workers:<project>, or ask the owner`
+}
+
 export function resolveAudience(
   audience: Audience,
   presence: PresenceFact[],

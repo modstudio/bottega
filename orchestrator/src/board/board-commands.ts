@@ -22,7 +22,7 @@ function parseBoardDuration(value: string): number {
   return amount * factor
 }
 
-const collect = (value: string, values: string[]) => [...values, value]
+const collect = (value: string, values: string[] = []) => [...values, value]
 
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
