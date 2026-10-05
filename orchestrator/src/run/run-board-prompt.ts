@@ -1,18 +1,18 @@
 // concern: run-board-prompt
 /** Adds addressed board context after a run row exists, without changing its compiled canon pack. */
 import { writeFileSync } from 'node:fs'
-import { claimRunNotices } from '../board/board-service.ts'
+import { claimRunBoardNotices } from '../board/board-delivery.ts'
 import { db } from '../database/db.ts'
 import { sha } from './run-process.ts'
 
 export const BOARD_PACK_MAX_NOTICES = 5
 export const BOARD_PACK_MAX_CHARS = 2_000
 
-type RunNotice = ReturnType<typeof claimRunNotices>[number]
+type RunNotice = Awaited<ReturnType<typeof claimRunBoardNotices>>[number]
 
 export function renderRunBoardSection(notices: RunNotice[]): {
   text: string
-  includedIds: number[]
+  includedIds: Array<number | string>
 } {
   if (!notices.length) return { text: '', includedIds: [] }
   const ordered = [...notices].sort(
@@ -43,35 +43,37 @@ export function renderRunBoardSection(notices: RunNotice[]): {
   }
 }
 
-export function appendInitialRunBoardPrompt(
+export async function appendInitialRunBoardPrompt(
   prompt: string,
   runId: number,
-): { prompt: string; noticeIds: number[] } {
-  const section = renderRunBoardSection(claimRunNotices(runId))
+): Promise<{ prompt: string; noticeIds: Array<number | string> }> {
+  const section = renderRunBoardSection(await claimRunBoardNotices(runId))
   return {
     prompt: section.text ? `${prompt}\n\n${section.text}` : prompt,
     noticeIds: section.includedIds,
   }
 }
 
-export function prepareRunBoard(
+export async function prepareRunBoard(
   prompt: string,
   promptPath: string,
   runId: number,
   firstTurn: boolean,
-): { prompt: string; noticeIds: number[] } {
-  const result = firstTurn ? appendInitialRunBoardPrompt(prompt, runId) : { prompt, noticeIds: [] }
+): Promise<{ prompt: string; noticeIds: Array<number | string> }> {
+  const result = firstTurn
+    ? await appendInitialRunBoardPrompt(prompt, runId)
+    : { prompt, noticeIds: [] }
   if (result.noticeIds.length) persistBoundPrompt(promptPath, result.prompt, runId)
   return result
 }
 
-export function prepareLaterRunBoardPrompt(
+export async function prepareLaterRunBoardPrompt(
   runId: number,
   laterTurn: boolean,
   mailbox: { id: number; body: string }[],
   prompt: string,
-): { prompt: string; notices: RunNotice[] } {
-  const notices = laterTurn ? claimRunNotices(runId) : []
+): Promise<{ prompt: string; notices: RunNotice[] }> {
+  const notices = laterTurn ? await claimRunBoardNotices(runId) : []
   const items = [
     ...mailbox.map((message) => `[message ${message.id}] ${message.body}`),
     ...notices.map((notice) => notice.text),

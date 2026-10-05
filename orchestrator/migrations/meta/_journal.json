@@ -561,6 +561,13 @@
       "when": 1790884800007,
       "tag": "0079_record_install_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1790884800008,
+      "tag": "0080_hosted_board_cache",
+      "breakpoints": true
     }
   ]
 }

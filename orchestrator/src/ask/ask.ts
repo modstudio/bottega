@@ -33,7 +33,11 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
-import { readRunNotices } from '../board/board-service.ts'
+import {
+  BOARD_ASK_REFRESH_BUDGET_MS,
+  claimRunBoardNotices,
+  markRunBoardNoticesDelivered,
+} from '../board/board-delivery.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
@@ -571,7 +575,11 @@ export function createAskMcpServer(
       try {
         if (!authorized()) throw new Error(unauthorized())
         const messages = checkMessages(runId)
-        const notices = readRunNotices(runId)
+        const notices = await claimRunBoardNotices(runId, false, BOARD_ASK_REFRESH_BUDGET_MS)
+        await markRunBoardNoticesDelivered(
+          runId,
+          notices.map((notice) => notice.id),
+        )
         const items = [
           ...messages.map((note) => `[message ${note.id}] ${note.body}`),
           ...notices.map((notice) => notice.text),

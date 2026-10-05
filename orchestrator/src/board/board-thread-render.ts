@@ -1,7 +1,7 @@
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 
 export function renderBoardQuestion(message: {
-  id: number
+  id: number | string
   origin: string
   title: string
   body: string
@@ -21,9 +21,9 @@ export function renderBoardQuestion(message: {
 }
 
 export function renderBoardReply(message: {
-  id: number
+  id: number | string
   origin: string
-  rootId: number
+  rootId: number | string
   rootTitle: string
   body: string
 }): string {

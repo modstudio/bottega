@@ -2,13 +2,13 @@ import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import type { BoardTag } from './board-tags.ts'
 
 export function renderBoardNotice(message: {
-  id: number
+  id: number | string
   kind?: string
   authorKind: string
   authorSession: string | null
   authorHarness: string | null
   authorProject: string | null
-  authorRunId?: number | null
+  authorRunId?: number | string | null
   title: string
   body: string
   expiresAt: string

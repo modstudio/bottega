@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { readBoardNotices } from '../board/board-delivery.ts'
 import {
   boardAccept,
   boardAcknowledge,
@@ -12,7 +13,6 @@ import {
   boardWithdraw,
 } from '../board/board-operations.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
-import { readNotices } from '../board/board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
 import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 
@@ -128,7 +128,12 @@ export function registerBoardTools(server: McpServer): void {
       inputSchema: z.object({ all: z.boolean().optional() }),
     },
     async ({ all }) =>
-      result(readNotices(all ?? false).map((notice) => ({ ...notice, id: String(notice.id) }))),
+      result(
+        (await readBoardNotices(all ?? false)).map((notice) => ({
+          ...notice,
+          id: String(notice.id),
+        })),
+      ),
   )
   server.registerTool(
     'board_ack',

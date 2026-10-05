@@ -299,8 +299,8 @@ function refreshPostingPresence(
   database
     .query(
       `INSERT INTO presence
-       (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,?,'architect',?,?,?,?,?)
+       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,?,'architect',?,?,?,?,?,?)
        ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
          machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
          current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
@@ -312,6 +312,7 @@ function refreshPostingPresence(
       origin.project,
       cwd,
       current?.launch_key ?? null,
+      at,
       at,
     )
 }

@@ -116,7 +116,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../agent/agents.ts',
     '../ask/ask.ts',
     '../ask/worker-note-broker.ts',
-    '../board/board-service.ts',
+    '../board/board-delivery.ts',
     './checkpoint.ts',
     './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',

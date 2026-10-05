@@ -28,7 +28,7 @@ import {
   monitor,
   monitorHistory,
 } from './monitor.ts'
-import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
+import { claimMonitorNoticesWithHosted, markMonitorNoticesDelivered } from './monitor-notices.ts'
 import {
   formatStoreWriteLockReport,
   type StoreWriteLockReport,
@@ -144,18 +144,18 @@ function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }
   }
 }
 
-function acknowledge(ids: string): void {
+async function acknowledge(ids: string): Promise<void> {
   const sid = sessionId()
   if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
   if (!deliveryAuthorized())
     throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
-  markMonitorNoticesDelivered(sid, ids.split(',') as MonitorNotice['noticeId'][])
+  await markMonitorNoticesDelivered(sid, ids.split(',') as MonitorNotice['noticeId'][])
 }
 
 async function showNotices(json: boolean, presentation: Presentation): Promise<void> {
   const sid = sessionId()
   if (!sid) throw new Error('monitor notices require CLAUDE_CODE_SESSION_ID')
-  const rows = claimMonitorNotices(sid)
+  const rows = await claimMonitorNoticesWithHosted(sid)
   if (json) await presentation.write(`${JSON.stringify(rows)}\n`)
   else
     for (const condition of rows)

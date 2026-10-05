@@ -35,7 +35,7 @@ export type PresenceFact = {
   machine: string
   lastSeen?: number
   live?: boolean
-  runIds?: ReadonlySet<number>
+  runIds?: ReadonlySet<number | string>
   taskKeys?: ReadonlySet<string>
   taskAudienceOnly?: boolean
 }
@@ -115,14 +115,7 @@ export function resolveAudience(
   if (audience.kind === 'task')
     return readers(live.filter((row) => row.taskKeys?.has(audience.value)))
   if (audience.kind === 'run')
-    return readers(
-      live.filter(
-        (row) =>
-          row.role === 'worker' &&
-          typeof audience.value === 'number' &&
-          row.runIds?.has(audience.value),
-      ),
-    )
+    return readers(live.filter((row) => row.role === 'worker' && row.runIds?.has(audience.value)))
   if (audience.kind === 'machine')
     return readers(live.filter((row) => row.machine === audience.value))
   return readers(live.filter((row) => row.role === 'architect' && row.reader === audience.value))
@@ -130,12 +123,15 @@ export function resolveAudience(
 
 export const shouldInterrupt = (message: {
   authorKind: string
+  authorIsSignedInUser?: boolean
   audienceKind: Audience['kind']
   ackRequired: boolean
   claimConflict?: boolean
 }): boolean =>
   message.claimConflict === true ||
-  (message.ackRequired && (message.authorKind === 'operator' || message.audienceKind === 'machine'))
+  (message.ackRequired &&
+    ((message.authorKind === 'operator' && message.authorIsSignedInUser !== false) ||
+      message.audienceKind === 'machine'))
 
 export function requireRealSession(session: string, action: string): void {
   if (!session.trim() || session === OPERATOR_READER || session.startsWith('run:'))

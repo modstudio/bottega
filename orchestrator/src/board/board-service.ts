@@ -1,6 +1,7 @@
 import { hostname } from 'node:os'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { reapHostedBoardCache } from './board-hosted-cache.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -72,8 +73,8 @@ export function recordPresence(
   writableDb()
     .query(
       `INSERT INTO presence
-       (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,?,'architect',?,?,?,?,?)
+       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,?,'architect',?,?,?,?,?,?)
        ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
          machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
          current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
@@ -85,6 +86,7 @@ export function recordPresence(
       project.name,
       cwd,
       current?.launch_key ?? null,
+      at,
       at,
     )
   return true
@@ -338,6 +340,8 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
   }
   return {
     message: render(row),
+    row,
+    tags: messageTags(row.id),
     receipts,
     reached: receipts.length,
     acknowledged: receipts.filter((receipt) => receipt.acknowledged_at !== null).length,
@@ -461,5 +465,5 @@ export function reapBoardMessages(clock = Date.now()): number {
   const remove = writableDb().query('DELETE FROM board_message WHERE id=?')
   let reaped = 0
   for (const id of ids) reaped += remove.run(id).changes
-  return reaped
+  return reaped + reapHostedBoardCache(clock)
 }

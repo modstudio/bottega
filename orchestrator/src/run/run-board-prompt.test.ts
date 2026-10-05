@@ -15,7 +15,7 @@ const notice = (id: number, ackRequired: boolean, createdAt: string, text = `not
   text,
 })
 
-test('a dispatch-delivered notice is not returned by the worker pull path', () => {
+test('a dispatch-delivered notice is not returned by the worker pull path', async () => {
   const clock = Date.now() + 400_000
   const run = db()
     .query(
@@ -30,9 +30,9 @@ test('a dispatch-delivered notice is not returned by the worker pull path', () =
     {},
     clock,
   )
-  const bound = appendInitialRunBoardPrompt('PROMPT', run.id)
+  const bound = await appendInitialRunBoardPrompt('PROMPT', run.id)
   expect(bound.noticeIds).toEqual([posted.id])
-  markRunNoticesDelivered(run.id, bound.noticeIds, clock + 1)
+  markRunNoticesDelivered(run.id, bound.noticeIds.map(Number), clock + 1)
   expect(readRunNotices(run.id, false, clock + 2)).toEqual([])
 })
 
