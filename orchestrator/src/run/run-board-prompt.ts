@@ -54,6 +54,17 @@ export function appendInitialRunBoardPrompt(
   }
 }
 
+export function prepareInitialRunBoardPrompt(
+  prompt: string,
+  promptPath: string,
+  runId: number,
+  firstTurn: boolean,
+): { prompt: string; noticeIds: number[] } {
+  const result = firstTurn ? appendInitialRunBoardPrompt(prompt, runId) : { prompt, noticeIds: [] }
+  if (result.noticeIds.length) persistBoundPrompt(promptPath, result.prompt, runId)
+  return result
+}
+
 export function persistBoundPrompt(promptPath: string, prompt: string, runId: number): void {
   writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
   db()

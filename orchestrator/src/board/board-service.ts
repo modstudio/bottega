@@ -66,8 +66,11 @@ const unrecognizedSessionMarked = (env: Environment) =>
 export function boardActor(env: Environment = process.env): Actor {
   if (workerMarked(env))
     throw new Error('workers cannot use the architect notice board in this slice')
-  if (env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER)
-    throw new Error('operator is reserved and is not a session id')
+  if (
+    env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
+    env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')
+  )
+    throw new Error('operator and run:<id> readers are reserved and are not session ids')
   const identity = architectIdentity(env)
   if (identity) return { kind: 'architect', session: identity.session }
   if (unrecognizedSessionMarked(env))
@@ -88,12 +91,15 @@ export function recordPresence(
   at = nowIso(),
 ): boolean {
   if (workerMarked(env)) return false
-  if (env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER)
-    throw new Error('operator is reserved and is not a session id')
+  if (
+    env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
+    env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')
+  )
+    throw new Error('operator and run:<id> readers are reserved and are not session ids')
   const identity = architectIdentity(env)
   if (!identity) return false
-  if (identity.session === OPERATOR_READER)
-    throw new Error('operator is reserved and is not a session id')
+  if (identity.session === OPERATOR_READER || identity.session.startsWith('run:'))
+    throw new Error('operator and run:<id> readers are reserved and are not session ids')
   const project = projectAt(cwd)
   if (!project) throw new Error(`no registered project contains ${cwd}; run orch project add first`)
   const current = db()

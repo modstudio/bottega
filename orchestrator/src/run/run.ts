@@ -103,7 +103,7 @@ import {
   runScratchDir,
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
-import { appendInitialRunBoardPrompt, persistBoundPrompt } from './run-board-prompt.ts'
+import { persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { decideCodexSandbox } from './run-codex-sandbox.ts'
@@ -692,6 +692,7 @@ export async function run(opts: {
     sandboxRunDirExisted,
     cwd,
     prompt: claimedBoundPrompt,
+    initialBoardNoticeIds,
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = await claimRun({
@@ -731,11 +732,6 @@ export async function run(opts: {
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
   })
   prompt = claimedBoundPrompt
-  const initialBoard = resume.isFirstTurn
-    ? appendInitialRunBoardPrompt(prompt, claim.id)
-    : { prompt, noticeIds: [] }
-  prompt = initialBoard.prompt
-  if (initialBoard.noticeIds.length) persistBoundPrompt(promptPath, prompt, claim.id)
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
 
@@ -1106,7 +1102,7 @@ export async function run(opts: {
       textReplyContract,
       resolvedDialect,
       mcpSetupHeader,
-      initialBoardNoticeIds: initialBoard.noticeIds,
+      initialBoardNoticeIds,
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
