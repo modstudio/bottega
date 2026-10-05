@@ -38,10 +38,16 @@ const IDS = {
   claimSuccessor: '02990000-0000-7000-8000-000000000016',
   claimDuplicate: '02990000-0000-7000-8000-000000000017',
   claimReadInsert: '02990000-0000-7000-8000-000000000018',
+  claimTakeoverOld: '02990000-0000-7000-8000-000000000019',
+  claimTakeoverNew: '02990000-0000-7000-8000-000000000020',
+  claimMissingSuccessor: '02990000-0000-7000-8000-000000000023',
+  claimMissingOld: '02990000-0000-7000-8000-000000000025',
   revisionA: '02990000-0000-7000-8000-000000000021',
   revisionB: '02990000-0000-7000-8000-000000000022',
+  shadowRevision: '02990000-0000-7000-8000-000000000024',
   invisibleReply: '02990000-0000-7000-8000-000000000043',
   mismatchedReply: '02990000-0000-7000-8000-000000000044',
+  shadowedRootReply: '02990000-0000-7000-8000-000000000045',
 } as const
 
 function actor(
@@ -280,6 +286,25 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(reply.stderr).toContain('board reply thread root is not visible')
   })
 
+  test('a temporary board_message cannot forge a visible reply root', () => {
+    const reply = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `CREATE TEMP TABLE board_message
+         (id uuid, scope_project_ids uuid[], recipient_user_ids uuid[]);
+       INSERT INTO board_message VALUES
+         ('${IDS.authorOnly}',ARRAY[]::uuid[],ARRAY[]::uuid[]);
+       INSERT INTO public.board_message
+         (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+          scope_project_ids,recipient_user_ids)
+       VALUES ('${IDS.shadowedRootReply}','${IDS.userB}','reply',
+         '${IDS.authorOnly}','reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[]);`,
+    )
+    expect(reply.code).not.toBe(0)
+    expect(reply.stderr).toContain('board reply thread root is not visible')
+  })
+
   test("a reply's scope and recipients must match its board root", () => {
     const reply = actor(
       input,
@@ -498,6 +523,72 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(duplicate.stderr).toContain('board_claim_live_subject_unique')
   })
 
+  test('a writing non-holder takes over a lapsed exact-subject claim atomically', () => {
+    const created = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimTakeoverOld}','${IDS.projectA}','resource','takeover',
+         '${IDS.userA}',60000,now() - interval '2 minutes',now() - interval '2 minutes',
+         now() - interval '1 minute');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+
+    const takeover = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `BEGIN;
+       UPDATE board_claim SET closed_at=now(),close_reason='taken-over',
+         superseded_by_claim_id='${IDS.claimTakeoverNew}'
+       WHERE id='${IDS.claimTakeoverOld}';
+       INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimTakeoverNew}','${IDS.projectA}','resource','takeover',
+         '${IDS.userB}',60000,now(),now(),now() + interval '1 minute');
+       COMMIT;
+       SELECT closed_at IS NOT NULL,close_reason,superseded_by_claim_id
+       FROM board_claim WHERE id='${IDS.claimTakeoverOld}';
+       SELECT closed_at IS NULL,holder_user_id
+       FROM board_claim WHERE id='${IDS.claimTakeoverNew}';`,
+    )
+    expect(takeover.code, takeover.stderr).toBe(0)
+    expect(takeover.stdout.split('\n')).toEqual([
+      `t|taken-over|${IDS.claimTakeoverNew}`,
+      `t|${IDS.userB}`,
+    ])
+  })
+
+  test('a lapsed claim cannot link a successor that is never inserted', () => {
+    const created = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimMissingOld}','${IDS.projectA}','resource','missing-successor',
+         '${IDS.userA}',60000,now() - interval '2 minutes',now() - interval '2 minutes',
+         now() - interval '1 minute');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+
+    const result = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET closed_at=now(),close_reason='taken-over',
+         superseded_by_claim_id='${IDS.claimMissingSuccessor}'
+       WHERE id='${IDS.claimMissingOld}';`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('board_claim_superseded_by_claim_id_board_claim_id_fkey')
+  })
+
   test('the reporting role has SELECT grants but board RLS exposes no rows and no writes', () => {
     const grants = input.admin(`SELECT
       has_table_privilege('${input.readerRole}','board_message','SELECT'),
@@ -536,5 +627,21 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     const revisions = result.stdout.split('\n').map(BigInt)
     expect(revisions[0]! < revisions[1]!).toBe(true)
     expect(revisions[1]! < revisions[2]!).toBe(true)
+  })
+
+  test('a temporary board_message_revision sequence cannot poison the public cursor', () => {
+    const result = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `CREATE TEMP SEQUENCE board_message_revision START WITH 9000000000;
+       INSERT INTO public.board_message
+       (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at)
+       VALUES ('${IDS.shadowRevision}','${IDS.userA}','notice','architects',
+         'shadow-revision','proof',false,now() + interval '1 hour',now())
+       RETURNING revision;`,
+    )
+    expect(result.code, result.stderr).toBe(0)
+    expect(BigInt(result.stdout) < 9_000_000_000n).toBe(true)
   })
 }

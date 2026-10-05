@@ -49,7 +49,7 @@ CREATE TABLE "board_message" (
 	"claim_id" uuid,
 	"scope_project_ids" uuid[] DEFAULT ARRAY[]::uuid[] NOT NULL,
 	"recipient_user_ids" uuid[] DEFAULT ARRAY[]::uuid[] NOT NULL,
-	"revision" bigint DEFAULT nextval('board_message_revision') NOT NULL,
+	"revision" bigint DEFAULT nextval('public.board_message_revision'::regclass) NOT NULL,
 	CONSTRAINT "board_message_kind_check" CHECK ("kind" IN ('notice','suggestion','question','reply')),
 	CONSTRAINT "board_message_reply_shape_check" CHECK (("kind" = 'reply' AND "thread_root_id" IS NOT NULL
           AND "audience" IS NULL AND "title" IS NULL

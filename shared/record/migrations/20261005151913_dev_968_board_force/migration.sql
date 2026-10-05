@@ -1,19 +1,26 @@
-CREATE FUNCTION board_message_assign_revision() RETURNS trigger
+ALTER TABLE public.board_claim
+ALTER CONSTRAINT board_claim_superseded_by_claim_id_board_claim_id_fkey
+DEFERRABLE INITIALLY DEFERRED;
+
+CREATE FUNCTION public.board_message_assign_revision() RETURNS trigger
 LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
-  NEW.revision := nextval('board_message_revision');
+  NEW.revision := nextval('public.board_message_revision'::regclass);
   RETURN NEW;
 END
 $$;
 
 CREATE TRIGGER board_message_assign_revision
 BEFORE INSERT OR UPDATE ON "board_message"
-FOR EACH ROW EXECUTE FUNCTION board_message_assign_revision();
+FOR EACH ROW EXECUTE FUNCTION public.board_message_assign_revision();
 
-CREATE FUNCTION board_message_validate_reply() RETURNS trigger
+CREATE FUNCTION public.board_message_validate_reply() RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   root_scope_project_ids uuid[];
@@ -22,7 +29,7 @@ BEGIN
   IF NEW.kind = 'reply' THEN
     SELECT scope_project_ids, recipient_user_ids
       INTO root_scope_project_ids, root_recipient_user_ids
-      FROM board_message
+      FROM public.board_message
       WHERE id = NEW.thread_root_id;
 
     IF NOT FOUND THEN
@@ -41,11 +48,12 @@ $$;
 
 CREATE TRIGGER board_message_validate_reply
 BEFORE INSERT OR UPDATE ON "board_message"
-FOR EACH ROW EXECUTE FUNCTION board_message_validate_reply();
+FOR EACH ROW EXECUTE FUNCTION public.board_message_validate_reply();
 
-CREATE FUNCTION board_claim_validate_update() RETURNS trigger
+CREATE FUNCTION public.board_claim_validate_update() RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
   IF NEW.holder_user_id IS DISTINCT FROM OLD.holder_user_id
@@ -80,11 +88,11 @@ $$;
 
 CREATE TRIGGER board_claim_validate_update
 BEFORE UPDATE ON "board_claim"
-FOR EACH ROW EXECUTE FUNCTION board_claim_validate_update();
+FOR EACH ROW EXECUTE FUNCTION public.board_claim_validate_update();
 
 ALTER TABLE "board_message" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "board_message_tag" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "board_receipt" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "board_claim" FORCE ROW LEVEL SECURITY;
 
-GRANT USAGE, SELECT ON SEQUENCE board_message_revision TO record_actor;
+GRANT USAGE, SELECT ON SEQUENCE public.board_message_revision TO record_actor;

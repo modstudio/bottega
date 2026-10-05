@@ -1,8 +1,8 @@
 {
-  "id": "380898a3-91cb-4761-ab5a-2917bec09d67",
-  "prevIds": ["98d93ad6-2e43-4ae9-9632-ce3a5374f945"],
   "version": "8",
   "dialect": "postgres",
+  "id": "dd4f83e3-4254-4e1b-a7fd-7eab105658bb",
+  "prevIds": ["88c06047-1a17-4dc5-90f9-5806f55e42f9"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -9395,7 +9395,7 @@
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
-      "default": "nextval('board_message_revision')",
+      "default": "nextval('public.board_message_revision'::regclass)",
       "generated": null,
       "identity": null,
       "name": "revision",

@@ -163,7 +163,9 @@ export const boardMessage = pgTable.withRLS(
     claimId: uuid('claim_id').references(() => boardClaim.id),
     scopeProjectIds: uuid('scope_project_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
     recipientUserIds: uuid('recipient_user_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
-    revision: bigint({ mode: 'bigint' }).notNull().default(sql`nextval('board_message_revision')`),
+    revision: bigint({ mode: 'bigint' })
+      .notNull()
+      .default(sql`nextval('public.board_message_revision'::regclass)`),
   },
   (table) => {
     const readsScope = readsEveryScopedProject(table.scopeProjectIds)
