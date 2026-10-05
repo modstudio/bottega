@@ -17,11 +17,12 @@ import {
   type TakeClaimInput,
   takeClaim,
 } from './board-claim-service.ts'
-import { boardMode } from './board-mode.ts'
+import { boardMode, boardModeForId } from './board-mode.ts'
 import {
   architectIdentity,
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   BOARD_DEFAULT_EXPIRY_MS,
+  OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
 import {
@@ -42,7 +43,6 @@ import {
 
 type Environment = Record<string, string | undefined>
 type Context = { env?: Environment; clock?: number; cwd?: string; client?: RecordApiClient }
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function context(input: Context = {}) {
   return {
@@ -63,21 +63,8 @@ function locality(audience: string) {
     : ('shared' as const)
 }
 
-function idForMode(id: string, mode: 'local' | 'hosted', noun = 'board id'): number | string {
-  if (mode === 'hosted') {
-    if (!UUID.test(id))
-      throw new Error(
-        `${noun} must be a UUID in hosted mode because hosted board ids are opaque record ids`,
-      )
-    return id
-  }
-  const number = Number(id)
-  if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(number))
-    throw new Error(
-      `${noun} must be a positive integer string in local mode because local board ids are SQLite row ids`,
-    )
-  return number
-}
+const idForMode = (id: string, mode: 'local' | 'hosted'): number | string =>
+  mode === 'local' ? Number(id) : id
 
 const stringId = (value: number | string | null) => (value === null ? null : String(value))
 
@@ -185,8 +172,8 @@ export async function boardAsk(
 
 export async function boardReply(id: string, body: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
-  const parsed = idForMode(id, mode, 'board thread id')
+  const mode = boardModeForId(id, 'board thread id', c.env)
+  const parsed = idForMode(id, mode)
   if (mode === 'local') {
     const result = replyToThread(parsed as number, body, c.env, c.clock, c.cwd)
     return { ...result, id: String(result.id), rootId: String(result.rootId) }
@@ -205,8 +192,8 @@ export async function boardReply(id: string, body: string, inputContext?: Contex
 
 export async function boardThread(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
-  const parsed = idForMode(id, mode, 'board thread id')
+  const mode = boardModeForId(id, 'board thread id', c.env)
+  const parsed = idForMode(id, mode)
   return mode === 'local'
     ? localThread(readThread(parsed as number, c.env, c.clock))
     : hostedClient(c).getBoardThread(parsed as string)
@@ -256,9 +243,12 @@ async function fileHostedNote(
 
 export async function boardAccept(questionId: string, replyId: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
-  const question = idForMode(questionId, mode, 'board question id')
-  const reply = idForMode(replyId, mode, 'board reply id')
+  const mode = boardModeForId(questionId, 'board question id', c.env)
+  const replyMode = boardModeForId(replyId, 'board reply id', c.env)
+  if (replyMode !== mode)
+    throw new Error('board question id and board reply id must refer to rows in the same store')
+  const question = idForMode(questionId, mode)
+  const reply = idForMode(replyId, mode)
   if (mode === 'local') {
     const value = await acceptAnswer(question as number, reply as number, c.env, c.clock, c.cwd)
     return { ...value, accepted: String(value.accepted), questionId: String(value.questionId) }
@@ -272,8 +262,8 @@ export async function boardAccept(questionId: string, replyId: string, inputCont
 
 export async function boardFileNote(questionId: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
-  const question = idForMode(questionId, mode, 'board question id')
+  const mode = boardModeForId(questionId, 'board question id', c.env)
+  const question = idForMode(questionId, mode)
   if (mode === 'local')
     return { ...(await fileAnswerNote(question as number, c.env, c.cwd)), questionId }
   return {
@@ -284,7 +274,7 @@ export async function boardFileNote(questionId: string, inputContext?: Context) 
 
 export async function boardWithdraw(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
+  const mode = boardModeForId(id, undefined, c.env)
   const parsed = idForMode(id, mode)
   if (mode === 'local') withdrawNotice(parsed as number, c.env, c.clock)
   else
@@ -296,15 +286,11 @@ export async function boardWithdraw(id: string, inputContext?: Context) {
 
 export async function boardAcknowledge(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
+  const mode = boardModeForId(id, undefined, c.env)
   const parsed = idForMode(id, mode)
   if (mode === 'local') acknowledgeNotice(parsed as number, c.env, c.clock)
   else {
-    const session = boardActor(c.env).session
-    if (!session)
-      throw new Error(
-        'hosted board acknowledgement requires an architect session; sign in from a supported architect harness',
-      )
+    const session = boardActor(c.env).session ?? OPERATOR_READER
     // An acknowledged receipt never escalates; the cache change will first store the real posting-time value.
     await hostedClient(c).putBoardReceipt({
       messageId: parsed as string,
@@ -318,7 +304,7 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
 
 export async function boardStatus(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
+  const mode = boardModeForId(id, undefined, c.env)
   const parsed = idForMode(id, mode)
   if (mode === 'hosted') return hostedClient(c).getBoardStatus(parsed as string)
   const status = noticeStatus(parsed as number, c.env, c.clock)
@@ -370,8 +356,8 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
 
 export async function boardClaimRenew(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
-  const parsed = idForMode(id, mode, 'board claim id')
+  const mode = boardModeForId(id, 'board claim id', c.env)
+  const parsed = idForMode(id, mode)
   return mode === 'local'
     ? localClaim(renewClaim(parsed as number, c.env, c.clock))
     : hostedClient(c).renewBoardClaim(parsed as string, {
@@ -380,8 +366,8 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const mode = boardMode('shared', c.env)
-  const parsed = idForMode(id, mode, 'board claim id')
+  const mode = boardModeForId(id, 'board claim id', c.env)
+  const parsed = idForMode(id, mode)
   return mode === 'local'
     ? localClaim(releaseClaim(parsed as number, c.env, c.clock))
     : hostedClient(c).releaseBoardClaim(parsed as string, {
