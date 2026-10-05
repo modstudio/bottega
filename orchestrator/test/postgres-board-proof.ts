@@ -123,7 +123,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
          renewed_at,lapses_at)
       VALUES ('${IDS.claimA}','${IDS.projectA}','path','src/a.ts','${IDS.userA}',60000,
-        now(),now(),now() + interval '1 minute');
+        now(),now(),now() + interval '1 hour');
     `)
   })
 
@@ -388,7 +388,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
        (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
         renewed_at,lapses_at)
        VALUES ('${IDS.claimLiveOther}','${IDS.projectA}','path','live-note','${IDS.userB}',60000,
-        now(),now(),now() + interval '1 minute');`,
+        now(),now(),now() + interval '1 hour');`,
     )
     expect(created.code, created.stderr).toBe(0)
     const update = actor(
@@ -468,7 +468,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
        (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
         renewed_at,lapses_at)
        VALUES ('${IDS.claimHolderEdit}','${IDS.projectA}','path','holder-edit','${IDS.userB}',60000,
-        now(),now(),now() + interval '1 minute');`,
+        now(),now(),now() + interval '1 hour');`,
     )
     expect(created.code, created.stderr).toBe(0)
     const update = actor(

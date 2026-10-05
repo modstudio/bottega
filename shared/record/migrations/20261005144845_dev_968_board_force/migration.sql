@@ -63,7 +63,8 @@ BEGIN
     RAISE EXCEPTION 'only its holder may update a live board claim';
   END IF;
 
-  IF NEW.holder_session IS DISTINCT FROM OLD.holder_session
+  IF NEW.id IS DISTINCT FROM OLD.id
+    OR NEW.holder_session IS DISTINCT FROM OLD.holder_session
     OR NEW.note IS DISTINCT FROM OLD.note
     OR NEW.run_id IS DISTINCT FROM OLD.run_id
     OR NEW.duration_ms IS DISTINCT FROM OLD.duration_ms
