@@ -25,6 +25,7 @@ import {
 } from './record-board-contract.ts'
 import {
   postHostedBoardNoticeInTransaction,
+  requireOwnedHostedRunAndMachine,
   resolveVisibleProjectId,
 } from './record-board-messages.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
@@ -153,6 +154,24 @@ function takeOverlaps(
   return { exactHeld, conflicts, foreignLive: conflicts.filter((row) => hostedLive(row, clock)) }
 }
 
+type ClaimTellKind = 'taken-over' | 'conflict-attempt'
+
+function claimTellNotice(
+  kind: ClaimTellKind,
+  input: { userId: string; subject: string; project: string; claimId: string },
+): { title: string; body: string } {
+  if (kind === 'taken-over') {
+    return {
+      title: 'Claim taken over',
+      body: `User ${input.userId} took over claim ${input.claimId} with ${input.subject} in ${input.project}.`,
+    }
+  }
+  return {
+    title: 'Conflicting claim attempt',
+    body: `User ${input.userId} attempted to claim ${input.subject} in ${input.project}; it conflicts with claim ${input.claimId}.`,
+  }
+}
+
 async function tellConflicts(
   tx: SQL,
   conflicts: ClaimRow[],
@@ -160,9 +179,15 @@ async function tellConflicts(
   projectId: string,
   session: string | null,
   clock: number,
-  title: string,
+  kind: ClaimTellKind,
 ): Promise<void> {
   for (const conflict of conflicts) {
+    const copy = claimTellNotice(kind, {
+      userId: input.userId,
+      subject: input.subject,
+      project: input.project,
+      claimId: String(conflict.id),
+    })
     await tellHolder(tx, {
       userId: input.userId,
       projectId,
@@ -170,8 +195,8 @@ async function tellConflicts(
       claimId: String(conflict.id),
       holderUserId: String(conflict.holder_user_id),
       holderSession: conflict.holder_session == null ? null : String(conflict.holder_session),
-      title,
-      body: `User ${input.userId} ${title === 'Claim taken over' ? 'took over' : 'attempted to claim'} ${title === 'Claim taken over' ? `claim ${String(conflict.id)} with ${input.subject}` : input.subject} in ${input.project}${title === 'Claim taken over' ? '.' : `; it conflicts with claim ${String(conflict.id)}.`}`,
+      title: copy.title,
+      body: copy.body,
       authorSession: session,
       clock,
     })
@@ -203,7 +228,7 @@ async function supersedeConflicts(
       WHERE id=${String(conflict.id)}::uuid
     `
   }
-  await tellConflicts(tx, conflicts, input, projectId, session, clock, 'Claim taken over')
+  await tellConflicts(tx, conflicts, input, projectId, session, clock, 'taken-over')
 }
 
 function differentRenewalTerms(
@@ -304,6 +329,10 @@ async function insertTakenClaim(
   clock: number,
 ): Promise<HostedBoardClaim & { action: 'taken' | 'taken-over' }> {
   const now = new Date(clock).toISOString()
+  await requireOwnedHostedRunAndMachine(tx, input.userId, {
+    runId: input.runId,
+    runField: 'runId',
+  })
   await supersedeConflicts(tx, conflicts, input, projectId, session, clock, now)
   await tx`
     INSERT INTO board_claim (
@@ -350,15 +379,7 @@ async function takeClaimInTx(
   if (decision === 'renew' && exactHeld)
     return renewOpenClaim(tx, input, exactHeld, duration, note, clock)
   if (decision === 'refuse') {
-    await tellConflicts(
-      tx,
-      foreignLive,
-      input,
-      projectId,
-      session,
-      clock,
-      'Conflicting claim attempt',
-    )
+    await tellConflicts(tx, foreignLive, input, projectId, session, clock, 'conflict-attempt')
     return {
       refused: `claim conflicts with: ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
     }

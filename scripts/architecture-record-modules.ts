@@ -142,6 +142,7 @@ export const recordModules: RecordModule[] = [
     '../board/board-tags.ts',
     './record-board-contract.ts',
     './record-board-messages.ts',
+    './record-board-receipts.ts',
     './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/record-board-claims.ts', [

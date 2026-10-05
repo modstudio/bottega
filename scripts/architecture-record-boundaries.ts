@@ -177,6 +177,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../board/board-tags.ts',
       './record-board-contract.ts',
       './record-board-messages.ts',
+      './record-board-receipts.ts',
       './record-board-tx.ts',
     ],
     'Keep the hosted board change cursor independent of HTTP and local stores.',

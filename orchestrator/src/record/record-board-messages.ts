@@ -61,7 +61,7 @@ const iso = (value: unknown) => {
   return new Date(String(value)).toISOString()
 }
 
-function asTags(rows: Record<string, unknown>[]): BoardTag[] {
+export function hostedBoardTags(rows: Record<string, unknown>[]): BoardTag[] {
   return rows.map((row) => ({
     kind: String(row.kind) as BoardTag['kind'],
     value: String(row.value),
@@ -156,7 +156,7 @@ async function messageTags(tx: SQL, id: string): Promise<BoardTag[]> {
     SELECT kind, value, origin FROM board_message_tag
     WHERE message_id=${id}::uuid ORDER BY kind, value, origin
   `
-  return asTags(rows as Record<string, unknown>[])
+  return hostedBoardTags(rows as Record<string, unknown>[])
 }
 
 export async function loadHostedBoardMessage(
@@ -186,6 +186,37 @@ function sessionOrNull(value: string | null | undefined): string | null {
   if (actor.kind === 'architect')
     asBoardError(() => requireRealSession(actor.session, 'hosted board'))
   return actor.session
+}
+
+export async function requireOwnedHostedRunAndMachine(
+  tx: SQL,
+  userId: string,
+  input: {
+    runId?: string | null
+    machineId?: string | null
+    runField: string
+    machineField?: string
+  },
+): Promise<void> {
+  if (input.runId) {
+    const rows = await tx`SELECT started_by_user_id FROM run WHERE id=${input.runId}::uuid`
+    if (!rows[0] || String(rows[0].started_by_user_id) !== userId) {
+      throw new RecordBoardError(
+        `board ${input.runField} is missing, invisible, or not started by this user`,
+        400,
+      )
+    }
+  }
+  if (input.machineId) {
+    const field = input.machineField ?? 'authorMachineId'
+    const rows = await tx`SELECT user_id FROM machine WHERE id=${input.machineId}::uuid`
+    if (!rows[0] || String(rows[0].user_id) !== userId) {
+      throw new RecordBoardError(
+        `board ${field} is missing, invisible, or not owned by this user`,
+        400,
+      )
+    }
+  }
 }
 
 async function authorWindow(
@@ -292,6 +323,12 @@ async function insertRoot(
   const claimId = forcedScope?.claimId ?? null
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
+  await requireOwnedHostedRunAndMachine(tx, userId, {
+    runId: input.authorRunId,
+    machineId: input.authorMachineId,
+    runField: 'authorRunId',
+    machineField: 'authorMachineId',
+  })
   await tx`
     INSERT INTO board_message (
       id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
@@ -311,23 +348,6 @@ async function insertRoot(
   return input.id
 }
 
-async function storedArraysMatch(
-  tx: SQL,
-  id: string,
-  scopeProjectIds: string[],
-  recipientUserIds: string[],
-): Promise<boolean> {
-  const rows = (await tx`
-    SELECT
-      scope_project_ids IS NOT DISTINCT FROM COALESCE(${boardUuidArray(tx, scopeProjectIds)}, ARRAY[]::uuid[])
-        AS same_scope,
-      recipient_user_ids IS NOT DISTINCT FROM COALESCE(${boardUuidArray(tx, recipientUserIds)}, ARRAY[]::uuid[])
-        AS same_recipients
-    FROM board_message WHERE id=${id}::uuid
-  `) as { same_scope: boolean; same_recipients: boolean }[]
-  return Boolean(rows[0]?.same_scope && rows[0]?.same_recipients)
-}
-
 async function existingOrConflict(
   tx: SQL,
   id: string,
@@ -335,19 +355,7 @@ async function existingOrConflict(
 ): Promise<HostedBoardMessage | null> {
   const loaded = await loadHostedBoardMessage(tx, id)
   if (!loaded) return null
-  const stored = createContent(loaded.row, loaded.tags)
-  const sameScalars = sameHostedBoardCreateContent(
-    {
-      ...stored,
-      scopeProjectIds: requested.scopeProjectIds,
-      recipientUserIds: requested.recipientUserIds,
-    },
-    requested,
-  )
-  if (
-    !sameScalars ||
-    !(await storedArraysMatch(tx, id, requested.scopeProjectIds, requested.recipientUserIds))
-  ) {
+  if (!sameHostedBoardCreateContent(createContent(loaded.row, loaded.tags), requested)) {
     throw new RecordBoardError(
       `board message ${id} already exists with different content; mint a new id`,
       409,
@@ -481,6 +489,15 @@ function replyBodyRefusal(body: string): string | null {
   return null
 }
 
+export function hostedBoardFilingFailRefusal(error: string): string | null {
+  if (!error.trim()) return 'filing failure error is required'
+  if (error.length > BOARD_BODY_MAX_CHARS)
+    return `board filing failure exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
+  if (containsSecretShaped(error))
+    return 'board filing failure contains secret-shaped text; remove the credential and retry'
+  return null
+}
+
 function liveRoot(row: Record<string, unknown>, clock: number): boolean {
   if (row.expires_at == null) return false
   return messageIsLive(
@@ -510,6 +527,12 @@ async function insertReplyCopyingRoot(
   createdAt: string,
   clock: number,
 ): Promise<HostedBoardMessage> {
+  await requireOwnedHostedRunAndMachine(tx, input.userId, {
+    runId: input.authorRunId,
+    machineId: input.authorMachineId,
+    runField: 'authorRunId',
+    machineField: 'authorMachineId',
+  })
   const inserted = await tx`
     INSERT INTO board_message (
       id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
@@ -552,10 +575,13 @@ export async function replyHostedBoardMessage(
     senderTags: [],
   }
   return withBoardTenant(input, true, async (tx) => {
-    const sameId = await existingOrConflict(tx, input.id, requested)
-    if (sameId) return sameId
     const rootRow = await loadThreadRoot(tx, input.rootId)
     if (!rootRow) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
+    requested.scopeProjectIds = hostedUuidList(rootRow.row.scope_project_ids)
+    requested.threadRootId = String(rootRow.row.id)
+    requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
+    const sameId = await existingOrConflict(tx, input.id, requested)
+    if (sameId) return sameId
     const audienceKind = rootRow.row.audience
       ? parseHostedAudience(String(rootRow.row.audience)).kind
       : 'operator'
@@ -573,9 +599,6 @@ export async function replyHostedBoardMessage(
       hasReceipt: false,
     })
     if (refusal) throw new RecordBoardError(refusal, 400)
-    requested.scopeProjectIds = hostedUuidList(rootRow.row.scope_project_ids)
-    requested.threadRootId = String(rootRow.row.id)
-    requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
     const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
     const duplicate = (await tx`
       SELECT id FROM board_message
@@ -690,15 +713,39 @@ export async function readHostedBoardThread(
 
 function filingLeaseError(question: Record<string, unknown>, clock: number): string | null {
   const decision = noteFilingLeaseDecision(
-    question.note_id == null ? null : 1,
+    question.note_id == null ? null : String(question.note_id),
     question.note_filing_started_at == null ? null : String(question.note_filing_started_at),
     clock,
   )
   if (decision.kind === 'filed')
-    return `board question ${String(question.id)} already filed note ${String(question.note_id)}`
+    return `board question ${String(question.id)} already filed note ${decision.noteId}`
   if (decision.kind === 'in-progress')
     return `board question ${String(question.id)} note filing is in progress; retry after ${new Date(decision.retryAt).toISOString()}`
   return null
+}
+
+function filingHeldLeaseRefusal(question: Record<string, unknown>, clock: number): string {
+  return (
+    filingLeaseError(question, clock) ??
+    `board question ${String(question.id)} note filing lease is not held`
+  )
+}
+
+function assertFilingQuestion(
+  loaded: { row: Record<string, unknown> } | null,
+  userId: string,
+  id: string,
+): asserts loaded is { row: Record<string, unknown> } {
+  if (!loaded) throw new RecordBoardError(`board message ${id} not found`, 404)
+  if (String(loaded.row.kind) !== 'question' || loaded.row.accepted_reply_id == null) {
+    throw new RecordBoardError(`board question ${id} has no accepted answer to file`, 400)
+  }
+  if (String(loaded.row.author_user_id) !== userId) {
+    throw new RecordBoardError(
+      `only the question author or operator may file a note for board question ${id}`,
+      403,
+    )
+  }
 }
 
 export async function takeHostedBoardFilingLease(
@@ -708,16 +755,7 @@ export async function takeHostedBoardFilingLease(
   sessionOrNull(input.authorSession)
   return withBoardTenant(input, true, async (tx) => {
     const question = await loadHostedBoardMessage(tx, input.id)
-    if (!question) throw new RecordBoardError(`board message ${input.id} not found`, 404)
-    if (String(question.row.kind) !== 'question' || question.row.accepted_reply_id == null) {
-      throw new RecordBoardError(`board question ${input.id} has no accepted answer to file`, 400)
-    }
-    if (String(question.row.author_user_id) !== input.userId) {
-      throw new RecordBoardError(
-        `only the question author or operator may file a note for board question ${input.id}`,
-        403,
-      )
-    }
+    assertFilingQuestion(question, input.userId, input.id)
     const refusal = filingLeaseError(question.row, clock)
     if (refusal) throw new RecordBoardError(refusal, 409)
     const startedAt = new Date(clock).toISOString()
@@ -744,21 +782,26 @@ export async function completeHostedBoardFilingLease(
   input: BoardTenant & { id: string; noteId: string; authorSession?: string | null },
 ): Promise<HostedBoardMessage> {
   sessionOrNull(input.authorSession)
+  const clock = Date.now()
   return withBoardTenant(input, true, async (tx) => {
     const question = await loadHostedBoardMessage(tx, input.id)
-    if (!question) throw new RecordBoardError(`board message ${input.id} not found`, 404)
-    if (String(question.row.author_user_id) !== input.userId) {
-      throw new RecordBoardError(
-        `only the question author or operator may file a note for board question ${input.id}`,
-        403,
-      )
-    }
-    await tx`
+    assertFilingQuestion(question, input.userId, input.id)
+    const updated = await tx`
       UPDATE board_message
       SET note_id=${input.noteId}::uuid, note_pending_error=NULL, note_filing_started_at=NULL
-      WHERE id=${input.id}::uuid
+      WHERE id=${input.id}::uuid AND note_id IS NULL AND note_filing_started_at IS NOT NULL
+      RETURNING id
     `
-    return viewById(tx, input.id, Date.now())
+    if (!updated[0]) {
+      const raced = await loadHostedBoardMessage(tx, input.id)
+      throw new RecordBoardError(
+        raced
+          ? filingHeldLeaseRefusal(raced.row, clock)
+          : `board question ${input.id} note filing lease is not held`,
+        409,
+      )
+    }
+    return viewById(tx, input.id, clock)
   })
 }
 
@@ -766,21 +809,27 @@ export async function failHostedBoardFilingLease(
   input: BoardTenant & { id: string; error: string; authorSession?: string | null },
 ): Promise<HostedBoardMessage> {
   sessionOrNull(input.authorSession)
-  if (!input.error.trim()) throw new RecordBoardError('filing failure error is required', 400)
+  const refusal = hostedBoardFilingFailRefusal(input.error)
+  if (refusal) throw new RecordBoardError(refusal, 400)
+  const clock = Date.now()
   return withBoardTenant(input, true, async (tx) => {
     const question = await loadHostedBoardMessage(tx, input.id)
-    if (!question) throw new RecordBoardError(`board message ${input.id} not found`, 404)
-    if (String(question.row.author_user_id) !== input.userId) {
-      throw new RecordBoardError(
-        `only the question author or operator may file a note for board question ${input.id}`,
-        403,
-      )
-    }
-    await tx`
+    assertFilingQuestion(question, input.userId, input.id)
+    const updated = await tx`
       UPDATE board_message
       SET note_pending_error=${input.error}, note_filing_started_at=NULL
-      WHERE id=${input.id}::uuid
+      WHERE id=${input.id}::uuid AND note_id IS NULL AND note_filing_started_at IS NOT NULL
+      RETURNING id
     `
-    return viewById(tx, input.id, Date.now())
+    if (!updated[0]) {
+      const raced = await loadHostedBoardMessage(tx, input.id)
+      throw new RecordBoardError(
+        raced
+          ? filingHeldLeaseRefusal(raced.row, clock)
+          : `board question ${input.id} note filing lease is not held`,
+        409,
+      )
+    }
+    return viewById(tx, input.id, clock)
   })
 }

@@ -11,7 +11,7 @@ import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
-function view(row: Record<string, unknown>): HostedBoardReceipt {
+export function hostedBoardReceiptView(row: Record<string, unknown>): HostedBoardReceipt {
   return {
     messageId: String(row.message_id),
     readerUserId: String(row.reader_user_id),
@@ -51,6 +51,6 @@ export async function putHostedBoardReceipt(
     `
     if (!rows[0])
       throw new RecordBoardError(`board receipt for ${input.messageId} was not stored`, 409)
-    return view(rows[0] as Record<string, unknown>)
+    return hostedBoardReceiptView(rows[0] as Record<string, unknown>)
   })
 }

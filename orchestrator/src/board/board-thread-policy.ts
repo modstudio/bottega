@@ -4,11 +4,11 @@ export const BOARD_NOTE_FILING_LEASE_MS = 2 * 60 * 1_000
 
 export type NoteFilingLeaseDecision =
   | { kind: 'take' }
-  | { kind: 'filed'; noteId: number }
+  | { kind: 'filed'; noteId: string | number }
   | { kind: 'in-progress'; retryAt: number }
 
 export function noteFilingLeaseDecision(
-  noteId: number | null,
+  noteId: string | number | null,
   filingStartedAt: string | null,
   clock: number,
 ): NoteFilingLeaseDecision {

@@ -7,10 +7,9 @@ import {
   type HostedBoardChange,
   RecordBoardError,
 } from './record-board-contract.ts'
-import { hostedBoardMessageView } from './record-board-messages.ts'
+import { hostedBoardMessageView, hostedBoardTags } from './record-board-messages.ts'
+import { hostedBoardReceiptView } from './record-board-receipts.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
-
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
 export async function listHostedBoardChanges(
   input: BoardTenant & { after: string; limit?: number },
@@ -49,25 +48,14 @@ export async function listHostedBoardChanges(
     for (const row of tagRows) {
       const id = String(row.message_id)
       const list = tagsByMessage.get(id) ?? []
-      list.push({
-        kind: String(row.kind) as BoardTag['kind'],
-        value: String(row.value),
-        origin: String(row.origin) as BoardTag['origin'],
-      })
+      list.push(...hostedBoardTags([row]))
       tagsByMessage.set(id, list)
     }
     const receiptsByMessage = new Map<string, HostedBoardChange['receipts']>()
     for (const row of receiptRows) {
       const id = String(row.message_id)
       const list = receiptsByMessage.get(id) ?? []
-      list.push({
-        messageId: id,
-        readerUserId: String(row.reader_user_id),
-        readerSession: String(row.reader_session),
-        audienceAtPosting: Boolean(row.audience_at_posting),
-        deliveredAt: iso(row.delivered_at),
-        acknowledgedAt: iso(row.acknowledged_at),
-      })
+      list.push(hostedBoardReceiptView(row))
       receiptsByMessage.set(id, list)
     }
     const items = messages.map((row) => {
