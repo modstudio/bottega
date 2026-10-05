@@ -54,7 +54,12 @@ const cachedFixture: CachedSessionContext = {
     user: { preset: 'autonomous', rulings: 'agent' },
     space: { release: 'promote' },
   },
-  rulings: { value: 'agent', scope: 'hosted user' },
+}
+
+const resolvedFixture = {
+  registered: true as const,
+  project: cachedFixture.project,
+  rulings: { value: 'agent' as const, scope: 'hosted user' },
   stages: [
     { stage: 'plan', agreed: true, value: 'auto', scope: 'hosted user', steps: 2 },
     { stage: 'review', agreed: true, value: 'ask', scope: 'project', steps: 1 },
@@ -66,16 +71,8 @@ const cachedFixture: CachedSessionContext = {
     landing: 'main',
     production: 'production',
   },
-}
-
-const resolvedFixture = {
-  registered: true as const,
-  project: cachedFixture.project,
-  rulings: cachedFixture.rulings,
-  stages: cachedFixture.stages,
-  release: cachedFixture.release,
   text: '',
-}
+} satisfies Parameters<typeof staleSessionContext>[0]
 
 test('only cached hosted winners are marked stale and hosted auto is downgraded', () => {
   const slice = staleSessionContext(resolvedFixture, cachedFixture.resolvedAt, 'offline')
@@ -86,7 +83,7 @@ test('only cached hosted winners are marked stale and hosted auto is downgraded'
     { stage: 'docs', agreed: true, value: 'review', scope: 'local user', steps: 1 },
   ])
   expect(slice.rulings).toEqual({ value: 'agent', scope: 'hosted user (stale)' })
-  expect(slice.release).toEqual({ ...cachedFixture.release, scope: 'hosted space (stale)' })
+  expect(slice.release).toEqual({ ...resolvedFixture.release, scope: 'hosted space (stale)' })
 })
 
 test('stale cached context starts with the stale header', () => {

@@ -15,7 +15,7 @@ import {
   type ReleaseValue,
   type StageAutonomyValue,
 } from './autonomy.ts'
-import { resolveProjectAutonomy } from './autonomy-scopes.ts'
+import { HOSTED_AUTONOMY_SCOPE_NAMES, resolveProjectAutonomy } from './autonomy-scopes.ts'
 import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 
@@ -117,7 +117,7 @@ function renderSlice(
   ].join('\n')
 }
 
-const hostedScopes = new Set(['hosted user', 'hosted space'])
+const hostedScopes = new Set<string>(HOSTED_AUTONOMY_SCOPE_NAMES)
 
 export function staleSessionContext(
   slice: Extract<ArchitectSessionContext, { registered: true }>,
@@ -247,10 +247,6 @@ async function architectSessionContext(
           user: resolution.hosted?.user ?? {},
           space: resolution.hosted?.space ?? {},
         },
-        rulings,
-        stages,
-        release,
-        ...(warnings.length ? { warnings } : {}),
       },
       stateEnvironment,
     )

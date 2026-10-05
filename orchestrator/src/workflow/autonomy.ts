@@ -163,6 +163,21 @@ export function validateAutonomySettings(value: unknown, scope: string): Autonom
   }
 }
 
+export function validateStoredAutonomySettings(
+  value: unknown,
+  scope: string,
+): { settings: AutonomySettings; ignoredRelease?: unknown } {
+  if (
+    object(value) &&
+    value.release !== undefined &&
+    !allowed(value.release, RELEASE_AUTONOMY_VALUES)
+  ) {
+    const { release, ...rest } = value
+    return { settings: validateAutonomySettings(rest, scope), ignoredRelease: release }
+  }
+  return { settings: validateAutonomySettings(value, scope) }
+}
+
 function resolvedAutonomyValue(
   subject: Pick<CatalogueStep, 'stage'> & { slug?: string; autonomy?: AutonomyValue },
   settings: WorkflowAutonomySettings,
@@ -209,19 +224,13 @@ export function resolveAutonomy(
 ): AutonomyResolution {
   const warnings: string[] = []
   const checked = scopes.map((scope) => {
-    if (
-      object(scope.settings) &&
-      scope.settings.release !== undefined &&
-      !allowed(scope.settings.release, RELEASE_AUTONOMY_VALUES)
-    ) {
-      const { release, ...rest } = scope.settings
-      const settings = validateAutonomySettings(rest, scope.name)
+    const { settings, ignoredRelease } = validateStoredAutonomySettings(scope.settings, scope.name)
+    if (ignoredRelease !== undefined) {
       warnings.push(
-        `warning: ignored invalid autonomy setting at ${scope.name} key release: ${String(release)}; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
+        `warning: ignored invalid autonomy setting at ${scope.name} key release: ${String(ignoredRelease)}; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
       )
-      return { name: scope.name, settings }
     }
-    return { name: scope.name, settings: validateAutonomySettings(scope.settings, scope.name) }
+    return { name: scope.name, settings }
   })
   const resolved: AutonomyResolution['steps'] = {}
   for (const step of steps) {

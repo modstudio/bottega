@@ -25,6 +25,7 @@ import {
 import type { CatalogueStep } from './step-catalogue.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
+export const HOSTED_AUTONOMY_SCOPE_NAMES = ['hosted user', 'hosted space'] as const
 type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
 const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   parseStoredAutonomy(
@@ -99,8 +100,8 @@ export async function resolveProjectAutonomy(
       { name: 'local project', settings: local.project },
       { name: 'project', settings: registered.settings.autonomy },
       { name: 'local user', settings: local.user },
-      { name: 'hosted user', settings: hostedSettings.user },
-      { name: 'hosted space', settings: hostedSettings.space },
+      { name: HOSTED_AUTONOMY_SCOPE_NAMES[0], settings: hostedSettings.user },
+      { name: HOSTED_AUTONOMY_SCOPE_NAMES[1], settings: hostedSettings.space },
       builtInAutonomyScope(defaultPreset ?? builtInAutonomyPreset),
     ],
     workflow,

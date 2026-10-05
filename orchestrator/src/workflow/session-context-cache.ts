@@ -1,5 +1,5 @@
 // concern: workflows
-/** Persists the last complete architect-session autonomy slice. */
+/** Persists the hosted autonomy inputs from the last successful architect-session read. */
 
 import { randomUUID } from 'node:crypto'
 import {
@@ -14,46 +14,14 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
-import { RELEASE_AUTONOMY_VALUES } from '../../../shared/release-autonomy.ts'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
-import {
-  type AutonomySettings,
-  type AutonomyStage,
-  type AutonomyValue,
-  autonomyStages,
-  autonomyValues,
-  type ReleaseValue,
-  type StageAutonomyValue,
-  validateAutonomySettings,
-} from './autonomy.ts'
+import { type AutonomySettings, validateStoredAutonomySettings } from './autonomy.ts'
 
 export type CachedSessionContext = {
   version: 1
   resolvedAt: string
   project: string
   hosted: { user: AutonomySettings; space: AutonomySettings }
-  rulings: { value: 'agent' | 'user'; scope: string }
-  stages: (
-    | {
-        stage: AutonomyStage
-        agreed: true
-        value: StageAutonomyValue
-        scope: string
-        steps: number
-      }
-    | {
-        stage: AutonomyStage
-        agreed: false
-        values: { value: AutonomyValue; scope: string; steps: number }[]
-      }
-  )[]
-  release: {
-    value: ReleaseValue
-    scope: string
-    landing: string | null
-    production: string | null
-  }
-  warnings?: string[]
 }
 
 const cacheDirectory = (env: StateEnvironment) =>
@@ -69,13 +37,7 @@ function object(value: unknown): value is Record<string, unknown> {
 function validHostedSettings(value: unknown): value is AutonomySettings {
   if (!object(value)) return false
   try {
-    if (
-      value.release !== undefined &&
-      !RELEASE_AUTONOMY_VALUES.includes(value.release as ReleaseValue)
-    ) {
-      const { release: _release, ...settings } = value
-      validateAutonomySettings(settings, 'cached hosted autonomy')
-    } else validateAutonomySettings(value, 'cached hosted autonomy')
+    validateStoredAutonomySettings(value, 'cached hosted autonomy')
     return true
   } catch {
     return false
@@ -93,55 +55,10 @@ function validCache(value: unknown, project: string): value is CachedSessionCont
   if (
     !object(value.hosted) ||
     !validHostedSettings(value.hosted.user) ||
-    !validHostedSettings(value.hosted.space) ||
-    !object(value.rulings) ||
-    !Array.isArray(value.stages) ||
-    !object(value.release)
+    !validHostedSettings(value.hosted.space)
   )
     return false
-  if (!['agent', 'user'].includes(String(value.rulings.value))) return false
-  if (typeof value.rulings.scope !== 'string') return false
-  if (
-    typeof value.release.value !== 'string' ||
-    !RELEASE_AUTONOMY_VALUES.includes(value.release.value as ReleaseValue) ||
-    typeof value.release.scope !== 'string'
-  )
-    return false
-  if (value.release.landing !== null && typeof value.release.landing !== 'string') return false
-  if (value.release.production !== null && typeof value.release.production !== 'string')
-    return false
-  if (
-    value.warnings !== undefined &&
-    (!Array.isArray(value.warnings) || value.warnings.some((item) => typeof item !== 'string'))
-  )
-    return false
-  return value.stages.every((stage) => {
-    if (
-      !object(stage) ||
-      typeof stage.stage !== 'string' ||
-      !autonomyStages.includes(stage.stage as AutonomyStage) ||
-      typeof stage.agreed !== 'boolean'
-    )
-      return false
-    if (stage.agreed)
-      return (
-        typeof stage.value === 'string' &&
-        [...autonomyValues, 'per step'].includes(stage.value) &&
-        typeof stage.scope === 'string' &&
-        typeof stage.steps === 'number'
-      )
-    return (
-      Array.isArray(stage.values) &&
-      stage.values.every(
-        (item) =>
-          object(item) &&
-          typeof item.value === 'string' &&
-          autonomyValues.includes(item.value as AutonomyValue) &&
-          typeof item.scope === 'string' &&
-          typeof item.steps === 'number',
-      )
-    )
-  })
+  return true
 }
 
 export function readSessionContextCache(
