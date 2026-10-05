@@ -77,6 +77,7 @@ export async function resolveProjectAutonomy(
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
   stages: readonly AutonomyStage[] = [],
+  hostedFallback?: { user: AutonomySettings; space: AutonomySettings },
 ): Promise<AutonomyResolution> {
   if (session.release !== undefined) {
     throw new Error(
@@ -87,6 +88,10 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
+  const hostedSettings =
+    hosted.status === 'unavailable' && hostedFallback
+      ? hostedFallback
+      : { user: hosted.user, space: hosted.space }
   const resolution = resolveAutonomy(
     steps,
     [
@@ -94,15 +99,19 @@ export async function resolveProjectAutonomy(
       { name: 'local project', settings: local.project },
       { name: 'project', settings: registered.settings.autonomy },
       { name: 'local user', settings: local.user },
-      { name: 'hosted user', settings: hosted.user },
-      { name: 'hosted space', settings: hosted.space },
+      { name: 'hosted user', settings: hostedSettings.user },
+      { name: 'hosted space', settings: hostedSettings.space },
       builtInAutonomyScope(defaultPreset ?? builtInAutonomyPreset),
     ],
     workflow,
     stages,
   )
   if (hosted.status === 'available')
-    return { ...resolution, hosted: { status: hosted.status }, session }
+    return {
+      ...resolution,
+      hosted: { status: hosted.status, user: hosted.user, space: hosted.space },
+      session,
+    }
   if (hosted.status === 'not-configured')
     return {
       ...resolution,

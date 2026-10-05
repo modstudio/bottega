@@ -16,11 +16,7 @@ import {
   type StageAutonomyValue,
 } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
-import {
-  type CachedSessionContext,
-  readSessionContextCache,
-  writeSessionContextCache,
-} from './session-context-cache.ts'
+import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = 'orch config set'
@@ -121,45 +117,56 @@ function renderSlice(
   ].join('\n')
 }
 
+const hostedScopes = new Set(['hosted user', 'hosted space'])
+
 export function staleSessionContext(
-  cached: CachedSessionContext,
+  slice: Extract<ArchitectSessionContext, { registered: true }>,
+  resolvedAt: string,
   cause: string,
 ): ArchitectSessionContext {
-  const stages = cached.stages.map((stage): StageSlice => {
+  let stale = false
+  const staleScope = (scope: string) => {
+    if (!hostedScopes.has(scope)) return scope
+    stale = true
+    return `${scope} (stale)`
+  }
+  const stages = slice.stages.map((stage): StageSlice => {
     if (stage.agreed)
       return {
         ...stage,
-        value: stage.value === 'auto' ? 'review' : stage.value,
-        scope: `${stage.scope} (stale)`,
+        value: hostedScopes.has(stage.scope) && stage.value === 'auto' ? 'review' : stage.value,
+        scope: staleScope(stage.scope),
       }
     return {
       ...stage,
       values: stage.values.map((item) => ({
         ...item,
-        value: item.value === 'auto' ? 'review' : item.value,
-        scope: `${item.scope} (stale)`,
+        value: hostedScopes.has(item.scope) && item.value === 'auto' ? 'review' : item.value,
+        scope: staleScope(item.scope),
       })),
     }
   })
-  const release = cached.release
-  const warnings = cached.warnings ?? []
-  const text = [
-    `autonomy is stale: last read ${cached.resolvedAt}; ${cause}; auto stages are shown as review until a fresh read succeeds`,
-    `rulings: ${cached.rulings.value} (${cached.rulings.scope})`,
+  const rulings = { ...slice.rulings, scope: staleScope(slice.rulings.scope) }
+  const release = { ...slice.release, scope: staleScope(slice.release.scope) }
+  const warnings = slice.warnings ?? []
+  const lines = [
+    `rulings: ${rulings.value} (${rulings.scope})`,
     ...stages.map(stageLine),
     releaseLine(release),
     ...warnings,
-  ].join('\n')
+  ]
+  if (stale)
+    lines.unshift(
+      `autonomy is stale: last read ${resolvedAt}; ${cause}; auto stages won by the hosted profile are shown as review until a fresh read succeeds`,
+    )
   return {
-    registered: true,
-    project: cached.project,
-    rulings: cached.rulings,
+    ...slice,
+    rulings,
     stages,
     release,
     ...(warnings.length ? { warnings } : {}),
-    stale: true,
-    resolvedAt: cached.resolvedAt,
-    text,
+    ...(stale ? { stale: true, resolvedAt } : {}),
+    text: stale ? lines.join('\n') : renderSlice(slice.project, rulings, stages, release, warnings),
   }
 }
 
@@ -178,6 +185,8 @@ async function architectSessionContext(
   const project = projectAt(cwd, dependencies.database)
   if (!project) return { registered: false }
   const steps = catalogueStepsForAutonomy(productionStepCatalogue().definition.steps)
+  const stateEnvironment = dependencies.stateEnvironment ?? process.env
+  const cached = readSessionContextCache(project.name, stateEnvironment)
   const resolution = await resolveProjectAutonomy(
     project.name,
     undefined,
@@ -189,12 +198,8 @@ async function architectSessionContext(
     dependencies.configEnvironment,
     undefined,
     autonomyStages,
+    cached?.hosted,
   )
-  const stateEnvironment = dependencies.stateEnvironment ?? process.env
-  if (resolution.hosted?.status === 'unavailable') {
-    const cached = readSessionContextCache(project.name, stateEnvironment)
-    if (cached) return staleSessionContext(cached, resolution.hosted.reason ?? 'hosted read failed')
-  }
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {
     if (!step.stage) continue
@@ -226,12 +231,22 @@ async function architectSessionContext(
     ...(warnings.length ? { warnings } : {}),
     text: renderSlice(project.name, rulings, stages, release, warnings),
   } satisfies ArchitectSessionContext
+  if (resolution.hosted?.status === 'unavailable' && cached)
+    return staleSessionContext(
+      slice,
+      cached.resolvedAt,
+      resolution.hosted.reason ?? 'hosted read failed',
+    )
   if (resolution.hosted?.status !== 'unavailable')
     writeSessionContextCache(
       {
         version: 1,
         resolvedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
         project: project.name,
+        hosted: {
+          user: resolution.hosted?.user ?? {},
+          space: resolution.hosted?.space ?? {},
+        },
         rulings,
         stages,
         release,

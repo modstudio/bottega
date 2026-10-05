@@ -39,7 +39,12 @@ export type AutonomyResolution = {
   stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>
   rulings: RulingsResolution
   release: { value: ReleaseValue; scope: string }
-  hosted?: { status: 'available' | 'not-configured' | 'unavailable'; reason?: string }
+  hosted?: {
+    status: 'available' | 'not-configured' | 'unavailable'
+    reason?: string
+    user?: AutonomySettings
+    space?: AutonomySettings
+  }
   note?: string
   warnings?: string[]
   session?: AutonomySettings

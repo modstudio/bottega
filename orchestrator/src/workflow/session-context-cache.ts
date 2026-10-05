@@ -17,18 +17,21 @@ import { basename, join } from 'node:path'
 import { RELEASE_AUTONOMY_VALUES } from '../../../shared/release-autonomy.ts'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
 import {
+  type AutonomySettings,
   type AutonomyStage,
   type AutonomyValue,
   autonomyStages,
   autonomyValues,
   type ReleaseValue,
   type StageAutonomyValue,
+  validateAutonomySettings,
 } from './autonomy.ts'
 
 export type CachedSessionContext = {
   version: 1
   resolvedAt: string
   project: string
+  hosted: { user: AutonomySettings; space: AutonomySettings }
   rulings: { value: 'agent' | 'user'; scope: string }
   stages: (
     | {
@@ -63,6 +66,22 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function validHostedSettings(value: unknown): value is AutonomySettings {
+  if (!object(value)) return false
+  try {
+    if (
+      value.release !== undefined &&
+      !RELEASE_AUTONOMY_VALUES.includes(value.release as ReleaseValue)
+    ) {
+      const { release: _release, ...settings } = value
+      validateAutonomySettings(settings, 'cached hosted autonomy')
+    } else validateAutonomySettings(value, 'cached hosted autonomy')
+    return true
+  } catch {
+    return false
+  }
+}
+
 function validCache(value: unknown, project: string): value is CachedSessionContext {
   if (!object(value) || value.version !== 1 || value.project !== project) return false
   if (
@@ -71,7 +90,15 @@ function validCache(value: unknown, project: string): value is CachedSessionCont
     new Date(value.resolvedAt).toISOString() !== value.resolvedAt
   )
     return false
-  if (!object(value.rulings) || !Array.isArray(value.stages) || !object(value.release)) return false
+  if (
+    !object(value.hosted) ||
+    !validHostedSettings(value.hosted.user) ||
+    !validHostedSettings(value.hosted.space) ||
+    !object(value.rulings) ||
+    !Array.isArray(value.stages) ||
+    !object(value.release)
+  )
+    return false
   if (!['agent', 'user'].includes(String(value.rulings.value))) return false
   if (typeof value.rulings.scope !== 'string') return false
   if (
