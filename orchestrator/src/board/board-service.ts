@@ -70,7 +70,9 @@ export function boardActor(env: Environment = process.env): Actor {
     env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
     env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')
   )
-    throw new Error('operator and run:<id> readers are reserved and are not session ids')
+    throw new Error(
+      'operator and run:<id> readers are reserved; use a real architect session id or address the worker with run:<id>',
+    )
   const identity = architectIdentity(env)
   if (identity) return { kind: 'architect', session: identity.session }
   if (unrecognizedSessionMarked(env))
@@ -95,11 +97,15 @@ export function recordPresence(
     env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
     env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')
   )
-    throw new Error('operator and run:<id> readers are reserved and are not session ids')
+    throw new Error(
+      'operator and run:<id> readers are reserved; use a real architect session id or address the worker with run:<id>',
+    )
   const identity = architectIdentity(env)
   if (!identity) return false
   if (identity.session === OPERATOR_READER || identity.session.startsWith('run:'))
-    throw new Error('operator and run:<id> readers are reserved and are not session ids')
+    throw new Error(
+      'operator and run:<id> readers are reserved; use a real architect session id or address the worker with run:<id>',
+    )
   const project = projectAt(cwd)
   if (!project) throw new Error(`no registered project contains ${cwd}; run orch project add first`)
   const current = db()
@@ -198,6 +204,7 @@ export type PostNoticeInput = SenderBoardTags & {
   ackRequired?: boolean
   deadlineMs?: number
   expiresMs?: number
+  suggestingRunId?: number
 }
 
 function resolvePostAudience(expression: string, machine: string) {
@@ -314,12 +321,14 @@ export function postNotice(
   const duplicateCandidates = db()
     .query(
       `SELECT id FROM board_message
-       WHERE author_kind=? AND author_session IS ? AND audience=? AND title=? AND body=?
+       WHERE author_kind=? AND author_session IS ? AND author_run_id IS ?
+         AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC`,
     )
     .all(
       actor.kind,
       authorSession,
+      input.suggestingRunId ?? null,
       audienceExpression,
       input.title,
       input.body,
@@ -368,13 +377,14 @@ export function postNotice(
     const inserted = database
       .query(
         `INSERT INTO board_message
-         (kind,author_kind,author_session,author_harness,author_project,audience,title,body,
+         (kind,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
           ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-         VALUES ('notice',?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+         VALUES ('notice',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
       )
       .run(
         actor.kind,
         authorSession,
+        input.suggestingRunId ?? null,
         origin.harness,
         origin.project,
         audienceExpression,

@@ -114,7 +114,9 @@ export const shouldInterrupt = (message: {
 
 export function requireRealSession(session: string, action: string): void {
   if (!session.trim() || session === OPERATOR_READER || session.startsWith('run:'))
-    throw new Error(`${action} requires a real session id`)
+    throw new Error(
+      `${action} requires a real session id for an architect; use run:<id> only as a worker reader`,
+    )
 }
 
 export const messageIsLive = (

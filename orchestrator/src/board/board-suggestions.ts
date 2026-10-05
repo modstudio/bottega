@@ -172,17 +172,12 @@ export function postBoardSuggestion(
     task: input.task ?? defaults.task,
     paths: input.paths ?? defaults.paths,
     topics: input.topics ?? defaults.topics,
+    suggestingRunId: row.author_run_id,
   }
   const posted = postNotice(notice, env, clock, cwd)
-  const database = writableDb()
-  writeTransaction(() => {
-    database
-      .query('UPDATE board_message SET author_run_id=? WHERE id=?')
-      .run(row.author_run_id, posted.id)
-    database
-      .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE id=?')
-      .run(new Date(clock).toISOString(), id)
-  }, database)
+  writableDb()
+    .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE id=?')
+    .run(new Date(clock).toISOString(), id)
   return posted
 }
 
