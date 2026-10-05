@@ -13,7 +13,6 @@ import {
 import { renderBoardNotice } from './board-render.ts'
 import {
   addressed,
-  type BoardActor,
   boardActor,
   type Environment,
   hasReceipt,
@@ -33,7 +32,7 @@ export { requireRealSession } from './board-policy.ts'
 
 const workerMarked = (env: Environment) => Boolean(env.ORCH_RUN_ID || env.ORCH_DEPTH)
 
-export type { BoardActor, PostNoticeInput, PostNoticeResult }
+export type { PostNoticeInput, PostNoticeResult }
 export { boardActor }
 
 function boardReader(env: Environment = process.env): string {
