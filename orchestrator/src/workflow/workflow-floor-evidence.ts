@@ -493,6 +493,30 @@ function resolveNumericArtifact(
   throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
 }
 
+function resolveTaskArtifact(
+  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
+  raw: string,
+  identity: CursorIdentity,
+  ports: FloorEvidencePorts,
+): { ref: string; exists: boolean } {
+  if (identity.workflowKey && ref.key !== identity.workflowKey)
+    throw new Error(
+      `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
+    )
+  const readTask = ports.readTask
+  if (!readTask)
+    throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
+  const task = readTask(ref.key, { fresh: true })
+  if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
+  if (task.commentsVerifiable === false)
+    throw new Error(
+      `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
+    )
+  if (!task.commentIds.map(String).includes(ref.id))
+    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
+  return { ref: raw, exists: true }
+}
+
 function resolveArtifact(
   ref: ArtifactRef,
   raw: string,
@@ -541,22 +565,7 @@ function resolveArtifact(
       exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(ref.id),
     }
   }
-  if (identity.workflowKey && ref.key !== identity.workflowKey)
-    throw new Error(
-      `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
-    )
-  const readTask = ports.readTask
-  if (!readTask)
-    throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
-  const task = readTask(ref.key, { fresh: true })
-  if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
-  if (task.commentsVerifiable === false)
-    throw new Error(
-      `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
-    )
-  if (!task.commentIds.map(String).includes(ref.id))
-    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  return { ref: raw, exists: true }
+  return resolveTaskArtifact(ref, raw, identity, ports)
 }
 
 function gatherTask(

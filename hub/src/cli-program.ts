@@ -371,6 +371,44 @@ async function createTaskCommand(
   }
 }
 
+function printTaskRow(row: ReturnType<typeof showTask>['task']): void {
+  console.log(
+    `${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
+      `${row.project.padEnd(12)} ${row.title ?? ''}`,
+  )
+}
+
+async function showTaskCommand(
+  key: string,
+  project: string | undefined,
+  fresh: boolean,
+  json: boolean,
+): Promise<void> {
+  const freshness = fresh ? await refreshTrackerTask(key, project) : null
+  const shown = showTask(key, { project })
+  if (json) {
+    console.log(
+      JSON.stringify(
+        freshness?.trackerRead
+          ? { ...shown, tracker_comments_verifiable: freshness.commentsVerifiable }
+          : shown,
+      ),
+    )
+    return
+  }
+  printTaskRow(shown.task)
+  if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
+  if (shown.task.body) console.log(`\n${shown.task.body}`)
+  if (shown.documents.length) {
+    console.log('\ndocuments:')
+    for (const document of shown.documents) {
+      const role = document.role ? ` [${document.role}]` : ''
+      console.log(`  ${document.id}${role}  ${document.title} — hub task doc show ${document.id}`)
+    }
+  }
+  for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
+}
+
 async function task(parsed: ParsedTaskArguments | undefined) {
   const taskArgv = argv.slice(1)
   if (taskHelpRequested(taskArgv)) {
@@ -385,13 +423,6 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     if (value === undefined || !value.trim()) throw new Error(`--${name} is required`)
     return value
   }
-  const printRow = (row: ReturnType<typeof showTask>['task']) => {
-    console.log(
-      `${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
-        `${row.project.padEnd(12)} ${row.title ?? ''}`,
-    )
-  }
-
   async function closeAndPruneTask(key: string) {
     const { closed, pruned, pruneError, claimReleaseError } = await closeThenPrune(
       key,
@@ -400,7 +431,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       taskOptionalFlag('abandon'),
       {},
     )
-    printRow(closed)
+    printTaskRow(closed)
     if (claimReleaseError) {
       console.error(`claim release failed: ${claimReleaseError.message}`)
       console.error(
@@ -544,37 +575,16 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     })
     if (taskHas('json')) console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('no tasks')
-    else rows.forEach(printRow)
+    else rows.forEach(printTaskRow)
     return
   }
   if (sub === 'show') {
-    const freshness = taskHas('fresh')
-      ? await refreshTrackerTask(parsed?.positionals[0] ?? '', taskFlag('project'))
-      : null
-    const shown = showTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') })
-    if (taskHas('json'))
-      console.log(
-        JSON.stringify(
-          freshness?.trackerRead
-            ? { ...shown, tracker_comments_verifiable: freshness.commentsVerifiable }
-            : shown,
-        ),
-      )
-    else {
-      printRow(shown.task)
-      if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
-      if (shown.task.body) console.log(`\n${shown.task.body}`)
-      if (shown.documents.length) {
-        console.log('\ndocuments:')
-        for (const document of shown.documents) {
-          const role = document.role ? ` [${document.role}]` : ''
-          console.log(
-            `  ${document.id}${role}  ${document.title} — hub task doc show ${document.id}`,
-          )
-        }
-      }
-      for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
-    }
+    await showTaskCommand(
+      parsed?.positionals[0] ?? '',
+      taskFlag('project'),
+      taskHas('fresh'),
+      taskHas('json'),
+    )
     return
   }
   if (sub === 'set') {
@@ -592,7 +602,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       ...(taskHas('assignee') ? { assignee: required('assignee') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
-    printRow(
+    printTaskRow(
       await setTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') }, changes, {
         force: taskHas('force'),
         abandonReason: taskOptionalFlag('abandon'),
