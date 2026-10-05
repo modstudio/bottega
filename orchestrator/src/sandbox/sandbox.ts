@@ -21,6 +21,7 @@ import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
@@ -220,7 +221,7 @@ export function readonlyLensProfile(input: {
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
       process.execPath,
-      ROOT,
+      ...(embeddedDistributionManifest() ? [] : [ROOT]),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of

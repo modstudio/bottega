@@ -2,7 +2,7 @@
 /** Owns persisted agent rows, hydration, cache, and mutations. Must not know probes or model-host state. */
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
-import { DB_PATH, db as dbForAgents, ROOT, writableDb } from '../database/db.ts'
+import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
@@ -144,7 +144,6 @@ const FALLBACK_AGENTS: Record<string, Agent> = {
 }
 
 export function agentRows(): AgentRow[] {
-  if (!ROOT) return []
   if (!existsSync(DB_PATH)) throw new Error(`orchestrator database does not exist: ${DB_PATH}`)
   // Let the canonical opener diagnose a stranded WAL. SQLite cannot open this
   // shape read-only without its shared-memory sidecar, and db() carries the

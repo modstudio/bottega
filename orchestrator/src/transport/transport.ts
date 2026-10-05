@@ -2,6 +2,7 @@ import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
@@ -361,32 +362,70 @@ export function resolveCodexAcpBin(opts?: {
   if (override) return override
   const checkoutBin =
     opts?.checkoutBin ??
-    join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin', 'codex-acp')
-  if ((opts?.exists ?? existsSync)(checkoutBin)) return checkoutBin
+    (embeddedDistributionManifest()
+      ? null
+      : join(
+          dirname(fileURLToPath(import.meta.url)),
+          '..',
+          '..',
+          'node_modules',
+          '.bin',
+          'codex-acp',
+        ))
+  if (checkoutBin && (opts?.exists ?? existsSync)(checkoutBin)) return checkoutBin
   const found = (opts?.which ?? ((name: string) => Bun.which(name)))('codex-acp')
   if (found) return found
   throw new Error(
-    `cannot find a codex-acp executable: none at ${checkoutBin} and PATH lookup found nothing; set ORCH_ACP_BIN to its path, or install it so it is on PATH`,
+    `cannot find a codex-acp executable: ${checkoutBin ? `none at ${checkoutBin} and ` : ''}PATH lookup found nothing; set ORCH_ACP_BIN to its path, or install it so it is on PATH`,
   )
 }
 
-export function acpRuntimeGaps(opts?: {
+type AcpRuntimeGapOptions = {
   sdkResolve?: () => string
   ajvResolve?: () => string
   binPath?: string
   binExists?: (path: string) => boolean
+  env?: Record<string, string | undefined>
+  which?: (name: string) => string | null
   agentName?: string
   agent?: TransportAgent
-}): string | null {
+}
+
+function resolveAcpRuntimeBin(
+  opts: AcpRuntimeGapOptions | undefined,
+  agentName: string,
+  registered: TransportAgent | undefined,
+  which: (name: string) => string | null,
+  binExists: (path: string) => boolean,
+): string {
+  if (opts?.binPath) return opts.binPath
+  if (agentName === 'grok') return which('grok') ?? 'grok'
+  const registeredBin = registered ? which(registered.bin) : null
+  return registeredBin ?? resolveCodexAcpBin({ env: opts?.env, exists: binExists, which })
+}
+
+function missingAcpExecutableGap(
+  agentName: string,
+  registered: TransportAgent | undefined,
+): string {
+  const executable =
+    agentName === 'grok'
+      ? 'grok'
+      : agentName === 'codex'
+        ? 'codex-acp'
+        : registered
+          ? `${agentName} ACP harness`
+          : 'codex-acp'
+  return `ACP transport is a ${ACP_PILOT_TASK} pilot; the ${executable} executable is not installed`
+}
+
+export function acpRuntimeGaps(opts?: AcpRuntimeGapOptions): string | null {
   const sdkResolve =
     opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
   const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
   const agentName = opts?.agentName ?? 'codex'
   const registered = opts?.agent
-  const registeredBin = registered ? Bun.which(registered.bin) : null
-  const binPath =
-    opts?.binPath ??
-    (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : (registeredBin ?? resolveCodexAcpBin()))
+  const which = opts?.which ?? ((name: string) => Bun.which(name))
   const binExists = opts?.binExists ?? existsSync
   try {
     sdkResolve()
@@ -398,8 +437,14 @@ export function acpRuntimeGaps(opts?: {
   } catch {
     return `ACP transport is a ${ACP_PILOT_TASK} pilot; ajv is not installed`
   }
+  let binPath: string
+  try {
+    binPath = resolveAcpRuntimeBin(opts, agentName, registered, which, binExists)
+  } catch {
+    return missingAcpExecutableGap(agentName, registered)
+  }
   if (!binExists(binPath)) {
-    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the ${agentName === 'grok' ? 'grok' : agentName === 'codex' ? 'codex-acp' : registered ? `${agentName} ACP harness` : 'codex-acp'} executable is not installed`
+    return missingAcpExecutableGap(agentName, registered)
   }
   return null
 }
@@ -457,10 +502,16 @@ export function outcomeFromTransport(result: {
 }): { status: 'ok' | 'asking' | 'failed'; failureKind: FailureKind | null } {
   if (result.asking) return { status: 'asking', failureKind: null }
   if (result.stopReason && result.stopReason !== 'end_turn') {
-    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
+    return {
+      status: 'failed',
+      failureKind: failureKindFromStop(result.stopReason, result.error),
+    }
   }
   if (result.error || result.exitCode !== 0 || !result.output.trim()) {
-    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
+    return {
+      status: 'failed',
+      failureKind: failureKindFromStop(result.stopReason, result.error),
+    }
   }
   return { status: 'ok', failureKind: null }
 }
@@ -488,13 +539,19 @@ export function decideAcpPermission(
       options.find((option) => option.kind === 'allow_once') ??
       (allowRead ? options.find((option) => option.kind === 'allow_always') : undefined)
     if (allow)
-      return { decision: 'allow', outcome: { outcome: 'selected', optionId: allow.optionId } }
+      return {
+        decision: 'allow',
+        outcome: { outcome: 'selected', optionId: allow.optionId },
+      }
   }
   const reject =
     options.find((option) => option.kind === 'reject_once') ??
     options.find((option) => option.kind === 'reject_always')
   if (reject)
-    return { decision: 'reject', outcome: { outcome: 'selected', optionId: reject.optionId } }
+    return {
+      decision: 'reject',
+      outcome: { outcome: 'selected', optionId: reject.optionId },
+    }
   return { decision: 'reject', outcome: { outcome: 'cancelled' } }
 }
 

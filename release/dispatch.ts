@@ -8,6 +8,7 @@ export type BinaryEntries = {
   runExec(argv: string[]): Promise<number>
   askProxy(argv: string[]): Promise<number>
   retrievalSearch(argv: string[]): Promise<void>
+  checkAttribution(argv: string[]): Promise<number>
 }
 
 /** Route public and hidden executable commands without publishing hidden commands in usage. */
@@ -45,6 +46,9 @@ export async function dispatchBinary(
   if (command === BOTTEGA_ENTRY_PROTOCOL['retrieval-search'].compiledArguments[0]) {
     await entries.retrievalSearch(rest)
     return Number(process.exitCode ?? 0)
+  }
+  if (command === BOTTEGA_ENTRY_PROTOCOL['check-attribution'].compiledArguments[0]) {
+    return entries.checkAttribution(rest)
   }
   console.error(usage)
   return 2

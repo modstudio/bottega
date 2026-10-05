@@ -8,6 +8,7 @@ export const BOTTEGA_ENTRY_PROTOCOL = {
   'ask-server': { compiledArguments: ['orch', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
   'retrieval-search': { compiledArguments: ['__retrieval-search'], usage: 'hidden' },
+  'check-attribution': { compiledArguments: ['__check-attribution'], usage: 'hidden' },
 } as const satisfies Record<
   string,
   { compiledArguments: readonly string[]; usage: 'public' | 'nested' | 'hidden' }
@@ -43,6 +44,12 @@ function sourceArguments(entry: BottegaEntry): string[] {
       ]
     case 'retrieval-search':
       return [assetPath('bin', 'retrieval-search')]
+    case 'check-attribution':
+      return [
+        process.execPath,
+        '--no-env-file',
+        assetPath('orchestrator', 'src', 'check', 'check-attribution.ts'),
+      ]
   }
 }
 

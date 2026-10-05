@@ -57,10 +57,7 @@ import {
 import type { OutcomeStatus } from '../outcome.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
-import {
-  assertSharedRefGuardOutsideWritableRoots,
-  workerSharedGitRoots,
-} from '../resources/ref-guard.ts'
+import { workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
@@ -107,7 +104,10 @@ import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { decideCodexSandbox } from './run-codex-sandbox.ts'
-import { workerGitConfigEnvironment } from './run-git-guard.ts'
+import {
+  assertWorkerGitGuardOutsideWritableRoots,
+  workerGitConfigEnvironment,
+} from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
 import { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -750,7 +750,7 @@ export async function run(opts: {
     ...codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
   }
   if (gitConfigEnvironment) {
-    assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
+    assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)
   }
   const mcpConfig = readMcpConfig(cwd)
   const codexMcpScope = codexProjectServersForRun(
