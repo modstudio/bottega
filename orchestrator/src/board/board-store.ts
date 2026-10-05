@@ -34,6 +34,12 @@ export type BoardActor =
   | { kind: 'operator'; session: null }
   | { kind: 'architect'; session: string }
 export type PostNoticeResult = { id: number; dropped: boolean; reached: number; warning?: string }
+export class BoardPostRateLimitError extends Error {
+  constructor() {
+    super('board post rate limit reached; retry after the ten-minute author window')
+    this.name = 'BoardPostRateLimitError'
+  }
+}
 export type PostNoticeInput = SenderBoardTags & {
   audience: string
   title: string
@@ -148,23 +154,15 @@ function presenceFacts(database = db(), at = Date.now()) {
   }
   const claims = database
     .query(
-      `SELECT claim.holder_kind,claim.holder_session,claim.subject_value,claim.lapses_at,
-              latest.status run_status
-       FROM board_claim claim
-       LEFT JOIN run member ON member.id=claim.run_id
-       LEFT JOIN run latest ON latest.id=(
-         SELECT id FROM run
-         WHERE id=COALESCE(member.parent_run_id,member.id)
-            OR parent_run_id=COALESCE(member.parent_run_id,member.id)
-         ORDER BY turn DESC,id DESC LIMIT 1)
-       WHERE claim.closed_at IS NULL AND claim.subject_kind='task'`,
+      `SELECT holder_kind,holder_session,subject_value,lapses_at,run_id
+       FROM board_claim WHERE closed_at IS NULL AND subject_kind='task'`,
     )
     .all() as {
     holder_kind: 'operator' | 'architect'
     holder_session: string | null
     subject_value: string
     lapses_at: string
-    run_status: string | null
+    run_id: number | null
   }[]
   const claimReaders = new Map<string, { role: 'operator' | 'architect'; taskKeys: Set<string> }>()
   for (const claim of claims) {
@@ -172,7 +170,7 @@ function presenceFacts(database = db(), at = Date.now()) {
       !claimIsLive({
         closed: false,
         lapsesAt: Date.parse(claim.lapses_at),
-        runStatus: claim.run_status,
+        runStatus: latestRunStatus(claim.run_id, database),
         now: at,
       })
     )
@@ -206,6 +204,25 @@ function presenceFacts(database = db(), at = Date.now()) {
       taskAudienceOnly: true,
     })),
   ]
+}
+
+export function latestRunStatus(
+  runId: number | null,
+  database: ReturnType<typeof db> = db(),
+): string | null {
+  if (runId === null) return null
+  const row = database
+    .query(
+      `SELECT latest.status FROM run member
+       JOIN run latest ON latest.id=(
+         SELECT id FROM run
+         WHERE id=COALESCE(member.parent_run_id,member.id)
+            OR parent_run_id=COALESCE(member.parent_run_id,member.id)
+         ORDER BY turn DESC,id DESC LIMIT 1)
+       WHERE member.id=?`,
+    )
+    .get(runId) as { status: string } | null
+  return row?.status ?? 'missing'
 }
 
 export function recipients(
@@ -398,8 +415,7 @@ export function insertRootMessage(
     ).count
     return postNoticeResult(duplicate!.id, true, reached)
   }
-  if (decision === 'rate-limited')
-    throw new Error('board post rate limit reached; retry after the ten-minute author window')
+  if (decision === 'rate-limited') throw new BoardPostRateLimitError()
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
   const deadline = ackRequired ? new Date(clock + deadlineMs).toISOString() : null

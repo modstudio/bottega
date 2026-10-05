@@ -71,6 +71,37 @@ test('a broad path claim refuses every live conflict and tells every architect h
   expect(claimInterruptNotices('second-holder', clock + 2)).toHaveLength(1)
 })
 
+test('a holder may take an overlapping path claim without closing or notifying itself', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('holder', null, clock)
+  const narrow = takeClaim({ subject: 'path:src/a.ts' }, env('holder'), clock, cwd)
+  const broad = takeClaim({ subject: 'path:src/**' }, env('holder'), clock + 1, cwd)
+  expect(broad.action).toBe('taken')
+  expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toEqual([
+    expect.objectContaining({ id: narrow.id, live: true }),
+    expect.objectContaining({ id: broad.id, live: true }),
+  ])
+  expect(claimInterruptNotices('holder', clock + 2)).toEqual([])
+})
+
+test('an overlapping take ignores the holder own claim but refuses and tells another holder', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('holder', null, clock)
+  presence('other', null, clock)
+  const own = takeClaim({ subject: 'path:src/a.ts' }, env('holder'), clock, cwd)
+  takeClaim({ subject: 'path:src/b.ts' }, env('other'), clock, cwd)
+  expect(() => takeClaim({ subject: 'path:src/**' }, env('holder'), clock + 1, cwd)).toThrow(
+    /claim conflicts with: session other/,
+  )
+  expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toContainEqual(
+    expect.objectContaining({ id: own.id, live: true }),
+  )
+  expect(claimInterruptNotices('holder', clock + 2)).toEqual([])
+  expect(claimInterruptNotices('other', clock + 2)).toHaveLength(1)
+})
+
 test('a broad path takeover closes and links every stale conflict', () => {
   const { cwd } = fixtureProject()
   const clock = Date.now()
@@ -229,4 +260,30 @@ test('a stale architect presence with a live task claim reaches only that task a
     expect(
       postNotice({ audience, title, body: 'Not for a stale session.' }, {}, clock + 1, cwd).reached,
     ).toBe(0)
+})
+
+test('a task claim tied to an ended chain does not put its holder in the task audience', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  const root = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES (?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+    )
+    .run(new Date(clock).toISOString())
+  const runId = Number(root.lastInsertRowid)
+  takeClaim({ subject: 'task:DEV-9', runId }, env('holder'), clock, cwd)
+  db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+  const posted = postNotice(
+    {
+      audience: 'task:DEV-9',
+      title: 'Ended claim',
+      body: 'No live task readers.',
+    },
+    {},
+    clock + 1,
+    cwd,
+  )
+  expect(posted.reached).toBe(0)
 })

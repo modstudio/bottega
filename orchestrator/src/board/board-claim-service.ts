@@ -19,7 +19,12 @@ import {
 } from './board-claim-policy.ts'
 import { BOARD_BODY_MAX_CHARS } from './board-policy.ts'
 import { postNoticeInTransaction } from './board-service.ts'
-import { boardActor, type Environment } from './board-store.ts'
+import {
+  BoardPostRateLimitError,
+  boardActor,
+  type Environment,
+  latestRunStatus,
+} from './board-store.ts'
 import { pathTagRefusal } from './board-tags.ts'
 
 type ClaimRow = {
@@ -127,22 +132,6 @@ function holder(row: ClaimRow): ClaimActor {
     : { kind: 'architect', session: row.holder_session! }
 }
 
-function latestRunStatus(runId: number | null, database = db()): string | null {
-  if (runId === null) return null
-  const row = database
-    .query(
-      `SELECT latest.status FROM run member
-       JOIN run latest ON latest.id=(
-         SELECT id FROM run
-         WHERE id=COALESCE(member.parent_run_id,member.id)
-            OR parent_run_id=COALESCE(member.parent_run_id,member.id)
-         ORDER BY turn DESC,id DESC LIMIT 1)
-       WHERE member.id=?`,
-    )
-    .get(runId) as { status: string } | null
-  return row?.status ?? 'missing'
-}
-
 function rowLive(row: ClaimRow, clock: number, database = db()): boolean {
   return claimIsLive({
     closed: row.closed_at !== null,
@@ -209,11 +198,7 @@ function linkClaimNotice(
     try {
       return postNoticeInTransaction({ audience, title, body }, env, clock, cwd, database)
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === 'board post rate limit reached; retry after the ten-minute author window'
-      )
-        return null
+      if (error instanceof BoardPostRateLimitError) return null
       throw error
     }
   })()
@@ -248,20 +233,22 @@ function conflictingClaims(context: TakeTransaction): {
   const candidates = context.database
     .query('SELECT * FROM board_claim WHERE project=? AND closed_at IS NULL ORDER BY id')
     .all(context.project) as ClaimRow[]
-  const conflicts = candidates.filter((row) =>
+  const overlaps = candidates.filter((row) =>
     claimSubjectsConflict(context.subject, {
       kind: row.subject_kind,
       value: row.subject_value,
     }),
   )
-  const live = conflicts.filter((row) => rowLive(row, context.clock, context.database))
-  const exactHeld = live.find(
+  const exactHeld = overlaps.find(
     (row) =>
+      rowLive(row, context.clock, context.database) &&
       row.subject_kind === context.subject.kind &&
       row.subject_value === context.subject.value &&
       sameClaimHolder(context.actor, holder(row)),
   )
-  return { conflicts, exactHeld, foreignLive: live.filter((row) => row !== exactHeld) }
+  const conflicts = overlaps.filter((row) => !sameClaimHolder(context.actor, holder(row)))
+  const foreignLive = conflicts.filter((row) => rowLive(row, context.clock, context.database))
+  return { conflicts, exactHeld, foreignLive }
 }
 
 function renewTakenClaim(row: ClaimRow, context: TakeTransaction): TakeTransactionResult {
