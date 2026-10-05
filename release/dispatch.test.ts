@@ -61,3 +61,27 @@ test('hidden subcommands route their unchanged arguments without appearing in us
     { entry: 'retrieval-search', argv: ['query', '--json'] },
   ])
 })
+
+test('setup routes to orch setup with its arguments', async () => {
+  const calls: string[][] = []
+  const unreachable = async (): Promise<never> => {
+    throw new Error('setup dispatched the wrong entry')
+  }
+  const code = await dispatchBinary(
+    ['setup', '--in', '/work/one', '--in', '/work/two'],
+    PLATFORM_SLUG,
+    {
+      orch: async (argv) => {
+        calls.push(argv)
+        return 17
+      },
+      hub: unreachable,
+      runExec: unreachable,
+      askProxy: unreachable,
+      retrievalSearch: unreachable,
+    },
+    () => 'test',
+  )
+  expect(code).toBe(17)
+  expect(calls).toEqual([['setup', '--in', '/work/one', '--in', '/work/two']])
+})

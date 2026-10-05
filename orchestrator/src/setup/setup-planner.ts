@@ -42,6 +42,19 @@ export type SetupAction =
       server: McpServer
     }
 
+export function setupActionChangesMachine(action: SetupAction): boolean {
+  switch (action.kind) {
+    case 'add':
+    case 'set':
+    case 'register-mcp':
+      return true
+    case 'unchanged':
+    case 'mcp-unchanged':
+    case 'mcp-skipped':
+      return false
+  }
+}
+
 export function validateSetupAnswers(questions: SetupQuestion[], value: unknown): SetupAnswers {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('answers must be a JSON object mapping question id to option id')

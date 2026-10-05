@@ -9,12 +9,19 @@ import { addProject, fillAbsentProjectSettings } from '../project/project-comman
 import { projectByName, projects } from '../project/projects.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { gatherRepositoryFactsReport } from '../setup/repository-facts.ts'
-import { applySetupActions } from '../setup/setup-apply.ts'
+import {
+  applySetupActions,
+  type SetupActionResult,
+  type SetupProjectService,
+} from '../setup/setup-apply.ts'
+import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
 import { proposeSetup, type SetupAgent } from '../setup/setup-engine.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
+import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
 import {
   planSetupActions,
   recommendedAnswers,
+  type SetupAction,
   validateSetupAnswers,
 } from '../setup/setup-planner.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -63,8 +70,49 @@ function inputs(options: SetupOptions): string[] {
   return options.in?.length ? options.in : [process.cwd()]
 }
 
+function setupProjectService(): SetupProjectService {
+  return {
+    add: (input) => addProject(input, requireRecordSpaceMembership),
+    fillAbsent: fillAbsentProjectSettings,
+    currentRecipePath: (name) => projectByName(name)?.settings.worktree?.recipePath ?? null,
+  }
+}
+
+function applyPlan(actions: SetupAction[]): Promise<SetupActionResult[]> {
+  return applySetupActions(actions, setupProjectService())
+}
+
 export function register(program: Command): void {
-  const setup = program.command('setup')
+  const setup = program
+    .command('setup')
+    .option('--in <folder>', 'folder to inspect', collect, [])
+    .allowExcessArguments(false)
+    .action(async (options: SetupOptions) => {
+      if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
+        console.error(
+          'orch setup requires both stdin and stdout to be TTYs; use orch setup apply --yes or orch setup apply --answers <file>',
+        )
+        process.exitCode = 2
+        return
+      }
+      const folders = inputs(options)
+      introduceSetup(folders)
+      const plan = await gatherSetupPlan(
+        () => setupPlan(folders),
+        () => {
+          process.exitCode = 130
+        },
+      )
+      if (plan === SETUP_CANCEL) return
+      const outcome = await runInteractiveSetup(plan, clackSetupPrompter, applyPlan)
+      if (outcome.kind === 'cancelled') process.exitCode = 130
+      if (
+        outcome.kind === 'applied' &&
+        outcome.results.some((result) => result.status === 'refused')
+      ) {
+        process.exitCode = 1
+      }
+    })
   setup
     .command('facts')
     .requiredOption('--json')
@@ -103,11 +151,7 @@ export function register(program: Command): void {
         answers = validateSetupAnswers(plan.questions, value)
       }
       const actions = planSetupActions(plan, answers)
-      const results = await applySetupActions(actions, {
-        add: (input) => addProject(input, requireRecordSpaceMembership),
-        fillAbsent: fillAbsentProjectSettings,
-        currentRecipePath: (name) => projectByName(name)?.settings.worktree?.recipePath ?? null,
-      })
+      const results = await applyPlan(actions)
       if (results.some((result) => result.status === 'refused')) process.exitCode = 1
       log(
         JSON.stringify(
