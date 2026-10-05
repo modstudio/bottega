@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -134,11 +135,11 @@ describe('settings apply', () => {
   })
 
   test('renders hosted settings merged with the machine overlay and reports unmatched drops', async () => {
-    const config = join(root, '.config', 'bottega')
+    const config = join(root, '.config', PLATFORM_SLUG)
     mkdirSync(config, { recursive: true })
     writeFileSync(
       join(config, 'machine.toml'),
-      '[permissions]\nallow = ["Bash(git status)", "Bash(orch *)"]\n' +
+      '[permissions]\nallow = ["Bash(git status)"]\n' +
         '[permissions.drop]\nallow = ["Bash(orch *)", "Bash(missing)"]\n',
     )
     writeCurrentSettings()

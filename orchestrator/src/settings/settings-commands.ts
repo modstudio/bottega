@@ -216,11 +216,7 @@ export async function settingsRenderCheckCommand(
   const path = settingsFilePath(target, process.env, cwd)
   const parsed = flags.has('json') ? tryReadSettingsFile(path) : readSettingsFile(path)
   const existing = settingsRow(target, owner)
-  const hostedOwned = existing ? parseStoreOwned(existing.body) : emptyOwned()
-  const storeOwned =
-    target.kind === 'user'
-      ? mergeMachinePermissionOverlay(hostedOwned, readMachinePermissions()).settings
-      : hostedOwned
+  const storeOwned = effectiveStoredSettings(target, existing?.body)
   const fileOwned = parsed
     ? target.kind === 'user'
       ? { ...parsed.owned, envKeys: parsed.envKeys }
@@ -267,6 +263,16 @@ export async function settingsRenderCheckCommand(
     presentation.log(`no settings row for ${targetLabel(target)}`)
   }
   if (drifted || !existing) presentation.exitCode(1)
+}
+
+function effectiveStoredSettings(
+  target: SettingsTargetKind,
+  body: string | undefined,
+): OwnedSettings {
+  if (!body) return emptyOwned()
+  const hosted = parseStoreOwned(body)
+  if (target.kind === 'project') return hosted
+  return mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
 }
 
 function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSettings) {

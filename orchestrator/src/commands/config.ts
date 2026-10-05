@@ -59,8 +59,8 @@ export function assertConfigWriteAllowed(
 
 export const configGetPresentation = (row: ConfigRow, json: boolean) =>
   json ? JSON.stringify(row) : row.value
-export const configListPresentation = <Row extends { scope: string; key: string; value: string }>(
-  rows: Row[],
+export const configListPresentation = (
+  rows: { scope: string; key: string; value: string }[],
   json: boolean,
 ) => (json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`))
 

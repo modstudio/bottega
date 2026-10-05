@@ -133,6 +133,49 @@ function validatedChildTable(
   return child as Record<string, unknown>
 }
 
+function validateAutonomyTable(
+  name: string,
+  child: unknown,
+  prefix: string,
+  path: string,
+): boolean {
+  if (prefix || name !== 'autonomy') return false
+  if (typeof child !== 'object' || child === null || Array.isArray(child))
+    throw new Error(`refusing machine config ${path}: key autonomy must be a table`)
+  return true
+}
+
+function validatePermissionsTable(
+  name: string,
+  child: unknown,
+  prefix: string,
+  path: string,
+): boolean {
+  if (prefix || name !== 'permissions') return false
+  if (!permissionsSchema.safeParse(child).success)
+    throw new Error(
+      `refusing machine config ${path}: permissions must contain only optional allow, ask, deny string lists and a drop table with the same lists`,
+    )
+  return true
+}
+
+function validateProjectTable(child: unknown, prefix: string, key: string, path: string): boolean {
+  if (prefix !== 'projects' || key === 'projects.clone_root') return false
+  if (typeof child !== 'object' || child === null || Array.isArray(child))
+    throw new Error(`refusing machine config ${path}: key ${key} must be a table`)
+  const project = child as Record<string, unknown>
+  if (Object.keys(project).some((projectKey) => projectKey !== 'autonomy'))
+    throw new Error(`refusing machine config ${path}: unknown key ${key}`)
+  if (
+    project.autonomy !== undefined &&
+    (typeof project.autonomy !== 'object' ||
+      project.autonomy === null ||
+      Array.isArray(project.autonomy))
+  )
+    throw new Error(`refusing machine config ${path}: key ${key}.autonomy must be a table`)
+  return true
+}
+
 function validateFile(
   table: Record<string, MachineConfigEntry>,
   parsed: unknown,
@@ -145,34 +188,12 @@ function validateFile(
   const visit = (value: Record<string, unknown>, prefix = ''): void => {
     for (const [name, child] of Object.entries(value)) {
       const key = prefix ? `${prefix}.${name}` : name
-      if (!prefix && name === 'autonomy') {
-        if (typeof child !== 'object' || child === null || Array.isArray(child))
-          throw new Error(`refusing machine config ${path}: key autonomy must be a table`)
+      if (
+        validateAutonomyTable(name, child, prefix, path) ||
+        validatePermissionsTable(name, child, prefix, path) ||
+        validateProjectTable(child, prefix, key, path)
+      )
         continue
-      }
-      if (!prefix && name === 'permissions') {
-        const result = permissionsSchema.safeParse(child)
-        if (!result.success)
-          throw new Error(
-            `refusing machine config ${path}: permissions must contain only optional allow, ask, deny string lists and a drop table with the same lists`,
-          )
-        continue
-      }
-      if (prefix === 'projects' && key !== 'projects.clone_root') {
-        if (typeof child !== 'object' || child === null || Array.isArray(child))
-          throw new Error(`refusing machine config ${path}: key ${key} must be a table`)
-        const project = child as Record<string, unknown>
-        if (Object.keys(project).some((projectKey) => projectKey !== 'autonomy'))
-          throw new Error(`refusing machine config ${path}: unknown key ${key}`)
-        if (
-          project.autonomy !== undefined &&
-          (typeof project.autonomy !== 'object' ||
-            project.autonomy === null ||
-            Array.isArray(project.autonomy))
-        )
-          throw new Error(`refusing machine config ${path}: key ${key}.autonomy must be a table`)
-        continue
-      }
       const childTable = validatedChildTable(table, known, child, key, path)
       if (childTable) visit(childTable, key)
     }
