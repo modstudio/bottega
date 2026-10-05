@@ -114,9 +114,14 @@ export async function refreshTrackerTask(
         guard.assertHeld()
         const observation = (dependencies.observe ?? observeTrackerTask)(task)
         try {
-          const mirror = await (dependencies.createMirror ?? createCollectorMirrorPass)('tracker')
-          await withTimeout(
-            mirrorTrackerObservation(mirror, task, observation, guard.assertHeld),
+          // The bound covers opening the mirror too: loading the hosted identity is a
+          // network call made while the lease is held.
+          const mirror = await withTimeout(
+            (async () => {
+              const pass = await (dependencies.createMirror ?? createCollectorMirrorPass)('tracker')
+              await mirrorTrackerObservation(pass, task, observation, guard.assertHeld)
+              return pass
+            })(),
             dependencies.mirrorTimeoutMs ?? FRESH_TASK_MIRROR_TIMEOUT_MS,
           )
           mirror.reportSkipped((error) => failureDetail(error, resolved.token))
