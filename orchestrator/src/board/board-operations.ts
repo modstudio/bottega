@@ -39,7 +39,7 @@ import {
   postNotice,
   withdrawNotice,
 } from './board-service.ts'
-import { boardActor, type BoardOrigin, originText } from './board-store.ts'
+import { type BoardOrigin, boardActor, originText } from './board-store.ts'
 import {
   acceptAnswer,
   askQuestion,
@@ -58,9 +58,9 @@ export type BoardPostResult = {
   warning: string | null
 }
 
-export type BoardReplyResult = BoardPostResult & { rootId: string }
+type BoardReplyResult = BoardPostResult & { rootId: string }
 
-export type BoardMessageResult = {
+type BoardMessageResult = {
   id: string
   kind: string | null
   title: string | null
@@ -88,7 +88,7 @@ export type BoardMessageResult = {
   text: string | null
 }
 
-export type BoardReplyView = {
+type BoardReplyView = {
   id: string
   body: string
   origin: BoardOrigin
@@ -97,7 +97,7 @@ export type BoardReplyView = {
 
 export type BoardThreadResult = { root: BoardMessageResult; replies: BoardReplyView[] }
 
-export type BoardReceiptResult = {
+type BoardReceiptResult = {
   messageId: string
   readerUserId: string | null
   readerSession: string

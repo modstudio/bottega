@@ -7,11 +7,11 @@ import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import {
   boardAccept,
   boardAcknowledge,
-  boardClaimRelease,
+  boardAsk,
   boardClaimList,
+  boardClaimRelease,
   boardClaimRenew,
   boardClaimTake,
-  boardAsk,
   boardFileNote,
   boardPost,
   boardReply,
@@ -19,6 +19,7 @@ import {
   boardThread,
   boardWithdraw,
 } from './board-operations.ts'
+import { originText } from './board-store.ts'
 
 const env = {
   CLAUDE_CODE_SESSION_ID: 'board-route-session',
@@ -84,9 +85,57 @@ test('an unadopted install keeps a post local and renders its id as a string', a
     },
   )
   expect(result.id).toBeString()
+  expect(result).toEqual({
+    id: result.id,
+    dropped: false,
+    reached: 1,
+    warning: null,
+  })
   expect(
     db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
   ).toBe(1)
+})
+
+test('hosted post and reply expose unavailable posting counts as null', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const root = hostedMessage()
+  const reply = hostedMessage()
+  const client = {
+    ...createMemoryRecordApiClient(),
+    postBoardMessage: async () => root,
+    replyBoardMessage: async () => reply,
+  }
+  await expect(
+    boardPost({ audience: 'operator', title: 'Hosted', body: 'body' }, { env, client }),
+  ).resolves.toEqual({ id: root.id, dropped: false, reached: null, warning: null })
+  await expect(boardReply(root.id, 'reply', { env, client })).resolves.toEqual({
+    id: reply.id,
+    rootId: root.id,
+    dropped: false,
+    reached: null,
+    warning: null,
+  })
+})
+
+test('local and hosted note filing render one common origin shape', () => {
+  expect(
+    originText({
+      kind: 'architect',
+      session: 'origin-session',
+      harness: 'claude',
+      project: 'fixture',
+      runId: null,
+    }),
+  ).toBe('architect origin-session (claude, fixture)')
+  expect(
+    originText({
+      kind: 'worker',
+      session: null,
+      harness: 'codex',
+      project: 'fixture',
+      runId: '01990000-0000-7000-8000-000000000001',
+    }),
+  ).toBe('worker run 01990000-0000-7000-8000-000000000001')
 })
 
 test('thread results have one pinned shape in local and hosted modes', async () => {
@@ -95,6 +144,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
     { audience: 'operator', title: 'Local question', body: 'Question body' },
     { env: {}, clock },
   )
+  db().query('UPDATE board_message SET note_id=42 WHERE id=?').run(Number(question.id))
   const local = await boardThread(question.id, { env: {}, clock })
   expect(local).toEqual({
     root: {
@@ -112,7 +162,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       acceptedReplyId: null,
       acceptedBy: null,
       acceptedAt: null,
-      noteId: null,
+      noteId: '42',
       notePendingError: null,
       revision: null,
       scopeProjectIds: null,
@@ -306,6 +356,26 @@ test('claim verbs stringify every id and share the same local and hosted result 
   await expect(boardClaimList('board-route-project', true, hostedContext)).resolves.toEqual({
     claims: [hostedClaim],
   })
+})
+
+test('a local claim run id is exposed as an opaque string', async () => {
+  const inserted = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
+       VALUES ('2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
+               'running','claim-route-session') RETURNING id`,
+    )
+    .get() as { id: number }
+  const result = await boardClaimTake(
+    { subject: 'resource:run-bound', runId: inserted.id },
+    {
+      env: { CLAUDE_CODE_SESSION_ID: 'claim-route-session' },
+      cwd: process.cwd(),
+      clock: Date.parse('2026-10-05T12:00:00Z'),
+    },
+  )
+  expect(result.runId).toBe(String(inserted.id))
 })
 
 test('hosted take and list use the local claim-project actor decision', async () => {
