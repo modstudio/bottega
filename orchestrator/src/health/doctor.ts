@@ -9,6 +9,7 @@ import {
   ensureLocalHealth,
   fileContractProbeReason,
   lastWakeAttempt,
+  localAgentHealth,
   modelHostModel,
   modelHostUrl,
   predatesFileContract,
@@ -71,8 +72,8 @@ function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | u
   const registration = registeredLocalAgent(agentRows(), baseUrl)
   const contextTokens = registration ? registeredContextTokens(registration) : null
   const lines = [
-    `\nlocal endpoint  ${baseUrl || '(ORCH_MODEL_HOST_URL unset)'}`,
-    `local model     ${registration?.model || '(not registered)'}`,
+    `\nmodel host URL ${baseUrl || '(ORCH_MODEL_HOST_URL unset)'}`,
+    `model host row ${registration?.model || '(not registered)'}`,
   ]
   if (baseUrl && !registration) {
     lines.push(
@@ -289,6 +290,7 @@ export async function doctorCommand(
   }
   for (const row of agentRows()) {
     if (row.operated_by !== 'self' || !row.enabled) continue
+    const health = localAgentHealth(row.name)
     const probedAt = row.probed_at ? Date.parse(row.probed_at) : NaN
     const ageDays = Number.isFinite(probedAt) ? (Date.now() - probedAt) / 86_400_000 : null
     const probe = row.probe_result ? (JSON.parse(row.probe_result) as { ok?: boolean }) : null
@@ -301,6 +303,12 @@ export async function doctorCommand(
     } else {
       log(`local probe     ${row.name} ${age}`)
     }
+    log(`local endpoint  ${row.name} ${row.base_url ?? '(unset)'}`)
+    log(
+      `local reachable ${row.name} ${health ? `${health.ok ? 'yes' : 'NO'} — ${health.detail}` : 'not probed'}`,
+    )
+    const context = localContextDiagnosis(health?.contextTokens, row, registeredContextTokens(row))
+    if (context) log(`  ${context}`)
   }
   const srtAgents = Object.values(AGENTS)
     .filter((agent) =>
@@ -321,7 +329,7 @@ export async function doctorCommand(
   const configuredUrl = modelHostUrl()
   const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
   for (const line of local.lines) log(line)
-  log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
+  log(`model host     ${r.ok ? 'reachable' : 'UNREACHABLE'} — ${r.detail}`)
   if (!r.ok && configuredUrl) {
     // Reporting commands do not have side effects, so doctor only sends a
     // packet when asked in as many words. `orch do` wakes on its own; a
