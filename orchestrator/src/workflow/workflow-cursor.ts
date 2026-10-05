@@ -318,13 +318,6 @@ function cursorForStepRequest(
   return candidate && isUntouchedCursor(candidate) ? candidate : null
 }
 
-function refuseRetiredHandle(row: CursorRow, cursor: number | undefined): void {
-  if (cursor === undefined || (row.state !== 'done' && row.state !== 'abandoned')) return
-  throw new Error(
-    `cursor ${row.id} is ${row.state}; a new run is opened by fetching step 1 without a handle`,
-  )
-}
-
 function refuseInvalidServe(
   decision: ReturnType<typeof decideCursorTransition>,
   row: CursorRow | null,
@@ -360,7 +353,6 @@ function prepareStepServe(
 ) {
   const handled =
     cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
-  if (handled) refuseRetiredHandle(handled, cursor)
   const preliminary = handled
     ? cursorComposition(handled, d)
     : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)

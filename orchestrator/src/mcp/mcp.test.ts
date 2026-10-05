@@ -250,6 +250,95 @@ describe('orch MCP', () => {
     }
   })
 
+  test('every MCP workflow operation routes by cursor handle', async () => {
+    const project = 'mcp-cursor-handles'
+    upsertProject({
+      name: project,
+      path: '/mcp-cursor-handles',
+      stack: 'bun',
+      settings: {
+        gate: 'bun run check',
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        tracker: { kind: 'hub', protocol: 'hub' },
+      },
+    })
+    const args = (key: string) => ({ key, branch: `${key}-work`, worktree: `/tmp/${key}` })
+    const insert = db().prepare(
+      `INSERT INTO workflow_cursor
+        (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+         total_steps,created_at,updated_at,enforcement)
+       VALUES (?,'ship','default',?,'',NULL,1,1,?,0,'rebase','running','[]',NULL,
+               3,'2026-10-01','2026-10-01','note-only') RETURNING id`,
+    )
+    const first = insert.get(project, 'DEV-1082-MCP-A', JSON.stringify(args('DEV-1082-MCP-A'))) as {
+      id: number
+    }
+    const second = insert.get(
+      project,
+      'DEV-1082-MCP-B',
+      JSON.stringify(args('DEV-1082-MCP-B')),
+    ) as {
+      id: number
+    }
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    const call = async (name: string, arguments_: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: arguments_ })
+      if (result.isError)
+        throw new Error(
+          `${name}: ${(result.content as { text: string }[])[0]?.text ?? 'unknown error'}`,
+        )
+      return (result.content as { text: string }[])[0]!.text
+    }
+    try {
+      const common = { slug: 'ship', project, mode: 'default' }
+      expect(
+        await call('get_workflow_step', {
+          ...common,
+          step: 'rebase',
+          args: args('DEV-1082-MCP-A'),
+          cursor: first.id,
+        }),
+      ).toContain(`cursor ${first.id}`)
+      await call('next_workflow_step', {
+        ...common,
+        args: args('DEV-1082-MCP-A'),
+        cursor: first.id,
+        note: 'closed through MCP handle',
+      })
+      await call('await_workflow_ruling', {
+        ...common,
+        args: args('DEV-1082-MCP-B'),
+        cursor: second.id,
+        question: 'Proceed through MCP handle?',
+      })
+      await call('rule_workflow', {
+        ...common,
+        args: args('DEV-1082-MCP-B'),
+        cursor: second.id,
+        ruling: 'Proceed.',
+        from_operator: true,
+      })
+      await call('abandon_workflow', { cursor: second.id, reason: 'stopped through MCP handle' })
+
+      expect(
+        db().query('SELECT ordinal,state FROM workflow_cursor WHERE id=?').get(first.id),
+      ).toEqual({ ordinal: 1, state: 'running' })
+      expect(db().query('SELECT state FROM workflow_cursor WHERE id=?').get(second.id)).toEqual({
+        state: 'abandoned',
+      })
+    } finally {
+      await client.close()
+      await server.close()
+      removeProject(project)
+    }
+  })
+
   test('file_issue advertises every accepted input field', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })

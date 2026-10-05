@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import type { WorkflowDefinition } from '../workflow/workflows.ts'
+import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 import { workflowPromptDefinitions } from './mcp-prompts.ts'
 
@@ -100,5 +100,45 @@ describe('workflow prompts on the wire', () => {
     expect(result.messages[0]?.content).toMatchObject({
       text: expect.stringContaining('- key: The filed task key.'),
     })
+  })
+
+  test('a prompt with no default mode lists its arguments and exact next calls', async () => {
+    const slug = 'prompt-mode-chooser'
+    upsertProject({
+      name: 'prompt-fixture',
+      path: process.cwd(),
+      stack: 'node',
+      settings: { gate: 'true', docs: { protocol: 'orch-docs' } },
+    })
+    const draft = setWorkflow(
+      slug,
+      {
+        title: 'Choose prompt mode',
+        description: 'Exercise the mode chooser prompt.',
+        arguments: [{ name: 'key', required: false, description: 'Existing task key.' }],
+        modes: [
+          { slug: 'feature', title: 'Feature', entry: 'Add behavior?', steps: ['score'] },
+          { slug: 'fix', title: 'Fix', entry: 'Correct behavior?', steps: ['score'] },
+        ],
+      },
+      'test prompt mode chooser',
+      'test',
+    )
+    promoteWorkflow(slug, draft.n, 'publish test prompt', 'test')
+    const client = await connected()
+    const result = await client.getPrompt({
+      name: slug,
+      arguments: { project: 'prompt-fixture' },
+    })
+    const text = (result.messages[0]!.content as { text: string }).text
+
+    expect(text).toContain('No mode is chosen yet.')
+    expect(text).toContain('get it from the operator as a task key or a description')
+    expect(text).toContain('- key (optional): Existing task key.')
+    expect(text).toContain('MCP `compose_workflow` or `get_workflow_step` with `mode`')
+    expect(text).toContain(
+      `CLI \`orch workflow compose ${slug} --project prompt-fixture --mode <mode>\``,
+    )
+    expect(text).not.toContain('facts: {}')
   })
 })

@@ -202,10 +202,11 @@ function abandonCommand(argv: string[], print: (value: unknown, line?: string) =
   const project = flagValue(argv, 'project')
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   if (!project && !cursor) throw new Error('--project is required without --cursor')
+  const slug = argv[2]?.startsWith('--') ? '' : (argv[2] ?? '')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const mode = resolveWorkflowCursorMode(
-    argv[2] ?? '',
+    slug,
     project ?? '',
     flagValue(argv, 'mode'),
     args,
@@ -216,7 +217,7 @@ function abandonCommand(argv: string[], print: (value: unknown, line?: string) =
     cursor,
   )
   const result = abandonWorkflowCursor(
-    argv[2] ?? '',
+    slug,
     project ?? '',
     mode,
     args,

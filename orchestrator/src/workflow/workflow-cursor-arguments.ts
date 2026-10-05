@@ -43,7 +43,7 @@ export function decideCursorArguments(
         action: 'refuse',
         reason:
           `workflow argument "${name}" conflicts with the cursor: stored value "${storedValue}", ` +
-          `supplied value "${suppliedValue}"; run orch workflow abandon for this cursor, then compose again`,
+          `supplied value "${suppliedValue}"`,
       }
     }
     if (!storedValue?.trim()) merged[name] = suppliedValue
@@ -76,10 +76,7 @@ export function applyCursorArguments(
     rebindableArguments(row, d),
   )
   if (decision.action === 'refuse')
-    throw new Error(
-      `${decision.reason.replace(/; run orch workflow abandon for this cursor, then compose again$/, '')}; ` +
-        `orch workflow abandon --cursor ${row.id} --reason "<why>"`,
-    )
+    throw new Error(`${decision.reason}; orch workflow abandon --cursor ${row.id} --reason "<why>"`)
   const encoded = JSON.stringify(decision.args)
   if (decision.rebindings.length) {
     const at = nowIso()

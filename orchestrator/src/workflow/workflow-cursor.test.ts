@@ -179,13 +179,13 @@ describe('workflow cursor adapter', () => {
     ).toEqual({
       action: 'refuse',
       reason:
-        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"; run orch workflow abandon for this cursor, then compose again',
+        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"',
     })
     expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' }, new Set(['key']))).toEqual(
       {
         action: 'refuse',
         reason:
-          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"',
       },
     )
   })

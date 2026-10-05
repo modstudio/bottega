@@ -106,7 +106,11 @@ test('two keyless runs in one session have distinct handles and advance independ
   })
   expect(() =>
     nextWorkflowStep('keyless-runs', 'fixture', 'default', {}, 'ambiguous', context, d, {}, ports),
-  ).toThrow(new RegExp(`cursor ${first.cursor}.*cursor ${second.cursor}`, 's'))
+  ).toThrow(
+    `more than one open keyless workflow cursor matches; pass a cursor handle:\n` +
+      `cursor ${first.cursor}, unassigned, keyless-runs default, step 2 complete\n` +
+      `cursor ${second.cursor}, unassigned, keyless-runs default, step 1 score`,
+  )
 })
 
 test('step 1 reuses one untouched composed keyless cursor but opens after it advances', () => {

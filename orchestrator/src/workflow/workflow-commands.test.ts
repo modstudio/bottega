@@ -356,6 +356,58 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
   expect(lines.join('\n')).toContain(`Workflow ${slug} for ${key} was abandoned at step 2 score`)
 })
 
+test('every CLI cursor verb routes by handle, including handle-only abandon', async () => {
+  const slug = 'cursor-handle-verbs'
+  const project = 'cursor-handle-verbs-project'
+  const catalogue = productionStepCatalogue().definition.steps
+  const steps = [
+    catalogue.find(({ slug }) => slug === 'complete')!.slug,
+    catalogue.find(({ slug }) => slug === 'score')!.slug,
+  ]
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
+  const first = composeWorkflowWithCursor(slug, project, 'report', { key: 'DEV-1082-A' }, {})
+  const second = composeWorkflowWithCursor(slug, project, 'report', { key: 'DEV-1082-B' }, {})
+  const firstCursor = first.cursor!.id
+  const secondCursor = second.cursor!.id
+  db()
+    .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id IN (?,?)")
+    .run(firstCursor, secondCursor)
+  const lines: string[] = []
+  const command = (verb: string, cursor: number, ...tail: string[]) =>
+    workflowCommand(
+      [
+        'workflow',
+        verb,
+        slug,
+        ...(verb === 'step' ? [steps[0]!] : []),
+        '--project',
+        project,
+        '--cursor',
+        String(cursor),
+        ...tail,
+      ],
+      presentation(lines),
+    )
+
+  await command('step', firstCursor, '--arg', 'key=DEV-1082-A')
+  await command('next', firstCursor, '--note', 'closed by handle')
+  await command('await', secondCursor, '--question', 'Proceed by handle?')
+  await command('rule', secondCursor, '--ruling', 'Proceed.', '--from-operator')
+  await workflowCommand(
+    ['workflow', 'abandon', '--cursor', String(secondCursor), '--reason', 'stopped by handle'],
+    presentation(lines),
+  )
+
+  expect(lines.join('\n')).toContain(`cursor ${firstCursor}`)
+  expect(
+    db().query('SELECT ordinal,state FROM workflow_cursor WHERE id=?').get(firstCursor),
+  ).toEqual({ ordinal: 1, state: 'running' })
+  expect(db().query('SELECT state FROM workflow_cursor WHERE id=?').get(secondCursor)).toEqual({
+    state: 'abandoned',
+  })
+})
+
 test('mode-less cursor command refuses active cursors in multiple modes', async () => {
   const slug = 'cursor-ambiguous-mode'
   const project = 'cursor-ambiguous-mode-project'

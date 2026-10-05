@@ -60,7 +60,12 @@ function selectByHandle(
     .query('SELECT * FROM workflow_cursor WHERE id=?')
     .get(cursor) as SelectableCursorRow | null
   if (!row) throw new Error(`workflow cursor ${cursor} does not exist`)
-  return validateIdentity(row, identity)
+  validateIdentity(row, identity)
+  if (row.state === 'done' || row.state === 'abandoned')
+    throw new Error(
+      `cursor ${row.id} is ${row.state}; a new run is opened by fetching step 1 without a handle`,
+    )
+  return row
 }
 
 export function selectWorkflowCursor(
