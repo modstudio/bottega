@@ -27,6 +27,7 @@
     "@ast-grep/napi": "0.45.3",
     "@aws-sdk/client-sesv2": "^3.1135.0",
     "@better-auth/drizzle-adapter": "1.7.5",
+    "@clack/prompts": "1.8.1",
     "@modelcontextprotocol/client": "^2.2.0",
     "@modelcontextprotocol/server": "^2.2.0",
     "ajv": "^8.20.0",

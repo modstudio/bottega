@@ -92,6 +92,27 @@ test('setup facts is store-free at the executable entry boundary', () => {
     } finally {
       observed.close()
     }
+
+    const bareSetup = Bun.spawnSync(
+      ['bun', '--no-env-file', join(import.meta.dir, 'orch.ts'), 'setup'],
+      {
+        cwd: join(import.meta.dir, '../../..'),
+        env: {
+          ...process.env,
+          ORCH_DB: existing,
+          ORCH_DB_WRITE: '1',
+          CLAUDE_CODE_SESSION_ID: 'setup-non-tty-test',
+        },
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 30_000,
+      },
+    )
+    expect(bareSetup.exitCode).toBe(2)
+    expect(bareSetup.stderr.toString()).toContain('requires both stdin and stdout to be TTYs')
+    expect(bareSetup.stderr.toString()).toContain('orch setup apply --yes')
+    expect(bareSetup.stderr.toString()).toContain('orch setup apply --answers <file>')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

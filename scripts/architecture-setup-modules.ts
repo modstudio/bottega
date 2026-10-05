@@ -75,4 +75,19 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [],
     reason: 'Keep harness MCP CLI grammar independent of setup policy, stores, and projects.',
   },
+  {
+    name: 'setup-interactive-boundary',
+    file: 'orchestrator/src/setup/setup-interactive.ts',
+    allowed: ['./setup-planner.ts'],
+    typeOnlyAllowed: ['./setup-apply.ts', './setup-engine.ts'],
+    reason:
+      'Keep interactive setup decisions independent of prompt adapters, stores, and commands.',
+  },
+  {
+    name: 'setup-clack-boundary',
+    file: 'orchestrator/src/setup/setup-clack.ts',
+    allowed: ['@clack/prompts', './setup-interactive.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the bought prompt library confined to the interactive presentation adapter.',
+  },
 ]

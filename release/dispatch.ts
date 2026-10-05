@@ -27,12 +27,13 @@ export async function dispatchBinary(
   const publicCommands = Object.values(BOTTEGA_ENTRY_PROTOCOL)
     .filter((entry) => entry.usage === 'public')
     .map((entry) => entry.compiledArguments[0])
-  const usage = `usage: ${PLATFORM_SLUG} <${publicCommands.join('|')}> [arguments]`
+  const usage = `usage: ${PLATFORM_SLUG} <setup|${publicCommands.join('|')}> [arguments]`
   if (argv.length === 1 && argv[0] === '--help') {
     console.log(usage)
     return 0
   }
   const [command, ...rest] = argv
+  if (command === 'setup') return entries.orch(['setup', ...rest])
   if (command === BOTTEGA_ENTRY_PROTOCOL.orch.compiledArguments[0]) return entries.orch(rest)
   if (command === BOTTEGA_ENTRY_PROTOCOL.hub.compiledArguments[0]) return entries.hub(rest)
   if (command === BOTTEGA_ENTRY_PROTOCOL['run-exec'].compiledArguments[0]) {
