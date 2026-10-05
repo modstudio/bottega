@@ -96,6 +96,7 @@ export function hostedBoardMessageView(
   return {
     id: String(row.id),
     kind: String(row.kind),
+    threadRootId: row.thread_root_id == null ? null : String(row.thread_root_id),
     title: row.title == null ? null : String(row.title),
     body: String(row.body),
     audience: row.audience == null ? null : String(row.audience),

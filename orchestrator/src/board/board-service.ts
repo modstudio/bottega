@@ -1,6 +1,7 @@
 import { hostname } from 'node:os'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { reapHostedBoardCache } from './board-hosted-cache.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -72,8 +73,8 @@ export function recordPresence(
   writableDb()
     .query(
       `INSERT INTO presence
-       (session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,?,'architect',?,?,?,?,?)
+       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,?,'architect',?,?,?,?,?,?)
        ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
          machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
          current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
@@ -85,6 +86,7 @@ export function recordPresence(
       project.name,
       cwd,
       current?.launch_key ?? null,
+      at,
       at,
     )
   return true
@@ -110,7 +112,7 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-function runReader(runId: number): string {
+export function runReader(runId: number): string {
   const row = db()
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
@@ -227,21 +229,11 @@ export function markRunNoticesDelivered(runId: number, ids: number[], clock = Da
   }, database)
 }
 
-export function readRunNotices(runId: number, all = false, clock = Date.now()) {
-  const notices = claimRunNotices(runId, all, clock)
-  markRunNoticesDelivered(
-    runId,
-    notices.map((notice) => notice.id),
-    clock,
-  )
-  return notices
-}
-
 export function claimNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-): { id: number; text: string }[] {
+): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
   const reader = boardReader(env)
   const rows = messageRows().filter(
     (row) =>
@@ -249,7 +241,11 @@ export function claimNotices(
       deliverableTo(row, reader, clock) &&
       (all || !wasDelivered(row.id, reader)),
   )
-  return rows.map((row) => render(row))
+  return rows.map((row) => ({
+    ...render(row),
+    ackRequired: row.ack_required === 1,
+    createdAt: row.created_at,
+  }))
 }
 
 export function markNoticesDelivered(
@@ -279,7 +275,7 @@ export function readNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-): { id: number; text: string }[] {
+): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
   const notices = claimNotices(all, env, clock)
   markNoticesDelivered(
     notices.map((notice) => notice.id),
@@ -338,6 +334,8 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
   }
   return {
     message: render(row),
+    row,
+    tags: messageTags(row.id),
     receipts,
     reached: receipts.length,
     acknowledged: receipts.filter((receipt) => receipt.acknowledged_at !== null).length,
@@ -461,5 +459,5 @@ export function reapBoardMessages(clock = Date.now()): number {
   const remove = writableDb().query('DELETE FROM board_message WHERE id=?')
   let reaped = 0
   for (const id of ids) reaped += remove.run(id).changes
-  return reaped
+  return reaped + reapHostedBoardCache(clock)
 }

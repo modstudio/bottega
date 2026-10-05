@@ -320,6 +320,7 @@ export const modules: ArchitectureModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
+    '../board/board-delivery.ts',
     '../board/board-service.ts',
     '../database/db.ts',
     './monitor-conditions.ts',

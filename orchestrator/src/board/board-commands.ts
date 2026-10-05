@@ -1,5 +1,6 @@
 import type { Command } from 'commander'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
+import { claimBoardNotices, markBoardNoticesDelivered, readBoardNotices } from './board-delivery.ts'
 import {
   boardAccept,
   boardAcknowledge,
@@ -11,7 +12,7 @@ import {
   boardThread,
   boardWithdraw,
 } from './board-operations.ts'
-import { claimNotices, markNoticesDelivered, readNotices, recordPresence } from './board-service.ts'
+import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 
 function parseBoardDuration(value: string): number {
@@ -112,19 +113,21 @@ export function registerBoardCommands(program: Command): void {
     .command('read')
     .option('--all')
     .option('--claim', 'read without stamping delivery (for the session-start hook)')
-    .action((options) => {
-      const notices = options.claim
-        ? claimNotices(Boolean(options.all))
-        : readNotices(Boolean(options.all))
-      if (options.claim)
-        console.log(JSON.stringify(notices.map((notice) => ({ ...notice, id: String(notice.id) }))))
-      else for (const notice of notices) console.log(notice.text)
+    .action(async (options) => {
+      const delivery = options.claim
+        ? await claimBoardNotices(Boolean(options.all))
+        : await readBoardNotices(Boolean(options.all))
+      console.log(
+        JSON.stringify({
+          notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
+          warning: delivery.warning,
+        }),
+      )
     })
-  board.command('delivered <ids>').action((ids) => {
-    const parsed = String(ids).split(',').map(localBoardId)
-    if (!parsed.length || parsed.some((id) => !Number.isSafeInteger(id) || id <= 0))
-      throw new Error('board delivered ids must be comma-separated positive integers')
-    markNoticesDelivered(parsed)
+  board.command('delivered <ids>').action(async (ids) => {
+    const parsed = String(ids).split(',')
+    if (!parsed.length) throw new Error('board delivered ids are required')
+    await markBoardNoticesDelivered(parsed)
   })
   board
     .command('ack <id>')

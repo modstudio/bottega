@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
-import { markRunNoticesDelivered } from '../board/board-service.ts'
+import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
@@ -161,7 +161,7 @@ export type LiveInput = {
   textReplyContract: boolean
   resolvedDialect: ReplyDialect
   mcpSetupHeader: string | null
-  initialBoardNoticeIds: number[]
+  initialBoardNoticeIds: Array<number | string>
 }
 
 export type LiveResult = {
@@ -329,7 +329,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     noteBroker = startWorkerNoteBroker(claim.id)
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
-    const boardDelivery = prepareLaterRunBoardPrompt(
+    const boardDelivery = await prepareLaterRunBoardPrompt(
       claim.id,
       Boolean(opts.resume),
       checkpointMessages,
@@ -603,7 +603,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       claim.id,
       checkpointMessages.map((message) => message.id),
     )
-    markRunNoticesDelivered(claim.id, [
+    await markRunBoardNoticesDelivered(claim.id, [
       ...initialBoardNoticeIds,
       ...checkpointNotices.map((notice) => notice.id),
     ])

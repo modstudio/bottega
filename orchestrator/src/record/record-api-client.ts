@@ -8,7 +8,7 @@ import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
-  HostedBoardChange,
+  HostedBoardChanges,
   HostedBoardClaim,
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
@@ -182,10 +182,7 @@ export type RecordApiClient = {
   getBoardThread(id: string): Promise<HostedBoardThread>
   getBoardStatus(id: string): Promise<HostedBoardStatus>
   putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
-  listBoardChanges(query: {
-    after?: string
-    limit?: number
-  }): Promise<{ items: HostedBoardChange[]; highestRevision: string | null }>
+  listBoardChanges(query: { after?: string; limit?: number }): Promise<HostedBoardChanges>
   takeBoardClaim(
     input: HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
@@ -214,9 +211,18 @@ function injectedClient(): RecordApiClient | null {
   return injectSlot().current
 }
 
+export class RecordApiRequestError extends Error {
+  readonly kind: 'unreachable' | 'refused'
+
+  constructor(message: string, kind: 'unreachable' | 'refused') {
+    super(message)
+    this.kind = kind
+  }
+}
+
 function recordApiUnreachable(error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error)
-  return new Error(`${detail}\n${RECORD_WRITE_REMEDY}`)
+  return new RecordApiRequestError(`${detail}\n${RECORD_WRITE_REMEDY}`, 'unreachable')
 }
 
 function recordApiError(body: unknown, status: number): Error {
@@ -230,7 +236,10 @@ function recordApiError(body: unknown, status: number): Error {
     (typeof record.message === 'string' && record.message) ||
     (typeof nested.message === 'string' && nested.message) ||
     `record API ${status}`
-  if (message.includes(MISSING_HOSTED_REVISION_REMEDY)) return new Error(message)
+  if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
+    return new RecordApiRequestError(message, 'refused')
+  if (status >= 400 && status < 500)
+    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused')
   return recordApiUnreachable(new Error(message))
 }
 

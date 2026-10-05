@@ -37,6 +37,7 @@ type HostedBoardTag = HostedBoardSenderTag & { origin: 'sender' | 'inferred' }
 export type HostedBoardMessage = {
   id: string
   kind: string
+  threadRootId: string | null
   title: string | null
   body: string
   audience: string | null
@@ -86,6 +87,12 @@ export type HostedBoardChange = {
   message: HostedBoardMessage
   tags: HostedBoardTag[]
   receipts: HostedBoardReceipt[]
+}
+
+export type HostedBoardChanges = {
+  userId: string
+  items: HostedBoardChange[]
+  highestRevision: string | null
 }
 
 export type HostedBoardStatus = {

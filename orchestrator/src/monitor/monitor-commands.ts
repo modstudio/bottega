@@ -28,7 +28,10 @@ import {
   monitor,
   monitorHistory,
 } from './monitor.ts'
-import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
+import {
+  claimMonitorNoticesWithHosted,
+  markMonitorNoticesDeliveredWithHosted,
+} from './monitor-notices.ts'
 import {
   formatStoreWriteLockReport,
   type StoreWriteLockReport,
@@ -44,6 +47,7 @@ type Options = {
   lockHolder: boolean
   limit: number
   json: boolean
+  skipBoardRefresh: boolean
 }
 type Presentation = {
   log(value: string): void
@@ -115,7 +119,7 @@ function deliveryAuthorized(): boolean {
 export async function monitorCommand(options: Options, presentation: Presentation): Promise<void> {
   if (options.lockHolder) return showLockHolder(options.json, presentation)
   if (options.ackNotices !== undefined) return acknowledge(options.ackNotices)
-  if (options.notices) return showNotices(options.json, presentation)
+  if (options.notices) return showNotices(options.json, options.skipBoardRefresh, presentation)
   if (options.history) return showHistory(options.limit, options.json, presentation)
   await runMonitor(options, presentation)
 }
@@ -144,22 +148,30 @@ function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }
   }
 }
 
-function acknowledge(ids: string): void {
+async function acknowledge(ids: string): Promise<void> {
   const sid = sessionId()
   if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
   if (!deliveryAuthorized())
     throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
-  markMonitorNoticesDelivered(sid, ids.split(',') as MonitorNotice['noticeId'][])
+  await markMonitorNoticesDeliveredWithHosted(sid, ids.split(',') as MonitorNotice['noticeId'][])
 }
 
-async function showNotices(json: boolean, presentation: Presentation): Promise<void> {
+async function showNotices(
+  json: boolean,
+  skipBoardRefresh: boolean,
+  presentation: Presentation,
+): Promise<void> {
   const sid = sessionId()
   if (!sid) throw new Error('monitor notices require CLAUDE_CODE_SESSION_ID')
-  const rows = claimMonitorNotices(sid)
-  if (json) await presentation.write(`${JSON.stringify(rows)}\n`)
-  else
-    for (const condition of rows)
+  const delivery = await claimMonitorNoticesWithHosted(sid, {
+    refreshBoard: !skipBoardRefresh,
+  })
+  if (json) await presentation.write(`${JSON.stringify(delivery)}\n`)
+  else {
+    for (const condition of delivery.notices)
       presentation.log(`MONITOR ${condition.kind} ${condition.subject}: ${condition.detail}`)
+    if (delivery.warning) presentation.log(delivery.warning)
+  }
 }
 
 async function showHistory(

@@ -12,7 +12,23 @@ import {
   resolveAudience,
   runAudienceRefusal,
   shouldInterrupt,
+  validatePostNoticeInput,
 } from './board-policy.ts'
+
+test('notice header fields refuse every line separator', () => {
+  expect(() => validatePostNoticeInput({ title: 'bad\nvalue', body: 'body' })).toThrow(
+    /title contains a line break/,
+  )
+  expect(() => validatePostNoticeInput({ title: 'safe', body: 'body', task: 'DEV\r9' })).toThrow(
+    /task tag contains a line break/,
+  )
+  expect(() =>
+    validatePostNoticeInput({ title: 'safe', body: 'body', paths: ['src\u2028file'] }),
+  ).toThrow(/path tag contains a line break/)
+  expect(() =>
+    validatePostNoticeInput({ title: 'safe', body: 'body', topics: ['gate\u2029forged'] }),
+  ).toThrow(/topic contains a line break/)
+})
 
 test('architect identity is a table with only the ruled Claude entry', () => {
   expect(architectIdentity({ CLAUDE_CODE_SESSION_ID: 'claude-1' })).toEqual({

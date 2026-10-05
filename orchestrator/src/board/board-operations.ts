@@ -24,6 +24,7 @@ import {
   type TakeClaimInput,
   takeClaim,
 } from './board-claim-service.ts'
+import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
   architectIdentity,
@@ -39,7 +40,7 @@ import {
   postNotice,
   withdrawNotice,
 } from './board-service.ts'
-import { type BoardOrigin, boardActor, originText } from './board-store.ts'
+import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
 import {
   acceptAnswer,
   askQuestion,
@@ -63,6 +64,7 @@ type BoardReplyResult = BoardPostResult & { rootId: string }
 type BoardMessageResult = {
   id: string
   kind: string | null
+  threadRootId: string | null
   title: string | null
   body: string | null
   audience: string | null
@@ -173,6 +175,7 @@ function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
     root: {
       ...value.root,
       id: String(value.root.id),
+      threadRootId: null,
       acceptedReplyId: stringId(value.root.acceptedReplyId),
       noteId: stringId(value.root.noteId),
       revision: null,
@@ -203,33 +206,44 @@ function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
   }
 }
 
-function localStatus(value: ReturnType<typeof noticeStatus>): BoardStatusResult {
+function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): BoardStatusResult {
+  const row = value.row
   return {
     message: {
       id: String(value.message.id),
-      kind: null,
-      title: null,
-      body: null,
-      audience: null,
-      origin: null,
-      senderTags: null,
-      createdAt: null,
-      expiresAt: null,
-      withdrawnAt: null,
-      state: null,
-      acceptedReplyId: null,
-      acceptedBy: null,
-      acceptedAt: null,
-      noteId: null,
-      notePendingError: null,
+      kind: row.kind,
+      threadRootId: stringId(row.thread_root_id),
+      title: row.title,
+      body: row.body,
+      audience: row.audience,
+      origin: boardOrigin(row),
+      senderTags: value.tags
+        .filter((tag) => tag.origin === 'sender')
+        .map(({ kind, value }) => ({ kind, value })),
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      withdrawnAt: row.withdrawn_at,
+      state:
+        row.accepted_reply_id !== null
+          ? 'accepted'
+          : row.withdrawn_at
+            ? 'withdrawn'
+            : row.expires_at && Date.parse(row.expires_at) <= clock
+              ? 'expired'
+              : 'open',
+      acceptedReplyId: stringId(row.accepted_reply_id),
+      acceptedBy: row.accepted_by,
+      acceptedAt: row.accepted_at,
+      noteId: stringId(row.note_id),
+      notePendingError: row.note_pending_error,
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
       claimId: null,
       authorUserId: null,
-      authorSession: null,
-      ackRequired: null,
-      ackDeadline: null,
+      authorSession: row.author_session,
+      ackRequired: row.ack_required === 1,
+      ackDeadline: row.ack_deadline,
       text: value.message.text,
     },
     receipts: value.receipts.map((receipt) => ({
@@ -470,11 +484,11 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
   if (mode === 'local') acknowledgeNotice(parsed as number, c.env, c.clock)
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
-    // An acknowledged receipt never escalates; the cache change will first store the real posting-time value.
+    // An acknowledged receipt never escalates; uncached legacy rows safely use true.
     await hostedClient(c).putBoardReceipt({
       messageId: parsed as string,
       readerSession: session,
-      audienceAtPosting: true,
+      audienceAtPosting: cachedAudienceAtPosting(parsed as string, session) ?? true,
       acknowledged: true,
     })
   }
@@ -487,7 +501,7 @@ export async function boardStatus(id: string, inputContext?: Context) {
   const parsed = idForMode(id, mode)
   return mode === 'hosted'
     ? hostedStatus(await hostedClient(c).getBoardStatus(parsed as string))
-    : localStatus(noticeStatus(parsed as number, c.env, c.clock))
+    : localStatus(noticeStatus(parsed as number, c.env, c.clock), c.clock)
 }
 
 function hostedClaimRunId(runId: number | undefined, env: Environment): string | null | undefined {

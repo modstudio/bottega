@@ -29,6 +29,7 @@ const env = {
 const hostedMessage = (id = newRecordId()) => ({
   id,
   kind: 'notice',
+  threadRootId: null,
   title: 'Hosted',
   body: 'body',
   audience: 'operator',
@@ -150,6 +151,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
     root: {
       id: question.id,
       kind: 'question',
+      threadRootId: null,
       title: 'Local question',
       body: 'Question body',
       audience: 'operator',
@@ -199,16 +201,17 @@ test('status results have one pinned shape in local and hosted modes', async () 
   expect(local).toEqual({
     message: {
       id: posted.id,
-      kind: null,
-      title: null,
-      body: null,
-      audience: null,
-      origin: null,
-      senderTags: null,
-      createdAt: null,
-      expiresAt: null,
+      kind: 'notice',
+      threadRootId: null,
+      title: 'Local status',
+      body: 'Status body',
+      audience: 'operator',
+      origin: { kind: 'operator', session: null, harness: null, project: null, runId: null },
+      senderTags: [],
+      createdAt: '2026-10-05T12:00:00.000Z',
+      expiresAt: '2026-10-06T12:00:00.000Z',
       withdrawnAt: null,
-      state: null,
+      state: 'open',
       acceptedReplyId: null,
       acceptedBy: null,
       acceptedAt: null,
@@ -220,7 +223,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
       claimId: null,
       authorUserId: null,
       authorSession: null,
-      ackRequired: null,
+      ackRequired: false,
       ackDeadline: null,
       text: expect.any(String),
     },
@@ -609,6 +612,22 @@ test('hosted acknowledgement uses the reserved operator reader without a session
     boardAcknowledge(id, { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL }, client }),
   ).resolves.toEqual({ acknowledged: id })
   expect(readerSession).toBe('operator')
+})
+
+test('hosted acknowledgement refuses when the service is unreachable', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const id = newRecordId()
+  await expect(
+    boardAcknowledge(id, {
+      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+      client: {
+        ...createMemoryRecordApiClient(),
+        putBoardReceipt: async () => {
+          throw new Error('record service offline')
+        },
+      },
+    }),
+  ).rejects.toThrow('record service offline')
 })
 
 test('an adopted install without hosted configuration refuses instead of writing locally', async () => {

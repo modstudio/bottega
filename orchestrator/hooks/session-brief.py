@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 
 def _start(orch, *args, env=None, cwd=None):
@@ -172,12 +173,24 @@ def _board_slice(completed):
     if completed is None or completed.returncode != 0:
         return "", []
     try:
-        rows = json.loads(completed.stdout)
+        result = json.loads(completed.stdout)
+        if isinstance(result, list):
+            rows = result
+            warning = None
+        elif isinstance(result, dict):
+            rows = result.get("notices")
+            warning = result.get("warning")
+            if warning is not None and not isinstance(warning, str):
+                raise ValueError("invalid board warning")
+        else:
+            raise ValueError("invalid board notice response")
         def board_id(row):
             value = row.get("id") if isinstance(row, dict) else None
             if isinstance(value, int) and not isinstance(value, bool) and value > 0:
                 return str(value)
             if isinstance(value, str) and value.isascii() and value.isdigit() and value[0] != "0":
+                return value
+            if isinstance(value, str) and str(uuid.UUID(value)) == value.lower():
                 return value
             raise ValueError("invalid board notice id")
 
@@ -185,7 +198,8 @@ def _board_slice(completed):
             isinstance(row, dict) and isinstance(row.get("text"), str) for row in rows
         ):
             raise ValueError("invalid board notice response")
-        return "\n\n".join(row["text"] for row in rows), [board_id(row) for row in rows]
+        text = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
+        return text, [board_id(row) for row in rows]
     except Exception:
         return "", []
 
@@ -196,6 +210,51 @@ def _emitted_board_ids(output, board_text, board_ids):
         if isinstance(output, dict) else ""
     )
     return list(board_ids) if board_ids and board_text and board_text in emitted_context else []
+
+
+def _valid_notice_id(value):
+    source, separator, identifier = value.partition(":") if isinstance(value, str) else ("", "", "")
+    if source not in ("condition", "landing", "board") or separator != ":":
+        return False
+    if identifier.isdigit():
+        return int(identifier) > 0
+    try:
+        return source == "board" and str(uuid.UUID(identifier)) == identifier.lower()
+    except ValueError:
+        return False
+
+
+def _monitor_delivery(stdout, owner_session):
+    result = json.loads(stdout)
+    if isinstance(result, list):
+        rows = result
+        warning = None
+    elif isinstance(result, dict):
+        rows = result.get("notices")
+        warning = result.get("warning")
+    else:
+        raise ValueError("invalid monitor notice JSON")
+    if not isinstance(rows, list) or (warning is not None and not isinstance(warning, str)):
+        raise ValueError("invalid monitor notice JSON")
+    if not all(
+        isinstance(item, dict)
+        and isinstance(item.get("kind"), str)
+        and isinstance(item.get("subject"), str)
+        and isinstance(item.get("detail"), str)
+        and isinstance(item.get("noticeId"), str)
+        and _valid_notice_id(item["noticeId"])
+        and item.get("ownerSession") == owner_session
+        for item in rows
+    ):
+        raise ValueError("invalid monitor notice JSON")
+    return rows, warning
+
+
+def _monitor_notice_command(orch, skip_board_refresh=False):
+    command = [orch, "monitor", "--notices", "--json"]
+    if skip_board_refresh:
+        command.append("--skip-board-refresh")
+    return command
 
 
 def assemble_additional_context(
@@ -298,6 +357,7 @@ def main() -> int:
     cwd = None
     orch = None
     monitor_notices = []
+    monitor_warning = None
     inbox_env = None
     notice_timeout = 1.0
     acknowledgement_timeout = 1.0
@@ -348,7 +408,9 @@ def main() -> int:
                     json.dump({"token": capability_token, "pid": os.getpid()}, capability_file)
                 inbox_env["ORCH_MONITOR_CAPABILITY_PATH"] = capability_path
                 inbox_env["ORCH_MONITOR_CAPABILITY_TOKEN"] = capability_token
-                monitor_p = _start(orch, "monitor", "--notices", "--json", env=inbox_env)
+                monitor_p = _start(
+                    *_monitor_notice_command(orch, skip_board_refresh=True), env=inbox_env
+                )
                 notice_deadline = time.monotonic() + notice_timeout
             except Exception:
                 monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
@@ -684,21 +746,7 @@ def main() -> int:
             try:
                 monitor = _wait(monitor_p, notice_deadline)
                 if monitor.returncode == 0:
-                    monitor_notices = json.loads(monitor.stdout)
-                    if not isinstance(monitor_notices, list) or not all(
-                        isinstance(item, dict)
-                        and isinstance(item.get("kind"), str)
-                        and isinstance(item.get("subject"), str)
-                        and isinstance(item.get("detail"), str)
-                        and isinstance(item.get("noticeId"), str)
-                        and item["noticeId"].partition(":")[0] in ("condition", "landing", "board")
-                        and item["noticeId"].partition(":")[1] == ":"
-                        and item["noticeId"].partition(":")[2].isdigit()
-                        and int(item["noticeId"].partition(":")[2]) > 0
-                        and item.get("ownerSession") == sid
-                        for item in monitor_notices
-                    ):
-                        raise ValueError("invalid monitor notice JSON")
+                    monitor_notices, monitor_warning = _monitor_delivery(monitor.stdout, sid)
                 elif monitor.returncode == -1:
                     monitor_failure = "Monitor notice observation timed out; addressed condition state is unknown."
                 else:
@@ -719,16 +767,20 @@ def main() -> int:
         notices = health_notices
         if monitor_failure:
             notices.append(monitor_failure)
-        if monitor_notices:
-            monitor_text = "\n".join(
-                f'MONITOR {item["kind"]} {item["subject"]}: {item["detail"]}'
-                for item in monitor_notices
-            )
+        if monitor_notices or monitor_warning:
+            monitor_text = "\n".join([
+                *(
+                    f'MONITOR {item["kind"]} {item["subject"]}: {item["detail"]}'
+                    for item in monitor_notices
+                ),
+                *([monitor_warning] if monitor_warning else []),
+            ])
             context = assemble_additional_context(
                 **{**health_sections, "extra": _join_sections(extra_section, monitor_text)}
             )
-            noun = "condition" if len(monitor_notices) == 1 else "conditions"
-            notices.append(f"Monitor addressed {len(monitor_notices)} {noun} to this session.")
+            if monitor_notices:
+                noun = "condition" if len(monitor_notices) == 1 else "conditions"
+                notices.append(f"Monitor addressed {len(monitor_notices)} {noun} to this session.")
 
         if context or notices:
             output = {

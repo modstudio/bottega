@@ -35,7 +35,7 @@ export type PresenceFact = {
   machine: string
   lastSeen?: number
   live?: boolean
-  runIds?: ReadonlySet<number>
+  runIds?: ReadonlySet<number | string>
   taskKeys?: ReadonlySet<string>
   taskAudienceOnly?: boolean
 }
@@ -115,14 +115,7 @@ export function resolveAudience(
   if (audience.kind === 'task')
     return readers(live.filter((row) => row.taskKeys?.has(audience.value)))
   if (audience.kind === 'run')
-    return readers(
-      live.filter(
-        (row) =>
-          row.role === 'worker' &&
-          typeof audience.value === 'number' &&
-          row.runIds?.has(audience.value),
-      ),
-    )
+    return readers(live.filter((row) => row.role === 'worker' && row.runIds?.has(audience.value)))
   if (audience.kind === 'machine')
     return readers(live.filter((row) => row.machine === audience.value))
   return readers(live.filter((row) => row.role === 'architect' && row.reader === audience.value))
@@ -130,12 +123,15 @@ export function resolveAudience(
 
 export const shouldInterrupt = (message: {
   authorKind: string
+  authorIsSignedInUser?: boolean
   audienceKind: Audience['kind']
   ackRequired: boolean
   claimConflict?: boolean
 }): boolean =>
   message.claimConflict === true ||
-  (message.ackRequired && (message.authorKind === 'operator' || message.audienceKind === 'machine'))
+  (message.ackRequired &&
+    ((message.authorKind === 'operator' && message.authorIsSignedInUser !== false) ||
+      message.audienceKind === 'machine'))
 
 export function requireRealSession(session: string, action: string): void {
   if (!session.trim() || session === OPERATOR_READER || session.startsWith('run:'))
@@ -171,6 +167,16 @@ export function validatePostNoticeInput(input: {
   ackRequired?: boolean
   deadlineMs?: number
 }): void {
+  const lineBreak = /[\r\n\u2028\u2029]/
+  const headerFields: Array<[string, string | undefined]> = [
+    ['title', input.title],
+    ['task tag', input.task],
+    ...(input.paths ?? []).map((value) => ['path tag', value] as [string, string]),
+    ...(input.topics ?? []).map((value) => ['topic', value] as [string, string]),
+  ]
+  for (const [field, value] of headerFields)
+    if (value !== undefined && lineBreak.test(value))
+      throw new Error(`board notice ${field} contains a line break; remove it and retry`)
   if (input.title.length > BOARD_TITLE_MAX_CHARS)
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
   if (input.body.length > BOARD_BODY_MAX_CHARS)

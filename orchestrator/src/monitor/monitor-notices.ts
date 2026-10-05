@@ -1,11 +1,8 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import {
-  claimInterruptNotices,
-  markInterruptNoticesDelivered,
-  requireRealSession,
-} from '../board/board-service.ts'
+import { claimBoardInterrupts, markBoardInterruptsDelivered } from '../board/board-delivery.ts'
+import { requireRealSession } from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
@@ -214,17 +211,6 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   }[]
   return [
     ...conditions,
-    ...claimInterruptNotices(ownerSession).map(
-      (notice): MonitorNotice => ({
-        noticeId: notice.noticeId,
-        kind: 'board-notice',
-        subject: notice.noticeId,
-        since: null,
-        ageMs: null,
-        detail: notice.detail,
-        ownerSession,
-      }),
-    ),
     ...landings.map(
       (row): MonitorNotice => ({
         noticeId: `landing:${row.id}`,
@@ -239,6 +225,30 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   ]
 }
 
+export async function claimMonitorNoticesWithHosted(
+  ownerSession: string,
+  input: { refreshBoard?: boolean } = {},
+): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
+  const board = await claimBoardInterrupts(ownerSession, { refresh: input.refreshBoard })
+  return {
+    notices: [
+      ...claimMonitorNotices(ownerSession),
+      ...board.notices.map(
+        (notice): MonitorNotice => ({
+          noticeId: notice.noticeId,
+          kind: 'board-notice',
+          subject: notice.noticeId,
+          since: null,
+          ageMs: null,
+          detail: notice.detail,
+          ownerSession,
+        }),
+      ),
+    ],
+    warning: board.warning,
+  }
+}
+
 /** Acknowledge only rows the hook has already emitted to its consumer. */
 export function markMonitorNoticesDelivered(
   ownerSession: string,
@@ -247,12 +257,15 @@ export function markMonitorNoticesDelivered(
 ): void {
   requireRealSession(ownerSession, 'monitor notice acknowledgement')
   const parsed = ids.map((token) => {
-    const match = /^(condition|landing|board):([1-9]\d*)$/.exec(token)
+    const match = /^(condition|landing|board):(.+)$/.exec(token)
     if (!match)
       throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
-    return { source: match[1] as 'condition' | 'landing' | 'board', id: Number(match[2]) }
+    return { source: match[1] as 'condition' | 'landing' | 'board', id: match[2]! }
   })
-  if (!parsed.length || parsed.some(({ id }) => !Number.isSafeInteger(id))) {
+  if (
+    !parsed.length ||
+    parsed.some(({ source, id }) => source !== 'board' && !/^[1-9]\d*$/.test(id))
+  ) {
     throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
   }
   const database = writableDb()
@@ -261,12 +274,11 @@ export function markMonitorNoticesDelivered(
       `UPDATE monitor_condition SET delivered_at=? WHERE id=? AND owner_session_id=? AND delivered_at IS NULL`,
     )
     const conditions = new Set(
-      parsed.filter(({ source }) => source === 'condition').map(({ id }) => id),
+      parsed.filter(({ source }) => source === 'condition').map(({ id }) => Number(id)),
     )
     const landings = new Set(
-      parsed.filter(({ source }) => source === 'landing').map(({ id }) => id),
+      parsed.filter(({ source }) => source === 'landing').map(({ id }) => Number(id)),
     )
-    const board = new Set(parsed.filter(({ source }) => source === 'board').map(({ id }) => id))
     // A receipt may stamp a landing only when that source-qualified landing token
     // came from the claim that produced the emission. Equal ids in other sources do not qualify.
     for (const id of conditions) mark.run(deliveredAt, id, ownerSession)
@@ -276,6 +288,15 @@ export function markMonitorNoticesDelivered(
           AND status IN ('refused','rebase_required','install_failed')`,
     )
     for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)
-    markInterruptNoticesDelivered(ownerSession, [...board], deliveredAt)
   }, database)
+}
+
+export async function markMonitorNoticesDeliveredWithHosted(
+  ownerSession: string,
+  ids: MonitorNotice['noticeId'][],
+  deliveredAt = nowIso(),
+): Promise<void> {
+  markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
+  const board = ids.map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '').filter((id) => id !== '')
+  await markBoardInterruptsDelivered(ownerSession, board, deliveredAt)
 }

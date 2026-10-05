@@ -432,18 +432,33 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '
-import sys, json, os
+import sys, json, os, uuid
 try:
-    rows = json.load(sys.stdin)
+    result = json.load(sys.stdin)
 except Exception:
     raise SystemExit(2)
-if not isinstance(rows, list):
+if isinstance(result, list):
+    rows = result
+    warning = None
+elif isinstance(result, dict):
+    rows = result.get("notices")
+    warning = result.get("warning")
+else:
     raise SystemExit(2)
+if not isinstance(rows, list) or (warning is not None and not isinstance(warning, str)):
+    raise SystemExit(2)
+if warning:
+    print("warning\t" + warning.replace("\t", " ").replace("\r", " ").replace("\n", " "))
 for row in rows:
     if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
         raise SystemExit(2)
     source, separator, identifier = row["noticeId"].partition(":")
-    if source not in ("condition", "landing", "board") or separator != ":" or not identifier.isdigit() or int(identifier) < 1:
+    numeric = identifier.isdigit() and int(identifier) > 0
+    try:
+        hosted = source == "board" and str(uuid.UUID(identifier)) == identifier.lower() if not numeric else False
+    except (ValueError, AttributeError):
+        raise SystemExit(2)
+    if source not in ("condition", "landing", "board") or separator != ":" or not (numeric or hosted):
         raise SystemExit(2)
     if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):
         raise SystemExit(2)
@@ -462,12 +477,15 @@ for row in rows:
     echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc). Health state still follows inbox and runs; inspect monitor diagnostics directly."
     report_store_write_lock
   elif [ -n "$monitor_observed" ]; then
-    monitor_ids=$(printf '%s\n' "$monitor_observed" | cut -f1 | paste -sd, -)
-    CAP_DIR=""
-    CAP_DIR=$(mktemp -d 2>/dev/null); cap_mint_rc=$?
-    if [ "$cap_mint_rc" -eq 0 ]; then
-      CAP_PATH="$CAP_DIR/capability.json"
-      CAP_TOKEN=$(python3 -c '
+    monitor_ids=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning" {print $1}' | paste -sd, -)
+    if [ -z "$monitor_ids" ]; then
+      printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'
+    else
+      CAP_DIR=""
+      CAP_DIR=$(mktemp -d 2>/dev/null); cap_mint_rc=$?
+      if [ "$cap_mint_rc" -eq 0 ]; then
+        CAP_PATH="$CAP_DIR/capability.json"
+        CAP_TOKEN=$(python3 -c '
 import json, os, secrets, sys
 token = secrets.token_hex(32)
 with open(sys.argv[1], "x", encoding="utf-8") as f:
@@ -475,28 +493,29 @@ with open(sys.argv[1], "x", encoding="utf-8") as f:
     json.dump({"token": token, "pid": int(sys.argv[2])}, f)
 print(token)
 ' "$CAP_PATH" "$$" 2>/dev/null); cap_mint_rc=$?
-    fi
-    if [ "$cap_mint_rc" -ne 0 ]; then
-      [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
-      echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
-    elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
-      export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
-      export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
-      ack_timed_out=$(mktemp)
-      CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
-      ACTIVE_GUARDED_PID=$!
-      start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
-      ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
-      wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
-      ACTIVE_GUARDED_PID=""
-      cancel_watchdog "$ACTIVE_WATCHDOG_PID"
-      ACTIVE_WATCHDOG_PID=""
-      if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
-      rm -f "$ack_timed_out"
-      rm -rf "$CAP_DIR"
-      unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
-      if [ "$ack_rc" -ne 0 ]; then
-        echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+      fi
+      if [ "$cap_mint_rc" -ne 0 ]; then
+        [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
+        echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
+      elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
+        export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
+        export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
+        ack_timed_out=$(mktemp)
+        CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
+        ACTIVE_GUARDED_PID=$!
+        start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
+        ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
+        wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
+        ACTIVE_GUARDED_PID=""
+        cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+        ACTIVE_WATCHDOG_PID=""
+        if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
+        rm -f "$ack_timed_out"
+        rm -rf "$CAP_DIR"
+        unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
+        if [ "$ack_rc" -ne 0 ]; then
+          echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+        fi
       fi
     fi
   fi

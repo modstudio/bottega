@@ -103,7 +103,7 @@ import {
   runScratchDir,
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
-import { persistBoundPrompt, prepareRunBoard } from './run-board-prompt.ts'
+import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { decideCodexSandbox } from './run-codex-sandbox.ts'
@@ -730,7 +730,7 @@ export async function run(opts: {
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
   })
-  const initialBoard = prepareRunBoard(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
+  const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
