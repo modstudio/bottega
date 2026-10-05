@@ -3,7 +3,11 @@
 import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
 import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordApiClient,
+  recordApiClient,
+  RecordApiRequestError,
+} from '../record/record-api-client.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
   type HostedBoardChange,
@@ -29,9 +33,11 @@ export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
 export const BOARD_REFRESH_OUTCOME_KEY = 'board_hosted_refresh_outcome'
 const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
+const BOARD_REFRESH_IDENTITY_AT_KEY = 'board_hosted_identity_at'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
 const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
+export const BOARD_IDENTITY_REFRESH_INTERVAL_MS = 60_000
 
 export type HostedCacheNotice = {
   id: string
@@ -108,7 +114,8 @@ function replacePage(
        VALUES (?,?,?,?,?,0) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        audience_at_posting=excluded.audience_at_posting,
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
-       acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at)`,
+       acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
+       pending_sync=0,sync_error=NULL`,
     )
     for (const change of page.items) {
       const message = change.message
@@ -148,21 +155,41 @@ async function flushReceipts(
     )
     .all() as { message_id: string; reader_session: string; audience_at_posting: number }[]
   for (const row of rows) {
-    await within(
-      client.putBoardReceipt({
-        messageId: row.message_id,
-        readerSession: row.reader_session,
-        audienceAtPosting: row.audience_at_posting === 1,
-        delivered: true,
-      }),
-      deadline - now(),
-    )
-    database
-      .query(
-        'UPDATE hosted_board_receipt_cache SET pending_sync=0 WHERE message_id=? AND reader_session=?',
+    try {
+      await within(
+        client.putBoardReceipt({
+          messageId: row.message_id,
+          readerSession: row.reader_session,
+          audienceAtPosting: row.audience_at_posting === 1,
+          delivered: true,
+        }),
+        deadline - now(),
       )
-      .run(row.message_id, row.reader_session)
+      database
+        .query(
+          `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=NULL
+           WHERE message_id=? AND reader_session=?`,
+        )
+        .run(row.message_id, row.reader_session)
+    } catch (error) {
+      if (error instanceof RecordApiRequestError && error.kind === 'refused') {
+        database
+          .query(
+            `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=?
+             WHERE message_id=? AND reader_session=?`,
+          )
+          .run(error.message, row.message_id, row.reader_session)
+        continue
+      }
+      return
+    }
   }
+}
+
+function identityNeedsRefresh(database: Database, clock: number): boolean {
+  if (!meta(database, BOARD_REFRESH_USER_KEY)) return true
+  const refreshedAt = meta(database, BOARD_REFRESH_IDENTITY_AT_KEY)
+  return !refreshedAt || clock - Date.parse(refreshedAt) >= BOARD_IDENTITY_REFRESH_INTERVAL_MS
 }
 
 export async function refreshHostedBoard(
@@ -170,15 +197,17 @@ export async function refreshHostedBoard(
 ): Promise<'local' | 'success' | 'failed'> {
   const database = input.database ?? writableDb()
   const env = input.env ?? process.env
-  if (boardMode('shared', env, database) === 'local') return 'local'
   const now = input.now ?? Date.now
   const started = now()
   const deadline = started + input.budgetMs
-  const client = input.client ?? recordApiClient()
   try {
-    const identity = await within(client.whoami(), deadline - now())
-    setMeta(database, BOARD_REFRESH_USER_KEY, String(identity.user.id))
-    await flushReceipts(client, database, deadline, now)
+    if (boardMode('shared', env, database) === 'local') return 'local'
+  } catch (error) {
+    recordRefresh(database, now(), `failed: ${error instanceof Error ? error.message : String(error)}`)
+    return 'failed'
+  }
+  try {
+    const client = input.client ?? recordApiClient()
     let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
     while (now() < deadline) {
       const page = await within(
@@ -189,6 +218,14 @@ export async function refreshHostedBoard(
       if (page.highestRevision !== null) after = page.highestRevision
       if (page.items.length < BOARD_CHANGES_PAGE_LIMIT) break
     }
+    if (identityNeedsRefresh(database, now())) {
+      const identity = await within(client.whoami(), deadline - now())
+      writeTransaction(() => {
+        setMeta(database, BOARD_REFRESH_USER_KEY, String(identity.user.id))
+        setMeta(database, BOARD_REFRESH_IDENTITY_AT_KEY, new Date(now()).toISOString())
+      }, database)
+    }
+    await flushReceipts(client, database, deadline, now)
     recordRefresh(database, now(), 'success')
     return 'success'
   } catch (error) {
@@ -500,7 +537,8 @@ export async function markCachedHostedDelivered(
       )
       database
         .query(
-          'UPDATE hosted_board_receipt_cache SET pending_sync=0 WHERE message_id=? AND reader_session=?',
+          `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=NULL
+           WHERE message_id=? AND reader_session=?`,
         )
         .run(id, reader)
     } catch {

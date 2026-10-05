@@ -454,7 +454,10 @@ for row in rows:
         raise SystemExit(2)
     source, separator, identifier = row["noticeId"].partition(":")
     numeric = identifier.isdigit() and int(identifier) > 0
-    hosted = source == "board" and str(uuid.UUID(identifier)) == identifier.lower() if not numeric else False
+    try:
+        hosted = source == "board" and str(uuid.UUID(identifier)) == identifier.lower() if not numeric else False
+    except (ValueError, AttributeError):
+        raise SystemExit(2)
     if source not in ("condition", "landing", "board") or separator != ":" or not (numeric or hosted):
         raise SystemExit(2)
     if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):

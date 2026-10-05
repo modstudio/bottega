@@ -1,7 +1,12 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { createMemoryRecordApiClient, installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
+import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
+import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { ask, createAskMcpServer } from './ask.ts'
 
 async function askClient(
@@ -28,7 +33,43 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
   return (result.content as { type: 'text'; text: string }[])[0]!.text
 }
 
+afterEach(() => installRecordApiClient(null))
+
 describe('the live ask channel always answers', () => {
+  test('check_orchestrator_messages emits hosted beside local once with the failed-refresh warning', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
+    db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+    const local = postNotice({ audience: `run:${run}`, title: 'Local ask', body: 'local ask body' }, {}, Date.parse('2026-10-05T12:00:00.000Z'))
+    const hosted: HostedBoardMessage = {
+      id: newRecordId(), kind: 'notice', threadRootId: null, title: 'Hosted ask', body: 'hosted ask body',
+      audience: `run:${run}`,
+      origin: { kind: 'architect', session: 'remote', harness: 'claude', project: 'ask-project', runId: null },
+      senderTags: [], createdAt: '2026-10-05T12:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z',
+      withdrawnAt: null, state: 'open', acceptedReplyId: null, acceptedBy: null, acceptedAt: null,
+      noteId: null, notePendingError: null, revision: '1', scopeProjectIds: [], recipientUserIds: [],
+      claimId: null, authorUserId: newRecordId(), authorSession: 'remote', ackRequired: false, ackDeadline: null,
+    }
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      listBoardChanges: async () => ({ items: [{ message: hosted, tags: [], receipts: [] }], highestRevision: '1' }),
+      whoami: async () => { throw new Error('ask refresh offline') },
+      putBoardReceipt: async () => { throw new Error('receipt offline') },
+    })
+    const connection = await askClient(run)
+    try {
+      const first = resultText(await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }))
+      expect(first).toContain(`Notice ${local.id}`)
+      expect(first).toContain(`Notice ${hosted.id}`)
+      expect(first).toContain('ask refresh offline')
+      const second = resultText(await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }))
+      expect(second).not.toContain(`Notice ${local.id}`)
+      expect(second).not.toContain(`Notice ${hosted.id}`)
+      expect(second).toContain('ask refresh offline')
+    } finally {
+      await connection.close()
+    }
+  })
+
   test('writers receive run_gate while readers receive only the recorded gate result', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })

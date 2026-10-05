@@ -14,6 +14,7 @@ import {
   markNoticesDelivered,
   markRunNoticesDelivered,
   readNotices,
+  runReader,
 } from './board-service.ts'
 
 const BOARD_READ_REFRESH_BUDGET_MS = 500
@@ -66,10 +67,11 @@ export async function claimRunBoardNotices(
   budgetMs = BOARD_PROMPT_REFRESH_BUDGET_MS,
 ) {
   const refreshed = await refreshHostedBoard({ budgetMs })
+  const reader = runReader(runId)
   return refreshed === 'local'
     ? { notices: claimRunNotices(runId, all), warning: null }
     : {
-        notices: [...claimRunNotices(runId, all), ...claimCachedHosted(`run:${runId}`, all)],
+        notices: [...claimRunNotices(runId, all), ...claimCachedHosted(reader, all)],
         warning: hostedBoardVerificationWarning(),
       }
 }
@@ -78,12 +80,13 @@ export async function markRunBoardNoticesDelivered(
   runId: number,
   ids: Array<number | string>,
 ): Promise<void> {
+  const reader = runReader(runId)
   markRunNoticesDelivered(
     runId,
     ids.filter((id): id is number => typeof id === 'number'),
   )
   await markCachedHostedDelivered(
-    `run:${runId}`,
+    reader,
     ids.filter((id): id is string => typeof id === 'string'),
   )
 }

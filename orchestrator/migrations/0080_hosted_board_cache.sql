@@ -24,6 +24,7 @@ CREATE TABLE hosted_board_receipt_cache (
   delivered_at TEXT,
   acknowledged_at TEXT,
   pending_sync INTEGER NOT NULL DEFAULT 0 CHECK (pending_sync IN (0,1)),
+  sync_error TEXT,
   PRIMARY KEY (message_id,reader_session)
 );
 

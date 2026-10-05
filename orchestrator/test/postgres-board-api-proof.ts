@@ -8,6 +8,7 @@ import {
 } from '../src/board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../src/board/board-mode.ts'
 import { BOARD_POST_RATE_LIMIT } from '../src/board/board-policy.ts'
+import { applyMigrations } from '../src/database/migrations.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { recordAuth } from '../src/record/record-auth.ts'
@@ -159,16 +160,22 @@ export function registerBoardApiProofs(input: {
 
   const cacheStore = (session: string) => {
     const store = new Database(':memory:')
-    store.exec(`
-      CREATE TABLE schema_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      INSERT INTO schema_meta VALUES ('${BOARD_HOSTED_ADOPTED_KEY}','1');
-      CREATE TABLE presence(session_id TEXT PRIMARY KEY,harness TEXT,role TEXT,machine TEXT,project TEXT,cwd TEXT,current_task_key TEXT,first_seen TEXT,last_seen TEXT);
-      INSERT INTO presence VALUES ('${session}','claude','architect','machine-b','${PROJECT}','/tmp',NULL,'2026-10-05T00:00:00.000Z','2098-01-01T00:00:00.000Z');
-      CREATE TABLE run(id INTEGER PRIMARY KEY,parent_run_id INTEGER,record_id TEXT,repo TEXT,launch_key TEXT,status TEXT,turn INTEGER,started_at TEXT,changed_paths TEXT);
-      CREATE TABLE hosted_board_message_cache(id TEXT PRIMARY KEY,kind TEXT,thread_root_id TEXT,revision TEXT,payload TEXT);
-      CREATE TABLE hosted_board_message_tag_cache(message_id TEXT,kind TEXT,value TEXT,origin TEXT,PRIMARY KEY(message_id,kind,value,origin));
-      CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,audience_at_posting INTEGER,delivered_at TEXT,acknowledged_at TEXT,pending_sync INTEGER,PRIMARY KEY(message_id,reader_session));
-    `)
+    applyMigrations(store)
+    store
+      .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+      .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+    store
+      .query(
+        `INSERT INTO presence
+         (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+         VALUES (?,'claude','architect','machine-b',?,'/tmp',NULL,?,?)`,
+      )
+      .run(
+        session,
+        PROJECT,
+        '2026-10-05T00:00:00.000Z',
+        '2098-01-01T00:00:00.000Z',
+      )
     return store
   }
 

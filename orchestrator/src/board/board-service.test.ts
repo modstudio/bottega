@@ -55,6 +55,16 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
   expect(noticeStatus(posted.id, {}).unacknowledged).toEqual([])
 })
 
+test('recordPresence preserves first_seen after the first insert', () => {
+  const { cwd } = postingProject()
+  const env = { CLAUDE_CODE_SESSION_ID: 'presence-first-seen' }
+  recordPresence(cwd, env, '2026-10-05T11:00:00.000Z')
+  recordPresence(cwd, env, '2026-10-05T12:00:00.000Z')
+  expect(
+    db().query('SELECT first_seen,last_seen FROM presence WHERE session_id=?').get(env.CLAUDE_CODE_SESSION_ID),
+  ).toEqual({ first_seen: '2026-10-05T11:00:00.000Z', last_seen: '2026-10-05T12:00:00.000Z' })
+})
+
 test('tagged project notice follows matching run paths at posting and for a late session', () => {
   const clock = Date.now() + 10_000
   const project = 'board-routing-project'

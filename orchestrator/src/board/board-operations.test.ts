@@ -614,6 +614,22 @@ test('hosted acknowledgement uses the reserved operator reader without a session
   expect(readerSession).toBe('operator')
 })
 
+test('hosted acknowledgement refuses when the service is unreachable', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const id = newRecordId()
+  await expect(
+    boardAcknowledge(id, {
+      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+      client: {
+        ...createMemoryRecordApiClient(),
+        putBoardReceipt: async () => {
+          throw new Error('record service offline')
+        },
+      },
+    }),
+  ).rejects.toThrow('record service offline')
+})
+
 test('an adopted install without hosted configuration refuses instead of writing locally', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   await expect(

@@ -112,7 +112,7 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-function runReader(runId: number): string {
+export function runReader(runId: number): string {
   const row = db()
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
