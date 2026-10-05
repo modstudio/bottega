@@ -131,6 +131,77 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     ['bun', '../../../shared/record/schema.ts', '../../../shared/record/tenant.ts'],
     'Enforce the hosted snapshot service concern boundary.',
   ),
+  boundary(
+    'record-board-contract-boundary',
+    'orchestrator/src/record/record-board-contract.ts',
+    [],
+    'Keep the hosted board JSON contract free of SQL and local stores.',
+  ),
+  boundary(
+    'record-board-scope-boundary',
+    'orchestrator/src/record/record-board-scope.ts',
+    ['../board/board-policy.ts', '../board/board-tags.ts', './record-board-contract.ts'],
+    'Keep hosted board scope and create-content decisions pure.',
+  ),
+  boundary(
+    'record-board-tx-boundary',
+    'orchestrator/src/record/record-board-tx.ts',
+    ['bun', '../../../shared/record/tenant.ts', './record-board-contract.ts'],
+    'Keep hosted board transactions independent of HTTP and local stores.',
+  ),
+  boundary(
+    'record-board-messages-boundary',
+    'orchestrator/src/record/record-board-messages.ts',
+    [
+      'bun',
+      '../../../shared/secret-shaped.ts',
+      '../board/board-policy.ts',
+      '../board/board-tags.ts',
+      '../board/board-thread-policy.ts',
+      './record-board-contract.ts',
+      './record-board-scope.ts',
+      './record-board-tx.ts',
+    ],
+    'Keep hosted board message services independent of HTTP and local stores.',
+  ),
+  boundary(
+    'record-board-receipts-boundary',
+    'orchestrator/src/record/record-board-receipts.ts',
+    ['./record-board-contract.ts', './record-board-messages.ts', './record-board-tx.ts'],
+    'Keep hosted board receipts independent of HTTP and local stores.',
+  ),
+  boundary(
+    'record-board-changes-boundary',
+    'orchestrator/src/record/record-board-changes.ts',
+    [
+      '../board/board-tags.ts',
+      './record-board-contract.ts',
+      './record-board-messages.ts',
+      './record-board-tx.ts',
+    ],
+    'Keep the hosted board change cursor independent of HTTP and local stores.',
+  ),
+  boundary(
+    'record-board-claims-boundary',
+    'orchestrator/src/record/record-board-claims.ts',
+    [
+      'bun',
+      '../../../shared/record/schema.ts',
+      '../board/board-claim-policy.ts',
+      '../board/board-policy.ts',
+      './record-board-contract.ts',
+      './record-board-messages.ts',
+      './record-board-scope.ts',
+      './record-board-tx.ts',
+    ],
+    'Keep hosted board claims independent of HTTP and local stores.',
+  ),
+  boundary(
+    'record-api-board-boundary',
+    'orchestrator/src/record/record-api-board.ts',
+    ['hono', 'zod', './record-auth.ts', './record-board-contract.ts', './record-board-tx.ts'],
+    'Keep hosted board routes independent of SQL and local execution.',
+  ),
 ]
 
 export const recordSchemaBoundaries: ImportBoundary[] = [

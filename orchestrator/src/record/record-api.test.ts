@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
+import { idleBoardDeps } from './record-api-board.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -94,6 +95,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
       throw new Error('not implemented')
     },
     revokeMachineKey: async () => undefined,
+    ...idleBoardDeps(),
     ...overrides,
   })
 }

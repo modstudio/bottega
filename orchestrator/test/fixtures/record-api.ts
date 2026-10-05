@@ -44,6 +44,47 @@ type StoredRevision = {
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
 
+function unusedBoard(): Promise<never> {
+  return Promise.reject(new Error('hosted board is unused in this fixture'))
+}
+
+export function unusedBoardClientMethods(): Pick<
+  RecordApiClient,
+  | 'postBoardMessage'
+  | 'replyBoardMessage'
+  | 'withdrawBoardMessage'
+  | 'acceptBoardAnswer'
+  | 'takeBoardFilingLease'
+  | 'completeBoardFilingLease'
+  | 'failBoardFilingLease'
+  | 'getBoardThread'
+  | 'putBoardReceipt'
+  | 'listBoardChanges'
+  | 'takeBoardClaim'
+  | 'renewBoardClaim'
+  | 'releaseBoardClaim'
+  | 'listBoardClaims'
+  | 'releaseBoardTaskClaims'
+> {
+  return {
+    postBoardMessage: unusedBoard,
+    replyBoardMessage: unusedBoard,
+    withdrawBoardMessage: unusedBoard,
+    acceptBoardAnswer: unusedBoard,
+    takeBoardFilingLease: unusedBoard,
+    completeBoardFilingLease: unusedBoard,
+    failBoardFilingLease: unusedBoard,
+    getBoardThread: unusedBoard,
+    putBoardReceipt: unusedBoard,
+    listBoardChanges: unusedBoard,
+    takeBoardClaim: unusedBoard,
+    renewBoardClaim: unusedBoard,
+    releaseBoardClaim: unusedBoard,
+    listBoardClaims: unusedBoard,
+    releaseBoardTaskClaims: unusedBoard,
+  }
+}
+
 export function installRecordApiClient(client: RecordApiClient | null): void {
   const holder = globalThis as typeof globalThis & {
     [INJECT_KEY]?: { current: RecordApiClient | null }
@@ -72,6 +113,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     )
 
   return {
+    ...unusedBoardClientMethods(),
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')
     },

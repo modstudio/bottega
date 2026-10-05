@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { installRecordApiClient, unusedBoardClientMethods } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
 
 function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
+    ...unusedBoardClientMethods(),
     whoami: async () => ({
       user: { id: newRecordId() },
       activeSpaceId: null,

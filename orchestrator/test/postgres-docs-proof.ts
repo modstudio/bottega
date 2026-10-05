@@ -4,7 +4,11 @@ import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { succeeds } from './fixtures/postgres-rls.ts'
-import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+  unusedBoardClientMethods,
+} from './fixtures/record-api.ts'
 
 function unused(): Promise<never> {
   return Promise.reject(new Error('unused in cache-pull proof'))
@@ -21,6 +25,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     }>
   }
   return {
+    ...unusedBoardClientMethods(),
     whoami: unused,
     inviteMember: unused,
     putSnapshot: unused,
