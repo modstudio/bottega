@@ -527,6 +527,7 @@ export function composeWorkflow(
     project: projectName,
     catalogue: { version: catalogue.n },
     mode: mode ? { slug: mode.slug, title: mode.title } : null,
+    declaredArguments: definition.arguments,
     arguments: args,
     steps:
       selected.map((step, index) => {

@@ -171,6 +171,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
   if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const mode = resolveWorkflowCursorMode(
     argv[2]!,
     project,
@@ -179,6 +180,8 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     context,
     'orch workflow rule',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = ruleWorkflow(
     argv[2]!,
@@ -189,31 +192,38 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     argv.includes('--from-operator'),
     'cli',
     context,
+    undefined,
+    cursor,
   )
   print(result, `${result.summary} Question ${result.questionId}.`)
 }
 
 function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
-  if (!project) throw new Error('--project is required')
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  if (!project && !cursor) throw new Error('--project is required without --cursor')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const mode = resolveWorkflowCursorMode(
-    argv[2]!,
-    project,
+    argv[2] ?? '',
+    project ?? '',
     flagValue(argv, 'mode'),
     args,
     context,
     'orch workflow abandon',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = abandonWorkflowCursor(
-    argv[2]!,
-    project,
+    argv[2] ?? '',
+    project ?? '',
     mode,
     args,
     flagValue(argv, 'reason'),
     context,
+    undefined,
+    cursor,
   )
   print(result, result)
 }
@@ -238,6 +248,7 @@ async function stepCommand(
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
@@ -267,6 +278,7 @@ async function stepCommand(
         cliWorkflowCursorContext(),
         undefined,
         autonomy,
+        cursor,
       )
     : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection, autonomy)
   print(step, renderWorkflowStep(step))
@@ -277,6 +289,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
   if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const mode = resolveWorkflowCursorMode(
     argv[2]!,
     project,
@@ -285,6 +298,8 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     context,
     'orch workflow next',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = nextWorkflowStep(
     argv[2]!,
@@ -296,6 +311,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     undefined,
     evidenceFromArgv(argv),
     productionFloorPorts() as FloorEvidencePorts,
+    cursor,
   )
   print(result, result)
 }
@@ -305,6 +321,7 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
   if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const mode = resolveWorkflowCursorMode(
     argv[2]!,
     project,
@@ -313,6 +330,8 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     context,
     'orch workflow await',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = awaitWorkflowRuling(
     argv[2]!,
@@ -321,6 +340,9 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     args,
     flagValue(argv, 'question'),
     context,
+    undefined,
+    undefined,
+    cursor,
   )
   print(
     result,
