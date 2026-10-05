@@ -10,6 +10,7 @@ import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
@@ -1022,12 +1023,11 @@ export function pick(
     )
   }
   let eligible = cands.filter((c) => c.eligible)
-  const excluded: string[] = []
-  excluded.push(...cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`))
+  const excluded = cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
   if (eligible.length === 0) {
-    throw new Error(
+    throw new RefusalError(
       `no eligible agent for job "${jobName}"` +
-        (excluded.length ? `; excluded agents: ${excluded.join('; ')}` : ''),
+        (excluded.length ? `\n${excluded.join('\n')}` : ''),
     )
   }
   /** Exclusions are instructions, not preferences. The caller must widen them. */
@@ -1045,7 +1045,7 @@ export function pick(
       }
       return `${c.agent}: ${reasons.join(' and ')}`
     })
-    throw new Error(
+    throw new RefusalError(
       `routing constraints leave no eligible agent for job "${jobName}"; ` +
         `excluded by constraint: ${avoided.join('; ')}` +
         (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +

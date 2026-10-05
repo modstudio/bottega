@@ -3,6 +3,7 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
 import {
@@ -64,6 +65,60 @@ test('the registration probe gates inline and repository jobs', () => {
       .run(original.caps, original.probed_at, original.probe_result)
     refreshAgents()
   }
+})
+
+test('a no-agent refusal lists every exclusion in routing order with its remedy', () => {
+  const rows = db()
+    .query('SELECT name,enabled,disabled_reason,probed_at,probe_result FROM agent ORDER BY name')
+    .all() as {
+    name: string
+    enabled: number
+    disabled_reason: string | null
+    probed_at: string | null
+    probe_result: string | null
+  }[]
+  try {
+    db()
+      .query("UPDATE agent SET enabled=0,disabled_reason='disabled for routing refusal test'")
+      .run()
+    db()
+      .query(
+        "UPDATE agent SET enabled=1,disabled_reason=NULL,probed_at=NULL,probe_result=NULL WHERE name='codex'",
+      )
+      .run()
+    refreshAgents()
+
+    let refusal: unknown
+    try {
+      pick('implement', undefined, 0, false)
+    } catch (error) {
+      refusal = error
+    }
+    expect(refusal).toBeInstanceOf(RefusalError)
+    const message = (refusal as Error).message
+    const exclusions = candidates('implement')
+      .filter((candidate) => !candidate.eligible)
+      .map((candidate) => `${candidate.agent}: ${candidate.why}`)
+    expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
+    expect(message).toContain('run orch agent probe codex')
+    expect(message).toContain('disabled for routing refusal test')
+  } finally {
+    const restore = db().query(
+      'UPDATE agent SET enabled=?,disabled_reason=?,probed_at=?,probe_result=? WHERE name=?',
+    )
+    for (const row of rows)
+      restore.run(row.enabled, row.disabled_reason, row.probed_at, row.probe_result, row.name)
+    refreshAgents()
+  }
+})
+
+test('a routing-constraint refusal is typed for startup presentation', () => {
+  const eligible = candidates('summarize')
+    .filter((candidate) => candidate.eligible)
+    .map((candidate) => candidate.agent)
+  expect(() => pick('summarize', undefined, 0, false, undefined, { agents: eligible })).toThrow(
+    RefusalError,
+  )
 })
 
 describe('one score, reported the same everywhere', () => {

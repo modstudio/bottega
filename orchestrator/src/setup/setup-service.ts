@@ -73,7 +73,11 @@ function readSetupState(): { projects: ReturnType<typeof projects>; agents: Setu
     return {
       projects: projects(undefined, database),
       agents: database
-        .query('SELECT name,harness,enabled FROM agent ORDER BY name')
+        .query(
+          `SELECT name,harness,enabled,
+             CASE WHEN json_extract(probe_result,'$.ok')=1 THEN 1 ELSE 0 END AS probePassed
+             FROM agent ORDER BY name`,
+        )
         .all() as SetupAgent[],
     }
   } finally {

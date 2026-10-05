@@ -28,6 +28,12 @@
  * to be the code that still works when the code is broken.
  */
 import { Database } from 'bun:sqlite'
+import { RefusalError } from '../refusal-error.ts'
+
+export function startupFailureDiagnostic(error: unknown): string {
+  if (error instanceof RefusalError) return error.message
+  return String((error as Error)?.stack ?? error)
+}
 
 /** Record why this run never started, using as little of the codebase as possible. */
 function recordStartupFailure(id: number, reason: string): void {
@@ -74,7 +80,7 @@ export async function main(argv: string[]): Promise<number> {
     return 0
   } catch (e) {
     const message = String((e as Error)?.message ?? e)
-    const diagnostic = String((e as Error)?.stack ?? e)
+    const diagnostic = startupFailureDiagnostic(e)
     /**
      * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
      *

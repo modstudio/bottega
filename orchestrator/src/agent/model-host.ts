@@ -210,7 +210,7 @@ export function unavailableReason(name: string): string | null {
   if (a.contextTokens === 0) {
     return `no declared context window; run orch agent set ${name} --context-tokens <tokens>`
   }
-  if (which(a.bin, { PATH: process.env.PATH }) === null) return 'not installed'
+  if (!harnessInstalled(name)) return 'not installed'
   if (a.operatedBy === 'self') {
     // A local agent is only real once an endpoint is configured...
     if (!modelHostUrl()) return 'ORCH_MODEL_HOST_URL not set'
@@ -226,6 +226,11 @@ export function unavailableReason(name: string): string | null {
 
 export function available(name: string): boolean {
   return unavailableReason(name) === null
+}
+
+export function harnessInstalled(name: string): boolean {
+  const agent = AGENTS[name]
+  return Boolean(agent && which(agent.bin, { PATH: process.env.PATH }) !== null)
 }
 
 /** Confirm the local endpoint actually answers. Reachability is not configuration. */
@@ -269,8 +274,4 @@ export async function localReachable(
   } catch (e) {
     return { ok: false, detail: (e as Error).message }
   }
-}
-
-export function installed(): string[] {
-  return Object.keys(AGENTS).filter(available)
 }
