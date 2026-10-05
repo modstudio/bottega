@@ -385,7 +385,7 @@ async function showTaskCommand(
   json: boolean,
 ): Promise<void> {
   const freshness = fresh ? await refreshTrackerTask(key, project) : null
-  const shown = showTask(key, { project })
+  const shown = freshness?.shown ?? showTask(key, { project })
   if (json) {
     console.log(
       JSON.stringify(

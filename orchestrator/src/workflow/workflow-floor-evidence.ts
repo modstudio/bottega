@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
@@ -122,10 +123,14 @@ export function hubTaskReadRefusal(
   stderr: string,
   stdout: string,
 ): string {
-  const detail = stderr.trim() || stdout.trim() || `hub exited ${status}`
+  const rawDetail = stderr.trim() || stdout.trim() || `hub exited ${status}`
+  const detail =
+    containsSecretShaped(rawDetail) || /\b(?:proxy-)?authorization\b/i.test(rawDetail)
+      ? 'detail withheld'
+      : rawDetail
   const attempted = `hub task show ${key} --json --fresh`
   if (
-    detail.split('\n').some((line) => {
+    rawDetail.split('\n').some((line) => {
       const text = line.trim()
       return text === `no task ${key}` || text.includes(`task ${key} was not found in project`)
     })

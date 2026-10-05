@@ -1,8 +1,9 @@
 import { type ToolCaller, type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
-import { upsertTrackerTask } from './ingest/trackers.ts'
-import { credentials, Mcp } from './mcp.ts'
+import { withLease } from './collect.ts'
+import { observeTrackerTask } from './ingest/trackers.ts'
+import { credentials, failureDetail, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
-import { DuplicateTaskError, duplicateCandidates, listTasks } from './task.ts'
+import { DuplicateTaskError, duplicateCandidates, listTasks, showTask } from './task.ts'
 import {
   createAdvertisedTrackerTaskKey,
   taskCreationDestination,
@@ -22,12 +23,16 @@ type FreshTaskDependencies = {
   sourceFor?: (project: RegisteredProject) => TrackerSource | null
   readCredentials?: typeof credentials
   connect?: (url: string, token: string) => Promise<ToolCaller & { close(): Promise<void> }>
-  upsert?: typeof upsertTrackerTask
+  observe?: typeof observeTrackerTask
+  readBack?: typeof showTask
+  lease?: typeof withLease
+  leaseWaitMs?: number
 }
 
 export type FreshTaskResult = {
   trackerRead: boolean
   commentsVerifiable: boolean
+  shown?: ReturnType<typeof showTask>
 }
 
 function projectForTask(
@@ -53,7 +58,7 @@ function projectForTask(
   )
 }
 
-/** Refresh one externally tracked task without taking the whole-collection lease. */
+/** Refresh one externally tracked task under the collection lease. */
 export async function refreshTrackerTask(
   key: string,
   projectName?: string,
@@ -67,20 +72,41 @@ export async function refreshTrackerTask(
 
   const resolved = await (dependencies.readCredentials ?? credentials)(source.env)
   if (!resolved) throw new Error(`credentials for ${project.name} tracker do not resolve`)
-  const client = dependencies.connect
-    ? await dependencies.connect(resolved.url, resolved.token)
-    : new Mcp(resolved.url, resolved.token)
+  let client: (ToolCaller & { close(): Promise<void> }) | null = null
   try {
+    client = dependencies.connect
+      ? await dependencies.connect(resolved.url, resolved.token)
+      : new Mcp(resolved.url, resolved.token)
     if (!dependencies.connect) await (client as Mcp).initialize()
-    const task = await source.lookup(client, key.toUpperCase())
-    if (!task)
+    const holder = `fresh-task:${key.toUpperCase()}:${process.pid}`
+    const leased = await (dependencies.lease ?? withLease)(
+      holder,
+      async () => {
+        const task = await source.lookup!(client!, key.toUpperCase())
+        if (!task)
+          throw new Error(
+            `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
+          )
+        ;(dependencies.observe ?? observeTrackerTask)(task)
+        return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
+      },
+      dependencies.leaseWaitMs,
+    )
+    if (!leased.ran)
       throw new Error(
-        `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
+        `${leased.heldBy ?? 'another process'} holds the collect lease; fresh task read was not performed`,
       )
-    ;(dependencies.upsert ?? upsertTrackerTask)(task)
-    return { trackerRead: true, commentsVerifiable: false }
+    return { trackerRead: true, commentsVerifiable: false, shown: leased.value }
+  } catch (error) {
+    throw new Error(failureDetail(error, resolved.token))
   } finally {
-    await client.close()
+    if (client) {
+      try {
+        await client.close()
+      } catch (error) {
+        throw new Error(failureDetail(error, resolved.token))
+      }
+    }
   }
 }
 

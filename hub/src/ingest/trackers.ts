@@ -136,6 +136,7 @@ type TrackerIdentityRow = {
   key: string
   source: string
   external_id: string | null
+  status_category: string | null
 }
 
 function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
@@ -155,7 +156,7 @@ function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow 
   let row = t.externalId
     ? conn
         .query<TrackerIdentityRow, [string, string]>(
-          'SELECT record_id,key,source,external_id FROM task WHERE project=? AND external_id=?',
+          'SELECT record_id,key,source,external_id,status_category FROM task WHERE project=? AND external_id=?',
         )
         .get(t.project, t.externalId)
     : null
@@ -163,7 +164,7 @@ function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow 
   if (!row && t.externalId) {
     row = conn
       .query<TrackerIdentityRow, [string, string]>(
-        `SELECT record_id,key,source,external_id FROM task
+        `SELECT record_id,key,source,external_id,status_category FROM task
          WHERE project=? AND key=? AND external_id IS NULL`,
       )
       .get(t.project, t.key)
@@ -171,7 +172,7 @@ function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow 
   if (!row && !t.externalId) {
     row = conn
       .query<TrackerIdentityRow, [string, string]>(
-        'SELECT record_id,key,source,external_id FROM task WHERE project=? AND key=?',
+        'SELECT record_id,key,source,external_id,status_category FROM task WHERE project=? AND key=?',
       )
       .get(t.project, t.key)
   }
@@ -305,6 +306,34 @@ export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
   writeTransaction((conn) => upsertTrackerTaskOn(conn, t, at))
 }
 
+/** Observe one tracker row and its category transition in the same transaction. */
+function observeTrackerTaskOn(conn: Database, task: TrackerTask, at: string): boolean {
+  const stored = trackerIdentityRow(conn, task)
+  const was = stored?.status_category ?? null
+  const recordsTransition =
+    stored !== null &&
+    stored.source !== 'local' &&
+    stored.status_category !== null &&
+    stored.status_category !== task.category
+
+  upsertTrackerTaskOn(conn, task, at)
+  if (!recordsTransition) return false
+
+  const taskRecordId = taskRecordIdFor(conn, task.key, task.project)
+  conn
+    .query(
+      `INSERT OR IGNORE INTO task_status_event
+       (record_id, task_key, task_record_id, at, from_status, to_status)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    .run(newRecordId(), task.key, taskRecordId, at, was, task.category)
+  return true
+}
+
+export function observeTrackerTask(task: TrackerTask, at = nowIso()): boolean {
+  return writeTransaction((conn) => observeTrackerTaskOn(conn, task, at))
+}
+
 async function mirrorTrackerSnapshot(
   mirror: CollectorMirrorPass,
   tasks: TrackerTask[],
@@ -411,28 +440,11 @@ async function lookupTrackerTask(
   }
 }
 
-function writeTrackerCache(
-  tasks: Iterable<TrackerTask>,
-  before: ReadonlyMap<string, string>,
-  local: ReadonlySet<string>,
-  at: string,
-): number {
+export function writeTrackerCache(tasks: Iterable<TrackerTask>, at: string): number {
   let changed = 0
   writeTransaction((conn) => {
-    const event = conn.query(
-      `INSERT OR IGNORE INTO task_status_event
-       (record_id, task_key, task_record_id, at, from_status, to_status)
-       VALUES (?,?,?,?,?,?)`,
-    )
     for (const task of tasks) {
-      const identity = trackerTaskLabel(task.project, task.key)
-      const was = before.get(identity)
-      upsertTrackerTaskOn(conn, task, at)
-      if (!local.has(identity) && was !== undefined && was !== task.category) {
-        const taskRecordId = taskRecordIdFor(conn, task.key, task.project)
-        event.run(newRecordId(), task.key, taskRecordId, at, was, task.category)
-        changed++
-      }
+      if (observeTrackerTaskOn(conn, task, at)) changed++
     }
   })
   return changed
@@ -610,7 +622,7 @@ export async function ingestTrackers(
               return !local.has(identity) && differs(t, existing.get(identity))
             })
 
-            const changed = writeTrackerCache(unique.values(), before, local, at)
+            const changed = writeTrackerCache(unique.values(), at)
             const mirrorError = await mirrorTrackerSnapshot(
               mirror,
               [...unique.values()],

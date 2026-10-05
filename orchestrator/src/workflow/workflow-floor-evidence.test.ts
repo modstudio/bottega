@@ -15,6 +15,17 @@ test('missing hub task refusal names the fresh tracker read', () => {
   )
 })
 
+test.each([
+  'tracker failed with token=abcdefghijklmnopqrstuvwxyz123456',
+  'tracker failed with Authorization: Bearer fixture-value',
+])('fresh tracker refusal withholds sensitive detail: %s', (detail) => {
+  const refusal = hubTaskReadRefusal('DEV-1070', 1, detail, '')
+  expect(refusal).toBe(
+    "--task DEV-1070 could not be read through the project's tracker by hub task show DEV-1070 --json --fresh: detail withheld",
+  )
+  expect(refusal).not.toContain(detail)
+})
+
 test('checkout evidence accepts a commit from the cursor branch', () => {
   expect(
     classifyCheckoutEvidence({
