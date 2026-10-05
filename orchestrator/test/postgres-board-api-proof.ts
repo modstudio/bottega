@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { recordAuth } from '../src/record/record-auth.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 
@@ -91,14 +92,17 @@ export function registerBoardApiProofs(input: {
     const a = await signUp(EMAIL.a, 'Board API A')
     const b = await signUp(EMAIL.b, 'Board API B')
     const c = await signUp(EMAIL.c, 'Board API C')
-    const d = await signUp(EMAIL.d, 'Board API D')
+    const signedD = await recordAuth(input.actorUrl).api.signUpEmail({
+      body: { email: EMAIL.d, name: 'Board API D', password: SIGN_UP_AUTH.password },
+    })
+    if (!signedD.token) throw new Error('board API D has no bearer token')
     tokenA = a.token
     tokenB = b.token
     tokenC = c.token
-    tokenD = d.token
+    tokenD = signedD.token
     userA = a.userId
     userB = b.userId
-    userD = d.userId
+    userD = signedD.user.id
     spaceA = a.spaceId
     spaceB = b.spaceId
     input.succeeds(
