@@ -1,22 +1,5 @@
-DROP INDEX presence_last_seen;
-ALTER TABLE presence RENAME TO presence_before_hosted_cache;
-CREATE TABLE presence (
-  session_id TEXT PRIMARY KEY CHECK (session_id <> 'operator'),
-  harness TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role = 'architect'),
-  machine TEXT NOT NULL,
-  project TEXT NOT NULL,
-  cwd TEXT NOT NULL,
-  current_task_key TEXT,
-  first_seen TEXT NOT NULL DEFAULT (datetime('now')),
-  last_seen TEXT NOT NULL
-);
-INSERT INTO presence
-  (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-SELECT session_id,harness,role,machine,project,cwd,current_task_key,last_seen,last_seen
-FROM presence_before_hosted_cache;
-DROP TABLE presence_before_hosted_cache;
-CREATE INDEX presence_last_seen ON presence(last_seen);
+ALTER TABLE presence ADD COLUMN first_seen TEXT;
+UPDATE presence SET first_seen=last_seen;
 
 CREATE TABLE hosted_board_message_cache (
   id TEXT PRIMARY KEY,

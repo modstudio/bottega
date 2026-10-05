@@ -12,11 +12,12 @@ import {
   claimRunNotices,
   markNoticesDelivered,
   markRunNoticesDelivered,
+  readNotices,
 } from './board-service.ts'
 
-export const BOARD_READ_REFRESH_BUDGET_MS = 500
+const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_MONITOR_REFRESH_BUDGET_MS = 500
-export const BOARD_PROMPT_REFRESH_BUDGET_MS = 750
+const BOARD_PROMPT_REFRESH_BUDGET_MS = 750
 export const BOARD_ASK_REFRESH_BUDGET_MS = 500
 
 const sessionReader = (env: Record<string, string | undefined>) =>
@@ -41,16 +42,18 @@ export async function readBoardNotices(
   input: { env?: Record<string, string | undefined>; budgetMs?: number } = {},
 ) {
   const env = input.env ?? process.env
-  const notices = await claimBoardNotices(all, input)
-  const local = notices
-    .filter((notice) => typeof notice.id === 'number')
-    .map((notice) => Number(notice.id))
-  const hosted = notices
-    .filter((notice) => typeof notice.id === 'string')
-    .map((notice) => String(notice.id))
-  markNoticesDelivered(local, env)
-  await markCachedHostedDelivered(sessionReader(env), hosted)
-  return notices
+  const refreshed = await refreshHostedBoard({
+    budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
+    env,
+  })
+  const local = readNotices(all, env)
+  if (refreshed === 'local') return local
+  const hosted = claimCachedHosted(sessionReader(env), all)
+  await markCachedHostedDelivered(
+    sessionReader(env),
+    hosted.map((notice) => notice.id),
+  )
+  return [...local, ...hosted]
 }
 
 export async function claimRunBoardNotices(

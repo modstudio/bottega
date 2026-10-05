@@ -229,16 +229,6 @@ export function markRunNoticesDelivered(runId: number, ids: number[], clock = Da
   }, database)
 }
 
-export function readRunNotices(runId: number, all = false, clock = Date.now()) {
-  const notices = claimRunNotices(runId, all, clock)
-  markRunNoticesDelivered(
-    runId,
-    notices.map((notice) => notice.id),
-    clock,
-  )
-  return notices
-}
-
 export function claimNotices(
   all = false,
   env: Environment = process.env,

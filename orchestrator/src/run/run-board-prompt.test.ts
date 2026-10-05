@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { markRunNoticesDelivered, postNotice, readRunNotices } from '../board/board-service.ts'
+import { claimRunNotices, markRunNoticesDelivered, postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import {
   appendInitialRunBoardPrompt,
@@ -33,7 +33,7 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
   const bound = await appendInitialRunBoardPrompt('PROMPT', run.id)
   expect(bound.noticeIds).toEqual([posted.id])
   markRunNoticesDelivered(run.id, bound.noticeIds.map(Number), clock + 1)
-  expect(readRunNotices(run.id, false, clock + 2)).toEqual([])
+  expect(claimRunNotices(run.id, false, clock + 2)).toEqual([])
 })
 
 test('dispatch board section orders acknowledgements first, then newest, and reports overflow', () => {

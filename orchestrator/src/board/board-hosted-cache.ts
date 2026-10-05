@@ -26,9 +26,9 @@ import type { BoardTag } from './board-tags.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
 export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
-export const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
+const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
 export const BOARD_REFRESH_OUTCOME_KEY = 'board_hosted_refresh_outcome'
-export const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
+const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
 
 export type HostedCacheNotice = {
   id: string
@@ -269,6 +269,26 @@ const readerMatchesAuthor = (message: HostedBoardMessage, reader: string, databa
   return Boolean(root?.record_id && root.record_id === message.origin.runId)
 }
 
+const replyAddressesReader = (
+  message: HostedBoardMessage,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean => {
+  const rootId = message.threadRootId
+  if (!rootId) return false
+  const thread = cachedRows(database)
+    .map((item) => item.message)
+    .filter((candidate) => candidate.id === rootId || candidate.threadRootId === rootId)
+  const root = thread.find((candidate) => candidate.id === rootId)
+  if (!root || root.withdrawnAt || (root.expiresAt && Date.parse(root.expiresAt) <= clock))
+    return false
+  return thread.some(
+    (candidate) =>
+      candidate.createdAt < message.createdAt && readerMatchesAuthor(candidate, reader, database),
+  )
+}
+
 export function cachedMessageAddressed(
   row: { message: HostedBoardMessage; tags: BoardTag[] },
   reader: string,
@@ -276,20 +296,7 @@ export function cachedMessageAddressed(
   database: Database,
 ): boolean {
   const { message, tags } = row
-  if (message.kind === 'reply') {
-    const rootId = message.threadRootId
-    if (!rootId) return false
-    const thread = cachedRows(database)
-      .map((item) => item.message)
-      .filter((candidate) => candidate.id === rootId || candidate.threadRootId === rootId)
-    const root = thread.find((candidate) => candidate.id === rootId)
-    if (!root || root.withdrawnAt || (root.expiresAt && Date.parse(root.expiresAt) <= clock))
-      return false
-    return thread.some(
-      (candidate) =>
-        candidate.createdAt < message.createdAt && readerMatchesAuthor(candidate, reader, database),
-    )
-  }
+  if (message.kind === 'reply') return replyAddressesReader(message, reader, clock, database)
   if (
     !message.audience ||
     message.withdrawnAt ||
