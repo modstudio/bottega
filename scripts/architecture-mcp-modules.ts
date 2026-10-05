@@ -12,6 +12,14 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-setup-tools.ts', [
+    'node:fs',
+    'node:path',
+    '@modelcontextprotocol/server',
+    'zod',
+    '../setup/setup-planner.ts',
+    '../setup/setup-service.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-board-tools.ts', [
     '@modelcontextprotocol/server',
     'zod',

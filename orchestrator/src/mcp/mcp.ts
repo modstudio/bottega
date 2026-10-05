@@ -58,6 +58,7 @@ import { registerDocTools } from './mcp-doc-tools.ts'
 import { registerOperatorTools } from './mcp-operator-tools.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
+import { registerSetupTools } from './mcp-setup-tools.ts'
 
 const text = (value: unknown, isError = false) => ({
   content: [
@@ -371,6 +372,7 @@ export function createDocsMcpServer(): McpServer {
   registerSearchTools(server)
   registerOperatorTools(server)
   registerBoardTools(server)
+  registerSetupTools(server)
 
   server.registerTool(
     'list_workflows',

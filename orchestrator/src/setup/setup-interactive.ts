@@ -7,6 +7,7 @@ import {
   planSetupActions,
   type SetupAction,
   setupActionChangesMachine,
+  setupActionLine,
   validateSetupAnswers,
 } from './setup-planner.ts'
 
@@ -45,24 +46,8 @@ function questionOptions(question: SetupQuestion): SetupSelectOption[] {
   }))
 }
 
-function actionLine(action: SetupAction): string {
-  switch (action.kind) {
-    case 'register-mcp':
-      return `${action.replace ? 'Replace' : 'Register'} ${action.server.name} in ${action.harness}`
-    case 'add':
-      return `Add project ${action.name} (${action.path})`
-    case 'set':
-      return `Update project ${action.currentName} (${action.path})`
-    case 'unchanged':
-      return `Project ${action.name} (${action.path})`
-    case 'mcp-unchanged':
-    case 'mcp-skipped':
-      return `${action.server.name} in ${action.harness}`
-  }
-}
-
 function resultLine(result: SetupActionResult): string {
-  const action = actionLine(result)
+  const action = setupActionLine(result)
   const detail = result.message ? `: ${result.message}` : ''
   return `${result.status}: ${action}${detail}`
 }
@@ -100,7 +85,7 @@ export async function runInteractiveSetup(
 
   const validated = validateSetupAnswers(plan.questions, answers)
   const actions = planSetupActions(plan, validated)
-  const summary = actions.filter(setupActionChangesMachine).map(actionLine)
+  const summary = actions.filter(setupActionChangesMachine).map(setupActionLine)
   if (summary.length === 0) {
     prompter.line('The machine and projects are already set up.')
     return { kind: 'nothing-to-do' }
