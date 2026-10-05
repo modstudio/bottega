@@ -32,8 +32,7 @@ export const Route = createFileRoute('/context')({ component: ManagedContextPage
  */
 const hosted = isHostedMode()
 
-const APPLY_NOTE =
-  'Each machine applies these at session start and every 15 minutes (orch settings apply).'
+const APPLY_NOTE = 'Each machine applies these at session start (orch settings apply).'
 
 const capitalized = (value: string) => `${value[0]!.toUpperCase()}${value.slice(1)}`
 

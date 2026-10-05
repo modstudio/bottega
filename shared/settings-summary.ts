@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { containsSecretShaped } from './secret-shaped.ts'
 
-const SETTINGS_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
+export const SETTINGS_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
 export type SettingsPermissionList = (typeof SETTINGS_PERMISSION_LISTS)[number]
 
 export type StoredSettings = {

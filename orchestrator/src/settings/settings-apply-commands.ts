@@ -2,8 +2,10 @@
 /** Knows env import, adoption, guarded render writes, and restore command semantics. */
 import { realpathSync } from 'node:fs'
 import { gitToplevel } from '../../../shared/git.ts'
+import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   isPlainObject,
   type OwnedSettings,
@@ -30,6 +32,7 @@ import {
   userLocalSettingsPath,
   userSettingsPath,
 } from './settings-files.ts'
+import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { displaySettingsValue, renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
 
@@ -149,7 +152,13 @@ function adoptPermissionRules(
 export async function settingsRenderWriteCommand(
   flags: Flags,
   presentation: Presentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): Promise<void> {
+  if (workerProcess()) {
+    throw new Error(
+      'refusing settings render --write from an orch worker run; an operator must run orch settings render --write',
+    )
+  }
   const target = resolveTarget(flags)
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const row = settingsRow(target, owner)
@@ -167,7 +176,11 @@ export async function settingsRenderWriteCommand(
   }
   const path = target.kind === 'user' ? userSettingsPath(root) : projectSettingsPath(root)
   const parsed = readSettingsFile(path)
-  const owned = parseStoredOwnedSettings(row.body)
+  const hosted = parseStoredOwnedSettings(row.body)
+  const owned =
+    target.kind === 'user'
+      ? mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
+      : hosted
   const droppedEnv = flags.values?.('drop-env') ?? []
   if (target.kind === 'project' && droppedEnv.length > 0) {
     throw new Error('refusing settings render: --drop-env is user-only')

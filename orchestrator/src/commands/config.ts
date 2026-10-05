@@ -9,15 +9,18 @@ import {
 } from '../../../shared/release-autonomy.ts'
 import {
   deleteEntry,
+  deleteMachineEntry,
   deleteSecret,
   getEntry,
   listEntries,
+  listMachineEntries,
   listSecrets,
   machineInit,
   machineRevoke,
   machineShow,
   machineTrust,
   setEntry,
+  setMachineEntry,
   setSecret,
 } from '../config/config-service.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
@@ -38,17 +41,17 @@ function expectedRowVersion(value: string | undefined): number | null | undefine
 
 export function assertConfigWriteAllowed(
   key: string,
-  value: string,
+  value: string | undefined,
   env: Record<string, string | undefined> = process.env,
   pid = process.pid,
   inventory?: ProcessInventory,
 ): void {
   if (key.startsWith('autonomy.') && isOrchWorkerProcess(env, pid, inventory)) {
     throw new Error(
-      `refusing autonomy config write from an orch worker run; an operator must run orch config set ${key} ${value}`,
+      `refusing autonomy config write from an orch worker run; an operator must run orch config ${value === undefined ? `delete ${key}` : `set ${key} ${value}`}`,
     )
   }
-  if (key === 'autonomy.release' && !isReleaseAutonomyValue(value))
+  if (value !== undefined && key === 'autonomy.release' && !isReleaseAutonomyValue(value))
     throw new Error(
       `invalid autonomy.release; expected one of ${RELEASE_AUTONOMY_VALUES.join(', ')}`,
     )
@@ -56,8 +59,10 @@ export function assertConfigWriteAllowed(
 
 export const configGetPresentation = (row: ConfigRow, json: boolean) =>
   json ? JSON.stringify(row) : row.value
-export const configListPresentation = (rows: ConfigRow[], json: boolean) =>
-  json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`)
+export const configListPresentation = (
+  rows: { scope: string; key: string; value: string }[],
+  json: boolean,
+) => (json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`))
 
 export function register(program: Command): void {
   const config = program.command('config')
@@ -107,25 +112,53 @@ export function register(program: Command): void {
   config
     .command('set <key> <value>')
     .option('--space')
+    .option('--machine')
     .option('--expect <rowVersion>')
     .option('--json')
     .action(async (key, value, options) => {
       assertConfigWriteAllowed(key, value)
+      if (options.machine) {
+        if (options.space || options.expect)
+          throw new Error(
+            'refusing machine config set: --machine cannot be combined with --space or --expect',
+          )
+        const row = setMachineEntry(key, value)
+        if (options.json) log(JSON.stringify(row))
+        else
+          log(
+            'machine settings take effect at the next session start (or after `orch settings apply`)',
+          )
+        return
+      }
       const row = await setEntry(key, value, scope(options), expectedRowVersion(options.expect))
       if (options.json) log(configGetPresentation(row, true))
     })
   config
     .command('list')
+    .option('--machine')
     .option('--json')
     .action(async (options) => {
-      const rows = await listEntries()
+      const rows = options.machine ? listMachineEntries() : await listEntries()
       for (const line of configListPresentation(rows, Boolean(options.json))) log(line)
     })
   config
     .command('delete <key>')
     .option('--space')
+    .option('--machine')
     .option('--expect <rowVersion>')
     .action(async (key, options) => {
+      if (options.machine) {
+        if (options.space || options.expect)
+          throw new Error(
+            'refusing machine config delete: --machine cannot be combined with --space or --expect',
+          )
+        assertConfigWriteAllowed(key, undefined)
+        deleteMachineEntry(key)
+        log(
+          'machine settings take effect at the next session start (or after `orch settings apply`)',
+        )
+        return
+      }
       const expected = expectedRowVersion(options.expect)
       if (expected === null)
         throw new Error('delete expected row version must be a positive integer')

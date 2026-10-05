@@ -19,6 +19,11 @@ import {
   hostedIdentity,
   openHostedSecret,
 } from '../../../shared/hosted-secret-opening.ts'
+import {
+  deleteMachineAutonomy,
+  listMachineAutonomy,
+  setMachineAutonomy,
+} from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
   machineKeyInfo,
@@ -436,6 +441,19 @@ export async function deleteEntry(
     environment: HOSTED_CONFIG_ENVIRONMENT,
     expectedRowVersion: version,
   })
+}
+
+export function setMachineEntry(key: string, value: string) {
+  setMachineAutonomy(key, value)
+  return listMachineAutonomy().find((row) => row.key === key)!
+}
+
+export function deleteMachineEntry(key: string): void {
+  deleteMachineAutonomy(key)
+}
+
+export function listMachineEntries() {
+  return listMachineAutonomy()
 }
 
 export async function listSecrets(client = configClient()) {

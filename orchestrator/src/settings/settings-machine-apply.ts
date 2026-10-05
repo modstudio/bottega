@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import { resolveRunsDirectory, resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
   applyUserCanonHomePlans,
@@ -24,6 +25,7 @@ import {
   userSettingsEnvPath,
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
+import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
 
@@ -81,7 +83,11 @@ function applyUserSettings(
     const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
     if (!row) throw new Error('refusing settings render: no settings row for user')
     const parsed = readSettingsFile(path)
-    const owned = parseStoredOwnedSettings(row.body)
+    const merged = mergeMachinePermissionOverlay(
+      parseStoredOwnedSettings(row.body),
+      readMachinePermissions(deps.environment),
+    )
+    const owned = merged.settings
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
     const removed = parsed.envKeys.filter((name) => !(owned.envKeys ?? []).includes(name))
@@ -96,19 +102,42 @@ function applyUserSettings(
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
     const plan = planSettingsWrite(path, rendered)
     if (plan.currentText === plan.renderedText) {
-      return { target, outcome: 'current', changed: false }
+      return {
+        target,
+        outcome: 'current',
+        detail: unmatchedDropDetail(merged.unmatchedDrops),
+        changed: false,
+      }
     }
-    if (check) return { target, outcome: 'applied', detail: 'would apply', changed: true }
+    if (check)
+      return {
+        target,
+        outcome: 'applied',
+        detail: ['would apply', unmatchedDropDetail(merged.unmatchedDrops)]
+          .filter(Boolean)
+          .join('; '),
+        changed: true,
+      }
     const result = deps.applySettings(plan, deps.environment)
     return {
       target,
       outcome: 'applied',
-      detail: result.backup ? `backup ${result.backup}` : 'created new file',
+      detail: [
+        result.backup ? `backup ${result.backup}` : 'created new file',
+        unmatchedDropDetail(merged.unmatchedDrops),
+      ]
+        .filter(Boolean)
+        .join('; '),
       changed: true,
     }
   } catch (error) {
     return refusal(target, error)
   }
+}
+
+function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | undefined {
+  if (!drops.length) return undefined
+  return `unmatched drop(s): ${drops.map(({ list, rule }) => `${list} ${rule}`).join(', ')}`
 }
 
 function applyUserCanon(

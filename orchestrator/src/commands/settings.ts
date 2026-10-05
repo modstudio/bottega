@@ -16,6 +16,7 @@ import {
   applyMachineSettings,
   printMachineSettingsApplyResults,
 } from '../settings/settings-machine-apply.ts'
+import { editMachineSettingsPermission } from '../settings/settings-machine-permissions.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -66,15 +67,64 @@ export function register(program: Command): void {
       .command(operation)
       .option('--user')
       .option('--project <name>')
+      .option('--machine')
       .requiredOption('--list <name>')
       .requiredOption('--rule <rule>')
-      .requiredOption('--expect <revision>')
+      .option('--expect <revision>')
       .option('--reason <text>')
       .option('--json')
       .action(async (options) => {
-        const result = await settingsPermissionCommand(optionFlags(options), operation)
+        const flags = optionFlags(options)
+        if (
+          flags.has('machine') &&
+          (flags.has('user') ||
+            flags.flag('project') ||
+            flags.flag('expect') ||
+            flags.flag('reason'))
+        )
+          throw new Error(
+            'refusing machine permission edit: --machine cannot be combined with --user, --project, --expect, or --reason',
+          )
+        if (flags.has('machine')) {
+          const result = editMachineSettingsPermission({
+            operation,
+            list: flags.flag('list'),
+            rule: flags.flag('rule'),
+          })
+          if (options.json) log(JSON.stringify(result))
+          else {
+            log(result.message)
+            log(
+              'machine permissions take effect at the next session start (or after `orch settings apply`)',
+            )
+          }
+          return
+        }
+        const result = await settingsPermissionCommand(flags, operation)
         if (options.json) log(JSON.stringify(result))
         else log(result.message ?? `updated permissions.${options.list} at ${result.revision}`)
+      })
+  }
+  for (const operation of ['drop', 'undrop'] as const) {
+    permission
+      .command(operation)
+      .requiredOption('--list <name>')
+      .requiredOption('--rule <rule>')
+      .option('--json')
+      .action((options) => {
+        const flags = optionFlags(options)
+        const result = editMachineSettingsPermission({
+          operation,
+          list: flags.flag('list'),
+          rule: flags.flag('rule'),
+        })
+        if (options.json) log(JSON.stringify(result))
+        else {
+          log(result.message)
+          log(
+            'machine permissions take effect at the next session start (or after `orch settings apply`)',
+          )
+        }
       })
   }
   settings
