@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { acquireLease, releaseLease, withLease } from './collect.ts'
+import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
 import { db } from './db.ts'
 import type { CollectorMirrorPass } from './ingest/collector-mirror.ts'
 import { observeTrackerTask, writeTrackerCache } from './ingest/trackers.ts'
@@ -57,9 +57,9 @@ const dependencies = (lookup: TrackerSource['lookup']) => ({
     callTool: async () => ({}),
     close: async () => {},
   }),
-  lease: async <T>(_holder: string, fn: () => Promise<T>) => ({
+  lease: async <T>(_holder: string, fn: (guard: { assertHeld(): void }) => Promise<T>) => ({
     ran: true as const,
-    value: await fn(),
+    value: await fn({ assertHeld() {} }),
   }),
   createMirror: noOpMirror,
   readBack: () => shown,
@@ -207,6 +207,32 @@ describe('fresh tracker task read', () => {
     await fresh
   })
 
+  test('a fresh read whose lease is taken refuses without writing afterward', async () => {
+    let releaseLookup!: () => void
+    const lookupCanFinish = new Promise<void>((resolve) => (releaseLookup = resolve))
+    let lookupStarted!: () => void
+    const started = new Promise<void>((resolve) => (lookupStarted = resolve))
+    const fresh = refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => {
+        lookupStarted()
+        await lookupCanFinish
+        return task
+      }),
+      lease: withLease,
+      readBack: showTask,
+    })
+    await started
+    const freshHolder = leaseHolder()!
+    releaseLease(freshHolder)
+    expect(acquireLease('takeover')).toBeTrue()
+    releaseLookup()
+    await expect(fresh).rejects.toThrow(
+      'takeover holds the collect lease; fresh task read was not performed',
+    )
+    expect(db().query(`SELECT 1 FROM task WHERE key='FIX-1'`).get()).toBeNull()
+    releaseLease('takeover')
+  })
+
   test('records one first-observed category change and the following collect records none', async () => {
     expect(observeTrackerTask({ ...task, status: 'Open', category: 'open' }).event).toBeNull()
 
@@ -220,7 +246,11 @@ describe('fresh tracker task read', () => {
       db().query<{ count: number }, []>('SELECT count(*) count FROM task_status_event').get()
         ?.count,
     ).toBe(1)
-    expect(writeTrackerCache([task], '2026-10-05T00:00:00.000Z')).toBe(0)
+    expect(
+      writeTrackerCache([task], '2026-10-05T00:00:00.000Z').filter(
+        ({ observation }) => observation.event,
+      ),
+    ).toHaveLength(0)
     expect(
       db().query<{ count: number }, []>('SELECT count(*) count FROM task_status_event').get()
         ?.count,
@@ -271,7 +301,11 @@ describe('fresh tracker task read', () => {
       }),
     ])
 
-    expect(writeTrackerCache([task], '2026-10-05T00:00:00.000Z')).toBe(0)
+    expect(
+      writeTrackerCache([task], '2026-10-05T00:00:00.000Z').filter(
+        ({ observation }) => observation.event,
+      ),
+    ).toHaveLength(0)
     expect(eventRows).toHaveLength(1)
   })
 
@@ -346,5 +380,29 @@ describe('fresh tracker task read', () => {
       db().query<{ count: number }, []>('SELECT count(*) count FROM task_status_event').get()
         ?.count,
     ).toBe(0)
+  })
+
+  test('a mirror that never resolves is bounded and the fresh read still succeeds', async () => {
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await refreshTrackerTask('FIX-1', undefined, {
+        ...dependencies(async () => task),
+        lease: withLease,
+        observe: observeTrackerTask,
+        readBack: showTask,
+        mirrorTimeoutMs: 5,
+        createMirror: async () => ({
+          mirrorTasks: () => new Promise<void>(() => {}),
+          mirrorStatusEvents: async () => {},
+          reportSkipped: () => {},
+        }),
+      })
+      expect(result.shown?.task.key).toBe('FIX-1')
+      expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+        'mirror timed out after 5ms',
+      )
+    } finally {
+      errors.mockRestore()
+    }
   })
 })

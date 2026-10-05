@@ -1,5 +1,5 @@
 import { type ToolCaller, type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
-import { withLease } from './collect.ts'
+import { type LeaseGuard, withLease } from './collect.ts'
 import { createCollectorMirrorPass } from './ingest/collector-mirror.ts'
 import { mirrorTrackerObservation, observeTrackerTask } from './ingest/trackers.ts'
 import { credentials, failureDetail, Mcp } from './mcp.ts'
@@ -29,6 +29,26 @@ type FreshTaskDependencies = {
   readBack?: typeof showTask
   lease?: typeof withLease
   leaseWaitMs?: number
+  mirrorTimeoutMs?: number
+}
+
+const FRESH_TASK_MIRROR_TIMEOUT_MS = 15_000
+
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`mirror timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        )
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 export type FreshTaskResult = {
@@ -85,20 +105,25 @@ export async function refreshTrackerTask(
     const holder = `fresh-task:${key.toUpperCase()}:${process.pid}`
     const leased = await (dependencies.lease ?? withLease)(
       holder,
-      async () => {
+      async (guard: LeaseGuard) => {
         const task = await source.lookup!(client!, key.toUpperCase())
         if (!task)
           throw new Error(
             `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
           )
+        guard.assertHeld()
         const observation = (dependencies.observe ?? observeTrackerTask)(task)
         try {
           const mirror = await (dependencies.createMirror ?? createCollectorMirrorPass)('tracker')
-          await mirrorTrackerObservation(mirror, task, observation)
+          await withTimeout(
+            mirrorTrackerObservation(mirror, task, observation, guard.assertHeld),
+            dependencies.mirrorTimeoutMs ?? FRESH_TASK_MIRROR_TIMEOUT_MS,
+          )
           mirror.reportSkipped((error) => failureDetail(error, resolved.token))
         } catch (error) {
           console.error(`hub: tracker task mirror skipped: ${failureDetail(error, resolved.token)}`)
         }
+        guard.assertHeld()
         return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
       },
       dependencies.leaseWaitMs,
@@ -120,7 +145,7 @@ export async function refreshTrackerTask(
       closeFailure = error
     }
   }
-  const failure = closeFailure ?? operationFailure
+  const failure = operationFailure ?? closeFailure
   if (failure !== undefined) throw new Error(failureDetail(failure, resolved.token))
   return result
 }

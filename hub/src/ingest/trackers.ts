@@ -410,12 +410,15 @@ export async function mirrorTrackerObservation(
   mirror: CollectorMirrorPass,
   task: TrackerTask,
   observation: TrackerTaskObservation,
+  assertHeld: () => void = () => {},
 ): Promise<void> {
   if (observation.taskRecordId === null) return
+  assertHeld()
   await mirror.mirrorTasks([
     trackerTaskMirrorRow(task, observation.taskRecordId, observation.taskKey, observation.at),
   ])
-  if (observation.event)
+  assertHeld()
+  if (observation.event) {
     await mirror.mirrorStatusEvents([
       trackerStatusEventMirrorRow(
         task,
@@ -424,48 +427,31 @@ export async function mirrorTrackerObservation(
         observation.at,
       ),
     ])
+    assertHeld()
+  }
 }
 
 async function mirrorTrackerSnapshot(
   mirror: CollectorMirrorPass,
-  tasks: TrackerTask[],
-  local: ReadonlySet<string>,
-  before: ReadonlyMap<string, string>,
-  at: string,
+  observations: TrackerCacheObservation[],
 ): Promise<Error | null> {
-  const mirroredTasks = tasks
-    .filter((task) => !local.has(trackerTaskLabel(task.project, task.key)))
-    .map((task) => {
-      const localRow = trackerIdentityRow(db(), task)!
-      return trackerTaskMirrorRow(task, localRow.record_id, localRow.key, at)
-    })
-  const mirroredEvents = tasks.flatMap((task) => {
-    const identity = trackerTaskLabel(task.project, task.key)
-    const was = before.get(identity)
-    const event =
-      !local.has(identity) && was !== undefined && was !== task.category
-        ? db()
-            .query<{ record_id: string; task_record_id: string }, [string, string, string, string]>(
-              `SELECT record_id,task_record_id FROM task_status_event
-               WHERE task_record_id=? AND at=? AND from_status=? AND to_status=?`,
-            )
-            .get(trackerIdentityRow(db(), task)!.record_id, at, was, task.category)
-        : null
-    return event
+  const mirroredTasks = observations.flatMap(({ task, observation }) =>
+    observation.taskRecordId === null
+      ? []
+      : [trackerTaskMirrorRow(task, observation.taskRecordId, observation.taskKey, observation.at)],
+  )
+  const mirroredEvents = observations.flatMap(({ task, observation }) =>
+    observation.taskRecordId !== null && observation.event
       ? [
           trackerStatusEventMirrorRow(
             task,
-            {
-              recordId: event.record_id,
-              fromCategory: was!,
-              toCategory: task.category,
-            },
-            event.task_record_id,
-            at,
+            observation.event,
+            observation.taskRecordId,
+            observation.at,
           ),
         ]
-      : []
-  })
+      : [],
+  )
   try {
     for (let index = 0; index < mirroredTasks.length; index += 500) {
       await mirror.mirrorTasks(mirroredTasks.slice(index, index + 500))
@@ -513,14 +499,22 @@ async function lookupTrackerTask(
   }
 }
 
-export function writeTrackerCache(tasks: Iterable<TrackerTask>, at: string): number {
-  let changed = 0
+export type TrackerCacheObservation = {
+  task: TrackerTask
+  observation: TrackerTaskObservation
+}
+
+export function writeTrackerCache(
+  tasks: Iterable<TrackerTask>,
+  at: string,
+): TrackerCacheObservation[] {
+  const observations: TrackerCacheObservation[] = []
   writeTransaction((conn) => {
     for (const task of tasks) {
-      if (observeTrackerTaskOn(conn, task, at).event) changed++
+      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at) })
     }
   })
-  return changed
+  return observations
 }
 
 async function backfillTrackerTasks(
@@ -575,18 +569,6 @@ export async function ingestTrackers(
     ? registrations.filter((tracker) => only.has(tracker.project))
     : registrations
 
-  // Only keys whose category was already OBSERVED count as having a previous
-  // state. A git-seeded row knows a key and nothing else, so treating its null
-  // category as a previous value reported 316 transitions on the first collect
-  // - every task in two trackers' entire history, all "just changed".
-  const before = new Map(
-    d
-      .query<{ key: string; project: string; status_category: string }, []>(
-        `SELECT key, project, status_category FROM task WHERE status_category IS NOT NULL`,
-      )
-      .all()
-      .map((r) => [trackerTaskLabel(r.project, r.key), r.status_category]),
-  )
   const local = new Set(
     d
       .query<{ key: string; project: string }, []>(
@@ -677,14 +659,9 @@ export async function ingestTrackers(
               return !local.has(identity) && differs(t, existing.get(identity))
             })
 
-            const changed = writeTrackerCache(unique.values(), at)
-            const mirrorError = await mirrorTrackerSnapshot(
-              mirror,
-              [...unique.values()],
-              local,
-              before,
-              at,
-            )
+            const observations = writeTrackerCache(unique.values(), at)
+            const changed = observations.filter(({ observation }) => observation.event).length
+            const mirrorError = await mirrorTrackerSnapshot(mirror, observations)
 
             // Use the connection which already proved reachable for the handful of
             // closed tasks recent work names. A failed full sync is not immediately

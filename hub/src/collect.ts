@@ -109,7 +109,22 @@ async function hostedCollectLegs(): Promise<CollectLegResult[]> {
 }
 
 /** Long enough to outlast a slow pass, short enough that a dead holder frees it. */
-const LEASE_MS = 60_000
+export const COLLECT_LEASE_MS = 60_000
+const LEASE_RENEW_MS = 20_000
+
+export type LeaseGuard = {
+  /** Refuse further work after another holder has taken this lease. */
+  assertHeld(): void
+}
+
+class LeaseLostError extends Error {
+  readonly heldBy: string | null
+
+  constructor(heldBy: string | null) {
+    super(`${heldBy ?? 'another process'} holds the collect lease; leased work was discarded`)
+    this.heldBy = heldBy
+  }
+}
 
 /**
  * Only one process collects at a time, across the whole machine.
@@ -135,7 +150,7 @@ export function acquireLease(holder: string): boolean {
           WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
              OR json_extract(setting.value, '$.holder') = ?`,
       )
-      .run(JSON.stringify({ holder, until: now + LEASE_MS }), now, holder)
+      .run(JSON.stringify({ holder, until: now + COLLECT_LEASE_MS }), now, holder)
     return conn
       .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
       .get()
@@ -186,17 +201,37 @@ export function releaseLease(holder: string) {
  */
 export async function withLease<T>(
   holder: string,
-  fn: () => Promise<T>,
+  fn: (guard: LeaseGuard) => Promise<T>,
   waitMs = 30_000,
+  renewEveryMs = LEASE_RENEW_MS,
 ): Promise<{ ran: true; value: T } | { ran: false; heldBy: string | null }> {
   const deadline = Date.now() + waitMs
   while (!acquireLease(holder)) {
     if (Date.now() >= deadline) return { ran: false, heldBy: leaseHolder() }
     await new Promise((r) => setTimeout(r, 250))
   }
+  let lostBy: string | null | undefined
+  const markLost = () => {
+    if (lostBy === undefined) lostBy = leaseHolder()
+  }
+  const guard: LeaseGuard = {
+    assertHeld() {
+      if (lostBy === undefined && leaseHolder() !== holder) markLost()
+      if (lostBy !== undefined) throw new LeaseLostError(lostBy)
+    },
+  }
+  const renewal = setInterval(() => {
+    if (lostBy === undefined && !acquireLease(holder)) markLost()
+  }, renewEveryMs)
   try {
-    return { ran: true, value: await fn() }
+    const value = await fn(guard)
+    guard.assertHeld()
+    return { ran: true, value }
+  } catch (error) {
+    if (lostBy !== undefined) return { ran: false, heldBy: lostBy }
+    throw error
   } finally {
+    clearInterval(renewal)
     releaseLease(holder)
   }
 }
@@ -363,6 +398,7 @@ export function watch(
     initial?: () => Promise<unknown>
     fast?: () => Promise<unknown>
     slow?: () => Promise<unknown>
+    renewEveryMs?: number
   } = {},
 ) {
   let busy = false
@@ -370,14 +406,25 @@ export function watch(
   const guard = (work: () => Promise<unknown>) => async () => {
     if (stopping || busy || !acquireLease(holder)) return
     busy = true
+    let lostBy: string | null | undefined
+    const renewal = setInterval(() => {
+      if (lostBy === undefined && !acquireLease(holder)) lostBy = leaseHolder()
+    }, dependencies.renewEveryMs ?? LEASE_RENEW_MS)
     // A failed collect must not stop the loop or take the server down: the
     // stored data is still the last good reading, which is the point of having
     // stored it.
     try {
       await work()
+      if (lostBy !== undefined)
+        onError(
+          new Error(
+            `${lostBy ?? 'another process'} holds the collect lease; watch cycle result was discarded`,
+          ),
+        )
     } catch (e) {
       onError(e as Error)
     } finally {
+      clearInterval(renewal)
       releaseLease(holder)
       busy = false
     }
