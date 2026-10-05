@@ -90,6 +90,7 @@ CREATE TABLE "board_receipt" (
 --> statement-breakpoint
 ALTER TABLE "board_receipt" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE INDEX "board_claim_project_subject_idx" ON "board_claim" ("project_id","subject_kind","subject_value","closed_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "board_claim_live_subject_unique" ON "board_claim" ("project_id","subject_kind","subject_value") WHERE "closed_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "board_claim_run_idx" ON "board_claim" ("run_id","closed_at");--> statement-breakpoint
 CREATE INDEX "board_claim_superseded_idx" ON "board_claim" ("superseded_by_claim_id");--> statement-breakpoint
 CREATE INDEX "board_message_revision_idx" ON "board_message" ("revision");--> statement-breakpoint

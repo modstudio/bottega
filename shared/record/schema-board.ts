@@ -14,6 +14,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { machine, membership, project, RECORD_ACTOR_ROLE, user } from './schema.ts'
@@ -21,6 +22,7 @@ import { run } from './schema-run.ts'
 
 const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
 
+/** Board visibility is membership within bound spaces; the service binds every user space. */
 function readsEveryScopedProject(scopeProjectIds: AnyPgColumn) {
   return sql`NOT EXISTS (
     SELECT 1 FROM unnest(${scopeProjectIds}) AS scoped(project_id)
@@ -90,6 +92,9 @@ export const boardClaim = pgTable.withRLS(
         table.subjectValue,
         table.closedAt,
       ),
+      uniqueIndex('board_claim_live_subject_unique')
+        .on(table.projectId, table.subjectKind, table.subjectValue)
+        .where(sql`${table.closedAt} IS NULL`),
       index('board_claim_run_idx').on(table.runId, table.closedAt),
       index('board_claim_superseded_idx').on(table.supersededByClaimId),
       check(

@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "825e7d28-f28e-4179-b356-6caed61ec72a",
+  "id": "98d93ad6-2e43-4ae9-9632-ce3a5374f945",
   "prevIds": ["88c06047-1a17-4dc5-90f9-5806f55e42f9"],
   "ddl": [
     {
@@ -9963,6 +9963,41 @@
       "method": "btree",
       "concurrently": false,
       "name": "board_claim_project_subject_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "board_claim"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "subject_kind",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "subject_value",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": "\"closed_at\" IS NULL",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "board_claim_live_subject_unique",
       "entityType": "indexes",
       "schema": "public",
       "table": "board_claim"

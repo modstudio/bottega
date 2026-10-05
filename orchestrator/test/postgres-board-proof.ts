@@ -27,9 +27,17 @@ const IDS = {
   scopedBoth: '02990000-0000-7000-8000-000000000003',
   recipientOnly: '02990000-0000-7000-8000-000000000004',
   scopedRecipient: '02990000-0000-7000-8000-000000000005',
+  boundScopedA: '02990000-0000-7000-8000-000000000006',
+  boundScopedB: '02990000-0000-7000-8000-000000000007',
+  boundScopedBoth: '02990000-0000-7000-8000-000000000008',
   tag: 'tag',
   claimA: '02990000-0000-7000-8000-000000000011',
-  claimB: '02990000-0000-7000-8000-000000000012',
+  claimLiveOther: '02990000-0000-7000-8000-000000000013',
+  claimHolderEdit: '02990000-0000-7000-8000-000000000014',
+  claimLapsed: '02990000-0000-7000-8000-000000000015',
+  claimSuccessor: '02990000-0000-7000-8000-000000000016',
+  claimDuplicate: '02990000-0000-7000-8000-000000000017',
+  claimReadInsert: '02990000-0000-7000-8000-000000000018',
   revisionA: '02990000-0000-7000-8000-000000000021',
   revisionB: '02990000-0000-7000-8000-000000000022',
   invisibleReply: '02990000-0000-7000-8000-000000000043',
@@ -100,7 +108,10 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         ${messageValues(IDS.scopedA, IDS.userA, [IDS.projectA])},
         ${messageValues(IDS.scopedBoth, IDS.userA, [IDS.projectA, IDS.projectB])},
         ${messageValues(IDS.recipientOnly, IDS.userA, [], [IDS.userD])},
-        ${messageValues(IDS.scopedRecipient, IDS.userA, [IDS.projectA], [IDS.userD])};
+        ${messageValues(IDS.scopedRecipient, IDS.userA, [IDS.projectA], [IDS.userD])},
+        ${messageValues(IDS.boundScopedA, IDS.userD, [IDS.projectA])},
+        ${messageValues(IDS.boundScopedB, IDS.userD, [IDS.projectB])},
+        ${messageValues(IDS.boundScopedBoth, IDS.userD, [IDS.projectA, IDS.projectB])};
       INSERT INTO board_message_tag (message_id,kind,value,origin)
       VALUES ('${IDS.scopedA}','topic','${IDS.tag}','sender');
       INSERT INTO board_receipt
@@ -132,6 +143,34 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(visibleCount(input, IDS.userB, IDS.scopedBoth)).toBe('0')
     expect(visibleCount(input, IDS.userC, IDS.scopedBoth)).toBe('0')
     expect(visibleCount(input, IDS.userD, IDS.scopedBoth)).toBe('0')
+  })
+
+  test('board visibility is limited to the project spaces bound to the transaction', () => {
+    const spaceAOnly = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA],
+      `SELECT id FROM board_message
+       WHERE id IN ('${IDS.boundScopedA}','${IDS.boundScopedB}','${IDS.boundScopedBoth}')
+       ORDER BY id;`,
+    )
+    expect(spaceAOnly.code, spaceAOnly.stderr).toBe(0)
+    expect(spaceAOnly.stdout).toBe(IDS.boundScopedA)
+
+    const bothSpaces = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `SELECT id FROM board_message
+       WHERE id IN ('${IDS.boundScopedA}','${IDS.boundScopedB}','${IDS.boundScopedBoth}')
+       ORDER BY id;`,
+    )
+    expect(bothSpaces.code, bothSpaces.stderr).toBe(0)
+    expect(bothSpaces.stdout.split('\n')).toEqual([
+      IDS.boundScopedA,
+      IDS.boundScopedB,
+      IDS.boundScopedBoth,
+    ])
   })
 
   test('an empty-scope board message is visible only to its author and explicit recipients', () => {
@@ -298,7 +337,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(invisible.code).not.toBe(0)
   })
 
-  test('claims are visible to project members and writable only by writing members', () => {
+  test('claims are visible to project members only', () => {
     expect(
       actor(
         input,
@@ -315,6 +354,9 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         `SELECT count(*) FROM board_claim WHERE id='${IDS.claimA}';`,
       ).stdout,
     ).toBe('0')
+  })
+
+  test('a read-permission member cannot take or update a board claim', () => {
     const readInsert = actor(
       input,
       IDS.userC,
@@ -322,7 +364,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       `INSERT INTO board_claim
        (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
         renewed_at,lapses_at)
-       VALUES ('02990000-0000-7000-8000-000000000013','${IDS.projectA}','path','read',
+       VALUES ('${IDS.claimReadInsert}','${IDS.projectA}','path','read',
         '${IDS.userC}',60000,now(),now(),now() + interval '1 minute');`,
     )
     expect(readInsert.code).not.toBe(0)
@@ -335,25 +377,125 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(readUpdate.code, readUpdate.stderr).toBe(0)
     expect(readUpdate.stdout).toBe('')
     expect(input.admin(`SELECT note IS NULL FROM board_claim WHERE id='${IDS.claimA}';`)).toBe('t')
-    const writerTake = actor(
+  })
+
+  test("a non-holder writing member cannot edit a live board claim's note", () => {
+    const created = actor(
       input,
       IDS.userB,
       [IDS.spaceA],
       `INSERT INTO board_claim
        (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
         renewed_at,lapses_at)
-       VALUES ('${IDS.claimB}','${IDS.projectA}','path','writer','${IDS.userB}',60000,
+       VALUES ('${IDS.claimLiveOther}','${IDS.projectA}','path','live-note','${IDS.userB}',60000,
         now(),now(),now() + interval '1 minute');`,
     )
-    expect(writerTake.code, writerTake.stderr).toBe(0)
-    const otherWriterUpdate = actor(
+    expect(created.code, created.stderr).toBe(0)
+    const update = actor(
       input,
       IDS.userA,
       [IDS.spaceA, IDS.spaceB],
-      `UPDATE board_claim SET note='other writer' WHERE id='${IDS.claimB}' RETURNING note;`,
+      `UPDATE board_claim SET note='other writer' WHERE id='${IDS.claimLiveOther}';`,
     )
-    expect(otherWriterUpdate.code, otherWriterUpdate.stderr).toBe(0)
-    expect(otherWriterUpdate.stdout).toBe('other writer')
+    expect(update.code).not.toBe(0)
+    expect(update.stderr).toContain('only its holder may update a live board claim')
+  })
+
+  test('a non-holder writing member cannot close a live board claim', () => {
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET closed_at=now(),close_reason='released'
+       WHERE id='${IDS.claimA}';`,
+    )
+    expect(update.code).not.toBe(0)
+    expect(update.stderr).toContain('only its holder may update a live board claim')
+  })
+
+  test('a non-holder cannot take over a board claim', () => {
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET holder_user_id='${IDS.userB}' WHERE id='${IDS.claimA}';`,
+    )
+    expect(update.code).not.toBe(0)
+    expect(update.stderr).toContain('board claim identity and holder cannot change')
+  })
+
+  test('a non-holder writing member can close and supersede a lapsed board claim', () => {
+    const lapsed = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimLapsed}','${IDS.projectA}','path','lapsed','${IDS.userB}',60000,
+        now() - interval '2 minutes',now() - interval '2 minutes',now() - interval '1 minute');`,
+    )
+    expect(lapsed.code, lapsed.stderr).toBe(0)
+    const successor = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimSuccessor}','${IDS.projectA}','path','successor','${IDS.userA}',60000,
+        now(),now(),now() + interval '1 minute');`,
+    )
+    expect(successor.code, successor.stderr).toBe(0)
+    const update = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `UPDATE board_claim SET closed_at=now(),close_reason='taken-over',
+         superseded_by_claim_id='${IDS.claimSuccessor}'
+       WHERE id='${IDS.claimLapsed}' RETURNING close_reason;`,
+    )
+    expect(update.code, update.stderr).toBe(0)
+    expect(update.stdout).toBe('taken-over')
+  })
+
+  test('a board claim holder can renew, release and edit its note', () => {
+    const created = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimHolderEdit}','${IDS.projectA}','path','holder-edit','${IDS.userB}',60000,
+        now(),now(),now() + interval '1 minute');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET note='renewed',renewed_at=now(),
+         lapses_at=now() + interval '2 minutes',closed_at=now(),close_reason='released'
+       WHERE id='${IDS.claimHolderEdit}' RETURNING note,close_reason;`,
+    )
+    expect(update.code, update.stderr).toBe(0)
+    expect(update.stdout).toBe('renewed|released')
+  })
+
+  test('a second live board claim for the same exact subject is refused', () => {
+    const duplicate = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimDuplicate}','${IDS.projectA}','path','src/a.ts','${IDS.userB}',60000,
+        now(),now(),now() + interval '1 minute');`,
+    )
+    expect(duplicate.code).not.toBe(0)
+    expect(duplicate.stderr).toContain('board_claim_live_subject_unique')
   })
 
   test('the reporting role has SELECT grants but board RLS exposes no rows and no writes', () => {
