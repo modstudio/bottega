@@ -18,6 +18,7 @@ import { runModuleSpecs } from './architecture-run-modules.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
+import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
@@ -424,64 +425,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/sandbox-runtime-assets.ts', []),
   module('shared/record/schema.ts', ['../brand.ts']),
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
-  module('orchestrator/src/config/config-service.ts', [
-    'node:os',
-    '../../../shared/config-directory.ts',
-    '../../../shared/config-client.ts',
-    '../../../shared/hosted-config-space.ts',
-    '../../../shared/hosted-secret-opening.ts',
-    '../../../shared/machine-key-id.ts',
-    '../../../shared/record-remedies.ts',
-    '../../../shared/secret-envelope.ts',
-    '../../../shared/machine-key-store.ts',
-    '../../../shared/machine-config.ts',
-    '../../../shared/trust-list.ts',
-  ]),
-  module('orchestrator/src/commands/config.ts', [
-    'node:readline/promises',
-    'commander',
-    '../../../shared/config-client.ts',
-    '../../../shared/release-autonomy.ts',
-    '../config/config-service.ts',
-    '../run/run-process.ts',
-    './support.ts',
-  ]),
-  module('orchestrator/src/commands/settings.ts', [
-    'commander',
-    '../settings/settings-apply-commands.ts',
-    '../settings/settings-commands.ts',
-    '../settings/settings-machine-apply.ts',
-    '../settings/settings-machine-permissions.ts',
-    './support.ts',
-  ]),
-  module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
-  module('orchestrator/src/settings/settings-permission-overlay.ts', [
-    '../../../shared/machine-config.ts',
-    './settings.ts',
-  ]),
-  module('orchestrator/src/settings/settings-machine-permissions.ts', [
-    '../../../shared/machine-config.ts',
-    '../run/run-process.ts',
-  ]),
-  module('orchestrator/src/settings/settings-machine-apply.ts', [
-    'bun:sqlite',
-    'fs',
-    'path',
-    '../../../shared/state-directory.ts',
-    '../../../shared/machine-config.ts',
-    '../canon/user-canon-home-files.ts',
-    '../database/db.ts',
-    '../doc/docs.ts',
-    '../project/project-lock.ts',
-    '../record/record-cache.ts',
-    '../run/run-process.ts',
-    './settings.ts',
-    './settings-env.ts',
-    './settings-files.ts',
-    './settings-render.ts',
-    './settings-permission-overlay.ts',
-    './settings-write.ts',
-  ]),
+  ...settingsModules,
   ...recordModules,
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record/schema.ts',
