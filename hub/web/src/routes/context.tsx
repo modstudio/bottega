@@ -2,11 +2,13 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { MachineOverride } from '@/components/machine-override'
+import { MachinePermissionEditor } from '@/components/machine-permission-editor'
 import { Markdown } from '@/components/markdown'
 import { isHostedMode } from '@/lib/hub-mode'
 import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
+import { Button, TextButton } from '@/ui/button/button'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
@@ -43,6 +45,11 @@ const stageValues = AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(
 const FROM_PRESET = { value: '', label: 'From preset', disabled: true }
 
 const releaseValues = RELEASE_AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(value) }))
+
+const rulingsValues = (['agent', 'user'] as const).map((value) => ({
+  value,
+  label: capitalized(value),
+}))
 
 function ErrorText({ message }: { message: string }) {
   return (
@@ -354,6 +361,14 @@ function AutonomySection({
         queryClient.invalidateQueries({ queryKey: trpc.context.autonomy.get.pathKey() }),
     }),
   )
+  const refreshed = {
+    onSuccess: (data: NonNullable<typeof autonomy.data>) =>
+      queryClient.setQueryData(trpc.context.autonomy.get.queryOptions({ project }).queryKey, data),
+  }
+  const clearStage = useMutation(trpc.context.autonomy.clearStage.mutationOptions(refreshed))
+  const setMachine = useMutation(trpc.context.autonomy.setMachine.mutationOptions(refreshed))
+  const clearMachine = useMutation(trpc.context.autonomy.clearMachine.mutationOptions(refreshed))
+  const machinePending = setMachine.isPending || clearMachine.isPending
   const releaseLine = autonomy.data?.registered
     ? autonomy.data.text.split('\n').find((line) => line.startsWith('release: '))
     : undefined
@@ -361,13 +376,16 @@ function AutonomySection({
   return (
     <FieldSection
       title="Autonomy"
-      description="How much each workflow stage runs on its own, resolved for this machine. Your preset and overrides live in your hosted profile."
+      description="How much each workflow stage runs on its own, resolved for this machine. Your preset and overrides live in your hosted profile; a row can also be overridden on this machine alone."
     >
       <Select label="Project" value={project} options={options} onChange={onProject} />
       {autonomy.error ? <ErrorText message={autonomy.error.message} /> : null}
       {update.error ? <ErrorText message={update.error.message} /> : null}
       {updateRelease.error ? <ErrorText message={updateRelease.error.message} /> : null}
       {updatePreset.error ? <ErrorText message={updatePreset.error.message} /> : null}
+      {clearStage.error ? <ErrorText message={clearStage.error.message} /> : null}
+      {setMachine.error ? <ErrorText message={setMachine.error.message} /> : null}
+      {clearMachine.error ? <ErrorText message={clearMachine.error.message} /> : null}
       {autonomy.data?.registered
         ? autonomy.data.warnings?.map((warning) => <ErrorText key={warning} message={warning} />)
         : null}
@@ -396,11 +414,43 @@ function AutonomySection({
           />
           <DisplayRow
             label="Rulings"
-            value={`${autonomy.data.rulings.value} · ${autonomy.data.rulings.scope}`}
+            value={
+              <span className="flex flex-col gap-1.5">
+                <span>{`${autonomy.data.rulings.value} · ${autonomy.data.rulings.scope}`}</span>
+                <MachineOverride
+                  label="rulings"
+                  value={autonomy.data.rulings.machineValue}
+                  options={rulingsValues}
+                  pending={machinePending}
+                  onSet={(next) =>
+                    setMachine.mutate({ project, kind: 'rulings', value: next as 'agent' | 'user' })
+                  }
+                  onRemove={() => clearMachine.mutate({ project, kind: 'rulings' })}
+                />
+              </span>
+            }
           />
           <SettingBlock
             label="release"
-            hint={releaseLine ?? `release: ${autonomy.data.release.value}`}
+            hint={
+              <span className="flex flex-col gap-1.5">
+                <span>{releaseLine ?? `release: ${autonomy.data.release.value}`}</span>
+                <MachineOverride
+                  label="release"
+                  value={autonomy.data.release.machineValue}
+                  options={releaseValues}
+                  pending={machinePending}
+                  onSet={(next) =>
+                    setMachine.mutate({
+                      project,
+                      kind: 'release',
+                      value: next as ReleaseAutonomyValue,
+                    })
+                  }
+                  onRemove={() => clearMachine.mutate({ project, kind: 'release' })}
+                />
+              </span>
+            }
             control={
               <Select
                 label="release autonomy"
@@ -427,9 +477,38 @@ function AutonomySection({
                 key={stage.stage}
                 label={stage.stage}
                 hint={
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span>Resolved: {resolved}</span>
-                    {stage.overridden ? <Badge tone="warning">overridden</Badge> : null}
+                  <span className="flex flex-col gap-1.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span>Resolved: {resolved}</span>
+                      {stage.overridden ? (
+                        <>
+                          <Badge tone="warning">overridden</Badge>
+                          <TextButton
+                            disabled={clearStage.isPending}
+                            onClick={() => clearStage.mutate({ project, stage: stage.stage })}
+                          >
+                            Follow preset
+                          </TextButton>
+                        </>
+                      ) : null}
+                    </span>
+                    <MachineOverride
+                      label={stage.stage}
+                      value={stage.machineValue}
+                      options={stageValues}
+                      pending={machinePending}
+                      onSet={(next) =>
+                        setMachine.mutate({
+                          project,
+                          kind: 'stage',
+                          stage: stage.stage,
+                          value: next as AutonomyValue,
+                        })
+                      }
+                      onRemove={() =>
+                        clearMachine.mutate({ project, kind: 'stage', stage: stage.stage })
+                      }
+                    />
                   </span>
                 }
                 control={
@@ -474,9 +553,11 @@ function HostedAutonomySection({
   const update = useMutation(api.set.mutationOptions(refresh))
   const updateRelease = useMutation(api.setRelease.mutationOptions(refresh))
   const updatePreset = useMutation(api.setPreset.mutationOptions(refresh))
+  const clearStage = useMutation(api.clearStage.mutationOptions(refresh))
   const user = autonomy.data?.user
   const space = autonomy.data?.space
-  const error = autonomy.error ?? update.error ?? updateRelease.error ?? updatePreset.error
+  const error =
+    autonomy.error ?? update.error ?? updateRelease.error ?? updatePreset.error ?? clearStage.error
   return (
     <FieldSection
       title="Autonomy"
@@ -534,7 +615,21 @@ function HostedAutonomySection({
                 label={stage}
                 hint={
                   leaf ? (
-                    <Badge tone="warning">overridden</Badge>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Badge tone="warning">overridden</Badge>
+                      <TextButton
+                        disabled={clearStage.isPending}
+                        onClick={() =>
+                          clearStage.mutate({
+                            project,
+                            stage,
+                            expectedRowVersion: leaf.rowVersion,
+                          })
+                        }
+                      >
+                        Follow preset
+                      </TextButton>
+                    </span>
                   ) : (
                     `Follows the ${user.preset?.value ?? 'default'} preset`
                   )
@@ -632,6 +727,7 @@ function ManagedSettingsSection({
             />
           ))}
           <PermissionEditor address={address} revision={settings.data.revision} />
+          <MachinePermissionEditor machine={userMachineOverlay(target, localSettings.data)} />
           {hosted ? null : (
             <SettingBlock
               label="Apply now from a terminal"
@@ -643,6 +739,11 @@ function ManagedSettingsSection({
       ) : null}
     </FieldSection>
   )
+}
+
+/** The machine overlay is user-level, so a project target has none to show. */
+function userMachineOverlay<Machine>(target: string, data: { machine?: Machine } | undefined) {
+  return target === 'user' ? data?.machine : undefined
 }
 
 function applyCommand(target: string, projects: ManagedProject[]) {
