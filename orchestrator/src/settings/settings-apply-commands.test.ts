@@ -159,7 +159,7 @@ describe('settings render write', () => {
     await seedUser()
     const before = readFileSync(join(claude, 'settings.json'), 'utf8')
     const output = shown()
-    await settingsRenderWriteCommand(flags({ user: true, write: true }), output.port)
+    await settingsRenderWriteCommand(flags({ user: true, write: true }), output.port, () => false)
     expect(output.code()).toBe(1)
     expect(readFileSync(join(claude, 'settings.json'), 'utf8')).toBe(before)
     expect(output.logs.join('\n')).toContain('env keys removed: 1 OLD_KEY')
@@ -188,6 +188,7 @@ describe('settings render write', () => {
       settingsRenderWriteCommand(
         flags({ project: 'main-fixture', write: true, yes: true }),
         shown(root).port,
+        () => false,
       ),
     ).rejects.toThrow(/registered main checkout.*commit the settings change, and land it/s)
   })
@@ -200,11 +201,19 @@ describe('settings render write', () => {
     )
     await seedUser()
     await expect(
-      settingsRenderWriteCommand(flags({ user: true, write: true, yes: true }), shown().port),
+      settingsRenderWriteCommand(
+        flags({ user: true, write: true, yes: true }),
+        shown().port,
+        () => false,
+      ),
     ).rejects.toThrow(/ONLY_HERE.*settings env import --user.*--drop-env ONLY_HERE/s)
 
     await settingsEnvImportCommand(flags({ user: true }), shown().port)
-    await settingsRenderWriteCommand(flags({ user: true, write: true, yes: true }), shown().port)
+    await settingsRenderWriteCommand(
+      flags({ user: true, write: true, yes: true }),
+      shown().port,
+      () => false,
+    )
     expect(JSON.parse(readFileSync(settings, 'utf8')).env).toEqual({ ONLY_HERE: 'private' })
 
     await setDoc({
@@ -221,6 +230,7 @@ describe('settings render write', () => {
     await settingsRenderWriteCommand(
       flags({ user: true, write: true, yes: true, 'drop-env': 'ONLY_HERE' }),
       shown().port,
+      () => false,
     )
     expect(JSON.parse(readFileSync(settings, 'utf8')).env).toEqual({})
   })

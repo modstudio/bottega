@@ -152,8 +152,9 @@ function adoptPermissionRules(
 export async function settingsRenderWriteCommand(
   flags: Flags,
   presentation: Presentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): Promise<void> {
-  if (isOrchWorkerProcess(process.env, process.pid)) {
+  if (workerProcess()) {
     throw new Error(
       'refusing settings render --write from an orch worker run; an operator must run orch settings render --write',
     )
