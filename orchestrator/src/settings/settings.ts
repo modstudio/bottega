@@ -2,13 +2,17 @@
 /** Pure owned Claude settings shape. Must not know filesystems, stores, commands, or transports. */
 import { z } from 'zod'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../../shared/settings-summary.ts'
 
 export { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 
 export const SETTINGS_SLUG = 'settings'
 export const SETTINGS_SCOPE = 'settings'
-export const PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
-export type PermissionList = (typeof PERMISSION_LISTS)[number]
+export const PERMISSION_LISTS = SETTINGS_PERMISSION_LISTS
+export type PermissionList = SettingsPermissionList
 
 export type OwnedSettings = {
   permissions: unknown

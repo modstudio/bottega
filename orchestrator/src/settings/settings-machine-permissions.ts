@@ -2,12 +2,13 @@
 /** Owns operator-only edits to the machine permission overlay. */
 import {
   editMachinePermission,
-  MACHINE_PERMISSION_LISTS,
-  type MachinePermissionList,
+  type MachinePermissionOperation,
 } from '../../../shared/machine-config.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../../shared/settings-summary.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
-
-export type MachinePermissionOperation = 'add' | 'remove' | 'drop' | 'undrop'
 
 export function editMachineSettingsPermission(
   input: {
@@ -18,10 +19,10 @@ export function editMachineSettingsPermission(
   env: NodeJS.ProcessEnv = process.env,
   pid = process.pid,
   inventory?: ProcessInventory,
-): { changed: boolean; counts: Record<MachinePermissionList, number>; message: string } {
-  if (!MACHINE_PERMISSION_LISTS.includes(input.list as MachinePermissionList))
+): { changed: boolean; counts: Record<SettingsPermissionList, number>; message: string } {
+  if (!SETTINGS_PERMISSION_LISTS.includes(input.list as SettingsPermissionList))
     throw new Error(
-      `refusing settings permission: --list must be ${MACHINE_PERMISSION_LISTS.join(', ')}`,
+      `refusing settings permission: --list must be ${SETTINGS_PERMISSION_LISTS.join(', ')}`,
     )
   const rule = input.rule?.trim()
   if (!rule) throw new Error('refusing settings permission: --rule is required')
@@ -31,7 +32,7 @@ export function editMachineSettingsPermission(
     )
   const result = editMachinePermission(
     input.operation,
-    input.list as MachinePermissionList,
+    input.list as SettingsPermissionList,
     rule,
     env,
   )

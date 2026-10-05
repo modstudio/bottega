@@ -1,12 +1,10 @@
 // concern: settings-permission-overlay
 /** Purely merges hosted permission rules with one machine overlay. */
-import type {
-  MachinePermissionList,
-  MachinePermissionOverlay,
-} from '../../../shared/machine-config.ts'
+import type { MachinePermissionOverlay } from '../../../shared/machine-config.ts'
+import type { SettingsPermissionList } from '../../../shared/settings-summary.ts'
 import { isPlainObject, type OwnedSettings, PERMISSION_LISTS, permissionLists } from './settings.ts'
 
-export type UnmatchedMachineDrop = { list: MachinePermissionList; rule: string }
+export type UnmatchedMachineDrop = { list: SettingsPermissionList; rule: string }
 
 export function mergeMachinePermissionOverlay(
   hosted: OwnedSettings,

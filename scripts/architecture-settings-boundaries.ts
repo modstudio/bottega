@@ -6,7 +6,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-boundary',
     file: `${source}settings.ts`,
-    allowed: ['zod', 'shared/secret-shaped.ts'],
+    allowed: ['zod', 'shared/secret-shaped.ts', 'shared/settings-summary.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep owned settings schema and extraction pure.',
   },
@@ -54,6 +54,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'shared/machine-config.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/project/projects.ts',
+      'orchestrator/src/run/run-process.ts',
       `${source}settings.ts`,
       `${source}settings-env.ts`,
       `${source}settings-files.ts`,
@@ -97,14 +98,18 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-permission-overlay-boundary',
     file: `${source}settings-permission-overlay.ts`,
-    allowed: ['shared/machine-config.ts', `${source}settings.ts`],
+    allowed: ['shared/machine-config.ts', 'shared/settings-summary.ts', `${source}settings.ts`],
     typeOnlyAllowed: [],
     reason: 'Keep hosted and machine permission merging pure.',
   },
   {
     name: 'settings-machine-permissions-boundary',
     file: `${source}settings-machine-permissions.ts`,
-    allowed: ['shared/machine-config.ts', 'orchestrator/src/run/run-process.ts'],
+    allowed: [
+      'shared/machine-config.ts',
+      'shared/settings-summary.ts',
+      'orchestrator/src/run/run-process.ts',
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep machine permission edits independent of CLI grammar and hosted settings.',
   },

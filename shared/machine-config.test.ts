@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
   editMachinePermission,
+  editMachinePermissionTable,
   MACHINE_CONFIG,
   readMachinePermissions,
   readMachineValue,
@@ -172,6 +173,32 @@ describe('machine config resolution', () => {
 })
 
 describe('machine permission overlay', () => {
+  test('pure permission edits add, remove, drop, and undrop without mutating the input', () => {
+    const original = { allow: ['Bash(git status)'], drop: { deny: ['Read(.env)'] } }
+    const added = editMachinePermissionTable(original, 'add', 'allow', 'Bash(git diff)')
+    expect(added).toEqual({
+      changed: true,
+      permissions: {
+        allow: ['Bash(git status)', 'Bash(git diff)'],
+        drop: { deny: ['Read(.env)'] },
+      },
+    })
+    expect(original).toEqual({ allow: ['Bash(git status)'], drop: { deny: ['Read(.env)'] } })
+    expect(
+      editMachinePermissionTable(added.permissions, 'remove', 'allow', 'Bash(git status)'),
+    ).toMatchObject({ changed: true, permissions: { allow: ['Bash(git diff)'] } })
+
+    const dropped = editMachinePermissionTable(original, 'drop', 'ask', 'Bash(rm *)')
+    expect(dropped.permissions.drop).toEqual({ deny: ['Read(.env)'], ask: ['Bash(rm *)'] })
+    expect(editMachinePermissionTable(dropped.permissions, 'undrop', 'ask', 'Bash(rm *)')).toEqual({
+      changed: true,
+      permissions: original,
+    })
+    expect(editMachinePermissionTable(original, 'add', 'allow', 'Bash(git status)').changed).toBe(
+      false,
+    )
+  })
+
   test('validates all optional lists and rejects malformed or unknown permission keys', () => {
     const root = mkdtempSync(join(tmpdir(), 'machine-permissions-schema-'))
     const config = join(root, 'config')
@@ -214,6 +241,48 @@ describe('machine permission overlay', () => {
       expect(readMachinePermissions(env).drop.ask).toEqual(['Bash(rm *)'])
       setMachineAutonomy('autonomy.stage.review', 'auto', env)
       expect(readFileSync(file, 'utf8')).toContain('review = "auto"')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('refuses secret-shaped rules on write without printing the rule', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-permissions-secret-write-'))
+    const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }
+    const secret = 'token=not-a-real-secret'
+    try {
+      expect(() => editMachinePermission('add', 'allow', secret, env)).toThrow(
+        /secret-shaped permission rule at permissions\.allow\[0\]/,
+      )
+      try {
+        editMachinePermission('add', 'allow', secret, env)
+      } catch (error) {
+        expect(String(error)).not.toContain(secret)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('refuses a secret-shaped rule read from disk with its drop list and position', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-permissions-secret-read-'))
+    const config = join(root, 'config')
+    const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+    const secret = 'Authorization: secret-value'
+    try {
+      mkdirSync(config)
+      writeFileSync(
+        join(config, 'machine.toml'),
+        `[permissions.drop]\nask = ["Bash(git status)", "${secret}"]\n`,
+      )
+      let message = ''
+      try {
+        readMachinePermissions(env)
+      } catch (error) {
+        message = String(error)
+      }
+      expect(message).toContain('secret-shaped permission rule at permissions.drop.ask[1]')
+      expect(message).not.toContain(secret)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

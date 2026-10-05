@@ -369,6 +369,8 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     './config-directory.ts',
     './release-autonomy.ts',
+    './secret-shaped.ts',
+    './settings-summary.ts',
   ]),
   module('shared/config-client.ts', [
     './http-json.ts',

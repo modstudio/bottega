@@ -13,6 +13,8 @@ import { z } from 'zod'
 import { AUTONOMY_PRESETS, AUTONOMY_STAGES, AUTONOMY_VALUES } from './autonomy.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
 import { RELEASE_AUTONOMY_VALUES } from './release-autonomy.ts'
+import { containsSecretShaped } from './secret-shaped.ts'
+import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
 
 type MachineConfigEntry = {
   environment?: string
@@ -69,19 +71,20 @@ type MachineConfigValue<Key extends MachineConfigKey> =
 
 const warnedLegacyVariables = new Set<string>()
 
-export const MACHINE_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
-export type MachinePermissionList = (typeof MACHINE_PERMISSION_LISTS)[number]
 export type MachinePermissionOverlay = {
-  additions: Record<MachinePermissionList, string[]>
-  drop: Record<MachinePermissionList, string[]>
+  additions: Record<SettingsPermissionList, string[]>
+  drop: Record<SettingsPermissionList, string[]>
 }
 
+const permissionRuleSchema = z
+  .string()
+  .refine((rule) => !containsSecretShaped(rule), 'secret-shaped permission rule')
 const permissionListsSchema = z
-  .object({
-    allow: z.array(z.string()).optional(),
-    ask: z.array(z.string()).optional(),
-    deny: z.array(z.string()).optional(),
-  })
+  .object(
+    Object.fromEntries(
+      SETTINGS_PERMISSION_LISTS.map((list) => [list, z.array(permissionRuleSchema).optional()]),
+    ) as Record<SettingsPermissionList, z.ZodOptional<z.ZodArray<typeof permissionRuleSchema>>>,
+  )
   .strict()
 const permissionsSchema = permissionListsSchema
   .extend({ drop: permissionListsSchema.optional() })
@@ -152,7 +155,20 @@ function validatePermissionsTable(
   path: string,
 ): boolean {
   if (prefix || name !== 'permissions') return false
-  if (!permissionsSchema.safeParse(child).success)
+  const result = permissionsSchema.safeParse(child)
+  if (result.success) return true
+  const secretIssue = result.error.issues.find(
+    (issue) => issue.message === 'secret-shaped permission rule',
+  )
+  if (secretIssue) {
+    const location = secretIssue.path.reduce<string>(
+      (current, part) =>
+        typeof part === 'number' ? `${current}[${part}]` : `${current}.${String(part)}`,
+      'permissions',
+    )
+    throw new Error(`refusing machine config ${path}: secret-shaped permission rule at ${location}`)
+  }
+  if (!result.success)
     throw new Error(
       `refusing machine config ${path}: permissions must contain only optional allow, ask, deny string lists and a drop table with the same lists`,
     )
@@ -288,8 +304,10 @@ function readMachineFile(path: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-function emptyPermissionLists(): Record<MachinePermissionList, string[]> {
-  return { allow: [], ask: [], deny: [] }
+function emptyPermissionLists(): Record<SettingsPermissionList, string[]> {
+  const lists = {} as Record<SettingsPermissionList, string[]>
+  for (const list of SETTINGS_PERMISSION_LISTS) lists[list] = []
+  return lists
 }
 
 export function readMachinePermissions(
@@ -300,14 +318,14 @@ export function readMachinePermissions(
   const drop = (permissions.drop ?? {}) as Record<string, unknown>
   const additions = emptyPermissionLists()
   const dropped = emptyPermissionLists()
-  for (const list of MACHINE_PERMISSION_LISTS) {
+  for (const list of SETTINGS_PERMISSION_LISTS) {
     additions[list] = [...((permissions[list] as string[] | undefined) ?? [])]
     dropped[list] = [...((drop[list] as string[] | undefined) ?? [])]
   }
   return { additions, drop: dropped }
 }
 
-type MachinePermissionOperation = 'add' | 'remove' | 'drop' | 'undrop'
+export type MachinePermissionOperation = 'add' | 'remove' | 'drop' | 'undrop'
 
 function atomicPatch(
   mutate: (root: Record<string, unknown>) => void,
@@ -343,33 +361,49 @@ function atomicPatch(
 
 export function editMachinePermission(
   operation: MachinePermissionOperation,
-  list: MachinePermissionList,
+  list: SettingsPermissionList,
   rule: string,
   env: ConfigEnvironment = process.env,
 ): { changed: boolean; overlay: MachinePermissionOverlay } {
   let changed = false
   atomicPatch((root) => {
-    if (root.permissions === undefined) root.permissions = {}
-    const permissions = root.permissions as Record<string, unknown>
-    if ((operation === 'drop' || operation === 'undrop') && permissions.drop === undefined)
-      permissions.drop = {}
-    const target =
-      operation === 'drop' || operation === 'undrop'
-        ? (permissions.drop as Record<string, unknown>)
-        : permissions
-    const values = [...((target[list] as string[] | undefined) ?? [])]
-    const remove = operation === 'remove' || operation === 'undrop'
-    const next = remove ? values.filter((value) => value !== rule) : [...values, rule]
-    const deduplicated = [...new Set(next)]
-    changed = deduplicated.length !== values.length || deduplicated.some((v, i) => v !== values[i])
-    if (deduplicated.length) target[list] = deduplicated
-    else delete target[list]
-    if (operation === 'drop' || operation === 'undrop') {
-      if (Object.keys(target).length === 0) delete permissions.drop
-    }
-    if (Object.keys(permissions).length === 0) delete root.permissions
+    const result = editMachinePermissionTable(
+      (root.permissions as Record<string, unknown> | undefined) ?? {},
+      operation,
+      list,
+      rule,
+    )
+    changed = result.changed
+    if (Object.keys(result.permissions).length) root.permissions = result.permissions
+    else delete root.permissions
   }, env)
   return { changed, overlay: readMachinePermissions(env) }
+}
+
+export function editMachinePermissionTable(
+  current: Record<string, unknown>,
+  operation: MachinePermissionOperation,
+  list: SettingsPermissionList,
+  rule: string,
+): { permissions: Record<string, unknown>; changed: boolean } {
+  const permissions = { ...current }
+  const useDrop = operation === 'drop' || operation === 'undrop'
+  const currentDrop = (current.drop as Record<string, unknown> | undefined) ?? {}
+  const target = useDrop ? { ...currentDrop } : permissions
+  const values = [...((target[list] as string[] | undefined) ?? [])]
+  const remove = operation === 'remove' || operation === 'undrop'
+  const next = remove ? values.filter((value) => value !== rule) : [...values, rule]
+  const deduplicated = [...new Set(next)]
+  const changed =
+    deduplicated.length !== values.length ||
+    deduplicated.some((value, index) => value !== values[index])
+  if (deduplicated.length) target[list] = deduplicated
+  else delete target[list]
+  if (useDrop) {
+    if (Object.keys(target).length) permissions.drop = target
+    else delete permissions.drop
+  }
+  return { permissions, changed }
 }
 
 const MACHINE_AUTONOMY_KEYS =

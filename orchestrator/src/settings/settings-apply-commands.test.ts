@@ -296,6 +296,14 @@ describe('worker settings apply refusals', () => {
     )
   })
 
+  test('settings render --write refuses a worker caller', async () => {
+    await expect(
+      settingsRenderWriteCommand(flags({ user: true, write: true, yes: true }), shown().port),
+    ).rejects.toThrow(
+      'refusing settings render --write from an orch worker run; an operator must run orch settings render --write',
+    )
+  })
+
   test('settings adopt allows an architect caller and refuses a worker caller', async () => {
     delete process.env.ORCH_RUN_ID
     await seedUser()

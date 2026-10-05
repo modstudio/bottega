@@ -5,6 +5,7 @@ import { gitToplevel } from '../../../shared/git.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   isPlainObject,
   type OwnedSettings,
@@ -152,6 +153,11 @@ export async function settingsRenderWriteCommand(
   flags: Flags,
   presentation: Presentation,
 ): Promise<void> {
+  if (isOrchWorkerProcess(process.env, process.pid)) {
+    throw new Error(
+      'refusing settings render --write from an orch worker run; an operator must run orch settings render --write',
+    )
+  }
   const target = resolveTarget(flags)
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const row = settingsRow(target, owner)

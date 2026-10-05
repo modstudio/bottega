@@ -45,10 +45,12 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [
     '../../../shared/machine-config.ts',
+    '../../../shared/settings-summary.ts',
     './settings.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-permissions.ts', [
     '../../../shared/machine-config.ts',
+    '../../../shared/settings-summary.ts',
     '../run/run-process.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-apply.ts', [
