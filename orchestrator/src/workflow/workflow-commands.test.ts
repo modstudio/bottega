@@ -9,6 +9,7 @@ import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from './workflo
 
 const presentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),
+  error: () => {},
   setExitCode: () => {},
 })
 
@@ -68,6 +69,7 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
     ['workflow', 'step', 'mode-less-step', step.slug, '--project', 'mode-less-step'],
     {
       log: (line) => lines.push(line),
+      error: () => {},
       setExitCode: () => {},
     },
   )
@@ -224,6 +226,111 @@ test('workflow exec keeps its cwd option out of the child argv', async () => {
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
+})
+
+test('workflow exec returns each child exit code after recording its row', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    upsertProject({
+      name: 'workflow-exec-status',
+      path: process.cwd(),
+      stack: 'bun',
+      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    })
+    const exits: number[] = []
+    const lines: string[] = []
+    const adapter = {
+      log: (line: string) => lines.push(line),
+      error: () => {},
+      setExitCode: (code: number) => exits.push(code),
+    }
+
+    await workflowCommand(['workflow', 'exec', '--', 'passing'], adapter, {
+      runner: () => ({ exitCode: 0, output: '' }),
+    })
+    await workflowCommand(['workflow', 'exec', '--', 'failing'], adapter, {
+      runner: () => ({ exitCode: 7, output: '' }),
+    })
+
+    expect(exits).toEqual([0, 7])
+    expect(lines).toHaveLength(2)
+    expect(
+      db()
+        .query("SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 2")
+        .all()
+        .reverse(),
+    ).toEqual([
+      { command: '["passing"]', exit_code: 0 },
+      { command: '["failing"]', exit_code: 7 },
+    ])
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('workflow exec preserves a signal sentinel and returns the shell signal status', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    upsertProject({
+      name: 'workflow-exec-signal',
+      path: process.cwd(),
+      stack: 'bun',
+      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    })
+    const exits: number[] = []
+    const errors: string[] = []
+
+    await workflowCommand(
+      ['workflow', 'exec', '--', 'signaled'],
+      {
+        log: () => {},
+        error: (line) => errors.push(line),
+        setExitCode: (code) => exits.push(code),
+      },
+      { runner: () => ({ exitCode: -1, output: '', signal: 'SIGTERM' }) },
+    )
+
+    expect(exits).toEqual([143])
+    expect(errors).toEqual(['orch workflow exec: command was killed by SIGTERM'])
+    expect(
+      db().query("SELECT exit_code FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1").get(),
+    ).toEqual({ exit_code: -1 })
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('workflow probe returns the recorded child exit code', async () => {
+  upsertProject({
+    name: 'workflow-probe-status',
+    path: process.cwd(),
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+  const exits: number[] = []
+
+  await workflowCommand(
+    ['workflow', 'probe', '--', 'failing'],
+    { log: () => {}, error: () => {}, setExitCode: (code) => exits.push(code) },
+    { runner: () => ({ exitCode: 9, output: '' }) },
+  )
+
+  expect(exits).toEqual([9])
+  expect(
+    db().query("SELECT exit_code FROM probe WHERE kind='probe' ORDER BY id DESC LIMIT 1").get(),
+  ).toEqual({ exit_code: 9 })
 })
 
 test('next resolves an omitted mode to the composed cursor default', async () => {
