@@ -273,13 +273,14 @@ test('a run-tied claim without a hosted run id stays live as a lasting refusal a
   })
 })
 
-test('a lasting hosted refusal leaves the message local and live and still sets the mark', async () => {
+test('a lasting hosted root refusal leaves its thread local and live and still sets the mark', async () => {
   presence()
-  const notice = postNotice(
+  const question = askQuestion(
     { audience: 'session:reader', title: 'refused', body: 'local remains' },
     {},
     NOW,
   )
+  const reply = replyToThread(question.id, 'reply remains', {}, NOW + 1)
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
@@ -290,11 +291,16 @@ test('a lasting hosted refusal leaves the message local and live and still sets 
       )
     },
   }
-  const result = await adoptHostedBoard({ confirm: 1, clock: NOW, client })
-  expect(result).toMatchObject({ status: 'adopted', refused: 1 })
-  expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(notice.id)).toEqual({
-    withdrawn_at: null,
-  })
+  const result = await adoptHostedBoard({ confirm: 2, clock: NOW + 2, client })
+  expect(result).toMatchObject({ status: 'adopted', refused: 2 })
+  expect(
+    db()
+      .query('SELECT id,withdrawn_at FROM board_message WHERE id IN (?,?) ORDER BY id')
+      .all(question.id, reply.id),
+  ).toEqual([
+    { id: question.id, withdrawn_at: null },
+    { id: reply.id, withdrawn_at: null },
+  ])
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
   ).toEqual({ value: '1' })

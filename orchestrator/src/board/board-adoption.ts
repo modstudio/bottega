@@ -125,6 +125,16 @@ function runRecordId(localId: number | null, database: Database): string | null 
 }
 
 function lastingLocalRefusal(candidate: Candidate, database: Database): string | null {
+  if (candidate.kind === 'reply') {
+    const root = database
+      .query<{ kind: LocalKind }, [number]>('SELECT kind FROM board_message WHERE id=?')
+      .get(candidate.row.thread_root_id!)
+    const rootLedger = root
+      ? ledger(database).get(`${root.kind}:${candidate.row.thread_root_id}`)
+      : undefined
+    if (rootLedger?.state === 'refused')
+      return `thread root ${candidate.row.thread_root_id} was refused by the hosted service: ${rootLedger.refusal}`
+  }
   if (candidate.kind === 'claim' && candidate.row.run_id !== null) {
     if (!runRecordId(candidate.row.run_id, database))
       return `claim run ${candidate.row.run_id} has no hosted record id; run orch sync --backfill and rerun orch board adopt`
@@ -136,11 +146,11 @@ function planFor(candidates: Candidate[], rows: Map<string, LedgerRow>, database
   const counts = emptyCounts()
   const stays: BoardAdoptionPlan['stays'] = []
   for (const candidate of candidates) {
-    counts[candidate.kind]++
     const recorded = rows.get(`${candidate.kind}:${candidate.id}`)
     const reason =
       recorded?.state === 'refused' ? recorded.refusal : lastingLocalRefusal(candidate, database)
     if (reason) stays.push({ kind: candidate.kind, id: candidate.id, reason })
+    else counts[candidate.kind]++
   }
   return {
     total: candidates.length,
@@ -359,6 +369,11 @@ async function uploadOneMessage(
     return 'continue'
   }
   const pending = pendingLedger(candidate, context.at, context.database)
+  const localRefusal = lastingLocalRefusal(candidate, context.database)
+  if (localRefusal) {
+    refuseCandidate(candidate, pending.hosted_id, localRefusal, context.at, context.database)
+    return 'continue'
+  }
   try {
     await uploadMessage(
       candidate,
