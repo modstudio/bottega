@@ -21,7 +21,7 @@ import {
   type AutonomyPreset,
   type AutonomyValue,
 } from '../../../../shared/autonomy'
-import { SHIP_TO_VALUES, type ShipToValue } from '../../../../shared/ship-to'
+import { isShipToValue, SHIP_TO_VALUES } from '../../../../shared/ship-to'
 
 export const Route = createFileRoute('/context')({ component: ManagedContextPage })
 
@@ -437,13 +437,11 @@ function AutonomySection({
                   value={autonomy.data.shipTo.machineValue}
                   options={shipToValues}
                   pending={machinePending}
-                  onSet={(next) =>
-                    setMachine.mutate({
-                      project,
-                      kind: 'shipTo',
-                      value: next as ShipToValue,
-                    })
-                  }
+                  onSet={(next) => {
+                    if (isShipToValue(next)) {
+                      setMachine.mutate({ project, kind: 'shipTo', value: next })
+                    }
+                  }}
                   onRemove={() => clearMachine.mutate({ project, kind: 'shipTo' })}
                 />
               </span>
@@ -453,12 +451,9 @@ function AutonomySection({
                 label="ship to"
                 value={autonomy.data.shipTo.value}
                 options={shipToValues}
-                onChange={(next) =>
-                  updateShipTo.mutate({
-                    project,
-                    value: next as ShipToValue,
-                  })
-                }
+                onChange={(next) => {
+                  if (isShipToValue(next)) updateShipTo.mutate({ project, value: next })
+                }}
               />
             }
           />
@@ -594,13 +589,15 @@ function HostedAutonomySection({
                 label="ship to"
                 value={user.shipTo?.value ?? ''}
                 options={shipToValues}
-                onChange={(next) =>
-                  updateShipTo.mutate({
-                    project,
-                    value: next as ShipToValue,
-                    expectedRowVersion: user.shipTo?.rowVersion ?? null,
-                  })
-                }
+                onChange={(next) => {
+                  if (isShipToValue(next)) {
+                    updateShipTo.mutate({
+                      project,
+                      value: next,
+                      expectedRowVersion: user.shipTo?.rowVersion ?? null,
+                    })
+                  }
+                }}
               />
             }
           />
