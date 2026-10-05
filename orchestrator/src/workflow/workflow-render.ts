@@ -81,7 +81,8 @@ export function renderWorkflowComposition(result: WorkflowComposition): string {
     ...(result.needs.mode ?? []).map((mode) => `${mode.slug}: ${mode.entry}`),
     ...(result.needs.mode
       ? [
-          'Choose a mode by answering its question. Next call: MCP `compose_workflow` or `get_workflow_step` with `mode`; CLI `orch workflow compose ' +
+          'Choose a mode by answering its question, then compose again with that mode.',
+          'Next call: MCP `compose_workflow` or `get_workflow_step` with `mode`; CLI `orch workflow compose ' +
             `${result.workflow.slug} --project ${result.project} --mode <mode>\`.`,
         ]
       : []),
@@ -106,8 +107,9 @@ export function renderWorkflowStep(step: WorkflowStep): string {
       : step.resolvedAutonomy.value === 'review'
         ? 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
         : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-  const close =
-    "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met;"
+  const cursor = step.cursor ? ` with cursor ${step.cursor}` : ''
+  const cliCursor = step.cursor ? ` --cursor ${step.cursor}` : ''
+  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`orch workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
   const pointer =
     step.next === undefined
       ? `${close} that serves the following step from the workflow's step list.`
@@ -120,5 +122,5 @@ export function renderWorkflowStep(step: WorkflowStep): string {
     (kind) => `Evidence for ${kind}: ${floorGuidance[kind as FloorKind]}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
-  return `${notice}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}${step.cursor ? ` Use cursor ${step.cursor} for the next call.` : ''}`
+  return `${notice}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
 }

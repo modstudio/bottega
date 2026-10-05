@@ -247,9 +247,23 @@ async function stepCommand(
 ): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
-  const mode = flagValue(argv, 'mode')
+  const requestedMode = flagValue(argv, 'mode')
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
+  const context = cliWorkflowCursorContext()
+  const mode = cursor
+    ? resolveWorkflowCursorMode(
+        argv[2]!,
+        project,
+        requestedMode,
+        args,
+        context,
+        'orch workflow step',
+        'pass --mode <slug>',
+        undefined,
+        cursor,
+      )
+    : requestedMode
   const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
@@ -275,7 +289,7 @@ async function stepCommand(
         stepSlug,
         args,
         mode,
-        cliWorkflowCursorContext(),
+        context,
         undefined,
         autonomy,
         cursor,

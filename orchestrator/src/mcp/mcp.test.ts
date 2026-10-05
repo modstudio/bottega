@@ -220,6 +220,36 @@ describe('orch MCP', () => {
     }
   })
 
+  test('workflow operation tools expose cursor handles and abandonment parity', async () => {
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const tools = (await client.listTools()).tools
+      for (const name of [
+        'get_workflow_step',
+        'next_workflow_step',
+        'await_workflow_ruling',
+        'rule_workflow',
+      ]) {
+        expect(tools.find((tool) => tool.name === name)?.inputSchema.properties).toHaveProperty(
+          'cursor',
+        )
+      }
+      expect(tools.find((tool) => tool.name === 'abandon_workflow')?.inputSchema.required).toEqual(
+        expect.arrayContaining(['cursor', 'reason']),
+      )
+      expect(tools.find((tool) => tool.name === 'compose_workflow')?.description).toContain(
+        'without opening a run',
+      )
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('file_issue advertises every accepted input field', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })

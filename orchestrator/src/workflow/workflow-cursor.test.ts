@@ -68,7 +68,8 @@ function installEvidence(
   const row = d
     .query<{ id: number; ordinal: number; step_slug: string; state: string }, string[]>(
       `SELECT id,ordinal,step_slug,state FROM workflow_cursor
-        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=?`,
+        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+          AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY id DESC`,
     )
     .get(project, slug, mode, key, instance)
   if (!row || row.state === 'done' || row.state === 'abandoned') return {}
@@ -334,6 +335,141 @@ describe('workflow cursor adapter', () => {
     )
   })
 
+  test('two keyless runs in one session have distinct handles and advance independently', () => {
+    const d = database()
+    const first = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', {}, 'default', context, d)
+    const second = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', {}, 'default', context, d)
+    expect(first.cursor).not.toBe(second.cursor)
+    expect(first.notice).toContain(`Cursor ${first.cursor} was opened`)
+    expect(second.notice).toContain(`Cursor ${second.cursor} was opened`)
+    d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
+
+    nextWorkflowStep(
+      'ship',
+      'fixture',
+      'default',
+      {},
+      'first advanced',
+      context,
+      d,
+      {},
+      testPorts,
+      first.cursor,
+    )
+    expect(d.query('SELECT ordinal FROM workflow_cursor WHERE id=?').get(first.cursor)).toEqual({
+      ordinal: 1,
+    })
+    expect(d.query('SELECT ordinal FROM workflow_cursor WHERE id=?').get(second.cursor)).toEqual({
+      ordinal: 0,
+    })
+    expect(() =>
+      nextWorkflowStep('ship', 'fixture', 'default', {}, 'ambiguous', context, d, {}, testPorts),
+    ).toThrow(new RegExp(`cursor ${first.cursor}.*cursor ${second.cursor}`, 's'))
+  })
+
+  test('a handle validates supplied identity and serves the active step for an earlier request', () => {
+    const d = database()
+    const opened = getWorkflowStepWithCursor(
+      'ship',
+      'fixture',
+      'rebase',
+      args,
+      'default',
+      context,
+      d,
+    )
+    d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
+    nextWorkflowStep(
+      'ship',
+      'fixture',
+      'default',
+      args,
+      'advanced',
+      context,
+      d,
+      {},
+      testPorts,
+      opened.cursor,
+    )
+    const served = getWorkflowStepWithCursor(
+      'ship',
+      'fixture',
+      'rebase',
+      args,
+      'default',
+      context,
+      d,
+      undefined,
+      opened.cursor,
+    )
+    expect(served.slug).toBe('lens')
+    expect(served.notice).toContain('Requested step 1 rebase; serving active step 2 lens.')
+    expect(() =>
+      getWorkflowStepWithCursor(
+        'ship',
+        'wrong-project',
+        'lens',
+        args,
+        'default',
+        context,
+        d,
+        undefined,
+        opened.cursor,
+      ),
+    ).toThrow(`cursor ${opened.cursor} project mismatch`)
+  })
+
+  test('closing with task adopts a key once and rekeys cursor questions', () => {
+    const d = database()
+    const opened = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', {}, 'default', context, d)
+    awaitWorkflowRuling(
+      'ship',
+      'fixture',
+      'default',
+      {},
+      'Which task?',
+      context,
+      d,
+      () => {},
+      opened.cursor,
+    )
+    d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
+    nextWorkflowStep(
+      'ship',
+      'fixture',
+      'default',
+      {},
+      'task created',
+      context,
+      d,
+      { task: 'DEV-1082' },
+      testPorts,
+      opened.cursor,
+    )
+    const adopted = d
+      .query('SELECT workflow_key,args FROM workflow_cursor WHERE id=?')
+      .get(opened.cursor) as { workflow_key: string; args: string }
+    expect(adopted.workflow_key).toBe('DEV-1082')
+    expect(JSON.parse(adopted.args).key).toBe('DEV-1082')
+    expect(d.query('SELECT workflow_key FROM question').get()).toEqual({
+      workflow_key: 'DEV-1082',
+    })
+    expect(() =>
+      nextWorkflowStep(
+        'ship',
+        'fixture',
+        'default',
+        {},
+        'different task',
+        context,
+        d,
+        { task: 'DEV-9999' },
+        testPorts,
+        opened.cursor,
+      ),
+    ).toThrow(`cursor ${opened.cursor} is already assigned to DEV-1082`)
+  })
+
   test('compose creates once and recompose reports an advanced cursor', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
@@ -343,7 +479,7 @@ describe('workflow cursor adapter', () => {
 
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
     expect(renderWorkflowComposition(recomposed)).toContain(
-      'Cursor: at step 2 lens (running); continue with next.',
+      'Cursor 1 is already open at step 2 lens for DEV-822',
     )
   })
 
@@ -395,7 +531,7 @@ describe('workflow cursor adapter', () => {
 
     const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
 
-    expect(recomposed.cursor).toMatchObject({ n: 0, slug: 'rebase', state: 'running' })
+    expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
     const rows = d
       .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
       .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
@@ -415,7 +551,7 @@ describe('workflow cursor adapter', () => {
 
     const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
 
-    expect(recomposed.cursor).toMatchObject({ n: 0, slug: 'rebase', state: 'running' })
+    expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
     const rows = d
       .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
       .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
@@ -491,7 +627,7 @@ describe('workflow cursor adapter', () => {
     )
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toHaveLength(1)
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!.line).toBe(
-      'ship DEV-822 fixture step 1/9 rebase running next: lens',
+      'cursor 1 ship default DEV-822 fixture step 1/9 rebase running next: lens',
     )
     let output = ''
     for (const step of composition.steps) {
@@ -872,7 +1008,7 @@ describe('workflow cursor adapter', () => {
       d,
     )
     expect(renderWorkflowComposition(recomposed)).toContain(
-      'Cursor: at step 2 lens (running); continue with next. This cursor was driven by session session-one and is now yours.',
+      'Cursor 1 is already open at step 2 lens for DEV-822, (running); continue with next. This cursor was driven by session session-one and is now yours.',
     )
     expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
       session_id: 'session-two',

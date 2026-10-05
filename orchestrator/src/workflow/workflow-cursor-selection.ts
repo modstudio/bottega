@@ -40,9 +40,9 @@ export function selectWorkflowCursor(
   d: Database,
 ): SelectableCursorRow | null {
   if (cursor !== undefined) {
-    const row = d.query('SELECT * FROM workflow_cursor WHERE id=?').get(cursor) as
-      | SelectableCursorRow
-      | null
+    const row = d
+      .query('SELECT * FROM workflow_cursor WHERE id=?')
+      .get(cursor) as SelectableCursorRow | null
     if (!row) throw new Error(`workflow cursor ${cursor} does not exist`)
     if (identity.project && identity.project !== row.project)
       mismatch(cursor, 'project', identity.project, row.project)
@@ -60,11 +60,14 @@ export function selectWorkflowCursor(
       .query(
         `SELECT * FROM workflow_cursor
          WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-           AND state NOT IN ('done','abandoned') ORDER BY id LIMIT 1`,
+           AND instance_id='' ORDER BY id DESC LIMIT 1`,
       )
-      .get(identity.project, identity.workflow, identity.mode, identity.key) as
-      | SelectableCursorRow
-      | null
+      .get(
+        identity.project,
+        identity.workflow,
+        identity.mode,
+        identity.key,
+      ) as SelectableCursorRow | null
   }
   if (!ownerSession) return null
   const rows = d

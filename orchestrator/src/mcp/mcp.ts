@@ -425,9 +425,25 @@ export function createDocsMcpServer(): McpServer {
       }),
     },
     async ({ slug, project, step, mode, args, autonomy, cursor }) => {
-      const preliminary = composeWorkflow(slug, project, mode, args ?? {})
-      const stepSlug = mode ? step : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
-      const preliminaryStep = mode
+      const context = mcpWorkflowCursorContext()
+      const effectiveMode = cursor
+        ? resolveWorkflowCursorMode(
+            slug,
+            project,
+            mode,
+            args ?? {},
+            context,
+            'get_workflow_step',
+            'pass the mode argument',
+            undefined,
+            cursor,
+          )
+        : mode
+      const preliminary = composeWorkflow(slug, project, effectiveMode, args ?? {})
+      const stepSlug = effectiveMode
+        ? step
+        : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
+      const preliminaryStep = effectiveMode
         ? undefined
         : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })
       const resolved = await resolveProjectAutonomy(
@@ -439,14 +455,14 @@ export function createDocsMcpServer(): McpServer {
       )
       return text(
         renderWorkflowStep(
-          mode
+          effectiveMode
             ? getWorkflowStepWithCursor(
                 slug,
                 project,
                 stepSlug,
                 args ?? {},
-                mode,
-                mcpWorkflowCursorContext(),
+                effectiveMode,
+                context,
                 undefined,
                 resolved,
                 cursor,
