@@ -428,18 +428,23 @@ const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionS
 function shipToFact(
   project: { name: string; settings: { release?: { rungs: { name: string }[] } } },
   needs: readonly WorkflowFactSource[],
+  needsCloseState: boolean,
   args: Record<string, string>,
   autonomy: AutonomyResolution,
   projectFacts: Record<string, unknown>,
 ) {
   if (!needs.includes('ship-to')) return {}
+  if (autonomy.shipTo.complete === false)
+    throw new Error(
+      `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>`,
+    )
   const decision = decideShipToReach(
     autonomy.shipTo.value,
     project.settings.release?.rungs.map(({ name }) => name) ?? [],
     args.depth,
   )
   if (!decision.allowed) throw new Error(decision.refusal)
-  const tracker = needs.includes('tracker')
+  const tracker = needsCloseState
     ? (projectFacts.tracker as { states: Partial<Record<'review' | 'done', string>> })
     : undefined
   if (tracker && decision.remaining.length && !tracker.states.review)
@@ -562,7 +567,14 @@ export function composeWorkflow(
   )
   const facts = {
     ...projectFacts,
-    ...shipToFact(project, allNeeds, args, effectiveAutonomy, projectFacts),
+    ...shipToFact(
+      project,
+      allNeeds,
+      selected.some((step) => step.needs.includes('ship-to') && step.needs.includes('tracker')),
+      args,
+      effectiveAutonomy,
+      projectFacts,
+    ),
   }
   return {
     workflow: {
@@ -663,7 +675,14 @@ export function getWorkflowStep(
   )
   const facts = {
     ...projectFacts,
-    ...shipToFact(project, step.needs, args, effectiveAutonomy, projectFacts),
+    ...shipToFact(
+      project,
+      step.needs,
+      step.needs.includes('ship-to') && step.needs.includes('tracker'),
+      args,
+      effectiveAutonomy,
+      projectFacts,
+    ),
   }
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   const resolve = (template: string) =>
