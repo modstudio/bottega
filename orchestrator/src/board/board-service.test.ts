@@ -54,6 +54,115 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
   expect(noticeStatus(posted.id, {}).unacknowledged).toEqual([])
 })
 
+test('tagged project notice follows matching run paths at posting and for a late session', () => {
+  const clock = Date.now() + 10_000
+  const project = 'board-routing-project'
+  const insertPresence = db().query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?)`,
+  )
+  const insertRun = db().query(
+    `INSERT INTO run
+     (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,changed_paths)
+     VALUES (?,'codex','implement','sha',1,'prompt','ok',?,?)`,
+  )
+  for (const [session, paths] of [
+    ['matching-reader', ['orchestrator/src/board/board-service.ts']],
+    ['other-reader', ['hub/web/src/routes/index.tsx']],
+  ] as const) {
+    insertPresence.run(session, project, new Date(clock).toISOString())
+    insertRun.run(new Date(clock).toISOString(), session, JSON.stringify(paths))
+  }
+  const posted = postNotice(
+    {
+      audience: `project:${project}`,
+      title: 'Board work',
+      body: 'The board service changed.',
+      paths: ['orchestrator/src/board/**'],
+    },
+    {},
+    clock,
+  )
+  expect(posted.reached).toBe(1)
+  const matchingNotices = claimNotices(
+    false,
+    { CLAUDE_CODE_SESSION_ID: 'matching-reader' },
+    clock + 1,
+  )
+  expect(matchingNotices.map((notice) => notice.id)).toEqual([posted.id])
+  expect(matchingNotices[0]!.text).toContain('Tags: path:orchestrator/src/board/**')
+  expect(claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'other-reader' }, clock + 1)).toEqual([])
+
+  insertPresence.run('late-reader', project, new Date(clock + 2).toISOString())
+  insertRun.run(
+    new Date(clock + 2).toISOString(),
+    'late-reader',
+    JSON.stringify(['orchestrator/src/board/board-routing.ts']),
+  )
+  expect(
+    claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3).map(
+      (notice) => notice.id,
+    ),
+  ).toEqual([posted.id])
+  readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4)
+  expect(noticeStatus(posted.id, {}).reached).toBe(2)
+})
+
+test('an untagged notice infers no tags', () => {
+  const posted = postNotice(
+    {
+      audience: 'operator',
+      title: 'No context',
+      body: 'Even a quoted `orchestrator/src/board/board-service.ts` stays untagged.',
+    },
+    {},
+    Date.now() + 15_000,
+  )
+  expect(db().query('SELECT * FROM board_message_tag WHERE message_id=?').all(posted.id)).toEqual(
+    [],
+  )
+})
+
+test('duplicate notices require the same order-independent sender tag set', () => {
+  const clock = Date.now() + 17_000
+  const input = {
+    audience: 'project:board-duplicate-tags',
+    title: 'Retarget this notice',
+    body: 'No live session initially matches.',
+  }
+  const first = postNotice(
+    { ...input, paths: ['orchestrator/src/first/**'], topics: ['gate', 'infra'] },
+    {},
+    clock,
+  )
+  expect(first.reached).toBe(0)
+  expect(first.dropped).toBeFalse()
+  expect(first.warning).toBe(
+    'reached no live session; re-address it or wait for a matching session',
+  )
+
+  const retargeted = postNotice(
+    { ...input, paths: ['orchestrator/src/second/**'], topics: ['gate', 'infra'] },
+    {},
+    clock + 1,
+  )
+  expect(retargeted.id).not.toBe(first.id)
+  expect(retargeted.reached).toBe(0)
+  expect(retargeted.dropped).toBeFalse()
+
+  const duplicate = postNotice(
+    { ...input, paths: ['orchestrator/src/second/**'], topics: ['infra', 'gate'] },
+    {},
+    clock + 2,
+  )
+  expect(duplicate).toEqual({
+    id: retargeted.id,
+    dropped: true,
+    reached: 0,
+    warning: 'reached no live session; re-address it or wait for a matching session',
+  })
+})
+
 test('a session-start notice dropped for budget stays unread until a stamping read', () => {
   const clock = Date.now() + 20_000
   db()
@@ -134,6 +243,30 @@ test('secret-shaped title or body is refused before storage without echoing it',
   expect(
     db().query('SELECT id FROM board_message WHERE title=? OR body=?').all(planted, planted),
   ).toEqual([])
+})
+
+test('secret-shaped sender tag values are refused before storage without echoing them', () => {
+  const planted = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890'
+  const before = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
+    .count
+  for (const tags of [{ task: planted }, { paths: [planted] }, { topics: [planted] }]) {
+    let output = ''
+    try {
+      postNotice(
+        { audience: 'operator', title: 'safe', body: 'safe', ...tags },
+        {},
+        Date.now() + 55_000,
+      )
+    } catch (error) {
+      output = String(error)
+    }
+    expect(output).toContain('board notice tag contains secret-shaped text')
+    expect(output).toContain('remove the credential and retry')
+    expect(output).not.toContain(planted)
+  }
+  const after = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
+    .count
+  expect(after).toBe(before)
 })
 
 test('post content accepts exact size boundaries and refuses one character over', () => {

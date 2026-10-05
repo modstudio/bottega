@@ -111,7 +111,10 @@ test('board origin snapshot migration backfills an existing architect notice', (
          VALUES ('notice','architect','author','operator','Title','Body',0,'2026-10-03','2026-10-02')`,
       )
       .run()
-    expect(applyMigrations(database)).toEqual(['0074_board_origin_snapshot'])
+    expect(applyMigrations(database)).toEqual([
+      '0074_board_origin_snapshot',
+      '0075_board_message_tags',
+    ])
     expect(database.query('SELECT author_harness,author_project FROM board_message').get()).toEqual(
       { author_harness: 'claude-code', author_project: 'posting-project' },
     )
@@ -345,6 +348,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0072_release_ledger',
       '0073_board_notices',
       '0074_board_origin_snapshot',
+      '0075_board_message_tags',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -455,6 +459,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0072_release_ledger',
       '0073_board_notices',
       '0074_board_origin_snapshot',
+      '0075_board_message_tags',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -547,6 +552,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0072_release_ledger',
       '0073_board_notices',
       '0074_board_origin_snapshot',
+      '0075_board_message_tags',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -620,6 +626,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0072_release_ledger',
       '0073_board_notices',
       '0074_board_origin_snapshot',
+      '0075_board_message_tags',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',

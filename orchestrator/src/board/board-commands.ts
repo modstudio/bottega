@@ -21,6 +21,8 @@ function parseBoardDuration(value: string): number {
   return amount * factor
 }
 
+const collect = (value: string, values: string[]) => [...values, value]
+
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
   board.command('presence').action(() => {
@@ -31,24 +33,27 @@ export function registerBoardCommands(program: Command): void {
     .requiredOption('--audience <expr>')
     .requiredOption('--title <text>')
     .requiredOption('--body <text>')
+    .option('--task <key>')
+    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
+    .option('--topic <name>', 'add a controlled board topic', collect, [])
     .option('--ack-required')
     .option('--deadline <duration>')
     .option('--expires <duration>')
     .action((options) => {
       if (options.deadline && !options.ackRequired)
         throw new Error('--deadline requires --ack-required')
-      console.log(
-        JSON.stringify(
-          postNotice({
-            audience: options.audience,
-            title: options.title,
-            body: options.body,
-            ackRequired: Boolean(options.ackRequired),
-            deadlineMs: options.deadline ? parseBoardDuration(options.deadline) : undefined,
-            expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
-          }),
-        ),
-      )
+      const posted = postNotice({
+        audience: options.audience,
+        title: options.title,
+        body: options.body,
+        task: options.task,
+        paths: options.path,
+        topics: options.topic,
+        ackRequired: Boolean(options.ackRequired),
+        deadlineMs: options.deadline ? parseBoardDuration(options.deadline) : undefined,
+        expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
+      })
+      console.log(JSON.stringify(posted))
     })
   board
     .command('read')

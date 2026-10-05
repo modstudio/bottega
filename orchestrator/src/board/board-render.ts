@@ -1,4 +1,5 @@
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
+import type { BoardTag } from './board-tags.ts'
 
 export function renderBoardNotice(message: {
   id: number
@@ -10,6 +11,7 @@ export function renderBoardNotice(message: {
   body: string
   expiresAt: string
   ackRequired: boolean
+  tags: BoardTag[]
 }): string {
   const origin =
     message.authorKind === 'operator'
@@ -22,6 +24,7 @@ export function renderBoardNotice(message: {
     `Title: ${message.title.slice(0, BOARD_TITLE_MAX_CHARS)}`,
     `Expires: ${message.expiresAt}`,
     `Acknowledgement: ${message.ackRequired ? `required; run orch board ack ${message.id}` : 'not required'}`,
+    `Tags: ${message.tags.length ? message.tags.map((tag) => `${tag.kind}:${tag.value}`).join(', ') : 'none'}`,
     `> ${message.body.slice(0, BOARD_BODY_MAX_CHARS).replaceAll('\n', '\n> ')}`,
   ].join('\n')
 }

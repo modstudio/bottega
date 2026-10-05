@@ -24,22 +24,28 @@ export function registerBoardTools(server: McpServer): void {
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        task: z.string().min(1).optional(),
+        path: z.array(z.string()).optional(),
+        topic: z.array(z.string()).optional(),
         ack_required: z.boolean().optional(),
         deadline_ms: z.number().int().positive().optional(),
         expires_ms: z.number().int().positive().optional(),
       }),
     },
-    async (input) =>
-      result(
-        postNotice({
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          ackRequired: input.ack_required,
-          deadlineMs: input.deadline_ms,
-          expiresMs: input.expires_ms,
-        }),
-      ),
+    async (input) => {
+      const posted = postNotice({
+        audience: input.audience,
+        title: input.title,
+        body: input.body,
+        task: input.task,
+        paths: input.path,
+        topics: input.topic,
+        ackRequired: input.ack_required,
+        deadlineMs: input.deadline_ms,
+        expiresMs: input.expires_ms,
+      })
+      return result(posted)
+    },
   )
   server.registerTool(
     'board_read',
