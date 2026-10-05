@@ -8,7 +8,7 @@ import {
   RecordBoardError,
 } from './record-board-contract.ts'
 import { hostedBoardMessageView } from './record-board-messages.ts'
-import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
+import { boardUuidArray, type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
@@ -37,13 +37,13 @@ export async function listHostedBoardChanges(
     const ids = messages.map((row) => String(row.id))
     const tagRows = (await tx`
       SELECT message_id, kind, value, origin FROM board_message_tag
-      WHERE message_id = ANY(COALESCE(string_to_array(nullif(${ids.join(',')}, ''), ',')::uuid[], ARRAY[]::uuid[]))
+      WHERE message_id = ANY(COALESCE(${boardUuidArray(tx, ids)}, ARRAY[]::uuid[]))
       ORDER BY kind, value, origin
     `) as Record<string, unknown>[]
     const receiptRows = (await tx`
       SELECT * FROM board_receipt
       WHERE reader_user_id=${input.userId}::uuid
-        AND message_id = ANY(COALESCE(string_to_array(nullif(${ids.join(',')}, ''), ',')::uuid[], ARRAY[]::uuid[]))
+        AND message_id = ANY(COALESCE(${boardUuidArray(tx, ids)}, ARRAY[]::uuid[]))
     `) as Record<string, unknown>[]
     const tagsByMessage = new Map<string, BoardTag[]>()
     for (const row of tagRows) {

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { idleBoardDeps } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
@@ -132,4 +133,49 @@ test('board changes query refuses a non-integer after cursor', async () => {
   const response = await app.request('/v1/board/changes?after=abc')
   expect(response.status).toBe(400)
   expect(await response.json()).toEqual({ error: 'invalid board changes query' })
+})
+
+test('a board trigger exception is a named refusal not a server error', async () => {
+  const app = appWith(identity, {
+    replyBoardMessage: async () => {
+      throw new SQL.PostgresError('board reply scope and recipients must match thread root', {
+        code: 'ERR_POSTGRES_SERVER_ERROR',
+        errno: 'P0001',
+      })
+    },
+  })
+  const response = await app.request(`/v1/board/messages/${newRecordId()}/replies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: newRecordId(), body: 'Answer' }),
+  })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({
+    error: 'board reply scope and recipients must match thread root',
+  })
+})
+
+test('a row-level security denial is a named refusal not a server error', async () => {
+  const app = appWith(identity, {
+    postBoardMessage: async () => {
+      throw new SQL.PostgresError(
+        'new row violates row-level security policy for table "board_message"',
+        { code: 'ERR_POSTGRES_SERVER_ERROR', errno: 42501 as unknown as string },
+      )
+    },
+  })
+  const response = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: newRecordId(),
+      kind: 'notice',
+      audience: 'operator',
+      title: 'Hi',
+      body: 'There',
+      expiresAt,
+    }),
+  })
+  expect(response.status).toBe(400)
+  expect(JSON.stringify(await response.json())).toContain('row-level security')
 })

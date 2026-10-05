@@ -6,6 +6,7 @@ import {
   hostedBoardPostRefusal,
   hostedBoardScope,
   hostedProjectNameForAudience,
+  hostedUuidList,
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
 
@@ -98,3 +99,17 @@ test('idempotent create content ignores author identity and treats equal timesta
     ),
   ).toBeTrue()
 })
+
+test('hosted uuid lists decode Postgres array literals the JS array check misses', () => {
+  const id = '03990000-0000-7000-8000-000000000011'
+  expect(hostedUuidList(`{${id}}`)).toEqual([id])
+  expect(hostedUuidList([id])).toEqual([id])
+  expect(hostedUuidList(null)).toEqual([])
+  expect(hostedUuidList('{}')).toEqual([])
+  expect(
+    sameHostedBoardCreateContent(
+      { ...empty, scopeProjectIds: hostedUuidList(`{${id}}`) },
+      { ...empty, scopeProjectIds: [id] },
+    ),
+  ).toBeTrue()
+}))

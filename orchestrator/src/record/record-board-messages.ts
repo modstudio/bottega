@@ -41,23 +41,23 @@ import {
   hostedBoardPostRefusal,
   hostedBoardScope,
   hostedProjectNameForAudience,
+  hostedUuidList,
   parseHostedAudience,
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
 import {
+  boardUuidArray,
   type BoardTenant,
   isUniqueViolation,
-  uuidListSql,
   withBoardTenant,
 } from './record-board-tx.ts'
 
 const RATE_LIMITED = 'board post rate limit reached; retry after the ten-minute author window'
 
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
-
-const asStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return []
-  return value.map((entry) => String(entry))
+const iso = (value: unknown) => {
+  if (value == null) return null
+  if (value instanceof Date) return value.toISOString()
+  return new Date(String(value)).toISOString()
 }
 
 function asTags(rows: Record<string, unknown>[]): BoardTag[] {
@@ -112,8 +112,8 @@ export function hostedBoardMessageView(
     noteId: row.note_id == null ? null : String(row.note_id),
     notePendingError: row.note_pending_error == null ? null : String(row.note_pending_error),
     revision: String(row.revision),
-    scopeProjectIds: asStringArray(row.scope_project_ids),
-    recipientUserIds: asStringArray(row.recipient_user_ids),
+    scopeProjectIds: hostedUuidList(row.scope_project_ids),
+    recipientUserIds: hostedUuidList(row.recipient_user_ids),
     claimId: row.claim_id == null ? null : String(row.claim_id),
     authorUserId: String(row.author_user_id),
     authorSession: row.author_session == null ? null : String(row.author_session),
@@ -141,8 +141,8 @@ function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBo
     ackDeadline: iso(row.ack_deadline),
     expiresAt: iso(row.expires_at),
     threadRootId: row.thread_root_id == null ? null : String(row.thread_root_id),
-    scopeProjectIds: asStringArray(row.scope_project_ids),
-    recipientUserIds: asStringArray(row.recipient_user_ids),
+    scopeProjectIds: hostedUuidList(row.scope_project_ids),
+    recipientUserIds: hostedUuidList(row.recipient_user_ids),
     claimId: row.claim_id == null ? null : String(row.claim_id),
     senderTags: tags
       .filter((tag) => tag.origin === 'sender')
@@ -251,10 +251,6 @@ async function insertTags(tx: SQL, messageId: string, tags: BoardTag[]): Promise
   }
 }
 
-function scopeSql(ids: string[]): string {
-  return uuidListSql(ids)
-}
-
 async function insertRoot(
   tx: SQL,
   input: HostedBoardPostInput,
@@ -263,6 +259,7 @@ async function insertRoot(
   audience: Audience,
   tags: BoardTag[],
   clock: number,
+  forcedScope?: { scopeProjectIds: string[]; recipientUserIds: string[] },
 ): Promise<string> {
   const projectName = hostedProjectNameForAudience(audience, input.project)
   if (
@@ -288,8 +285,8 @@ async function insertRoot(
     )
   }
   const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-  const derived = hostedBoardScope(audience, projectId)
-  const recipients = input.recipientUserIds ?? derived.recipientUserIds
+  const derived = forcedScope ?? hostedBoardScope(audience, projectId)
+  const recipients = forcedScope?.recipientUserIds ?? input.recipientUserIds ?? derived.recipientUserIds
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
   await tx`
@@ -303,12 +300,29 @@ async function insertRoot(
       ${input.kind}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
       ${input.ackDeadline ?? null}::timestamptz, ${input.expiresAt}::timestamptz,
       ${createdAt}::timestamptz, ${input.claimId ?? null}::uuid,
-      COALESCE(string_to_array(nullif(${scopeSql(derived.scopeProjectIds)}, ''), ',')::uuid[], ARRAY[]::uuid[]),
-      COALESCE(string_to_array(nullif(${scopeSql(recipients)}, ''), ',')::uuid[], ARRAY[]::uuid[])
+      COALESCE(${boardUuidArray(tx, derived.scopeProjectIds)}, ARRAY[]::uuid[]),
+      COALESCE(${boardUuidArray(tx, recipients)}, ARRAY[]::uuid[])
     )
   `
   await insertTags(tx, input.id, tags)
   return input.id
+}
+
+async function storedArraysMatch(
+  tx: SQL,
+  id: string,
+  scopeProjectIds: string[],
+  recipientUserIds: string[],
+): Promise<boolean> {
+  const rows = (await tx`
+    SELECT
+      scope_project_ids IS NOT DISTINCT FROM COALESCE(${boardUuidArray(tx, scopeProjectIds)}, ARRAY[]::uuid[])
+        AS same_scope,
+      recipient_user_ids IS NOT DISTINCT FROM COALESCE(${boardUuidArray(tx, recipientUserIds)}, ARRAY[]::uuid[])
+        AS same_recipients
+    FROM board_message WHERE id=${id}::uuid
+  `) as { same_scope: boolean; same_recipients: boolean }[]
+  return Boolean(rows[0]?.same_scope && rows[0]?.same_recipients)
 }
 
 async function existingOrConflict(
@@ -318,7 +332,19 @@ async function existingOrConflict(
 ): Promise<HostedBoardMessage | null> {
   const loaded = await loadHostedBoardMessage(tx, id)
   if (!loaded) return null
-  if (!sameHostedBoardCreateContent(createContent(loaded.row, loaded.tags), requested)) {
+  const stored = createContent(loaded.row, loaded.tags)
+  const sameScalars = sameHostedBoardCreateContent(
+    {
+      ...stored,
+      scopeProjectIds: requested.scopeProjectIds,
+      recipientUserIds: requested.recipientUserIds,
+    },
+    requested,
+  )
+  if (
+    !sameScalars ||
+    !(await storedArraysMatch(tx, id, requested.scopeProjectIds, requested.recipientUserIds))
+  ) {
     throw new RecordBoardError(
       `board message ${id} already exists with different content; mint a new id`,
       409,
@@ -424,6 +450,7 @@ export async function postHostedBoardNoticeInTransaction(
   tx: SQL,
   input: HostedBoardPostInput & { userId: string },
   clock: number,
+  forcedScope?: { scopeProjectIds: string[]; recipientUserIds: string[] },
 ): Promise<'rate-limited' | HostedBoardMessage> {
   const audience = parseHostedAudience(input.audience)
   const refusal = hostedBoardPostRefusal(input.kind, audience)
@@ -446,6 +473,7 @@ export async function postHostedBoardNoticeInTransaction(
       audience,
       tags,
       clock,
+      forcedScope,
     )
   } catch (error) {
     if (isUniqueViolation(error, 'board_message_pkey')) {
@@ -526,9 +554,9 @@ export async function replyHostedBoardMessage(
       hasReceipt: false,
     })
     if (refusal) throw new RecordBoardError(refusal, 400)
-    requested.scopeProjectIds = asStringArray(rootRow.row.scope_project_ids)
+    requested.scopeProjectIds = hostedUuidList(rootRow.row.scope_project_ids)
     requested.threadRootId = String(rootRow.row.id)
-    requested.recipientUserIds = asStringArray(rootRow.row.recipient_user_ids)
+    requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
     const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
     const duplicate = (await tx`
       SELECT id FROM board_message
@@ -544,20 +572,22 @@ export async function replyHostedBoardMessage(
     if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
     const createdAt = new Date(clock).toISOString()
     try {
-      await tx`
+      const inserted = await tx`
         INSERT INTO board_message (
           id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
           kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
           created_at, claim_id, scope_project_ids, recipient_user_ids
-        ) VALUES (
+        )
+        SELECT
           ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
           ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
-          'reply', ${String(rootRow.row.id)}::uuid, NULL, NULL, ${input.body}, false, NULL, NULL,
-          ${createdAt}::timestamptz, NULL,
-          COALESCE(string_to_array(nullif(${scopeSql(requested.scopeProjectIds)}, ''), ',')::uuid[], ARRAY[]::uuid[]),
-          COALESCE(string_to_array(nullif(${scopeSql(requested.recipientUserIds)}, ''), ',')::uuid[], ARRAY[]::uuid[])
-        )
+          'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
+          ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids
+        FROM board_message AS root
+        WHERE root.id = ${String(rootRow.row.id)}::uuid
+        RETURNING id
       `
+      if (!inserted[0]) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
     } catch (error) {
       if (isUniqueViolation(error, 'board_message_pkey')) {
         const again = await existingOrConflict(tx, input.id, requested)

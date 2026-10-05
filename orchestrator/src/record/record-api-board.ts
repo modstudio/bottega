@@ -20,7 +20,7 @@ import {
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
 } from './record-board-contract.ts'
-import type { BoardTenant } from './record-board-tx.ts'
+import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 
@@ -150,6 +150,8 @@ export function registerRecordBoardRoutes(
   const tenantOf = (context: Context<ApiEnvironment>) =>
     boardTenant(deps.recordUrl, context.get('identity'))
   const readJson = async (context: Context<ApiEnvironment>) => context.req.json().catch(() => null)
+  const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
+    helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 
   app.put('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
@@ -159,7 +161,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.postBoardMessage({ ...tenant, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/messages/:id/replies', async (context) => {
@@ -173,7 +175,7 @@ export function registerRecordBoardRoutes(
         await deps.replyBoardMessage({ ...tenant, ...body.data, rootId: id.data }),
       )
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/messages/:id/withdraw', async (context) => {
@@ -185,7 +187,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.withdrawBoardMessage({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/messages/:id/accept', async (context) => {
@@ -197,7 +199,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.acceptBoardAnswer({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/messages/:id/filing-lease/complete', async (context) => {
@@ -212,7 +214,7 @@ export function registerRecordBoardRoutes(
         await deps.completeBoardFilingLease({ ...tenant, id: id.data, ...body.data }),
       )
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/messages/:id/filing-lease/fail', async (context) => {
@@ -225,7 +227,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.failBoardFilingLease({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/messages/:id/filing-lease', async (context) => {
@@ -238,7 +240,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.takeBoardFilingLease({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.get('/v1/board/threads/:id', async (context) => {
@@ -249,7 +251,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.readBoardThread({ ...tenant, id: id.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.put('/v1/board/receipts', async (context) => {
@@ -260,7 +262,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.putBoardReceipt({ ...tenant, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.get('/v1/board/changes', async (context) => {
@@ -276,7 +278,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.listBoardChanges({ ...tenant, ...query.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.put('/v1/board/claims', async (context) => {
@@ -287,7 +289,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.takeBoardClaim({ ...tenant, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/claims/release-task', async (context) => {
@@ -298,7 +300,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.releaseBoardTaskClaims({ ...tenant, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/claims/:id/renew', async (context) => {
@@ -311,7 +313,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.renewBoardClaim({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.post('/v1/board/claims/:id/release', async (context) => {
@@ -324,7 +326,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.releaseBoardClaim({ ...tenant, id: id.data, ...body.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
   app.get('/v1/board/claims', async (context) => {
@@ -335,7 +337,7 @@ export function registerRecordBoardRoutes(
     try {
       return context.json(await deps.listBoardClaims({ ...tenant, ...query.data }))
     } catch (error) {
-      return helpers.writeError(context, error)
+      return writeError(context, error)
     }
   })
 }

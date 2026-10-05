@@ -9,16 +9,19 @@ const IDS = {
   inviteA: '03990000-0000-7000-8000-000000000001',
   inviteB: '03990000-0000-7000-8000-000000000002',
   inviteC: '03990000-0000-7000-8000-000000000003',
+  inviteD: '03990000-0000-7000-8000-000000000004',
   project: '03990000-0000-7000-8000-000000000011',
   projectTwo: '03990000-0000-7000-8000-000000000012',
   memberB: '03990000-0000-7000-8000-000000000021',
   memberA2: '03990000-0000-7000-8000-000000000022',
+  memberRead: '03990000-0000-7000-8000-000000000023',
 } as const
 
 const EMAIL = {
   a: 'board-api-a@example.test',
   b: 'board-api-b@example.test',
   c: 'board-api-c@example.test',
+  d: 'board-api-d@example.test',
 } as const
 
 const PROJECT = 'board-api-shared'
@@ -44,8 +47,10 @@ export function registerBoardApiProofs(input: {
   let tokenA = ''
   let tokenB = ''
   let tokenC = ''
+  let tokenD = ''
   let userA = ''
   let userB = ''
+  let userD = ''
   let spaceA = ''
   let spaceB = ''
 
@@ -56,7 +61,8 @@ export function registerBoardApiProofs(input: {
       `INSERT INTO invitation (id,space_id,email,inviter_id,role,status,expires_at,created_at) VALUES
         ('${IDS.inviteA}','${input.spaceA}','${EMAIL.a}','${input.userA}','member','pending',now() + interval '1 day',now()),
         ('${IDS.inviteB}','${input.spaceA}','${EMAIL.b}','${input.userA}','member','pending',now() + interval '1 day',now()),
-        ('${IDS.inviteC}','${input.spaceA}','${EMAIL.c}','${input.userA}','member','pending',now() + interval '1 day',now());`,
+        ('${IDS.inviteC}','${input.spaceA}','${EMAIL.c}','${input.userA}','member','pending',now() + interval '1 day',now()),
+        ('${IDS.inviteD}','${input.spaceA}','${EMAIL.d}','${input.userA}','member','pending',now() + interval '1 day',now());`,
     )
     server = startRecordApiServer({
       ...process.env,
@@ -85,11 +91,14 @@ export function registerBoardApiProofs(input: {
     const a = await signUp(EMAIL.a, 'Board API A')
     const b = await signUp(EMAIL.b, 'Board API B')
     const c = await signUp(EMAIL.c, 'Board API C')
+    const d = await signUp(EMAIL.d, 'Board API D')
     tokenA = a.token
     tokenB = b.token
     tokenC = c.token
+    tokenD = d.token
     userA = a.userId
     userB = b.userId
+    userD = d.userId
     spaceA = a.spaceId
     spaceB = b.spaceId
     input.succeeds(
@@ -100,7 +109,8 @@ export function registerBoardApiProofs(input: {
         ('${IDS.projectTwo}','${spaceB}','${PROJECT_TWO}',ARRAY['BAPI2'],now());
        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.memberB}','${spaceA}','${userB}','member','write',now()),
-        ('${IDS.memberA2}','${spaceB}','${userA}','member','write',now());`,
+        ('${IDS.memberA2}','${spaceB}','${userA}','member','write',now()),
+        ('${IDS.memberRead}','${spaceA}','${userD}','member','read',now());`,
     )
   })
 
@@ -460,5 +470,11 @@ export function registerBoardApiProofs(input: {
     expect(posted.status).toBe(200)
     const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(tokenA) })
     expect(thread.status).toBe(200)
+  })
+
+  test('a row-level security denial is a named refusal not a server error', async () => {
+    const posted = await post(tokenD, notice(newRecordId(), `project:${PROJECT}`))
+    expect(posted.status).toBe(400)
+    expect(JSON.stringify(await posted.json())).toContain('row-level security')
   })
 }

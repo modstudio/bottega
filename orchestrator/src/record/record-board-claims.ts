@@ -124,11 +124,6 @@ async function tellHolder(
     recipientUserIds: [input.holderUserId],
     userId: input.userId,
   }
-  // Scope is set inside insertRoot from audience; session: is empty. Override by
-  // posting with a project-scoped insert: the claim notice is the one session:
-  // audience that carries a project scope, so write the row after a normal post
-  // attempt cannot express it. Insert directly when posting through the helper
-  // would drop the project scope.
   const posted = await postClaimNotice(tx, notice, input.projectId, input.clock)
   void posted
 }
@@ -139,20 +134,10 @@ async function postClaimNotice(
   projectId: string,
   clock: number,
 ): Promise<'rate-limited' | unknown> {
-  const scoped: HostedBoardPostInput & { userId: string } = {
-    ...input,
-    audience: input.audience,
-  }
-  const result = await postHostedBoardNoticeInTransaction(tx, scoped, clock)
-  if (result === 'rate-limited') return 'rate-limited'
-  await tx`
-    UPDATE board_message
-    SET scope_project_ids=ARRAY[${projectId}::uuid]::uuid[],
-        recipient_user_ids=COALESCE(string_to_array(nullif(${(input.recipientUserIds ?? []).join(',')}, ''), ',')::uuid[], ARRAY[]::uuid[]),
-        claim_id=${input.claimId ?? null}::uuid
-    WHERE id=${result.id}::uuid
-  `
-  return result
+  return postHostedBoardNoticeInTransaction(tx, input, clock, {
+    scopeProjectIds: [projectId],
+    recipientUserIds: input.recipientUserIds ?? [],
+  })
 }
 
 function takeOverlaps(
@@ -244,9 +229,16 @@ function differentRenewalTerms(
   )
 }
 
+type TakenClaim = HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }
+type TakeOutcome = TakenClaim | { refused: string }
+
+function takeRefused(outcome: TakeOutcome): outcome is { refused: string } {
+  return 'refused' in outcome
+}
+
 export async function takeHostedBoardClaim(
   input: BoardTenant & HostedBoardTakeClaimInput,
-): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }> {
+): Promise<TakenClaim> {
   const subject = asBoardError(() => parseClaimSubject(input.subject))
   const note = asBoardError(() => claimNote(input.note))
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
@@ -254,9 +246,11 @@ export async function takeHostedBoardClaim(
   if (durationRefusal) throw new RecordBoardError(durationRefusal, 400)
   const session = sessionOrNull(input.holderSession)
   const clock = Date.now()
-  return withBoardTenant(input, true, (tx) =>
+  const outcome = await withBoardTenant(input, true, (tx) =>
     takeClaimInTx(tx, input, subject, note, duration, session, clock),
   )
+  if (takeRefused(outcome)) throw new RecordBoardError(outcome.refused, 409)
+  return outcome
 }
 
 async function replayExistingTake(
@@ -358,7 +352,7 @@ async function takeClaimInTx(
   duration: number,
   session: string | null,
   clock: number,
-): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }> {
+): Promise<TakeOutcome> {
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, clock)
   const projectId = await resolveVisibleProjectId(tx, input.project)
@@ -386,10 +380,9 @@ async function takeClaimInTx(
       clock,
       'Conflicting claim attempt',
     )
-    throw new RecordBoardError(
-      `claim conflicts with: ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
-      409,
-    )
+    return {
+      refused: `claim conflicts with: ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
+    }
   }
   return insertTakenClaim(
     tx,

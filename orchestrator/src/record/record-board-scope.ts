@@ -58,6 +58,29 @@ function sameIds(left: string[], right: string[]): boolean {
   return [...right].sort().every((id, index) => id === ordered[index])
 }
 
+function uuidFromBytes(bytes: Uint8Array): string {
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function uuidEntry(entry: unknown): string {
+  if (typeof entry === 'string') return entry.trim().replace(/^"|"$/g, '').toLowerCase()
+  if (entry instanceof Uint8Array && entry.length === 16) return uuidFromBytes(entry)
+  return String(entry).trim().replace(/^"|"$/g, '').toLowerCase()
+}
+
+/** Decodes a hosted uuid[] column from bun, PGlite, or a Postgres array literal. */
+export function hostedUuidList(value: unknown): string[] {
+  if (value == null) return []
+  if (typeof value === 'string') {
+    const inner = value.trim().replace(/^\{|\}$/g, '')
+    if (!inner) return []
+    return inner.split(',').map(uuidEntry)
+  }
+  if (!Array.isArray(value)) return []
+  return value.map(uuidEntry)
+}
+
 export function sameHostedBoardCreateContent(
   stored: HostedBoardCreateContent,
   requested: HostedBoardCreateContent,
