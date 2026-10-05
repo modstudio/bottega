@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { recordAuth } from '../src/record/record-auth.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
+import { recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
