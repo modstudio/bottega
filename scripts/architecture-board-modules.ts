@@ -12,8 +12,12 @@ const module = (file: string, allowed: string[]): BoardModule => ({
 })
 
 export const boardModules: BoardModule[] = [
-  module('orchestrator/src/board/board-claim-policy.ts', []),
-  module('orchestrator/src/board/board-policy.ts', []),
+  module('orchestrator/src/board/board-claim-policy.ts', [
+    '../../../shared/secret-shaped.ts',
+    './board-policy.ts',
+    './board-tags.ts',
+  ]),
+  module('orchestrator/src/board/board-policy.ts', ['../../../shared/secret-shaped.ts']),
   module('orchestrator/src/board/board-tags.ts', ['node:path']),
   module('orchestrator/src/board/board-routing.ts', ['./board-tags.ts']),
   module('orchestrator/src/board/board-context.ts', [
@@ -27,7 +31,6 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-answer-note.ts', ['../mcp/hub-notes.ts']),
   module('orchestrator/src/board/board-store.ts', [
     'node:os',
-    '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './board-claim-policy.ts',
@@ -47,14 +50,11 @@ export const boardModules: BoardModule[] = [
     './board-thread-render.ts',
   ]),
   module('orchestrator/src/board/board-claim-service.ts', [
-    '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './board-claim-policy.ts',
-    './board-policy.ts',
     './board-service.ts',
     './board-store.ts',
-    './board-tags.ts',
   ]),
   module('orchestrator/src/board/board-claim-commands.ts', [
     'commander',

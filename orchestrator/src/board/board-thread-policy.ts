@@ -23,7 +23,7 @@ export type ThreadActor =
   | { kind: 'architect'; reader: string }
 
 export type ThreadRootFacts = {
-  id: number
+  id: string | number
   kind: string
   authorReader: string
   audienceKind: Audience['kind']
@@ -55,7 +55,7 @@ export function replyRefusal(input: {
 
 export function acceptRefusal(input: {
   actor: ThreadActor
-  questionId: number
+  questionId: string | number
   questionKind: string
   authorReader: string
   accepted: boolean

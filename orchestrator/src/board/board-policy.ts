@@ -1,3 +1,5 @@
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+
 export const BOARD_DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000
 export const BOARD_DEFAULT_ACK_DEADLINE_MS = 60 * 60 * 1000
 export const BOARD_POST_RATE_LIMIT = 10
@@ -6,6 +8,8 @@ export const BOARD_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
 export const BOARD_TITLE_MAX_CHARS = 120
 export const BOARD_BODY_MAX_CHARS = 4000
 const BOARD_RETENTION_MS = 14 * 24 * 60 * 60 * 1000
+const RUN_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** The local operator has no session id; this reserved reader keeps receipts non-null. */
 export const OPERATOR_READER = 'operator'
@@ -42,7 +46,7 @@ export type Audience =
   | { kind: 'project'; value: string }
   | { kind: 'workers'; value: string }
   | { kind: 'task'; value: string }
-  | { kind: 'run'; value: number }
+  | { kind: 'run'; value: number | string }
   | { kind: 'machine'; value: string }
   | { kind: 'session'; value: string }
 
@@ -58,9 +62,9 @@ export function parseAudience(expression: string): Audience {
     throw new Error(`session:${match[2]} is reserved; use audience ${match[2]}`)
   if (match[1] === 'run') {
     const id = Number(match[2])
-    if (!Number.isSafeInteger(id) || id <= 0)
-      throw new Error(`invalid run audience ${expression}; use run:<positive id>`)
-    return { kind: 'run', value: id }
+    if (Number.isSafeInteger(id) && id > 0) return { kind: 'run', value: id }
+    if (RUN_UUID.test(match[2])) return { kind: 'run', value: match[2] }
+    throw new Error(`invalid run audience ${expression}; use run:<positive id>`)
   }
   return {
     kind: match[1] as 'project' | 'workers' | 'task' | 'machine' | 'session',
@@ -112,7 +116,14 @@ export function resolveAudience(
   if (audience.kind === 'task')
     return readers(live.filter((row) => row.taskKeys?.has(audience.value)))
   if (audience.kind === 'run')
-    return readers(live.filter((row) => row.role === 'worker' && row.runIds?.has(audience.value)))
+    return readers(
+      live.filter(
+        (row) =>
+          row.role === 'worker' &&
+          typeof audience.value === 'number' &&
+          row.runIds?.has(audience.value),
+      ),
+    )
   if (audience.kind === 'machine')
     return readers(live.filter((row) => row.machine === audience.value))
   return readers(live.filter((row) => row.role === 'architect' && row.reader === audience.value))
@@ -150,6 +161,33 @@ export function postDecision(input: {
 }): 'post' | 'drop-duplicate' | 'rate-limited' {
   if (input.duplicate) return 'drop-duplicate'
   return input.recentPosts >= BOARD_POST_RATE_LIMIT ? 'rate-limited' : 'post'
+}
+
+export function validatePostNoticeInput(input: {
+  title: string
+  body: string
+  task?: string
+  paths?: string[]
+  topics?: string[]
+  ackRequired?: boolean
+  deadlineMs?: number
+}): void {
+  if (input.title.length > BOARD_TITLE_MAX_CHARS)
+    throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
+  if (input.body.length > BOARD_BODY_MAX_CHARS)
+    throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
+  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
+    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
+  if (
+    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
+      (value) => value !== undefined && containsSecretShaped(value),
+    )
+  )
+    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
+  if (!input.title.trim() || !input.body.trim())
+    throw new Error('board notice title and body are required')
+  if (input.deadlineMs !== undefined && !input.ackRequired)
+    throw new Error('a board notice deadline requires acknowledgement to be required')
 }
 
 export const needsAckEscalation = (input: {

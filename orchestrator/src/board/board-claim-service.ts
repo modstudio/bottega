@@ -1,23 +1,22 @@
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
   BOARD_CLAIM_DEFAULT_MS,
-  BOARD_CLAIM_MAX_MS,
-  BOARD_CLAIM_RESOURCE_MAX_CHARS,
   type ClaimActor,
   type ClaimCloseReason,
   type ClaimSubject,
   claimCloseReason,
+  claimDurationRefusal,
   claimIsLive,
+  claimNote,
   claimSubjectsConflict,
   claimTakeDecision,
   mayForceClaim,
   mayReleaseClaim,
   mayRenewClaim,
+  parseClaimSubject,
   sameClaimHolder,
 } from './board-claim-policy.ts'
-import { BOARD_BODY_MAX_CHARS } from './board-policy.ts'
 import { postNoticeInTransaction } from './board-service.ts'
 import {
   BoardPostRateLimitError,
@@ -25,7 +24,7 @@ import {
   type Environment,
   latestRunStatus,
 } from './board-store.ts'
-import { pathTagRefusal } from './board-tags.ts'
+
 
 type ClaimRow = {
   id: number
@@ -73,41 +72,6 @@ export type TakeClaimInput = {
 
 function claimActor(env: Environment): ClaimActor {
   return boardActor(env)
-}
-
-function parseSubject(expression: string): ClaimSubject {
-  const match = /^(task|path|resource):(.*)$/.exec(expression)
-  if (!match)
-    throw new Error(
-      `invalid claim subject ${expression}; use task:<KEY>, path:<glob>, or resource:<name>`,
-    )
-  const kind = match[1] as ClaimSubject['kind']
-  const value = match[2]!.trim()
-  if (!value) throw new Error(`claim ${kind} subject is empty; provide a value after ${kind}:`)
-  if (kind === 'path') {
-    const refusal = pathTagRefusal(value)
-    if (refusal) throw new Error(refusal)
-  }
-  if (kind === 'resource') {
-    if (value.length > BOARD_CLAIM_RESOURCE_MAX_CHARS)
-      throw new Error(
-        `claim resource exceeds ${BOARD_CLAIM_RESOURCE_MAX_CHARS} characters; shorten it`,
-      )
-    if (containsSecretShaped(value))
-      throw new Error('claim resource contains secret-shaped text; remove the credential and retry')
-  }
-  return { kind, value }
-}
-
-function claimNote(note: string | undefined): string | null | undefined {
-  if (note === undefined) return undefined
-  const value = note.trim()
-  if (!value) return null
-  if (value.length > BOARD_BODY_MAX_CHARS)
-    throw new Error(`claim note exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(value))
-    throw new Error('claim note contains secret-shaped text; remove the credential and retry')
-  return value
 }
 
 function claimProject(actor: ClaimActor, requested: string | undefined, cwd: string): string {
@@ -376,11 +340,11 @@ export function takeClaim(
 ): TakeClaimResult {
   const actor = claimActor(env)
   if (input.force && !mayForceClaim(actor)) throw new Error('only the operator may use --force')
-  const subject = parseSubject(input.subject)
+  const subject = parseClaimSubject(input.subject)
   const note = claimNote(input.note)
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
-  if (!Number.isSafeInteger(duration) || duration <= 0 || duration > BOARD_CLAIM_MAX_MS)
-    throw new Error(`claim duration must be positive and at most ${BOARD_CLAIM_MAX_MS}ms`)
+  const durationRefusal = claimDurationRefusal(duration)
+  if (durationRefusal) throw new Error(durationRefusal)
   const project = claimProject(actor, input.project, cwd)
   const database = writableDb()
   validateRunTie(input.runId, actor, database)

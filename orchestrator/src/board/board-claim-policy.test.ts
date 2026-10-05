@@ -1,12 +1,16 @@
 import { expect, test } from 'bun:test'
 import {
+  BOARD_CLAIM_DEFAULT_MS,
   claimCloseReason,
+  claimDurationRefusal,
   claimIsLive,
+  claimNote,
   claimSubjectsConflict,
   claimTakeDecision,
   mayForceClaim,
   mayReleaseClaim,
   mayRenewClaim,
+  parseClaimSubject,
 } from './board-claim-policy.ts'
 
 const architect = { kind: 'architect' as const, session: 'holder' }
@@ -46,6 +50,16 @@ test('claims conflict only within a kind, with symmetric path glob matching', ()
   expect(
     claimSubjectsConflict({ kind: 'task', value: 'same' }, { kind: 'resource', value: 'same' }),
   ).toBeFalse()
+})
+
+test('claim subject, note, and duration refusals match the local adapter rules', () => {
+  expect(parseClaimSubject('path:src/**')).toEqual({ kind: 'path', value: 'src/**' })
+  expect(() => parseClaimSubject('other:x')).toThrow(/task:<KEY>/)
+  expect(claimNote(undefined)).toBeUndefined()
+  expect(claimNote('  ')).toBeNull()
+  expect(claimNote(' held ')).toBe('held')
+  expect(claimDurationRefusal(0)).toContain('positive')
+  expect(claimDurationRefusal(BOARD_CLAIM_DEFAULT_MS)).toBeNull()
 })
 
 test('take decision covers take, renewal, refusal, stale takeover, and operator force', () => {
