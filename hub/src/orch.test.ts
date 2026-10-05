@@ -24,6 +24,9 @@ import {
   decodeRunsJson,
   docArgv,
   fileRulingArgv,
+  machineConfigArgv,
+  machinePermissionArgv,
+  machinePermissionListArgv,
   projectArgv,
   settingsCheck,
   settingsCheckArgv,
@@ -69,6 +72,21 @@ test('managed context wrappers build exact argv', () => {
     '--expect',
     '3',
   ])
+  expect(machineConfigArgv('list')).toEqual(['config', 'list', '--machine', '--json'])
+  expect(machineConfigArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'config',
+    'set',
+    'autonomy.stage.review',
+    'auto',
+    '--machine',
+    '--json',
+  ])
+  expect(machineConfigArgv('delete', 'autonomy.release')).toEqual([
+    'config',
+    'delete',
+    'autonomy.release',
+    '--machine',
+  ])
   expect(settingsCheckArgv({ user: true })).toEqual([
     'settings',
     'render',
@@ -107,6 +125,38 @@ test('managed context wrappers build exact argv', () => {
     'revision-1',
     '--reason',
     'needed',
+    '--json',
+  ])
+  expect(machinePermissionListArgv()).toEqual([
+    'settings',
+    'permission',
+    'list',
+    '--machine',
+    '--json',
+  ])
+  expect(
+    machinePermissionArgv({ operation: 'add', list: 'allow', rule: 'Bash(orch *)' }),
+  ).toEqual([
+    'settings',
+    'permission',
+    'add',
+    '--machine',
+    '--list',
+    'allow',
+    '--rule',
+    'Bash(orch *)',
+    '--json',
+  ])
+  expect(
+    machinePermissionArgv({ operation: 'drop', list: 'ask', rule: 'Bash(rm *)' }),
+  ).toEqual([
+    'settings',
+    'permission',
+    'drop',
+    '--list',
+    'ask',
+    '--rule',
+    'Bash(rm *)',
     '--json',
   ])
 })

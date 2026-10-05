@@ -548,6 +548,23 @@ const ConfigEntrySchema = z.object({
   updatedAt: z.string(),
 })
 
+const MachineConfigEntrySchema = z.object({
+  key: z.string(),
+  value: z.string(),
+  scope: z.literal('local user'),
+})
+
+const PermissionListsSchema = z.object({
+  allow: z.array(z.string()),
+  ask: z.array(z.string()),
+  deny: z.array(z.string()),
+})
+
+const MachinePermissionOverlaySchema = z.object({
+  additions: PermissionListsSchema,
+  drop: PermissionListsSchema,
+})
+
 const ContextSchema = z.discriminatedUnion('registered', [
   z.object({ registered: z.literal(false), warnings: z.array(z.string()).optional() }),
   z.object({
@@ -642,6 +659,14 @@ export const configDeleteArgv = (key: string, expectedRowVersion?: number) => [
   key,
   ...(expectedRowVersion !== undefined ? ['--expect', String(expectedRowVersion)] : []),
 ]
+export const machineConfigArgv = (operation: 'list' | 'set' | 'delete', key?: string, value?: string) => [
+  'config',
+  operation,
+  ...(key ? [key] : []),
+  ...(value ? [value] : []),
+  '--machine',
+  ...(operation === 'delete' ? [] : ['--json']),
+]
 export const settingsCheckArgv = (target: { user: true } | { project: string }) => [
   'settings',
   'render',
@@ -662,6 +687,26 @@ export const settingsPermissionArgv = (input: SettingsPermissionInput) => [
   '--expect',
   input.expectedRevision,
   ...(input.reason ? ['--reason', input.reason] : []),
+  '--json',
+]
+
+export const machinePermissionListArgv = () => [
+  'settings',
+  'permission',
+  'list',
+  '--machine',
+  '--json',
+]
+
+export const machinePermissionArgv = (input: MachinePermissionInput) => [
+  'settings',
+  'permission',
+  input.operation,
+  ...(['add', 'remove'].includes(input.operation) ? ['--machine'] : []),
+  '--list',
+  input.list,
+  '--rule',
+  input.rule,
   '--json',
 ]
 
@@ -689,6 +734,16 @@ export const configSet = (key: string, value: string, expectedRowVersion?: numbe
 export const configList = () => json(configArgv('list'), z.array(ConfigEntrySchema))
 export const configDelete = (key: string, expectedRowVersion?: number) =>
   orchProcess(configDeleteArgv(key, expectedRowVersion), 20_000, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+export const machineConfigList = () =>
+  json(machineConfigArgv('list'), z.array(MachineConfigEntrySchema))
+export const machineConfigSet = (key: string, value: string) =>
+  json(machineConfigArgv('set', key, value), MachineConfigEntrySchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+export const machineConfigDelete = (key: string) =>
+  orchProcess(machineConfigArgv('delete', key), 20_000, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const settingsCheck = (target: { user: true } | { project: string }) =>
@@ -719,8 +774,22 @@ export type SettingsPermissionInput = {
   reason?: string
 }
 
+export type MachinePermissionInput = {
+  operation: 'add' | 'remove' | 'drop' | 'undrop'
+  list: 'allow' | 'ask' | 'deny'
+  rule: string
+}
+
 export const settingsPermission = (input: SettingsPermissionInput) =>
   json(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+
+export const machinePermissions = () =>
+  json(machinePermissionListArgv(), MachinePermissionOverlaySchema)
+
+export const machinePermission = (input: MachinePermissionInput) =>
+  json(machinePermissionArgv(input), SettingsPermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 
