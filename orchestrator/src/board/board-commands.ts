@@ -9,6 +9,7 @@ import {
   recordPresence,
   withdrawNotice,
 } from './board-service.ts'
+import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 
 function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
@@ -75,4 +76,28 @@ export function registerBoardCommands(program: Command): void {
   board.command('ack <id>').action((id) => acknowledgeNotice(Number(id)))
   board.command('status <id>').action((id) => console.log(JSON.stringify(noticeStatus(Number(id)))))
   board.command('withdraw <id>').action((id) => withdrawNotice(Number(id)))
+  const suggestion = board.command('suggestion')
+  suggestion
+    .command('post <id>')
+    .requiredOption('--audience <expr>')
+    .option('--title <text>')
+    .option('--body <text>')
+    .option('--task <key>')
+    .option('--path <glob>', 'replace repository-relative path globs', collect)
+    .option('--topic <name>', 'replace controlled board topics', collect)
+    .action((id, options) => {
+      console.log(
+        JSON.stringify(
+          postBoardSuggestion(Number(id), {
+            audience: options.audience,
+            title: options.title,
+            body: options.body,
+            task: options.task,
+            paths: options.path,
+            topics: options.topic,
+          }),
+        ),
+      )
+    })
+  suggestion.command('decline <id>').action((id) => declineBoardSuggestion(Number(id)))
 }

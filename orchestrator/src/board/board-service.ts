@@ -2,7 +2,7 @@ import { hostname } from 'node:os'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { boardContext } from './board-context.ts'
+import { boardContext, boardRunContext } from './board-context.ts'
 import {
   architectIdentity,
   audienceRefusal,
@@ -39,6 +39,7 @@ type Actor = { kind: 'operator'; session: null } | { kind: 'architect'; session:
 type PostNoticeResult = { id: number; dropped: boolean; reached: number; warning?: string }
 type MessageRow = {
   id: number
+  kind: string
   author_kind: string
   author_session: string | null
   audience: string
@@ -51,6 +52,7 @@ type MessageRow = {
   withdrawn_at: string | null
   author_harness: string | null
   author_project: string | null
+  author_run_id: number | null
 }
 
 const NO_REACH_WARNING = 'reached no live session; re-address it or wait for a matching session'
@@ -61,7 +63,7 @@ const unrecognizedSessionMarked = (env: Environment) =>
     ([key, value]) => Boolean(value?.trim()) && /(?:SESSION_ID|THREAD_ID)$/.test(key),
   )
 
-function boardActor(env: Environment = process.env): Actor {
+export function boardActor(env: Environment = process.env): Actor {
   if (workerMarked(env))
     throw new Error('workers cannot use the architect notice board in this slice')
   if (env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER)
@@ -123,7 +125,7 @@ export function recordPresence(
 }
 
 function presenceFacts(database = db()) {
-  return (
+  const architects = (
     database.query('SELECT session_id,project,machine,last_seen FROM presence').all() as {
       session_id: string
       project: string
@@ -131,11 +133,38 @@ function presenceFacts(database = db()) {
       last_seen: string
     }[]
   ).map((row) => ({
-    session: row.session_id,
+    reader: row.session_id,
+    role: 'architect' as const,
     project: row.project,
     machine: row.machine,
     lastSeen: Date.parse(row.last_seen),
   }))
+  const liveTurns = database
+    .query(
+      `SELECT id,COALESCE(parent_run_id,id) root_id,repo,status,turn
+       FROM run WHERE repo IS NOT NULL
+       ORDER BY root_id,turn DESC`,
+    )
+    .all() as { id: number; root_id: number; repo: string; status: string; turn: number }[]
+  const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number> }>()
+  for (const row of liveTurns) {
+    const current = workers.get(row.root_id)
+    if (!current) workers.set(row.root_id, { ...row, runIds: new Set([row.id, row.root_id]) })
+    else current.runIds.add(row.id)
+  }
+  return [
+    ...architects,
+    ...[...workers.values()]
+      .filter((row) => row.status === 'running' || row.status === 'asking')
+      .map((row) => ({
+        reader: `run:${row.root_id}`,
+        role: 'worker' as const,
+        project: row.repo,
+        machine: hostname(),
+        live: true,
+        runIds: row.runIds,
+      })),
+  ]
 }
 
 function recipients(
@@ -146,8 +175,14 @@ function recipients(
 ): string[] {
   const audience = parseAudience(audienceExpression)
   const coarse = resolveAudience(audience, presenceFacts(database), at, SESSION_LIVE_MS)
-  if (audience.kind !== 'project') return coarse
-  return coarse.filter((session) => boardNoticeMatches(tags, boardContext(session, at, database)))
+  if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
+  return coarse.filter((reader) => {
+    const run = /^run:(\d+)$/.exec(reader)
+    return boardNoticeMatches(
+      tags,
+      run ? boardRunContext(Number(run[1]), database) : boardContext(reader, at, database),
+    )
+  })
 }
 
 export type PostNoticeInput = SenderBoardTags & {
@@ -376,6 +411,14 @@ function addressed(message: MessageRow, reader: string, clock: number): boolean 
   return recipients(message.audience, clock, messageTags(message.id)).includes(reader)
 }
 
+function runReader(runId: number): string {
+  const row = db()
+    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .get(runId) as { root_id: number } | null
+  if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
+  return `run:${row.root_id}`
+}
+
 function rowIsLive(message: MessageRow, clock: number): boolean {
   return messageIsLive(
     {
@@ -393,23 +436,81 @@ function wasDelivered(messageId: number, reader: string): boolean {
   return Boolean(receipt?.delivered_at)
 }
 
-function render(message: MessageRow) {
+function render(message: MessageRow, worker = false) {
   const tags = messageTags(message.id)
   return {
     id: message.id,
     text: renderBoardNotice({
       id: message.id,
+      kind: message.kind,
       authorKind: message.author_kind,
       authorSession: message.author_session,
       authorHarness: message.author_harness,
       authorProject: message.author_project,
+      authorRunId: message.author_run_id,
       title: message.title,
       body: message.body,
       expiresAt: message.expires_at,
       ackRequired: message.ack_required === 1,
       tags: tags.filter((tag) => tag.origin === 'sender'),
+      worker,
     }),
   }
+}
+
+export function claimRunNotices(
+  runId: number,
+  all = false,
+  clock = Date.now(),
+): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
+  const reader = runReader(runId)
+  return messageRows()
+    .filter(
+      (row) =>
+        row.kind === 'notice' &&
+        rowIsLive(row, clock) &&
+        addressed(row, reader, clock) &&
+        (all || !wasDelivered(row.id, reader)),
+    )
+    .map((row) => ({
+      ...render(row, true),
+      ackRequired: row.ack_required === 1,
+      createdAt: row.created_at,
+    }))
+}
+
+export function markRunNoticesDelivered(runId: number, ids: number[], clock = Date.now()): void {
+  const reader = runReader(runId)
+  const idSet = new Set(ids)
+  const rows = messageRows().filter(
+    (row) =>
+      row.kind === 'notice' &&
+      idSet.has(row.id) &&
+      rowIsLive(row, clock) &&
+      addressed(row, reader, clock),
+  )
+  if (!rows.length) return
+  const database = writableDb()
+  const deliveredAt = new Date(clock).toISOString()
+  writeTransaction(() => {
+    const stamp = database.query(
+      `INSERT INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
+    )
+    for (const row of rows) stamp.run(row.id, reader, deliveredAt)
+  }, database)
+}
+
+export function readRunNotices(runId: number, all = false, clock = Date.now()) {
+  const notices = claimRunNotices(runId, all, clock)
+  markRunNoticesDelivered(
+    runId,
+    notices.map((notice) => notice.id),
+    clock,
+  )
+  return notices
 }
 
 export function claimNotices(
@@ -424,7 +525,7 @@ export function claimNotices(
       addressed(row, reader, clock) &&
       (all || !wasDelivered(row.id, reader)),
   )
-  return rows.map(render)
+  return rows.map((row) => render(row))
 }
 
 export function markNoticesDelivered(
@@ -507,6 +608,7 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
       : [],
   )
   for (const receipt of receipts) {
+    if (receipt.reader_session.startsWith('run:')) continue
     if (receipt.acknowledged_at) unresolved.delete(receipt.reader_session)
     else unresolved.add(receipt.reader_session)
   }
@@ -515,7 +617,9 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
     receipts,
     reached: receipts.length,
     acknowledged: receipts.filter((receipt) => receipt.acknowledged_at !== null).length,
-    unacknowledged: row.ack_required ? [...unresolved].sort() : [],
+    unacknowledged: row.ack_required
+      ? [...unresolved].filter((reader) => !reader.startsWith('run:')).sort()
+      : [],
   }
 }
 
@@ -535,6 +639,7 @@ export function claimInterruptNotices(session: string, clock = Date.now()) {
   return messageRows()
     .filter(
       (row) =>
+        row.kind === 'notice' &&
         rowIsLive(row, clock) &&
         addressed(row, session, clock) &&
         shouldInterrupt({
@@ -580,16 +685,18 @@ export function boardEscalations(clock = Date.now()) {
     audience_at_posting: number
   }[]
   return rows
-    .filter((row) =>
-      needsAckEscalation({
-        ackRequired: row.ack_required === 1,
-        deadline: row.ack_deadline ? Date.parse(row.ack_deadline) : null,
-        expiresAt: Date.parse(row.expires_at),
-        withdrawnAt: row.withdrawn_at ? Date.parse(row.withdrawn_at) : null,
-        acknowledgedAt: row.acknowledged_at ? Date.parse(row.acknowledged_at) : null,
-        audienceAtPosting: row.audience_at_posting === 1,
-        now: clock,
-      }),
+    .filter(
+      (row) =>
+        !row.reader_session.startsWith('run:') &&
+        needsAckEscalation({
+          ackRequired: row.ack_required === 1,
+          deadline: row.ack_deadline ? Date.parse(row.ack_deadline) : null,
+          expiresAt: Date.parse(row.expires_at),
+          withdrawnAt: row.withdrawn_at ? Date.parse(row.withdrawn_at) : null,
+          acknowledgedAt: row.acknowledged_at ? Date.parse(row.acknowledged_at) : null,
+          audienceAtPosting: row.audience_at_posting === 1,
+          now: clock,
+        }),
     )
     .map((row) => ({
       kind: 'board-ack-overdue',

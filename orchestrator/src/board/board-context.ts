@@ -32,3 +32,22 @@ export function boardContext(
   }
   return { taskKeys, changedPaths }
 }
+
+export function boardRunContext(rootRunId: number, database: Database = db()): BoardSessionContext {
+  const runs = database
+    .query(
+      `SELECT launch_key,changed_paths FROM run
+       WHERE id=? OR parent_run_id=? ORDER BY turn`,
+    )
+    .all(rootRunId, rootRunId) as ContextRun[]
+  const taskKeys = new Set<string>()
+  const changedPaths = new Set<string>()
+  for (const run of runs) {
+    if (run.launch_key) taskKeys.add(run.launch_key)
+    if (!run.changed_paths) continue
+    const paths: unknown = JSON.parse(run.changed_paths)
+    if (Array.isArray(paths))
+      for (const path of paths) if (typeof path === 'string') changedPaths.add(path)
+  }
+  return { taskKeys, changedPaths }
+}

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
+import { claimRunNotices, markRunNoticesDelivered } from '../board/board-service.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
@@ -159,6 +160,7 @@ export type LiveInput = {
   textReplyContract: boolean
   resolvedDialect: ReplyDialect
   mcpSetupHeader: string | null
+  initialBoardNoticeIds: number[]
 }
 
 export type LiveResult = {
@@ -261,6 +263,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     textReplyContract,
     resolvedDialect,
     mcpSetupHeader,
+    initialBoardNoticeIds,
   } = input
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -325,9 +328,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     noteBroker = startWorkerNoteBroker(claim.id)
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
-    if (checkpointMessages.length) {
+    const checkpointNotices = opts.resume ? claimRunNotices(claim.id) : []
+    if (checkpointMessages.length || checkpointNotices.length) {
       const block =
-        checkpointMessages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+        [
+          ...checkpointMessages.map((note) => `[message ${note.id}] ${note.body}`),
+          ...checkpointNotices.map((notice) => notice.text),
+        ].join('\n\n') +
         '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
       prompt = `${block}\n\n${prompt}`
     }
@@ -597,6 +604,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       claim.id,
       checkpointMessages.map((message) => message.id),
     )
+    markRunNoticesDelivered(claim.id, [
+      ...initialBoardNoticeIds,
+      ...checkpointNotices.map((notice) => notice.id),
+    ])
     const collected = await Promise.race([handle.collect(), forcedCollect])
     workerEvents = collected.events.filter(
       (event): event is StreamEvent =>

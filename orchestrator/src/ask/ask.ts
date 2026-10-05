@@ -33,6 +33,7 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
+import { readRunNotices } from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
@@ -51,6 +52,7 @@ import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { registerAskBoardTools } from './ask-board-tools.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
 import { validateWorkerNoteInput, type WorkerNoteInput, type WorkerNoteRun } from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
@@ -404,6 +406,8 @@ export function createAskMcpServer(
   // the worker to ask again rather than decide the matter itself.
   const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
 
+  registerAskBoardTools({ server, runId, authorized, unauthorized, text })
+
   server.registerTool(
     'ask_orchestrator',
     {
@@ -567,8 +571,13 @@ export function createAskMcpServer(
       try {
         if (!authorized()) throw new Error(unauthorized())
         const messages = checkMessages(runId)
-        const body = messages.length
-          ? messages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+        const notices = readRunNotices(runId)
+        const items = [
+          ...messages.map((note) => `[message ${note.id}] ${note.body}`),
+          ...notices.map((notice) => notice.text),
+        ]
+        const body = items.length
+          ? items.join('\n\n') +
             '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
           : 'No queued messages. This check read nothing.'
         return text(body)

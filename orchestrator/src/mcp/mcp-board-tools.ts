@@ -8,6 +8,7 @@ import {
   readNotices,
   withdrawNotice,
 } from '../board/board-service.ts'
+import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
 
 const result = (value: unknown) => ({
   content: [
@@ -84,6 +85,43 @@ export function registerBoardTools(server: McpServer): void {
     async ({ id }) => {
       withdrawNotice(id)
       return result({ withdrawn: id })
+    },
+  )
+  server.registerTool(
+    'board_suggestion_post',
+    {
+      description: 'Post an addressed worker suggestion as a new architect notice.',
+      inputSchema: z.object({
+        id: z.number().int().positive(),
+        audience: z.string().min(1),
+        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS).optional(),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS).optional(),
+        task: z.string().min(1).optional(),
+        path: z.array(z.string()).optional(),
+        topic: z.array(z.string()).optional(),
+      }),
+    },
+    async (input) =>
+      result(
+        postBoardSuggestion(input.id, {
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          task: input.task,
+          paths: input.path,
+          topics: input.topic,
+        }),
+      ),
+  )
+  server.registerTool(
+    'board_suggestion_decline',
+    {
+      description: 'Decline and withdraw an addressed worker suggestion.',
+      inputSchema: z.object({ id: z.number().int().positive() }),
+    },
+    async ({ id }) => {
+      declineBoardSuggestion(id)
+      return result({ declined: id })
     },
   )
 }

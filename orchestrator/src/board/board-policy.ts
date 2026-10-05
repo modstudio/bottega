@@ -25,25 +25,44 @@ export function architectIdentity(
   return null
 }
 
-export type PresenceFact = { session: string; project: string; machine: string; lastSeen: number }
+export type PresenceFact = {
+  reader: string
+  role: 'architect' | 'worker'
+  project: string
+  machine: string
+  lastSeen?: number
+  live?: boolean
+  runIds?: ReadonlySet<number>
+}
 export type Audience =
   | { kind: 'operator' }
   | { kind: 'architects' }
   | { kind: 'project'; value: string }
+  | { kind: 'workers'; value: string }
+  | { kind: 'run'; value: number }
   | { kind: 'machine'; value: string }
   | { kind: 'session'; value: string }
 
 export function parseAudience(expression: string): Audience {
   if (expression === 'operator') return { kind: 'operator' }
   if (expression === 'architects') return { kind: 'architects' }
-  const match = /^(project|machine|session):(.+)$/.exec(expression)
+  const match = /^(project|workers|run|machine|session):(.+)$/.exec(expression)
   if (!match?.[2]?.trim())
     throw new Error(
-      `unsupported board audience ${expression}; use operator, architects, project:<name>, machine:<name>, or session:<id>`,
+      `unsupported board audience ${expression}; use operator, architects, project:<name>, workers:<project>, run:<id>, machine:<name>, or session:<id>`,
     )
-  if (match[1] === 'session' && match[2] === OPERATOR_READER)
-    throw new Error(`session:${OPERATOR_READER} is reserved; use audience operator`)
-  return { kind: match[1] as 'project' | 'machine' | 'session', value: match[2] }
+  if (match[1] === 'session' && (match[2] === OPERATOR_READER || match[2].startsWith('run:')))
+    throw new Error(`session:${match[2]} is reserved; use audience ${match[2]}`)
+  if (match[1] === 'run') {
+    const id = Number(match[2])
+    if (!Number.isSafeInteger(id) || id <= 0)
+      throw new Error(`invalid run audience ${expression}; use run:<positive id>`)
+    return { kind: 'run', value: id }
+  }
+  return {
+    kind: match[1] as 'project' | 'workers' | 'machine' | 'session',
+    value: match[2],
+  }
 }
 
 export function audienceRefusal(
@@ -62,13 +81,28 @@ export function resolveAudience(
   liveWindowMs: number,
 ): string[] {
   if (audience.kind === 'operator') return [OPERATOR_READER]
-  const live = presence.filter((row) => now - row.lastSeen <= liveWindowMs && row.lastSeen <= now)
-  if (audience.kind === 'architects') return live.map((row) => row.session)
+  const live = presence.filter((row) =>
+    row.role === 'worker'
+      ? row.live === true
+      : row.lastSeen !== undefined && now - row.lastSeen <= liveWindowMs && row.lastSeen <= now,
+  )
+  if (audience.kind === 'architects')
+    return live.filter((row) => row.role === 'architect').map((row) => row.reader)
   if (audience.kind === 'project')
-    return live.filter((row) => row.project === audience.value).map((row) => row.session)
+    return live.filter((row) => row.project === audience.value).map((row) => row.reader)
+  if (audience.kind === 'workers')
+    return live
+      .filter((row) => row.role === 'worker' && row.project === audience.value)
+      .map((row) => row.reader)
+  if (audience.kind === 'run')
+    return live
+      .filter((row) => row.role === 'worker' && row.runIds?.has(audience.value))
+      .map((row) => row.reader)
   if (audience.kind === 'machine')
-    return live.filter((row) => row.machine === audience.value).map((row) => row.session)
-  return live.filter((row) => row.session === audience.value).map((row) => row.session)
+    return live.filter((row) => row.machine === audience.value).map((row) => row.reader)
+  return live
+    .filter((row) => row.role === 'architect' && row.reader === audience.value)
+    .map((row) => row.reader)
 }
 
 export const shouldInterrupt = (message: {
@@ -79,7 +113,7 @@ export const shouldInterrupt = (message: {
   message.ackRequired && (message.authorKind === 'operator' || message.audienceKind === 'machine')
 
 export function requireRealSession(session: string, action: string): void {
-  if (!session.trim() || session === OPERATOR_READER)
+  if (!session.trim() || session === OPERATOR_READER || session.startsWith('run:'))
     throw new Error(`${action} requires a real session id`)
 }
 

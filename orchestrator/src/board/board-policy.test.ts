@@ -23,14 +23,28 @@ test('architect identity is a table with only the ruled Claude entry', () => {
 
 test('audiences resolve at delivery, including a late joiner', () => {
   const audience = parseAudience('architects')
-  const original = [{ session: 'one', project: PLATFORM_SLUG, machine: 'host-a', lastSeen: 900 }]
+  const original = [
+    {
+      reader: 'one',
+      role: 'architect' as const,
+      project: PLATFORM_SLUG,
+      machine: 'host-a',
+      lastSeen: 900,
+    },
+  ]
   expect(resolveAudience(audience, original, 1_000, 200)).toEqual(['one'])
   expect(
     resolveAudience(
       audience,
       [
         ...original,
-        { session: 'late', project: PLATFORM_SLUG, machine: 'host-b', lastSeen: 1_050 },
+        {
+          reader: 'late',
+          role: 'architect',
+          project: PLATFORM_SLUG,
+          machine: 'host-b',
+          lastSeen: 1_050,
+        },
       ],
       1_100,
       200,
@@ -41,16 +55,66 @@ test('audiences resolve at delivery, including a late joiner', () => {
 
 test('machine audiences resolve by live presence', () => {
   const presence = [
-    { session: 'same', project: PLATFORM_SLUG, machine: 'host-a', lastSeen: 900 },
-    { session: 'other', project: PLATFORM_SLUG, machine: 'host-b', lastSeen: 900 },
+    {
+      reader: 'same',
+      role: 'architect' as const,
+      project: PLATFORM_SLUG,
+      machine: 'host-a',
+      lastSeen: 900,
+    },
+    {
+      reader: 'other',
+      role: 'architect' as const,
+      project: PLATFORM_SLUG,
+      machine: 'host-b',
+      lastSeen: 900,
+    },
   ]
   expect(resolveAudience(parseAudience('machine:host-a'), presence, 1_000, 200)).toEqual(['same'])
   expect(parseAudience('machine:this')).toEqual({ kind: 'machine', value: 'this' })
 })
 
+test('worker audiences resolve projects, runs, and machines without leaking session audiences', () => {
+  const facts = [
+    {
+      reader: 'architect',
+      role: 'architect' as const,
+      project: PLATFORM_SLUG,
+      machine: 'host-a',
+      lastSeen: 900,
+    },
+    {
+      reader: 'run:10',
+      role: 'worker' as const,
+      project: PLATFORM_SLUG,
+      machine: 'host-a',
+      live: true,
+      runIds: new Set([10, 11]),
+    },
+  ]
+  expect(resolveAudience(parseAudience(`project:${PLATFORM_SLUG}`), facts, 1_000, 200)).toEqual([
+    'architect',
+    'run:10',
+  ])
+  expect(resolveAudience(parseAudience(`workers:${PLATFORM_SLUG}`), facts, 1_000, 200)).toEqual([
+    'run:10',
+  ])
+  expect(resolveAudience(parseAudience('run:11'), facts, 1_000, 200)).toEqual(['run:10'])
+  expect(resolveAudience(parseAudience('machine:host-a'), facts, 1_000, 200)).toEqual([
+    'architect',
+    'run:10',
+  ])
+  expect(resolveAudience(parseAudience('operator'), facts, 1_000, 200)).toEqual(['operator'])
+  expect(resolveAudience(parseAudience('architects'), facts, 1_000, 200)).toEqual(['architect'])
+  expect(resolveAudience(parseAudience('session:architect'), facts, 1_000, 200)).toEqual([
+    'architect',
+  ])
+  expect(() => parseAudience('session:run:10')).toThrow(/reserved/)
+})
+
 test('unsupported audience refusal lists every accepted form', () => {
   expect(() => parseAudience('everyone')).toThrow(
-    'unsupported board audience everyone; use operator, architects, project:<name>, machine:<name>, or session:<id>',
+    'unsupported board audience everyone; use operator, architects, project:<name>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
   )
 })
 

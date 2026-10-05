@@ -32,5 +32,28 @@ export const boardModules: BoardModule[] = [
     './board-routing.ts',
     './board-tags.ts',
   ]),
-  module('orchestrator/src/board/board-commands.ts', ['commander', './board-service.ts']),
+  module('orchestrator/src/board/board-suggestions.ts', [
+    '../../../shared/secret-shaped.ts',
+    '../database/db.ts',
+    './board-policy.ts',
+    './board-service.ts',
+    './board-tags.ts',
+  ]),
+  module('orchestrator/src/board/board-commands.ts', [
+    'commander',
+    './board-service.ts',
+    './board-suggestions.ts',
+  ]),
+  module('orchestrator/src/ask/ask-board-tools.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../board/board-policy.ts',
+    '../board/board-suggestions.ts',
+  ]),
+  module('orchestrator/src/run/run-board-prompt.ts', [
+    'node:fs',
+    '../board/board-service.ts',
+    '../database/db.ts',
+    './run-process.ts',
+  ]),
 ]

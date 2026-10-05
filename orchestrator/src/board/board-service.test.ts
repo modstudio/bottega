@@ -11,6 +11,7 @@ import {
   boardEscalations,
   claimInterruptNotices,
   claimNotices,
+  claimRunNotices,
   markInterruptNoticesDelivered,
   noticeStatus,
   postNotice,
@@ -106,6 +107,46 @@ test('tagged project notice follows matching run paths at posting and for a late
   ).toEqual([posted.id])
   readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4)
   expect(noticeStatus(posted.id, {}).reached).toBe(2)
+})
+
+test('tagged project notice reaches a matching worker chain and withholds from another', () => {
+  const clock = Date.now() + 12_000
+  const insertRun = db().query(
+    `INSERT INTO run
+     (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,parent_run_id,turn)
+     VALUES (?,'codex','implement','worker-board-project','sha',1,'prompt',?,?,?,?,?) RETURNING id`,
+  )
+  const matching = insertRun.get(
+    new Date(clock).toISOString(),
+    'running',
+    'DEV-MATCH',
+    JSON.stringify(['orchestrator/src/board/board-service.ts']),
+    null,
+    1,
+  ) as { id: number }
+  const other = insertRun.get(
+    new Date(clock).toISOString(),
+    'asking',
+    'DEV-OTHER',
+    JSON.stringify(['hub/web/src/routes/index.tsx']),
+    null,
+    1,
+  ) as { id: number }
+  const posted = postNotice(
+    {
+      audience: 'project:worker-board-project',
+      title: 'Matching worker',
+      body: 'Only matching task context receives this.',
+      task: 'DEV-MATCH',
+    },
+    {},
+    clock,
+  )
+  expect(posted.reached).toBe(1)
+  expect(claimRunNotices(matching.id, false, clock + 1).map((notice) => notice.id)).toEqual([
+    posted.id,
+  ])
+  expect(claimRunNotices(other.id, false, clock + 1)).toEqual([])
 })
 
 test('an untagged notice infers no tags', () => {
