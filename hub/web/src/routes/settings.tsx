@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { hourOfDayLabel, sendTimestamp } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
 import { queryClient, type RecordSettingsResponse, trpc } from '@/trpc/client'
@@ -19,7 +20,6 @@ type Subscription = Settings['subscriptions'][number]
 type Member = Settings['members'][number]
 type Draft = {
   scope: 'space' | 'project' | 'members' | 'projects'
-  project: string
   memberUserIds: string[]
   projectIds: string[]
   cadence: 'daily' | 'weekly'
@@ -74,12 +74,34 @@ function OperatorEmailSettings() {
   )
 }
 
-function initialDraft(row: Subscription | undefined, projects: string[]): Draft {
+function initialDraft(
+  row: Subscription | undefined,
+  spaceProjects: Settings['spaceProjects'],
+  isPersonalSpace: boolean,
+  spaceId: string,
+): Draft {
+  const storedAcrossSpaces = Boolean(
+    row?.scope_kind === 'projects' &&
+      isPersonalSpace &&
+      row.projects.some((project) => project.space_id !== spaceId),
+  )
+  const legacyProjectId =
+    row?.scope_kind === 'project'
+      ? spaceProjects.find((project) => project.name === row.project_name)?.id
+      : undefined
   return {
-    scope: row?.scope_kind ?? 'space',
-    project: row?.project_name ?? projects[0] ?? '',
+    scope:
+      row?.scope_kind === 'project'
+        ? 'project'
+        : storedAcrossSpaces
+          ? 'projects'
+          : row?.scope_kind === 'projects'
+            ? 'project'
+            : (row?.scope_kind ?? 'space'),
     memberUserIds: row?.members.map((member) => member.user_id) ?? [],
-    projectIds: row?.projects.map((project) => project.project_id) ?? [],
+    projectIds: legacyProjectId
+      ? [legacyProjectId]
+      : (row?.projects.map((project) => project.project_id) ?? []),
     cadence: row?.cadence ?? 'daily',
     hour: row?.hour ?? 9,
     weekday: row?.weekday ?? 'monday',
@@ -95,10 +117,65 @@ function initialDraft(row: Subscription | undefined, projects: string[]): Draft 
 }
 
 function draftScope(draft: Draft) {
-  if (draft.scope === 'project') return { kind: 'project' as const, project: draft.project }
+  if (draft.scope === 'project') return { kind: 'projects' as const, projectIds: draft.projectIds }
   if (draft.scope === 'members') return { kind: 'members' as const, userIds: draft.memberUserIds }
   if (draft.scope === 'projects') return { kind: 'projects' as const, projectIds: draft.projectIds }
   return { kind: 'space' as const }
+}
+
+function SpaceProjectChecks({
+  projects,
+  storedProjects,
+  selected,
+  spaceId,
+  onChange,
+}: {
+  projects: Settings['spaceProjects']
+  storedProjects: Subscription['projects']
+  selected: string[]
+  spaceId: string
+  onChange: (projectIds: string[]) => void
+}) {
+  const options = [
+    ...projects.map((project) => ({ ...project, note: null as string | null })),
+    ...storedProjects
+      .filter(
+        (stored) =>
+          stored.space_id === spaceId &&
+          !projects.some((project) => project.id === stored.project_id),
+      )
+      .map((stored) => ({
+        id: stored.project_id,
+        name: stored.project_name,
+        note: 'project was deleted',
+      })),
+  ]
+  return (
+    <div className="grid gap-2">
+      <span className="text-sm text-text-muted">Project</span>
+      {options.map((project) => (
+        <label
+          key={project.id}
+          htmlFor={`scope-space-project-${project.id}`}
+          className="flex items-center gap-2 text-sm"
+        >
+          <Checkbox
+            id={`scope-space-project-${project.id}`}
+            checked={selected.includes(project.id)}
+            onChange={(event) =>
+              onChange(
+                event.target.checked
+                  ? [...selected, project.id]
+                  : selected.filter((id) => id !== project.id),
+              )
+            }
+          />
+          {project.name}
+          {project.note ? ` (${project.note})` : ''}
+        </label>
+      ))}
+    </div>
+  )
 }
 
 function ProjectsAcrossSpaces({
@@ -165,11 +242,13 @@ const subscriptionCannotSave = (draft: Draft, pending: boolean) =>
   pending ||
   (!draft.recipientUserIds.length && !draft.recipientEmails.length) ||
   (draft.scope === 'members' && !draft.memberUserIds.length) ||
+  (draft.scope === 'project' && !draft.projectIds.length) ||
   (draft.scope === 'projects' && !draft.projectIds.length)
 
 function SubscriptionDialog({
   row,
-  projects,
+  spaceProjects,
+  spaceId,
   members,
   manageableProjects,
   isPersonalSpace,
@@ -177,14 +256,17 @@ function SubscriptionDialog({
   onClose,
 }: {
   row?: Subscription
-  projects: string[]
+  spaceProjects: Settings['spaceProjects']
+  spaceId: string
   members: Member[]
   manageableProjects: Settings['manageableProjects']
   isPersonalSpace: boolean
   canManageEmails: boolean
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, projects))
+  const [draft, setDraft] = useState<Draft>(() =>
+    initialDraft(row, spaceProjects, isPersonalSpace, spaceId),
+  )
   const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
@@ -299,14 +381,29 @@ function SubscriptionDialog({
             { value: 'members', label: 'Members' },
             ...(isPersonalSpace ? [{ value: 'projects', label: 'Projects across spaces' }] : []),
           ]}
-          onChange={(scope) => change({ scope: scope as Draft['scope'] })}
+          onChange={(scopeValue) => {
+            const scope = scopeValue as Draft['scope']
+            const ownProjectIds = new Set([
+              ...spaceProjects.map((project) => project.id),
+              ...(row?.projects
+                .filter((project) => project.space_id === spaceId)
+                .map((project) => project.project_id) ?? []),
+            ])
+            change({
+              scope,
+              ...(scope === 'project'
+                ? { projectIds: draft.projectIds.filter((id) => ownProjectIds.has(id)) }
+                : {}),
+            })
+          }}
         />
         {draft.scope === 'project' ? (
-          <Select
-            label="Project"
-            value={draft.project}
-            options={projects.map((project) => ({ value: project, label: project }))}
-            onChange={(project) => change({ project })}
+          <SpaceProjectChecks
+            projects={spaceProjects}
+            storedProjects={row?.projects ?? []}
+            selected={draft.projectIds}
+            spaceId={spaceId}
+            onChange={(projectIds) => change({ projectIds })}
           />
         ) : null}
         {draft.scope === 'members' ? (
@@ -398,7 +495,7 @@ function SubscriptionDialog({
           value={String(draft.hour)}
           options={Array.from({ length: 24 }, (_, hour) => ({
             value: String(hour),
-            label: `${String(hour).padStart(2, '0')}:00`,
+            label: hourOfDayLabel(hour),
           }))}
           onChange={(hour) => change({ hour: Number(hour) })}
         />
@@ -502,13 +599,21 @@ export function SettingsPage() {
                         : row.scope_kind === 'members'
                           ? `Members: ${row.members.map((member) => member.name).join(', ')}`
                           : row.scope_kind === 'projects'
-                            ? `Projects: ${row.projects.map((project) => `${project.space_name}/${project.project_name}`).join(', ')}`
+                            ? `Projects: ${row.projects
+                                .map((project) =>
+                                  row.projects.every(
+                                    (selected) => selected.space_id === data.spaceId,
+                                  )
+                                    ? project.project_name
+                                    : `${project.space_name}/${project.project_name}`,
+                                )
+                                .join(', ')}`
                             : 'Space'}
                     </TableCell>
                     <TableCell muted>
                       {row.cadence === 'weekly'
-                        ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
-                        : `daily ${row.hour}:00 ${row.zone}`}
+                        ? `weekly ${row.weekday} ${hourOfDayLabel(row.hour)} ${row.zone}`
+                        : `daily ${hourOfDayLabel(row.hour)} ${row.zone}`}
                       <Badge className="mt-1 block" tone={row.enabled ? 'success' : 'neutral'}>
                         {row.enabled ? 'enabled' : 'disabled'}
                       </Badge>
@@ -534,7 +639,8 @@ export function SettingsPage() {
           {creating || editing ? (
             <SubscriptionDialog
               row={editing}
-              projects={data.allProjects}
+              spaceProjects={data.spaceProjects}
+              spaceId={data.spaceId}
               members={data.members}
               manageableProjects={data.manageableProjects}
               isPersonalSpace={data.isPersonalSpace}
@@ -561,7 +667,7 @@ export function SettingsPage() {
               <TableBody>
                 {data.sends.map((row) => (
                   <TableRow key={`${row.at}:${row.recipients}`}>
-                    <TableCell muted>{row.at.slice(0, 16).replace('T', ' ')}</TableCell>
+                    <TableCell muted>{sendTimestamp(row.at)}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Badge>{String(row.status)}</Badge>

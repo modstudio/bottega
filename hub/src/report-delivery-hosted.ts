@@ -61,20 +61,26 @@ type SelectedProject = {
   retired_at: string | Date | null
 }
 
-const projectIsAvailable = (project: SelectedProject) =>
+export const projectIsAvailable = (project: SelectedProject, subscriptionSpaceId: string) =>
   Boolean(
     project.project_name &&
       project.space_id &&
       project.space_name &&
       !project.retired_at &&
-      (project.role === 'owner' || project.role === 'admin'),
+      (project.space_id === subscriptionSpaceId ||
+        project.role === 'owner' ||
+        project.role === 'admin'),
   )
 
-function projectExclusions(projects: SelectedProject[]) {
+function projectExclusions(projects: SelectedProject[], subscriptionSpaceId: string) {
   return projects.flatMap((project) => {
     const name = `${project.space_name ?? project.snapshot_space_id}/${project.snapshot_name}`
     if (!project.project_name || project.retired_at) return [`${name}: project was deleted`]
-    if (project.role !== 'owner' && project.role !== 'admin')
+    if (
+      project.space_id !== subscriptionSpaceId &&
+      project.role !== 'owner' &&
+      project.role !== 'admin'
+    )
       return [`${name}: subscription owner is no longer an owner or admin`]
     return []
   })
@@ -230,8 +236,10 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
               ),
             )
           : []
-      const validProjects = selectedProjects.filter(projectIsAvailable)
-      const exclusions = projectExclusions(selectedProjects)
+      const validProjects = selectedProjects.filter((project) =>
+        projectIsAvailable(project, value.spaceId),
+      )
+      const exclusions = projectExclusions(selectedProjects, value.spaceId)
       const scope = loadedScope(loaded, validProjects)
       const scopeName = loadedScopeName(loaded)
       const recipientIdentity =
