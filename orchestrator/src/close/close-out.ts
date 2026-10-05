@@ -537,6 +537,7 @@ function attemptCloseOutRun(
     sessionId: effective.session_id,
     launchKey: effective.launch_key,
     status: effective.status,
+    explicitTreeRemovalRequested: options.intent === 'tree-remove',
   }
   const preRemovalHold =
     terminalHoldResult(row.root_id, treePath, effective.status, options.keepTreeDecision) ??

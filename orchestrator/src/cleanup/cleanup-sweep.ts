@@ -388,6 +388,7 @@ function landingTreeSweepDecision(r: SweepCandidate) {
     status: r.status,
     treeExists: existsSync(r.worktree),
     landingInFlight: landingInFlightForSweep(r),
+    explicitTreeRemovalRequested: false,
   })
 }
 

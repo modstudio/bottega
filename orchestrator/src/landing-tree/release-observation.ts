@@ -17,6 +17,7 @@ export type LandingTreeReleaseRow = {
   status: string
   treeExists: boolean
   landingInFlight: boolean
+  explicitTreeRemovalRequested: boolean
 }
 
 function unavailable(row: LandingTreeReleaseRow, detail: string): LandingTreeReleaseDecision {
@@ -38,14 +39,18 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
       treeExists: row.treeExists,
       status: row.status,
       landingInFlight: row.landingInFlight,
+      explicitTreeRemovalRequested: row.explicitTreeRemovalRequested,
     }
     if (!row.treeExists) return landingTreeReleaseDecision(decisionFacts, false, false)
-    const trunk = project.settings.trunk?.trim()
-    if (!trunk) return unavailable(row, `project ${project.name} has no registered trunk`)
     const cleanStatus = git(['status', '--porcelain=v1', '--untracked-files=all'], row.worktree)
     if (cleanStatus !== '') {
       return landingTreeReleaseDecision(decisionFacts, false, false)
     }
+    if (row.explicitTreeRemovalRequested) {
+      return landingTreeReleaseDecision(decisionFacts, true, false)
+    }
+    const trunk = project.settings.trunk?.trim()
+    if (!trunk) return unavailable(row, `project ${project.name} has no registered trunk`)
     const branchTip = gitContext(
       project.path,
       'rev-parse',

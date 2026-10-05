@@ -23,6 +23,7 @@ export function landingTreeReleaseHold(input: {
   sessionId: string | null
   launchKey: string | null
   status: string
+  explicitTreeRemovalRequested: boolean
 }): ReleaseHoldResult | null {
   if (input.job !== LANDING_TREE_JOB) return null
   const project = input.repo ?? projectAt(input.worktree)?.name ?? null
