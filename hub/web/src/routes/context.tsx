@@ -726,9 +726,7 @@ function ManagedSettingsSection({
             />
           ))}
           <PermissionEditor address={address} revision={settings.data.revision} />
-          {target === 'user' && localSettings.data?.machine ? (
-            <MachinePermissionOverlay machine={localSettings.data.machine} />
-          ) : null}
+          <MachinePermissionOverlay machine={userMachineOverlay(target, localSettings.data)} />
           {hosted ? null : (
             <SettingBlock
               label="Apply now from a terminal"
@@ -740,6 +738,11 @@ function ManagedSettingsSection({
       ) : null}
     </FieldSection>
   )
+}
+
+/** The machine overlay is user-level, so a project target has none to show. */
+function userMachineOverlay<Machine>(target: string, data: { machine?: Machine } | undefined) {
+  return target === 'user' ? data?.machine : undefined
 }
 
 function applyCommand(target: string, projects: ManagedProject[]) {

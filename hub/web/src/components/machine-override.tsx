@@ -109,6 +109,14 @@ function OverlayRules({
 export function MachinePermissionOverlay({
   machine,
 }: {
+  machine: { additions: Lists; drop: Lists } | undefined
+}) {
+  return machine ? <MachinePermissionOverlayPanel machine={machine} /> : null
+}
+
+function MachinePermissionOverlayPanel({
+  machine,
+}: {
   machine: { additions: Lists; drop: Lists }
 }) {
   const [open, setOpen] = useState(false)
