@@ -24,8 +24,6 @@ export const BOARD_ASK_REFRESH_BUDGET_MS = 500
 const sessionReader = (env: Record<string, string | undefined>) =>
   architectIdentity(env)?.session ?? OPERATOR_READER
 
-export type BoardDelivery<T> = { notices: T[]; warning: string | null }
-
 export async function claimBoardNotices(
   all = false,
   input: { env?: Record<string, string | undefined>; budgetMs?: number } = {},

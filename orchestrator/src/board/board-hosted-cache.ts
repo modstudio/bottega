@@ -31,6 +31,7 @@ export const BOARD_REFRESH_OUTCOME_KEY = 'board_hosted_refresh_outcome'
 const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
+const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
 
 export type HostedCacheNotice = {
   id: string
@@ -468,6 +469,8 @@ export async function markCachedHostedDelivered(
 ): Promise<void> {
   const database = input.database ?? writableDb()
   const at = new Date(input.clock ?? Date.now()).toISOString()
+  const deadline = Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
+  const client = input.client ?? recordApiClient()
   for (const id of ids) {
     const row = database
       .query('SELECT payload FROM hosted_board_message_cache WHERE id=?')
@@ -486,12 +489,15 @@ export async function markCachedHostedDelivered(
       )
       .run(id, reader, posting ? 1 : 0, at)
     try {
-      await (input.client ?? recordApiClient()).putBoardReceipt({
-        messageId: id,
-        readerSession: reader,
-        audienceAtPosting: posting,
-        delivered: true,
-      })
+      await within(
+        client.putBoardReceipt({
+          messageId: id,
+          readerSession: reader,
+          audienceAtPosting: posting,
+          delivered: true,
+        }),
+        deadline - Date.now(),
+      )
       database
         .query(
           'UPDATE hosted_board_receipt_cache SET pending_sync=0 WHERE message_id=? AND reader_session=?',

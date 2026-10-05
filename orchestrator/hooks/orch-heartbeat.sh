@@ -475,11 +475,14 @@ for row in rows:
     report_store_write_lock
   elif [ -n "$monitor_observed" ]; then
     monitor_ids=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning" {print $1}' | paste -sd, -)
-    CAP_DIR=""
-    CAP_DIR=$(mktemp -d 2>/dev/null); cap_mint_rc=$?
-    if [ "$cap_mint_rc" -eq 0 ]; then
-      CAP_PATH="$CAP_DIR/capability.json"
-      CAP_TOKEN=$(python3 -c '
+    if [ -z "$monitor_ids" ]; then
+      printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'
+    else
+      CAP_DIR=""
+      CAP_DIR=$(mktemp -d 2>/dev/null); cap_mint_rc=$?
+      if [ "$cap_mint_rc" -eq 0 ]; then
+        CAP_PATH="$CAP_DIR/capability.json"
+        CAP_TOKEN=$(python3 -c '
 import json, os, secrets, sys
 token = secrets.token_hex(32)
 with open(sys.argv[1], "x", encoding="utf-8") as f:
@@ -487,32 +490,29 @@ with open(sys.argv[1], "x", encoding="utf-8") as f:
     json.dump({"token": token, "pid": int(sys.argv[2])}, f)
 print(token)
 ' "$CAP_PATH" "$$" 2>/dev/null); cap_mint_rc=$?
-    fi
-    if [ "$cap_mint_rc" -ne 0 ]; then
-      [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
-      echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
-    elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
-      if [ -z "$monitor_ids" ]; then
-        rm -rf "$CAP_DIR"
-        continue
       fi
-      export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
-      export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
-      ack_timed_out=$(mktemp)
-      CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
-      ACTIVE_GUARDED_PID=$!
-      start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
-      ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
-      wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
-      ACTIVE_GUARDED_PID=""
-      cancel_watchdog "$ACTIVE_WATCHDOG_PID"
-      ACTIVE_WATCHDOG_PID=""
-      if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
-      rm -f "$ack_timed_out"
-      rm -rf "$CAP_DIR"
-      unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
-      if [ "$ack_rc" -ne 0 ]; then
-        echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+      if [ "$cap_mint_rc" -ne 0 ]; then
+        [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
+        echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
+      elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
+        export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
+        export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
+        ack_timed_out=$(mktemp)
+        CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
+        ACTIVE_GUARDED_PID=$!
+        start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
+        ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
+        wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
+        ACTIVE_GUARDED_PID=""
+        cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+        ACTIVE_WATCHDOG_PID=""
+        if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
+        rm -f "$ack_timed_out"
+        rm -rf "$CAP_DIR"
+        unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
+        if [ "$ack_rc" -ne 0 ]; then
+          echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+        fi
       fi
     fi
   fi
