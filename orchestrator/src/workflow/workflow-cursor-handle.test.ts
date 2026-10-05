@@ -162,6 +162,136 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
   expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 2 })
 })
 
+test('step 1 ignores two advanced keyless cursors and opens a third', () => {
+  const d = database()
+  installKeylessWorkflow(d, 'advanced-keyless-runs')
+  const first = composeWorkflowWithCursor(
+    'advanced-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    context,
+    d,
+  ).cursor!.id
+  const second = composeWorkflowWithCursor(
+    'advanced-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    context,
+    d,
+  ).cursor!.id
+  d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
+  for (const cursor of [first, second])
+    nextWorkflowStep(
+      'advanced-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      'advanced',
+      context,
+      d,
+      {},
+      ports,
+      cursor,
+    )
+
+  const third = getWorkflowStepWithCursor(
+    'advanced-keyless-runs',
+    'fixture',
+    'score',
+    {},
+    'default',
+    context,
+    d,
+  )
+  expect([first, second]).not.toContain(third.cursor)
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 3 })
+})
+
+test('step 1 reuses the untouched cursor when another keyless cursor is advanced', () => {
+  const d = database()
+  installKeylessWorkflow(d, 'mixed-keyless-runs')
+  const advanced = composeWorkflowWithCursor(
+    'mixed-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    context,
+    d,
+  ).cursor!.id
+  const untouched = composeWorkflowWithCursor(
+    'mixed-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    context,
+    d,
+  ).cursor!.id
+  d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
+  nextWorkflowStep(
+    'mixed-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    'advanced',
+    context,
+    d,
+    {},
+    ports,
+    advanced,
+  )
+
+  const fetched = getWorkflowStepWithCursor(
+    'mixed-keyless-runs',
+    'fixture',
+    'score',
+    {},
+    'default',
+    context,
+    d,
+  )
+  expect(fetched.cursor).toBe(untouched)
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 2 })
+})
+
+test('step 1 refuses when two untouched keyless cursors match', () => {
+  const d = database()
+  installKeylessWorkflow(d, 'untouched-keyless-runs')
+  const first = composeWorkflowWithCursor(
+    'untouched-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    context,
+    d,
+  ).cursor!.id
+  const second = composeWorkflowWithCursor(
+    'untouched-keyless-runs',
+    'fixture',
+    'default',
+    {},
+    context,
+    d,
+  ).cursor!.id
+
+  expect(() =>
+    getWorkflowStepWithCursor(
+      'untouched-keyless-runs',
+      'fixture',
+      'score',
+      {},
+      'default',
+      context,
+      d,
+    ),
+  ).toThrow(
+    `more than one open keyless workflow cursor matches; pass a cursor handle:\n` +
+      `cursor ${first}, unassigned, untouched-keyless-runs default, step 1 score\n` +
+      `cursor ${second}, unassigned, untouched-keyless-runs default, step 1 score`,
+  )
+})
+
 test('a handle to a done or abandoned cursor never opens a replacement', () => {
   for (const state of ['done', 'abandoned'] as const) {
     const d = database()

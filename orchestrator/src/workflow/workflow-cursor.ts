@@ -14,7 +14,11 @@ import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
-import { type SelectableCursorRow, selectWorkflowCursor } from './workflow-cursor-selection.ts'
+import {
+  type SelectableCursorRow,
+  selectUntouchedKeylessWorkflowCursor,
+  selectWorkflowCursor,
+} from './workflow-cursor-selection.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -304,20 +308,6 @@ function cursorCompositionInput(row: CursorRow | null, args: Record<string, stri
   }
 }
 
-function isUntouchedCursor(row: CursorRow): boolean {
-  return row.ordinal === 0 && (JSON.parse(row.closed) as CursorTrailEntry[]).length === 0
-}
-
-function cursorForStepRequest(
-  handled: CursorRow | null,
-  candidate: CursorRow | null,
-  openingKeyless: boolean,
-): CursorRow | null {
-  if (handled) return handled
-  if (!openingKeyless) return candidate
-  return candidate && isUntouchedCursor(candidate) ? candidate : null
-}
-
 function refuseInvalidServe(
   decision: ReturnType<typeof decideCursorTransition>,
   row: CursorRow | null,
@@ -361,8 +351,14 @@ function prepareStepServe(
   ])
   const openingKeyless =
     cursor === undefined && !keyOf(args) && preliminary.steps[0]?.slug === preliminaryStepSlug
-  const candidate = handled ?? findCursor(project, slug, mode, args, context, d, cursor)
-  let row = cursorForStepRequest(handled, candidate, openingKeyless)
+  const candidate = openingKeyless
+    ? (selectUntouchedKeylessWorkflowCursor(
+        { project, workflow: slug, mode },
+        context.session,
+        d,
+      ) as CursorRow | null)
+    : (handled ?? findCursor(project, slug, mode, args, context, d, cursor))
+  let row = handled ?? candidate
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)
   if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)

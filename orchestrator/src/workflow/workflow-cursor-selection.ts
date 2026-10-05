@@ -36,6 +36,12 @@ function cursorCandidate(row: SelectableCursorRow): string {
   return `cursor ${row.id}, ${row.workflow_key || 'unassigned'}, ${row.workflow_slug} ${row.mode_slug}, step ${row.ordinal + 1} ${row.step_slug}`
 }
 
+function refuseAmbiguousKeylessCursors(rows: SelectableCursorRow[]): never {
+  throw new Error(
+    `more than one open keyless workflow cursor matches; pass a cursor handle:\n${rows.map(cursorCandidate).join('\n')}`,
+  )
+}
+
 function validateIdentity(
   row: SelectableCursorRow,
   identity: WorkflowCursorIdentity,
@@ -99,10 +105,26 @@ export function selectWorkflowCursor(
     )
     .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
   if (rows.length > 1) {
-    throw new Error(
-      `more than one open keyless workflow cursor matches; pass a cursor handle:\n${rows.map(cursorCandidate).join('\n')}`,
-    )
+    refuseAmbiguousKeylessCursors(rows)
   }
+  return rows[0] ?? null
+}
+
+export function selectUntouchedKeylessWorkflowCursor(
+  identity: Required<Pick<WorkflowCursorIdentity, 'project' | 'workflow' | 'mode'>>,
+  ownerSession: string | null | undefined,
+  d: Database,
+): SelectableCursorRow | null {
+  if (!ownerSession) return null
+  const rows = d
+    .query(
+      `SELECT * FROM workflow_cursor
+       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
+         AND session_id=? AND state NOT IN ('done','abandoned')
+         AND ordinal=0 AND json_array_length(closed)=0 ORDER BY id`,
+    )
+    .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
+  if (rows.length > 1) refuseAmbiguousKeylessCursors(rows)
   return rows[0] ?? null
 }
 
