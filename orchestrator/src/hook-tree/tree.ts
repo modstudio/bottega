@@ -3,11 +3,11 @@
 
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
-import { projectAt, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
+import { projectAt, projects, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
 import { trackedHookBranch } from '../recipe/tracked-recipe.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
@@ -23,6 +23,16 @@ function canonicalPath(path: string): string {
   } catch {
     return resolve(path)
   }
+}
+
+function registeredProjectContaining(path: string): ReturnType<typeof projects>[number] | null {
+  let best: ReturnType<typeof projects>[number] | null = null
+  for (const project of projects()) {
+    const root = canonicalPath(project.path)
+    if (path !== root && !path.startsWith(`${root}${sep}`)) continue
+    if (!best || root.length > canonicalPath(best.path).length) best = project
+  }
+  return best
 }
 
 function validateKey(
@@ -182,16 +192,27 @@ export function removeHookTree(requestedPath: string): void {
           )
           .all() as { id: number; job: string; worktree: string }[]
       ).filter((row) => isSyntheticLifecycleJob(row.job) && canonicalPath(row.worktree) === wanted)
-  if (!owners.length || owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
-    throw new Error(`${requestedPath} is not an architect-owned tree`)
+  if (!owners.length) {
+    const project = registeredProjectContaining(wanted)
+    if (!project) {
+      throw new Error(
+        `no orch run records the worktree at ${requestedPath}; no registered project contains it, so its main checkout cannot be established and orch will not remove it`,
+      )
+    }
+    throw new Error(
+      `no orch run records the worktree at ${requestedPath}; if orch did not make this tree, confirm it is clean and its commits are pushed, then run git -C ${project.path} worktree remove ${requestedPath}`,
+    )
+  }
+  if (owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
+    throw new Error(
+      `${requestedPath} belongs to run${owners.length === 1 ? '' : 's'} ${owners.map((row) => row.id).join(', ')}, which ${owners.length === 1 ? 'is' : 'are'} not architect tree runs; close ${owners.length === 1 ? 'it' : 'them'} with ${owners.map((row) => `orch close-out ${row.id}`).join('; ')}`,
+    )
   }
   if (owners.length > 1) {
     throw new Error(
       `${requestedPath} is claimed by more than one lifecycle run: ${owners.map((row) => row.id).join(', ')}`,
     )
   }
-  if (!isSyntheticLifecycleJob(owners[0]!.job))
-    throw new Error(`${requestedPath} is not an architect-owned tree`)
   writableDb()
   const result = closeOutRun(owners[0]!.id, { intent: 'tree-remove' })
   if (!['released', 'absent'].includes(result.outcome)) {

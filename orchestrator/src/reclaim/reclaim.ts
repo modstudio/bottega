@@ -196,6 +196,8 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
   const recipeRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: Boolean(row),
     trackedRecipe: Boolean(resolvedWorktreeTool(project)?.recipePath),
+    treePath: path,
+    mainCheckoutPath: project.path,
   })
   if (recipeRefusal) return { result: refuse(recipeRefusal) }
   return {

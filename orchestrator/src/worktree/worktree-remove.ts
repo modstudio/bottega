@@ -278,6 +278,8 @@ function removeWithoutCommand(
   const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: runId !== undefined,
     trackedRecipe: Boolean(tool.recipePath),
+    treePath: w.path,
+    mainCheckoutPath: w.repoRoot,
   })
   if (snapshotRefusal) return { removed: false, detail: snapshotRefusal }
   if (tool.recipePath) {
