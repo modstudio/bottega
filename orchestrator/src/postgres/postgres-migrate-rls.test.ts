@@ -19,6 +19,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
@@ -51,6 +52,9 @@ const { ORCH_RECORD_URL: actorUrl, RECORD_AUTH_DATABASE_URL: authUrl } = process
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
+const USER_B = '01990000-0000-7000-8000-000000000020'
+const USER_C = '01990000-0000-7000-8000-000000000030'
+const USER_D = '01990000-0000-7000-8000-000000000040'
 const AUTH_EMAIL_HTTP = 'auth-http@example.test'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
@@ -101,12 +105,17 @@ realPostgres('RLS proof against real Postgres', () => {
       `
       INSERT INTO space (id, name, slug, created_at) VALUES
         ('${SPACE_A}', 'space-a', 'space-a', now()), ('${SPACE_B}', 'space-b', 'space-b', now());
-      INSERT INTO "user" (id, email, name, created_at)
-        VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
+      INSERT INTO "user" (id, email, name, created_at) VALUES
+        ('${USER_A}', 'owner@example.test', 'Owner', now()),
+        ('${USER_B}', 'board-b@example.test', 'Board B', now()),
+        ('${USER_C}', 'board-c@example.test', 'Board C', now()),
+        ('${USER_D}', 'board-d@example.test', 'Board D', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
         VALUES
         ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now()),
-        ('01990000-0000-7000-8000-000000000012', '${SPACE_B}', '${USER_A}', 'member', 'write', now());
+        ('01990000-0000-7000-8000-000000000012', '${SPACE_B}', '${USER_A}', 'member', 'write', now()),
+        ('01990000-0000-7000-8000-000000000021', '${SPACE_A}', '${USER_B}', 'member', 'write', now()),
+        ('01990000-0000-7000-8000-000000000031', '${SPACE_A}', '${USER_C}', 'member', 'read', now());
       INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
       VALUES
@@ -277,6 +286,19 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
   registerHostedConfigProofs(actorUrl!, SPACE_A, SPACE_B, USER_A)
+  registerBoardRlsProofs({
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+    psql,
+    readerRole: RECORD_READER_ROLE,
+    spaceA: SPACE_A,
+    spaceB: SPACE_B,
+    projectA: PROJECT_A,
+    projectB: PROJECT_B,
+    userA: USER_A,
+    userB: USER_B,
+    userC: USER_C,
+    userD: USER_D,
+  })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
