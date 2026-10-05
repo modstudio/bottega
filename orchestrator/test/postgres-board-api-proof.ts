@@ -25,6 +25,7 @@ const IDS = {
   inviteD: '03990000-0000-7000-8000-000000000004',
   project: '03990000-0000-7000-8000-000000000011',
   projectTwo: '03990000-0000-7000-8000-000000000012',
+  adoptionProject: '03990000-0000-7000-8000-000000000013',
   memberB: '03990000-0000-7000-8000-000000000021',
   memberA2: '03990000-0000-7000-8000-000000000022',
   memberRead: '03990000-0000-7000-8000-000000000023',
@@ -39,6 +40,7 @@ const EMAIL = {
 
 const PROJECT = 'board-api-shared'
 const PROJECT_TWO = 'board-api-second'
+const ADOPTION_PROJECT = 'board-api-adoption'
 const expiresAt = '2099-01-01T00:00:00.000Z'
 
 function headers(token: string): Record<string, string> {
@@ -122,7 +124,8 @@ export function registerBoardApiProofs(input: {
       'postgres',
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${IDS.project}','${spaceA}','${PROJECT}',ARRAY['BAPI'],now()),
-        ('${IDS.projectTwo}','${spaceB}','${PROJECT_TWO}',ARRAY['BAPI2'],now());
+        ('${IDS.projectTwo}','${spaceB}','${PROJECT_TWO}',ARRAY['BAPI2'],now()),
+        ('${IDS.adoptionProject}','${spaceA}','${ADOPTION_PROJECT}',ARRAY['BAPIA'],now());
        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.memberB}','${spaceA}','${userB}','member','write',now()),
         ('${IDS.memberA2}','${spaceB}','${userA}','member','write',now()),
@@ -182,7 +185,7 @@ export function registerBoardApiProofs(input: {
     origin: () => origin,
     token: () => tokenA,
     userId: () => userA,
-    project: PROJECT,
+    project: ADOPTION_PROJECT,
     expiresAt,
     caseSession,
     succeeds: input.succeeds,

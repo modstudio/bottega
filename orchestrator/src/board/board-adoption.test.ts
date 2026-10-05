@@ -220,14 +220,28 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
   presence()
   postNotice({ audience: 'session:reader', title: 'one', body: 'one' }, {}, NOW - 2)
   postNotice({ audience: 'session:reader', title: 'two', body: 'two' }, {}, NOW - 1)
+  postNotice({ audience: 'session:reader', title: 'three', body: 'three' }, {}, NOW)
   const firstCalls: string[] = []
+  const rateClient = capturingClient(firstCalls, 'three').client
+  const firstClient: RecordApiClient = {
+    ...rateClient,
+    async postBoardMessage(input) {
+      if (input.title === 'one') {
+        firstCalls.push('post:one')
+        throw new RecordApiRequestError(
+          `unknown or invisible board project ${PLATFORM_SLUG}`,
+          'refused',
+        )
+      }
+      return rateClient.postBoardMessage(input)
+    },
+  }
   const stopped = await adoptHostedBoard({
-    confirm: 2,
+    confirm: 3,
     clock: NOW,
-    client: capturingClient(firstCalls, 'two').client,
+    client: firstClient,
   })
-  expect(stopped.status).toBe('stopped')
-  expect(stopped.remaining).toBe(1)
+  expect(stopped).toMatchObject({ status: 'stopped', uploaded: 1, refused: 1, remaining: 1 })
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
   ).toBeNull()
@@ -239,11 +253,11 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
 
   const secondCalls: string[] = []
   await adoptHostedBoard({
-    confirm: 2,
+    confirm: 3,
     clock: NOW + 1,
     client: capturingClient(secondCalls).client,
   })
-  expect(secondCalls.filter((call) => call.startsWith('post:'))).toEqual(['post:two'])
+  expect(secondCalls.filter((call) => call.startsWith('post:'))).toEqual(['post:three'])
   expect(
     db()
       .query<{ hosted_id: string }, [string]>(
@@ -252,6 +266,35 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
       .get(pending)?.hosted_id,
   ).toBe(pending)
 })
+
+test.each(['notice', 'claim'] as const)(
+  'an unexpected hosted refusal names the local %s row and its adoption remedy',
+  async (kind) => {
+    presence()
+    const local =
+      kind === 'notice'
+        ? postNotice({ audience: 'session:reader', title: 'one', body: 'one' }, {}, NOW)
+        : claim()
+    const base = capturingClient([]).client
+    const refuse = () => {
+      throw new RecordApiRequestError('hosted policy rejected this row', 'refused')
+    }
+    const client: RecordApiClient = {
+      ...base,
+      ...(kind === 'notice' ? { postBoardMessage: refuse } : { takeBoardClaim: refuse }),
+    }
+    const action = adoptHostedBoard({ confirm: 1, clock: NOW, client })
+    await expect(action).rejects.toThrow(
+      `hosted service refused local ${kind} ${local.id}: hosted policy rejected this row`,
+    )
+    await expect(action).rejects.toThrow(
+      kind === 'notice' ? `withdraw local notice ${local.id}` : `release local claim ${local.id}`,
+    )
+    expect(
+      db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+    ).toBeNull()
+  },
+)
 
 test('a run-tied claim without a hosted run id stays live as a lasting refusal and does not block the mark', async () => {
   const run = db()

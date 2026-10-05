@@ -59,7 +59,7 @@ function seedLocalBoard(input: ProofInput) {
     )
     .get(
       input.caseSession('adopt-notice'),
-      `project:${input.project}`,
+      `session:${input.caseSession('adopt-notice')}`,
       input.expiresAt,
       created,
       input.project,
@@ -73,7 +73,7 @@ function seedLocalBoard(input: ProofInput) {
     )
     .get(
       input.caseSession('adopt-question'),
-      `project:${input.project}`,
+      `session:${input.caseSession('adopt-question')}`,
       input.expiresAt,
       created,
       input.project,

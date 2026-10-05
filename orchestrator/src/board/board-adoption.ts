@@ -340,23 +340,37 @@ type UploadContext = {
   database: Database
   clock: number
   at: string
-  plan: BoardAdoptionPlan
 }
 
 function stoppedAtRateCap(context: UploadContext): BoardAdoptionResult {
   const rows = ledger(context.database)
-  const remaining = context.candidates.filter((row) => {
-    const state = rows.get(`${row.kind}:${row.id}`)?.state
-    return state !== 'uploaded' && state !== 'refused'
-  }).length
+  const states = context.candidates.map(
+    (row) => rows.get(`${row.kind}:${row.id}`)?.state ?? 'pending',
+  )
+  const uploaded = states.filter((state) => state === 'uploaded').length
+  const refused = states.filter((state) => state === 'refused').length
+  const remaining = states.length - uploaded - refused
   return {
     ...planFor(context.candidates, rows, context.database),
     status: 'stopped',
-    uploaded: context.plan.total - remaining,
-    refused: 0,
+    uploaded,
+    refused,
     remaining,
     message: `hosted board post rate cap reached; ${remaining} rows remain; rerun the same command after the window to resume`,
   }
+}
+
+function unexpectedHostedRefusal(candidate: Candidate, error: unknown): Error | null {
+  if (!(error instanceof RecordApiRequestError) || error.kind !== 'refused') return null
+  const remedy =
+    candidate.kind === 'claim'
+      ? `release local claim ${candidate.id}`
+      : `withdraw local ${candidate.kind} ${candidate.id}`
+  return new Error(
+    `hosted service refused local ${candidate.kind} ${candidate.id}: ${error.message}; ` +
+      `${remedy} (or let it expire), then rerun orch board adopt with the new --confirm total`,
+    { cause: error },
+  )
 }
 
 async function uploadOneMessage(
@@ -404,6 +418,8 @@ async function uploadOneMessage(
       )
       return 'continue'
     }
+    const refusal = unexpectedHostedRefusal(candidate, error)
+    if (refusal) throw refusal
     throw error
   }
 }
@@ -436,7 +452,11 @@ async function uploadOneClaim(
     await uploadClaim(candidate, pending.hosted_id, context.clock, context.client, context.database)
     retireCandidate(candidate, pending.hosted_id, context.at, context.database)
   } catch (error) {
-    if (uploadErrorDisposition(error) !== 'lasting') throw error
+    if (uploadErrorDisposition(error) !== 'lasting') {
+      const refusal = unexpectedHostedRefusal(candidate, error)
+      if (refusal) throw refusal
+      throw error
+    }
     refuseCandidate(
       candidate,
       pending.hosted_id,
@@ -491,7 +511,6 @@ export async function adoptHostedBoard(
     database,
     clock,
     at,
-    plan,
   }
   const stopped = await uploadMessages(uploadContext)
   if (stopped) return stopped
