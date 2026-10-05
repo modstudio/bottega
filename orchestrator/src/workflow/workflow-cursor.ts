@@ -12,10 +12,8 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
-import {
-  applyCursorArguments,
-  workflowKeyOf as keyOf,
-} from './workflow-cursor-arguments.ts'
+import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { type SelectableCursorRow, selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
   type ClosedStep,
@@ -55,20 +53,10 @@ export type WorkflowCursorContext = {
 }
 
 type CursorRow = SelectableCursorRow & {
-  id: number
-  project: string
-  workflow_slug: string
-  mode_slug: string
-  workflow_key: string
-  instance_id: string
-  session_id: string | null
   workflow_version: number
   catalogue_version: number
   args: string
   autonomy: string | null
-  ordinal: number
-  step_slug: string
-  state: CursorState
   closed: string
   question: string | null
   total_steps: number
@@ -584,50 +572,7 @@ function nextWorkflowStepImpl(
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   applyCursorArguments(row, args, d)
-  const adoptedKey = evidence.task?.trim()
-  if (adoptedKey && row.workflow_key && row.workflow_key !== adoptedKey)
-    throw new Error(
-      `cursor ${row.id} is already assigned to ${row.workflow_key}; it cannot adopt ${adoptedKey}`,
-    )
-  if (adoptedKey && !row.workflow_key) {
-    const conflict = d
-      .query<{ id: number }, [string, string, string, string]>(
-        `SELECT id FROM workflow_cursor
-         WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-           AND state NOT IN ('done','abandoned') LIMIT 1`,
-      )
-      .get(row.project, row.workflow_slug, row.mode_slug, adoptedKey)
-    if (conflict)
-      throw new Error(
-        `cursor ${row.id} cannot adopt ${adoptedKey}; open cursor ${conflict.id} already holds it`,
-      )
-    d.query(
-      `UPDATE workflow_cursor SET instance_id=instance_id || '#' || id
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
-         AND state IN ('done','abandoned')`,
-    ).run(row.project, row.workflow_slug, row.mode_slug, adoptedKey)
-    const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key: adoptedKey }
-    d.query('UPDATE workflow_cursor SET workflow_key=?,args=?,updated_at=? WHERE id=?').run(
-      adoptedKey,
-      JSON.stringify(adoptedArgs),
-      nowIso(),
-      row.id,
-    )
-    row.workflow_key = adoptedKey
-    row.args = JSON.stringify(adoptedArgs)
-    const questions = d
-      .query<{ id: number }, [number]>(
-        'SELECT id FROM question WHERE workflow_cursor_id=? ORDER BY id',
-      )
-      .all(row.id)
-    for (const question of questions) {
-      d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE id=?').run(
-        adoptedKey,
-        question.id,
-      )
-      enqueueQuestionRecord(d, question.id)
-    }
-  }
+  adoptWorkflowTask(row, evidence.task, d)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
     const step = composition.steps[row.ordinal]!

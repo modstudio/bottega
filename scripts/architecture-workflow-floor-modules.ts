@@ -20,10 +20,16 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-trail.ts',
     './workflows.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-cursor-adoption.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../run/question-outbox.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-selection.ts', [
     'bun:sqlite',
     '../database/db.ts',
     './workflow-cursor-arguments.ts',
+    './workflow-cursor-adoption.ts',
     './workflow-cursor-transition.ts',
     './workflows.ts',
   ]),
