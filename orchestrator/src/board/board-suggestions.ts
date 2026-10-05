@@ -9,7 +9,7 @@ import {
   BOARD_TITLE_MAX_CHARS,
   postDecision,
 } from './board-policy.ts'
-import { boardActor, type PostNoticeInput, postNotice } from './board-service.ts'
+import { boardActor, type PostNoticeInput, postNoticeInTransaction } from './board-service.ts'
 import { type BoardTag, type SenderBoardTags, senderBoardTags, senderTagKey } from './board-tags.ts'
 
 type Environment = Record<string, string | undefined>
@@ -121,8 +121,8 @@ export function suggestBoardPost(
   return { id, dropped: false }
 }
 
-function suggestion(id: number): SuggestionRow {
-  const row = db()
+function suggestion(id: number, database = db()): SuggestionRow {
+  const row = database
     .query(`SELECT * FROM board_message WHERE id=? AND kind='suggestion'`)
     .get(id) as SuggestionRow | null
   if (!row) throw new Error(`no board suggestion ${id}; choose an existing suggestion id`)
@@ -141,8 +141,8 @@ function authorizeDisposal(row: SuggestionRow, env: Environment) {
   return actor
 }
 
-function senderDefaults(id: number): SenderBoardTags {
-  const tags = db()
+function senderDefaults(id: number, database = db()): SenderBoardTags {
+  const tags = database
     .query(
       `SELECT kind,value FROM board_message_tag
        WHERE message_id=? AND origin='sender' ORDER BY rowid`,
@@ -162,23 +162,26 @@ export function postBoardSuggestion(
   clock = Date.now(),
   cwd = process.cwd(),
 ) {
-  const row = suggestion(id)
-  authorizeDisposal(row, env)
-  const defaults = senderDefaults(id)
-  const notice: PostNoticeInput = {
-    audience: input.audience,
-    title: input.title ?? row.title,
-    body: input.body ?? row.body,
-    task: input.task ?? defaults.task,
-    paths: input.paths ?? defaults.paths,
-    topics: input.topics ?? defaults.topics,
-    suggestingRunId: row.author_run_id,
-  }
-  const posted = postNotice(notice, env, clock, cwd)
-  writableDb()
-    .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE id=?')
-    .run(new Date(clock).toISOString(), id)
-  return posted
+  const database = writableDb()
+  return writeTransaction(() => {
+    const row = suggestion(id, database)
+    authorizeDisposal(row, env)
+    const defaults = senderDefaults(id, database)
+    const notice: PostNoticeInput = {
+      audience: input.audience,
+      title: input.title ?? row.title,
+      body: input.body ?? row.body,
+      task: input.task ?? defaults.task,
+      paths: input.paths ?? defaults.paths,
+      topics: input.topics ?? defaults.topics,
+      suggestingRunId: row.author_run_id,
+    }
+    const posted = postNoticeInTransaction(notice, env, clock, cwd, database)
+    database
+      .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE id=?')
+      .run(new Date(clock).toISOString(), id)
+    return posted
+  }, database)
 }
 
 export function declineBoardSuggestion(
@@ -186,9 +189,12 @@ export function declineBoardSuggestion(
   env: Environment = process.env,
   clock = Date.now(),
 ): void {
-  const row = suggestion(id)
-  authorizeDisposal(row, env)
-  writableDb()
-    .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
-    .run(new Date(clock).toISOString(), id)
+  const database = writableDb()
+  writeTransaction(() => {
+    const row = suggestion(id, database)
+    authorizeDisposal(row, env)
+    database
+      .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
+      .run(new Date(clock).toISOString(), id)
+  }, database)
 }

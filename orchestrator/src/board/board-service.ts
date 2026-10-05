@@ -153,8 +153,18 @@ function presenceFacts(database = db()) {
   }))
   const liveTurns = database
     .query(
-      `SELECT id,COALESCE(parent_run_id,id) root_id,repo,status,turn
-       FROM run WHERE repo IS NOT NULL
+      `WITH ranked AS (
+         SELECT id,COALESCE(parent_run_id,id) root_id,status,
+                ROW_NUMBER() OVER (
+                  PARTITION BY COALESCE(parent_run_id,id) ORDER BY turn DESC,id DESC
+                ) rank
+         FROM run
+       ), live_roots AS (
+         SELECT root_id FROM ranked WHERE rank=1 AND status IN ('running','asking')
+       )
+       SELECT run.id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn
+       FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_id,run.id)
+       WHERE run.repo IS NOT NULL
        ORDER BY root_id,turn DESC`,
     )
     .all() as { id: number; root_id: number; repo: string; status: string; turn: number }[]
@@ -166,16 +176,14 @@ function presenceFacts(database = db()) {
   }
   return [
     ...architects,
-    ...[...workers.values()]
-      .filter((row) => row.status === 'running' || row.status === 'asking')
-      .map((row) => ({
-        reader: `run:${row.root_id}`,
-        role: 'worker' as const,
-        project: row.repo,
-        machine: hostname(),
-        live: true,
-        runIds: row.runIds,
-      })),
+    ...[...workers.values()].map((row) => ({
+      reader: `run:${row.root_id}`,
+      role: 'worker' as const,
+      project: row.repo,
+      machine: hostname(),
+      live: true,
+      runIds: row.runIds,
+    })),
   ]
 }
 
@@ -222,6 +230,25 @@ function resolvePostOrigin(actor: Actor, env: Environment, cwd: string) {
       `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
     )
   return { harness: architectIdentity(env)!.harness, project: project.name }
+}
+
+function validatePostNoticeInput(input: PostNoticeInput): void {
+  if (input.title.length > BOARD_TITLE_MAX_CHARS)
+    throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
+  if (input.body.length > BOARD_BODY_MAX_CHARS)
+    throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
+  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
+    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
+  if (
+    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
+      (value) => value !== undefined && containsSecretShaped(value),
+    )
+  )
+    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
+  if (!input.title.trim() || !input.body.trim())
+    throw new Error('board notice title and body are required')
+  if (input.deadlineMs !== undefined && !input.ackRequired)
+    throw new Error('a board notice deadline requires acknowledgement to be required')
 }
 
 function postNoticeResult(id: number, dropped: boolean, reached: number): PostNoticeResult {
@@ -275,18 +302,18 @@ export function postNotice(
   clock = Date.now(),
   cwd = process.cwd(),
 ): PostNoticeResult {
-  if (input.title.length > BOARD_TITLE_MAX_CHARS)
-    throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
-  if (input.body.length > BOARD_BODY_MAX_CHARS)
-    throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
-    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
-  if (
-    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
+  const database = writableDb()
+  return writeTransaction(() => postNoticeInTransaction(input, env, clock, cwd, database), database)
+}
+
+export function postNoticeInTransaction(
+  input: PostNoticeInput,
+  env: Environment,
+  clock: number,
+  cwd: string,
+  database: ReturnType<typeof writableDb>,
+): PostNoticeResult {
+  validatePostNoticeInput(input)
   const actor = boardActor(env)
   const postingMachine = hostname()
   const { audience, expression: audienceExpression } = resolvePostAudience(
@@ -295,10 +322,6 @@ export function postNotice(
   )
   const refusal = audienceRefusal(audience, actor.kind)
   if (refusal) throw new Error(refusal)
-  if (!input.title.trim() || !input.body.trim())
-    throw new Error('board notice title and body are required')
-  if (input.deadlineMs !== undefined && !input.ackRequired)
-    throw new Error('a board notice deadline requires acknowledgement to be required')
   const senderTags = senderBoardTags(input)
   const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
   const expiresMs = input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS
@@ -311,14 +334,14 @@ export function postNotice(
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
   const recentPosts = (
-    db()
+    database
       .query(
         `SELECT COUNT(*) n FROM board_message
          WHERE author_kind=? AND author_session IS ? AND created_at>=?`,
       )
       .get(actor.kind, authorSession, since) as { n: number }
   ).n
-  const duplicateCandidates = db()
+  const duplicateCandidates = database
     .query(
       `SELECT id FROM board_message
        WHERE author_kind=? AND author_session IS ? AND author_run_id IS ?
@@ -336,7 +359,7 @@ export function postNotice(
     ) as { id: number }[]
   const senderTagsKey = senderTagKey(senderTags)
   const duplicate = duplicateCandidates.find((candidate) => {
-    const storedTags = db()
+    const storedTags = database
       .query(
         `SELECT kind,value FROM board_message_tag
          WHERE message_id=? AND origin='sender'`,
@@ -347,7 +370,7 @@ export function postNotice(
   const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
   if (decision === 'drop-duplicate') {
     const reached = (
-      db()
+      database
         .query(
           'SELECT COUNT(*) count FROM board_receipt WHERE message_id=? AND audience_at_posting=1',
         )
@@ -361,55 +384,52 @@ export function postNotice(
   const ackRequired = input.ackRequired ?? false
   const deadline = ackRequired ? new Date(clock + deadlineMs).toISOString() : null
   const expiresAt = new Date(clock + expiresMs).toISOString()
-  const database = writableDb()
   let id = 0
   let reached = 0
-  writeTransaction(() => {
-    refreshPostingPresence(database, actor, origin, postingMachine, cwd, createdAt)
-    const currentTaskKey = actor.session
-      ? ((
-          database
-            .query('SELECT current_task_key FROM presence WHERE session_id=?')
-            .get(actor.session) as { current_task_key: string | null } | null
-        )?.current_task_key ?? null)
-      : null
-    const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, currentTaskKey)]
-    const inserted = database
-      .query(
-        `INSERT INTO board_message
-         (kind,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
-          ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-         VALUES ('notice',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
-      )
-      .run(
-        actor.kind,
-        authorSession,
-        input.suggestingRunId ?? null,
-        origin.harness,
-        origin.project,
-        audienceExpression,
-        input.title,
-        input.body,
-        ackRequired ? 1 : 0,
-        deadline,
-        expiresAt,
-        createdAt,
-      )
-    id = Number(inserted.lastInsertRowid)
-    const addTag = database.query(
-      `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin)
-       VALUES (?,?,?,?)`,
+  refreshPostingPresence(database, actor, origin, postingMachine, cwd, createdAt)
+  const currentTaskKey = actor.session
+    ? ((
+        database
+          .query('SELECT current_task_key FROM presence WHERE session_id=?')
+          .get(actor.session) as { current_task_key: string | null } | null
+      )?.current_task_key ?? null)
+    : null
+  const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, currentTaskKey)]
+  const inserted = database
+    .query(
+      `INSERT INTO board_message
+       (kind,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
+        ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
+       VALUES ('notice',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
     )
-    for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin)
-    const add = database.query(
-      `INSERT OR IGNORE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,1,NULL,NULL)`,
+    .run(
+      actor.kind,
+      authorSession,
+      input.suggestingRunId ?? null,
+      origin.harness,
+      origin.project,
+      audienceExpression,
+      input.title,
+      input.body,
+      ackRequired ? 1 : 0,
+      deadline,
+      expiresAt,
+      createdAt,
     )
-    const postingRecipients = recipients(audienceExpression, clock, tags, database)
-    reached = postingRecipients.length
-    for (const reader of postingRecipients) add.run(id, reader)
-  }, database)
+  id = Number(inserted.lastInsertRowid)
+  const addTag = database.query(
+    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin)
+     VALUES (?,?,?,?)`,
+  )
+  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin)
+  const add = database.query(
+    `INSERT OR IGNORE INTO board_receipt
+     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,1,NULL,NULL)`,
+  )
+  const postingRecipients = recipients(audienceExpression, clock, tags, database)
+  reached = postingRecipients.length
+  for (const reader of postingRecipients) add.run(id, reader)
   return postNoticeResult(id, false, reached)
 }
 

@@ -44,7 +44,9 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
   )
   expect(
     claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'owning-architect' }, clock + 1)[0]!.text,
-  ).toContain(`Origin: worker run ${run.id}`)
+  ).toContain(
+    `Acknowledgement: dispose with orch board suggestion post ${suggested.id} --audience <expr> or orch board suggestion decline ${suggested.id}`,
+  )
 
   const posted = postBoardSuggestion(
     suggested.id,
@@ -71,6 +73,38 @@ test('worker suggestion can be declined', () => {
   expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(suggested.id)).toEqual(
     { withdrawn_at: new Date(clock + 1).toISOString() },
   )
+})
+
+test('refused suggestion post leaves the suggestion live', () => {
+  const clock = Date.now() + 250_000
+  const run = runFixture('rollback-architect')
+  const suggested = suggestBoardPost(run.id, { title: 'Keep me', body: 'Still useful' }, clock)
+  const noticesBefore = (
+    db().query("SELECT COUNT(*) count FROM board_message WHERE kind='notice'").get() as {
+      count: number
+    }
+  ).count
+  expect(() =>
+    postBoardSuggestion(
+      suggested.id,
+      { audience: 'operator', topics: ['unknown-topic'] },
+      { CLAUDE_CODE_SESSION_ID: 'rollback-architect' },
+      clock + 1,
+      projectFixture(),
+    ),
+  ).toThrow(/unknown board topic/)
+  expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(suggested.id)).toEqual(
+    {
+      withdrawn_at: null,
+    },
+  )
+  expect(
+    (
+      db().query("SELECT COUNT(*) count FROM board_message WHERE kind='notice'").get() as {
+        count: number
+      }
+    ).count,
+  ).toBe(noticesBefore)
 })
 
 test('suggestion refuses a run without an owner and disposal by another session', () => {
