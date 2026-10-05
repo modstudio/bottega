@@ -21,13 +21,6 @@ import {
   storedShipToLevel,
 } from './ship-to.ts'
 
-export {
-  isShipToConfigKey,
-  SHIP_TO_CONFIG_KEY,
-  STORED_SHIP_TO_CONFIG_ALIAS,
-  storedShipToLevel,
-} from './ship-to.ts'
-
 type MachineConfigEntry = {
   environment?: string
   legacyEnvironment?: string

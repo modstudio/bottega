@@ -23,6 +23,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/secret-envelope.ts',
     '../../../shared/machine-key-store.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [

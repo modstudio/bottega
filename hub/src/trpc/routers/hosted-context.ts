@@ -8,7 +8,6 @@ import {
 } from '../../../../shared/autonomy.ts'
 import { type StoredSettings, summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
-  isShipToConfigKey,
   readStoredShipTo,
   SHIP_TO_CONFIG_KEY,
   SHIP_TO_VALUES,
@@ -312,10 +311,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             expectedRowVersion: input.expectedRowVersion,
           })
           const alias = (await client.configEntries()).find(
-            (entry) =>
-              entry.scope === 'user' &&
-              isShipToConfigKey(entry.key) &&
-              entry.key === STORED_SHIP_TO_CONFIG_ALIAS,
+            (entry) => entry.scope === 'user' && entry.key === STORED_SHIP_TO_CONFIG_ALIAS,
           )
           if (alias)
             await client.deleteConfigEntry(STORED_SHIP_TO_CONFIG_ALIAS, {

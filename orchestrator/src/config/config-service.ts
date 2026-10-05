@@ -21,12 +21,8 @@ import {
 } from '../../../shared/hosted-secret-opening.ts'
 import {
   deleteMachineAutonomy,
-  isShipToConfigKey,
   listMachineAutonomy,
-  SHIP_TO_CONFIG_KEY,
-  STORED_SHIP_TO_CONFIG_ALIAS,
   setMachineAutonomy,
-  storedShipToLevel,
 } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
@@ -46,6 +42,12 @@ import {
   unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
+import {
+  isShipToConfigKey,
+  SHIP_TO_CONFIG_KEY,
+  STORED_SHIP_TO_CONFIG_ALIAS,
+  storedShipToLevel,
+} from '../../../shared/ship-to.ts'
 import {
   pinTrustedMachine,
   readTrustList,
