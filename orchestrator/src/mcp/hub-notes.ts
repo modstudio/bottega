@@ -69,11 +69,16 @@ export async function fileNote(
     ...(options.anchor ? ['--anchor-json', JSON.stringify(options.anchor)] : []),
   ]
   const output = (await hubOutput(args, cwd)).trim()
+  return parseFiledNoteOutput(output)
+}
+
+export function parseFiledNoteOutput(output: string) {
   const noteId = Number(/(?:^|\n)note (\d+) filed;/.exec(output)?.[1] ?? 0)
+  const recordId = /(?:^|\n)record ([0-9a-f-]{36})(?:\n|$)/i.exec(output)?.[1] ?? null
   const candidateIds = [...output.matchAll(/(?:^|\n)near (\d+) score/g)].map((match) =>
     Number(match[1]),
   )
-  return { output, noteId: noteId || null, candidateIds }
+  return { output, noteId: noteId || null, recordId, candidateIds }
 }
 
 export async function listHubNotes(project: string, options: { cwd: string }): Promise<HubNote[]> {

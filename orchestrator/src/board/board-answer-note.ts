@@ -5,7 +5,7 @@ const BOARD_ANSWER_NOTE_BODY_MAX_CHARS = 1_000
 export type AnswerNoteFiler = (
   input: { text: string; new: true },
   options: { cwd: string },
-) => Promise<{ noteId: number | null }>
+) => Promise<{ noteId: number | null; recordId?: string | null }>
 
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim()
 

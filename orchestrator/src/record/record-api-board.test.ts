@@ -104,6 +104,21 @@ test('board post refuses an invalid body at the route edge', async () => {
   expect(await response.json()).toEqual({ error: 'invalid board message' })
 })
 
+test('board status binds the caller tenant and returns the service view', async () => {
+  const id = newRecordId()
+  const expected = { message: { id }, receipts: [] }
+  const app = appWith(identity, {
+    boardStatus: async (input: { id: string; userId: string; spaceIds: string[] }) => {
+      expect(input).toMatchObject({ id, userId: identity.user.id })
+      expect(input.spaceIds).toEqual(['space-a', 'space-b'])
+      return expected
+    },
+  })
+  const response = await app.request(`/v1/board/messages/${id}/status`)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual(expected)
+})
+
 test('board post refuses caller recipientUserIds and claimId at the route edge', async () => {
   const app = appWith(identity)
   const base = {

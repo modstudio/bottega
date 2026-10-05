@@ -108,6 +108,7 @@ export function parseExplicitNoteAnchor(value: unknown, cwd = process.cwd()): No
 
 export type NoteRow = {
   id: number
+  record_id: string | null
   project: string
   text: string
   area: string | null

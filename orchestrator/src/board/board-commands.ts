@@ -1,23 +1,18 @@
 import type { Command } from 'commander'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
-  acknowledgeNotice,
-  claimNotices,
-  markNoticesDelivered,
-  noticeStatus,
-  postNotice,
-  readNotices,
-  recordPresence,
-  withdrawNotice,
-} from './board-service.ts'
+  boardAccept,
+  boardAcknowledge,
+  boardAsk,
+  boardFileNote,
+  boardPost,
+  boardReply,
+  boardStatus,
+  boardThread,
+  boardWithdraw,
+} from './board-operations.ts'
+import { claimNotices, markNoticesDelivered, readNotices, recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
-import {
-  acceptAnswer,
-  askQuestion,
-  fileAnswerNote,
-  readThread,
-  replyToThread,
-} from './board-thread-service.ts'
 
 function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
@@ -31,6 +26,14 @@ function parseBoardDuration(value: string): number {
 }
 
 const collect = (value: string, values: string[] = []) => [...values, value]
+const localBoardId = (value: string): number => {
+  const id = Number(value)
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(id))
+    throw new Error(
+      'board id must be a positive integer string because this operation is machine-local',
+    )
+  return id
+}
 
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
@@ -49,10 +52,10 @@ export function registerBoardCommands(program: Command): void {
     .option('--ack-required')
     .option('--deadline <duration>')
     .option('--expires <duration>')
-    .action((options) => {
+    .action(async (options) => {
       if (options.deadline && !options.ackRequired)
         throw new Error('--deadline requires --ack-required')
-      const posted = postNotice({
+      const posted = await boardPost({
         audience: options.audience,
         title: options.title,
         body: options.body,
@@ -74,10 +77,10 @@ export function registerBoardCommands(program: Command): void {
     .option('--path <glob>', 'add a repository-relative path glob', collect, [])
     .option('--topic <name>', 'add a controlled board topic', collect, [])
     .option('--expires <duration>')
-    .action((options) => {
+    .action(async (options) => {
       console.log(
         JSON.stringify(
-          askQuestion({
+          await boardAsk({
             audience: options.audience,
             title: options.title,
             body: options.body,
@@ -92,14 +95,18 @@ export function registerBoardCommands(program: Command): void {
   board
     .command('reply <root-id>')
     .requiredOption('--body <text>')
-    .action((id, options) => console.log(JSON.stringify(replyToThread(Number(id), options.body))))
-  board.command('thread <id>').action((id) => console.log(JSON.stringify(readThread(Number(id)))))
+    .action(async (id, options) =>
+      console.log(JSON.stringify(await boardReply(String(id), options.body))),
+    )
+  board
+    .command('thread <id>')
+    .action(async (id) => console.log(JSON.stringify(await boardThread(String(id)))))
   board.command('accept <question-id> <reply-id>').action(async (questionId, replyId) => {
-    const accepted = await acceptAnswer(Number(questionId), Number(replyId))
+    const accepted = await boardAccept(String(questionId), String(replyId))
     console.log(JSON.stringify(accepted))
   })
   board.command('file-note <question-id>').action(async (questionId) => {
-    console.log(JSON.stringify(await fileAnswerNote(Number(questionId))))
+    console.log(JSON.stringify(await boardFileNote(String(questionId))))
   })
   board
     .command('read')
@@ -109,18 +116,25 @@ export function registerBoardCommands(program: Command): void {
       const notices = options.claim
         ? claimNotices(Boolean(options.all))
         : readNotices(Boolean(options.all))
-      if (options.claim) console.log(JSON.stringify(notices))
+      if (options.claim)
+        console.log(JSON.stringify(notices.map((notice) => ({ ...notice, id: String(notice.id) }))))
       else for (const notice of notices) console.log(notice.text)
     })
   board.command('delivered <ids>').action((ids) => {
-    const parsed = String(ids).split(',').map(Number)
+    const parsed = String(ids).split(',').map(localBoardId)
     if (!parsed.length || parsed.some((id) => !Number.isSafeInteger(id) || id <= 0))
       throw new Error('board delivered ids must be comma-separated positive integers')
     markNoticesDelivered(parsed)
   })
-  board.command('ack <id>').action((id) => acknowledgeNotice(Number(id)))
-  board.command('status <id>').action((id) => console.log(JSON.stringify(noticeStatus(Number(id)))))
-  board.command('withdraw <id>').action((id) => withdrawNotice(Number(id)))
+  board
+    .command('ack <id>')
+    .action(async (id) => console.log(JSON.stringify(await boardAcknowledge(String(id)))))
+  board
+    .command('status <id>')
+    .action(async (id) => console.log(JSON.stringify(await boardStatus(String(id)))))
+  board
+    .command('withdraw <id>')
+    .action(async (id) => console.log(JSON.stringify(await boardWithdraw(String(id)))))
   const suggestion = board.command('suggestion')
   suggestion
     .command('post <id>')
@@ -133,16 +147,21 @@ export function registerBoardCommands(program: Command): void {
     .action((id, options) => {
       console.log(
         JSON.stringify(
-          postBoardSuggestion(Number(id), {
-            audience: options.audience,
-            title: options.title,
-            body: options.body,
-            task: options.task,
-            paths: options.path,
-            topics: options.topic,
-          }),
+          (() => {
+            const posted = postBoardSuggestion(localBoardId(String(id)), {
+              audience: options.audience,
+              title: options.title,
+              body: options.body,
+              task: options.task,
+              paths: options.path,
+              topics: options.topic,
+            })
+            return { ...posted, id: String(posted.id) }
+          })(),
         ),
       )
     })
-  suggestion.command('decline <id>').action((id) => declineBoardSuggestion(Number(id)))
+  suggestion
+    .command('decline <id>')
+    .action((id) => declineBoardSuggestion(localBoardId(String(id))))
 }

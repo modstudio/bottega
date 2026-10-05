@@ -364,6 +364,37 @@ export function registerBoardApiProofs(input: {
     expect((await json(other)).readerUserId).toBe(userB)
   })
 
+  test('status shows all receipts to the author, only the caller receipt to a reader, and 404 outside the project', async () => {
+    const id = newRecordId()
+    expect(
+      (await post(tokenA, notice(id, `project:${PROJECT}`, caseSession('status-author')))).status,
+    ).toBe(200)
+    const receipt = (token: string, readerSession: string) =>
+      fetch(`${origin}/v1/board/receipts`, {
+        method: 'PUT',
+        headers: headers(token),
+        body: JSON.stringify({
+          messageId: id,
+          readerSession,
+          audienceAtPosting: true,
+          delivered: true,
+        }),
+      })
+    expect((await receipt(tokenA, 'status-author-reader')).status).toBe(200)
+    expect((await receipt(tokenB, 'status-member-reader')).status).toBe(200)
+    const status = (token: string) =>
+      fetch(`${origin}/v1/board/messages/${id}/status`, { headers: headers(token) })
+    const author = await status(tokenA)
+    const reader = await status(tokenB)
+    const outsider = await status(tokenC)
+    expect(author.status).toBe(200)
+    expect(((await json(author)).receipts as unknown[]).length).toBe(2)
+    expect(reader.status).toBe(200)
+    const readerReceipts = (await json(reader)).receipts as Array<{ readerUserId: string }>
+    expect(readerReceipts).toEqual([{ ...(readerReceipts[0] ?? {}), readerUserId: userB }])
+    expect(outsider.status).toBe(404)
+  })
+
   test('the change cursor returns every visible change once including an update', async () => {
     const session = caseSession('change-cursor')
     const firstId = newRecordId()

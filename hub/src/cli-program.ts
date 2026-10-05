@@ -755,9 +755,18 @@ async function note() {
   for (const candidate of result.candidates) {
     console.log(`near ${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
   }
-  console.log(
-    `note ${result.note.id} filed; ${result.note.sightings} sighting${result.note.sightings === 1 ? '' : 's'}`,
-  )
+  for (const line of noteFiledOutput(result.note)) console.log(line)
+}
+
+export function noteFiledOutput(note: {
+  id: number
+  sightings: number
+  record_id: string | null
+}): string[] {
+  return [
+    `note ${note.id} filed; ${note.sightings} sighting${note.sightings === 1 ? '' : 's'}`,
+    ...(note.record_id ? [`record ${note.record_id}`] : []),
+  ]
 }
 
 function refuseAmbiguousNoteVerb(sub: string | undefined): void {

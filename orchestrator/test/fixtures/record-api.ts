@@ -27,6 +27,7 @@ export function idleBoardDeps(): RecordBoardDeps {
     completeBoardFilingLease: unused,
     failBoardFilingLease: unused,
     readBoardThread: unused,
+    boardStatus: unused,
     putBoardReceipt: unused,
     listBoardChanges: unused,
     takeBoardClaim: unused,
@@ -83,6 +84,7 @@ export function unusedBoardClientMethods(): Pick<
   | 'completeBoardFilingLease'
   | 'failBoardFilingLease'
   | 'getBoardThread'
+  | 'getBoardStatus'
   | 'putBoardReceipt'
   | 'listBoardChanges'
   | 'takeBoardClaim'
@@ -100,6 +102,7 @@ export function unusedBoardClientMethods(): Pick<
     completeBoardFilingLease: unusedBoard,
     failBoardFilingLease: unusedBoard,
     getBoardThread: unusedBoard,
+    getBoardStatus: unusedBoard,
     putBoardReceipt: unusedBoard,
     listBoardChanges: unusedBoard,
     takeBoardClaim: unusedBoard,

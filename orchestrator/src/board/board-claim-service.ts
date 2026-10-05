@@ -73,7 +73,12 @@ function claimActor(env: Environment): ClaimActor {
   return boardActor(env)
 }
 
-function claimProject(actor: ClaimActor, requested: string | undefined, cwd: string): string {
+export function claimProject(
+  requested: string | undefined,
+  env: Environment = process.env,
+  cwd = process.cwd(),
+): string {
+  const actor = claimActor(env)
   if (actor.kind === 'operator') {
     if (!requested) throw new Error('operator claim requires --project <name>')
     if (!projectByName(requested))
@@ -344,7 +349,7 @@ export function takeClaim(
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
   const durationRefusal = claimDurationRefusal(duration)
   if (durationRefusal) throw new Error(durationRefusal)
-  const project = claimProject(actor, input.project, cwd)
+  const project = claimProject(input.project, env, cwd)
   const database = writableDb()
   validateRunTie(input.runId, actor, database)
   const outcome = writeTransaction(
@@ -414,8 +419,7 @@ export function listClaims(
   clock = Date.now(),
   cwd = process.cwd(),
 ): { claims: ClaimView[] } {
-  const actor = claimActor(env)
-  const name = claimProject(actor, project, cwd)
+  const name = claimProject(project, env, cwd)
   const rows = db()
     .query('SELECT * FROM board_claim WHERE project=? ORDER BY id')
     .all(name) as ClaimRow[]

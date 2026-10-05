@@ -4,9 +4,10 @@
 import {
   type HostedBoardReceipt,
   type HostedBoardReceiptInput,
+  type HostedBoardStatus,
   RecordBoardError,
 } from './record-board-contract.ts'
-import { loadHostedBoardMessage } from './record-board-messages.ts'
+import { hostedBoardMessageView, loadHostedBoardMessage } from './record-board-messages.ts'
 import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
@@ -20,6 +21,24 @@ export function hostedBoardReceiptView(row: Record<string, unknown>): HostedBoar
     deliveredAt: iso(row.delivered_at),
     acknowledgedAt: iso(row.acknowledged_at),
   }
+}
+
+export async function hostedBoardStatus(
+  input: BoardTenant & { id: string },
+): Promise<HostedBoardStatus> {
+  return withBoardTenant(input, false, async (tx) => {
+    const message = await loadHostedBoardMessage(tx, input.id)
+    if (!message) throw new RecordBoardError(`board message ${input.id} not found`, 404)
+    const rows = (await tx`
+      SELECT * FROM board_receipt
+      WHERE message_id=${input.id}::uuid
+      ORDER BY reader_user_id, reader_session
+    `) as Record<string, unknown>[]
+    return {
+      message: hostedBoardMessageView(message.row, message.tags),
+      receipts: rows.map(hostedBoardReceiptView),
+    }
+  })
 }
 
 export async function putHostedBoardReceipt(

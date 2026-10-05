@@ -1,21 +1,19 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import {
+  boardAccept,
+  boardAcknowledge,
+  boardAsk,
+  boardFileNote,
+  boardPost,
+  boardReply,
+  boardStatus,
+  boardThread,
+  boardWithdraw,
+} from '../board/board-operations.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
-import {
-  acknowledgeNotice,
-  noticeStatus,
-  postNotice,
-  readNotices,
-  withdrawNotice,
-} from '../board/board-service.ts'
+import { readNotices } from '../board/board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
-import {
-  acceptAnswer,
-  askQuestion,
-  fileAnswerNote,
-  readThread,
-  replyToThread,
-} from '../board/board-thread-service.ts'
 import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 
 const result = (value: unknown) => ({
@@ -29,7 +27,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_ask',
     {
-      description: 'Ask a local architect-board question.',
+      description: 'Ask an architect-board question.',
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -42,7 +40,7 @@ export function registerBoardTools(server: McpServer): void {
     },
     async (input) =>
       result(
-        askQuestion({
+        await boardAsk({
           audience: input.audience,
           title: input.title,
           body: input.body,
@@ -56,46 +54,46 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_reply',
     {
-      description: 'Reply to a local board notice or question thread.',
+      description: 'Reply to a board notice or question thread.',
       inputSchema: z.object({
-        root_id: z.number().int().positive(),
+        root_id: z.string().min(1),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
       }),
     },
-    async ({ root_id, body }) => result(replyToThread(root_id, body)),
+    async ({ root_id, body }) => result(await boardReply(root_id, body)),
   )
   server.registerTool(
     'board_thread',
     {
-      description: 'Read a local board thread.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      description: 'Read a board thread.',
+      inputSchema: z.object({ id: z.string().min(1) }),
       annotations: { readOnlyHint: true },
     },
-    async ({ id }) => result(readThread(id)),
+    async ({ id }) => result(await boardThread(id)),
   )
   server.registerTool(
     'board_accept',
     {
       description: 'Accept one reply as the final answer to a board question.',
       inputSchema: z.object({
-        question_id: z.number().int().positive(),
-        reply_id: z.number().int().positive(),
+        question_id: z.string().min(1),
+        reply_id: z.string().min(1),
       }),
     },
-    async ({ question_id, reply_id }) => result(await acceptAnswer(question_id, reply_id)),
+    async ({ question_id, reply_id }) => result(await boardAccept(question_id, reply_id)),
   )
   server.registerTool(
     'board_file_note',
     {
       description: 'Retry filing the accepted answer for a board question as a note.',
-      inputSchema: z.object({ question_id: z.number().int().positive() }),
+      inputSchema: z.object({ question_id: z.string().min(1) }),
     },
-    async ({ question_id }) => result(await fileAnswerNote(question_id)),
+    async ({ question_id }) => result(await boardFileNote(question_id)),
   )
   server.registerTool(
     'board_post',
     {
-      description: 'Post a local architect-board notice.',
+      description: 'Post an architect-board notice.',
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -109,7 +107,7 @@ export function registerBoardTools(server: McpServer): void {
       }),
     },
     async (input) => {
-      const posted = postNotice({
+      const posted = await boardPost({
         audience: input.audience,
         title: input.title,
         body: input.body,
@@ -129,37 +127,36 @@ export function registerBoardTools(server: McpServer): void {
       description: 'Read live local notices addressed to the caller and stamp delivery.',
       inputSchema: z.object({ all: z.boolean().optional() }),
     },
-    async ({ all }) => result(readNotices(all ?? false)),
+    async ({ all }) =>
+      result(readNotices(all ?? false).map((notice) => ({ ...notice, id: String(notice.id) }))),
   )
   server.registerTool(
     'board_ack',
     {
       description: 'Explicitly acknowledge a local board notice.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.string().min(1) }),
     },
     async ({ id }) => {
-      acknowledgeNotice(id)
-      return result({ acknowledged: id })
+      return result(await boardAcknowledge(id))
     },
   )
   server.registerTool(
     'board_status',
     {
       description: 'Show per-reader delivery and acknowledgement receipts for a notice.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.string().min(1) }),
       annotations: { readOnlyHint: true },
     },
-    async ({ id }) => result(noticeStatus(id)),
+    async ({ id }) => result(await boardStatus(id)),
   )
   server.registerTool(
     'board_withdraw',
     {
       description: 'Withdraw a notice as its author or the operator.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.string().min(1) }),
     },
     async ({ id }) => {
-      withdrawNotice(id)
-      return result({ withdrawn: id })
+      return result(await boardWithdraw(id))
     },
   )
   server.registerTool(
@@ -167,7 +164,7 @@ export function registerBoardTools(server: McpServer): void {
     {
       description: 'Post an addressed worker suggestion as a new architect notice.',
       inputSchema: z.object({
-        id: z.number().int().positive(),
+        id: z.string().regex(/^[1-9]\d*$/),
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS).optional(),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS).optional(),
@@ -178,24 +175,27 @@ export function registerBoardTools(server: McpServer): void {
     },
     async (input) =>
       result(
-        postBoardSuggestion(input.id, {
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          task: input.task,
-          paths: input.path,
-          topics: input.topic,
-        }),
+        (() => {
+          const posted = postBoardSuggestion(Number(input.id), {
+            audience: input.audience,
+            title: input.title,
+            body: input.body,
+            task: input.task,
+            paths: input.path,
+            topics: input.topic,
+          })
+          return { ...posted, id: String(posted.id) }
+        })(),
       ),
   )
   server.registerTool(
     'board_suggestion_decline',
     {
       description: 'Decline and withdraw an addressed worker suggestion.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.string().regex(/^[1-9]\d*$/) }),
     },
     async ({ id }) => {
-      declineBoardSuggestion(id)
+      declineBoardSuggestion(Number(id))
       return result({ declined: id })
     },
   )

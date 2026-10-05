@@ -50,6 +50,7 @@ describe('record API client test safety', () => {
       const client = recordApiClient()
       const id = newRecordId()
       await expect(client.getBoardThread(id)).rejects.toThrow(/nope/)
+      await expect(client.getBoardStatus(id)).rejects.toThrow(/nope/)
       await expect(
         client.postBoardMessage({
           id,
@@ -65,11 +66,15 @@ describe('record API client test safety', () => {
         method: 'GET',
       })
       expect(calls[1]).toMatchObject({
+        url: `https://api.example.test/v1/board/messages/${id}/status`,
+        method: 'GET',
+      })
+      expect(calls[2]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages',
         method: 'PUT',
         body: { id, kind: 'notice', audience: 'operator', title: 'T', body: 'B' },
       })
-      const posted = calls[1]?.body as Record<string, unknown>
+      const posted = calls[2]?.body as Record<string, unknown>
       expect(posted).not.toHaveProperty('recipientUserIds')
       expect(posted).not.toHaveProperty('claimId')
     } finally {

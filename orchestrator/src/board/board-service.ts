@@ -14,6 +14,7 @@ import { renderBoardNotice } from './board-render.ts'
 import {
   addressed,
   boardActor,
+  boardOrigin,
   type Environment,
   hasReceipt,
   insertRootMessage,
@@ -139,7 +140,7 @@ function render(message: MessageRow, worker = false) {
       id: message.id,
       text: renderBoardReply({
         id: message.id,
-        origin: originText(message),
+        origin: originText(boardOrigin(message)),
         rootId: root.id,
         rootTitle: root.title,
         body: message.body,
@@ -151,7 +152,7 @@ function render(message: MessageRow, worker = false) {
       id: message.id,
       text: renderBoardQuestion({
         id: message.id,
-        origin: originText(message),
+        origin: originText(boardOrigin(message)),
         title: message.title ?? '',
         body: message.body,
         expiresAt: message.expires_at ?? '',

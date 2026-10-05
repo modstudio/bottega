@@ -18,6 +18,7 @@ import type {
   HostedBoardReceiptInput,
   HostedBoardReplyInput,
   HostedBoardSessionInput,
+  HostedBoardStatus,
   HostedBoardTakeClaimInput,
   HostedBoardThread,
 } from './record-board-contract.ts'
@@ -179,6 +180,7 @@ export type RecordApiClient = {
   ): Promise<HostedBoardMessage>
   failBoardFilingLease(id: string, input: HostedBoardFilingFailInput): Promise<HostedBoardMessage>
   getBoardThread(id: string): Promise<HostedBoardThread>
+  getBoardStatus(id: string): Promise<HostedBoardStatus>
   putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
   listBoardChanges(query: {
     after?: string
@@ -386,6 +388,7 @@ export function recordApiClient(): RecordApiClient {
         body: JSON.stringify(input),
       }),
     getBoardThread: (id) => request(`/v1/board/threads/${id}`),
+    getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
     putBoardReceipt: (input) =>
       request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input) }),
     listBoardChanges: (query) => {
