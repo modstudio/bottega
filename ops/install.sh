@@ -84,6 +84,8 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/pro
   "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-canon-audit" \
   "$HOME/Library/Logs/orch-canon-mirror"
 
+remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
+
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
@@ -105,7 +107,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.record-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/record-tunnel"
   fi
-  if [[ "$label" == "com.user.orch-record-sync" || "$label" == "com.user.orch-settings-apply" ]]; then
+  if [[ "$label" == "com.user.orch-record-sync" ]]; then
     has_env_file=false
     for env_file in ${ENV_FILES[@]+"${ENV_FILES[@]}"}; do
       [[ -f "$env_file" ]] && has_env_file=true
@@ -118,10 +120,6 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   if [[ "$label" == "com.user.orch-record-sync" ]]; then
     mkdir -p "$HOME/Library/Logs/orch-record-sync"
   fi
-  if [[ "$label" == "com.user.orch-settings-apply" ]]; then
-    mkdir -p "$HOME/Library/Logs/orch-settings-apply"
-  fi
-
   target="$AGENTS_DIR/$label.plist"
 
   # Unload any existing version first (and drop a stale symlink from older installs).
@@ -161,7 +159,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-settings-apply|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

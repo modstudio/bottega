@@ -1,7 +1,18 @@
-import { readFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
+import { patch as patchToml } from '@decimalturn/toml-patch'
 import { z } from 'zod'
+import { AUTONOMY_PRESETS, AUTONOMY_STAGES, AUTONOMY_VALUES } from './autonomy.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
+import { RELEASE_AUTONOMY_VALUES } from './release-autonomy.ts'
 
 type MachineConfigEntry = {
   environment?: string
@@ -57,6 +68,24 @@ type MachineConfigValue<Key extends MachineConfigKey> =
   (typeof MACHINE_CONFIG)[Key]['type'] extends 'integer' ? number : string
 
 const warnedLegacyVariables = new Set<string>()
+
+export const MACHINE_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
+export type MachinePermissionList = (typeof MACHINE_PERMISSION_LISTS)[number]
+export type MachinePermissionOverlay = {
+  additions: Record<MachinePermissionList, string[]>
+  drop: Record<MachinePermissionList, string[]>
+}
+
+const permissionListsSchema = z
+  .object({
+    allow: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+  })
+  .strict()
+const permissionsSchema = permissionListsSchema
+  .extend({ drop: permissionListsSchema.optional() })
+  .strict()
 
 function valueSchema(entry: MachineConfigEntry, environmentValue: boolean) {
   if (entry.type === 'string') return z.string()
@@ -116,7 +145,34 @@ function validateFile(
   const visit = (value: Record<string, unknown>, prefix = ''): void => {
     for (const [name, child] of Object.entries(value)) {
       const key = prefix ? `${prefix}.${name}` : name
-      if (!prefix && (name === 'autonomy' || name === 'projects')) continue
+      if (!prefix && name === 'autonomy') {
+        if (typeof child !== 'object' || child === null || Array.isArray(child))
+          throw new Error(`refusing machine config ${path}: key autonomy must be a table`)
+        continue
+      }
+      if (!prefix && name === 'permissions') {
+        const result = permissionsSchema.safeParse(child)
+        if (!result.success)
+          throw new Error(
+            `refusing machine config ${path}: permissions must contain only optional allow, ask, deny string lists and a drop table with the same lists`,
+          )
+        continue
+      }
+      if (prefix === 'projects' && key !== 'projects.clone_root') {
+        if (typeof child !== 'object' || child === null || Array.isArray(child))
+          throw new Error(`refusing machine config ${path}: key ${key} must be a table`)
+        const project = child as Record<string, unknown>
+        if (Object.keys(project).some((projectKey) => projectKey !== 'autonomy'))
+          throw new Error(`refusing machine config ${path}: unknown key ${key}`)
+        if (
+          project.autonomy !== undefined &&
+          (typeof project.autonomy !== 'object' ||
+            project.autonomy === null ||
+            Array.isArray(project.autonomy))
+        )
+          throw new Error(`refusing machine config ${path}: key ${key}.autonomy must be a table`)
+        continue
+      }
       const childTable = validatedChildTable(table, known, child, key, path)
       if (childTable) visit(childTable, key)
     }
@@ -182,25 +238,232 @@ export function resolveMachineValue<
   return result.data as Table[Key]['type'] extends 'integer' ? number : string
 }
 
-function machineConfigPath(env: ConfigEnvironment): string {
+function machineConfigPath(env: ConfigEnvironment = process.env): string {
   return join(resolveConfigRoot(env), 'machine.toml')
 }
 
-function readMachineFile(path: string): unknown {
+function readMachineText(path: string): string {
   let text: string
   try {
     text = readFileSync(path, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`refusing machine config ${path}: cannot read file: ${detail}`)
   }
   try {
-    return Bun.TOML.parse(text)
+    Bun.TOML.parse(text)
+    return text
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`refusing machine config ${path}: invalid TOML: ${detail}`)
   }
+}
+
+function readMachineFile(path: string): Record<string, unknown> {
+  const text = readMachineText(path)
+  const parsed = text ? Bun.TOML.parse(text) : {}
+  validateFile(MACHINE_CONFIG, parsed, path)
+  return parsed as Record<string, unknown>
+}
+
+function emptyPermissionLists(): Record<MachinePermissionList, string[]> {
+  return { allow: [], ask: [], deny: [] }
+}
+
+export function readMachinePermissions(
+  env: ConfigEnvironment = process.env,
+): MachinePermissionOverlay {
+  const parsed = readMachineFile(machineConfigPath(env))
+  const permissions = (parsed.permissions ?? {}) as Record<string, unknown>
+  const drop = (permissions.drop ?? {}) as Record<string, unknown>
+  const additions = emptyPermissionLists()
+  const dropped = emptyPermissionLists()
+  for (const list of MACHINE_PERMISSION_LISTS) {
+    additions[list] = [...((permissions[list] as string[] | undefined) ?? [])]
+    dropped[list] = [...((drop[list] as string[] | undefined) ?? [])]
+  }
+  return { additions, drop: dropped }
+}
+
+type MachinePermissionOperation = 'add' | 'remove' | 'drop' | 'undrop'
+
+function atomicPatch(
+  mutate: (root: Record<string, unknown>) => void,
+  env: ConfigEnvironment,
+): void {
+  const path = machineConfigPath(env)
+  const text = readMachineText(path)
+  const parsed = text ? (Bun.TOML.parse(text) as Record<string, unknown>) : {}
+  validateFile(MACHINE_CONFIG, parsed, path)
+  mutate(parsed)
+  validateFile(MACHINE_CONFIG, parsed, path)
+  const rendered = patchToml(text, parsed)
+  const directory = resolveConfigRoot(env)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const temporary = join(directory, `.machine.toml.${process.pid}.${crypto.randomUUID()}.tmp`)
+  let mode = 0o600
+  try {
+    mode = statSync(path).mode & 0o777
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  try {
+    writeFileSync(temporary, rendered, { encoding: 'utf8', mode, flag: 'wx' })
+    chmodSync(temporary, mode)
+    renameSync(temporary, path)
+  } catch (error) {
+    try {
+      unlinkSync(temporary)
+    } catch {}
+    throw error
+  }
+}
+
+export function editMachinePermission(
+  operation: MachinePermissionOperation,
+  list: MachinePermissionList,
+  rule: string,
+  env: ConfigEnvironment = process.env,
+): { changed: boolean; overlay: MachinePermissionOverlay } {
+  let changed = false
+  atomicPatch((root) => {
+    if (root.permissions === undefined) root.permissions = {}
+    const permissions = root.permissions as Record<string, unknown>
+    if ((operation === 'drop' || operation === 'undrop') && permissions.drop === undefined)
+      permissions.drop = {}
+    const target =
+      operation === 'drop' || operation === 'undrop'
+        ? (permissions.drop as Record<string, unknown>)
+        : permissions
+    const values = [...((target[list] as string[] | undefined) ?? [])]
+    const remove = operation === 'remove' || operation === 'undrop'
+    const next = remove ? values.filter((value) => value !== rule) : [...values, rule]
+    const deduplicated = [...new Set(next)]
+    changed = deduplicated.length !== values.length || deduplicated.some((v, i) => v !== values[i])
+    if (deduplicated.length) target[list] = deduplicated
+    else delete target[list]
+    if (operation === 'drop' || operation === 'undrop') {
+      if (Object.keys(target).length === 0) delete permissions.drop
+    }
+    if (Object.keys(permissions).length === 0) delete root.permissions
+  }, env)
+  return { changed, overlay: readMachinePermissions(env) }
+}
+
+const MACHINE_AUTONOMY_KEYS =
+  'autonomy.preset, autonomy.rulings, autonomy.release, autonomy.stage.<stage>, autonomy.step.<slug>, autonomy.workflow.<slug>.(preset|rulings|stage.<stage>|step.<slug>)'
+
+function autonomyPath(key: string): string[] {
+  const parts = key.split('.')
+  if (parts.shift() !== 'autonomy')
+    throw new Error(`accepted machine keys: ${MACHINE_AUTONOMY_KEYS}`)
+  const mapped: string[] = []
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!
+    if (part === 'stage') mapped.push('stages')
+    else if (part === 'step') mapped.push('steps')
+    else if (part === 'workflow') mapped.push('workflows')
+    else mapped.push(part)
+  }
+  return mapped
+}
+
+function autonomyEntryKind(key: string): 'preset' | 'rulings' | 'release' | 'value' {
+  const path = autonomyPath(key)
+  if (path.length === 1 && ['preset', 'rulings', 'release'].includes(path[0]!))
+    return path[0] as 'preset' | 'rulings' | 'release'
+  if (
+    path.length === 2 &&
+    ((path[0] === 'stages' && AUTONOMY_STAGES.includes(path[1] as never)) ||
+      (path[0] === 'steps' && Boolean(path[1])))
+  )
+    return 'value'
+  if (path.length === 3 && path[0] === 'workflows' && path[1]) {
+    if (path[2] === 'preset' || path[2] === 'rulings') return path[2]
+  }
+  if (
+    path.length === 4 &&
+    path[0] === 'workflows' &&
+    path[1] &&
+    ((path[2] === 'stages' && AUTONOMY_STAGES.includes(path[3] as never)) ||
+      (path[2] === 'steps' && Boolean(path[3])))
+  )
+    return 'value'
+  throw new Error(`accepted machine keys: ${MACHINE_AUTONOMY_KEYS}`)
+}
+
+function validateAutonomyEntry(key: string, value: string): void {
+  const kind = autonomyEntryKind(key)
+  const valid =
+    (kind === 'preset' && AUTONOMY_PRESETS.includes(value as never)) ||
+    (kind === 'rulings' && ['agent', 'user'].includes(value)) ||
+    (kind === 'release' && RELEASE_AUTONOMY_VALUES.includes(value as never)) ||
+    (kind === 'value' && AUTONOMY_VALUES.includes(value as never))
+  if (!valid) throw new Error(`accepted machine keys: ${MACHINE_AUTONOMY_KEYS}`)
+}
+
+export function setMachineAutonomy(
+  key: string,
+  value: string,
+  env: ConfigEnvironment = process.env,
+): void {
+  validateAutonomyEntry(key, value)
+  const path = autonomyPath(key)
+  atomicPatch((root) => {
+    if (root.autonomy === undefined) root.autonomy = {}
+    let table = root.autonomy as Record<string, unknown>
+    for (const part of path.slice(0, -1)) {
+      if (table[part] === undefined) table[part] = {}
+      table = table[part] as Record<string, unknown>
+    }
+    table[path.at(-1)!] = value
+  }, env)
+}
+
+export function deleteMachineAutonomy(key: string, env: ConfigEnvironment = process.env): void {
+  autonomyEntryKind(key)
+  const path = autonomyPath(key)
+  atomicPatch((root) => {
+    const stack: Record<string, unknown>[] = []
+    let table = root.autonomy as Record<string, unknown> | undefined
+    if (!table) return
+    stack.push(root, table)
+    for (const part of path.slice(0, -1)) {
+      const child = table[part]
+      if (typeof child !== 'object' || child === null || Array.isArray(child)) return
+      table = child as Record<string, unknown>
+      stack.push(table)
+    }
+    delete table[path.at(-1)!]
+    for (let index = stack.length - 1; index > 0; index--) {
+      const child = stack[index]!
+      if (Object.keys(child).length) break
+      const parent = stack[index - 1]!
+      const childKey = index === 1 ? 'autonomy' : path[index - 2]!
+      delete parent[childKey]
+    }
+  }, env)
+}
+
+export type MachineAutonomyEntry = { key: string; value: string; scope: 'local user' }
+
+export function listMachineAutonomy(env: ConfigEnvironment = process.env): MachineAutonomyEntry[] {
+  const root = readMachineFile(machineConfigPath(env))
+  const rows: MachineAutonomyEntry[] = []
+  const visit = (value: unknown, path: string[]): void => {
+    if (typeof value === 'string') {
+      const normalized = path.map(
+        (part) => ({ stages: 'stage', steps: 'step', workflows: 'workflow' })[part] ?? part,
+      )
+      rows.push({ key: `autonomy.${normalized.join('.')}`, value, scope: 'local user' })
+      return
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return
+    for (const [name, child] of Object.entries(value)) visit(child, [...path, name])
+  }
+  visit(root.autonomy, [])
+  return rows.sort((left, right) => left.key.localeCompare(right.key))
 }
 
 /** Read the autonomy tables while sharing machine.toml path and TOML handling. */
@@ -210,9 +473,7 @@ export function readMachineAutonomy(
 ): { user: unknown; project: unknown } {
   const path = machineConfigPath(env)
   const parsed = readMachineFile(path)
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
-    throw new Error(`refusing machine config ${path}: expected a TOML table`)
-  const root = parsed as Record<string, unknown>
+  const root = parsed
   const projects = root.projects
   const projectTable =
     typeof projects === 'object' && projects !== null && !Array.isArray(projects)

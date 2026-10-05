@@ -1,9 +1,16 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
-import { MACHINE_CONFIG, readMachineValue, resolveMachineValue } from './machine-config.ts'
+import {
+  editMachinePermission,
+  MACHINE_CONFIG,
+  readMachinePermissions,
+  readMachineValue,
+  resolveMachineValue,
+  setMachineAutonomy,
+} from './machine-config.ts'
 
 const path = '/config/platform/machine.toml'
 const silent = () => {}
@@ -161,5 +168,54 @@ describe('machine config resolution', () => {
     ).toThrow(
       'refusing machine config key hub.port: HUB_PORT must be an integer; set HUB_PORT to an integer or unset it',
     )
+  })
+})
+
+describe('machine permission overlay', () => {
+  test('validates all optional lists and rejects malformed or unknown permission keys', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-permissions-schema-'))
+    const config = join(root, 'config')
+    const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+    try {
+      mkdirSync(config)
+      writeFileSync(
+        join(config, 'machine.toml'),
+        '[permissions]\nallow = ["Bash(git status)"]\n[permissions.drop]\ndeny = ["Read(.env)"]\n',
+      )
+      expect(readMachinePermissions(env)).toEqual({
+        additions: { allow: ['Bash(git status)'], ask: [], deny: [] },
+        drop: { allow: [], ask: [], deny: ['Read(.env)'] },
+      })
+      writeFileSync(join(config, 'machine.toml'), '[permissions]\nallow = "wrong"\n')
+      expect(() => readMachinePermissions(env)).toThrow('permissions must contain only')
+      writeFileSync(join(config, 'machine.toml'), '[permissions]\nextra = []\n')
+      expect(() => readMachinePermissions(env)).toThrow('permissions must contain only')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('preserves comments and unrelated tables while editing and creates a missing file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-permissions-write-'))
+    const config = join(root, 'config')
+    const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+    try {
+      mkdirSync(config)
+      const file = join(config, 'machine.toml')
+      writeFileSync(file, '# operator note\n[hub]\nport = 9000 # keep this\n')
+      editMachinePermission('add', 'allow', 'Bash(git status)', env)
+      const edited = readFileSync(file, 'utf8')
+      expect(edited).toContain('# operator note')
+      expect(edited).toContain('port = 9000 # keep this')
+      expect(edited).toContain('Bash(git status)')
+
+      rmSync(file)
+      editMachinePermission('drop', 'ask', 'Bash(rm *)', env)
+      expect(readMachinePermissions(env).drop.ask).toEqual(['Bash(rm *)'])
+      setMachineAutonomy('autonomy.stage.review', 'auto', env)
+      expect(readFileSync(file, 'utf8')).toContain('review = "auto"')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

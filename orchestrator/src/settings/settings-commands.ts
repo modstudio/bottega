@@ -1,5 +1,7 @@
 // concern: settings-commands
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
+
+import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { summarizeSettings } from '../../../shared/settings-summary.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
@@ -32,6 +34,7 @@ import {
 } from './settings-files.ts'
 import { adoptionCandidates, lintSettings, type SettingsTarget } from './settings-lint.ts'
 import { editSettingsPermission, type SettingsPermissionOperation } from './settings-permission.ts'
+import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import {
   diffOwnedSettings,
   displayHookDrift,
@@ -213,7 +216,11 @@ export async function settingsRenderCheckCommand(
   const path = settingsFilePath(target, process.env, cwd)
   const parsed = flags.has('json') ? tryReadSettingsFile(path) : readSettingsFile(path)
   const existing = settingsRow(target, owner)
-  const storeOwned = existing ? parseStoreOwned(existing.body) : emptyOwned()
+  const hostedOwned = existing ? parseStoreOwned(existing.body) : emptyOwned()
+  const storeOwned =
+    target.kind === 'user'
+      ? mergeMachinePermissionOverlay(hostedOwned, readMachinePermissions()).settings
+      : hostedOwned
   const fileOwned = parsed
     ? target.kind === 'user'
       ? { ...parsed.owned, envKeys: parsed.envKeys }
