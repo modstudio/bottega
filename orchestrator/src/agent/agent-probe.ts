@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { which } from 'bun'
 import { nowIso, writableDb } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import {
   agentRows,
   HARNESSES,
@@ -18,6 +19,30 @@ import { localReachable } from './model-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
+
+export function registrationProbeRequirements(declaredJobs: string[] | null): {
+  tool: boolean
+  schema: boolean
+  mcp: boolean
+  file: true
+} {
+  const needs = { tool: false, schema: false, mcp: false, file: true as const }
+  const declared = declaredJobs !== null
+  const jobNames = declaredJobs ?? Object.keys(JOBS)
+  for (const name of jobNames) {
+    const job = JOBS[name]
+    if (!job) continue
+    if (job.needs.readsRepo) needs.tool = true
+    if (job.needs.writesRepo || job.findings) needs.schema = true
+    if (job.needs.mcp) needs.mcp = true
+  }
+  if (!declared) {
+    needs.tool = true
+    needs.schema = true
+    needs.mcp = true
+  }
+  return needs
+}
 
 async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
   try {
@@ -125,23 +150,9 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     '../transport/transport.ts'
   )
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
-  const { JOBS } = await import('../jobs/jobs.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
-  const declaredJobs = declared ?? Object.keys(JOBS)
-  const needs = { tool: false, schema: false, mcp: false }
-  for (const name of declaredJobs) {
-    const job = JOBS[name]
-    if (!job) continue
-    if (job.needs.readsRepo) needs.tool = true
-    if (job.needs.writesRepo || job.findings) needs.schema = true
-    if (job.needs.mcp) needs.mcp = true
-  }
-  if (!declared) {
-    needs.tool = true
-    needs.schema = true
-    needs.mcp = true
-  }
+  const needs = registrationProbeRequirements(declared)
   const transport = transportFor(agent.defaultTransport)
   const runOne = async (id: string, prompt: string, schema?: string, mcp = false) => {
     const started = Date.now()
@@ -245,18 +256,13 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       }
   const replyPath = join(scratch, 'reply.json')
   rmSync(replyPath, { force: true })
-  const structured = needs.schema
-    ? await runOne(
-        'schema',
-        'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then return a final message using the supplied schema.',
-        schemaPath,
-      )
-    : {
-        status: 'ok' as const,
-        output: 'skipped: not required for declared jobs',
-        parsed: { text: '{"status":"ok"}' },
-        events: [] as import('../transport/transport.ts').NormalizedEvent[],
-      }
+  const structured = await runOne(
+    'schema',
+    needs.schema
+      ? 'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then return a final message using the supplied schema.'
+      : 'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then reply with exactly: ok',
+    needs.schema ? schemaPath : undefined,
+  )
   const mcpRun =
     needs.mcp || !declared
       ? await runOne(
@@ -303,9 +309,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     ? tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)
     : null
   const schemaOk = needs.schema ? structured.status === 'ok' && parsedSchema?.status === 'ok' : null
-  const fileOk = needs.schema
-    ? valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile)
-    : null
+  const fileOk = valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile)
   const perJob = Object.fromEntries(
     Object.keys(JOBS).map((jobName) => {
       const job = JOBS[jobName]
@@ -348,7 +352,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   result.ok =
     result.reply.ok &&
     (!needs.tool || toolOk === true) &&
-    (!needs.schema || (schemaOk === true && fileOk === true)) &&
+    fileOk === true &&
+    (!needs.schema || schemaOk === true) &&
     (!needs.mcp || mcpVerifiable === true) &&
     (contextTokens !== null || !row.base_url)
   recordAgentProbe(name, result)
