@@ -55,6 +55,22 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
   }
 }
 
+export function setupActionLine(action: SetupAction): string {
+  switch (action.kind) {
+    case 'register-mcp':
+      return `${action.replace ? 'Replace' : 'Register'} ${action.server.name} in ${action.harness}`
+    case 'add':
+      return `Add project ${action.name} (${action.path})`
+    case 'set':
+      return `Update project ${action.currentName} (${action.path})`
+    case 'unchanged':
+      return `Project ${action.name} (${action.path})`
+    case 'mcp-unchanged':
+    case 'mcp-skipped':
+      return `${action.server.name} in ${action.harness}`
+  }
+}
+
 export function validateSetupAnswers(questions: SetupQuestion[], value: unknown): SetupAnswers {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('answers must be a JSON object mapping question id to option id')

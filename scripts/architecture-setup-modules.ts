@@ -8,6 +8,28 @@ type SetupModuleSpec = {
 
 export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
+    name: 'setup-service-boundary',
+    file: 'orchestrator/src/setup/setup-service.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:fs',
+      '../../../shared/self-spawn.ts',
+      '../database/db.ts',
+      '../project/project-commands.ts',
+      '../project/projects.ts',
+      '../record/record-space.ts',
+      '../worktree/worktree-lifecycle.ts',
+      './repository-facts.ts',
+      './setup-apply.ts',
+      './setup-engine.ts',
+      './setup-facts.ts',
+      './setup-planner.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep shared setup assembly and application independent of CLI and MCP presentation grammar.',
+  },
+  {
     name: 'setup-repository-facts-boundary',
     file: 'orchestrator/src/setup/repository-facts.ts',
     allowed: [
