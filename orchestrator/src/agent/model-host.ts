@@ -42,7 +42,10 @@ export function registeredContextTokens(row: AgentRow): number | null {
 export type LocalHealth = { ok: boolean; detail: string; contextTokens?: number }
 
 let modelHostHealth: LocalHealth | null = null
-const agentHealth = new Map<string, { baseUrl: string | null; health: LocalHealth }>()
+const agentHealth = new Map<
+  string,
+  { baseUrl: string | null; endpoint: string; health: LocalHealth }
+>()
 
 /**
  * MAC address to wake the model host at, or empty to never try.
@@ -182,13 +185,13 @@ export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: strin
   const probes = Object.values(AGENTS)
     .filter((agent) => agent.enabled !== false && agent.operatedBy === 'self')
     .map(async (agent) => {
+      const baseUrl = agent.baseUrl ?? null
+      const endpoint = baseUrl ?? globalBaseUrl
       const cached = agentHealth.get(agent.name)
-      if (cached?.baseUrl === agent.baseUrl && !opts.force) return
+      if (cached?.baseUrl === baseUrl && cached.endpoint === endpoint && !opts.force) return
       const health =
-        agent.baseUrl === globalBaseUrl
-          ? await globalProbe
-          : await localReachable(undefined, agent.baseUrl ?? '')
-      agentHealth.set(agent.name, { baseUrl: agent.baseUrl ?? null, health })
+        endpoint === globalBaseUrl ? await globalProbe : await localReachable(undefined, endpoint)
+      agentHealth.set(agent.name, { baseUrl, endpoint, health })
     })
   const [globalHealth] = await Promise.all([globalProbe, ...probes])
   modelHostHealth = globalHealth
@@ -198,8 +201,11 @@ export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: strin
 /** The last reachability verdict for this row's current endpoint, if probed. */
 export function localAgentHealth(name: string): LocalHealth | null {
   const agent = AGENTS[name]
+  if (!agent) return null
   const cached = agentHealth.get(name)
-  return cached && cached.baseUrl === agent?.baseUrl ? cached.health : null
+  const baseUrl = agent.baseUrl ?? null
+  const endpoint = baseUrl ?? modelHostUrl()
+  return cached && cached.baseUrl === baseUrl && cached.endpoint === endpoint ? cached.health : null
 }
 
 /**
@@ -238,9 +244,9 @@ export function unavailableReason(name: string): string | null {
   }
   if (!harnessInstalled(name)) return 'not installed'
   if (a.operatedBy === 'self') {
-    // A local agent is only real once its own endpoint is configured. The
-    // machine-wide model host is a wake target, not a default for every row.
-    if (!a.baseUrl) return 'ORCH_MODEL_HOST_URL not set'
+    // A row's endpoint wins when present. Rows without one retain the global
+    // model-host fallback used by the worker environment.
+    if (!(a.baseUrl ?? modelHostUrl())) return 'ORCH_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:
     // the env var stayed correct for the whole eleven hours the box was off.
     // Only a probe that has actually run can say no here, so a caller that

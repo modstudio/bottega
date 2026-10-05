@@ -120,7 +120,7 @@ function localProbeDiagnosis(row: AgentRow, now = Date.now()): { line: string; f
 }
 
 function rowReachabilityDiagnosis(row: AgentRow, globalBaseUrl: string): string[] {
-  if (row.base_url === globalBaseUrl) return []
+  if ((row.base_url ?? globalBaseUrl) === globalBaseUrl) return []
   const health = localAgentHealth(row.name)
   const lines = [
     `local endpoint  ${row.name} ${row.base_url ?? '(unset)'}`,

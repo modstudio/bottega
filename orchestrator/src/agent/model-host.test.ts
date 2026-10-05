@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { type AgentRow, addAgent, refreshAgents, removeAgent } from './agent-registry.ts'
 import {
   ensureLocalHealth,
@@ -90,4 +90,65 @@ test('self-operated agents use the reachability of their own endpoints', async (
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+describe('a self-operated agent without its own base URL', () => {
+  const originalModelHostUrl = process.env.ORCH_MODEL_HOST_URL
+
+  afterEach(() => {
+    if (originalModelHostUrl === undefined) delete process.env.ORCH_MODEL_HOST_URL
+    else process.env.ORCH_MODEL_HOST_URL = originalModelHostUrl
+  })
+
+  describe('with a configured global endpoint', () => {
+    beforeEach(() => {
+      process.env.ORCH_MODEL_HOST_URL = 'http://127.0.0.1:19003/v1'
+    })
+
+    test('uses the answering global endpoint', async () => {
+      addAgent('global-fallback-local', {
+        harness: 'goose',
+        backend: 'vllm',
+        model: 'operator/global-fallback',
+        contextTokens: 98_304,
+      })
+      addedAgents.push('global-fallback-local')
+      refreshAgents()
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        if (url.origin === 'http://127.0.0.1:19003') {
+          return Response.json({
+            data: [{ id: 'operator/global-fallback', max_model_len: 98_304 }],
+          })
+        }
+        throw new Error(`refused ${url.origin}`)
+      }) as typeof fetch
+      try {
+        await ensureLocalHealth({ force: true })
+        expect(unavailableReason('global-fallback-local')).toBeNull()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
+
+  describe('without a configured global endpoint', () => {
+    beforeEach(() => {
+      process.env.ORCH_MODEL_HOST_URL = ''
+    })
+
+    test('names the missing global endpoint', async () => {
+      addAgent('missing-global-local', {
+        harness: 'goose',
+        backend: 'vllm',
+        model: 'operator/missing-global',
+        contextTokens: 98_304,
+      })
+      addedAgents.push('missing-global-local')
+      refreshAgents()
+      await ensureLocalHealth({ force: true })
+      expect(unavailableReason('missing-global-local')).toBe('ORCH_MODEL_HOST_URL not set')
+    })
+  })
 })
