@@ -175,6 +175,18 @@ function resolvePostOrigin(actor: Actor, env: Environment, cwd: string) {
   return { harness: architectIdentity(env)!.harness, project: project.name }
 }
 
+function senderTagKey(tags: Pick<BoardTag, 'kind' | 'value'>[]): string {
+  return JSON.stringify(
+    tags
+      .map(({ kind, value }) => [kind, value] as const)
+      .sort(([leftKind, leftValue], [rightKind, rightValue]) =>
+        leftKind === rightKind
+          ? leftValue.localeCompare(rightValue)
+          : leftKind.localeCompare(rightKind),
+      ),
+  )
+}
+
 function refreshPostingPresence(
   database: ReturnType<typeof writableDb>,
   actor: Actor,
@@ -223,6 +235,12 @@ export function postNotice(
     throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
   if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
     throw new Error('board notice contains secret-shaped text; remove the credential and retry')
+  if (
+    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
+      (value) => value !== undefined && containsSecretShaped(value),
+    )
+  )
+    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
   const actor = boardActor(env)
   const postingMachine = hostname()
   const { audience, expression: audienceExpression } = resolvePostAudience(
@@ -258,22 +276,30 @@ export function postNotice(
       )
       .get(actor.kind, authorSession, since) as { n: number }
   ).n
-  const duplicate = db()
+  const duplicateCandidates = db()
     .query(
       `SELECT id FROM board_message
        WHERE author_kind=? AND author_session IS ? AND audience=? AND title=? AND body=?
-         AND created_at>=? ORDER BY id DESC LIMIT 1`,
+         AND created_at>=? ORDER BY id DESC`,
     )
-    .get(
+    .all(
       actor.kind,
       authorSession,
       audienceExpression,
       input.title,
       input.body,
       duplicateSince,
-    ) as {
-    id: number
-  } | null
+    ) as { id: number }[]
+  const senderTagsKey = senderTagKey(senderTags)
+  const duplicate = duplicateCandidates.find((candidate) => {
+    const storedTags = db()
+      .query(
+        `SELECT kind,value FROM board_message_tag
+         WHERE message_id=? AND origin='sender'`,
+      )
+      .all(candidate.id) as Pick<BoardTag, 'kind' | 'value'>[]
+    return senderTagKey(storedTags) === senderTagsKey
+  })
   const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
   if (decision === 'drop-duplicate') {
     const reached = (

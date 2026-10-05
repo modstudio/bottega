@@ -123,6 +123,38 @@ test('an untagged notice infers no tags', () => {
   )
 })
 
+test('duplicate notices require the same order-independent sender tag set', () => {
+  const clock = Date.now() + 17_000
+  const input = {
+    audience: 'project:board-duplicate-tags',
+    title: 'Retarget this notice',
+    body: 'No live session initially matches.',
+  }
+  const first = postNotice(
+    { ...input, paths: ['orchestrator/src/first/**'], topics: ['gate', 'infra'] },
+    {},
+    clock,
+  )
+  expect(first.reached).toBe(0)
+  expect(first.dropped).toBeFalse()
+
+  const retargeted = postNotice(
+    { ...input, paths: ['orchestrator/src/second/**'], topics: ['gate', 'infra'] },
+    {},
+    clock + 1,
+  )
+  expect(retargeted.id).not.toBe(first.id)
+  expect(retargeted.reached).toBe(0)
+  expect(retargeted.dropped).toBeFalse()
+
+  const duplicate = postNotice(
+    { ...input, paths: ['orchestrator/src/second/**'], topics: ['infra', 'gate'] },
+    {},
+    clock + 2,
+  )
+  expect(duplicate).toEqual({ id: retargeted.id, dropped: true, reached: 0 })
+})
+
 test('a session-start notice dropped for budget stays unread until a stamping read', () => {
   const clock = Date.now() + 20_000
   db()
@@ -203,6 +235,30 @@ test('secret-shaped title or body is refused before storage without echoing it',
   expect(
     db().query('SELECT id FROM board_message WHERE title=? OR body=?').all(planted, planted),
   ).toEqual([])
+})
+
+test('secret-shaped sender tag values are refused before storage without echoing them', () => {
+  const planted = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890'
+  const before = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
+    .count
+  for (const tags of [{ task: planted }, { paths: [planted] }, { topics: [planted] }]) {
+    let output = ''
+    try {
+      postNotice(
+        { audience: 'operator', title: 'safe', body: 'safe', ...tags },
+        {},
+        Date.now() + 55_000,
+      )
+    } catch (error) {
+      output = String(error)
+    }
+    expect(output).toContain('board notice tag contains secret-shaped text')
+    expect(output).toContain('remove the credential and retry')
+    expect(output).not.toContain(planted)
+  }
+  const after = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
+    .count
+  expect(after).toBe(before)
 })
 
 test('post content accepts exact size boundaries and refuses one character over', () => {
