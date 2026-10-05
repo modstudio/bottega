@@ -9,6 +9,13 @@ import {
   withdrawNotice,
 } from '../board/board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
+import {
+  acceptAnswer,
+  askQuestion,
+  fileAnswerNote,
+  readThread,
+  replyToThread,
+} from '../board/board-thread-service.ts'
 
 const result = (value: unknown) => ({
   content: [
@@ -17,6 +24,72 @@ const result = (value: unknown) => ({
 })
 
 export function registerBoardTools(server: McpServer): void {
+  server.registerTool(
+    'board_ask',
+    {
+      description: 'Ask a local architect-board question.',
+      inputSchema: z.object({
+        audience: z.string().min(1),
+        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        task: z.string().min(1).optional(),
+        path: z.array(z.string()).optional(),
+        topic: z.array(z.string()).optional(),
+        expires_ms: z.number().int().positive().optional(),
+      }),
+    },
+    async (input) =>
+      result(
+        askQuestion({
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          task: input.task,
+          paths: input.path,
+          topics: input.topic,
+          expiresMs: input.expires_ms,
+        }),
+      ),
+  )
+  server.registerTool(
+    'board_reply',
+    {
+      description: 'Reply to a local board notice or question thread.',
+      inputSchema: z.object({
+        root_id: z.number().int().positive(),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+      }),
+    },
+    async ({ root_id, body }) => result(replyToThread(root_id, body)),
+  )
+  server.registerTool(
+    'board_thread',
+    {
+      description: 'Read a local board thread.',
+      inputSchema: z.object({ id: z.number().int().positive() }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id }) => result(readThread(id)),
+  )
+  server.registerTool(
+    'board_accept',
+    {
+      description: 'Accept one reply as the final answer to a board question.',
+      inputSchema: z.object({
+        question_id: z.number().int().positive(),
+        reply_id: z.number().int().positive(),
+      }),
+    },
+    async ({ question_id, reply_id }) => result(await acceptAnswer(question_id, reply_id)),
+  )
+  server.registerTool(
+    'board_file_note',
+    {
+      description: 'Retry filing the accepted answer for a board question as a note.',
+      inputSchema: z.object({ question_id: z.number().int().positive() }),
+    },
+    async ({ question_id }) => result(await fileAnswerNote(question_id)),
+  )
   server.registerTool(
     'board_post',
     {

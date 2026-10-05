@@ -18,6 +18,7 @@ export const mcpModules: McpModule[] = [
     '../board/board-policy.ts',
     '../board/board-service.ts',
     '../board/board-suggestions.ts',
+    '../board/board-thread-service.ts',
   ]),
   module('orchestrator/src/mcp/hub-notes.ts', [
     'zod',
