@@ -70,7 +70,7 @@ export type CollectorMirrorPass = {
   reportSkipped(): void
 }
 
-export type CollectorMirrorResult = 'mirrored' | 'not-applicable' | 'unreadable'
+type CollectorMirrorResult = 'mirrored' | 'not-applicable' | 'unreadable'
 
 /** Load hosted identity once and apply the task project-space rule for one collection pass. */
 export async function createCollectorMirrorPass(
