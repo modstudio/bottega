@@ -1,6 +1,7 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { rememberHostedRecord } from './install-binding.ts'
 import { RECORD_SIGN_IN_REMEDY, recordAuth, recordIdentity } from './record-auth.ts'
 import { currentRecordSession } from './record-session.ts'
 
@@ -29,6 +30,7 @@ export async function signUpCommand(
   })
   if (!result.token) throw new Error(RECORD_SIGN_IN_REMEDY)
   writeRecordSessionToken(result.token)
+  rememberHostedRecord()
   presentation.log(`signed up ${result.user.email}`)
 }
 
@@ -41,6 +43,7 @@ export async function signInCommand(
     body: { email, password: await recordPassword(readPassword) },
   })
   writeRecordSessionToken(result.token)
+  rememberHostedRecord()
   presentation.log(`signed in ${result.user.email}`)
 }
 

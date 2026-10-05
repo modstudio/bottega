@@ -12,6 +12,11 @@ import {
   migrationJournal,
 } from './migrations.ts'
 
+function pendingMigrationsFrom(tag: string): string[] {
+  const journal = migrationJournal()
+  return journal.slice(journal.findIndex((entry) => entry.tag === tag)).map((entry) => entry.tag)
+}
+
 test('embedded migrations produce the disk journal and schema hash', () => {
   const diskJournal = migrationJournal()
   const diskHash = expectedSchemaHash()
@@ -111,13 +116,7 @@ test('board origin snapshot migration backfills an existing architect notice', (
          VALUES ('notice','architect','author','operator','Title','Body',0,'2026-10-03','2026-10-02')`,
       )
       .run()
-    expect(applyMigrations(database)).toEqual([
-      '0074_board_origin_snapshot',
-      '0075_board_message_tags',
-      '0076_board_worker_suggestions',
-      '0077_board_threads',
-      '0078_board_claims',
-    ])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0074_board_origin_snapshot'))
     expect(database.query('SELECT author_harness,author_project FROM board_message').get()).toEqual(
       { author_harness: 'claude-code', author_project: 'posting-project' },
     )
@@ -164,11 +163,9 @@ test('board worker suggestion migration preserves messages, receipts, and tags',
       )
       .run(message.id)
 
-    expect(applyMigrations(database)).toEqual([
-      '0076_board_worker_suggestions',
-      '0077_board_threads',
-      '0078_board_claims',
-    ])
+    expect(applyMigrations(database)).toEqual(
+      pendingMigrationsFrom('0076_board_worker_suggestions'),
+    )
     expect(
       database
         .query('SELECT kind,author_kind,author_run_id,title FROM board_message WHERE id=?')
@@ -225,7 +222,7 @@ test('board thread migration preserves existing messages, receipts, and tags', (
       )
       .run(message.id)
 
-    expect(applyMigrations(database)).toEqual(['0077_board_threads', '0078_board_claims'])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0077_board_threads'))
     expect(
       database
         .query(
@@ -277,7 +274,7 @@ test('board claim migration preserves existing board rows and adds their nullabl
          VALUES ('notice','architect','author','operator','Title','Body',0,'2026-10-03','2026-10-02')`,
       )
       .run()
-    expect(applyMigrations(database)).toEqual(['0078_board_claims'])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0078_board_claims'))
     expect(database.query('SELECT title,body,claim_id FROM board_message').get()).toEqual({
       title: 'Title',
       body: 'Body',
@@ -492,37 +489,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       )
       .run(run.id, run.id)
 
-    expect(applyMigrations(database)).toEqual([
-      '0050_task_rulings',
-      '0051_worker_gate',
-      '0052_worker_gate_lifecycle',
-      '0053_question_filed_ruling',
-      '0054_file_ruling_audit',
-      '0055_settings_doc_scope',
-      '0056_workflow_questions',
-      '0057_review_finding_amendment',
-      '0058_question_record_id',
-      '0059_question_revision',
-      '0060_mutation_audit_turn',
-      '0061_pull_request_triage_snapshot',
-      '0062_run_resource_teardown',
-      '0063_workflow_floor_evidence',
-      '0064_architect_review_read',
-      '0065_workflow_exec_evidence',
-      '0066_landing_override_change_group',
-      '0067_outbox_quarantine',
-      '0068_outbox_redaction_audit',
-      '0069_question_close_audit',
-      '0070_question_delivery_retired',
-      '0071_worker_note_request',
-      '0072_release_ledger',
-      '0073_board_notices',
-      '0074_board_origin_snapshot',
-      '0075_board_message_tags',
-      '0076_board_worker_suggestions',
-      '0077_board_threads',
-      '0078_board_claims',
-    ])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0050_task_rulings'))
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
       reason: 'because',
@@ -595,48 +562,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
     const before = database
       .query("SELECT name FROM agent WHERE billing IN ('free','local') ORDER BY name")
       .all()
-    expect(applyMigrations(database)).toEqual([
-      '0039_agent_operator',
-      '0040_workflow_cursor',
-      '0041_readonly_clone_source',
-      '0042_workflow_cursor_abandoned',
-      '0043_lens_requires_execution',
-      '0044_workflow_cursor_autonomy',
-      '0045_question_delivery',
-      '0046_unvoid_audit',
-      '0047_project_task_identity',
-      '0048_user_canon_owner',
-      '0049_operator_waiting',
-      '0050_task_rulings',
-      '0051_worker_gate',
-      '0052_worker_gate_lifecycle',
-      '0053_question_filed_ruling',
-      '0054_file_ruling_audit',
-      '0055_settings_doc_scope',
-      '0056_workflow_questions',
-      '0057_review_finding_amendment',
-      '0058_question_record_id',
-      '0059_question_revision',
-      '0060_mutation_audit_turn',
-      '0061_pull_request_triage_snapshot',
-      '0062_run_resource_teardown',
-      '0063_workflow_floor_evidence',
-      '0064_architect_review_read',
-      '0065_workflow_exec_evidence',
-      '0066_landing_override_change_group',
-      '0067_outbox_quarantine',
-      '0068_outbox_redaction_audit',
-      '0069_question_close_audit',
-      '0070_question_delivery_retired',
-      '0071_worker_note_request',
-      '0072_release_ledger',
-      '0073_board_notices',
-      '0074_board_origin_snapshot',
-      '0075_board_message_tags',
-      '0076_board_worker_suggestions',
-      '0077_board_threads',
-      '0078_board_claims',
-    ])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0039_agent_operator'))
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
       .all()
@@ -699,40 +625,7 @@ test('project task identity migration backfills ledger project relationships', (
       )
       .run(source.id)
 
-    expect(applyMigrations(database)).toEqual([
-      '0047_project_task_identity',
-      '0048_user_canon_owner',
-      '0049_operator_waiting',
-      '0050_task_rulings',
-      '0051_worker_gate',
-      '0052_worker_gate_lifecycle',
-      '0053_question_filed_ruling',
-      '0054_file_ruling_audit',
-      '0055_settings_doc_scope',
-      '0056_workflow_questions',
-      '0057_review_finding_amendment',
-      '0058_question_record_id',
-      '0059_question_revision',
-      '0060_mutation_audit_turn',
-      '0061_pull_request_triage_snapshot',
-      '0062_run_resource_teardown',
-      '0063_workflow_floor_evidence',
-      '0064_architect_review_read',
-      '0065_workflow_exec_evidence',
-      '0066_landing_override_change_group',
-      '0067_outbox_quarantine',
-      '0068_outbox_redaction_audit',
-      '0069_question_close_audit',
-      '0070_question_delivery_retired',
-      '0071_worker_note_request',
-      '0072_release_ledger',
-      '0073_board_notices',
-      '0074_board_origin_snapshot',
-      '0075_board_message_tags',
-      '0076_board_worker_suggestions',
-      '0077_board_threads',
-      '0078_board_claims',
-    ])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0047_project_task_identity'))
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
       target_project_id: project.id,
@@ -777,39 +670,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       )
       .run()
 
-    expect(applyMigrations(database)).toEqual([
-      '0048_user_canon_owner',
-      '0049_operator_waiting',
-      '0050_task_rulings',
-      '0051_worker_gate',
-      '0052_worker_gate_lifecycle',
-      '0053_question_filed_ruling',
-      '0054_file_ruling_audit',
-      '0055_settings_doc_scope',
-      '0056_workflow_questions',
-      '0057_review_finding_amendment',
-      '0058_question_record_id',
-      '0059_question_revision',
-      '0060_mutation_audit_turn',
-      '0061_pull_request_triage_snapshot',
-      '0062_run_resource_teardown',
-      '0063_workflow_floor_evidence',
-      '0064_architect_review_read',
-      '0065_workflow_exec_evidence',
-      '0066_landing_override_change_group',
-      '0067_outbox_quarantine',
-      '0068_outbox_redaction_audit',
-      '0069_question_close_audit',
-      '0070_question_delivery_retired',
-      '0071_worker_note_request',
-      '0072_release_ledger',
-      '0073_board_notices',
-      '0074_board_origin_snapshot',
-      '0075_board_message_tags',
-      '0076_board_worker_suggestions',
-      '0077_board_threads',
-      '0078_board_claims',
-    ])
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0048_user_canon_owner'))
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',
       record_id: 'record-doc',

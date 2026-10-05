@@ -36,6 +36,7 @@ import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { rememberHostedRecord } from './install-binding.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import { deferOutboxRow, markOutboxRowSynced, outboxRowIsEligible } from './outbox-dependency.ts'
@@ -1006,6 +1007,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       )
       .get()!.count
     await pullRecordCache(writableLocal)
+    rememberHostedRecord(writableLocal)
     return {
       pushed,
       failed,

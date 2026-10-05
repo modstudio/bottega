@@ -28,6 +28,9 @@ export async function proveProjectSpaceRecordSync(input: {
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
   )`)
+  local.exec(
+    'CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY CHECK (id = 1), bound_at TEXT NOT NULL)',
+  )
   const ids = [newRecordId(), newRecordId()]
   for (const [index, projectName] of ['alpha', 'beta'].entries()) {
     const run = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
@@ -110,6 +113,9 @@ export async function proveScoreRecordSync(input: {
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
   )`)
+  local.exec(
+    'CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY CHECK (id = 1), bound_at TEXT NOT NULL)',
+  )
   const run = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
   const recordId = newRecordId()
   Object.assign(run, {

@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/run/question-delivery.ts', [
     '../database/db.ts',
     './question-vocabulary.ts',
@@ -61,6 +62,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-session.ts',
     './record-sync.ts',
+    './install-binding.ts',
     './machine-identity.ts',
     './outbox-dependency.ts',
     './outbox-quarantine.ts',

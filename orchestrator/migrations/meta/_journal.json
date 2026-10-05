@@ -554,6 +554,13 @@
       "when": 1790884800006,
       "tag": "0078_board_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1790884800007,
+      "tag": "0079_record_install_binding",
+      "breakpoints": true
     }
   ]
 }

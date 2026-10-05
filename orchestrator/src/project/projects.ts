@@ -39,7 +39,6 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
 import { validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
@@ -52,6 +51,11 @@ import {
   placeholders,
   validateCreate,
 } from '../worktree/worktree-template.ts'
+import {
+  requireHostedProjectPush,
+  retireProjectInHostedRecord,
+  writeProjectToHostedRecord,
+} from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
 import type { MainStackConsumer, ProjectSettings, WorktreeTool } from './project-settings.ts'
 
@@ -262,18 +266,11 @@ export async function writeHostedProject(p: {
   settings?: ProjectSettings
   retiredAt?: string | null
 }): Promise<void> {
-  await recordApiClient().upsertProject({
-    name: p.name,
-    previousName: p.previousName,
-    path: p.path.replace(/\/$/, ''),
-    stack: p.stack ?? null,
-    canon: Boolean(p.canon),
-    settings: p.settings ?? {},
-    retiredAt: p.retiredAt ?? null,
-  })
+  await writeProjectToHostedRecord(p)
 }
 
 export async function pushProjects(): Promise<string[]> {
+  requireHostedProjectPush()
   const names: string[] = []
   for (const project of [...projects(), ...projects({ retired: true })]) {
     await writeHostedProject({
@@ -411,7 +408,7 @@ export async function removeWrittenProject(name: string): Promise<boolean> {
   if (!project) return false
   const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
   if (refusal) throw new Error(refusal.join('\n'))
-  await recordApiClient().retireProject(name)
+  await retireProjectInHostedRecord(name)
   return removeProject(name)
 }
 
@@ -427,7 +424,7 @@ export function retireProject(name: string): 'retired' | 'already-retired' {
 export async function retireWrittenProject(name: string): Promise<'retired' | 'already-retired'> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
-  await recordApiClient().retireProject(name)
+  await retireProjectInHostedRecord(name)
   return retireProject(name)
 }
 
