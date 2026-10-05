@@ -5,13 +5,13 @@ import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
-  decideCursorArguments,
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
   ruleWorkflow,
   workflowCursorProjectScope,
 } from './workflow-cursor.ts'
+import { decideCursorArguments } from './workflow-cursor-arguments.ts'
 import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -68,7 +68,8 @@ function installEvidence(
   const row = d
     .query<{ id: number; ordinal: number; step_slug: string; state: string }, string[]>(
       `SELECT id,ordinal,step_slug,state FROM workflow_cursor
-        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=?`,
+        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+          AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY id DESC`,
     )
     .get(project, slug, mode, key, instance)
   if (!row || row.state === 'done' || row.state === 'abandoned') return {}
@@ -178,15 +179,20 @@ describe('workflow cursor adapter', () => {
     ).toEqual({
       action: 'refuse',
       reason:
-        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"; run orch workflow abandon for this cursor, then compose again',
+        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"',
     })
     expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' }, new Set(['key']))).toEqual(
       {
         action: 'refuse',
         reason:
-          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"; run orch workflow abandon for this cursor, then compose again',
+          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"',
       },
     )
+    expect(decideCursorArguments({}, { key: 'DEV-822' }, none)).toEqual({
+      action: 'merge',
+      args: {},
+      rebindings: [],
+    })
   })
 
   test('next advances with a rebound argument from the pinned workflow and records the event', () => {
@@ -343,7 +349,7 @@ describe('workflow cursor adapter', () => {
 
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
     expect(renderWorkflowComposition(recomposed)).toContain(
-      'Cursor: at step 2 lens (running); continue with next.',
+      'Cursor 1 is already open at step 2 lens for DEV-822',
     )
   })
 
@@ -395,7 +401,7 @@ describe('workflow cursor adapter', () => {
 
     const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
 
-    expect(recomposed.cursor).toMatchObject({ n: 0, slug: 'rebase', state: 'running' })
+    expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
     const rows = d
       .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
       .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
@@ -415,7 +421,7 @@ describe('workflow cursor adapter', () => {
 
     const recomposed = composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
 
-    expect(recomposed.cursor).toMatchObject({ n: 0, slug: 'rebase', state: 'running' })
+    expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
     const rows = d
       .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
       .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
@@ -491,7 +497,7 @@ describe('workflow cursor adapter', () => {
     )
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toHaveLength(1)
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!.line).toBe(
-      'ship DEV-822 fixture step 1/9 rebase running next: lens',
+      'cursor 1 ship default DEV-822 fixture step 1/9 rebase running next: lens',
     )
     let output = ''
     for (const step of composition.steps) {
@@ -550,7 +556,7 @@ describe('workflow cursor adapter', () => {
       )
 
     expect(output).toBe(
-      `Workflow keyless-fixture (agent) is finished: ${composition.steps.length} steps closed.`,
+      `Workflow keyless-fixture for DEV-822 is finished: ${composition.steps.length} steps closed.`,
     )
   })
 
@@ -872,7 +878,7 @@ describe('workflow cursor adapter', () => {
       d,
     )
     expect(renderWorkflowComposition(recomposed)).toContain(
-      'Cursor: at step 2 lens (running); continue with next. This cursor was driven by session session-one and is now yours.',
+      'Cursor 1 is already open at step 2 lens for DEV-822. This cursor was driven by session session-one and is now yours.',
     )
     expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
       session_id: 'session-two',

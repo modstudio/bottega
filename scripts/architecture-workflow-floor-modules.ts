@@ -14,6 +14,27 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-format.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-arguments.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './workflow-cursor-format.ts',
+    './workflow-cursor-trail.ts',
+    './workflows.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-cursor-adoption.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../run/question-outbox.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-cursor-selection.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './workflow-cursor-arguments.ts',
+    './workflow-cursor-trail.ts',
+    './workflow-cursor-transition.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
@@ -59,6 +80,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflows.ts',
     './workflow-cursor-transition.ts',
     './workflow-cursor-trail.ts',
+    './workflow-cursor-arguments.ts',
+    './workflow-cursor-adoption.ts',
+    './workflow-cursor-format.ts',
+    './workflow-cursor-selection.ts',
     './workflow-step-reference.ts',
   ]),
 ]

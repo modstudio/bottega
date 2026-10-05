@@ -141,6 +141,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
       '../workflow/autonomy-scopes.ts',
+      '../workflow/workflow-cursor-format.ts',
       './question-vocabulary.ts',
       './question-open.ts',
       './run-answer-liveness.ts',

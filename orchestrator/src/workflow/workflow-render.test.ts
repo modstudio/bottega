@@ -72,7 +72,7 @@ describe('workflow rendering', () => {
       {
         title: 'Choose',
         description: 'Choose a path.',
-        arguments: [],
+        arguments: [{ name: 'key', required: false, description: 'Existing task key.' }],
         modes: [
           { slug: 'one', title: 'One', entry: 'First?', steps: ['lens'] },
           { slug: 'two', title: 'Two', entry: 'Second?', steps: ['lens'] },
@@ -90,6 +90,14 @@ describe('workflow rendering', () => {
     expect(rendered).toContain(
       'Choose a mode by answering its question, then compose again with that mode.',
     )
+    expect(rendered).toContain('No mode is chosen yet.')
+    expect(rendered).toContain('- key (optional): Existing task key.')
+    expect(rendered).toContain(
+      'If the work has not been supplied, get it from the operator as a task key or a description before choosing a mode.',
+    )
+    expect(rendered).toContain('MCP `compose_workflow` or `get_workflow_step` with `mode`')
+    expect(rendered).toContain('`orch workflow compose choose --project fixture --mode <mode>`')
+    expect(rendered).not.toContain('facts: {}')
     expect(rendered).not.toContain('Work the numbered steps below')
     expect(rendered).not.toContain('Reading a step line:')
     const lastInEveryMode = getWorkflowStep('choose', 'fixture', 'lens', args, d)

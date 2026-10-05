@@ -17,6 +17,7 @@ import {
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
+  abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   cliWorkflowCursorContext,
   composeWorkflowWithCursor,
@@ -24,9 +25,9 @@ import {
   listWorkflowCursors,
   nextWorkflowStep,
   renderWorkflowCursorLine,
-  resolveWorkflowCursorMode,
   ruleWorkflow,
 } from './workflow-cursor.ts'
+import { resolveWorkflowCursorMode } from './workflow-cursor-selection.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
@@ -171,6 +172,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
   if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const mode = resolveWorkflowCursorMode(
     argv[2]!,
     project,
@@ -179,6 +181,8 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     context,
     'orch workflow rule',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = ruleWorkflow(
     argv[2]!,
@@ -189,31 +193,44 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     argv.includes('--from-operator'),
     'cli',
     context,
+    undefined,
+    cursor,
   )
   print(result, `${result.summary} Question ${result.questionId}.`)
 }
 
 function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const project = flagValue(argv, 'project')
-  if (!project) throw new Error('--project is required')
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  if (!project && !cursor) throw new Error('--project is required without --cursor')
+  const slug = argv[2]?.startsWith('--') ? '' : (argv[2] ?? '')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  if (cursor && !project) {
+    const result = abandonWorkflowCursorByHandle(cursor, flagValue(argv, 'reason'), context)
+    print(result, result)
+    return
+  }
   const mode = resolveWorkflowCursorMode(
-    argv[2]!,
-    project,
+    slug,
+    project ?? '',
     flagValue(argv, 'mode'),
     args,
     context,
     'orch workflow abandon',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = abandonWorkflowCursor(
-    argv[2]!,
-    project,
+    slug,
+    project ?? '',
     mode,
     args,
     flagValue(argv, 'reason'),
     context,
+    undefined,
+    cursor,
   )
   print(result, result)
 }
@@ -237,8 +254,23 @@ async function stepCommand(
 ): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
-  const mode = flagValue(argv, 'mode')
+  const requestedMode = flagValue(argv, 'mode')
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
+  const context = cliWorkflowCursorContext()
+  const mode = cursor
+    ? resolveWorkflowCursorMode(
+        argv[2]!,
+        project,
+        requestedMode,
+        args,
+        context,
+        'orch workflow step',
+        'pass --mode <slug>',
+        undefined,
+        cursor,
+      )
+    : requestedMode
   const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
@@ -264,9 +296,10 @@ async function stepCommand(
         stepSlug,
         args,
         mode,
-        cliWorkflowCursorContext(),
+        context,
         undefined,
         autonomy,
+        cursor,
       )
     : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection, autonomy)
   print(step, renderWorkflowStep(step))
@@ -277,6 +310,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
   if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const mode = resolveWorkflowCursorMode(
     argv[2]!,
     project,
@@ -285,6 +319,8 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     context,
     'orch workflow next',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = nextWorkflowStep(
     argv[2]!,
@@ -296,6 +332,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     undefined,
     evidenceFromArgv(argv),
     productionFloorPorts() as FloorEvidencePorts,
+    cursor,
   )
   print(result, result)
 }
@@ -305,6 +342,7 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
   if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const mode = resolveWorkflowCursorMode(
     argv[2]!,
     project,
@@ -313,6 +351,8 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     context,
     'orch workflow await',
     'pass --mode <slug>',
+    undefined,
+    cursor,
   )
   const result = awaitWorkflowRuling(
     argv[2]!,
@@ -321,6 +361,9 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     args,
     flagValue(argv, 'question'),
     context,
+    undefined,
+    undefined,
+    cursor,
   )
   print(
     result,

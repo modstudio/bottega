@@ -36,13 +36,14 @@ import { getReview, listReviews } from '../review/review.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import {
+  abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   getWorkflowStepWithCursor,
   mcpWorkflowCursorContext,
   nextWorkflowStep,
-  resolveWorkflowCursorMode,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
+import { resolveWorkflowCursorMode } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
 import {
@@ -382,7 +383,8 @@ export function createDocsMcpServer(): McpServer {
   server.registerTool(
     'compose_workflow',
     {
-      description: 'Compose a workflow index without returning step bodies.',
+      description:
+        'Purely compose a workflow index without opening a run or returning step bodies. Fetch step 1 with get_workflow_step to open the run.',
       inputSchema: z.object({
         slug: z.string().trim().min(1),
         project: z.string().trim().min(1),
@@ -419,12 +421,29 @@ export function createDocsMcpServer(): McpServer {
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         autonomy: z.string().optional(),
+        cursor: z.number().int().positive().optional(),
       }),
     },
-    async ({ slug, project, step, mode, args, autonomy }) => {
-      const preliminary = composeWorkflow(slug, project, mode, args ?? {})
-      const stepSlug = mode ? step : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
-      const preliminaryStep = mode
+    async ({ slug, project, step, mode, args, autonomy, cursor }) => {
+      const context = mcpWorkflowCursorContext()
+      const effectiveMode = cursor
+        ? resolveWorkflowCursorMode(
+            slug,
+            project,
+            mode,
+            args ?? {},
+            context,
+            'get_workflow_step',
+            'pass the mode argument',
+            undefined,
+            cursor,
+          )
+        : mode
+      const preliminary = composeWorkflow(slug, project, effectiveMode, args ?? {})
+      const stepSlug = effectiveMode
+        ? step
+        : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
+      const preliminaryStep = effectiveMode
         ? undefined
         : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })
       const resolved = await resolveProjectAutonomy(
@@ -436,16 +455,17 @@ export function createDocsMcpServer(): McpServer {
       )
       return text(
         renderWorkflowStep(
-          mode
+          effectiveMode
             ? getWorkflowStepWithCursor(
                 slug,
                 project,
                 stepSlug,
                 args ?? {},
-                mode,
-                mcpWorkflowCursorContext(),
+                effectiveMode,
+                context,
                 undefined,
                 resolved,
+                cursor,
               )
             : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, resolved),
         ),
@@ -470,6 +490,7 @@ export function createDocsMcpServer(): McpServer {
         run: z.number().int().positive().optional(),
         artifact: z.string().trim().min(1).optional(),
         task: z.string().trim().min(1).optional(),
+        cursor: z.number().int().positive().optional(),
         defer: z.string().trim().min(1).optional(),
         satisfies: z.number().int().positive().optional(),
       }),
@@ -488,6 +509,7 @@ export function createDocsMcpServer(): McpServer {
       task,
       defer,
       satisfies,
+      cursor,
     }) => {
       const workflowArgs = args ?? {}
       const context = mcpWorkflowCursorContext()
@@ -503,12 +525,16 @@ export function createDocsMcpServer(): McpServer {
             context,
             'next_workflow_step',
             'pass the mode argument',
+            undefined,
+            cursor,
           ),
           workflowArgs,
           note,
           context,
           undefined,
           { ruling, review, gate, run, artifact, task, defer, satisfies },
+          undefined,
+          cursor,
         ),
       )
     },
@@ -524,9 +550,10 @@ export function createDocsMcpServer(): McpServer {
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
         question: z.string().trim().min(1),
+        cursor: z.number().int().positive().optional(),
       }),
     },
-    async ({ slug, project, mode, args, question }) => {
+    async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
       const context = mcpWorkflowCursorContext()
       return text(
@@ -541,10 +568,15 @@ export function createDocsMcpServer(): McpServer {
             context,
             'await_workflow_ruling',
             'pass the mode argument',
+            undefined,
+            cursor,
           ),
           workflowArgs,
           question,
           context,
+          undefined,
+          undefined,
+          cursor,
         ),
       )
     },
@@ -561,9 +593,10 @@ export function createDocsMcpServer(): McpServer {
         args: z.record(z.string(), z.string()).optional(),
         ruling: z.string().trim().min(1),
         from_operator: z.boolean().optional(),
+        cursor: z.number().int().positive().optional(),
       }),
     },
-    async ({ slug, project, mode, args, ruling, from_operator }) => {
+    async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
       const context = mcpWorkflowCursorContext()
       return text(
@@ -578,15 +611,32 @@ export function createDocsMcpServer(): McpServer {
             context,
             'rule_workflow',
             'pass the mode argument',
+            undefined,
+            cursor,
           ),
           workflowArgs,
           ruling,
           Boolean(from_operator),
           'mcp',
           context,
+          undefined,
+          cursor,
         ),
       )
     },
+  )
+
+  server.registerTool(
+    'abandon_workflow',
+    {
+      description: 'Abandon one workflow run by cursor handle.',
+      inputSchema: z.object({
+        cursor: z.number().int().positive(),
+        reason: z.string().trim().min(1),
+      }),
+    },
+    async ({ cursor, reason }) =>
+      text(abandonWorkflowCursorByHandle(cursor, reason, mcpWorkflowCursorContext())),
   )
 
   server.registerTool(

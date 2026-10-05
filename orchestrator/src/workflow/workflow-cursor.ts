@@ -12,8 +12,20 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
+import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
+import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import {
-  type ArgumentReboundEvent,
+  formatCursorOpened,
+  formatCursorResumed,
+  workflowCursorReference,
+} from './workflow-cursor-format.ts'
+import {
+  type SelectableCursorRow,
+  selectUntouchedKeylessWorkflowCursor,
+  selectWorkflowCursor,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
+import {
   type ClosedStep,
   type CursorTrailEntry,
   currentStepActivatedAt,
@@ -42,35 +54,15 @@ import {
 } from './workflow-floor-evidence.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import {
-  composeWorkflow,
-  getWorkflowStep,
-  productionWorkflows,
-  resolveWorkflowMode,
-  showWorkflow,
-} from './workflows.ts'
+import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
-export type WorkflowCursorContext = {
-  session?: string | null
-  /** Used only for a keyless workflow when the harness supplies no session id. */
-  instance?: string
-}
+export type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 
-type CursorRow = {
-  id: number
-  project: string
-  workflow_slug: string
-  mode_slug: string
-  workflow_key: string
-  instance_id: string
-  session_id: string | null
+type CursorRow = SelectableCursorRow & {
   workflow_version: number
   catalogue_version: number
   args: string
   autonomy: string | null
-  ordinal: number
-  step_slug: string
-  state: CursorState
   closed: string
   question: string | null
   total_steps: number
@@ -86,16 +78,7 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
 })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
-/** A cursor is keyed by the task key the caller passed; production's argument list never decides identity. */
-const keyOf = (args: Record<string, string>): string => args.key?.trim() ?? ''
-const instanceOf = (key: string, context: WorkflowCursorContext): string => {
-  if (key) return ''
-  const instance = context.session ?? context.instance
-  if (instance) return instance
-  throw new Error(
-    'keyless workflow cursor needs an identity; pass --arg key=<task key> or run under a harness that sets CLAUDE_CODE_SESSION_ID',
-  )
-}
+const instanceOf = (key: string): string => (key ? '' : randomUUID())
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 const cursorName = (slug: string, mode: string, key: string, capitalized = false) =>
@@ -135,146 +118,15 @@ function findCursor(
   args: Record<string, string>,
   context: WorkflowCursorContext,
   d: Database,
+  cursor?: number,
 ): CursorRow | null {
   const key = keyOf(args)
-  const row = d
-    .query(
-      `SELECT * FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=?`,
-    )
-    .get(project, workflow, mode, key, instanceOf(key, context)) as CursorRow | null
-  return row
-}
-
-export function resolveWorkflowCursorMode(
-  slug: string,
-  project: string,
-  requested: string | undefined,
-  args: Record<string, string>,
-  context: WorkflowCursorContext,
-  caller: string,
-  remedy: string,
-  d: Database = db(),
-): string {
-  if (requested) return requested
-  const key = keyOf(args)
-  const rows = d
-    .query(
-      `SELECT DISTINCT mode_slug FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND workflow_key=? AND instance_id=?
-         AND state NOT IN ('done','abandoned')
-       ORDER BY mode_slug`,
-    )
-    .all(project, slug, key, instanceOf(key, context)) as { mode_slug: string }[]
-  if (rows.length === 1) return rows[0]!.mode_slug
-  if (rows.length > 1) {
-    throw new Error(
-      `${caller} cannot resolve a mode for workflow "${slug}"; active cursor modes: ` +
-        `${rows.map(({ mode_slug }) => mode_slug).join(', ')}; ${remedy}`,
-    )
-  }
-  const definition = showWorkflow(slug, undefined, d).definition
-  const mode = resolveWorkflowMode(definition)
-  if (mode) return mode.slug
-  throw new Error(
-    `${caller} cannot resolve a default mode for workflow "${slug}"; ` +
-      `modes: ${definition.modes.map(({ slug: modeSlug }) => modeSlug).join(', ')}; ${remedy}`,
-  )
-}
-
-export type CursorArgumentDecision =
-  | {
-      action: 'merge'
-      args: Record<string, string>
-      rebindings: Array<{ name: string; oldValue: string; newValue: string }>
-    }
-  | { action: 'refuse'; reason: string }
-
-export function decideCursorArguments(
-  stored: Record<string, string>,
-  supplied: Record<string, string>,
-  rebindable: ReadonlySet<string>,
-): CursorArgumentDecision {
-  const merged = { ...stored }
-  const rebindings: Array<{ name: string; oldValue: string; newValue: string }> = []
-  for (const [name, suppliedValue] of Object.entries(supplied)) {
-    if (!suppliedValue.trim()) continue
-    const storedValue = stored[name]
-    if (storedValue?.trim() && storedValue !== suppliedValue) {
-      if (name !== 'key' && rebindable.has(name)) {
-        merged[name] = suppliedValue
-        rebindings.push({ name, oldValue: storedValue, newValue: suppliedValue })
-        continue
-      }
-      return {
-        action: 'refuse',
-        reason:
-          `workflow argument "${name}" conflicts with the cursor: stored value "${storedValue}", ` +
-          `supplied value "${suppliedValue}"; run orch workflow abandon for this cursor, then compose again`,
-      }
-    }
-    if (!storedValue?.trim()) merged[name] = suppliedValue
-  }
-  return { action: 'merge', args: merged, rebindings }
-}
-
-function cursorRebindableArguments(row: CursorRow, d: Database): Set<string> {
-  const current = productionWorkflows(d).find(({ slug }) => slug === row.workflow_slug)
-  const definitions = [
-    showWorkflow(row.workflow_slug, row.workflow_version, d).definition,
-    ...(current ? [current.definition] : []),
-  ]
-  return new Set(
-    definitions
-      .flatMap((definition) => definition.arguments)
-      .filter((argument) => argument.name !== 'key' && argument.rebind === true)
-      .map((argument) => argument.name),
-  )
-}
-
-function applyCursorArguments(
-  row: CursorRow,
-  supplied: Record<string, string>,
-  d: Database,
-): Record<string, string> {
-  const decision = decideCursorArguments(
-    JSON.parse(row.args) as Record<string, string>,
-    supplied,
-    cursorRebindableArguments(row, d),
-  )
-  if (decision.action === 'refuse') throw new Error(decision.reason)
-  const encoded = JSON.stringify(decision.args)
-  if (decision.rebindings.length) {
-    const at = nowIso()
-    const trail = JSON.parse(row.closed) as CursorTrailEntry[]
-    trail.push(
-      ...decision.rebindings.map(
-        ({ name, oldValue, newValue }): ArgumentReboundEvent => ({
-          event: 'argument-rebound',
-          name,
-          oldValue,
-          newValue,
-          at,
-        }),
-      ),
-    )
-    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE id=?').run(
-      encoded,
-      JSON.stringify(trail),
-      at,
-      row.id,
-    )
-    row.args = encoded
-    row.closed = JSON.stringify(trail)
-  } else if (encoded !== row.args) {
-    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE id=?').run(
-      encoded,
-      nowIso(),
-      row.id,
-    )
-    row.args = encoded
-  }
-  return decision.args
+  return selectWorkflowCursor(
+    { project, workflow, mode, ...(key ? { key } : {}) },
+    cursor,
+    context.session,
+    d,
+  ) as CursorRow | null
 }
 
 /** The session that drove this cursor before the current one took it over, or null. */
@@ -288,19 +140,25 @@ function insertCursor(
   autonomy?: AutonomyResolution,
 ): CursorRow {
   const key = keyOf(composition.arguments)
-  const instance = instanceOf(key, context)
+  const instance = instanceOf(key)
   const at = nowIso()
-  const existing = findCursor(
-    composition.project,
-    composition.workflow.slug,
-    composition.mode!.slug,
-    composition.arguments,
-    context,
-    d,
-  )
+  const existing = key
+    ? findCursor(
+        composition.project,
+        composition.workflow.slug,
+        composition.mode!.slug,
+        composition.arguments,
+        context,
+        d,
+      )
+    : null
   if (decideCursorStart(existing?.state ?? null) === 'retire') {
-    d.query(`UPDATE workflow_cursor SET instance_id=instance_id || '#' || id WHERE id=?`).run(
-      existing!.id,
+    vacateRetiredWorkflowKeySlot(
+      composition.project,
+      composition.workflow.slug,
+      composition.mode!.slug,
+      key,
+      d,
     )
   }
   const autonomySnapshot = autonomy
@@ -347,20 +205,24 @@ function insertCursor(
     at,
     at,
   )
-  return findCursor(
-    composition.project,
-    composition.workflow.slug,
-    composition.mode!.slug,
-    composition.arguments,
-    context,
-    d,
-  )!
+  return key
+    ? findCursor(
+        composition.project,
+        composition.workflow.slug,
+        composition.mode!.slug,
+        composition.arguments,
+        context,
+        d,
+      )!
+    : (d.query('SELECT * FROM workflow_cursor WHERE id=last_insert_rowid()').get() as CursorRow)
 }
 
 export type CursorSummary = {
+  id: number
   n: number
   slug: string
   state: CursorState
+  opened: boolean
   previousSession?: string | null
 }
 
@@ -377,14 +239,16 @@ export function composeWorkflowWithCursor(
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
-    const existing = findCursor(
-      composition.project,
-      composition.workflow.slug,
-      composition.mode!.slug,
-      composition.arguments,
-      context,
-      d,
-    )
+    const existing = keyOf(composition.arguments)
+      ? findCursor(
+          composition.project,
+          composition.workflow.slug,
+          composition.mode!.slug,
+          composition.arguments,
+          context,
+          d,
+        )
+      : null
     const previousSession =
       decideCursorStart(existing?.state ?? null) === 'reuse'
         ? takenOverFrom(existing, context)
@@ -395,9 +259,11 @@ export function composeWorkflowWithCursor(
     return {
       ...cursorComposition(row, d),
       cursor: {
-        n: row.ordinal === 0 ? 0 : row.ordinal + 1,
+        id: row.id,
+        n: row.ordinal + 1,
         slug: row.step_slug,
         state: row.state,
+        opened: !existing || decideCursorStart(existing.state) === 'retire',
         previousSession,
       } satisfies CursorSummary,
     }
@@ -428,7 +294,7 @@ function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>)
   return (
     `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is at step ${active.n} ${active.slug}; ` +
     `fetch that step, or close it with: orch workflow next ${row.workflow_slug} --project ${row.project} ` +
-    `--mode ${row.mode_slug}${args} --note "<how its floor was met>"`
+    `--mode ${row.mode_slug}${workflowCursorReference(row.id).cli}${args} --note "<how its floor was met>"`
   )
 }
 
@@ -470,6 +336,59 @@ function refuseInvalidServe(
   throw new Error(remedy(row!, composition))
 }
 
+function prepareStepServe(
+  slug: string,
+  project: string,
+  stepSlug: string,
+  args: Record<string, string>,
+  mode: string,
+  context: WorkflowCursorContext,
+  d: Database,
+  autonomy: AutonomyResolution | undefined,
+  cursor: number | undefined,
+) {
+  const handled =
+    cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
+  const preliminary = handled
+    ? cursorComposition(handled, d)
+    : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)
+  const preliminaryStepSlug = resolveWorkflowStepReference(stepSlug, [
+    { mode, steps: preliminary.steps.map((step) => step.slug) },
+  ])
+  const openingKeyless =
+    cursor === undefined && !keyOf(args) && preliminary.steps[0]?.slug === preliminaryStepSlug
+  const candidate = openingKeyless
+    ? (selectUntouchedKeylessWorkflowCursor(
+        { project, workflow: slug, mode },
+        context.session,
+        d,
+      ) as CursorRow | null)
+    : (handled ?? findCursor(project, slug, mode, args, context, d, cursor))
+  let row = handled ?? candidate
+  const opensCursor = row === null
+  const startDecision = decideCursorStart(row?.state ?? null)
+  if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
+  const input = cursorCompositionInput(row, args, mode)
+  const composition = composeWorkflow(
+    slug,
+    project,
+    mode,
+    input.effectiveArgs,
+    d,
+    input.selection,
+    row ? cursorAutonomy(row) : autonomy,
+  )
+  const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
+    { mode, steps: composition.steps.map((step) => step.slug) },
+  ])
+  const index = composition.steps.findIndex((step) => step.slug === resolvedStepSlug)
+  if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
+  const requested = composition.steps[index]!
+  if (index === 0 && startDecision === 'retire')
+    row = insertCursor(composition, context, d, autonomy)
+  return { row, opensCursor, composition, requested, index, input }
+}
+
 function getWorkflowStepWithCursorImpl(
   slug: string,
   project: string,
@@ -479,29 +398,21 @@ function getWorkflowStepWithCursorImpl(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
   autonomy?: AutonomyResolution,
+  cursor?: number,
 ) {
-  let row = findCursor(project, slug, mode, args, context, d)
-  const startDecision = decideCursorStart(row?.state ?? null)
-  if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
-  const { effectiveArgs, selection } = cursorCompositionInput(row, args, mode)
-  const composition = composeWorkflow(
+  const prepared = prepareStepServe(
     slug,
     project,
+    stepSlug,
+    args,
     mode,
-    effectiveArgs,
+    context,
     d,
-    selection,
-    row ? cursorAutonomy(row) : autonomy,
+    autonomy,
+    cursor,
   )
-  const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
-    { mode, steps: composition.steps.map((step) => step.slug) },
-  ])
-  const index = composition.steps.findIndex((step) => step.slug === resolvedStepSlug)
-  if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
-  const requested = composition.steps[index]!
-  if (index === 0 && startDecision === 'retire') {
-    row = insertCursor(composition, context, d, autonomy)
-  }
+  let { row } = prepared
+  const { opensCursor, composition, requested, index, input } = prepared
   const decision = decideCursorTransition(row ? cursorValue(row) : null, {
     kind: 'serve',
     ordinal: index,
@@ -518,15 +429,41 @@ function getWorkflowStepWithCursorImpl(
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
-  return getWorkflowStep(
+  const served = getWorkflowStep(
     slug,
     project,
-    resolvedStepSlug,
-    effectiveArgs,
+    decision.slug,
+    input.effectiveArgs,
     d,
-    selection,
+    input.selection,
     cursorAutonomy(row),
   )
+  const openNotice = opensCursor
+    ? formatCursorOpened({
+        cursor: row.id,
+        workflow: slug,
+        mode,
+        key: row.workflow_key,
+        step: 1,
+        stepSlug: row.step_slug,
+      })
+    : !cursor && row.workflow_key
+      ? formatCursorResumed({
+          cursor: row.id,
+          key: row.workflow_key,
+          step: row.ordinal + 1,
+          stepSlug: row.step_slug,
+        })
+      : undefined
+  const redirectNotice =
+    decision.slug !== requested.slug
+      ? `Requested step ${index + 1} ${requested.slug}; serving active step ${decision.ordinal + 1} ${decision.slug}.`
+      : undefined
+  return {
+    ...served,
+    cursor: row.id,
+    notice: [openNotice, redirectNotice].filter(Boolean).join('\n'),
+  }
 }
 
 export function getWorkflowStepWithCursor(
@@ -538,9 +475,21 @@ export function getWorkflowStepWithCursor(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
   autonomy?: AutonomyResolution,
+  cursor?: number,
 ) {
   return writeTransaction(
-    () => getWorkflowStepWithCursorImpl(slug, project, stepSlug, args, mode, context, d, autonomy),
+    () =>
+      getWorkflowStepWithCursorImpl(
+        slug,
+        project,
+        stepSlug,
+        args,
+        mode,
+        context,
+        d,
+        autonomy,
+        cursor,
+      ),
     d,
   )
 }
@@ -662,15 +611,20 @@ function nextWorkflowStepImpl(
   evidence: WorkflowEvidenceInput,
   ports: FloorEvidencePorts,
   d: Database = writableDb(),
+  cursor?: number,
 ): string {
-  const row = findCursor(project, slug, mode, args, context, d)
+  const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
     )
+  slug = row.workflow_slug
+  project = row.project
+  mode = row.mode_slug
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   applyCursorArguments(row, args, d)
+  adoptWorkflowTask(row, evidence.task, d)
   if (!note?.trim()) {
     const composition = cursorComposition(row, d)
     const step = composition.steps[row.ordinal]!
@@ -747,8 +701,8 @@ function nextWorkflowStepImpl(
     at,
     row.id,
   )
-  return renderWorkflowStep(
-    getWorkflowStep(
+  return renderWorkflowStep({
+    ...getWorkflowStep(
       slug,
       project,
       decision.slug,
@@ -761,7 +715,8 @@ function nextWorkflowStepImpl(
       },
       cursorAutonomy(row),
     ),
-  )
+    cursor: row.id,
+  })
 }
 
 export function nextWorkflowStep(
@@ -774,9 +729,11 @@ export function nextWorkflowStep(
   d: Database = writableDb(),
   evidence: WorkflowEvidenceInput = {},
   ports: FloorEvidencePorts = productionFloorPorts(),
+  cursor?: number,
 ): string {
   return writeTransaction(
-    () => nextWorkflowStepImpl(slug, project, mode, args, note, context, evidence, ports, d),
+    () =>
+      nextWorkflowStepImpl(slug, project, mode, args, note, context, evidence, ports, d, cursor),
     d,
   )
 }
@@ -789,13 +746,25 @@ function abandonWorkflowCursorImpl(
   reason: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  cursor?: number,
 ): string {
   if (!reason?.trim()) throw new Error('--reason is required')
-  const row = findCursor(project, slug, mode, args, context, d)
+  const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
     )
+  return abandonSelectedWorkflowCursor(row, reason, context, d)
+}
+
+function abandonSelectedWorkflowCursor(
+  row: CursorRow,
+  reason: string,
+  context: WorkflowCursorContext,
+  d: Database,
+): string {
+  const slug = row.workflow_slug
+  const mode = row.mode_slug
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   const at = nowIso()
@@ -827,11 +796,25 @@ export function abandonWorkflowCursor(
   reason: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  cursor?: number,
 ): string {
   return writeTransaction(
-    () => abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d),
+    () => abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
     d,
   )
+}
+
+export function abandonWorkflowCursorByHandle(
+  cursor: number,
+  reason: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): string {
+  if (!reason?.trim()) throw new Error('--reason is required')
+  return writeTransaction(() => {
+    const row = selectWorkflowCursor({}, cursor, context.session, d) as CursorRow
+    return abandonSelectedWorkflowCursor(row, reason, context, d)
+  }, d)
 }
 
 function awaitWorkflowRulingImpl(
@@ -842,9 +825,10 @@ function awaitWorkflowRulingImpl(
   question: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  cursor?: number,
 ): { summary: CursorSummary & { questionId: number }; cursorId: number } {
   if (!question?.trim()) throw new Error('--question is required')
-  const row = findCursor(project, slug, mode, args, context, d)
+  const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
@@ -892,7 +876,14 @@ function awaitWorkflowRulingImpl(
     questionId = inserted.id
   }
   return {
-    summary: { n: row.ordinal + 1, slug: row.step_slug, state: 'awaiting-ruling', questionId },
+    summary: {
+      id: row.id,
+      n: row.ordinal + 1,
+      slug: row.step_slug,
+      state: 'awaiting-ruling',
+      opened: false,
+      questionId,
+    },
     cursorId: row.id,
   }
 }
@@ -907,10 +898,11 @@ export function ruleWorkflow(
   channel: 'cli' | 'mcp',
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  cursor?: number,
 ): { summary: string; questionId: number } {
   if (!ruling?.trim()) throw new Error('--ruling is required')
   return writeTransaction(() => {
-    const row = findCursor(project, slug, mode, args, context, d)
+    const row = findCursor(project, slug, mode, args, context, d, cursor)
     if (!row)
       throw new Error(
         `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
@@ -966,9 +958,10 @@ export function awaitWorkflowRuling(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
   notify: typeof notifyWaitingItem = notifyWaitingItem,
+  cursor?: number,
 ): CursorSummary & { questionId: number } {
   const result = writeTransaction(
-    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d),
+    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
     d,
   )
   notify('workflow', result.cursorId, d)
@@ -1030,5 +1023,5 @@ export function renderWorkflowCursorLine(
 ): string {
   const question = row.question ? ` question: ${row.question}` : ''
   const obligations = row.obligations ? ` obligations: ${row.obligations}` : ''
-  return `${row.workflow_slug} ${row.workflow_key} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${question}${obligations}`
+  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${question}${obligations}`
 }

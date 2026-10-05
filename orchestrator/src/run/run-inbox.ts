@@ -4,6 +4,7 @@ import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -67,7 +68,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
   const rows = db()
     .query(
-      `SELECT q.id,q.asked_at,q.question,c.project,c.workflow_slug,c.mode_slug,c.args,
+      `SELECT q.id,q.asked_at,q.question,c.id cursor_id,c.project,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
@@ -77,6 +78,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     id: number
     asked_at: string
     question: string
+    cursor_id: number
     project: string
     workflow_slug: string
     mode_slug: string
@@ -109,7 +111,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
       question: row.question,
       answer_command: canAnswer
         ? `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
-          `--mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>"`
+          `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_id).cli}${flags} --ruling "<ruling>"`
         : null,
       ownership_notice: canAnswer
         ? null
