@@ -25,7 +25,6 @@ import {
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
 import { boardNoticeMatches } from './board-routing.ts'
-import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 import {
   type BoardTag,
   inferredBoardTags,
@@ -33,6 +32,7 @@ import {
   senderBoardTags,
   senderTagKey,
 } from './board-tags.ts'
+import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
 export { requireRealSession } from './board-policy.ts'
 
@@ -92,7 +92,7 @@ export function boardActor(env: Environment = process.env): BoardActor {
   return { kind: 'operator', session: null }
 }
 
-export function boardReader(env: Environment = process.env): string {
+function boardReader(env: Environment = process.env): string {
   const actor = boardActor(env)
   return actor.session ?? OPERATOR_READER
 }
@@ -528,7 +528,7 @@ export function rowIsLive(message: MessageRow, clock: number): boolean {
   )
 }
 
-export function wasDelivered(messageId: number, reader: string): boolean {
+function wasDelivered(messageId: number, reader: string): boolean {
   const receipt = db()
     .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
     .get(messageId, reader) as { delivered_at: string | null } | null
@@ -555,7 +555,7 @@ export function originText(message: MessageRow): string {
   return `architect ${message.author_session ?? 'unknown'} (${message.author_harness ?? 'unknown harness'}, ${message.author_project ?? 'unknown project'})`
 }
 
-export function render(message: MessageRow, worker = false) {
+function render(message: MessageRow, worker = false) {
   const tags = messageTags(message.id)
   if (message.kind === 'reply') {
     const root = messageRows().find((candidate) => candidate.id === message.thread_root_id)
@@ -580,7 +580,9 @@ export function render(message: MessageRow, worker = false) {
         title: message.title ?? '',
         body: message.body,
         expiresAt: message.expires_at ?? '',
-        tags: tags.filter((tag) => tag.origin === 'sender').map((tag) => `${tag.kind}:${tag.value}`),
+        tags: tags
+          .filter((tag) => tag.origin === 'sender')
+          .map((tag) => `${tag.kind}:${tag.value}`),
       }),
     }
   }

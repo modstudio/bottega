@@ -91,17 +91,13 @@ export function registerBoardCommands(program: Command): void {
     .command('reply <root-id>')
     .requiredOption('--body <text>')
     .action((id, options) => console.log(JSON.stringify(replyToThread(Number(id), options.body))))
-  board
-    .command('thread <id>')
-    .action((id) => console.log(JSON.stringify(readThread(Number(id)))))
+  board.command('thread <id>').action((id) => console.log(JSON.stringify(readThread(Number(id)))))
   board.command('accept <question-id> <reply-id>').action(async (questionId, replyId) => {
     const accepted = await acceptAnswer(Number(questionId), Number(replyId))
     console.log(
       JSON.stringify({
         ...accepted,
-        retry: accepted.notePendingError
-          ? `orch board file-note ${Number(questionId)}`
-          : null,
+        retry: accepted.notePendingError ? `orch board file-note ${Number(questionId)}` : null,
       }),
     )
   })

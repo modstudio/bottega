@@ -1,6 +1,8 @@
 import type { Audience } from './board-policy.ts'
 
-export type ThreadActor = { kind: 'operator'; reader: string } | { kind: 'architect'; reader: string }
+export type ThreadActor =
+  | { kind: 'operator'; reader: string }
+  | { kind: 'architect'; reader: string }
 
 export type ThreadRootFacts = {
   id: number
@@ -45,12 +47,17 @@ export function acceptRefusal(input: {
     return `board message ${input.questionId} is not a question; accept an answer only on a question`
   if (input.accepted)
     return `board question ${input.questionId} already has an accepted answer; acceptance is final`
-  if (!input.live) return `board question ${input.questionId} is not open; accept an answer to a live question`
+  if (!input.live)
+    return `board question ${input.questionId} is not open; accept an answer to a live question`
   if (input.actor.kind !== 'operator' && input.actor.reader !== input.authorReader)
     return `only the question author or operator may accept an answer to board question ${input.questionId}`
   return null
 }
 
-export function threadParticipants(rootAuthor: string, replyAuthors: string[], replier: string): string[] {
+export function threadParticipants(
+  rootAuthor: string,
+  replyAuthors: string[],
+  replier: string,
+): string[] {
   return [...new Set([rootAuthor, ...replyAuthors])].filter((reader) => reader !== replier)
 }

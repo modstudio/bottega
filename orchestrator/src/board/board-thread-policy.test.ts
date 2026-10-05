@@ -80,15 +80,11 @@ test('acceptance belongs to the asker or operator and only an open question', ()
     accepted: false,
     live: true,
   }
-  expect(
-    acceptRefusal({ ...input, actor: { kind: 'operator', reader: 'operator' } }),
-  ).toBeNull()
-  expect(
-    acceptRefusal({ ...input, actor: { kind: 'architect', reader: 'asker' } }),
-  ).toBeNull()
-  expect(
-    acceptRefusal({ ...input, actor: { kind: 'architect', reader: 'other' } }),
-  ).toContain('question author')
+  expect(acceptRefusal({ ...input, actor: { kind: 'operator', reader: 'operator' } })).toBeNull()
+  expect(acceptRefusal({ ...input, actor: { kind: 'architect', reader: 'asker' } })).toBeNull()
+  expect(acceptRefusal({ ...input, actor: { kind: 'architect', reader: 'other' } })).toContain(
+    'question author',
+  )
   expect(
     acceptRefusal({
       ...input,

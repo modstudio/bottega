@@ -2,8 +2,8 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import {
-  acceptedAnswerNoteText,
   type AnswerNoteFiler,
+  acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
 } from './board-answer-note.ts'
 import {
@@ -83,23 +83,23 @@ export function replyToThread(
     throw new Error('board reply contains secret-shaped text; remove the credential and retry')
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
-  const root = threadRoot(id)
-  const refusal = replyRefusal({
-    actor: { kind: actor.kind, reader },
-    root: {
-      id: root.id,
-      kind: root.kind,
-      authorReader: authorReader(root),
-      audienceKind: root.audience ? parseAudience(root.audience).kind : 'operator',
-      live: rowIsLive(root, clock),
-      accepted: root.accepted_reply_id !== null,
-    },
-    addressed: addressed(root, reader, clock),
-    hasReceipt: hasReceipt(root.id, reader),
-  })
-  if (refusal) throw new Error(refusal)
   const database = writableDb()
   return writeTransaction(() => {
+    const root = threadRoot(id)
+    const refusal = replyRefusal({
+      actor: { kind: actor.kind, reader },
+      root: {
+        id: root.id,
+        kind: root.kind,
+        authorReader: authorReader(root),
+        audienceKind: root.audience ? parseAudience(root.audience).kind : 'operator',
+        live: rowIsLive(root, clock),
+        accepted: root.accepted_reply_id !== null,
+      },
+      addressed: addressed(root, reader, clock),
+      hasReceipt: hasReceipt(root.id, reader),
+    })
+    if (refusal) throw new Error(refusal)
     const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
     const recentPosts = (
       database
@@ -126,9 +126,9 @@ export function replyToThread(
     const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
     if (decision === 'drop-duplicate') {
       const reached = (
-        database.query('SELECT COUNT(*) n FROM board_receipt WHERE message_id=?').get(
-          duplicate!.id,
-        ) as { n: number }
+        database
+          .query('SELECT COUNT(*) n FROM board_receipt WHERE message_id=?')
+          .get(duplicate!.id) as { n: number }
       ).n
       return { id: duplicate!.id, rootId: root.id, dropped: true, reached }
     }
@@ -149,7 +149,15 @@ export function replyToThread(
           thread_root_id)
          VALUES ('reply',?,?,NULL,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?)`,
       )
-      .run(actor.kind, actor.session, identity?.harness ?? null, project?.name ?? null, body, createdAt, root.id)
+      .run(
+        actor.kind,
+        actor.session,
+        identity?.harness ?? null,
+        project?.name ?? null,
+        body,
+        createdAt,
+        root.id,
+      )
     const replyId = Number(inserted.lastInsertRowid)
     const earlierAuthors = database
       .query(
@@ -172,11 +180,7 @@ export function replyToThread(
   }, database)
 }
 
-export function readThread(
-  id: number,
-  env: Environment = process.env,
-  clock = Date.now(),
-) {
+export function readThread(id: number, env: Environment = process.env, clock = Date.now()) {
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const root = threadRoot(id)
@@ -247,19 +251,21 @@ async function filePendingNote(
       { cwd },
     )
     if (filed.noteId === null) throw new Error('hub did not report the filed note id')
+    const database = writableDb()
     writeTransaction(() => {
-      writableDb()
+      database
         .query('UPDATE board_message SET note_id=?,note_pending_error=NULL WHERE id=?')
         .run(filed.noteId, question.id)
-    }, writableDb())
+    }, database)
     return { noteId: filed.noteId, notePendingError: null }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
+    const database = writableDb()
     writeTransaction(() => {
-      writableDb()
+      database
         .query('UPDATE board_message SET note_pending_error=? WHERE id=?')
         .run(detail, question.id)
-    }, writableDb())
+    }, database)
     return { noteId: null, notePendingError: detail }
   }
 }
@@ -313,10 +319,14 @@ export async function fileAnswerNote(
   cwd = process.cwd(),
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
 ) {
-  boardActor(env)
+  const actor = boardActor(env)
   const question = message(questionId)
   if (question.kind !== 'question' || question.accepted_reply_id === null)
     throw new Error(`board question ${questionId} has no accepted answer to file`)
+  if (actor.kind !== 'operator' && actor.session !== question.author_session)
+    throw new Error(
+      `only the question author or operator may file the answer note for board question ${questionId}`,
+    )
   if (question.note_id !== null)
     throw new Error(`board question ${questionId} already filed note ${question.note_id}`)
   const reply = message(question.accepted_reply_id)
