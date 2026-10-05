@@ -4,6 +4,7 @@ import {
   BOARD_TOPICS,
   inferredBoardTags,
   senderBoardTags,
+  senderTagKey,
 } from './board-tags.ts'
 
 test('sender tags remove exact duplicates before enforcing their bounds', () => {
@@ -15,6 +16,12 @@ test('sender tags remove exact duplicates before enforcing their bounds', () => 
 test('invalid paths and unknown topics are refused with remedies', () => {
   expect(() => senderBoardTags({ paths: ['../outside'] })).toThrow(/remove that segment/)
   expect(() => senderBoardTags({ topics: ['unknown'] })).toThrow(BOARD_TOPICS.join(', '))
+})
+
+test('sender tag identity is order-insensitive', () => {
+  expect(senderTagKey(senderBoardTags({ paths: ['hub/**'], topics: ['gate', 'infra'] }))).toBe(
+    senderTagKey(senderBoardTags({ topics: ['infra', 'gate'], paths: ['hub/**'] })),
+  )
 })
 
 test('inference adds current task and valid quoted paths only after a sender tag', () => {

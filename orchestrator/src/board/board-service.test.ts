@@ -137,6 +137,9 @@ test('duplicate notices require the same order-independent sender tag set', () =
   )
   expect(first.reached).toBe(0)
   expect(first.dropped).toBeFalse()
+  expect(first.warning).toBe(
+    'reached no live session; re-address it or wait for a matching session',
+  )
 
   const retargeted = postNotice(
     { ...input, paths: ['orchestrator/src/second/**'], topics: ['gate', 'infra'] },
@@ -152,7 +155,12 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 2,
   )
-  expect(duplicate).toEqual({ id: retargeted.id, dropped: true, reached: 0 })
+  expect(duplicate).toEqual({
+    id: retargeted.id,
+    dropped: true,
+    reached: 0,
+    warning: 'reached no live session; re-address it or wait for a matching session',
+  })
 })
 
 test('a session-start notice dropped for budget stays unread until a stamping read', () => {

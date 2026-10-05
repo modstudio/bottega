@@ -53,6 +53,18 @@ export function senderBoardTags(input: SenderBoardTags): BoardTag[] {
   ]
 }
 
+export function senderTagKey(tags: Pick<BoardTag, 'kind' | 'value'>[]): string {
+  return JSON.stringify(
+    tags
+      .map(({ kind, value }) => [kind, value] as const)
+      .sort(([leftKind, leftValue], [rightKind, rightValue]) =>
+        leftKind === rightKind
+          ? leftValue.localeCompare(rightValue)
+          : leftKind.localeCompare(rightKind),
+      ),
+  )
+}
+
 export function inferredBoardTags(
   body: string,
   senderTags: BoardTag[],

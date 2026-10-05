@@ -30,5 +30,5 @@ export function boardContext(
     if (Array.isArray(paths))
       for (const path of paths) if (typeof path === 'string') changedPaths.add(path)
   }
-  return { taskKeys, changedPaths, topics: new Set() }
+  return { taskKeys, changedPaths }
 }

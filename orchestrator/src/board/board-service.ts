@@ -29,12 +29,14 @@ import {
   inferredBoardTags,
   type SenderBoardTags,
   senderBoardTags,
+  senderTagKey,
 } from './board-tags.ts'
 
 export { requireRealSession } from './board-policy.ts'
 
 type Environment = Record<string, string | undefined>
 type Actor = { kind: 'operator'; session: null } | { kind: 'architect'; session: string }
+type PostNoticeResult = { id: number; dropped: boolean; reached: number; warning?: string }
 type MessageRow = {
   id: number
   author_kind: string
@@ -50,6 +52,8 @@ type MessageRow = {
   author_harness: string | null
   author_project: string | null
 }
+
+const NO_REACH_WARNING = 'reached no live session; re-address it or wait for a matching session'
 
 const workerMarked = (env: Environment) => Boolean(env.ORCH_RUN_ID || env.ORCH_DEPTH)
 const unrecognizedSessionMarked = (env: Environment) =>
@@ -146,16 +150,13 @@ function recipients(
   return coarse.filter((session) => boardNoticeMatches(tags, boardContext(session, at, database)))
 }
 
-export type PostNoticeInput = {
+export type PostNoticeInput = SenderBoardTags & {
   audience: string
   title: string
   body: string
   ackRequired?: boolean
   deadlineMs?: number
   expiresMs?: number
-  task?: string
-  paths?: string[]
-  topics?: string[]
 }
 
 function resolvePostAudience(expression: string, machine: string) {
@@ -175,16 +176,13 @@ function resolvePostOrigin(actor: Actor, env: Environment, cwd: string) {
   return { harness: architectIdentity(env)!.harness, project: project.name }
 }
 
-function senderTagKey(tags: Pick<BoardTag, 'kind' | 'value'>[]): string {
-  return JSON.stringify(
-    tags
-      .map(({ kind, value }) => [kind, value] as const)
-      .sort(([leftKind, leftValue], [rightKind, rightValue]) =>
-        leftKind === rightKind
-          ? leftValue.localeCompare(rightValue)
-          : leftKind.localeCompare(rightKind),
-      ),
-  )
+function postNoticeResult(id: number, dropped: boolean, reached: number): PostNoticeResult {
+  return {
+    id,
+    dropped,
+    reached,
+    ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}),
+  }
 }
 
 function refreshPostingPresence(
@@ -228,7 +226,7 @@ export function postNotice(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
-): { id: number; dropped: boolean; reached: number } {
+): PostNoticeResult {
   if (input.title.length > BOARD_TITLE_MAX_CHARS)
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
   if (input.body.length > BOARD_BODY_MAX_CHARS)
@@ -253,11 +251,7 @@ export function postNotice(
     throw new Error('board notice title and body are required')
   if (input.deadlineMs !== undefined && !input.ackRequired)
     throw new Error('a board notice deadline requires acknowledgement to be required')
-  const senderTags = senderBoardTags({
-    task: input.task,
-    paths: input.paths,
-    topics: input.topics,
-  } satisfies SenderBoardTags)
+  const senderTags = senderBoardTags(input)
   const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
   const expiresMs = input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS
   if (input.ackRequired && deadlineMs > expiresMs)
@@ -309,7 +303,7 @@ export function postNotice(
         )
         .get(duplicate!.id) as { count: number }
     ).count
-    return { id: duplicate!.id, dropped: true, reached }
+    return postNoticeResult(duplicate!.id, true, reached)
   }
   if (decision === 'rate-limited')
     throw new Error('board post rate limit reached; retry after the ten-minute author window')
@@ -365,7 +359,7 @@ export function postNotice(
     reached = postingRecipients.length
     for (const reader of postingRecipients) add.run(id, reader)
   }, database)
-  return { id, dropped: false, reached }
+  return postNoticeResult(id, false, reached)
 }
 
 function messageRows(): MessageRow[] {

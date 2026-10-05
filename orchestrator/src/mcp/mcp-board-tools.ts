@@ -15,8 +15,6 @@ const result = (value: unknown) => ({
   ],
 })
 
-const noReachWarning = 'reached no live session; re-address it or wait for a matching session'
-
 export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_post',
@@ -46,7 +44,7 @@ export function registerBoardTools(server: McpServer): void {
         deadlineMs: input.deadline_ms,
         expiresMs: input.expires_ms,
       })
-      return result(posted.reached === 0 ? { ...posted, warning: noReachWarning } : posted)
+      return result(posted)
     },
   )
   server.registerTool(

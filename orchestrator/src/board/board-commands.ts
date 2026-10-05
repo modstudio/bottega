@@ -22,7 +22,6 @@ function parseBoardDuration(value: string): number {
 }
 
 const collect = (value: string, values: string[]) => [...values, value]
-const noReachWarning = 'reached no live session; re-address it or wait for a matching session'
 
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
@@ -54,9 +53,7 @@ export function registerBoardCommands(program: Command): void {
         deadlineMs: options.deadline ? parseBoardDuration(options.deadline) : undefined,
         expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
       })
-      console.log(
-        JSON.stringify(posted.reached === 0 ? { ...posted, warning: noReachWarning } : posted),
-      )
+      console.log(JSON.stringify(posted))
     })
   board
     .command('read')

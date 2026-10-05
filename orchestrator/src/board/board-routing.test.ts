@@ -3,14 +3,9 @@ import { type BoardSessionContext, boardNoticeMatches } from './board-routing.ts
 import type { BoardTag, BoardTagKind } from './board-tags.ts'
 
 const tag = (kind: BoardTagKind, value: string): BoardTag => ({ kind, value, origin: 'sender' })
-const context = (input: {
-  taskKeys?: string[]
-  changedPaths?: string[]
-  topics?: string[]
-}): BoardSessionContext => ({
+const context = (input: { taskKeys?: string[]; changedPaths?: string[] }): BoardSessionContext => ({
   taskKeys: new Set(input.taskKeys),
   changedPaths: new Set(input.changedPaths),
-  topics: new Set(input.topics),
 })
 
 test('an untagged notice matches every session', () => {
@@ -41,14 +36,14 @@ test('a path glob does not match an unrelated changed path', () => {
   ).toBeFalse()
 })
 
-test('a topic tag matches a known session topic', () => {
-  expect(boardNoticeMatches([tag('topic', 'gate')], context({ topics: ['gate'] }))).toBeTrue()
+test('topic-only notices match when session topics are unknown', () => {
+  expect(boardNoticeMatches([tag('topic', 'gate'), tag('topic', 'infra')], context({}))).toBeTrue()
 })
 
-test('topic-only notices match when session topics are unknown', () => {
+test('a topic tag does not rescue a mixed notice with no context match', () => {
   expect(
-    boardNoticeMatches([tag('topic', 'gate'), tag('topic', 'infra')], context({ topics: [] })),
-  ).toBeTrue()
+    boardNoticeMatches([tag('task', 'DEV-OTHER'), tag('topic', 'gate')], context({})),
+  ).toBeFalse()
 })
 
 test('any matching tag is sufficient', () => {
