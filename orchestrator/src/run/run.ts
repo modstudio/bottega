@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -103,6 +103,7 @@ import {
   runScratchDir,
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
+import { persistBoundPrompt, prepareRunBoard } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import { decideCodexSandbox } from './run-codex-sandbox.ts'
@@ -729,7 +730,8 @@ export async function run(opts: {
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
   })
-  prompt = claimedBoundPrompt
+  const initialBoard = prepareRunBoard(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
+  prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
 
@@ -949,10 +951,7 @@ export async function run(opts: {
 
   if (requiresCanonSource) {
     prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
-    writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
-    db()
-      .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
-      .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
+    persistBoundPrompt(promptPath, prompt, claim.id)
   }
 
   bindSignals()
@@ -1103,6 +1102,7 @@ export async function run(opts: {
       textReplyContract,
       resolvedDialect,
       mcpSetupHeader,
+      initialBoardNoticeIds: initialBoard.noticeIds,
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)

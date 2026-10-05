@@ -39,6 +39,8 @@ describe('the live ask channel always answers', () => {
       const readerTools = await readerConnection.client.listTools()
       expect(writerTools.tools.find((tool) => tool.name === 'note')).toBeDefined()
       expect(readerTools.tools.find((tool) => tool.name === 'note')).toBeDefined()
+      expect(writerTools.tools.find((tool) => tool.name === 'suggest_board_post')).toBeDefined()
+      expect(readerTools.tools.find((tool) => tool.name === 'suggest_board_post')).toBeDefined()
       expect(writerTools.tools.find((tool) => tool.name === 'run_gate')).toBeDefined()
       expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
