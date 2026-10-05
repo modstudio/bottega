@@ -3,6 +3,7 @@
 
 import {
   claimCachedHosted,
+  hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
@@ -23,6 +24,8 @@ export const BOARD_ASK_REFRESH_BUDGET_MS = 500
 const sessionReader = (env: Record<string, string | undefined>) =>
   architectIdentity(env)?.session ?? OPERATOR_READER
 
+export type BoardDelivery<T> = { notices: T[]; warning: string | null }
+
 export async function claimBoardNotices(
   all = false,
   input: { env?: Record<string, string | undefined>; budgetMs?: number } = {},
@@ -33,8 +36,11 @@ export async function claimBoardNotices(
     env,
   })
   return refreshed === 'local'
-    ? claimNotices(all, env)
-    : [...claimNotices(all, env), ...claimCachedHosted(sessionReader(env), all)]
+    ? { notices: claimNotices(all, env), warning: null }
+    : {
+        notices: [...claimNotices(all, env), ...claimCachedHosted(sessionReader(env), all)],
+        warning: hostedBoardVerificationWarning(),
+      }
 }
 
 export async function readBoardNotices(
@@ -47,13 +53,13 @@ export async function readBoardNotices(
     env,
   })
   const local = readNotices(all, env)
-  if (refreshed === 'local') return local
+  if (refreshed === 'local') return { notices: local, warning: null }
   const hosted = claimCachedHosted(sessionReader(env), all)
   await markCachedHostedDelivered(
     sessionReader(env),
     hosted.map((notice) => notice.id),
   )
-  return [...local, ...hosted]
+  return { notices: [...local, ...hosted], warning: hostedBoardVerificationWarning() }
 }
 
 export async function claimRunBoardNotices(
@@ -63,8 +69,11 @@ export async function claimRunBoardNotices(
 ) {
   const refreshed = await refreshHostedBoard({ budgetMs })
   return refreshed === 'local'
-    ? claimRunNotices(runId, all)
-    : [...claimRunNotices(runId, all), ...claimCachedHosted(`run:${runId}`, all)]
+    ? { notices: claimRunNotices(runId, all), warning: null }
+    : {
+        notices: [...claimRunNotices(runId, all), ...claimCachedHosted(`run:${runId}`, all)],
+        warning: hostedBoardVerificationWarning(),
+      }
 }
 
 export async function markRunBoardNoticesDelivered(

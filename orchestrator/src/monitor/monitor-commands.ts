@@ -158,11 +158,13 @@ async function acknowledge(ids: string): Promise<void> {
 async function showNotices(json: boolean, presentation: Presentation): Promise<void> {
   const sid = sessionId()
   if (!sid) throw new Error('monitor notices require CLAUDE_CODE_SESSION_ID')
-  const rows = await claimMonitorNoticesWithHosted(sid)
-  if (json) await presentation.write(`${JSON.stringify(rows)}\n`)
-  else
-    for (const condition of rows)
+  const delivery = await claimMonitorNoticesWithHosted(sid)
+  if (json) await presentation.write(`${JSON.stringify(delivery)}\n`)
+  else {
+    for (const condition of delivery.notices)
       presentation.log(`MONITOR ${condition.kind} ${condition.subject}: ${condition.detail}`)
+    if (delivery.warning) presentation.log(delivery.warning)
+  }
 }
 
 async function showHistory(

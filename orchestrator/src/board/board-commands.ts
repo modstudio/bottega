@@ -114,12 +114,15 @@ export function registerBoardCommands(program: Command): void {
     .option('--all')
     .option('--claim', 'read without stamping delivery (for the session-start hook)')
     .action(async (options) => {
-      const notices = options.claim
+      const delivery = options.claim
         ? await claimBoardNotices(Boolean(options.all))
         : await readBoardNotices(Boolean(options.all))
-      if (options.claim)
-        console.log(JSON.stringify(notices.map((notice) => ({ ...notice, id: String(notice.id) }))))
-      else for (const notice of notices) console.log(notice.text)
+      console.log(
+        JSON.stringify({
+          notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
+          warning: delivery.warning,
+        }),
+      )
     })
   board.command('delivered <ids>').action(async (ids) => {
     const parsed = String(ids)

@@ -29,6 +29,8 @@ export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
 export const BOARD_REFRESH_OUTCOME_KEY = 'board_hosted_refresh_outcome'
 const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
+const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
+const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
 
 export type HostedCacheNotice = {
   id: string
@@ -61,6 +63,7 @@ function recordRefresh(database: Database, at: number, outcome: string): void {
   writeTransaction(() => {
     setMeta(database, BOARD_REFRESH_AT_KEY, new Date(at).toISOString())
     setMeta(database, BOARD_REFRESH_OUTCOME_KEY, outcome)
+    if (outcome === 'success') setMeta(database, BOARD_VERIFIED_AT_KEY, new Date(at).toISOString())
   }, database)
 }
 
@@ -343,12 +346,27 @@ function delivered(database: Database, id: string, reader: string): boolean {
   )
 }
 
-function staleLine(database: Database): string {
+export function hostedBoardVerificationWarning(database: Database = db()): string | null {
   const outcome = meta(database, BOARD_REFRESH_OUTCOME_KEY)
-  if (!outcome?.startsWith('failed:')) return ''
-  const at = meta(database, BOARD_REFRESH_AT_KEY) ?? 'an unknown time'
+  if (!outcome?.startsWith('failed:')) return null
+  const failedAt = meta(database, BOARD_REFRESH_AT_KEY) ?? 'an unknown time'
+  const verifiedAt = meta(database, BOARD_VERIFIED_AT_KEY) ?? 'never'
+  const reason = outcome.slice('failed:'.length).trim() || 'unknown failure'
   const identity = meta(database, BOARD_REFRESH_USER_KEY) ? '' : '; identity is unverified'
-  return `\nHosted board cache is unverified; last verification attempt failed at ${at}${identity}.`
+  return `Hosted board cache is unverified; last verified ${verifiedAt}; refresh failed at ${failedAt}: ${reason}${identity}.`
+}
+
+export function takeHostedBoardVerificationTransition(
+  database: Database = writableDb(),
+): string | null {
+  const warning = hostedBoardVerificationWarning(database)
+  const current = warning ? 'failed' : 'verified'
+  const previous = meta(database, BOARD_MONITOR_VERIFICATION_KEY)
+  setMeta(database, BOARD_MONITOR_VERIFICATION_KEY, current)
+  if (warning && previous !== 'failed') return warning
+  if (!warning && previous === 'failed')
+    return `Hosted board cache is verified again at ${meta(database, BOARD_VERIFIED_AT_KEY) ?? 'an unknown time'}.`
+  return null
 }
 
 function renderCached(
@@ -401,7 +419,6 @@ export function claimCachedHosted(
 ): HostedCacheNotice[] {
   const rows = cachedRows(database)
   const messages = rows.map((row) => row.message)
-  const suffix = staleLine(database)
   return rows
     .filter(
       (row) =>
@@ -410,7 +427,7 @@ export function claimCachedHosted(
     )
     .map(({ message, tags }) => ({
       id: message.id,
-      text: renderCached(message, tags, messages, reader.startsWith('run:')) + suffix,
+      text: renderCached(message, tags, messages, reader.startsWith('run:')),
       ackRequired: message.ackRequired,
       createdAt: message.createdAt,
     }))
@@ -510,13 +527,12 @@ export function claimCachedHostedInterrupts(
     })
     .map(({ message, tags }) => ({
       noticeId: `board:${message.id}` as const,
-      detail:
-        renderCached(
-          message,
-          tags,
-          cachedRows(database).map((row) => row.message),
-          false,
-        ) + staleLine(database),
+      detail: renderCached(
+        message,
+        tags,
+        cachedRows(database).map((row) => row.message),
+        false,
+      ),
     }))
 }
 

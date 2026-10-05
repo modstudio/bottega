@@ -8,8 +8,10 @@ import {
   BOARD_REFRESH_OUTCOME_KEY,
   cachedMessageAddressed,
   claimCachedHosted,
+  hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   refreshHostedBoard,
+  takeHostedBoardVerificationTransition,
 } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 
@@ -127,7 +129,7 @@ test('refresh pages to completion, advances with each page, and replaces an upda
   ).toBe('updated')
 })
 
-test('refresh records an unreachable service without throwing and cached delivery says unverified', async () => {
+test('refresh records an unreachable service without throwing and exposes verification failure', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
@@ -164,9 +166,16 @@ test('refresh records an unreachable service without throwing and cached deliver
       }
     ).value,
   ).toContain('offline')
+  expect(hostedBoardVerificationWarning()).toContain('Hosted board cache is unverified')
+  expect(hostedBoardVerificationWarning()).toContain('offline')
   expect(
-    claimCachedHosted('cache-reader', false, Date.parse('2026-10-05T12:02:00.000Z'))[0]?.text,
-  ).toContain('cache is unverified')
+    claimCachedHosted('cache-reader', false, Date.parse('2026-10-05T12:02:00.000Z')),
+  ).toHaveLength(1)
+  expect(takeHostedBoardVerificationTransition()).toContain('unverified')
+  expect(takeHostedBoardVerificationTransition()).toBeNull()
+  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: good })
+  expect(takeHostedBoardVerificationTransition()).toContain('verified again')
+  expect(takeHostedBoardVerificationTransition()).toBeNull()
 })
 
 test('routing narrows own-user audiences and withholds questions from worker chains', async () => {

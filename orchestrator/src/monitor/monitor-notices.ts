@@ -6,6 +6,7 @@ import {
   claimCachedHostedInterrupts,
   markCachedHostedDelivered,
   refreshHostedBoard,
+  takeHostedBoardVerificationTransition,
 } from '../board/board-hosted-cache.ts'
 import {
   claimInterruptNotices,
@@ -247,23 +248,26 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
 
 export async function claimMonitorNoticesWithHosted(
   ownerSession: string,
-): Promise<MonitorNotice[]> {
+): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
   const refreshed = await refreshHostedBoard({ budgetMs: BOARD_MONITOR_REFRESH_BUDGET_MS })
-  if (refreshed === 'local') return claimMonitorNotices(ownerSession)
-  return [
-    ...claimMonitorNotices(ownerSession),
-    ...claimCachedHostedInterrupts(ownerSession).map(
-      (notice): MonitorNotice => ({
-        noticeId: notice.noticeId,
-        kind: 'board-notice',
-        subject: notice.noticeId,
-        since: null,
-        ageMs: null,
-        detail: notice.detail,
-        ownerSession,
-      }),
-    ),
-  ]
+  if (refreshed === 'local') return { notices: claimMonitorNotices(ownerSession), warning: null }
+  return {
+    notices: [
+      ...claimMonitorNotices(ownerSession),
+      ...claimCachedHostedInterrupts(ownerSession).map(
+        (notice): MonitorNotice => ({
+          noticeId: notice.noticeId,
+          kind: 'board-notice',
+          subject: notice.noticeId,
+          since: null,
+          ageMs: null,
+          detail: notice.detail,
+          ownerSession,
+        }),
+      ),
+    ],
+    warning: takeHostedBoardVerificationTransition(),
+  }
 }
 
 /** Acknowledge only rows the hook has already emitted to its consumer. */

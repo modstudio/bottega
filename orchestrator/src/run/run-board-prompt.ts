@@ -8,7 +8,7 @@ import { sha } from './run-process.ts'
 export const BOARD_PACK_MAX_NOTICES = 5
 export const BOARD_PACK_MAX_CHARS = 2_000
 
-type RunNotice = Awaited<ReturnType<typeof claimRunBoardNotices>>[number]
+type RunNotice = Awaited<ReturnType<typeof claimRunBoardNotices>>['notices'][number]
 
 export function renderRunBoardSection(notices: RunNotice[]): {
   text: string
@@ -47,9 +47,11 @@ export async function appendInitialRunBoardPrompt(
   prompt: string,
   runId: number,
 ): Promise<{ prompt: string; noticeIds: Array<number | string> }> {
-  const section = renderRunBoardSection(await claimRunBoardNotices(runId))
+  const delivery = await claimRunBoardNotices(runId)
+  const section = renderRunBoardSection(delivery.notices)
+  const boardText = [section.text, delivery.warning].filter(Boolean).join('\n\n')
   return {
-    prompt: section.text ? `${prompt}\n\n${section.text}` : prompt,
+    prompt: boardText ? `${prompt}\n\n${boardText}` : prompt,
     noticeIds: section.includedIds,
   }
 }
@@ -73,10 +75,12 @@ export async function prepareLaterRunBoardPrompt(
   mailbox: { id: number; body: string }[],
   prompt: string,
 ): Promise<{ prompt: string; notices: RunNotice[] }> {
-  const notices = laterTurn ? await claimRunBoardNotices(runId) : []
+  const delivery = laterTurn ? await claimRunBoardNotices(runId) : { notices: [], warning: null }
+  const notices = delivery.notices
   const items = [
     ...mailbox.map((message) => `[message ${message.id}] ${message.body}`),
     ...notices.map((notice) => notice.text),
+    ...(delivery.warning ? [delivery.warning] : []),
   ]
   if (!items.length) return { prompt, notices }
   const banner =

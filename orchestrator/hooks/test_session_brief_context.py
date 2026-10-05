@@ -66,6 +66,32 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertEqual(session_brief._board_slice(completed), ("hosted notice", [hosted]))
         self.assertTrue(session_brief._valid_notice_id(f"board:{hosted}"))
 
+    def test_board_slice_accepts_delivery_envelope_and_renders_warning(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({
+                "notices": [{"id": "7", "text": "notice"}],
+                "warning": "Hosted board cache is unverified.",
+            }),
+        )
+        self.assertEqual(
+            session_brief._board_slice(completed),
+            ("notice\n\nHosted board cache is unverified.", ["7"]),
+        )
+
+    def test_board_slice_renders_warning_with_no_notices(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({
+                "notices": [],
+                "warning": "Hosted board cache is unverified.",
+            }),
+        )
+        self.assertEqual(
+            session_brief._board_slice(completed),
+            ("Hosted board cache is unverified.", []),
+        )
+
     def test_board_slice_rejects_a_non_digit_string_id(self):
         completed = SimpleNamespace(
             returncode=0,

@@ -434,11 +434,21 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '
 import sys, json, os, uuid
 try:
-    rows = json.load(sys.stdin)
+    result = json.load(sys.stdin)
 except Exception:
     raise SystemExit(2)
-if not isinstance(rows, list):
+if isinstance(result, list):
+    rows = result
+    warning = None
+elif isinstance(result, dict):
+    rows = result.get("notices")
+    warning = result.get("warning")
+else:
     raise SystemExit(2)
+if not isinstance(rows, list) or (warning is not None and not isinstance(warning, str)):
+    raise SystemExit(2)
+if warning:
+    print("warning\t" + warning.replace("\t", " ").replace("\r", " ").replace("\n", " "))
 for row in rows:
     if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
         raise SystemExit(2)
@@ -464,7 +474,7 @@ for row in rows:
     echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc). Health state still follows inbox and runs; inspect monitor diagnostics directly."
     report_store_write_lock
   elif [ -n "$monitor_observed" ]; then
-    monitor_ids=$(printf '%s\n' "$monitor_observed" | cut -f1 | paste -sd, -)
+    monitor_ids=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning" {print $1}' | paste -sd, -)
     CAP_DIR=""
     CAP_DIR=$(mktemp -d 2>/dev/null); cap_mint_rc=$?
     if [ "$cap_mint_rc" -eq 0 ]; then
@@ -482,6 +492,10 @@ print(token)
       [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
       echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
     elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
+      if [ -z "$monitor_ids" ]; then
+        rm -rf "$CAP_DIR"
+        continue
+      fi
       export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
       export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
       ack_timed_out=$(mktemp)

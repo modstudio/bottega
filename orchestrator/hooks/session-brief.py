@@ -173,7 +173,17 @@ def _board_slice(completed):
     if completed is None or completed.returncode != 0:
         return "", []
     try:
-        rows = json.loads(completed.stdout)
+        result = json.loads(completed.stdout)
+        if isinstance(result, list):
+            rows = result
+            warning = None
+        elif isinstance(result, dict):
+            rows = result.get("notices")
+            warning = result.get("warning")
+            if warning is not None and not isinstance(warning, str):
+                raise ValueError("invalid board warning")
+        else:
+            raise ValueError("invalid board notice response")
         def board_id(row):
             value = row.get("id") if isinstance(row, dict) else None
             if isinstance(value, int) and not isinstance(value, bool) and value > 0:
@@ -188,7 +198,8 @@ def _board_slice(completed):
             isinstance(row, dict) and isinstance(row.get("text"), str) for row in rows
         ):
             raise ValueError("invalid board notice response")
-        return "\n\n".join(row["text"] for row in rows), [board_id(row) for row in rows]
+        text = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
+        return text, [board_id(row) for row in rows]
     except Exception:
         return "", []
 

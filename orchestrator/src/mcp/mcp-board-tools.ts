@@ -127,13 +127,13 @@ export function registerBoardTools(server: McpServer): void {
       description: 'Read live local notices addressed to the caller and stamp delivery.',
       inputSchema: z.object({ all: z.boolean().optional() }),
     },
-    async ({ all }) =>
-      result(
-        (await readBoardNotices(all ?? false)).map((notice) => ({
-          ...notice,
-          id: String(notice.id),
-        })),
-      ),
+    async ({ all }) => {
+      const delivery = await readBoardNotices(all ?? false)
+      return result({
+        notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
+        warning: delivery.warning,
+      })
+    },
   )
   server.registerTool(
     'board_ack',

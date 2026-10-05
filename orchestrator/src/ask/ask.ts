@@ -575,14 +575,15 @@ export function createAskMcpServer(
       try {
         if (!authorized()) throw new Error(unauthorized())
         const messages = checkMessages(runId)
-        const notices = await claimRunBoardNotices(runId, false, BOARD_ASK_REFRESH_BUDGET_MS)
+        const delivery = await claimRunBoardNotices(runId, false, BOARD_ASK_REFRESH_BUDGET_MS)
         await markRunBoardNoticesDelivered(
           runId,
-          notices.map((notice) => notice.id),
+          delivery.notices.map((notice) => notice.id),
         )
         const items = [
           ...messages.map((note) => `[message ${note.id}] ${note.body}`),
-          ...notices.map((notice) => notice.text),
+          ...delivery.notices.map((notice) => notice.text),
+          ...(delivery.warning ? [delivery.warning] : []),
         ]
         const body = items.length
           ? items.join('\n\n') +
