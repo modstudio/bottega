@@ -92,7 +92,7 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 **Headless grok must never be able to prompt.** Every grok run uses `bypassPermissions`. The worktree and the dirtied-tree detector are the guards.
 
-**Worker messages are context, not rulings.** Board notices stay on the board under the chain reader; never copy them into `run_message`. Receipt messages only after prompt success.
+**Run messages are context, not rulings.** `orch tell` queues; queued is never reported as delivered. A message cannot close an open question or relax the escalation contract.
 
 **`answer` refuses a chain with nothing open; `continue` refuses one that is waiting.** Resuming a waiting worker makes it guess. A resumed turn is detached, like everything else.
 
