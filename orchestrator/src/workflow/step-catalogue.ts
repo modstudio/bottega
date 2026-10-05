@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { type InjectionSource, injectionSources } from '../project/project-injection.ts'
+import { type WorkflowFactSource, workflowFactSources } from '../project/project-injection.ts'
 import {
   type AutonomyStage,
   type AutonomyValue,
@@ -27,7 +27,7 @@ export type CatalogueStep = {
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage
   autonomy: AutonomyValue
-  needs: InjectionSource[]
+  needs: WorkflowFactSource[]
 }
 type StepCatalogueDefinition = { steps: CatalogueStep[] }
 
@@ -222,7 +222,7 @@ function validateNeeds(item: Record<string, unknown>, errors: string[]): void {
   const needs = item.needs.map(String)
   if (new Set(needs).size !== needs.length) errors.push(`step "${slug}" needs has duplicates`)
   for (const source of needs)
-    if (!(injectionSources as readonly string[]).includes(source))
+    if (!(workflowFactSources as readonly string[]).includes(source))
       errors.push(`step "${slug}" has invalid injection source "${source}"`)
 }
 

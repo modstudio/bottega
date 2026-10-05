@@ -122,7 +122,7 @@ type InjectableProject = {
   settings: InjectionSettings
 }
 
-export const injectionSources = [
+const injectionSources = [
   'tracker',
   'trunk',
   'gate',
@@ -132,6 +132,8 @@ export const injectionSources = [
   'stack',
 ] as const
 export type InjectionSource = (typeof injectionSources)[number]
+export const workflowFactSources = [...injectionSources, 'ship-to'] as const
+export type WorkflowFactSource = (typeof workflowFactSources)[number]
 
 type InjectionValues<Project extends InjectableProject> = {
   tracker: ResolvedTracker

@@ -42,7 +42,12 @@ export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
   stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>
   rulings: RulingsResolution
-  shipTo: { value: ShipTo; scope: string }
+  shipTo: {
+    value: ShipTo
+    scope: string
+    complete?: boolean
+    unavailableReason?: string
+  }
   hosted?: {
     status: 'available' | 'not-configured' | 'unavailable'
     reason?: string

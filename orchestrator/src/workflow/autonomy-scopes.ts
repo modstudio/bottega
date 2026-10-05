@@ -151,6 +151,13 @@ export async function resolveProjectAutonomy(
       ),
       unavailableReason: hosted.reason,
     },
+    shipTo: {
+      ...resolution.shipTo,
+      complete: ['session', 'local project', 'project', 'local user'].includes(
+        resolution.shipTo.scope,
+      ),
+      unavailableReason: hosted.reason,
+    },
     hosted: { status: hosted.status, reason: hosted.reason },
     note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
     session,

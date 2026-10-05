@@ -200,6 +200,238 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  const publishShipToFixture = (d: Database, needs: string[] = ['tracker', 'ship-to']) => {
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'ship-to-fixture',
+            stage: 'ship',
+            title: 'Ship-to fixture',
+            body: needs.includes('tracker')
+              ? 'Close at {{shipTo.closeState}} with {{shipTo.remainingText}} remaining.'
+              : 'Ship to {{shipTo.level}}.',
+            ...(needs.includes('tracker') ? { expectedStatus: '{{shipTo.closeState}}' } : {}),
+            floor: ['tracker-transition'],
+            job: null,
+            autonomy: 'auto',
+            needs,
+          },
+        ],
+      },
+      'ship-to fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'ship-to-fixture',
+      {
+        title: 'Ship-to fixture',
+        description: 'Ship.',
+        arguments: [{ name: 'depth', required: false, description: 'Last rung.' }],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['ship-to-fixture'],
+          },
+        ],
+      },
+      'ship-to fixture',
+      'test',
+      d,
+    )
+    promoteWorkflow('ship-to-fixture', workflow.n, 'publish', 'test', d)
+  }
+
+  const shipToAutonomy = (level: 'branch' | 'trunk' | 'production') => ({
+    steps: { 'ship-to-fixture': { value: 'auto' as const, scope: 'test' } },
+    rulings: { value: 'agent' as const, scope: 'test' },
+    shipTo: { value: level, scope: 'session' },
+  })
+
+  test.each([
+    ['trunk', [{ name: 'production', branch: 'production' }], 'review'],
+    ['trunk', [], 'done'],
+    ['production', [{ name: 'production', branch: 'production' }], 'done'],
+  ] as const)('ship-to %s resolves close state %s', (level, rungs, expected) => {
+    const d = database()
+    publishShipToFixture(d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        release: { rungs, mergeMethod: 'squash', requiredChecks: [] },
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+    const autonomy = shipToAutonomy(level)
+    const composed = composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy)
+    const served = getWorkflowStep(
+      'ship-to-fixture',
+      'fixture',
+      'ship-to-fixture',
+      {},
+      d,
+      {},
+      autonomy,
+    )
+
+    expect(composed.facts.shipTo!.closeState).toBe(expected)
+    expect(composed.steps[0]!.expectedStatus).toBe(expected)
+    expect(served.facts.shipTo!.closeState).toBe(expected)
+    expect(served.expectedStatus).toBe(expected)
+  })
+
+  test('a project without release settings composes a step needing ship-to', () => {
+    const d = database()
+    publishShipToFixture(d, ['ship-to'])
+
+    expect(
+      composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, shipToAutonomy('trunk'))
+        .facts.shipTo,
+    ).toEqual({
+      level: 'trunk',
+      scope: 'session',
+      mayMerge: 'yes',
+      reach: [],
+      remaining: [],
+      reachText: 'none',
+      remainingText: 'none',
+    })
+  })
+
+  test('compose and step fetch refuse ship-to facts when the hosted level is incomplete', () => {
+    const d = database()
+    publishShipToFixture(d, ['ship-to'])
+    const autonomy = {
+      ...shipToAutonomy('trunk'),
+      shipTo: {
+        value: 'trunk' as const,
+        scope: 'built-in',
+        complete: false,
+        unavailableReason: 'record service offline',
+      },
+    }
+    const expected =
+      'hosted autonomy settings could not be read: record service offline; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>'
+
+    expect(() =>
+      composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy),
+    ).toThrow(expected)
+    expect(() =>
+      getWorkflowStep('ship-to-fixture', 'fixture', 'ship-to-fixture', {}, d, {}, autonomy),
+    ).toThrow(expected)
+  })
+
+  test('separate ship-to and tracker needs do not require a tracker review state', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: [
+          ...current.steps,
+          {
+            slug: 'only-ship-to',
+            stage: 'ship',
+            title: 'Only ship-to',
+            body: 'Ship to {{shipTo.level}}.',
+            floor: ['command-exit'],
+            job: null,
+            autonomy: 'auto',
+            needs: ['ship-to'],
+          },
+          {
+            slug: 'only-tracker',
+            stage: 'ship',
+            title: 'Only tracker',
+            body: 'Use {{tracker.kind}}.',
+            floor: ['tracker-transition'],
+            job: null,
+            autonomy: 'auto',
+            needs: ['tracker'],
+          },
+        ],
+      },
+      'separate ship-to and tracker fixtures',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflow(
+      'separate-ship-to-tracker',
+      {
+        title: 'Separate ship-to and tracker',
+        description: 'Keep step needs separate.',
+        arguments: [],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['only-ship-to', 'only-tracker'],
+          },
+        ],
+      },
+      'separate ship-to and tracker fixtures',
+      'test',
+      d,
+    )
+    promoteWorkflow('separate-ship-to-tracker', workflow.n, 'publish', 'test', d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+        release,
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+    const autonomy = {
+      steps: {
+        'only-ship-to': { value: 'auto' as const, scope: 'test' },
+        'only-tracker': { value: 'auto' as const, scope: 'test' },
+      },
+      rulings: { value: 'agent' as const, scope: 'test' },
+      shipTo: { value: 'trunk' as const, scope: 'project' },
+    }
+
+    const composed = composeWorkflow(
+      'separate-ship-to-tracker',
+      'fixture',
+      undefined,
+      {},
+      d,
+      {},
+      autonomy,
+    )
+    const shipStep = getWorkflowStep(
+      'separate-ship-to-tracker',
+      'fixture',
+      'only-ship-to',
+      {},
+      d,
+      {},
+      autonomy,
+    )
+    const trackerStep = getWorkflowStep(
+      'separate-ship-to-tracker',
+      'fixture',
+      'only-tracker',
+      {},
+      d,
+      {},
+      autonomy,
+    )
+
+    expect(composed.facts.shipTo).toEqual(shipStep.facts.shipTo)
+    expect(composed.facts.shipTo).not.toHaveProperty('closeState')
+    expect(composed.facts.tracker).toEqual(trackerStep.facts.tracker)
+  })
+
   test('renders the registered name through the built-in project placeholder', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition

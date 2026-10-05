@@ -58,6 +58,52 @@ test('hosted failures are visible and leave rulings incomplete without a higher 
     'hosted autonomy settings unavailable: offline; resolved from local and project scopes',
   )
   expect(result.rulings).toMatchObject({ complete: false, unavailableReason: 'offline' })
+  expect(result.shipTo).toMatchObject({ complete: false, unavailableReason: 'offline' })
+})
+
+test('an unavailable hosted read leaves ship-to complete when a machine or project scope sets it', async () => {
+  const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
+  writeFileSync(join(config, 'machine.toml'), '[autonomy]\nship-to = "branch"\n')
+  const unavailable = () =>
+    ({
+      listEntries: async () => {
+        throw new Error('offline')
+      },
+    }) as never
+
+  const machine = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    unavailable,
+    database(),
+    { BOTTEGA_CONFIG_HOME: config },
+  )
+  expect(machine.shipTo).toMatchObject({
+    value: 'branch',
+    scope: 'local user',
+    complete: true,
+    unavailableReason: 'offline',
+  })
+
+  const project = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    unavailable,
+    database(JSON.stringify({ autonomy: { 'ship-to': 'production' } })),
+    missingConfig,
+  )
+  expect(project.shipTo).toMatchObject({
+    value: 'production',
+    scope: 'project',
+    complete: true,
+    unavailableReason: 'offline',
+  })
 })
 
 test('invalid hosted settings remain validation failures', async () => {
