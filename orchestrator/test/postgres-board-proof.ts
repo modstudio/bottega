@@ -1,0 +1,647 @@
+import { beforeAll, expect, test } from 'bun:test'
+import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
+import type { PsqlResult } from './fixtures/postgres-rls.ts'
+
+type BoardProofInput = {
+  admin: (statement: string) => string
+  psql: (user: string, password: string, statement: string) => PsqlResult
+  readerRole: string
+}
+
+const IDS = {
+  userA: '02990000-0000-7000-8000-000000000101',
+  userB: '02990000-0000-7000-8000-000000000102',
+  userC: '02990000-0000-7000-8000-000000000103',
+  userD: '02990000-0000-7000-8000-000000000104',
+  spaceA: '02990000-0000-7000-8000-000000000111',
+  spaceB: '02990000-0000-7000-8000-000000000112',
+  projectA: '02990000-0000-7000-8000-000000000121',
+  projectB: '02990000-0000-7000-8000-000000000122',
+  projectA2: '02990000-0000-7000-8000-000000000123',
+  membershipA1: '02990000-0000-7000-8000-000000000131',
+  membershipA2: '02990000-0000-7000-8000-000000000132',
+  membershipB: '02990000-0000-7000-8000-000000000133',
+  membershipC: '02990000-0000-7000-8000-000000000134',
+  authorOnly: '02990000-0000-7000-8000-000000000001',
+  scopedA: '02990000-0000-7000-8000-000000000002',
+  scopedBoth: '02990000-0000-7000-8000-000000000003',
+  recipientOnly: '02990000-0000-7000-8000-000000000004',
+  scopedRecipient: '02990000-0000-7000-8000-000000000005',
+  boundScopedA: '02990000-0000-7000-8000-000000000006',
+  boundScopedB: '02990000-0000-7000-8000-000000000007',
+  boundScopedBoth: '02990000-0000-7000-8000-000000000008',
+  tag: 'tag',
+  claimA: '02990000-0000-7000-8000-000000000011',
+  claimLiveOther: '02990000-0000-7000-8000-000000000013',
+  claimHolderEdit: '02990000-0000-7000-8000-000000000014',
+  claimLapsed: '02990000-0000-7000-8000-000000000015',
+  claimSuccessor: '02990000-0000-7000-8000-000000000016',
+  claimDuplicate: '02990000-0000-7000-8000-000000000017',
+  claimReadInsert: '02990000-0000-7000-8000-000000000018',
+  claimTakeoverOld: '02990000-0000-7000-8000-000000000019',
+  claimTakeoverNew: '02990000-0000-7000-8000-000000000020',
+  claimMissingSuccessor: '02990000-0000-7000-8000-000000000023',
+  claimMissingOld: '02990000-0000-7000-8000-000000000025',
+  revisionA: '02990000-0000-7000-8000-000000000021',
+  revisionB: '02990000-0000-7000-8000-000000000022',
+  shadowRevision: '02990000-0000-7000-8000-000000000024',
+  invisibleReply: '02990000-0000-7000-8000-000000000043',
+  mismatchedReply: '02990000-0000-7000-8000-000000000044',
+  shadowedRootReply: '02990000-0000-7000-8000-000000000045',
+} as const
+
+function actor(
+  input: BoardProofInput,
+  userId: string,
+  spaceIds: string[],
+  statement: string,
+): PsqlResult {
+  return input.psql(
+    RECORD_ACTOR_ROLE,
+    'actor-password',
+    `SET app.user_id='${userId}';
+     SET app.space_id='${spaceIds[0] ?? ''}';
+     SET app.space_ids='${spaceIds.join(',')}';
+     ${statement}`,
+  )
+}
+
+function visibleCount(input: BoardProofInput, userId: string, messageId: string): string {
+  return actor(
+    input,
+    userId,
+    [IDS.spaceA, IDS.spaceB],
+    `SELECT count(*) FROM board_message WHERE id='${messageId}';`,
+  ).stdout
+}
+
+function messageValues(
+  id: string,
+  author: string,
+  scope: string[],
+  recipients: string[] = [],
+): string {
+  return `('${id}','${author}','notice','architects','proof','proof',false,
+    now() + interval '1 hour',now(),ARRAY[${scope.map((id) => `'${id}'::uuid`).join(',')}]::uuid[],
+    ARRAY[${recipients.map((id) => `'${id}'::uuid`).join(',')}]::uuid[])`
+}
+
+export function registerBoardRlsProofs(input: BoardProofInput): void {
+  beforeAll(() => {
+    input.admin(`
+      INSERT INTO space (id,name,slug,created_at) VALUES
+        ('${IDS.spaceA}','board-space-a','board-space-a',now()),
+        ('${IDS.spaceB}','board-space-b','board-space-b',now());
+      INSERT INTO "user" (id,email,name,created_at) VALUES
+        ('${IDS.userA}','board-a@example.test','Board A',now()),
+        ('${IDS.userB}','board-b@example.test','Board B',now()),
+        ('${IDS.userC}','board-c@example.test','Board C',now()),
+        ('${IDS.userD}','board-d@example.test','Board D',now());
+      INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+        ('${IDS.membershipA1}','${IDS.spaceA}','${IDS.userA}','member','write',now()),
+        ('${IDS.membershipA2}','${IDS.spaceB}','${IDS.userA}','member','write',now()),
+        ('${IDS.membershipB}','${IDS.spaceA}','${IDS.userB}','member','write',now()),
+        ('${IDS.membershipC}','${IDS.spaceA}','${IDS.userC}','member','read',now());
+      INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
+        ('${IDS.projectA}','${IDS.spaceA}','board-alpha',ARRAY['BOARD'],now()),
+        ('${IDS.projectA2}','${IDS.spaceA}','board-alpha-two',ARRAY['BOARD2'],now()),
+        ('${IDS.projectB}','${IDS.spaceB}','board-beta',ARRAY['BOARD'],now());
+      INSERT INTO board_message
+        (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
+         scope_project_ids,recipient_user_ids)
+      VALUES
+        ${messageValues(IDS.authorOnly, IDS.userA, [])},
+        ${messageValues(IDS.scopedA, IDS.userA, [IDS.projectA])},
+        ${messageValues(IDS.scopedBoth, IDS.userA, [IDS.projectA, IDS.projectB])},
+        ${messageValues(IDS.recipientOnly, IDS.userA, [], [IDS.userD])},
+        ${messageValues(IDS.scopedRecipient, IDS.userA, [IDS.projectA], [IDS.userD])},
+        ${messageValues(IDS.boundScopedA, IDS.userD, [IDS.projectA])},
+        ${messageValues(IDS.boundScopedB, IDS.userD, [IDS.projectB])},
+        ${messageValues(IDS.boundScopedBoth, IDS.userD, [IDS.projectA, IDS.projectB])};
+      INSERT INTO board_message_tag (message_id,kind,value,origin)
+      VALUES ('${IDS.scopedA}','topic','${IDS.tag}','sender');
+      INSERT INTO board_receipt
+        (message_id,reader_user_id,reader_session,audience_at_posting,delivered_at)
+      VALUES
+        ('${IDS.scopedA}','${IDS.userA}','operator',true,now()),
+        ('${IDS.scopedA}','${IDS.userB}','worker-chain',true,now());
+      INSERT INTO board_claim
+        (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+         renewed_at,lapses_at)
+      VALUES ('${IDS.claimA}','${IDS.projectA}','path','src/a.ts','${IDS.userA}',60000,
+        now(),now(),now() + interval '1 hour');
+    `)
+  })
+
+  test('a board author sees their own message whatever its scope', () => {
+    expect(visibleCount(input, IDS.userA, IDS.scopedBoth)).toBe('1')
+    expect(visibleCount(input, IDS.userA, IDS.authorOnly)).toBe('1')
+  })
+
+  test("a one-project board message is visible to that project's space members only", () => {
+    expect(visibleCount(input, IDS.userB, IDS.scopedA)).toBe('1')
+    expect(visibleCount(input, IDS.userC, IDS.scopedA)).toBe('1')
+    expect(visibleCount(input, IDS.userD, IDS.scopedA)).toBe('0')
+  })
+
+  test('a board message scoped across spaces requires membership in both', () => {
+    expect(visibleCount(input, IDS.userA, IDS.scopedBoth)).toBe('1')
+    expect(visibleCount(input, IDS.userB, IDS.scopedBoth)).toBe('0')
+    expect(visibleCount(input, IDS.userC, IDS.scopedBoth)).toBe('0')
+    expect(visibleCount(input, IDS.userD, IDS.scopedBoth)).toBe('0')
+  })
+
+  test('board visibility is limited to the project spaces bound to the transaction', () => {
+    const spaceAOnly = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA],
+      `SELECT id FROM board_message
+       WHERE id IN ('${IDS.boundScopedA}','${IDS.boundScopedB}','${IDS.boundScopedBoth}')
+       ORDER BY id;`,
+    )
+    expect(spaceAOnly.code, spaceAOnly.stderr).toBe(0)
+    expect(spaceAOnly.stdout).toBe(IDS.boundScopedA)
+
+    const bothSpaces = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `SELECT id FROM board_message
+       WHERE id IN ('${IDS.boundScopedA}','${IDS.boundScopedB}','${IDS.boundScopedBoth}')
+       ORDER BY id;`,
+    )
+    expect(bothSpaces.code, bothSpaces.stderr).toBe(0)
+    expect(bothSpaces.stdout.split('\n')).toEqual([
+      IDS.boundScopedA,
+      IDS.boundScopedB,
+      IDS.boundScopedBoth,
+    ])
+  })
+
+  test('an empty-scope board message is visible only to its author and explicit recipients', () => {
+    expect(visibleCount(input, IDS.userA, IDS.recipientOnly)).toBe('1')
+    expect(visibleCount(input, IDS.userD, IDS.recipientOnly)).toBe('1')
+    expect(visibleCount(input, IDS.userB, IDS.recipientOnly)).toBe('0')
+    expect(visibleCount(input, IDS.userC, IDS.recipientOnly)).toBe('0')
+  })
+
+  test('an explicit recipient without scoped-project membership cannot see the message', () => {
+    expect(visibleCount(input, IDS.userD, IDS.scopedRecipient)).toBe('0')
+  })
+
+  test('removing membership removes visibility of an existing board message', () => {
+    expect(visibleCount(input, IDS.userB, IDS.scopedA)).toBe('1')
+    input.admin(`DELETE FROM membership WHERE id='${IDS.membershipB}';`)
+    try {
+      expect(visibleCount(input, IDS.userB, IDS.scopedA)).toBe('0')
+    } finally {
+      input.admin(`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES ('${IDS.membershipB}','${IDS.spaceA}','${IDS.userB}',
+          'member','write',now());`)
+    }
+  })
+
+  test('a read-permission member reads but cannot insert a scoped board message', () => {
+    expect(visibleCount(input, IDS.userC, IDS.scopedA)).toBe('1')
+    const inserted = actor(
+      input,
+      IDS.userC,
+      [IDS.spaceA],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
+        scope_project_ids,recipient_user_ids)
+       VALUES ${messageValues('02990000-0000-7000-8000-000000000041', IDS.userC, [IDS.projectA])};`,
+    )
+    expect(inserted.code).not.toBe(0)
+    expect(inserted.stderr).toContain('row-level security policy')
+  })
+
+  test('a user cannot insert a board message naming another author', () => {
+    const inserted = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
+        scope_project_ids,recipient_user_ids)
+       VALUES ${messageValues('02990000-0000-7000-8000-000000000042', IDS.userA, [IDS.projectA])};`,
+    )
+    expect(inserted.code).not.toBe(0)
+    expect(inserted.stderr).toContain('row-level security policy')
+  })
+
+  test('a non-author cannot change a board message or insert or delete its tags', () => {
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_message SET body='changed' WHERE id='${IDS.scopedA}';`,
+    )
+    expect(update.code, update.stderr).toBe(0)
+    expect(update.stdout).toBe('')
+    const deletion = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `DELETE FROM board_message WHERE id='${IDS.scopedA}';`,
+    )
+    expect(deletion.code, deletion.stderr).toBe(0)
+    expect(deletion.stdout).toBe('')
+    expect(input.admin(`SELECT body FROM board_message WHERE id='${IDS.scopedA}';`)).toBe('proof')
+    const insertTag = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_message_tag (message_id,kind,value,origin)
+       VALUES ('${IDS.scopedA}','topic','foreign','sender');`,
+    )
+    expect(insertTag.code).not.toBe(0)
+    const deleteTag = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `DELETE FROM board_message_tag
+       WHERE message_id='${IDS.scopedA}' AND value='${IDS.tag}';`,
+    )
+    expect(deleteTag.code, deleteTag.stderr).toBe(0)
+    expect(deleteTag.stdout).toBe('')
+    expect(
+      input.admin(`SELECT count(*) FROM board_message_tag WHERE message_id='${IDS.scopedA}';`),
+    ).toBe('1')
+  })
+
+  test('a reply to a board root the user cannot see is refused', () => {
+    const reply = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids)
+       VALUES ('${IDS.invisibleReply}','${IDS.userB}','reply',
+        '${IDS.authorOnly}','reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[]);`,
+    )
+    expect(reply.code).not.toBe(0)
+    expect(reply.stderr).toContain('board reply thread root is not visible')
+  })
+
+  test('a temporary board_message cannot forge a visible reply root', () => {
+    const reply = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `CREATE TEMP TABLE board_message
+         (id uuid, scope_project_ids uuid[], recipient_user_ids uuid[]);
+       INSERT INTO board_message VALUES
+         ('${IDS.authorOnly}',ARRAY[]::uuid[],ARRAY[]::uuid[]);
+       INSERT INTO public.board_message
+         (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+          scope_project_ids,recipient_user_ids)
+       VALUES ('${IDS.shadowedRootReply}','${IDS.userB}','reply',
+         '${IDS.authorOnly}','reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[]);`,
+    )
+    expect(reply.code).not.toBe(0)
+    expect(reply.stderr).toContain('board reply thread root is not visible')
+  })
+
+  test("a reply's scope and recipients must match its board root", () => {
+    const reply = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids)
+       VALUES ('${IDS.mismatchedReply}','${IDS.userB}','reply',
+        '${IDS.scopedA}','reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[]);`,
+    )
+    expect(reply.code).not.toBe(0)
+    expect(reply.stderr).toContain('board reply scope and recipients must match thread root')
+  })
+
+  test('receipt visibility and writes are limited to readers and message authors', () => {
+    const own = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `SELECT count(*) FROM board_receipt WHERE message_id='${IDS.scopedA}';`,
+    )
+    expect(own.stdout).toBe('1')
+    const author = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `SELECT count(*) FROM board_receipt WHERE message_id='${IDS.scopedA}';`,
+    )
+    expect(author.stdout).toBe('2')
+    const unrelated = actor(
+      input,
+      IDS.userC,
+      [IDS.spaceA],
+      `SELECT count(*) FROM board_receipt WHERE message_id='${IDS.scopedA}';`,
+    )
+    expect(unrelated.stdout).toBe('0')
+    const otherReader = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_receipt
+       (message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${IDS.scopedA}','${IDS.userC}','other',true);`,
+    )
+    expect(otherReader.code).not.toBe(0)
+    const invisible = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_receipt
+       (message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${IDS.authorOnly}','${IDS.userB}','own',false);`,
+    )
+    expect(invisible.code).not.toBe(0)
+  })
+
+  test('claims are visible to project members only', () => {
+    expect(
+      actor(
+        input,
+        IDS.userB,
+        [IDS.spaceA],
+        `SELECT count(*) FROM board_claim WHERE id='${IDS.claimA}';`,
+      ).stdout,
+    ).toBe('1')
+    expect(
+      actor(
+        input,
+        IDS.userD,
+        [IDS.spaceA],
+        `SELECT count(*) FROM board_claim WHERE id='${IDS.claimA}';`,
+      ).stdout,
+    ).toBe('0')
+  })
+
+  test('a read-permission member cannot take or update a board claim', () => {
+    const readInsert = actor(
+      input,
+      IDS.userC,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimReadInsert}','${IDS.projectA}','path','read',
+        '${IDS.userC}',60000,now(),now(),now() + interval '1 minute');`,
+    )
+    expect(readInsert.code).not.toBe(0)
+    const readUpdate = actor(
+      input,
+      IDS.userC,
+      [IDS.spaceA],
+      `UPDATE board_claim SET note='read' WHERE id='${IDS.claimA}';`,
+    )
+    expect(readUpdate.code, readUpdate.stderr).toBe(0)
+    expect(readUpdate.stdout).toBe('')
+    expect(input.admin(`SELECT note IS NULL FROM board_claim WHERE id='${IDS.claimA}';`)).toBe('t')
+  })
+
+  test("a non-holder writing member cannot edit a live board claim's note", () => {
+    const created = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimLiveOther}','${IDS.projectA}','path','live-note','${IDS.userB}',60000,
+        now(),now(),now() + interval '1 hour');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+    const update = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `UPDATE board_claim SET note='other writer' WHERE id='${IDS.claimLiveOther}';`,
+    )
+    expect(update.code).not.toBe(0)
+    expect(update.stderr).toContain('only its holder may update a live board claim')
+  })
+
+  test('a non-holder writing member cannot close a live board claim', () => {
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET closed_at=now(),close_reason='released'
+       WHERE id='${IDS.claimA}';`,
+    )
+    expect(update.code).not.toBe(0)
+    expect(update.stderr).toContain('only its holder may update a live board claim')
+  })
+
+  test('a non-holder cannot take over a board claim', () => {
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET holder_user_id='${IDS.userB}' WHERE id='${IDS.claimA}';`,
+    )
+    expect(update.code).not.toBe(0)
+    expect(update.stderr).toContain('board claim identity and holder cannot change')
+  })
+
+  test('a non-holder writing member can close and supersede a lapsed board claim', () => {
+    const lapsed = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimLapsed}','${IDS.projectA}','path','lapsed','${IDS.userB}',60000,
+        now() - interval '2 minutes',now() - interval '2 minutes',now() - interval '1 minute');`,
+    )
+    expect(lapsed.code, lapsed.stderr).toBe(0)
+    const successor = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimSuccessor}','${IDS.projectA}','path','successor','${IDS.userA}',60000,
+        now(),now(),now() + interval '1 minute');`,
+    )
+    expect(successor.code, successor.stderr).toBe(0)
+    const update = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `UPDATE board_claim SET closed_at=now(),close_reason='taken-over',
+         superseded_by_claim_id='${IDS.claimSuccessor}'
+       WHERE id='${IDS.claimLapsed}' RETURNING close_reason;`,
+    )
+    expect(update.code, update.stderr).toBe(0)
+    expect(update.stdout).toBe('taken-over')
+  })
+
+  test('a board claim holder can renew, release and edit its note', () => {
+    const created = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimHolderEdit}','${IDS.projectA}','path','holder-edit','${IDS.userB}',60000,
+        now(),now(),now() + interval '1 hour');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+    const update = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET note='renewed',renewed_at=now(),
+         lapses_at=now() + interval '2 minutes',closed_at=now(),close_reason='released'
+       WHERE id='${IDS.claimHolderEdit}' RETURNING note,close_reason;`,
+    )
+    expect(update.code, update.stderr).toBe(0)
+    expect(update.stdout).toBe('renewed|released')
+  })
+
+  test('a second live board claim for the same exact subject is refused', () => {
+    const duplicate = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimDuplicate}','${IDS.projectA}','path','src/a.ts','${IDS.userB}',60000,
+        now(),now(),now() + interval '1 minute');`,
+    )
+    expect(duplicate.code).not.toBe(0)
+    expect(duplicate.stderr).toContain('board_claim_live_subject_unique')
+  })
+
+  test('a writing non-holder takes over a lapsed exact-subject claim atomically', () => {
+    const created = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimTakeoverOld}','${IDS.projectA}','resource','takeover',
+         '${IDS.userA}',60000,now() - interval '2 minutes',now() - interval '2 minutes',
+         now() - interval '1 minute');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+
+    const takeover = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `BEGIN;
+       UPDATE board_claim SET closed_at=now(),close_reason='taken-over',
+         superseded_by_claim_id='${IDS.claimTakeoverNew}'
+       WHERE id='${IDS.claimTakeoverOld}';
+       INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimTakeoverNew}','${IDS.projectA}','resource','takeover',
+         '${IDS.userB}',60000,now(),now(),now() + interval '1 minute');
+       COMMIT;
+       SELECT closed_at IS NOT NULL,close_reason,superseded_by_claim_id
+       FROM board_claim WHERE id='${IDS.claimTakeoverOld}';
+       SELECT closed_at IS NULL,holder_user_id
+       FROM board_claim WHERE id='${IDS.claimTakeoverNew}';`,
+    )
+    expect(takeover.code, takeover.stderr).toBe(0)
+    expect(takeover.stdout.split('\n')).toEqual([
+      `t|taken-over|${IDS.claimTakeoverNew}`,
+      `t|${IDS.userB}`,
+    ])
+  })
+
+  test('a lapsed claim cannot link a successor that is never inserted', () => {
+    const created = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_claim
+       (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
+        renewed_at,lapses_at)
+       VALUES ('${IDS.claimMissingOld}','${IDS.projectA}','resource','missing-successor',
+         '${IDS.userA}',60000,now() - interval '2 minutes',now() - interval '2 minutes',
+         now() - interval '1 minute');`,
+    )
+    expect(created.code, created.stderr).toBe(0)
+
+    const result = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `UPDATE board_claim SET closed_at=now(),close_reason='taken-over',
+         superseded_by_claim_id='${IDS.claimMissingSuccessor}'
+       WHERE id='${IDS.claimMissingOld}';`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('board_claim_superseded_by_claim_id_board_claim_id_fkey')
+  })
+
+  test('the reporting role has SELECT grants but board RLS exposes no rows and no writes', () => {
+    const grants = input.admin(`SELECT
+      has_table_privilege('${input.readerRole}','board_message','SELECT'),
+      has_table_privilege('${input.readerRole}','board_message','INSERT'),
+      has_table_privilege('${input.readerRole}','board_message_tag','SELECT'),
+      has_table_privilege('${input.readerRole}','board_receipt','SELECT'),
+      has_table_privilege('${input.readerRole}','board_claim','SELECT');`)
+    expect(grants).toBe('t|f|t|t|t')
+    const read = input.psql(
+      input.readerRole,
+      'reader-password',
+      'SELECT count(*) FROM board_message; SELECT count(*) FROM board_claim;',
+    )
+    expect(read.code, read.stderr).toBe(0)
+    expect(read.stdout.split('\n')).toEqual(['0', '0'])
+  })
+
+  test('board message revision strictly increases across inserts and updates', () => {
+    const result = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at)
+       VALUES
+        ('${IDS.revisionA}','${IDS.userA}','notice','architects','revision-a','a',false,
+          now() + interval '1 hour',now()),
+        ('${IDS.revisionB}','${IDS.userA}','notice','architects','revision-b','b',false,
+          now() + interval '1 hour',now());
+       SELECT revision FROM board_message
+       WHERE id IN ('${IDS.revisionA}','${IDS.revisionB}') ORDER BY revision;
+       UPDATE board_message SET body='updated' WHERE id='${IDS.revisionA}';
+       SELECT revision FROM board_message WHERE id='${IDS.revisionA}';`,
+    )
+    expect(result.code, result.stderr).toBe(0)
+    const revisions = result.stdout.split('\n').map(BigInt)
+    expect(revisions[0]! < revisions[1]!).toBe(true)
+    expect(revisions[1]! < revisions[2]!).toBe(true)
+  })
+
+  test('a temporary board_message_revision sequence cannot poison the public cursor', () => {
+    const result = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `CREATE TEMP SEQUENCE board_message_revision START WITH 9000000000;
+       INSERT INTO public.board_message
+       (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at)
+       VALUES ('${IDS.shadowRevision}','${IDS.userA}','notice','architects',
+         'shadow-revision','proof',false,now() + interval '1 hour',now())
+       RETURNING revision;`,
+    )
+    expect(result.code, result.stderr).toBe(0)
+    expect(BigInt(result.stdout) < 9_000_000_000n).toBe(true)
+  })
+}

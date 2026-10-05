@@ -19,6 +19,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
@@ -277,6 +278,11 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
   registerHostedConfigProofs(actorUrl!, SPACE_A, SPACE_B, USER_A)
+  registerBoardRlsProofs({
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+    psql,
+    readerRole: RECORD_READER_ROLE,
+  })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
