@@ -758,6 +758,7 @@ async function note() {
   console.log(
     `note ${result.note.id} filed; ${result.note.sightings} sighting${result.note.sightings === 1 ? '' : 's'}`,
   )
+  if (result.note.record_id) console.log(`record ${result.note.record_id}`)
 }
 
 function refuseAmbiguousNoteVerb(sub: string | undefined): void {
