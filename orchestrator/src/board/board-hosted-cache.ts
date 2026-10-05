@@ -20,7 +20,7 @@ import {
   shouldInterrupt,
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
-import { originText, recipients } from './board-store.ts'
+import { originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
@@ -305,7 +305,13 @@ export function cachedMessageAddressed(
     message.authorUserId !== signedIn
   )
     return false
-  const addressed = recipients(message.audience, clock, tags, database).includes(reader)
+  const addressed = recipients(
+    message.audience,
+    clock,
+    tags,
+    database,
+    presenceFacts(database, clock),
+  ).includes(reader)
   if (!addressed) return false
   if (message.kind === 'question' && reader.startsWith('run:')) return false
   return true

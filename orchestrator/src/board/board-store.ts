@@ -107,8 +107,8 @@ export function boardActor(env: Environment = process.env): BoardActor {
   return { kind: 'operator', session: null }
 }
 
-export function presenceFacts(database = db(), at = Date.now()) {
-  const architects = (
+function architectPresenceFacts(database: ReturnType<typeof db>) {
+  return (
     database
       .query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence')
       .all() as {
@@ -126,6 +126,9 @@ export function presenceFacts(database = db(), at = Date.now()) {
     lastSeen: Date.parse(row.last_seen),
     taskKeys: new Set(row.current_task_key ? [row.current_task_key] : []),
   }))
+}
+
+function workerPresenceFacts(database: ReturnType<typeof db>) {
   const liveTurns = database
     .query(
       `WITH ranked AS (
@@ -171,6 +174,18 @@ export function presenceFacts(database = db(), at = Date.now()) {
       if (row.record_id) current.runIds.add(row.record_id)
     }
   }
+  return [...workers.values()].map((row) => ({
+    reader: `run:${row.root_id}`,
+    role: 'worker' as const,
+    project: row.repo ?? '',
+    machine: hostname(),
+    live: true,
+    runIds: row.runIds,
+    taskKeys: new Set(row.launch_key ? [row.launch_key] : []),
+  }))
+}
+
+function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
   const claims = database
     .query(
       `SELECT holder_kind,holder_session,subject_value,lapses_at,run_id
@@ -202,26 +217,22 @@ export function presenceFacts(database = db(), at = Date.now()) {
     fact.taskKeys.add(claim.subject_value)
     claimReaders.set(reader, fact)
   }
+  return [...claimReaders].map(([reader, fact]) => ({
+    reader,
+    role: fact.role,
+    project: '',
+    machine: hostname(),
+    live: true,
+    taskKeys: fact.taskKeys,
+    taskAudienceOnly: true,
+  }))
+}
+
+export function presenceFacts(database = db(), at = Date.now()) {
   return [
-    ...architects,
-    ...[...workers.values()].map((row) => ({
-      reader: `run:${row.root_id}`,
-      role: 'worker' as const,
-      project: row.repo ?? '',
-      machine: hostname(),
-      live: true,
-      runIds: row.runIds,
-      taskKeys: new Set(row.launch_key ? [row.launch_key] : []),
-    })),
-    ...[...claimReaders].map(([reader, fact]) => ({
-      reader,
-      role: fact.role,
-      project: '',
-      machine: hostname(),
-      live: true,
-      taskKeys: fact.taskKeys,
-      taskAudienceOnly: true,
-    })),
+    ...architectPresenceFacts(database),
+    ...workerPresenceFacts(database),
+    ...claimPresenceFacts(database, at),
   ]
 }
 
@@ -249,9 +260,10 @@ export function recipients(
   at: number,
   tags: BoardTag[],
   database = db(),
+  facts = presenceFacts(database, at),
 ): string[] {
   const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, presenceFacts(database, at), at, SESSION_LIVE_MS)
+  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS)
   if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
   return coarse.filter((reader) => {
     const run = /^run:(\d+)$/.exec(reader)

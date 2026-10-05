@@ -22,14 +22,14 @@ import {
 } from './board-service.ts'
 
 const BOARD_READ_REFRESH_BUDGET_MS = 500
-export const BOARD_MONITOR_REFRESH_BUDGET_MS = 500
+const BOARD_MONITOR_REFRESH_BUDGET_MS = 500
 const BOARD_PROMPT_REFRESH_BUDGET_MS = 750
 export const BOARD_ASK_REFRESH_BUDGET_MS = 500
 
 const sessionReader = (env: Record<string, string | undefined>) =>
   architectIdentity(env)?.session ?? OPERATOR_READER
 
-export type BoardDeliveryNotice = {
+type BoardDeliveryNotice = {
   id: string
   text: string
   ackRequired: boolean
