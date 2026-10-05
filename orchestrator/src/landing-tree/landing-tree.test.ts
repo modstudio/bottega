@@ -81,7 +81,11 @@ describe('landing-tree decisions', () => {
     [
       true,
       false,
-      { action: 'keep', reason: 'landing tree held by session owner: branch has not landed' },
+      {
+        action: 'keep',
+        reason:
+          'landing tree held by session owner: branch has not landed; session owner releases it with orch tree remove <path>',
+      },
     ],
   ] as const)('decides release from clean=%s landed=%s', (clean, landed, expected) => {
     expect(
@@ -92,6 +96,7 @@ describe('landing-tree decisions', () => {
           treeExists: true,
           status: 'ok',
           landingInFlight: false,
+          explicitTreeRemovalRequested: false,
         },
         clean,
         landed,
@@ -106,6 +111,47 @@ describe('landing-tree decisions', () => {
       treeExists: false,
       status: 'ok',
       landingInFlight: false,
+      explicitTreeRemovalRequested: false,
+    }
+    expect(landingTreeReleaseDecision(facts, false, false)).toEqual({ action: 'release' })
+    expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, false, false)).toEqual({
+      action: 'keep',
+      reason: 'landing tree held by session owner: landing is in flight',
+    })
+    expect(landingTreeReleaseDecision({ ...facts, status: 'running' }, false, false)).toEqual({
+      action: 'keep',
+      reason: 'landing tree held by session owner: conversation is running',
+    })
+  })
+
+  test('explicit removal releases a present clean tree before its branch lands', () => {
+    const facts = {
+      job: LANDING_TREE_JOB,
+      sessionId: 'owner',
+      treeExists: true,
+      status: 'ok',
+      landingInFlight: false,
+      explicitTreeRemovalRequested: true,
+    }
+    expect(landingTreeReleaseDecision(facts, true, false)).toEqual({ action: 'release' })
+    expect(landingTreeReleaseDecision(facts, false, false)).toEqual({
+      action: 'keep',
+      reason: 'landing tree held by session owner: tree is dirty',
+    })
+    expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, true, false)).toEqual({
+      action: 'keep',
+      reason: 'landing tree held by session owner: landing is in flight',
+    })
+  })
+
+  test('explicit removal leaves absent-tree holds unchanged', () => {
+    const facts = {
+      job: LANDING_TREE_JOB,
+      sessionId: 'owner',
+      treeExists: false,
+      status: 'ok',
+      landingInFlight: false,
+      explicitTreeRemovalRequested: true,
     }
     expect(landingTreeReleaseDecision(facts, false, false)).toEqual({ action: 'release' })
     expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, false, false)).toEqual({
@@ -127,6 +173,7 @@ describe('landing-tree decisions', () => {
           treeExists: true,
           status: 'ok',
           landingInFlight: false,
+          explicitTreeRemovalRequested: false,
         },
         false,
         false,

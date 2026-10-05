@@ -20,6 +20,7 @@ test('an absent terminal landing tree is releasable unless its branch is landing
     status: 'ok',
     treeExists: false,
     landingInFlight: false,
+    explicitTreeRemovalRequested: false,
   }
 
   expect(observeLandingTreeRelease(row)).toEqual({ action: 'release' })

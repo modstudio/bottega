@@ -52,7 +52,7 @@ export function landingTreeCommandBase(trunk: string | undefined): string {
 
 export type LandingTreeReleaseDecision = { action: 'release' } | { action: 'keep'; reason: string }
 
-/** Sweep releases an absent terminal landing tree, or a clean present tree whose branch landed. */
+/** Release an absent terminal landing tree, or a present tree when its release policy permits. */
 export function landingTreeReleaseDecision(
   row: {
     job: string
@@ -60,6 +60,7 @@ export function landingTreeReleaseDecision(
     treeExists: boolean
     status: string
     landingInFlight: boolean
+    explicitTreeRemovalRequested: boolean
   },
   clean: boolean,
   landed: boolean,
@@ -79,8 +80,19 @@ export function landingTreeReleaseDecision(
     return { action: 'release' }
   }
   if (!clean) return { action: 'keep', reason: `landing tree held by ${owner}: tree is dirty` }
+  if (row.explicitTreeRemovalRequested) {
+    if (row.landingInFlight) {
+      return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+    }
+    return { action: 'release' }
+  }
   if (!landed)
-    return { action: 'keep', reason: `landing tree held by ${owner}: branch has not landed` }
+    return {
+      action: 'keep',
+      reason:
+        `landing tree held by ${owner}: branch has not landed; ` +
+        `${owner} releases it with orch tree remove <path>`,
+    }
   return { action: 'release' }
 }
 
