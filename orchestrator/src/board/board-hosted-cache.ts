@@ -5,8 +5,8 @@ import { hostname } from 'node:os'
 import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type RecordApiClient,
-  recordApiClient,
   RecordApiRequestError,
+  recordApiClient,
 } from '../record/record-api-client.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
@@ -203,7 +203,11 @@ export async function refreshHostedBoard(
   try {
     if (boardMode('shared', env, database) === 'local') return 'local'
   } catch (error) {
-    recordRefresh(database, now(), `failed: ${error instanceof Error ? error.message : String(error)}`)
+    recordRefresh(
+      database,
+      now(),
+      `failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
     return 'failed'
   }
   try {

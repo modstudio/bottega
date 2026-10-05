@@ -5,9 +5,9 @@ import { db } from '../database/db.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
+  BOARD_IDENTITY_REFRESH_INTERVAL_MS,
   BOARD_REFRESH_CURSOR_KEY,
   BOARD_REFRESH_OUTCOME_KEY,
-  BOARD_IDENTITY_REFRESH_INTERVAL_MS,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   claimCachedHosted,
@@ -224,8 +224,12 @@ test('routing narrows own-user audiences and withholds questions from worker cha
 
 test('reader routing covers local audiences, context, hosted run ids, nobody here, and reply participants', async () => {
   const database = db()
-  database.query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  database.query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run('board_hosted_signed_in_user', userId)
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', userId)
   database
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
@@ -237,18 +241,27 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
       `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
        VALUES (?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
     )
-    .run('2026-10-05T11:30:00.000Z', JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']))
+    .run(
+      '2026-10-05T11:30:00.000Z',
+      JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']),
+    )
   const recordId = newRecordId()
   const root = database
     .query(
       `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn)
        VALUES (?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1) RETURNING id`,
     )
-    .get('2026-10-05T11:30:00.000Z', JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']), recordId) as { id: number }
+    .get(
+      '2026-10-05T11:30:00.000Z',
+      JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']),
+      recordId,
+    ) as { id: number }
   const clock = Date.parse('2026-10-05T12:02:00.000Z')
   const addressed = (audience: string, reader: string, tags: HostedBoardChange['tags'] = []) =>
     cachedMessageAddressed({ message: message({ audience }), tags }, reader, clock, database)
-  const matching = [{ kind: 'path' as const, value: 'orchestrator/src/board/**', origin: 'sender' as const }]
+  const matching = [
+    { kind: 'path' as const, value: 'orchestrator/src/board/**', origin: 'sender' as const },
+  ]
   const missing = [{ kind: 'path' as const, value: 'hub/web/**', origin: 'sender' as const }]
   expect(addressed('project:cache-project', 'cache-reader', matching)).toBe(true)
   expect(addressed('project:cache-project', 'cache-reader', missing)).toBe(false)
@@ -268,13 +281,28 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     ),
   ).toBe(false)
 
-  const threadRoot = message({ kind: 'question', audience: 'session:someone-else', authorSession: 'cache-reader' })
+  const threadRoot = message({
+    kind: 'question',
+    audience: 'session:someone-else',
+    authorSession: 'cache-reader',
+  })
   database
-    .query('INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)')
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
     .run(threadRoot.id, threadRoot.kind, null, threadRoot.revision, JSON.stringify(threadRoot))
-  const reply = message({ kind: 'reply', threadRootId: threadRoot.id, audience: null, createdAt: '2026-10-05T12:00:01.000Z' })
-  expect(cachedMessageAddressed({ message: reply, tags: [] }, 'cache-reader', clock, database)).toBe(true)
-  expect(cachedMessageAddressed({ message: reply, tags: [] }, 'not-a-participant', clock, database)).toBe(false)
+  const reply = message({
+    kind: 'reply',
+    threadRootId: threadRoot.id,
+    audience: null,
+    createdAt: '2026-10-05T12:00:01.000Z',
+  })
+  expect(
+    cachedMessageAddressed({ message: reply, tags: [] }, 'cache-reader', clock, database),
+  ).toBe(true)
+  expect(
+    cachedMessageAddressed({ message: reply, tags: [] }, 'not-a-participant', clock, database),
+  ).toBe(false)
 })
 
 test('a local delivery stamp suppresses a repeat and its failed hosted write retries on refresh', async () => {
@@ -332,23 +360,26 @@ test('an adopted install without record configuration records a failed refresh w
 test('refresh stops at its budget, keeps the last page cursor, and resumes from it', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const calls: string[] = []
-  let clock = 0
+  let clockCalls = 0
+  let resumed = false
   const full = Array.from({ length: 100 }, () => change(message()))
   const client = {
     ...createMemoryRecordApiClient(),
     listBoardChanges: async ({ after }: { after?: string }) => {
       calls.push(after ?? '0')
-      clock = 10
       return after === '0'
         ? { items: full, highestRevision: '100' }
         : { items: [], highestRevision: null }
     },
   }
-  await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now: () => clock })
+  const now = () => (resumed ? 20 : clockCalls++ < 3 ? 0 : 10)
+  await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now })
   expect(calls).toEqual(['0'])
-  expect(db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_CURSOR_KEY)).toEqual({ value: '100' })
-  clock = 20
-  await refreshHostedBoard({ budgetMs: 50, env: { ORCH_RECORD_API_URL: 'x' }, client, now: () => clock })
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_CURSOR_KEY),
+  ).toEqual({ value: '100' })
+  resumed = true
+  await refreshHostedBoard({ budgetMs: 50, env: { ORCH_RECORD_API_URL: 'x' }, client, now })
   expect(calls).toEqual(['0', '100'])
 })
 
@@ -364,47 +395,97 @@ test('identity is fetched only when absent or older than its refresh interval', 
     },
     listBoardChanges: async () => ({ items: [], highestRevision: null }),
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client, now: () => clock })
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client, now: () => clock + 1 })
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client,
+    now: () => clock,
+  })
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client,
+    now: () => clock + 1,
+  })
   clock += BOARD_IDENTITY_REFRESH_INTERVAL_MS
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client, now: () => clock })
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client,
+    now: () => clock,
+  })
   expect(identities).toBe(2)
 })
 
 test('receipt flushing follows change fetch; network failure stays pending and refusal is recorded and cleared', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const cached = message()
-  const base = { ...createMemoryRecordApiClient(), listBoardChanges: async () => ({ items: [change(cached)], highestRevision: '1' }) }
+  const base = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => ({ items: [change(cached)], highestRevision: '1' }),
+  }
   await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: base })
-  await markCachedHostedDelivered('cache-reader', [cached.id], { client: { ...base, putBoardReceipt: async () => { throw new Error('offline') } } })
+  await markCachedHostedDelivered('cache-reader', [cached.id], {
+    client: {
+      ...base,
+      putBoardReceipt: async () => {
+        throw new Error('offline')
+      },
+    },
+  })
   const order: string[] = []
   await refreshHostedBoard({
     budgetMs: 1_000,
     env: { ORCH_RECORD_API_URL: 'x' },
     client: {
       ...base,
-      listBoardChanges: async () => { order.push('changes'); return { items: [], highestRevision: null } },
-      putBoardReceipt: async () => { order.push('receipt'); throw new Error('offline') },
+      listBoardChanges: async () => {
+        order.push('changes')
+        return { items: [], highestRevision: null }
+      },
+      putBoardReceipt: async () => {
+        order.push('receipt')
+        throw new Error('offline')
+      },
     },
   })
   expect(order).toEqual(['changes', 'receipt'])
-  expect(db().query('SELECT pending_sync FROM hosted_board_receipt_cache WHERE message_id=?').get(cached.id)).toEqual({ pending_sync: 1 })
+  expect(
+    db()
+      .query('SELECT pending_sync FROM hosted_board_receipt_cache WHERE message_id=?')
+      .get(cached.id),
+  ).toEqual({ pending_sync: 1 })
   await refreshHostedBoard({
     budgetMs: 1_000,
     env: { ORCH_RECORD_API_URL: 'x' },
-    client: { ...base, listBoardChanges: async () => ({ items: [], highestRevision: null }), putBoardReceipt: async () => { throw new RecordApiRequestError('receipt no longer visible', 'refused') } },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({ items: [], highestRevision: null }),
+      putBoardReceipt: async () => {
+        throw new RecordApiRequestError('receipt no longer visible', 'refused')
+      },
+    },
   })
-  expect(db().query('SELECT pending_sync,sync_error FROM hosted_board_receipt_cache WHERE message_id=?').get(cached.id)).toEqual({ pending_sync: 0, sync_error: 'receipt no longer visible' })
+  expect(
+    db()
+      .query('SELECT pending_sync,sync_error FROM hosted_board_receipt_cache WHERE message_id=?')
+      .get(cached.id),
+  ).toEqual({ pending_sync: 0, sync_error: 'receipt no longer visible' })
 })
 
 test('cache pruning removes an expired unaccepted thread and keeps an accepted thread', () => {
   const expired = '2025-01-01T00:00:00.000Z'
   const accepted = message({ expiresAt: expired, acceptedReplyId: newRecordId() })
   const unaccepted = message({ expiresAt: expired })
-  const put = db().query('INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)')
-  for (const row of [accepted, unaccepted]) put.run(row.id, row.kind, row.threadRootId, row.revision, JSON.stringify(row))
+  const put = db().query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  for (const row of [accepted, unaccepted])
+    put.run(row.id, row.kind, row.threadRootId, row.revision, JSON.stringify(row))
   expect(reapHostedBoardCache(Date.parse('2026-10-05T12:00:00.000Z'))).toBe(1)
-  expect(db().query('SELECT id FROM hosted_board_message_cache').all()).toEqual([{ id: accepted.id }])
+  expect(db().query('SELECT id FROM hosted_board_message_cache').all()).toEqual([
+    { id: accepted.id },
+  ])
 })
 
 test('audienceAtPosting uses session first_seen and chain-root start time in both directions', () => {
@@ -415,7 +496,12 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
        VALUES ('early-session','claude','architect','machine','cache-project','/tmp',NULL,?,?),
               ('late-session','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
     )
-    .run('2026-10-05T11:00:00.000Z', createdAt, '2026-10-05T13:00:00.000Z', '2026-10-05T13:00:00.000Z')
+    .run(
+      '2026-10-05T11:00:00.000Z',
+      createdAt,
+      '2026-10-05T13:00:00.000Z',
+      '2026-10-05T13:00:00.000Z',
+    )
   const earlyRun = database
     .query(
       `INSERT INTO run(started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
@@ -430,7 +516,9 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
     .get('2026-10-05T13:00:00.000Z') as { id: number }
   const cached = message()
   database
-    .query('INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)')
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
     .run(cached.id, cached.kind, null, cached.revision, JSON.stringify(cached))
   expect(cachedAudienceAtPosting(cached.id, 'early-session')).toBe(true)
   expect(cachedAudienceAtPosting(cached.id, 'late-session')).toBe(false)
@@ -440,7 +528,9 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
 
 test('interrupt routing admits claim-linked and own-operator ack notices but not another user', () => {
   const database = db()
-  database.query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run('board_hosted_signed_in_user', userId)
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', userId)
   database
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
@@ -450,16 +540,35 @@ test('interrupt routing admits claim-linked and own-operator ack notices but not
   const linked = message({ claimId: newRecordId() })
   const ownOperator = message({
     ackRequired: true,
-    origin: { kind: 'operator', session: null, harness: null, project: 'cache-project', runId: null },
+    origin: {
+      kind: 'operator',
+      session: null,
+      harness: null,
+      project: 'cache-project',
+      runId: null,
+    },
   })
   const otherOperator = message({
     ackRequired: true,
     authorUserId: newRecordId(),
-    origin: { kind: 'operator', session: null, harness: null, project: 'cache-project', runId: null },
+    origin: {
+      kind: 'operator',
+      session: null,
+      harness: null,
+      project: 'cache-project',
+      runId: null,
+    },
   })
-  const put = database.query('INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)')
-  for (const row of [linked, ownOperator, otherOperator]) put.run(row.id, row.kind, null, row.revision, JSON.stringify(row))
+  const put = database.query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  for (const row of [linked, ownOperator, otherOperator])
+    put.run(row.id, row.kind, null, row.revision, JSON.stringify(row))
   expect(
-    claimCachedHostedInterrupts('cache-reader', Date.parse('2026-10-05T12:02:00.000Z'), database).map((row) => row.noticeId),
+    claimCachedHostedInterrupts(
+      'cache-reader',
+      Date.parse('2026-10-05T12:02:00.000Z'),
+      database,
+    ).map((row) => row.noticeId),
   ).toEqual([`board:${linked.id}`, `board:${ownOperator.id}`])
 })

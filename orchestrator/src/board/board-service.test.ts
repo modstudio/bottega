@@ -61,7 +61,9 @@ test('recordPresence preserves first_seen after the first insert', () => {
   recordPresence(cwd, env, '2026-10-05T11:00:00.000Z')
   recordPresence(cwd, env, '2026-10-05T12:00:00.000Z')
   expect(
-    db().query('SELECT first_seen,last_seen FROM presence WHERE session_id=?').get(env.CLAUDE_CODE_SESSION_ID),
+    db()
+      .query('SELECT first_seen,last_seen FROM presence WHERE session_id=?')
+      .get(env.CLAUDE_CODE_SESSION_ID),
   ).toEqual({ first_seen: '2026-10-05T11:00:00.000Z', last_seen: '2026-10-05T12:00:00.000Z' })
 })
 

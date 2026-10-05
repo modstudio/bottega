@@ -170,12 +170,7 @@ export function registerBoardApiProofs(input: {
          (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
          VALUES (?,'claude','architect','machine-b',?,'/tmp',NULL,?,?)`,
       )
-      .run(
-        session,
-        PROJECT,
-        '2026-10-05T00:00:00.000Z',
-        '2098-01-01T00:00:00.000Z',
-      )
+      .run(session, PROJECT, '2026-10-05T00:00:00.000Z', '2098-01-01T00:00:00.000Z')
     return store
   }
 
