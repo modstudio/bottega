@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
@@ -50,7 +50,16 @@ const cachedFixture: CachedSessionContext = {
   version: 1,
   resolvedAt: '2026-09-28T12:34:56.000Z',
   project: 'cached-fixture',
-  rulings: { value: 'agent', scope: 'hosted user' },
+  hosted: {
+    user: { preset: 'autonomous', rulings: 'agent' },
+    space: { release: 'promote' },
+  },
+}
+
+const resolvedFixture = {
+  registered: true as const,
+  project: cachedFixture.project,
+  rulings: { value: 'agent' as const, scope: 'hosted user' },
   stages: [
     { stage: 'plan', agreed: true, value: 'auto', scope: 'hosted user', steps: 2 },
     { stage: 'review', agreed: true, value: 'ask', scope: 'project', steps: 1 },
@@ -62,29 +71,37 @@ const cachedFixture: CachedSessionContext = {
     landing: 'main',
     production: 'production',
   },
-}
+  text: '',
+} satisfies Parameters<typeof staleSessionContext>[0]
 
-test('stale cached stages downgrade auto and leave other levels unchanged', () => {
-  const slice = staleSessionContext(cachedFixture, 'offline')
+test('only cached hosted winners are marked stale and hosted auto is downgraded', () => {
+  const slice = staleSessionContext(resolvedFixture, cachedFixture.resolvedAt, 'offline')
   if (!slice.registered) throw new Error('expected a registered slice')
   expect(slice.stages).toEqual([
     { stage: 'plan', agreed: true, value: 'review', scope: 'hosted user (stale)', steps: 2 },
-    { stage: 'review', agreed: true, value: 'ask', scope: 'project (stale)', steps: 1 },
-    { stage: 'docs', agreed: true, value: 'review', scope: 'local user (stale)', steps: 1 },
+    { stage: 'review', agreed: true, value: 'ask', scope: 'project', steps: 1 },
+    { stage: 'docs', agreed: true, value: 'review', scope: 'local user', steps: 1 },
   ])
-  expect(slice.release).toEqual(cachedFixture.release)
+  expect(slice.rulings).toEqual({ value: 'agent', scope: 'hosted user (stale)' })
+  expect(slice.release).toEqual({ ...resolvedFixture.release, scope: 'hosted space (stale)' })
 })
 
 test('stale cached context starts with the stale header', () => {
-  const slice = staleSessionContext(cachedFixture, 'hosted API unavailable')
+  const slice = staleSessionContext(
+    resolvedFixture,
+    cachedFixture.resolvedAt,
+    'hosted API unavailable',
+  )
   if (!slice.registered) throw new Error('expected a registered slice')
   expect(slice.text.split('\n')[0]).toBe(
-    'autonomy is stale: last read 2026-09-28T12:34:56.000Z; hosted API unavailable; auto stages are shown as review until a fresh read succeeds',
+    'autonomy is stale: last read 2026-09-28T12:34:56.000Z; hosted API unavailable; auto stages won by the hosted profile are shown as review until a fresh read succeeds',
   )
 })
 
 test('stale cached context JSON includes its status and resolution time', () => {
-  const json = JSON.parse(JSON.stringify(staleSessionContext(cachedFixture, 'offline')))
+  const json = JSON.parse(
+    JSON.stringify(staleSessionContext(resolvedFixture, cachedFixture.resolvedAt, 'offline')),
+  )
   expect(json.stale).toBe(true)
   expect(json.resolvedAt).toBe('2026-09-28T12:34:56.000Z')
 })
@@ -330,7 +347,7 @@ test('a workflow catalogue with no canon steps still reports resolved canon auto
   expect(slice.text as string).toContain('\ncanon: per step (built-in)\n')
 })
 
-test('a hosted-read failure serves the cached successful resolution', async () => {
+test('a hosted-read failure combines live local layers with cached hosted layers', async () => {
   const name = 'session-context-stale-adapter'
   const path = repository(name)
   upsertProject({
@@ -342,12 +359,19 @@ test('a hosted-read failure serves the cached successful resolution', async () =
       trunk: 'main',
       productionBranch: 'production',
       docs: { protocol: 'orch-docs' },
-      autonomy: { stages: { plan: 'auto', review: 'ask' }, release: 'promote' },
+      autonomy: { stages: { plan: 'auto' } },
     },
   })
   const resolvedAt = new Date('2026-09-28T18:00:00.000Z')
   await contextJson(path, {
-    clientFactory: () => ({ listEntries: async () => [] }) as never,
+    clientFactory: () =>
+      ({
+        listEntries: async () => [
+          { scope: 'user', key: 'autonomy.stage.review', value: 'auto' },
+          { scope: 'user', key: 'autonomy.rulings', value: 'user' },
+          { scope: 'space', key: 'autonomy.release', value: 'push' },
+        ],
+      }) as never,
     now: () => resolvedAt,
   })
 
@@ -363,13 +387,47 @@ test('a hosted-read failure serves the cached successful resolution', async () =
   expect(stale.stale).toBe(true)
   expect(stale.resolvedAt).toBe(resolvedAt.toISOString())
   expect(stale.text).toStartWith(
-    `autonomy is stale: last read ${resolvedAt.toISOString()}; record is offline; auto stages are shown as review until a fresh read succeeds`,
+    `autonomy is stale: last read ${resolvedAt.toISOString()}; record is offline; auto stages won by the hosted profile are shown as review until a fresh read succeeds`,
   )
-  expect(stale.text).toContain('plan: review (project (stale))')
-  expect(stale.text).toContain('review: ask (project (stale))')
-  expect(stale.text).toContain(
-    'release: promote (land to main, then promote to production) (project)',
-  )
+  expect(stale.text).toContain('plan: auto (project)')
+  expect(stale.text).toContain('review: review (hosted user (stale))')
+  expect(stale.text).toContain('rulings: user (hosted user (stale))')
+  expect(stale.text).toContain('release: push (push the branch only) (hosted space (stale))')
+})
+
+test('a machine auto winner stays auto and does not make the context stale', async () => {
+  const name = 'session-context-live-machine-winner'
+  const path = repository(name)
+  const config = join(stateRoot, `${name}-config`)
+  mkdirSync(config)
+  upsertProject({
+    name,
+    path,
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+  await contextJson(path, {
+    configEnvironment: { BOTTEGA_CONFIG_HOME: config },
+    clientFactory: () =>
+      ({
+        listEntries: async () => [{ scope: 'user', key: 'autonomy.stage.plan', value: 'ask' }],
+      }) as never,
+  })
+  writeFileSync(join(config, 'machine.toml'), '[autonomy.stages]\nplan = "auto"\n')
+
+  const slice = await contextJson(path, {
+    configEnvironment: { BOTTEGA_CONFIG_HOME: config },
+    clientFactory: () =>
+      ({
+        listEntries: async () => {
+          throw new Error('record is offline')
+        },
+      }) as never,
+  })
+
+  expect(slice.stale).toBeUndefined()
+  expect(slice.text).toContain('plan: auto (local user)')
+  expect(slice.text).toStartWith(`Autonomy for ${name}, resolved now from ${PLATFORM_NAME}`)
 })
 
 test('a hosted-read failure without a cache serves the local-scope resolution', async () => {
@@ -403,6 +461,44 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
   expect(degraded.text).toStartWith(`Autonomy for ${name}, resolved now from ${PLATFORM_NAME}`)
 })
 
+test('an earlier-shape cache without hosted inputs is ignored', async () => {
+  const name = 'session-context-ignores-old-cache'
+  const path = repository(name)
+  upsertProject({
+    name,
+    path,
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+  await contextJson(path, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => [{ scope: 'user', key: 'autonomy.stage.plan', value: 'auto' }],
+      }) as never,
+  })
+  const cache = join(
+    stateRoot,
+    'orchestrator',
+    'autonomy-context',
+    `${Buffer.from(name).toString('base64url')}.json`,
+  )
+  const earlier = JSON.parse(readFileSync(cache, 'utf8')) as Record<string, unknown>
+  delete earlier.hosted
+  writeFileSync(cache, `${JSON.stringify(earlier)}\n`)
+
+  const slice = await contextJson(path, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => {
+          throw new Error('record is offline')
+        },
+      }) as never,
+  })
+
+  expect(slice.stale).toBeUndefined()
+  expect(slice.text).toContain('plan: auto (built-in)')
+})
+
 test('a degraded resolution does not overwrite the successful cache', async () => {
   const name = 'session-context-degraded-preserves-cache'
   const path = repository(name)
@@ -414,12 +510,14 @@ test('a degraded resolution does not overwrite the successful cache', async () =
       gate: 'bun run check',
       trunk: 'main',
       docs: { protocol: 'orch-docs' },
-      autonomy: { stages: { plan: 'auto' } },
     },
   })
   const resolvedAt = new Date('2026-09-28T19:00:00.000Z')
   await contextJson(path, {
-    clientFactory: () => ({ listEntries: async () => [] }) as never,
+    clientFactory: () =>
+      ({
+        listEntries: async () => [{ scope: 'user', key: 'autonomy.stage.plan', value: 'auto' }],
+      }) as never,
     now: () => resolvedAt,
   })
 

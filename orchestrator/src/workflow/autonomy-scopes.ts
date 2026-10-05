@@ -25,6 +25,7 @@ import {
 import type { CatalogueStep } from './step-catalogue.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
+export const HOSTED_AUTONOMY_SCOPE_NAMES = ['hosted user', 'hosted space'] as const
 type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
 const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   parseStoredAutonomy(
@@ -77,6 +78,7 @@ export async function resolveProjectAutonomy(
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
   stages: readonly AutonomyStage[] = [],
+  hostedFallback?: { user: AutonomySettings; space: AutonomySettings },
 ): Promise<AutonomyResolution> {
   if (session.release !== undefined) {
     throw new Error(
@@ -87,6 +89,10 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
+  const hostedSettings =
+    hosted.status === 'unavailable' && hostedFallback
+      ? hostedFallback
+      : { user: hosted.user, space: hosted.space }
   const resolution = resolveAutonomy(
     steps,
     [
@@ -94,15 +100,19 @@ export async function resolveProjectAutonomy(
       { name: 'local project', settings: local.project },
       { name: 'project', settings: registered.settings.autonomy },
       { name: 'local user', settings: local.user },
-      { name: 'hosted user', settings: hosted.user },
-      { name: 'hosted space', settings: hosted.space },
+      { name: HOSTED_AUTONOMY_SCOPE_NAMES[0], settings: hostedSettings.user },
+      { name: HOSTED_AUTONOMY_SCOPE_NAMES[1], settings: hostedSettings.space },
       builtInAutonomyScope(defaultPreset ?? builtInAutonomyPreset),
     ],
     workflow,
     stages,
   )
   if (hosted.status === 'available')
-    return { ...resolution, hosted: { status: hosted.status }, session }
+    return {
+      ...resolution,
+      hosted: { status: hosted.status, user: hosted.user, space: hosted.space },
+      session,
+    }
   if (hosted.status === 'not-configured')
     return {
       ...resolution,
