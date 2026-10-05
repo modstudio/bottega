@@ -12,12 +12,18 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
-import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
+import {
+  formatCursorOpened,
+  formatCursorResumed,
+  workflowCursorReference,
+} from './workflow-cursor-format.ts'
 import {
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
+  type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import {
   type ClosedStep,
@@ -50,11 +56,7 @@ import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
-export type WorkflowCursorContext = {
-  session?: string | null
-  /** Used only for a keyless workflow when the harness supplies no session id. */
-  instance?: string
-}
+export type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 
 type CursorRow = SelectableCursorRow & {
   workflow_version: number
@@ -151,8 +153,12 @@ function insertCursor(
       )
     : null
   if (decideCursorStart(existing?.state ?? null) === 'retire') {
-    d.query(`UPDATE workflow_cursor SET instance_id=instance_id || '#' || id WHERE id=?`).run(
-      existing!.id,
+    vacateRetiredWorkflowKeySlot(
+      composition.project,
+      composition.workflow.slug,
+      composition.mode!.slug,
+      key,
+      d,
     )
   }
   const autonomySnapshot = autonomy
@@ -288,7 +294,7 @@ function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>)
   return (
     `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is at step ${active.n} ${active.slug}; ` +
     `fetch that step, or close it with: orch workflow next ${row.workflow_slug} --project ${row.project} ` +
-    `--mode ${row.mode_slug}${args} --note "<how its floor was met>"`
+    `--mode ${row.mode_slug}${workflowCursorReference(row.id).cli}${args} --note "<how its floor was met>"`
   )
 }
 
@@ -432,11 +438,22 @@ function getWorkflowStepWithCursorImpl(
     input.selection,
     cursorAutonomy(row),
   )
-  const key = row.workflow_key ? `for ${row.workflow_key}` : 'unassigned'
   const openNotice = opensCursor
-    ? `Cursor ${row.id} was opened for workflow ${slug} and mode ${mode}, ${key}, at step 1 ${row.step_slug}.`
+    ? formatCursorOpened({
+        cursor: row.id,
+        workflow: slug,
+        mode,
+        key: row.workflow_key,
+        step: 1,
+        stepSlug: row.step_slug,
+      })
     : !cursor && row.workflow_key
-      ? `Cursor ${row.id} is already open at step ${row.ordinal + 1} ${row.step_slug} for ${row.workflow_key}.`
+      ? formatCursorResumed({
+          cursor: row.id,
+          key: row.workflow_key,
+          step: row.ordinal + 1,
+          stepSlug: row.step_slug,
+        })
       : undefined
   const redirectNotice =
     decision.slug !== requested.slug
@@ -737,9 +754,17 @@ function abandonWorkflowCursorImpl(
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
     )
-  slug = row.workflow_slug
-  project = row.project
-  mode = row.mode_slug
+  return abandonSelectedWorkflowCursor(row, reason, context, d)
+}
+
+function abandonSelectedWorkflowCursor(
+  row: CursorRow,
+  reason: string,
+  context: WorkflowCursorContext,
+  d: Database,
+): string {
+  const slug = row.workflow_slug
+  const mode = row.mode_slug
   if (row.state === 'done' || row.state === 'abandoned')
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
   const at = nowIso()
@@ -777,6 +802,19 @@ export function abandonWorkflowCursor(
     () => abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
     d,
   )
+}
+
+export function abandonWorkflowCursorByHandle(
+  cursor: number,
+  reason: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): string {
+  if (!reason?.trim()) throw new Error('--reason is required')
+  return writeTransaction(() => {
+    const row = selectWorkflowCursor({}, cursor, context.session, d) as CursorRow
+    return abandonSelectedWorkflowCursor(row, reason, context, d)
+  }, d)
 }
 
 function awaitWorkflowRulingImpl(

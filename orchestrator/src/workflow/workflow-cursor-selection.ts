@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowMode, showWorkflow } from './workflows.ts'
 
@@ -12,6 +13,8 @@ export type WorkflowCursorIdentity = {
   mode?: string
   key?: string
 }
+
+export type WorkflowCursorContext = { session?: string | null; instance?: string }
 
 export type SelectableCursorRow = {
   id: number
@@ -121,21 +124,22 @@ export function selectUntouchedKeylessWorkflowCursor(
       `SELECT * FROM workflow_cursor
        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
          AND session_id=? AND state NOT IN ('done','abandoned')
-         AND ordinal=0 AND json_array_length(closed)=0 ORDER BY id`,
+         AND ordinal=0 ORDER BY id`,
     )
-    .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
+    .all(identity.project, identity.workflow, identity.mode, ownerSession)
+    .filter(
+      (row) => !hasClosedStep((row as SelectableCursorRow & { closed: string }).closed),
+    ) as SelectableCursorRow[]
   if (rows.length > 1) refuseAmbiguousKeylessCursors(rows)
   return rows[0] ?? null
 }
-
-export type CursorModeContext = { session?: string | null; instance?: string }
 
 export function resolveWorkflowCursorMode(
   slug: string,
   project: string,
   requested: string | undefined,
   args: Record<string, string>,
-  context: CursorModeContext,
+  context: WorkflowCursorContext,
   caller: string,
   remedy: string,
   d: Database = db(),

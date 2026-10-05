@@ -36,7 +36,7 @@ import { getReview, listReviews } from '../review/review.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import {
-  abandonWorkflowCursor,
+  abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   getWorkflowStepWithCursor,
   mcpWorkflowCursorContext,
@@ -636,18 +636,7 @@ export function createDocsMcpServer(): McpServer {
       }),
     },
     async ({ cursor, reason }) =>
-      text(
-        abandonWorkflowCursor(
-          '',
-          '',
-          '',
-          {},
-          reason,
-          mcpWorkflowCursorContext(),
-          undefined,
-          cursor,
-        ),
-      ),
+      text(abandonWorkflowCursorByHandle(cursor, reason, mcpWorkflowCursorContext())),
   )
 
   server.registerTool(

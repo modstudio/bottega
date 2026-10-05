@@ -24,6 +24,9 @@ export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 
 export const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
+export const hasClosedStep = (trail: string): boolean =>
+  (JSON.parse(trail) as CursorTrailEntry[]).some(isClosedStep)
+
 export function currentStepActivatedAt(
   row: { ordinal: number; created_at: string; closed: string; step_slug: string },
   cursor: string,

@@ -188,6 +188,11 @@ describe('workflow cursor adapter', () => {
           'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"',
       },
     )
+    expect(decideCursorArguments({}, { key: 'DEV-822' }, none)).toEqual({
+      action: 'merge',
+      args: {},
+      rebindings: [],
+    })
   })
 
   test('next advances with a rebound argument from the pinned workflow and records the event', () => {
@@ -873,7 +878,7 @@ describe('workflow cursor adapter', () => {
       d,
     )
     expect(renderWorkflowComposition(recomposed)).toContain(
-      'Cursor 1 is already open at step 2 lens for DEV-822, (running); continue with next. This cursor was driven by session session-one and is now yours.',
+      'Cursor 1 is already open at step 2 lens for DEV-822. This cursor was driven by session session-one and is now yours.',
     )
     expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
       session_id: 'session-two',

@@ -2,6 +2,7 @@
 /** Merges late workflow arguments and records the explicitly rebindable changes. */
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { productionWorkflows, showWorkflow } from './workflows.ts'
 
@@ -33,6 +34,7 @@ export function decideCursorArguments(
   for (const [name, suppliedValue] of Object.entries(supplied)) {
     if (!suppliedValue.trim()) continue
     const storedValue = stored[name]
+    if (name === 'key' && !storedValue?.trim()) continue
     if (storedValue?.trim() && storedValue !== suppliedValue) {
       if (name !== 'key' && rebindable.has(name)) {
         merged[name] = suppliedValue
@@ -76,7 +78,9 @@ export function applyCursorArguments(
     rebindableArguments(row, d),
   )
   if (decision.action === 'refuse')
-    throw new Error(`${decision.reason}; orch workflow abandon --cursor ${row.id} --reason "<why>"`)
+    throw new Error(
+      `${decision.reason}; orch workflow abandon${workflowCursorReference(row.id).cli} --reason "<why>"`,
+    )
   const encoded = JSON.stringify(decision.args)
   if (decision.rebindings.length) {
     const at = nowIso()

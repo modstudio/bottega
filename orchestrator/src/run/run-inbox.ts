@@ -4,6 +4,7 @@ import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -110,7 +111,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
       question: row.question,
       answer_command: canAnswer
         ? `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
-          `--mode ${shellWord(row.mode_slug)} --cursor ${row.cursor_id}${flags} --ruling "<ruling>"`
+          `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_id).cli}${flags} --ruling "<ruling>"`
         : null,
       ownership_notice: canAnswer
         ? null

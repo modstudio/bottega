@@ -17,6 +17,7 @@ import {
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
+  abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   cliWorkflowCursorContext,
   composeWorkflowWithCursor,
@@ -205,6 +206,11 @@ function abandonCommand(argv: string[], print: (value: unknown, line?: string) =
   const slug = argv[2]?.startsWith('--') ? '' : (argv[2] ?? '')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  if (cursor && !project) {
+    const result = abandonWorkflowCursorByHandle(cursor, flagValue(argv, 'reason'), context)
+    print(result, result)
+    return
+  }
   const mode = resolveWorkflowCursorMode(
     slug,
     project ?? '',

@@ -1,3 +1,8 @@
+import {
+  formatCursorOpened,
+  formatCursorResumed,
+  workflowCursorReference,
+} from './workflow-cursor-format.ts'
 import { type FloorKind, floorGuidance } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -44,13 +49,14 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     : ''
   const continuation = result.cursor
     ? result.cursor.opened
-      ? `Cursor ${result.cursor.id} was opened for workflow ${result.workflow.slug} and mode ${mode.slug}, ${result.arguments.key ? `for ${result.arguments.key}` : 'unassigned'}, at step 1 ${first.slug}.${takeover}`
-      : `Cursor ${result.cursor.id} is already open at step ${result.cursor.n} ${result.cursor.slug} for ${result.arguments.key}, (${result.cursor.state}); continue with next.${takeover}`
+      ? `${formatCursorOpened({ cursor: result.cursor.id, workflow: result.workflow.slug, mode: mode.slug, key: result.arguments.key ?? '', step: 1, stepSlug: first.slug })}${takeover}`
+      : `${formatCursorResumed({ cursor: result.cursor.id, key: result.arguments.key ?? '', step: result.cursor.n, stepSlug: result.cursor.slug })}${takeover}`
     : `Begin now by fetching step 1, ${first.slug}.${takeover}`
-  const cursor = result.cursor ? ` --cursor ${result.cursor.id}` : ''
+  const reference = result.cursor ? workflowCursorReference(result.cursor.id) : null
+  const cursor = reference?.cli ?? ''
   const nextCommand = `orch workflow next ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --note "<how the floor was met>"`
   const awaitCommand = `orch workflow await ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --question "..."`
-  const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", cursor ${result.cursor?.id ?? 'omitted'}, args ${JSON.stringify(result.arguments)}), or with \`orch workflow step ${result.workflow.slug} ${first.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
+  const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", ${reference?.mcp ?? 'cursor omitted'}, args ${JSON.stringify(result.arguments)}), or with \`orch workflow step ${result.workflow.slug} ${first.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
   return [
     `${result.workflow.title} — ${mode.title}`,
     result.workflow.description,
@@ -114,8 +120,9 @@ export function renderWorkflowStep(step: WorkflowStep): string {
       : step.resolvedAutonomy.value === 'review'
         ? 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
         : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-  const cursor = step.cursor ? ` with cursor ${step.cursor}` : ''
-  const cliCursor = step.cursor ? ` --cursor ${step.cursor}` : ''
+  const reference = step.cursor ? workflowCursorReference(step.cursor) : null
+  const cursor = reference ? ` with ${reference.mcp}` : ''
+  const cliCursor = reference?.cli ?? ''
   const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`orch workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
   const pointer =
     step.next === undefined

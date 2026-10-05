@@ -13,6 +13,42 @@ type AdoptionCursor = {
   args: string
 }
 
+export function vacateRetiredWorkflowKeySlot(
+  project: string,
+  workflow: string,
+  mode: string,
+  key: string,
+  d: Database,
+): void {
+  d.query(
+    `UPDATE workflow_cursor SET instance_id=instance_id || '#' || id
+     WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
+       AND state IN ('done','abandoned')`,
+  ).run(project, workflow, mode, key)
+}
+
+function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): void {
+  vacateRetiredWorkflowKeySlot(row.project, row.workflow_slug, row.mode_slug, key, d)
+  const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
+  d.query(
+    "UPDATE workflow_cursor SET workflow_key=?,instance_id='',args=?,updated_at=? WHERE id=?",
+  ).run(key, JSON.stringify(adoptedArgs), nowIso(), row.id)
+  row.workflow_key = key
+  row.args = JSON.stringify(adoptedArgs)
+  const questions = d
+    .query<{ id: number }, [number]>(
+      'SELECT id FROM question WHERE workflow_cursor_id=? ORDER BY id',
+    )
+    .all(row.id)
+  for (const question of questions) {
+    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE id=?').run(
+      key,
+      question.id,
+    )
+    enqueueQuestionRecord(d, question.id)
+  }
+}
+
 export function adoptWorkflowTask(
   row: AdoptionCursor,
   suppliedTask: string | undefined,
@@ -38,30 +74,5 @@ export function adoptWorkflowTask(
     throw new Error(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
     )
-  d.query(
-    `UPDATE workflow_cursor SET instance_id=instance_id || '#' || id
-     WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
-       AND state IN ('done','abandoned')`,
-  ).run(row.project, row.workflow_slug, row.mode_slug, key)
-  const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
-  d.query('UPDATE workflow_cursor SET workflow_key=?,args=?,updated_at=? WHERE id=?').run(
-    key,
-    JSON.stringify(adoptedArgs),
-    nowIso(),
-    row.id,
-  )
-  row.workflow_key = key
-  row.args = JSON.stringify(adoptedArgs)
-  const questions = d
-    .query<{ id: number }, [number]>(
-      'SELECT id FROM question WHERE workflow_cursor_id=? ORDER BY id',
-    )
-    .all(row.id)
-  for (const question of questions) {
-    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE id=?').run(
-      key,
-      question.id,
-    )
-    enqueueQuestionRecord(d, question.id)
-  }
+  assignWorkflowTaskKey(row, key, d)
 }
