@@ -27,7 +27,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_ask',
     {
-      description: 'Ask a local architect-board question.',
+      description: 'Ask an architect-board question.',
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -54,7 +54,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_reply',
     {
-      description: 'Reply to a local board notice or question thread.',
+      description: 'Reply to a board notice or question thread.',
       inputSchema: z.object({
         root_id: z.string().min(1),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
@@ -65,7 +65,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_thread',
     {
-      description: 'Read a local board thread.',
+      description: 'Read a board thread.',
       inputSchema: z.object({ id: z.string().min(1) }),
       annotations: { readOnlyHint: true },
     },
@@ -93,7 +93,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_post',
     {
-      description: 'Post a local architect-board notice.',
+      description: 'Post an architect-board notice.',
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
