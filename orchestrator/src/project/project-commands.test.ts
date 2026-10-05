@@ -6,6 +6,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
@@ -36,13 +37,18 @@ async function runProject(
 }
 
 let priorRecordUrl: string | undefined
+let priorRecordApiUrl: string | undefined
 beforeAll(() => {
   priorRecordUrl = process.env.ORCH_RECORD_URL
+  priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
   process.env.ORCH_RECORD_URL = 'postgres://record.test/database'
+  process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
 })
 afterAll(() => {
   if (priorRecordUrl === undefined) delete process.env.ORCH_RECORD_URL
   else process.env.ORCH_RECORD_URL = priorRecordUrl
+  if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
 })
 
 describe('orch project retire', () => {
@@ -179,6 +185,7 @@ test('rename writes the hosted project once then updates the local name', async 
     'updated once-dst',
   )
   expect(hosted).toEqual([{ name: 'once-dst', previousName: 'once-src' }])
+  expect(readRecordInstallBinding().bound).toBe(true)
   expect(projectByName('once-src')).toBeNull()
   expect(projectByName('once-dst')?.path).toBe('/w/once-src')
 })

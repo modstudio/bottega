@@ -694,7 +694,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-auth-command-boundary',
     'orchestrator/src/record/record-auth-command.ts',
-    ['../../../shared/record-session.ts', './record-auth.ts', './record-session.ts'],
+    [
+      '../../../shared/record-session.ts',
+      './install-binding.ts',
+      './record-auth.ts',
+      './record-session.ts',
+    ],
     'Enforce the record-auth-command concern boundary.',
   ),
   boundary(
@@ -739,6 +744,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record/schema-question.ts',
       '../../../shared/record-space-membership.ts',
       '../database/db.ts',
+      './install-binding.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
       './outbox-dependency.ts',

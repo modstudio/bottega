@@ -10,6 +10,7 @@ import {
 } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { describeRecordInstallBinding, readRecordInstallBinding } from './install-binding.ts'
 import { machineId } from './machine-identity.ts'
 import { blockedByRetiredParentRows } from './outbox-dependency.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
@@ -168,6 +169,11 @@ export async function diagnoseRecord(
   const migrateUrl = input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL
   const urls = [recordUrl, migrateUrl].filter((url): url is string => Boolean(url))
   const checks: RecordDoctorCheck[] = []
+  checks.push({
+    name: 'install binding',
+    status: 'pass',
+    detail: describeRecordInstallBinding(readRecordInstallBinding(db())),
+  })
   checks.push(outboxQuarantineCheck(db()))
   checks.push(outboxRetiredParentCheck(db()))
   const run = async <T>(name: string, action: () => Promise<T>): Promise<T | undefined> => {

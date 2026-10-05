@@ -444,6 +444,13 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
+  module('orchestrator/src/project/project-write-decision.ts', []),
+  module('orchestrator/src/project/project-hosted-write.ts', [
+    '../record/install-binding.ts',
+    '../record/record-api-client.ts',
+    './project-settings.ts',
+    './project-write-decision.ts',
+  ]),
   module('orchestrator/src/release/release-decision.ts', []),
   module('orchestrator/src/release/release-service.ts', [
     '../database/db.ts',
