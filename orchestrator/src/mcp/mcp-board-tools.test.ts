@@ -56,3 +56,40 @@ test('board_post MCP schema mirrors the title size ceiling before service storag
     (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number }).count,
   ).toBe(0)
 })
+
+test('board_read MCP result is the delivery envelope with one normalized notice shape', async () => {
+  const posted = postNotice(
+    { audience: 'operator', title: 'MCP read shape', body: 'Read through the envelope.' },
+    {},
+  )
+  const identityKeys = [
+    'CLAUDE_CODE_SESSION_ID',
+    'CODEX_SESSION_ID',
+    'CODEX_THREAD_ID',
+    'ORCH_RUN_ID',
+    'ORCH_DEPTH',
+  ] as const
+  const identity = Object.fromEntries(identityKeys.map((key) => [key, process.env[key]]))
+  for (const key of identityKeys) delete process.env[key]
+  const result = await withBoardClient((client) =>
+    client.callTool({ name: 'board_read', arguments: {} }),
+  ).finally(() => {
+    for (const key of identityKeys) {
+      const value = identity[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  const parsed = JSON.parse((result.content as { type: 'text'; text: string }[])[0]!.text)
+  expect(parsed).toEqual({
+    notices: [
+      {
+        id: String(posted.id),
+        text: expect.stringContaining(`BOARD NOTICE ${posted.id}`),
+        ackRequired: false,
+        createdAt: expect.any(String),
+      },
+    ],
+    warning: null,
+  })
+})
