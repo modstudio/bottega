@@ -684,6 +684,7 @@ export function registerBoardApiProofs(input: {
       await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
     )
     expect((thread.root as { noteId: string }).noteId).toBe(firstNote)
+    expect((thread.root as { notePendingError: string | null }).notePendingError).toBeNull()
   })
 
   test('fail after complete is refused and leaves no error', async () => {
@@ -707,6 +708,11 @@ export function registerBoardApiProofs(input: {
         })
       ).status,
     ).toBe(200)
+    const before = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    const pendingBefore = (before.root as { notePendingError: string | null }).notePendingError
+    expect(pendingBefore).toBeNull()
     const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
       method: 'POST',
       headers: headers(tokenA),
@@ -716,12 +722,18 @@ export function registerBoardApiProofs(input: {
     const thread = await json(
       await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
     )
-    expect((thread.root as { notePendingError: string | null }).notePendingError).toBeNull()
+    expect((thread.root as { notePendingError: string | null }).notePendingError).toBe(
+      pendingBefore,
+    )
   })
 
   test('fail without a take is refused', async () => {
     const session = caseSession('filing-fail-without-take')
     const questionId = await askAndAnswer(session)
+    const before = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    const pendingBefore = (before.root as { notePendingError: string | null }).notePendingError
     const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
       method: 'POST',
       headers: headers(tokenA),
@@ -729,6 +741,12 @@ export function registerBoardApiProofs(input: {
     })
     expect(failed.status).toBe(409)
     expect(JSON.stringify(await failed.json())).toContain('not held')
+    const thread = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    expect((thread.root as { notePendingError: string | null }).notePendingError).toBe(
+      pendingBefore,
+    )
   })
 
   test('filing-fail secret-shaped error is refused without echoing the text', async () => {
@@ -743,6 +761,10 @@ export function registerBoardApiProofs(input: {
         })
       ).status,
     ).toBe(200)
+    const before = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    const pendingBefore = (before.root as { notePendingError: string | null }).notePendingError
     const secret = 'password=supersecretvalue'
     const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
       method: 'POST',
@@ -756,7 +778,17 @@ export function registerBoardApiProofs(input: {
     const thread = await json(
       await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
     )
-    expect((thread.root as { notePendingError: string | null }).notePendingError).toBeNull()
+    const pendingAfter = (thread.root as { notePendingError: string | null }).notePendingError
+    expect(pendingAfter).toBe(pendingBefore)
+    expect(`${pendingAfter ?? ''}`).not.toContain(secret)
+    expect(JSON.stringify(thread)).not.toContain(secret)
+    const retake = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
+      method: 'POST',
+      headers: headers(tokenA),
+      body: JSON.stringify({ authorSession: session }),
+    })
+    expect(retake.status).toBe(409)
+    expect(JSON.stringify(await retake.json())).toContain('in progress')
   })
 
   test('a post naming another user run is refused', async () => {
