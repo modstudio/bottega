@@ -27,8 +27,13 @@ export async function claimBoardNotices(
   input: { env?: Record<string, string | undefined>; budgetMs?: number } = {},
 ) {
   const env = input.env ?? process.env
-  await refreshHostedBoard({ budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS, env })
-  return [...claimNotices(all, env), ...claimCachedHosted(sessionReader(env), all)]
+  const refreshed = await refreshHostedBoard({
+    budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
+    env,
+  })
+  return refreshed === 'local'
+    ? claimNotices(all, env)
+    : [...claimNotices(all, env), ...claimCachedHosted(sessionReader(env), all)]
 }
 
 export async function readBoardNotices(
@@ -53,8 +58,10 @@ export async function claimRunBoardNotices(
   all = false,
   budgetMs = BOARD_PROMPT_REFRESH_BUDGET_MS,
 ) {
-  await refreshHostedBoard({ budgetMs })
-  return [...claimRunNotices(runId, all), ...claimCachedHosted(`run:${runId}`, all)]
+  const refreshed = await refreshHostedBoard({ budgetMs })
+  return refreshed === 'local'
+    ? claimRunNotices(runId, all)
+    : [...claimRunNotices(runId, all), ...claimCachedHosted(`run:${runId}`, all)]
 }
 
 export async function markRunBoardNoticesDelivered(

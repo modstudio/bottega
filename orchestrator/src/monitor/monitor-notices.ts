@@ -248,7 +248,8 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
 export async function claimMonitorNoticesWithHosted(
   ownerSession: string,
 ): Promise<MonitorNotice[]> {
-  await refreshHostedBoard({ budgetMs: BOARD_MONITOR_REFRESH_BUDGET_MS })
+  const refreshed = await refreshHostedBoard({ budgetMs: BOARD_MONITOR_REFRESH_BUDGET_MS })
+  if (refreshed === 'local') return claimMonitorNotices(ownerSession)
   return [
     ...claimMonitorNotices(ownerSession),
     ...claimCachedHostedInterrupts(ownerSession).map(
@@ -266,11 +267,11 @@ export async function claimMonitorNoticesWithHosted(
 }
 
 /** Acknowledge only rows the hook has already emitted to its consumer. */
-export async function markMonitorNoticesDelivered(
+export function markMonitorNoticesDelivered(
   ownerSession: string,
   ids: MonitorNotice['noticeId'][],
   deliveredAt = nowIso(),
-): Promise<void> {
+): void {
   requireRealSession(ownerSession, 'monitor notice acknowledgement')
   const parsed = ids.map((token) => {
     const match = /^(condition|landing|board):(.+)$/.exec(token)
@@ -311,8 +312,16 @@ export async function markMonitorNoticesDelivered(
     for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)
     markInterruptNoticesDelivered(ownerSession, [...localBoard], deliveredAt)
   }, database)
-  const hostedBoard = parsed
-    .filter(({ source, id }) => source === 'board' && !/^[1-9]\d*$/.test(id))
-    .map(({ id }) => id)
-  await markCachedHostedDelivered(ownerSession, hostedBoard, { clock: Date.parse(deliveredAt) })
+}
+
+export async function markMonitorNoticesDeliveredWithHosted(
+  ownerSession: string,
+  ids: MonitorNotice['noticeId'][],
+  deliveredAt = nowIso(),
+): Promise<void> {
+  markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
+  const hosted = ids
+    .map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '')
+    .filter((id) => id !== '' && !/^[1-9]\d*$/.test(id))
+  await markCachedHostedDelivered(ownerSession, hosted, { clock: Date.parse(deliveredAt) })
 }

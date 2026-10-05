@@ -57,6 +57,15 @@ class AssembleAdditionalContext(unittest.TestCase):
             ("notice one\n\nnotice two", ["7", "8"]),
         )
 
+    def test_board_slice_accepts_hosted_uuid_ids(self):
+        hosted = "01990000-0000-7000-8000-000000000099"
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{"id": hosted, "text": "hosted notice"}]),
+        )
+        self.assertEqual(session_brief._board_slice(completed), ("hosted notice", [hosted]))
+        self.assertTrue(session_brief._valid_notice_id(f"board:{hosted}"))
+
     def test_board_slice_rejects_a_non_digit_string_id(self):
         completed = SimpleNamespace(
             returncode=0,

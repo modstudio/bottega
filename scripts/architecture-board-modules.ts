@@ -86,6 +86,7 @@ export const boardModules: BoardModule[] = [
     'node:os',
     '../database/db.ts',
     '../project/projects.ts',
+    './board-hosted-cache.ts',
     './board-policy.ts',
     './board-render.ts',
     './board-store.ts',

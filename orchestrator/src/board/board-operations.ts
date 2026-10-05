@@ -24,6 +24,7 @@ import {
   type TakeClaimInput,
   takeClaim,
 } from './board-claim-service.ts'
+import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
   architectIdentity,
@@ -205,7 +206,7 @@ function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
   }
 }
 
-function localStatus(value: ReturnType<typeof noticeStatus>): BoardStatusResult {
+function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): BoardStatusResult {
   const row = value.row
   return {
     message: {
@@ -227,7 +228,7 @@ function localStatus(value: ReturnType<typeof noticeStatus>): BoardStatusResult 
           ? 'accepted'
           : row.withdrawn_at
             ? 'withdrawn'
-            : row.expires_at && Date.parse(row.expires_at) <= Date.now()
+            : row.expires_at && Date.parse(row.expires_at) <= clock
               ? 'expired'
               : 'open',
       acceptedReplyId: stringId(row.accepted_reply_id),
@@ -483,11 +484,11 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
   if (mode === 'local') acknowledgeNotice(parsed as number, c.env, c.clock)
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
-    // An acknowledged receipt never escalates; the cache change will first store the real posting-time value.
+    // An acknowledged receipt never escalates; uncached legacy rows safely use true.
     await hostedClient(c).putBoardReceipt({
       messageId: parsed as string,
       readerSession: session,
-      audienceAtPosting: true,
+      audienceAtPosting: cachedAudienceAtPosting(parsed as string, session) ?? true,
       acknowledged: true,
     })
   }
@@ -500,7 +501,7 @@ export async function boardStatus(id: string, inputContext?: Context) {
   const parsed = idForMode(id, mode)
   return mode === 'hosted'
     ? hostedStatus(await hostedClient(c).getBoardStatus(parsed as string))
-    : localStatus(noticeStatus(parsed as number, c.env, c.clock))
+    : localStatus(noticeStatus(parsed as number, c.env, c.clock), c.clock)
 }
 
 function hostedClaimRunId(runId: number | undefined, env: Environment): string | null | undefined {

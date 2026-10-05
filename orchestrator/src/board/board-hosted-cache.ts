@@ -259,6 +259,7 @@ function localPresence(database: Database): PresenceFact[] {
 }
 
 const readerMatchesAuthor = (message: HostedBoardMessage, reader: string, database: Database) => {
+  if (message.authorUserId !== meta(database, BOARD_REFRESH_USER_KEY)) return false
   if (reader === OPERATOR_READER) return message.authorSession === null
   const run = /^run:(\d+)$/.exec(reader)
   if (!run) return message.authorSession === reader
@@ -275,6 +276,20 @@ export function cachedMessageAddressed(
   database: Database,
 ): boolean {
   const { message, tags } = row
+  if (message.kind === 'reply') {
+    const rootId = message.threadRootId
+    if (!rootId) return false
+    const thread = cachedRows(database)
+      .map((item) => item.message)
+      .filter((candidate) => candidate.id === rootId || candidate.threadRootId === rootId)
+    const root = thread.find((candidate) => candidate.id === rootId)
+    if (!root || root.withdrawnAt || (root.expiresAt && Date.parse(root.expiresAt) <= clock))
+      return false
+    return thread.some(
+      (candidate) =>
+        candidate.createdAt < message.createdAt && readerMatchesAuthor(candidate, reader, database),
+    )
+  }
   if (
     !message.audience ||
     message.withdrawnAt ||
@@ -306,16 +321,7 @@ export function cachedMessageAddressed(
   )
     return false
   if (message.kind === 'question' && reader.startsWith('run:')) return false
-  if (message.kind !== 'reply') return true
-  const rootId = message.threadRootId
-  if (!rootId) return false
-  const thread = cachedRows(database)
-    .map((item) => item.message)
-    .filter((candidate) => candidate.id === rootId || candidate.threadRootId === rootId)
-  return thread.some(
-    (candidate) =>
-      candidate.createdAt < message.createdAt && readerMatchesAuthor(candidate, reader, database),
-  )
+  return true
 }
 
 function delivered(database: Database, id: string, reader: string): boolean {
@@ -416,6 +422,19 @@ function audienceAtPosting(reader: string, createdAt: string, database: Database
     .query('SELECT COALESCE(first_seen,last_seen) first_seen FROM presence WHERE session_id=?')
     .get(reader) as { first_seen: string } | null
   return Boolean(row && row.first_seen <= createdAt)
+}
+
+export function cachedAudienceAtPosting(
+  messageId: string,
+  reader: string,
+  database: Database = db(),
+): boolean | null {
+  const row = database
+    .query('SELECT payload FROM hosted_board_message_cache WHERE id=?')
+    .get(messageId) as { payload: string } | null
+  return row
+    ? audienceAtPosting(reader, (JSON.parse(row.payload) as HostedBoardMessage).createdAt, database)
+    : null
 }
 
 export async function markCachedHostedDelivered(

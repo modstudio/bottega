@@ -1,6 +1,14 @@
+import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
+import {
+  claimCachedHosted,
+  markCachedHostedDelivered,
+  refreshHostedBoard,
+} from '../src/board/board-hosted-cache.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../src/board/board-mode.ts'
 import { BOARD_POST_RATE_LIMIT } from '../src/board/board-policy.ts'
+import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
@@ -147,6 +155,112 @@ export function registerBoardApiProofs(input: {
     expiresAt,
     authorSession,
     ...extra,
+  })
+
+  const cacheStore = (session: string) => {
+    const store = new Database(':memory:')
+    store.exec(`
+      CREATE TABLE schema_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+      INSERT INTO schema_meta VALUES ('${BOARD_HOSTED_ADOPTED_KEY}','1');
+      CREATE TABLE presence(session_id TEXT PRIMARY KEY,harness TEXT,role TEXT,machine TEXT,project TEXT,cwd TEXT,current_task_key TEXT,first_seen TEXT,last_seen TEXT);
+      INSERT INTO presence VALUES ('${session}','claude','architect','machine-b','${PROJECT}','/tmp',NULL,'2026-10-05T00:00:00.000Z','2098-01-01T00:00:00.000Z');
+      CREATE TABLE run(id INTEGER PRIMARY KEY,parent_run_id INTEGER,record_id TEXT,repo TEXT,launch_key TEXT,status TEXT,turn INTEGER,started_at TEXT,changed_paths TEXT);
+      CREATE TABLE hosted_board_message_cache(id TEXT PRIMARY KEY,kind TEXT,thread_root_id TEXT,revision TEXT,payload TEXT);
+      CREATE TABLE hosted_board_message_tag_cache(message_id TEXT,kind TEXT,value TEXT,origin TEXT,PRIMARY KEY(message_id,kind,value,origin));
+      CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,audience_at_posting INTEGER,delivered_at TEXT,acknowledged_at TEXT,pending_sync INTEGER,PRIMARY KEY(message_id,reader_session));
+    `)
+    return store
+  }
+
+  const cacheClient = (token: string): RecordApiClient =>
+    ({
+      whoami: async () => json(await fetch(`${origin}/v1/whoami`, { headers: headers(token) })),
+      listBoardChanges: async ({
+        after,
+        limit,
+      }: Parameters<RecordApiClient['listBoardChanges']>[0]) =>
+        json(
+          await fetch(`${origin}/v1/board/changes?after=${after ?? '0'}&limit=${limit ?? 100}`, {
+            headers: headers(token),
+          }),
+        ),
+      putBoardReceipt: async (body: Parameters<RecordApiClient['putBoardReceipt']>[0]) =>
+        json(
+          await fetch(`${origin}/v1/board/receipts`, {
+            method: 'PUT',
+            headers: headers(token),
+            body: JSON.stringify(body),
+          }),
+        ),
+    }) as unknown as RecordApiClient
+
+  test('two machine caches deliver a shared notice once and keep another user operator notice out', async () => {
+    const sessionA = caseSession('machine-a')
+    const sessionB = caseSession('machine-b')
+    const storeA = cacheStore(sessionA)
+    const storeB = cacheStore(sessionB)
+    try {
+      const projectNotice = newRecordId()
+      expect(
+        (await post(tokenA, notice(projectNotice, `project:${PROJECT}`, sessionA))).status,
+      ).toBe(200)
+      const clientA = cacheClient(tokenA)
+      const clientB = cacheClient(tokenB)
+      expect(
+        await refreshHostedBoard({
+          budgetMs: 2_000,
+          env: { ORCH_RECORD_API_URL: origin },
+          client: clientA,
+          database: storeA,
+        }),
+      ).toBe('success')
+      expect(
+        await refreshHostedBoard({
+          budgetMs: 2_000,
+          env: { ORCH_RECORD_API_URL: origin },
+          client: clientB,
+          database: storeB,
+        }),
+      ).toBe('success')
+      const delivered = claimCachedHosted(
+        sessionB,
+        false,
+        Date.parse('2098-01-01T00:00:00.000Z'),
+        storeB,
+      )
+      expect(delivered.map((row) => row.id)).toEqual([projectNotice])
+      await markCachedHostedDelivered(sessionB, [projectNotice], {
+        client: clientB,
+        database: storeB,
+        clock: Date.parse('2098-01-01T00:00:00.000Z'),
+      })
+      expect(
+        claimCachedHosted(sessionB, false, Date.parse('2098-01-01T00:00:00.000Z'), storeB),
+      ).toEqual([])
+      const status = await json(
+        await fetch(`${origin}/v1/board/messages/${projectNotice}/status`, {
+          headers: headers(tokenA),
+        }),
+      )
+      expect(
+        (status.receipts as Array<{ readerSession: string }>).map((row) => row.readerSession),
+      ).toContain(sessionB)
+
+      const operatorNotice = newRecordId()
+      expect((await post(tokenA, notice(operatorNotice, 'operator', sessionA))).status).toBe(200)
+      await refreshHostedBoard({
+        budgetMs: 2_000,
+        env: { ORCH_RECORD_API_URL: origin },
+        client: clientB,
+        database: storeB,
+      })
+      expect(
+        storeB.query('SELECT 1 FROM hosted_board_message_cache WHERE id=?').get(operatorNotice),
+      ).toBeNull()
+    } finally {
+      storeA.close()
+      storeB.close()
+    }
   })
 
   test('two members see a shared project notice and not each other operator notice', async () => {

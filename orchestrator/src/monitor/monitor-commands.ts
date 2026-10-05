@@ -28,7 +28,10 @@ import {
   monitor,
   monitorHistory,
 } from './monitor.ts'
-import { claimMonitorNoticesWithHosted, markMonitorNoticesDelivered } from './monitor-notices.ts'
+import {
+  claimMonitorNoticesWithHosted,
+  markMonitorNoticesDeliveredWithHosted,
+} from './monitor-notices.ts'
 import {
   formatStoreWriteLockReport,
   type StoreWriteLockReport,
@@ -149,7 +152,7 @@ async function acknowledge(ids: string): Promise<void> {
   if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
   if (!deliveryAuthorized())
     throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
-  await markMonitorNoticesDelivered(sid, ids.split(',') as MonitorNotice['noticeId'][])
+  await markMonitorNoticesDeliveredWithHosted(sid, ids.split(',') as MonitorNotice['noticeId'][])
 }
 
 async function showNotices(json: boolean, presentation: Presentation): Promise<void> {

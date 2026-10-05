@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 
 def _start(orch, *args, env=None, cwd=None):
@@ -179,6 +180,8 @@ def _board_slice(completed):
                 return str(value)
             if isinstance(value, str) and value.isascii() and value.isdigit() and value[0] != "0":
                 return value
+            if isinstance(value, str) and str(uuid.UUID(value)) == value.lower():
+                return value
             raise ValueError("invalid board notice id")
 
         if not isinstance(rows, list) or not all(
@@ -196,6 +199,18 @@ def _emitted_board_ids(output, board_text, board_ids):
         if isinstance(output, dict) else ""
     )
     return list(board_ids) if board_ids and board_text and board_text in emitted_context else []
+
+
+def _valid_notice_id(value):
+    source, separator, identifier = value.partition(":") if isinstance(value, str) else ("", "", "")
+    if source not in ("condition", "landing", "board") or separator != ":":
+        return False
+    if identifier.isdigit():
+        return int(identifier) > 0
+    try:
+        return source == "board" and str(uuid.UUID(identifier)) == identifier.lower()
+    except ValueError:
+        return False
 
 
 def assemble_additional_context(
@@ -691,10 +706,7 @@ def main() -> int:
                         and isinstance(item.get("subject"), str)
                         and isinstance(item.get("detail"), str)
                         and isinstance(item.get("noticeId"), str)
-                        and item["noticeId"].partition(":")[0] in ("condition", "landing", "board")
-                        and item["noticeId"].partition(":")[1] == ":"
-                        and item["noticeId"].partition(":")[2].isdigit()
-                        and int(item["noticeId"].partition(":")[2]) > 0
+                        and _valid_notice_id(item["noticeId"])
                         and item.get("ownerSession") == sid
                         for item in monitor_notices
                     ):
