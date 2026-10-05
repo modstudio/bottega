@@ -1,0 +1,326 @@
+import { expect, test } from 'bun:test'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { db } from '../database/db.ts'
+import { type RecordApiClient, RecordApiRequestError } from '../record/record-api-client.ts'
+import type { HostedBoardMessage, HostedBoardReceipt } from '../record/record-board-contract.ts'
+import {
+  adoptHostedBoard,
+  mayMarkBoardHostedAdopted,
+  selectBoardAdoptionCandidates,
+} from './board-adoption.ts'
+import { claimBoardNotices } from './board-delivery.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
+import { postNotice } from './board-service.ts'
+import { askQuestion, replyToThread } from './board-thread-service.ts'
+
+const NOW = Date.parse('2026-10-05T12:00:00.000Z')
+const ENV = { CLAUDE_CODE_SESSION_ID: 'reader', ORCH_RECORD_API_URL: 'https://record.test' }
+
+function presence() {
+  db()
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('reader','claude','architect','machine','bottega','/tmp',NULL,?,?)`,
+    )
+    .run(new Date(NOW - 1_000).toISOString(), new Date(NOW).toISOString())
+}
+
+function claim(runId: number | null = null) {
+  return db()
+    .query(
+      `INSERT INTO board_claim
+       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+        taken_at,renewed_at,lapses_at)
+       VALUES ('bottega','task','DEV-968','architect','reader','moving',?,3600000,?,?,?)
+       RETURNING id`,
+    )
+    .get(
+      runId,
+      new Date(NOW - 1_000).toISOString(),
+      new Date(NOW - 1_000).toISOString(),
+      new Date(NOW + 3_600_000).toISOString(),
+    ) as { id: number }
+}
+
+function hostedMessage(
+  input: Parameters<RecordApiClient['postBoardMessage']>[0],
+): HostedBoardMessage {
+  return {
+    id: input.id,
+    kind: input.kind,
+    threadRootId: null,
+    title: input.title,
+    body: input.body,
+    audience: input.audience,
+    origin: {
+      kind: 'architect',
+      session: input.authorSession ?? null,
+      harness: input.authorHarness ?? null,
+      project: input.project ?? null,
+      runId: input.authorRunId ?? null,
+    },
+    senderTags: [],
+    createdAt: new Date(NOW).toISOString(),
+    expiresAt: input.expiresAt,
+    withdrawnAt: null,
+    state: 'open',
+    acceptedReplyId: null,
+    acceptedBy: null,
+    acceptedAt: null,
+    noteId: null,
+    notePendingError: null,
+    revision: '1',
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    claimId: null,
+    authorUserId: '01990000-0000-7000-8000-000000000001',
+    authorSession: input.authorSession ?? null,
+    ackRequired: input.ackRequired ?? false,
+    ackDeadline: input.ackDeadline ?? null,
+  }
+}
+
+function capturingClient(calls: string[], failTitle?: string) {
+  const base = createMemoryRecordApiClient()
+  const messages = new Map<string, HostedBoardMessage>()
+  const receipts: HostedBoardReceipt[] = []
+  const client: RecordApiClient = {
+    ...base,
+    async listBoardChanges() {
+      calls.push('changes')
+      return {
+        userId: '01990000-0000-7000-8000-000000000001',
+        items: [...messages.values()].map((message) => ({
+          message,
+          tags: [],
+          receipts: receipts.filter((receipt) => receipt.messageId === message.id),
+        })),
+        highestRevision: messages.size ? '1' : null,
+      }
+    },
+    async postBoardMessage(input) {
+      calls.push(`post:${input.title}`)
+      if (input.title === failTitle)
+        throw new RecordApiRequestError(
+          'board post rate limit reached; retry after the ten-minute author window',
+          'refused',
+        )
+      const message = hostedMessage(input)
+      messages.set(input.id, message)
+      return message
+    },
+    async replyBoardMessage(rootId, input) {
+      calls.push('reply')
+      const root = messages.get(rootId)!
+      const message = {
+        ...root,
+        id: input.id,
+        kind: 'reply',
+        threadRootId: rootId,
+        body: input.body,
+      }
+      messages.set(input.id, message)
+      return message
+    },
+    async putBoardReceipt(input) {
+      calls.push('receipt')
+      const receipt = {
+        messageId: input.messageId,
+        readerUserId: '01990000-0000-7000-8000-000000000001',
+        readerSession: input.readerSession,
+        audienceAtPosting: input.audienceAtPosting,
+        deliveredAt: input.delivered ? new Date(NOW).toISOString() : null,
+        acknowledgedAt: input.acknowledged ? new Date(NOW).toISOString() : null,
+      }
+      receipts.push(receipt)
+      return receipt
+    },
+    async takeBoardClaim(input) {
+      calls.push('claim')
+      return {
+        id: input.id,
+        project: input.project,
+        subject: { kind: 'task', value: 'DEV-968' },
+        holder: input.holderSession ?? 'operator',
+        note: input.note ?? null,
+        runId: input.runId ?? null,
+        takenAt: new Date(NOW).toISOString(),
+        renewedAt: new Date(NOW).toISOString(),
+        lapsesAt: new Date(NOW + (input.durationMs ?? 1)).toISOString(),
+        live: true,
+        closedAt: null,
+        closeReason: null,
+        previousClaimIds: [],
+        supersededByClaimId: null,
+        action: 'taken',
+      }
+    },
+  }
+  return { client, messages }
+}
+
+test('confirmed adoption uploads roots before replies, then receipts and claims, retires local rows, and suppresses both copies', async () => {
+  presence()
+  const notice = postNotice(
+    { audience: 'session:reader', title: 'first', body: 'notice' },
+    {},
+    NOW - 3_000,
+  )
+  db()
+    .query(
+      `INSERT OR REPLACE INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,'reader',1,?,NULL)`,
+    )
+    .run(notice.id, new Date(NOW - 2_000).toISOString())
+  const question = askQuestion(
+    { audience: 'session:reader', title: 'second', body: 'question' },
+    {},
+    NOW - 2_000,
+  )
+  replyToThread(question.id, 'reply body', {}, NOW - 1_000)
+  const localClaim = claim()
+  const calls: string[] = []
+  const { client } = capturingClient(calls)
+  installRecordApiClient(client)
+
+  const result = await adoptHostedBoard({ confirm: 4, clock: NOW, client })
+
+  expect(result.status).toBe('adopted')
+  expect(calls.filter((call) => call !== 'changes')).toEqual([
+    'post:first',
+    'post:second',
+    'reply',
+    'receipt',
+    'claim',
+  ])
+  expect(
+    db()
+      .query<{ count: number }, []>(
+        'SELECT count(*) count FROM board_message WHERE withdrawn_at IS NOT NULL',
+      )
+      .get()?.count,
+  ).toBe(3)
+  expect(db().query('SELECT close_reason FROM board_claim WHERE id=?').get(localClaim.id)).toEqual({
+    close_reason: 'released',
+  })
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toEqual({ value: '1' })
+  expect((await claimBoardNotices(false, { env: ENV })).notices).toEqual([])
+})
+
+test('rate cap leaves the mark unset and reruns only the remainder with its stable hosted id', async () => {
+  presence()
+  postNotice({ audience: 'session:reader', title: 'one', body: 'one' }, {}, NOW - 2)
+  postNotice({ audience: 'session:reader', title: 'two', body: 'two' }, {}, NOW - 1)
+  const firstCalls: string[] = []
+  const stopped = await adoptHostedBoard({
+    confirm: 2,
+    clock: NOW,
+    client: capturingClient(firstCalls, 'two').client,
+  })
+  expect(stopped.status).toBe('stopped')
+  expect(stopped.remaining).toBe(1)
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toBeNull()
+  const pending = db()
+    .query<{ hosted_id: string }, []>(
+      "SELECT hosted_id FROM board_hosted_adoption_ledger WHERE state='pending'",
+    )
+    .get()!.hosted_id
+
+  const secondCalls: string[] = []
+  await adoptHostedBoard({
+    confirm: 2,
+    clock: NOW + 1,
+    client: capturingClient(secondCalls).client,
+  })
+  expect(secondCalls.filter((call) => call.startsWith('post:'))).toEqual(['post:two'])
+  expect(
+    db()
+      .query<{ hosted_id: string }, [string]>(
+        'SELECT hosted_id FROM board_hosted_adoption_ledger WHERE local_id=(SELECT local_id FROM board_hosted_adoption_ledger WHERE hosted_id=?)',
+      )
+      .get(pending)?.hosted_id,
+  ).toBe(pending)
+})
+
+test('a run-tied claim without a hosted run id stays live as a lasting refusal and does not block the mark', async () => {
+  const run = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES (?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+    )
+    .get(new Date(NOW - 1_000).toISOString()) as { id: number }
+  const localClaim = claim(run.id)
+  const result = await adoptHostedBoard({
+    confirm: 1,
+    clock: NOW,
+    client: capturingClient([]).client,
+  })
+  expect(result).toMatchObject({ status: 'adopted', refused: 1 })
+  expect(db().query('SELECT closed_at FROM board_claim WHERE id=?').get(localClaim.id)).toEqual({
+    closed_at: null,
+  })
+})
+
+test('a lasting hosted refusal leaves the message local and live and still sets the mark', async () => {
+  presence()
+  const notice = postNotice(
+    { audience: 'session:reader', title: 'refused', body: 'local remains' },
+    {},
+    NOW,
+  )
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage() {
+      throw new RecordApiRequestError('unknown or invisible board project bottega', 'refused')
+    },
+  }
+  const result = await adoptHostedBoard({ confirm: 1, clock: NOW, client })
+  expect(result).toMatchObject({ status: 'adopted', refused: 1 })
+  expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(notice.id)).toEqual({
+    withdrawn_at: null,
+  })
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toEqual({ value: '1' })
+})
+
+test('an absent or wrong confirmation writes no ledger, local row, claim, or adoption state', async () => {
+  presence()
+  const notice = postNotice({ audience: 'session:reader', title: 'one', body: 'one' }, {}, NOW)
+  const localClaim = claim()
+  const before = JSON.stringify({
+    message: db().query('SELECT * FROM board_message WHERE id=?').get(notice.id),
+    claim: db().query('SELECT * FROM board_claim WHERE id=?').get(localClaim.id),
+  })
+  const client = capturingClient([]).client
+  expect((await adoptHostedBoard({ clock: NOW, client })).status).toBe('plan')
+  await expect(adoptHostedBoard({ confirm: 1, clock: NOW, client })).rejects.toThrow(
+    'current candidate total 2',
+  )
+  expect(db().query('SELECT count(*) count FROM board_hosted_adoption_ledger').get()).toEqual({
+    count: 0,
+  })
+  expect(
+    JSON.stringify({
+      message: db().query('SELECT * FROM board_message WHERE id=?').get(notice.id),
+      claim: db().query('SELECT * FROM board_claim WHERE id=?').get(localClaim.id),
+    }),
+  ).toBe(before)
+})
+
+test('candidate and final-mark decisions are pure', () => {
+  expect(selectBoardAdoptionCandidates([])).toEqual([])
+  expect(mayMarkBoardHostedAdopted(['uploaded', 'refused'])).toBeTrue()
+  expect(mayMarkBoardHostedAdopted(['uploaded', 'pending'])).toBeFalse()
+})

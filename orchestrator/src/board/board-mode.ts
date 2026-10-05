@@ -10,7 +10,7 @@ import { db } from '../database/db.ts'
 
 export const BOARD_HOSTED_ADOPTED_KEY = 'board_hosted_adopted'
 
-function boardHasAdoptedHosted(database: Database = db()): boolean {
+export function boardHasAdoptedHosted(database: Database = db()): boolean {
   return (
     database
       .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')

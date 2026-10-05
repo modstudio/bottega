@@ -12,6 +12,17 @@ const module = (file: string, allowed: string[]): BoardModule => ({
 })
 
 export const boardModules: BoardModule[] = [
+  module('orchestrator/src/board/board-adoption.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    '../record/machine-identity.ts',
+    '../record/record-api-client.ts',
+    './board-claim-policy.ts',
+    './board-mode.ts',
+    './board-policy.ts',
+    './board-store.ts',
+  ]),
   module('orchestrator/src/board/board-mode.ts', [
     'bun:sqlite',
     '../../../shared/board-mode.ts',
@@ -119,6 +130,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-commands.ts', [
     'commander',
+    './board-adoption.ts',
     './board-claim-commands.ts',
     './board-operations.ts',
     './board-delivery.ts',
