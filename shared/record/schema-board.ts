@@ -166,14 +166,7 @@ export const boardMessage = pgTable.withRLS(
     const visible = sql`${table.authorUserId} = ${currentUser} OR
       (cardinality(${table.scopeProjectIds}) > 0 AND ${readsScope}) OR
       (${currentUser} = ANY(${table.recipientUserIds}) AND ${readsScope})`
-    const replyRootVisibleAndMatching = sql`(${table.kind} <> 'reply' OR EXISTS (
-      SELECT 1 FROM board_message root
-      WHERE root.id = ${table.threadRootId}
-        AND root.scope_project_ids = ${table.scopeProjectIds}
-        AND root.recipient_user_ids = ${table.recipientUserIds}
-    ))`
-    const writesRow = sql`${table.authorUserId} = ${currentUser} AND ${writesScope}
-      AND ${replyRootVisibleAndMatching}`
+    const writesRow = sql`${table.authorUserId} = ${currentUser} AND ${writesScope}`
     return [
       index('board_message_revision_idx').on(table.revision),
       index('board_message_delivery_idx').on(table.expiresAt, table.withdrawnAt, table.createdAt),

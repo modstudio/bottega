@@ -17,6 +17,7 @@ const IDS = {
   spaceB: '02990000-0000-7000-8000-000000000112',
   projectA: '02990000-0000-7000-8000-000000000121',
   projectB: '02990000-0000-7000-8000-000000000122',
+  projectA2: '02990000-0000-7000-8000-000000000123',
   membershipA1: '02990000-0000-7000-8000-000000000131',
   membershipA2: '02990000-0000-7000-8000-000000000132',
   membershipB: '02990000-0000-7000-8000-000000000133',
@@ -31,6 +32,8 @@ const IDS = {
   claimB: '02990000-0000-7000-8000-000000000012',
   revisionA: '02990000-0000-7000-8000-000000000021',
   revisionB: '02990000-0000-7000-8000-000000000022',
+  invisibleReply: '02990000-0000-7000-8000-000000000043',
+  mismatchedReply: '02990000-0000-7000-8000-000000000044',
 } as const
 
 function actor(
@@ -87,6 +90,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         ('${IDS.membershipC}','${IDS.spaceA}','${IDS.userC}','member','read',now());
       INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${IDS.projectA}','${IDS.spaceA}','board-alpha',ARRAY['BOARD'],now()),
+        ('${IDS.projectA2}','${IDS.spaceA}','board-alpha-two',ARRAY['BOARD2'],now()),
         ('${IDS.projectB}','${IDS.spaceB}','board-beta',ARRAY['BOARD'],now());
       INSERT INTO board_message
         (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
@@ -230,11 +234,26 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       `INSERT INTO board_message
        (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
         scope_project_ids,recipient_user_ids)
-       VALUES ('02990000-0000-7000-8000-000000000043','${IDS.userB}','reply',
+       VALUES ('${IDS.invisibleReply}','${IDS.userB}','reply',
         '${IDS.authorOnly}','reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[]);`,
     )
     expect(reply.code).not.toBe(0)
-    expect(reply.stderr).toContain('row-level security policy')
+    expect(reply.stderr).toContain('board reply thread root is not visible')
+  })
+
+  test("a reply's scope and recipients must match its board root", () => {
+    const reply = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids)
+       VALUES ('${IDS.mismatchedReply}','${IDS.userB}','reply',
+        '${IDS.scopedA}','reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[]);`,
+    )
+    expect(reply.code).not.toBe(0)
+    expect(reply.stderr).toContain('board reply scope and recipients must match thread root')
   })
 
   test('receipt visibility and writes are limited to readers and message authors', () => {

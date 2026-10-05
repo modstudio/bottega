@@ -1,8 +1,8 @@
 {
-  "id": "cf2eae9b-2be0-4868-bf76-3a43c2a9e77d",
-  "prevIds": ["011e8f6d-50df-4800-80e8-32cfb3593456"],
   "version": "8",
   "dialect": "postgres",
+  "id": "825e7d28-f28e-4179-b356-6caed61ec72a",
+  "prevIds": ["88c06047-1a17-4dc5-90f9-5806f55e42f9"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -14934,7 +14934,7 @@
       "for": "INSERT",
       "roles": ["record_actor"],
       "using": null,
-      "withCheck": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n        AND m.permission = 'write'\n    )\n  )\n      AND (\"board_message\".\"kind\" <> 'reply' OR EXISTS (\n      SELECT 1 FROM board_message root\n      WHERE root.id = \"board_message\".\"thread_root_id\"\n        AND root.scope_project_ids = \"board_message\".\"scope_project_ids\"\n        AND root.recipient_user_ids = \"board_message\".\"recipient_user_ids\"\n    ))",
+      "withCheck": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n        AND m.permission = 'write'\n    )\n  )",
       "name": "board_message_actor_insert",
       "entityType": "policies",
       "schema": "public",
@@ -14945,7 +14945,7 @@
       "for": "UPDATE",
       "roles": ["record_actor"],
       "using": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "withCheck": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n        AND m.permission = 'write'\n    )\n  )\n      AND (\"board_message\".\"kind\" <> 'reply' OR EXISTS (\n      SELECT 1 FROM board_message root\n      WHERE root.id = \"board_message\".\"thread_root_id\"\n        AND root.scope_project_ids = \"board_message\".\"scope_project_ids\"\n        AND root.recipient_user_ids = \"board_message\".\"recipient_user_ids\"\n    ))",
+      "withCheck": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n        AND m.permission = 'write'\n    )\n  )",
       "name": "board_message_actor_update",
       "entityType": "policies",
       "schema": "public",

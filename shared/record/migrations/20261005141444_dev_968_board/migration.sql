@@ -158,13 +158,7 @@ CREATE POLICY "board_message_actor_insert" ON "board_message" AS PERMISSIVE FOR 
       WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
         AND m.permission = 'write'
     )
-  )
-      AND ("board_message"."kind" <> 'reply' OR EXISTS (
-      SELECT 1 FROM board_message root
-      WHERE root.id = "board_message"."thread_root_id"
-        AND root.scope_project_ids = "board_message"."scope_project_ids"
-        AND root.recipient_user_ids = "board_message"."recipient_user_ids"
-    )));--> statement-breakpoint
+  ));--> statement-breakpoint
 CREATE POLICY "board_message_actor_update" ON "board_message" AS PERMISSIVE FOR UPDATE TO "record_actor" USING ("board_message"."author_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("board_message"."author_user_id" = nullif(current_setting('app.user_id', true), '')::uuid AND NOT EXISTS (
     SELECT 1 FROM unnest("board_message"."scope_project_ids") AS scoped(project_id)
     WHERE NOT EXISTS (
@@ -173,13 +167,7 @@ CREATE POLICY "board_message_actor_update" ON "board_message" AS PERMISSIVE FOR 
       WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
         AND m.permission = 'write'
     )
-  )
-      AND ("board_message"."kind" <> 'reply' OR EXISTS (
-      SELECT 1 FROM board_message root
-      WHERE root.id = "board_message"."thread_root_id"
-        AND root.scope_project_ids = "board_message"."scope_project_ids"
-        AND root.recipient_user_ids = "board_message"."recipient_user_ids"
-    )));--> statement-breakpoint
+  ));--> statement-breakpoint
 CREATE POLICY "board_message_actor_delete" ON "board_message" AS PERMISSIVE FOR DELETE TO "record_actor" USING ("board_message"."author_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "board_message_tag_actor_select" ON "board_message_tag" AS PERMISSIVE FOR SELECT TO "record_actor" USING (EXISTS (
       SELECT 1 FROM "board_message" message WHERE message.id = "board_message_tag"."message_id"
