@@ -54,7 +54,7 @@ export function appendInitialRunBoardPrompt(
   }
 }
 
-export function prepareInitialRunBoardPrompt(
+export function prepareRunBoard(
   prompt: string,
   promptPath: string,
   runId: number,
@@ -63,6 +63,23 @@ export function prepareInitialRunBoardPrompt(
   const result = firstTurn ? appendInitialRunBoardPrompt(prompt, runId) : { prompt, noticeIds: [] }
   if (result.noticeIds.length) persistBoundPrompt(promptPath, result.prompt, runId)
   return result
+}
+
+export function prepareLaterRunBoardPrompt(
+  runId: number,
+  laterTurn: boolean,
+  mailbox: { id: number; body: string }[],
+  prompt: string,
+): { prompt: string; notices: RunNotice[] } {
+  const notices = laterTurn ? claimRunNotices(runId) : []
+  const items = [
+    ...mailbox.map((message) => `[message ${message.id}] ${message.body}`),
+    ...notices.map((notice) => notice.text),
+  ]
+  if (!items.length) return { prompt, notices }
+  const banner =
+    'These messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
+  return { prompt: `${items.join('\n\n')}\n\n${banner}\n\n${prompt}`, notices }
 }
 
 export function persistBoundPrompt(promptPath: string, prompt: string, runId: number): void {

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
-import { claimRunNotices, markRunNoticesDelivered } from '../board/board-service.ts'
+import { markRunNoticesDelivered } from '../board/board-service.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
@@ -55,6 +55,7 @@ import {
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
 import { questionOpenSql } from './question-open.ts'
+import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { childEnv, errorTail, live, liveCheckpoints, registerLiveGate } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
@@ -328,16 +329,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     noteBroker = startWorkerNoteBroker(claim.id)
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
-    const checkpointNotices = opts.resume ? claimRunNotices(claim.id) : []
-    if (checkpointMessages.length || checkpointNotices.length) {
-      const block =
-        [
-          ...checkpointMessages.map((note) => `[message ${note.id}] ${note.body}`),
-          ...checkpointNotices.map((notice) => notice.text),
-        ].join('\n\n') +
-        '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
-      prompt = `${block}\n\n${prompt}`
-    }
+    const boardDelivery = prepareLaterRunBoardPrompt(
+      claim.id,
+      Boolean(opts.resume),
+      checkpointMessages,
+      prompt,
+    )
+    const checkpointNotices = boardDelivery.notices
+    prompt = boardDelivery.prompt
     const startOpts: TransportStartOpts = {
       agent: a,
       cwd,

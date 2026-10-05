@@ -71,7 +71,6 @@ import {
   runScratchDir,
   writeDispatchState,
 } from './run-artifacts.ts'
-import { prepareInitialRunBoardPrompt } from './run-board-prompt.ts'
 import {
   decideClaimTreePlan,
   resumeCreationLifecycle,
@@ -173,7 +172,6 @@ export type ClaimResult = {
   sandboxRunDirExisted: boolean
   cwd: string
   prompt: string
-  initialBoardNoticeIds: number[]
   mcpConnection: McpConnection | null
   usingMcp: boolean
 }
@@ -541,7 +539,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let isolatedCwd: string | null = null
   let removeIsolatedCwd: (() => void) | null = null
   let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null
-  let initialBoardNoticeIds: number[] = []
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
   let mcpTrustGranted = false,
@@ -1067,14 +1064,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       usingMcp = false
       db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
     }
-    const boardPrompt = prepareInitialRunBoardPrompt(
-      prompt,
-      promptPath,
-      claim.id,
-      resume.isFirstTurn,
-    )
-    prompt = boardPrompt.prompt
-    initialBoardNoticeIds = boardPrompt.noticeIds
   } catch (e) {
     removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
@@ -1117,7 +1106,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     sandboxRunDirExisted,
     cwd,
     prompt,
-    initialBoardNoticeIds,
     mcpConnection,
     usingMcp,
   }
