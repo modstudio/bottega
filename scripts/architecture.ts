@@ -1,5 +1,6 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
+import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
@@ -60,17 +61,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
-  module('orchestrator/src/board/board-policy.ts', []),
-  module('orchestrator/src/board/board-render.ts', ['./board-policy.ts']),
-  module('orchestrator/src/board/board-service.ts', [
-    'node:os',
-    '../../../shared/secret-shaped.ts',
-    '../database/db.ts',
-    '../project/projects.ts',
-    './board-policy.ts',
-    './board-render.ts',
-  ]),
-  module('orchestrator/src/board/board-commands.ts', ['commander', './board-service.ts']),
+  ...boardModules,
   ...releaseModules,
   ...retrievalModules,
   ...operatorWaitingModules,

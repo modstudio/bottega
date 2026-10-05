@@ -526,6 +526,13 @@
       "when": 1790884800002,
       "tag": "0074_board_origin_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1790884800003,
+      "tag": "0075_board_message_tags",
+      "breakpoints": true
     }
   ]
 }
