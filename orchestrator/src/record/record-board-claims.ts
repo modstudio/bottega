@@ -28,7 +28,7 @@ import {
   resolveVisibleProjectId,
 } from './record-board-messages.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
-import { type BoardTenant, isUniqueViolation, withBoardTenant } from './record-board-tx.ts'
+import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
@@ -120,24 +120,14 @@ async function tellHolder(
     body: input.body,
     expiresAt: new Date(input.clock + 24 * 60 * 60 * 1000).toISOString(),
     authorSession: input.authorSession,
-    claimId: input.claimId,
-    recipientUserIds: [input.holderUserId],
     userId: input.userId,
   }
-  const posted = await postClaimNotice(tx, notice, input.projectId, input.clock)
-  void posted
-}
-
-async function postClaimNotice(
-  tx: SQL,
-  input: HostedBoardPostInput & { userId: string },
-  projectId: string,
-  clock: number,
-): Promise<'rate-limited' | unknown> {
-  return postHostedBoardNoticeInTransaction(tx, input, clock, {
-    scopeProjectIds: [projectId],
-    recipientUserIds: input.recipientUserIds ?? [],
+  const posted = await postHostedBoardNoticeInTransaction(tx, notice, input.clock, {
+    scopeProjectIds: [input.projectId],
+    recipientUserIds: [input.holderUserId],
+    claimId: input.claimId,
   })
+  void posted
 }
 
 function takeOverlaps(
@@ -315,28 +305,17 @@ async function insertTakenClaim(
 ): Promise<HostedBoardClaim & { action: 'taken' | 'taken-over' }> {
   const now = new Date(clock).toISOString()
   await supersedeConflicts(tx, conflicts, input, projectId, session, clock, now)
-  try {
-    await tx`
-      INSERT INTO board_claim (
-        id, project_id, subject_kind, subject_value, holder_user_id, holder_session, note, run_id,
-        duration_ms, taken_at, renewed_at, lapses_at
-      ) VALUES (
-        ${input.id}::uuid, ${projectId}::uuid, ${subject.kind}, ${subject.value},
-        ${input.userId}::uuid, ${session}, ${note ?? null}, ${input.runId ?? null}::uuid,
-        ${duration}, ${now}::timestamptz, ${now}::timestamptz,
-        ${new Date(clock + duration).toISOString()}::timestamptz
-      )
-    `
-  } catch (error) {
-    if (
-      isUniqueViolation(error, 'board_claim_pkey') ||
-      isUniqueViolation(error, 'board_claim_live_subject_unique')
-    ) {
-      const row = await loadClaim(tx, input.id)
-      if (row) return { ...(await claimView(tx, row, clock, input.project)), action: 'taken' }
-    }
-    throw error
-  }
+  await tx`
+    INSERT INTO board_claim (
+      id, project_id, subject_kind, subject_value, holder_user_id, holder_session, note, run_id,
+      duration_ms, taken_at, renewed_at, lapses_at
+    ) VALUES (
+      ${input.id}::uuid, ${projectId}::uuid, ${subject.kind}, ${subject.value},
+      ${input.userId}::uuid, ${session}, ${note ?? null}, ${input.runId ?? null}::uuid,
+      ${duration}, ${now}::timestamptz, ${now}::timestamptz,
+      ${new Date(clock + duration).toISOString()}::timestamptz
+    )
+  `
   const row = await loadClaim(tx, input.id)
   return {
     ...(await claimView(tx, row!, clock, input.project)),

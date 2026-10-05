@@ -104,6 +104,32 @@ test('board post refuses an invalid body at the route edge', async () => {
   expect(await response.json()).toEqual({ error: 'invalid board message' })
 })
 
+test('board post refuses caller recipientUserIds and claimId at the route edge', async () => {
+  const app = appWith(identity)
+  const base = {
+    id: newRecordId(),
+    kind: 'notice',
+    audience: 'operator',
+    title: 'Hi',
+    body: 'There',
+    expiresAt,
+  }
+  const withRecipients = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...base, recipientUserIds: [newRecordId()] }),
+  })
+  const withClaim = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...base, id: newRecordId(), claimId: newRecordId() }),
+  })
+  expect(withRecipients.status).toBe(400)
+  expect(await withRecipients.json()).toEqual({ error: 'invalid board message' })
+  expect(withClaim.status).toBe(400)
+  expect(await withClaim.json()).toEqual({ error: 'invalid board message' })
+})
+
 test('board routes bind every membership space, not only the active space', async () => {
   const captured: string[][] = []
   const app = appWith(identity, {

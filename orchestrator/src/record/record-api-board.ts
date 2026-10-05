@@ -46,8 +46,6 @@ const postSchema = z
     authorRunId: idSchema.nullable().optional(),
     project: z.string().min(1).optional(),
     currentTaskKey: z.string().min(1).nullable().optional(),
-    claimId: idSchema.nullable().optional(),
-    recipientUserIds: z.array(idSchema).optional(),
   })
   .strict()
 const replySchema = z

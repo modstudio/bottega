@@ -69,6 +69,9 @@ describe('record API client test safety', () => {
         method: 'PUT',
         body: { id, kind: 'notice', audience: 'operator', title: 'T', body: 'B' },
       })
+      const posted = calls[1]?.body as Record<string, unknown>
+      expect(posted).not.toHaveProperty('recipientUserIds')
+      expect(posted).not.toHaveProperty('claimId')
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

@@ -138,8 +138,6 @@ export type HostedBoardPostInput = {
   authorRunId?: string | null
   project?: string
   currentTaskKey?: string | null
-  claimId?: string | null
-  recipientUserIds?: string[]
 }
 
 export type HostedBoardReplyInput = {

@@ -158,6 +158,35 @@ export function registerBoardApiProofs(input: {
     expect(await seen(tokenA, operatorB)).toBe(404)
   })
 
+  test('post refuses caller recipientUserIds and claimId at the route edge', async () => {
+    const base = notice(newRecordId(), 'operator')
+    const withRecipients = await post(tokenA, { ...base, recipientUserIds: [userB] })
+    const withClaim = await post(tokenA, {
+      ...notice(newRecordId(), 'operator'),
+      claimId: newRecordId(),
+    })
+    expect(withRecipients.status).toBe(400)
+    expect(await json(withRecipients)).toEqual({ error: 'invalid board message' })
+    expect(withClaim.status).toBe(400)
+    expect(await json(withClaim)).toEqual({ error: 'invalid board message' })
+  })
+
+  test('a user in a different space never sees an operator notice through the change cursor', async () => {
+    const id = newRecordId()
+    expect((await post(tokenA, notice(id, 'operator'))).status).toBe(200)
+    const outsider = await json(
+      await fetch(`${origin}/v1/board/changes?after=0`, { headers: headers(tokenC) }),
+    )
+    const outsiderItems = outsider.items as Array<{ message: { id: string } }>
+    expect(outsiderItems.some((item) => item.message.id === id)).toBeFalse()
+    const author = await json(
+      await fetch(`${origin}/v1/board/changes?after=0`, { headers: headers(tokenA) }),
+    )
+    expect(
+      (author.items as Array<{ message: { id: string } }>).some((item) => item.message.id === id),
+    ).toBeTrue()
+  })
+
   test('a user outside the space sees nothing', async () => {
     const id = newRecordId()
     expect((await post(tokenA, notice(id, `project:${PROJECT}`))).status).toBe(200)

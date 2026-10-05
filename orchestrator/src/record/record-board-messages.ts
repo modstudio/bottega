@@ -45,12 +45,13 @@ import {
   parseHostedAudience,
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
-import {
-  type BoardTenant,
-  boardUuidArray,
-  isUniqueViolation,
-  withBoardTenant,
-} from './record-board-tx.ts'
+import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
+
+type HostedBoardForcedScope = {
+  scopeProjectIds: string[]
+  recipientUserIds: string[]
+  claimId?: string | null
+}
 
 const RATE_LIMITED = 'board post rate limit reached; retry after the ten-minute author window'
 
@@ -259,7 +260,7 @@ async function insertRoot(
   audience: Audience,
   tags: BoardTag[],
   clock: number,
-  forcedScope?: { scopeProjectIds: string[]; recipientUserIds: string[] },
+  forcedScope?: HostedBoardForcedScope,
 ): Promise<string> {
   const projectName = hostedProjectNameForAudience(audience, input.project)
   if (
@@ -285,9 +286,10 @@ async function insertRoot(
     )
   }
   const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-  const derived = forcedScope ?? hostedBoardScope(audience, projectId)
-  const recipients =
-    forcedScope?.recipientUserIds ?? input.recipientUserIds ?? derived.recipientUserIds
+  const derived = hostedBoardScope(audience, projectId)
+  const scopeProjectIds = forcedScope?.scopeProjectIds ?? derived.scopeProjectIds
+  const recipients = forcedScope?.recipientUserIds ?? derived.recipientUserIds
+  const claimId = forcedScope?.claimId ?? null
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
   await tx`
@@ -300,8 +302,8 @@ async function insertRoot(
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
       ${input.kind}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
       ${input.ackDeadline ?? null}::timestamptz, ${input.expiresAt}::timestamptz,
-      ${createdAt}::timestamptz, ${input.claimId ?? null}::uuid,
-      COALESCE(${boardUuidArray(tx, derived.scopeProjectIds)}, ARRAY[]::uuid[]),
+      ${createdAt}::timestamptz, ${claimId}::uuid,
+      COALESCE(${boardUuidArray(tx, scopeProjectIds)}, ARRAY[]::uuid[]),
       COALESCE(${boardUuidArray(tx, recipients)}, ARRAY[]::uuid[])
     )
   `
@@ -398,8 +400,8 @@ export async function postHostedBoardMessage(
     expiresAt,
     threadRootId: null,
     scopeProjectIds: [],
-    recipientUserIds: input.recipientUserIds ?? [],
-    claimId: input.claimId ?? null,
+    recipientUserIds: [],
+    claimId: null,
     senderTags: senderTags.map(({ kind, value }) => ({ kind, value })),
   }
   return withBoardTenant(input, true, async (tx) => {
@@ -407,7 +409,7 @@ export async function postHostedBoardMessage(
     const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
     const derived = hostedBoardScope(audience, projectId)
     requested.scopeProjectIds = derived.scopeProjectIds
-    requested.recipientUserIds = input.recipientUserIds ?? derived.recipientUserIds
+    requested.recipientUserIds = derived.recipientUserIds
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const duplicateId = await duplicateRootId(
@@ -426,23 +428,15 @@ export async function postHostedBoardMessage(
     const decision = await authorWindow(tx, input.userId, session, clock, duplicateId !== null)
     if (decision === 'drop-duplicate' && duplicateId) return viewById(tx, duplicateId, clock)
     if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
-    try {
-      await insertRoot(
-        tx,
-        { ...input, ackRequired, ackDeadline, expiresAt, authorSession: session },
-        input.userId,
-        session,
-        audience,
-        tags,
-        clock,
-      )
-    } catch (error) {
-      if (isUniqueViolation(error, 'board_message_pkey')) {
-        const again = await existingOrConflict(tx, input.id, requested)
-        if (again) return again
-      }
-      throw error
-    }
+    await insertRoot(
+      tx,
+      { ...input, ackRequired, ackDeadline, expiresAt, authorSession: session },
+      input.userId,
+      session,
+      audience,
+      tags,
+      clock,
+    )
     return viewById(tx, input.id, clock)
   })
 }
@@ -451,7 +445,7 @@ export async function postHostedBoardNoticeInTransaction(
   tx: SQL,
   input: HostedBoardPostInput & { userId: string },
   clock: number,
-  forcedScope?: { scopeProjectIds: string[]; recipientUserIds: string[] },
+  forcedScope?: HostedBoardForcedScope,
 ): Promise<'rate-limited' | HostedBoardMessage> {
   const audience = parseHostedAudience(input.audience)
   const refusal = hostedBoardPostRefusal(input.kind, audience)
@@ -465,24 +459,16 @@ export async function postHostedBoardNoticeInTransaction(
   ]
   const decision = await authorWindow(tx, input.userId, session, clock, false)
   if (decision === 'rate-limited') return 'rate-limited'
-  try {
-    await insertRoot(
-      tx,
-      { ...input, authorSession: session },
-      input.userId,
-      session,
-      audience,
-      tags,
-      clock,
-      forcedScope,
-    )
-  } catch (error) {
-    if (isUniqueViolation(error, 'board_message_pkey')) {
-      const loaded = await loadHostedBoardMessage(tx, input.id)
-      if (loaded) return hostedBoardMessageView(loaded.row, loaded.tags, clock)
-    }
-    throw error
-  }
+  await insertRoot(
+    tx,
+    { ...input, authorSession: session },
+    input.userId,
+    session,
+    audience,
+    tags,
+    clock,
+    forcedScope,
+  )
   return viewById(tx, input.id, clock)
 }
 
@@ -521,34 +507,25 @@ async function insertReplyCopyingRoot(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
   session: string | null,
   rootId: string,
-  requested: HostedBoardCreateContent,
   createdAt: string,
   clock: number,
 ): Promise<HostedBoardMessage> {
-  try {
-    const inserted = await tx`
-      INSERT INTO board_message (
-        id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
-        kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
-        created_at, claim_id, scope_project_ids, recipient_user_ids
-      )
-      SELECT
-        ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
-        ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
-        'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
-        ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids
-      FROM board_message AS root
-      WHERE root.id = ${rootId}::uuid
-      RETURNING id
-    `
-    if (!inserted[0]) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
-  } catch (error) {
-    if (isUniqueViolation(error, 'board_message_pkey')) {
-      const again = await existingOrConflict(tx, input.id, requested)
-      if (again) return again
-    }
-    throw error
-  }
+  const inserted = await tx`
+    INSERT INTO board_message (
+      id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
+      kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
+      created_at, claim_id, scope_project_ids, recipient_user_ids
+    )
+    SELECT
+      ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
+      ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
+      'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
+      ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids
+    FROM board_message AS root
+    WHERE root.id = ${rootId}::uuid
+    RETURNING id
+  `
+  if (!inserted[0]) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
   return viewById(tx, input.id, clock)
 }
 
@@ -617,7 +594,6 @@ export async function replyHostedBoardMessage(
       input,
       session,
       String(rootRow.row.id),
-      requested,
       new Date(clock).toISOString(),
       clock,
     )

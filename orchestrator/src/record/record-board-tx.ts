@@ -75,15 +75,3 @@ export async function withBoardTenant<T>(
 export function boardUuidArray(tx: SQL, ids: readonly string[]) {
   return tx.array([...ids], 'uuid')
 }
-
-export function isUniqueViolation(error: unknown, constraint: string): boolean {
-  if (!error || typeof error !== 'object') return false
-  const postgres = error as { code?: unknown; constraint?: unknown; constraint_name?: unknown }
-  const message = error instanceof Error ? error.message : String(error)
-  const named =
-    postgres.constraint === constraint ||
-    postgres.constraint_name === constraint ||
-    message.includes(`"${constraint}"`) ||
-    message.includes(constraint)
-  return named && (postgres.code === '23505' || message.includes('duplicate key value'))
-}
