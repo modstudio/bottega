@@ -21,6 +21,11 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { DOC_SCOPES, type DocScope, type FilingDocScope } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
+import type {
+  MachineAutonomyEntry,
+  MachinePermissionOperation,
+  MachinePermissionOverlay,
+} from '../../shared/machine-config.ts'
 import {
   type AnswerWaitingResult,
   AnswerWaitingResultSchema,
@@ -49,6 +54,10 @@ import {
 } from '../../shared/orch-contract.ts'
 import { RELEASE_AUTONOMY_VALUES } from '../../shared/release-autonomy.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../shared/settings-summary.ts'
 
 export type {
   OperatorWaitingItem,
@@ -548,6 +557,23 @@ const ConfigEntrySchema = z.object({
   updatedAt: z.string(),
 })
 
+export const MachineAutonomyEntrySchema = z.object({
+  key: z.string(),
+  value: z.string(),
+  scope: z.literal('local user'),
+}) satisfies z.ZodType<MachineAutonomyEntry>
+
+const PermissionListsSchema = z.object(
+  Object.fromEntries(
+    SETTINGS_PERMISSION_LISTS.map((list) => [list, z.array(z.string())]),
+  ) as Record<SettingsPermissionList, z.ZodArray<z.ZodString>>,
+)
+
+export const MachinePermissionOverlaySchema = z.object({
+  additions: PermissionListsSchema,
+  drop: PermissionListsSchema,
+}) satisfies z.ZodType<MachinePermissionOverlay>
+
 const ContextSchema = z.discriminatedUnion('registered', [
   z.object({ registered: z.literal(false), warnings: z.array(z.string()).optional() }),
   z.object({
@@ -642,6 +668,18 @@ export const configDeleteArgv = (key: string, expectedRowVersion?: number) => [
   key,
   ...(expectedRowVersion !== undefined ? ['--expect', String(expectedRowVersion)] : []),
 ]
+export const machineConfigArgv = (
+  operation: 'list' | 'set' | 'delete',
+  key?: string,
+  value?: string,
+) => [
+  'config',
+  operation,
+  ...(key ? [key] : []),
+  ...(value ? [value] : []),
+  '--machine',
+  ...(operation === 'delete' ? [] : ['--json']),
+]
 export const settingsCheckArgv = (target: { user: true } | { project: string }) => [
   'settings',
   'render',
@@ -662,6 +700,26 @@ export const settingsPermissionArgv = (input: SettingsPermissionInput) => [
   '--expect',
   input.expectedRevision,
   ...(input.reason ? ['--reason', input.reason] : []),
+  '--json',
+]
+
+export const machinePermissionListArgv = () => [
+  'settings',
+  'permission',
+  'list',
+  '--machine',
+  '--json',
+]
+
+export const machinePermissionArgv = (input: MachinePermissionInput) => [
+  'settings',
+  'permission',
+  input.operation,
+  ...(['add', 'remove'].includes(input.operation) ? ['--machine'] : []),
+  '--list',
+  input.list,
+  '--rule',
+  input.rule,
   '--json',
 ]
 
@@ -691,6 +749,16 @@ export const configDelete = (key: string, expectedRowVersion?: number) =>
   orchProcess(configDeleteArgv(key, expectedRowVersion), 20_000, {
     env: requiredDashboardCapabilityEnvironment(),
   })
+export const machineConfigList = () =>
+  json(machineConfigArgv('list'), z.array(MachineAutonomyEntrySchema))
+export const machineConfigSet = (key: string, value: string) =>
+  json(machineConfigArgv('set', key, value), MachineAutonomyEntrySchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+export const machineConfigDelete = (key: string) =>
+  orchProcess(machineConfigArgv('delete', key), 20_000, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
 export const settingsCheck = (target: { user: true } | { project: string }) =>
   json(settingsCheckArgv(target), SettingsCheckSchema, {
     acceptedExitCodes: [1],
@@ -710,6 +778,12 @@ const SettingsPermissionResultSchema = z.object({
   message: z.string().optional(),
 })
 
+export const MachinePermissionResultSchema = z.object({
+  changed: z.boolean(),
+  counts: z.object({ allow: z.number(), ask: z.number(), deny: z.number() }),
+  message: z.string(),
+})
+
 export type SettingsPermissionInput = {
   target: { user: true } | { project: string }
   operation: 'add' | 'remove'
@@ -719,8 +793,22 @@ export type SettingsPermissionInput = {
   reason?: string
 }
 
+export type MachinePermissionInput = {
+  operation: MachinePermissionOperation
+  list: SettingsPermissionList
+  rule: string
+}
+
 export const settingsPermission = (input: SettingsPermissionInput) =>
   json(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
+    env: requiredDashboardCapabilityEnvironment(),
+  })
+
+export const machinePermissions = () =>
+  json(machinePermissionListArgv(), MachinePermissionOverlaySchema)
+
+export const machinePermission = (input: MachinePermissionInput) =>
+  json(machinePermissionArgv(input), MachinePermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 

@@ -16,7 +16,10 @@ import {
   applyMachineSettings,
   printMachineSettingsApplyResults,
 } from '../settings/settings-machine-apply.ts'
-import { editMachineSettingsPermission } from '../settings/settings-machine-permissions.ts'
+import {
+  editMachineSettingsPermission,
+  listMachineSettingsPermissions,
+} from '../settings/settings-machine-permissions.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -62,6 +65,18 @@ export function register(program: Command): void {
       })
     })
   const permission = settings.command('permission')
+  permission
+    .command('list')
+    .option('--machine')
+    .option('--json')
+    .action((options) => {
+      if (!options.machine) {
+        throw new Error(
+          'refusing hosted permission listing; run orch settings permission list --machine',
+        )
+      }
+      for (const line of listMachineSettingsPermissions(Boolean(options.json))) log(line)
+    })
   for (const operation of ['add', 'remove'] as const) {
     permission
       .command(operation)

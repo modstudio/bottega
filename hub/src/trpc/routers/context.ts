@@ -13,6 +13,11 @@ import {
   configSet,
   contextGet,
   dashboardMutationAvailable,
+  machineConfigDelete,
+  machineConfigList,
+  machineConfigSet,
+  machinePermission,
+  machinePermissions,
   settingsCheck,
   settingsPermission,
   userDocGet,
@@ -41,6 +46,7 @@ const permissionList = z.enum(['allow', 'ask', 'deny'])
 const autonomyValue = z.enum(AUTONOMY_VALUES)
 const autonomyPreset = z.enum(AUTONOMY_PRESETS)
 const releaseValue = z.enum(RELEASE_AUTONOMY_VALUES)
+const rulingsValue = z.enum(['agent', 'user'])
 const target = z.union([
   z.object({ user: z.literal(true) }),
   z.object({ project: z.string().min(1) }),
@@ -54,7 +60,10 @@ function projectPath(name: string): string {
 
 async function localAutonomy(project: string) {
   const cwd = projectPath(project)
-  const resolved = await fromOrch(() => contextGet(cwd))
+  const [resolved, machineEntries] = await Promise.all([
+    fromOrch(() => contextGet(cwd)),
+    fromOrch(machineConfigList),
+  ])
   let entries: Awaited<ReturnType<typeof configList>> = []
   let configWarning: string | null = null
   try {
@@ -79,22 +88,67 @@ async function localAutonomy(project: string) {
       userPreset?: AutonomyPreset | null
     }
   }
-  const stages: Array<(typeof resolved.stages)[number] & { overridden?: boolean | null }> =
-    resolved.stages.map((stage) => ({
+  const machineValue = <Value extends string>(
+    key: z.infer<typeof machineKey>,
+    values: readonly Value[],
+  ): Value | undefined => {
+    const value = machineEntries.find((entry) => entry.key === autonomyMachineKey(key))?.value
+    return values.includes(value as Value) ? (value as Value) : undefined
+  }
+  const stages: Array<
+    (typeof resolved.stages)[number] & {
+      overridden?: boolean | null
+      machineValue?: (typeof AUTONOMY_VALUES)[number]
+    }
+  > = resolved.stages.map((stage) => {
+    const value = machineValue({ kind: 'stage', stage: stage.stage }, AUTONOMY_VALUES)
+    return {
       ...stage,
+      ...(value !== undefined ? { machineValue: value } : {}),
       overridden: configWarning
         ? null
         : user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
-    }))
+    }
+  })
+  const rulingsMachineValue = machineValue({ kind: 'rulings' }, ['agent', 'user'] as const)
+  const releaseMachineValue = machineValue({ kind: 'release' }, RELEASE_AUTONOMY_VALUES)
   return {
     ...resolved,
+    rulings: {
+      ...resolved.rulings,
+      ...(rulingsMachineValue !== undefined ? { machineValue: rulingsMachineValue } : {}),
+    },
+    release: {
+      ...resolved.release,
+      ...(releaseMachineValue !== undefined ? { machineValue: releaseMachineValue } : {}),
+    },
     userPreset,
     stages,
     ...(configWarning ? { warnings: [...(resolved.warnings ?? []), configWarning] } : {}),
-  } as Omit<typeof resolved, 'stages'> & {
+  } as Omit<typeof resolved, 'stages' | 'rulings' | 'release'> & {
     userPreset?: AutonomyPreset | null
     stages: typeof stages
+    rulings: typeof resolved.rulings & { machineValue?: 'agent' | 'user' }
+    release: typeof resolved.release & {
+      machineValue?: (typeof RELEASE_AUTONOMY_VALUES)[number]
+    }
   }
+}
+
+const machineKey = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('stage'), stage: z.enum(AUTONOMY_STAGES) }),
+  z.object({ kind: z.literal('release') }),
+  z.object({ kind: z.literal('rulings') }),
+])
+
+const machineSet = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('stage'), stage: z.enum(AUTONOMY_STAGES), value: autonomyValue }),
+  z.object({ kind: z.literal('release'), value: releaseValue }),
+  z.object({ kind: z.literal('rulings'), value: rulingsValue }),
+])
+
+function autonomyMachineKey(input: z.infer<typeof machineKey>): string {
+  return input.kind === 'stage' ? `autonomy.stage.${input.stage}` : `autonomy.${input.kind}`
 }
 
 function configConflict(error: unknown): error is TRPCError {
@@ -225,11 +279,60 @@ export const contextRouter = t.router({
         await clearLocalStageOverrides(entries)
         return localAutonomy(input.project)
       }),
+    clearStage: mutation
+      .input(
+        z.object({
+          project: z.string().min(1),
+          stage: z.string().min(1),
+          expectedRowVersion: z.number().int().positive().nullable().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const before = await localAutonomy(input.project)
+        if (!before.registered || !before.stages.some(({ stage }) => stage === input.stage)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Unknown autonomy stage "${input.stage}"`,
+          })
+        }
+        const key = `autonomy.stage.${input.stage}`
+        const entry = (await fromOrch(configList)).find(
+          (candidate) => candidate.scope === 'user' && candidate.key === key,
+        )
+        if (!entry) return { ...(await localAutonomy(input.project)), cleared: false }
+        if (input.expectedRowVersion === null) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Current row version is not null' })
+        }
+        await fromOrch(() => configDelete(key, input.expectedRowVersion ?? entry.rowVersion))
+        return { ...(await localAutonomy(input.project)), cleared: true }
+      }),
+    setMachine: mutation
+      .input(z.object({ project: z.string().min(1) }).and(machineSet))
+      .mutation(async ({ input }) => {
+        projectPath(input.project)
+        await fromOrch(() => machineConfigSet(autonomyMachineKey(input), input.value))
+        return localAutonomy(input.project)
+      }),
+    clearMachine: mutation
+      .input(z.object({ project: z.string().min(1) }).and(machineKey))
+      .mutation(async ({ input }) => {
+        projectPath(input.project)
+        const key = autonomyMachineKey(input)
+        const removed = (await fromOrch(machineConfigList)).some((entry) => entry.key === key)
+        await fromOrch(() => machineConfigDelete(key))
+        return { ...(await localAutonomy(input.project)), removed }
+      }),
   }),
   settings: t.router({
     get: t.procedure.input(target).query(async ({ input }) => {
-      const result = await fromOrch(() => settingsCheck(input))
-      return { ...result, mode: 'local' } as typeof result & { mode?: 'local' }
+      const [result, machine] = await Promise.all([
+        fromOrch(() => settingsCheck(input)),
+        fromOrch(machinePermissions),
+      ])
+      return { ...result, mode: 'local', machine } as typeof result & {
+        mode?: 'local'
+        machine?: typeof machine
+      }
     }),
     permission: mutation
       .input(
@@ -243,5 +346,14 @@ export const contextRouter = t.router({
         }),
       )
       .mutation(({ input }) => fromOrch(() => settingsPermission(input), true)),
+    machinePermission: mutation
+      .input(
+        z.object({
+          list: permissionList,
+          rule: z.string().trim().min(1, 'Rule is required'),
+          operation: z.enum(['add', 'remove', 'drop', 'undrop']),
+        }),
+      )
+      .mutation(({ input }) => fromOrch(() => machinePermission(input), true)),
   }),
 })

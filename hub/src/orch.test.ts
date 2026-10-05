@@ -24,6 +24,12 @@ import {
   decodeRunsJson,
   docArgv,
   fileRulingArgv,
+  MachineAutonomyEntrySchema,
+  MachinePermissionOverlaySchema,
+  MachinePermissionResultSchema,
+  machineConfigArgv,
+  machinePermissionArgv,
+  machinePermissionListArgv,
   projectArgv,
   settingsCheck,
   settingsCheckArgv,
@@ -31,6 +37,40 @@ import {
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('machine bridge schemas parse the CLI output shapes', () => {
+  expect(
+    MachinePermissionResultSchema.parse({
+      changed: true,
+      counts: { allow: 1, ask: 2, deny: 3 },
+      message: 'updated machine permissions',
+    }),
+  ).toEqual({
+    changed: true,
+    counts: { allow: 1, ask: 2, deny: 3 },
+    message: 'updated machine permissions',
+  })
+  expect(
+    MachinePermissionOverlaySchema.parse({
+      additions: { allow: ['Bash(orch *)'], ask: [], deny: [] },
+      drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
+    }),
+  ).toEqual({
+    additions: { allow: ['Bash(orch *)'], ask: [], deny: [] },
+    drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
+  })
+  expect(
+    MachineAutonomyEntrySchema.parse({
+      key: 'autonomy.stage.review',
+      value: 'auto',
+      scope: 'local user',
+    }),
+  ).toEqual({
+    key: 'autonomy.stage.review',
+    value: 'auto',
+    scope: 'local user',
+  })
+})
 
 test('managed context wrappers build exact argv', () => {
   expect(contextArgv('/work/project')).toEqual(['context', '--cwd', '/work/project', '--json'])
@@ -68,6 +108,21 @@ test('managed context wrappers build exact argv', () => {
     'autonomy.stage.review',
     '--expect',
     '3',
+  ])
+  expect(machineConfigArgv('list')).toEqual(['config', 'list', '--machine', '--json'])
+  expect(machineConfigArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'config',
+    'set',
+    'autonomy.stage.review',
+    'auto',
+    '--machine',
+    '--json',
+  ])
+  expect(machineConfigArgv('delete', 'autonomy.release')).toEqual([
+    'config',
+    'delete',
+    'autonomy.release',
+    '--machine',
   ])
   expect(settingsCheckArgv({ user: true })).toEqual([
     'settings',
@@ -107,6 +162,34 @@ test('managed context wrappers build exact argv', () => {
     'revision-1',
     '--reason',
     'needed',
+    '--json',
+  ])
+  expect(machinePermissionListArgv()).toEqual([
+    'settings',
+    'permission',
+    'list',
+    '--machine',
+    '--json',
+  ])
+  expect(machinePermissionArgv({ operation: 'add', list: 'allow', rule: 'Bash(orch *)' })).toEqual([
+    'settings',
+    'permission',
+    'add',
+    '--machine',
+    '--list',
+    'allow',
+    '--rule',
+    'Bash(orch *)',
+    '--json',
+  ])
+  expect(machinePermissionArgv({ operation: 'drop', list: 'ask', rule: 'Bash(rm *)' })).toEqual([
+    'settings',
+    'permission',
+    'drop',
+    '--list',
+    'ask',
+    '--rule',
+    'Bash(rm *)',
     '--json',
   ])
 })

@@ -27,6 +27,7 @@ describe('hostedRouter', () => {
   test('exposes the record and hosted context namespaces', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([
+      'context.autonomy.clearStage',
       'context.autonomy.get',
       'context.autonomy.set',
       'context.autonomy.setPreset',
@@ -70,5 +71,8 @@ describe('hostedRouter', () => {
       'record.void',
       'record.whoami',
     ])
+    expect(procedures).not.toContain('context.autonomy.setMachine')
+    expect(procedures).not.toContain('context.autonomy.clearMachine')
+    expect(procedures).not.toContain('context.settings.machinePermission')
   })
 })

@@ -236,6 +236,31 @@ describe('hosted context router', () => {
     })
   })
 
+  test('autonomy.clearStage deletes only the named override and reports absence', async () => {
+    const client = fakeClient()
+    const result = await caller(client).autonomy.clearStage({
+      project: 'alpha',
+      stage: 'review',
+      expectedRowVersion: 3,
+    })
+    expect(result.cleared).toBe(true)
+    expect(client.deleteConfigEntry).toHaveBeenCalledTimes(1)
+    expect(client.deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.review', {
+      scope: 'user',
+      expectedRowVersion: 3,
+    })
+
+    const absentClient = fakeClient({ configEntries: mock(async () => []) as never })
+    await expect(
+      caller(absentClient).autonomy.clearStage({
+        project: 'alpha',
+        stage: 'review',
+        expectedRowVersion: null,
+      }),
+    ).resolves.toMatchObject({ cleared: false })
+    expect(absentClient.deleteConfigEntry).not.toHaveBeenCalled()
+  })
+
   test('autonomy.setPreset retries a conflict and reports overrides still left', async () => {
     let lists = 0
     const configEntries = mock(async () => {

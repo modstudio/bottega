@@ -313,6 +313,30 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
           await clearHostedStageOverrides(client, entries)
           return hostedAutonomy(client, input.project)
         }),
+      clearStage: t.procedure
+        .input(
+          z.object({
+            project: z.string().min(1),
+            stage: z.enum(AUTONOMY_STAGES),
+            expectedRowVersion,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          const client = clientFor(ctx)
+          const key = `autonomy.stage.${input.stage}`
+          const entry = (await client.configEntries()).find(
+            (candidate) => candidate.scope === 'user' && candidate.key === key,
+          )
+          if (!entry) return { ...(await hostedAutonomy(client, input.project)), cleared: false }
+          if (input.expectedRowVersion === null) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'Current row version is not null' })
+          }
+          await client.deleteConfigEntry(key, {
+            scope: 'user',
+            expectedRowVersion: input.expectedRowVersion,
+          })
+          return { ...(await hostedAutonomy(client, input.project)), cleared: true }
+        }),
     }),
     settings: t.router({
       get: t.procedure.input(target).query(async ({ ctx, input }) => {

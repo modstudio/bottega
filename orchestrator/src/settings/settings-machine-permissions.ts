@@ -3,12 +3,32 @@
 import {
   editMachinePermission,
   type MachinePermissionOperation,
+  type MachinePermissionOverlay,
+  readMachinePermissions,
 } from '../../../shared/machine-config.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
 } from '../../../shared/settings-summary.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
+
+export function machinePermissionListPresentation(
+  overlay: MachinePermissionOverlay,
+  json: boolean,
+): string[] {
+  if (json) return [JSON.stringify(overlay)]
+  return SETTINGS_PERMISSION_LISTS.flatMap((list) => [
+    ...overlay.additions[list].map((rule) => `${list}\tadditions\t${rule}`),
+    ...overlay.drop[list].map((rule) => `${list}\tdrop\t${rule}`),
+  ])
+}
+
+export function listMachineSettingsPermissions(
+  json: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  return machinePermissionListPresentation(readMachinePermissions(env), json)
+}
 
 export function editMachineSettingsPermission(
   input: {
