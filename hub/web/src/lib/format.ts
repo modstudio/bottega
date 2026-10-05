@@ -42,6 +42,21 @@ export function collectedTime(value: string | null) {
   return `collected ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(value)).toLowerCase()}`
 }
 
+export function hourOfDayLabel(hour: number) {
+  const period = hour < 12 ? 'AM' : 'PM'
+  return `${hour % 12 || 12}:00 ${period}`
+}
+
+export function sendTimestamp(value: string | number | Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(value))
+}
+
 /** A run's time as the dashboard prints it, in the operator's zone. */
 export function runEasternTime(value: string, includeDay = false) {
   const parts = new Intl.DateTimeFormat('en-US', {

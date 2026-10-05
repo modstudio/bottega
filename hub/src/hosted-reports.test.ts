@@ -12,6 +12,7 @@ const caller = {
 const member = '01990000-0000-7000-8000-000000000702'
 const outsider = '01990000-0000-7000-8000-000000000799'
 const crossProject = '01990000-0000-7000-8000-000000000798'
+const ownProject = '01990000-0000-7000-8000-000000000797'
 const facts = { projectNames: ['workshop'], memberUserIds: [caller.userId, member] }
 const daily = { cadence: 'daily', hour: 8, zone: 'America/New_York' }
 
@@ -116,7 +117,19 @@ describe('report subscriptions', () => {
     ).toThrow('members scope requires at least one member')
   })
 
-  test('projects scope requires the personal space and eligible non-empty projects', () => {
+  test('projects scope accepts own-space projects for a member and personal cross-space projects', () => {
+    expect(
+      planReportSubscription(
+        caller,
+        { scope: { kind: 'projects', projectIds: [ownProject] }, ...daily },
+        {
+          ...facts,
+          membershipRole: 'member',
+          personalSpaceId: outsider,
+          ownSpaceProjectIds: [ownProject],
+        },
+      ),
+    ).toMatchObject({ scope_kind: 'projects', project_ids: [ownProject], project_name: null })
     expect(
       planReportSubscription(
         caller,
@@ -130,7 +143,7 @@ describe('report subscriptions', () => {
         { scope: { kind: 'projects', projectIds: [crossProject] }, ...daily },
         { ...facts, personalSpaceId: outsider, eligibleProjectIds: [crossProject] },
       ),
-    ).toThrow('projects scope is available only in your personal space')
+    ).toThrow('every report project must be in this space')
     expect(() =>
       planReportSubscription(
         caller,
@@ -144,7 +157,7 @@ describe('report subscriptions', () => {
         { scope: { kind: 'projects', projectIds: [crossProject] }, ...daily },
         { ...facts, personalSpaceId: caller.spaceId, eligibleProjectIds: [] },
       ),
-    ).toThrow('every report project must belong to a space you own or administer')
+    ).toThrow('a non-personal space may only choose its own projects')
   })
 
   test('the cadence round-trips with its zone', () => {

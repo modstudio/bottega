@@ -8,7 +8,7 @@ import {
   renderReport,
   runReportDeliveryPass,
 } from './report-delivery.ts'
-import { sesReportMailClient } from './report-delivery-hosted.ts'
+import { projectIsAvailable, sesReportMailClient } from './report-delivery-hosted.ts'
 import type { GatheredReport } from './report-renderer.ts'
 
 const now = new Date('2026-09-18T13:30:00.000Z') // 09:30 America/New_York
@@ -21,6 +21,48 @@ const candidate = (id: string): DeliveryCandidate => ({
   zone: 'America/New_York',
   createdAt: '2026-09-16T12:00:00.000Z',
   lastPeriodEnd: null,
+})
+
+const selectedProject = (overrides: Record<string, unknown> = {}) => ({
+  project_id: 'project',
+  project_name: 'Workshop',
+  snapshot_name: 'Workshop',
+  space_id: 'subscription-space',
+  snapshot_space_id: 'subscription-space',
+  space_name: 'Home',
+  role: 'member',
+  retired_at: null,
+  ...overrides,
+})
+
+test('selected project availability requires admin only outside the subscription space', () => {
+  expect(projectIsAvailable(selectedProject(), 'subscription-space')).toBe(true)
+  expect(
+    projectIsAvailable(
+      selectedProject({ space_id: 'other-space', snapshot_space_id: 'other-space' }),
+      'subscription-space',
+    ),
+  ).toBe(false)
+  expect(
+    projectIsAvailable(
+      selectedProject({ space_id: 'other-space', snapshot_space_id: 'other-space', role: 'admin' }),
+      'subscription-space',
+    ),
+  ).toBe(true)
+  expect(
+    projectIsAvailable(selectedProject({ retired_at: new Date() }), 'subscription-space'),
+  ).toBe(false)
+  expect(
+    projectIsAvailable(
+      selectedProject({
+        space_id: 'other-space',
+        snapshot_space_id: 'other-space',
+        role: 'owner',
+        retired_at: new Date(),
+      }),
+      'subscription-space',
+    ),
+  ).toBe(false)
 })
 
 const workMeasures: Measures = {

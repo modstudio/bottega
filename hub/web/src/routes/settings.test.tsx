@@ -13,6 +13,8 @@ const member = {
 function renderSettings(recipients = [member]) {
   queryClient.setQueryData(trpc.record.settings.queryOptions({ hours: 48 }).queryKey, {
     allProjects: ['workshop'],
+    spaceId: '01990000-0000-7000-8000-00000000070a',
+    spaceProjects: [{ id: '01990000-0000-7000-8000-000000000711', name: 'workshop' }],
     callerRole: 'owner',
     isPersonalSpace: true,
     manageableProjects: [],
