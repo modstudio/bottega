@@ -40,12 +40,18 @@ export function registerBoardClaimTools(server: McpServer): void {
   )
   server.registerTool(
     'board_claim_renew',
-    { description: 'Renew a live coordination claim.', inputSchema: z.object({ id: z.number().int().positive() }) },
+    {
+      description: 'Renew a live coordination claim.',
+      inputSchema: z.object({ id: z.number().int().positive() }),
+    },
     async ({ id }) => result(renewClaim(id)),
   )
   server.registerTool(
     'board_claim_release',
-    { description: 'Release a live coordination claim.', inputSchema: z.object({ id: z.number().int().positive() }) },
+    {
+      description: 'Release a live coordination claim.',
+      inputSchema: z.object({ id: z.number().int().positive() }),
+    },
     async ({ id }) => result(releaseClaim(id)),
   )
   server.registerTool(

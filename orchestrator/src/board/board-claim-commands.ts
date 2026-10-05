@@ -48,7 +48,5 @@ export function registerBoardClaimCommands(
     .command('release-task <key>')
     .requiredOption('--project <name>')
     .requiredOption('--json')
-    .action((key, options) =>
-      console.log(JSON.stringify(releaseTaskClaims(key, options.project))),
-    )
+    .action((key, options) => console.log(JSON.stringify(releaseTaskClaims(key, options.project))))
 }

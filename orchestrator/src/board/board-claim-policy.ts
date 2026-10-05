@@ -22,7 +22,8 @@ export function claimCloseReason(input: ClaimLiveness): ClaimCloseReason | null 
   return null
 }
 
-export const claimIsLive = (input: ClaimLiveness): boolean => claimCloseReason(input) === null
+export const claimIsLive = (input: ClaimLiveness): boolean =>
+  !input.closed && claimCloseReason(input) === null
 
 export function claimSubjectsConflict(left: ClaimSubject, right: ClaimSubject): boolean {
   if (left.kind !== right.kind) return false
@@ -38,14 +39,14 @@ export type ClaimTakeDecision = 'take' | 'renew' | 'refuse' | 'take-over'
 export function claimTakeDecision(input: {
   sameHolderSameSubject: boolean
   conflictingClaim: boolean
-  conflictingLive: boolean
+  foreignLiveConflict: boolean
   force: boolean
   actorKind: ClaimActor['kind']
 }): ClaimTakeDecision {
-  if (input.sameHolderSameSubject && input.conflictingLive) return 'renew'
-  if (!input.conflictingClaim) return 'take'
-  if (!input.conflictingLive || (input.force && input.actorKind === 'operator')) return 'take-over'
-  return 'refuse'
+  if (input.foreignLiveConflict)
+    return input.force && input.actorKind === 'operator' ? 'take-over' : 'refuse'
+  if (input.sameHolderSameSubject) return 'renew'
+  return input.conflictingClaim ? 'take-over' : 'take'
 }
 
 export const sameClaimHolder = (actor: ClaimActor, holder: ClaimActor): boolean =>

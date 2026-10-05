@@ -47,12 +47,55 @@ test('a lapsed claim is taken over, linked, closed, and its holder is told', () 
   const first = takeClaim({ subject: 'resource:gpu', durationMs: 1 }, env('holder'), clock, cwd)
   const next = takeClaim({ subject: 'resource:gpu' }, env('other'), clock + 2, cwd)
   expect(next.action).toBe('taken-over')
-  expect(next.previousClaimId).toBe(first.id)
+  expect(next.previousClaimIds).toEqual([first.id])
   expect(listClaims(undefined, true, env('holder'), clock + 2, cwd).claims[0]).toMatchObject({
     id: first.id,
     closeReason: 'taken-over',
+    supersededByClaimId: next.id,
   })
   expect(claimInterruptNotices('holder', clock + 3)).toHaveLength(1)
+})
+
+test('a broad path claim refuses every live conflict and tells every architect holder', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('first-holder', null, clock)
+  presence('second-holder', null, clock)
+  takeClaim({ subject: 'path:src/a.ts' }, env('first-holder'), clock, cwd)
+  takeClaim({ subject: 'path:src/b.ts' }, env('second-holder'), clock, cwd)
+  expect(() => takeClaim({ subject: 'path:src/**' }, env('requester'), clock + 1, cwd)).toThrow(
+    /session first-holder.*session second-holder/,
+  )
+  expect(claimInterruptNotices('first-holder', clock + 2)).toHaveLength(1)
+  expect(claimInterruptNotices('second-holder', clock + 2)).toHaveLength(1)
+})
+
+test('a broad path takeover closes and links every stale conflict', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('first-holder', null, clock)
+  presence('second-holder', null, clock)
+  const first = takeClaim(
+    { subject: 'path:src/a.ts', durationMs: 1 },
+    env('first-holder'),
+    clock,
+    cwd,
+  )
+  const second = takeClaim(
+    { subject: 'path:src/b.ts', durationMs: 1 },
+    env('second-holder'),
+    clock,
+    cwd,
+  )
+  const broad = takeClaim({ subject: 'path:src/**' }, env('requester'), clock + 2, cwd)
+  expect(broad.previousClaimIds).toEqual([first.id, second.id])
+  const history = listClaims(undefined, true, env('requester'), clock + 2, cwd).claims
+  expect(history.slice(0, 2).map((claim) => claim.supersededByClaimId)).toEqual([
+    broad.id,
+    broad.id,
+  ])
+  expect(claimInterruptNotices('first-holder', clock + 3)).toHaveLength(1)
+  expect(claimInterruptNotices('second-holder', clock + 3)).toHaveLength(1)
 })
 
 test('a tied claim follows the chain latest turn and renewal restarts its lease', () => {

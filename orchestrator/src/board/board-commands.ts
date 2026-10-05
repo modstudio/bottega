@@ -19,7 +19,7 @@ import {
   replyToThread,
 } from './board-thread-service.ts'
 
-export function parseBoardDuration(value: string): number {
+function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
   if (!match) throw new Error(`invalid duration ${value}; use a positive value such as 30m or 1d`)
   const amount = Number(match[1])

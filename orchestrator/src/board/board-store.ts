@@ -98,7 +98,9 @@ export function boardActor(env: Environment = process.env): BoardActor {
 
 function presenceFacts(database = db(), at = Date.now()) {
   const architects = (
-    database.query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence').all() as {
+    database
+      .query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence')
+      .all() as {
       session_id: string
       project: string
       machine: string
@@ -130,7 +132,14 @@ function presenceFacts(database = db(), at = Date.now()) {
        JOIN run root ON root.id=COALESCE(run.parent_run_id,run.id)
        ORDER BY root_id,run.turn DESC`,
     )
-    .all() as { id: number; root_id: number; repo: string | null; status: string; turn: number; launch_key: string | null }[]
+    .all() as {
+    id: number
+    root_id: number
+    repo: string | null
+    status: string
+    turn: number
+    launch_key: string | null
+  }[]
   const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number> }>()
   for (const row of liveTurns) {
     const current = workers.get(row.root_id)
@@ -150,12 +159,29 @@ function presenceFacts(database = db(), at = Date.now()) {
          ORDER BY turn DESC,id DESC LIMIT 1)
        WHERE claim.closed_at IS NULL AND claim.subject_kind='task'`,
     )
-    .all() as { holder_kind: 'operator' | 'architect'; holder_session: string | null; subject_value: string; lapses_at: string; run_status: string | null }[]
+    .all() as {
+    holder_kind: 'operator' | 'architect'
+    holder_session: string | null
+    subject_value: string
+    lapses_at: string
+    run_status: string | null
+  }[]
   const claimReaders = new Map<string, { role: 'operator' | 'architect'; taskKeys: Set<string> }>()
   for (const claim of claims) {
-    if (!claimIsLive({ closed: false, lapsesAt: Date.parse(claim.lapses_at), runStatus: claim.run_status, now: at })) continue
+    if (
+      !claimIsLive({
+        closed: false,
+        lapsesAt: Date.parse(claim.lapses_at),
+        runStatus: claim.run_status,
+        now: at,
+      })
+    )
+      continue
     const reader = claim.holder_kind === 'operator' ? OPERATOR_READER : claim.holder_session!
-    const fact = claimReaders.get(reader) ?? { role: claim.holder_kind, taskKeys: new Set<string>() }
+    const fact = claimReaders.get(reader) ?? {
+      role: claim.holder_kind,
+      taskKeys: new Set<string>(),
+    }
     fact.taskKeys.add(claim.subject_value)
     claimReaders.set(reader, fact)
   }

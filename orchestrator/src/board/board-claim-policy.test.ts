@@ -15,6 +15,7 @@ const operator = { kind: 'operator' as const, session: null }
 
 test('claim liveness derives closure, lapse, and the latest tied run state', () => {
   expect(claimIsLive({ closed: false, lapsesAt: 101, runStatus: null, now: 100 })).toBeTrue()
+  expect(claimIsLive({ closed: true, lapsesAt: 101, runStatus: null, now: 100 })).toBeFalse()
   expect(claimCloseReason({ closed: true, lapsesAt: 101, runStatus: null, now: 100 })).toBeNull()
   expect(claimCloseReason({ closed: false, lapsesAt: 100, runStatus: null, now: 100 })).toBe(
     'lapsed',
@@ -27,21 +28,81 @@ test('claim liveness derives closure, lapse, and the latest tied run state', () 
 })
 
 test('claims conflict only within a kind, with symmetric path glob matching', () => {
-  expect(claimSubjectsConflict({ kind: 'task', value: 'DEV-1' }, { kind: 'task', value: 'DEV-1' })).toBeTrue()
-  expect(claimSubjectsConflict({ kind: 'resource', value: 'gpu' }, { kind: 'resource', value: 'gpu' })).toBeTrue()
-  expect(claimSubjectsConflict({ kind: 'path', value: 'src/**' }, { kind: 'path', value: 'src/a.ts' })).toBeTrue()
-  expect(claimSubjectsConflict({ kind: 'path', value: 'src/a.ts' }, { kind: 'path', value: 'src/**' })).toBeTrue()
-  expect(claimSubjectsConflict({ kind: 'path', value: 'src/**' }, { kind: 'path', value: 'test/a.ts' })).toBeFalse()
-  expect(claimSubjectsConflict({ kind: 'task', value: 'same' }, { kind: 'resource', value: 'same' })).toBeFalse()
+  expect(
+    claimSubjectsConflict({ kind: 'task', value: 'DEV-1' }, { kind: 'task', value: 'DEV-1' }),
+  ).toBeTrue()
+  expect(
+    claimSubjectsConflict({ kind: 'resource', value: 'gpu' }, { kind: 'resource', value: 'gpu' }),
+  ).toBeTrue()
+  expect(
+    claimSubjectsConflict({ kind: 'path', value: 'src/**' }, { kind: 'path', value: 'src/a.ts' }),
+  ).toBeTrue()
+  expect(
+    claimSubjectsConflict({ kind: 'path', value: 'src/a.ts' }, { kind: 'path', value: 'src/**' }),
+  ).toBeTrue()
+  expect(
+    claimSubjectsConflict({ kind: 'path', value: 'src/**' }, { kind: 'path', value: 'test/a.ts' }),
+  ).toBeFalse()
+  expect(
+    claimSubjectsConflict({ kind: 'task', value: 'same' }, { kind: 'resource', value: 'same' }),
+  ).toBeFalse()
 })
 
 test('take decision covers take, renewal, refusal, stale takeover, and operator force', () => {
-  expect(claimTakeDecision({ sameHolderSameSubject: false, conflictingClaim: false, conflictingLive: false, force: false, actorKind: 'architect' })).toBe('take')
-  expect(claimTakeDecision({ sameHolderSameSubject: true, conflictingClaim: true, conflictingLive: true, force: false, actorKind: 'architect' })).toBe('renew')
-  expect(claimTakeDecision({ sameHolderSameSubject: false, conflictingClaim: true, conflictingLive: true, force: false, actorKind: 'architect' })).toBe('refuse')
-  expect(claimTakeDecision({ sameHolderSameSubject: false, conflictingClaim: true, conflictingLive: false, force: false, actorKind: 'architect' })).toBe('take-over')
-  expect(claimTakeDecision({ sameHolderSameSubject: false, conflictingClaim: true, conflictingLive: true, force: true, actorKind: 'operator' })).toBe('take-over')
-  expect(claimTakeDecision({ sameHolderSameSubject: false, conflictingClaim: true, conflictingLive: true, force: true, actorKind: 'architect' })).toBe('refuse')
+  expect(
+    claimTakeDecision({
+      sameHolderSameSubject: false,
+      conflictingClaim: false,
+      foreignLiveConflict: false,
+      force: false,
+      actorKind: 'architect',
+    }),
+  ).toBe('take')
+  expect(
+    claimTakeDecision({
+      sameHolderSameSubject: true,
+      conflictingClaim: true,
+      foreignLiveConflict: false,
+      force: false,
+      actorKind: 'architect',
+    }),
+  ).toBe('renew')
+  expect(
+    claimTakeDecision({
+      sameHolderSameSubject: false,
+      conflictingClaim: true,
+      foreignLiveConflict: true,
+      force: false,
+      actorKind: 'architect',
+    }),
+  ).toBe('refuse')
+  expect(
+    claimTakeDecision({
+      sameHolderSameSubject: false,
+      conflictingClaim: true,
+      foreignLiveConflict: false,
+      force: false,
+      actorKind: 'architect',
+    }),
+  ).toBe('take-over')
+  expect(
+    claimTakeDecision({
+      sameHolderSameSubject: false,
+      conflictingClaim: true,
+      foreignLiveConflict: true,
+      force: true,
+      actorKind: 'operator',
+    }),
+  ).toBe('take-over')
+  expect(
+    claimTakeDecision({
+      sameHolderSameSubject: false,
+      conflictingClaim: true,
+      foreignLiveConflict: true,
+      force: true,
+      actorKind: 'architect',
+    }),
+  ).toBe('refuse')
 })
 
 test('renew, release, and force authorities are explicit', () => {

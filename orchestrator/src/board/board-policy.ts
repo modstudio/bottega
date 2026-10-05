@@ -110,9 +110,7 @@ export function resolveAudience(
       .map((row) => row.reader)
   if (audience.kind === 'task')
     return [
-      ...new Set(
-        live.filter((row) => row.taskKeys?.has(audience.value)).map((row) => row.reader),
-      ),
+      ...new Set(live.filter((row) => row.taskKeys?.has(audience.value)).map((row) => row.reader)),
     ]
   if (audience.kind === 'run')
     return live

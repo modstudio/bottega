@@ -1,6 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import {
   acknowledgeNotice,
@@ -17,6 +16,7 @@ import {
   readThread,
   replyToThread,
 } from '../board/board-thread-service.ts'
+import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 
 const result = (value: unknown) => ({
   content: [

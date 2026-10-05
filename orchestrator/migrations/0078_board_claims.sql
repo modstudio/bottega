@@ -13,7 +13,7 @@ CREATE TABLE board_claim (
   lapses_at TEXT NOT NULL,
   closed_at TEXT,
   close_reason TEXT CHECK (close_reason IN ('released','lapsed','run-ended','task-closed','taken-over')),
-  previous_claim_id INTEGER REFERENCES board_claim(id),
+  superseded_by_claim_id INTEGER REFERENCES board_claim(id),
   CHECK (
     (holder_kind = 'operator' AND holder_session IS NULL) OR
     (holder_kind = 'architect' AND holder_session IS NOT NULL)
@@ -25,5 +25,6 @@ CREATE TABLE board_claim (
 CREATE INDEX board_claim_project_subject
   ON board_claim(project, subject_kind, subject_value, closed_at);
 CREATE INDEX board_claim_run ON board_claim(run_id, closed_at);
+CREATE INDEX board_claim_superseded ON board_claim(superseded_by_claim_id);
 
 ALTER TABLE board_message ADD COLUMN claim_id INTEGER REFERENCES board_claim(id);

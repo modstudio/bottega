@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
+import type { TaskRow } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
 import { decideTaskClose } from './task-close-decision.ts'
-import type { TaskRow } from './task.ts'
 
-const closedTask = { project: 'bottega', key: 'DEV-1' } as TaskRow
+const closedTask = { project: PLATFORM_NAME, key: 'DEV-1' } as TaskRow
 
 describe('task close decision', () => {
   test('closes when every branch is landed', () => {
@@ -59,7 +60,7 @@ describe('task close claim release', () => {
         return { released: 2 }
       },
     })
-    expect(released).toBe('bottega:DEV-1')
+    expect(released).toBe(`${PLATFORM_NAME}:DEV-1`)
     expect(result.claimReleaseError).toBeNull()
   })
 

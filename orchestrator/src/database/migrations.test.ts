@@ -284,7 +284,9 @@ test('board claim migration preserves existing board rows and adds their nullabl
       claim_id: null,
     })
     expect(
-      database.query("SELECT name FROM sqlite_master WHERE type='table' AND name='board_claim'").get(),
+      database
+        .query("SELECT name FROM sqlite_master WHERE type='table' AND name='board_claim'")
+        .get(),
     ).toEqual({ name: 'board_claim' })
   } finally {
     database.close()

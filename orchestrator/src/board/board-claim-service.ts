@@ -7,9 +7,9 @@ import {
   BOARD_CLAIM_RESOURCE_MAX_CHARS,
   type ClaimActor,
   type ClaimCloseReason,
+  type ClaimSubject,
   claimCloseReason,
   claimIsLive,
-  type ClaimSubject,
   claimSubjectsConflict,
   claimTakeDecision,
   mayForceClaim,
@@ -37,7 +37,7 @@ type ClaimRow = {
   lapses_at: string
   closed_at: string | null
   close_reason: ClaimCloseReason | null
-  previous_claim_id: number | null
+  superseded_by_claim_id: number | null
 }
 
 export type ClaimView = {
@@ -53,7 +53,8 @@ export type ClaimView = {
   live: boolean
   closedAt: string | null
   closeReason: ClaimCloseReason | null
-  previousClaimId: number | null
+  previousClaimIds: number[]
+  supersededByClaimId: number | null
 }
 export type TakeClaimResult = ClaimView & { action: 'taken' | 'renewed' | 'taken-over' }
 export type TakeClaimInput = {
@@ -72,7 +73,9 @@ function claimActor(env: Environment): ClaimActor {
 function parseSubject(expression: string): ClaimSubject {
   const match = /^(task|path|resource):(.*)$/.exec(expression)
   if (!match)
-    throw new Error(`invalid claim subject ${expression}; use task:<KEY>, path:<glob>, or resource:<name>`)
+    throw new Error(
+      `invalid claim subject ${expression}; use task:<KEY>, path:<glob>, or resource:<name>`,
+    )
   const kind = match[1] as ClaimSubject['kind']
   const value = match[2]!.trim()
   if (!value) throw new Error(`claim ${kind} subject is empty; provide a value after ${kind}:`)
@@ -105,13 +108,16 @@ function claimNote(note: string | undefined): string | null | undefined {
 function claimProject(actor: ClaimActor, requested: string | undefined, cwd: string): string {
   if (actor.kind === 'operator') {
     if (!requested) throw new Error('operator claim requires --project <name>')
-    if (!projectByName(requested)) throw new Error(`unknown project ${requested}; run orch project list`)
+    if (!projectByName(requested))
+      throw new Error(`unknown project ${requested}; run orch project list`)
     return requested
   }
   const held = projectAt(cwd)
   if (!held) throw new Error(`claim project is unknown for ${cwd}; run from a registered project`)
   if (requested && requested !== held.name)
-    throw new Error(`architect session belongs to project ${held.name}; omit --project or use ${held.name}`)
+    throw new Error(
+      `architect session belongs to project ${held.name}; omit --project or use ${held.name}`,
+    )
   return held.name
 }
 
@@ -160,7 +166,12 @@ function view(row: ClaimRow, clock: number, database = db()): ClaimView {
     live: rowLive(row, clock, database),
     closedAt: row.closed_at,
     closeReason: row.close_reason,
-    previousClaimId: row.previous_claim_id,
+    previousClaimIds: (
+      database
+        .query('SELECT id FROM board_claim WHERE superseded_by_claim_id=? ORDER BY id')
+        .all(row.id) as { id: number }[]
+    ).map(({ id }) => id),
+    supersededByClaimId: row.superseded_by_claim_id,
   }
 }
 
@@ -198,6 +209,160 @@ function linkClaimNotice(
   database.query('UPDATE board_message SET claim_id=? WHERE id=?').run(claimId, notice.id)
 }
 
+type TakeTransaction = {
+  input: TakeClaimInput
+  actor: ClaimActor
+  subject: ClaimSubject
+  note: string | null | undefined
+  duration: number
+  project: string
+  env: Environment
+  clock: number
+  cwd: string
+  database: ReturnType<typeof writableDb>
+}
+
+type TakeTransactionResult = {
+  row: ClaimRow
+  action: TakeClaimResult['action'] | null
+  refusal: string | null
+}
+
+function conflictingClaims(context: TakeTransaction): {
+  conflicts: ClaimRow[]
+  exactHeld: ClaimRow | undefined
+  foreignLive: ClaimRow[]
+} {
+  const candidates = context.database
+    .query('SELECT * FROM board_claim WHERE project=? AND closed_at IS NULL ORDER BY id')
+    .all(context.project) as ClaimRow[]
+  const conflicts = candidates.filter((row) =>
+    claimSubjectsConflict(context.subject, {
+      kind: row.subject_kind,
+      value: row.subject_value,
+    }),
+  )
+  const live = conflicts.filter((row) => rowLive(row, context.clock, context.database))
+  const exactHeld = live.find(
+    (row) =>
+      row.subject_kind === context.subject.kind &&
+      row.subject_value === context.subject.value &&
+      sameClaimHolder(context.actor, holder(row)),
+  )
+  return { conflicts, exactHeld, foreignLive: live.filter((row) => row !== exactHeld) }
+}
+
+function renewTakenClaim(row: ClaimRow, context: TakeTransaction): TakeTransactionResult {
+  if (
+    (context.input.durationMs !== undefined && context.input.durationMs !== row.duration_ms) ||
+    (context.input.runId !== undefined && context.input.runId !== row.run_id) ||
+    (context.note !== undefined && context.note !== row.note)
+  )
+    throw new Error(
+      `claim ${row.id} already holds this subject with different terms; release it and take it again`,
+    )
+  const renewedAt = new Date(context.clock).toISOString()
+  context.database
+    .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE id=?')
+    .run(renewedAt, new Date(context.clock + row.duration_ms).toISOString(), row.id)
+  return { row: claimById(row.id, context.database), action: 'renewed', refusal: null }
+}
+
+function tellConflictingHolders(conflicts: ClaimRow[], context: TakeTransaction): void {
+  for (const conflict of conflicts) {
+    if (conflict.holder_kind !== 'architect') continue
+    linkClaimNotice(
+      conflict.id,
+      `session:${conflict.holder_session}`,
+      'Conflicting claim attempt',
+      `${context.actor.kind === 'operator' ? 'The operator' : `Session ${context.actor.session}`} attempted to claim ${context.input.subject} in ${context.project}; it conflicts with claim ${conflict.id}.`,
+      context.env,
+      context.clock,
+      context.cwd,
+      context.database,
+    )
+  }
+}
+
+function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTransactionResult {
+  tellConflictingHolders(conflicts, context)
+  const details = conflicts.map((conflict) => {
+    const named =
+      conflict.holder_kind === 'operator' ? 'operator' : `session ${conflict.holder_session}`
+    const remedy =
+      conflict.holder_kind === 'architect'
+        ? `ask with orch board ask --audience session:${conflict.holder_session}, or wait`
+        : 'wait for the operator claim to lapse'
+    return `${named} until ${conflict.lapses_at} (${remedy})`
+  })
+  return {
+    row: conflicts[0]!,
+    action: null,
+    refusal: `claim conflicts with: ${details.join('; ')}`,
+  }
+}
+
+function tellTakenOverHolder(claim: ClaimRow, context: TakeTransaction): void {
+  if (claim.holder_kind !== 'architect') return
+  linkClaimNotice(
+    claim.id,
+    `session:${claim.holder_session}`,
+    'Claim taken over',
+    `${context.actor.kind === 'operator' ? 'The operator' : `Session ${context.actor.session}`} took over claim ${claim.id} with ${context.input.subject} in ${context.project}.`,
+    context.env,
+    context.clock,
+    context.cwd,
+    context.database,
+  )
+}
+
+function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): TakeTransactionResult {
+  const now = new Date(context.clock).toISOString()
+  const inserted = context.database
+    .query(
+      `INSERT INTO board_claim
+       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+        taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)`,
+    )
+    .run(
+      context.project,
+      context.subject.kind,
+      context.subject.value,
+      context.actor.kind,
+      context.actor.session,
+      context.note ?? null,
+      context.input.runId ?? null,
+      context.duration,
+      now,
+      now,
+      new Date(context.clock + context.duration).toISOString(),
+    )
+  const row = claimById(Number(inserted.lastInsertRowid), context.database)
+  const close = context.database.query(
+    "UPDATE board_claim SET closed_at=?,close_reason='taken-over',superseded_by_claim_id=? WHERE id=?",
+  )
+  for (const conflict of conflicts) {
+    close.run(now, row.id, conflict.id)
+    tellTakenOverHolder(conflict, context)
+  }
+  return { row, action: conflicts.length ? 'taken-over' : 'taken', refusal: null }
+}
+
+function takeClaimInTransaction(context: TakeTransaction): TakeTransactionResult {
+  const { conflicts, exactHeld, foreignLive } = conflictingClaims(context)
+  const decision = claimTakeDecision({
+    sameHolderSameSubject: exactHeld !== undefined,
+    conflictingClaim: conflicts.length > 0,
+    foreignLiveConflict: foreignLive.length > 0,
+    force: Boolean(context.input.force),
+    actorKind: context.actor.kind,
+  })
+  if (decision === 'renew') return renewTakenClaim(exactHeld!, context)
+  if (decision === 'refuse') return refusedTake(foreignLive, context)
+  return insertTakenClaim(decision === 'take-over' ? conflicts : [], context)
+}
+
 export function takeClaim(
   input: TakeClaimInput,
   env: Environment = process.env,
@@ -214,110 +379,22 @@ export function takeClaim(
   const project = claimProject(actor, input.project, cwd)
   const database = writableDb()
   validateRunTie(input.runId, actor, database)
-  const outcome = writeTransaction(() => {
-    const candidates = database
-      .query('SELECT * FROM board_claim WHERE project=? AND closed_at IS NULL ORDER BY id')
-      .all(project) as ClaimRow[]
-    const conflict = candidates.find((row) =>
-      claimSubjectsConflict(subject, { kind: row.subject_kind, value: row.subject_value }),
-    )
-    const conflictLive = conflict ? rowLive(conflict, clock, database) : false
-    const exactHeld = Boolean(
-      conflict &&
-        conflict.subject_kind === subject.kind &&
-        conflict.subject_value === subject.value &&
-        sameClaimHolder(actor, holder(conflict)),
-    )
-    const decision = claimTakeDecision({
-      sameHolderSameSubject: exactHeld,
-      conflictingClaim: Boolean(conflict),
-      conflictingLive: conflictLive,
-      force: Boolean(input.force),
-      actorKind: actor.kind,
-    })
-    const now = new Date(clock).toISOString()
-    if (decision === 'renew') {
-      if (
-        (input.durationMs !== undefined && input.durationMs !== conflict!.duration_ms) ||
-        (input.runId !== undefined && input.runId !== conflict!.run_id) ||
-        (note !== undefined && note !== conflict!.note)
-      )
-        throw new Error(
-          `claim ${conflict!.id} already holds this subject with different terms; release it and take it again`,
-        )
-      const lapses = new Date(clock + conflict!.duration_ms).toISOString()
-      database
-        .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE id=?')
-        .run(now, lapses, conflict!.id)
-      return { row: claimById(conflict!.id, database), action: 'renewed' as const, refusal: null }
-    }
-    if (decision === 'refuse') {
-      if (conflict!.holder_kind === 'architect')
-        linkClaimNotice(
-          conflict!.id,
-          `session:${conflict!.holder_session}`,
-          'Conflicting claim attempt',
-          `${actor.kind === 'operator' ? 'The operator' : `Session ${actor.session}`} attempted to claim ${input.subject} in ${project}.`,
-          env,
-          clock,
-          cwd,
-          database,
-        )
-      const ask =
-        conflict!.holder_kind === 'architect'
-          ? `ask the holder with orch board ask --audience session:${conflict!.holder_session}, or wait`
-          : 'wait for the operator claim to lapse'
-      return {
-        row: conflict!,
-        action: null,
-        refusal: `claim conflicts with ${conflict!.holder_kind === 'operator' ? 'operator' : `session ${conflict!.holder_session}`} until ${conflict!.lapses_at}; ${ask}`,
-      }
-    }
-    if (conflict) {
-      database
-        .query("UPDATE board_claim SET closed_at=?,close_reason='taken-over' WHERE id=?")
-        .run(now, conflict.id)
-    }
-    const lapses = new Date(clock + duration).toISOString()
-    const inserted = database
-      .query(
-        `INSERT INTO board_claim
-         (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
-          taken_at,renewed_at,lapses_at,closed_at,close_reason,previous_claim_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,?)`,
-      )
-      .run(
-        project,
-        subject.kind,
-        subject.value,
-        actor.kind,
-        actor.session,
-        note ?? null,
-        input.runId ?? null,
+  const outcome = writeTransaction(
+    () =>
+      takeClaimInTransaction({
+        input,
+        actor,
+        subject,
+        note,
         duration,
-        now,
-        now,
-        lapses,
-        conflict?.id ?? null,
-      )
-    const row = claimById(Number(inserted.lastInsertRowid), database)
-    if (conflict?.holder_kind === 'architect')
-      linkClaimNotice(
-        conflict.id,
-        `session:${conflict.holder_session}`,
-        'Claim taken over',
-        `${actor.kind === 'operator' ? 'The operator' : `Session ${actor.session}`} took over ${input.subject} in ${project}.`,
+        project,
         env,
         clock,
         cwd,
         database,
-      )
-    return {
-      row,
-      action: conflict ? ('taken-over' as const) : ('taken' as const),
-      refusal: null,
-    }
-  }, database)
+      }),
+    database,
+  )
   if (outcome.refusal) throw new Error(outcome.refusal)
   return { ...view(outcome.row, clock, database), action: outcome.action! }
 }
@@ -333,7 +410,8 @@ export function renewClaim(
     const row = claimById(id, database)
     if (!rowLive(row, clock, database))
       throw new Error(`claim ${id} is no longer live; take the subject again`)
-    if (!mayRenewClaim(actor, holder(row))) throw new Error(`only the claim holder may renew claim ${id}`)
+    if (!mayRenewClaim(actor, holder(row)))
+      throw new Error(`only the claim holder may renew claim ${id}`)
     const at = new Date(clock).toISOString()
     database
       .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE id=?')
@@ -370,7 +448,9 @@ export function listClaims(
 ): { claims: ClaimView[] } {
   const actor = claimActor(env)
   const name = claimProject(actor, project, cwd)
-  const rows = db().query('SELECT * FROM board_claim WHERE project=? ORDER BY id').all(name) as ClaimRow[]
+  const rows = db()
+    .query('SELECT * FROM board_claim WHERE project=? ORDER BY id')
+    .all(name) as ClaimRow[]
   const claims = rows.map((row) => view(row, clock)).filter((row) => all || row.live)
   return { claims }
 }
@@ -383,12 +463,16 @@ export function releaseTaskClaims(
 ): { released: number } {
   const actor = claimActor(env)
   if (actor.kind !== 'operator')
-    throw new Error('release-task is an operator integration verb; run it outside an architect session')
+    throw new Error(
+      'release-task is an operator integration verb; run it outside an architect session',
+    )
   if (!projectByName(project)) throw new Error(`unknown project ${project}; run orch project list`)
   const database = writableDb()
   return writeTransaction(() => {
     const rows = database
-      .query("SELECT * FROM board_claim WHERE project=? AND subject_kind='task' AND subject_value=? AND closed_at IS NULL")
+      .query(
+        "SELECT * FROM board_claim WHERE project=? AND subject_kind='task' AND subject_value=? AND closed_at IS NULL",
+      )
       .all(project, key) as ClaimRow[]
     const ids = rows.filter((row) => rowLive(row, clock, database)).map((row) => row.id)
     const close = database.query(
@@ -402,7 +486,9 @@ export function releaseTaskClaims(
 export function stampEndedClaims(clock = Date.now()): number {
   const database = writableDb()
   return writeTransaction(() => {
-    const rows = database.query('SELECT * FROM board_claim WHERE closed_at IS NULL').all() as ClaimRow[]
+    const rows = database
+      .query('SELECT * FROM board_claim WHERE closed_at IS NULL')
+      .all() as ClaimRow[]
     const close = database.query('UPDATE board_claim SET closed_at=?,close_reason=? WHERE id=?')
     let count = 0
     for (const row of rows) {
