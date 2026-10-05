@@ -42,6 +42,7 @@ export function registeredContextTokens(row: AgentRow): number | null {
 export type LocalHealth = { ok: boolean; detail: string; contextTokens?: number }
 
 let modelHostHealth: LocalHealth | null = null
+let modelHostHealthBaseUrl: string | null = null
 const agentHealth = new Map<
   string,
   { baseUrl: string | null; endpoint: string; health: LocalHealth }
@@ -179,7 +180,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
 export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: string } = {}) {
   const globalBaseUrl = opts.baseUrl ?? modelHostUrl()
   const globalProbe =
-    !modelHostHealth || opts.force
+    !modelHostHealth || modelHostHealthBaseUrl !== globalBaseUrl || opts.force
       ? localReachable(undefined, globalBaseUrl)
       : Promise.resolve(modelHostHealth)
   const probes = Object.values(AGENTS)
@@ -195,6 +196,7 @@ export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: strin
     })
   const [globalHealth] = await Promise.all([globalProbe, ...probes])
   modelHostHealth = globalHealth
+  modelHostHealthBaseUrl = globalBaseUrl
   return modelHostHealth
 }
 

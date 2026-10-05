@@ -131,6 +131,43 @@ describe('a self-operated agent without its own base URL', () => {
         globalThis.fetch = originalFetch
       }
     })
+
+    test('reprobes when the configured global endpoint changes', async () => {
+      addAgent('changing-global-fallback-local', {
+        harness: 'goose',
+        backend: 'vllm',
+        model: 'operator/changing-global-fallback',
+        contextTokens: 98_304,
+      })
+      addedAgents.push('changing-global-fallback-local')
+      refreshAgents()
+      const fetched: string[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        fetched.push(url.origin)
+        if (url.origin === 'http://127.0.0.1:19004') {
+          return Response.json({
+            data: [{ id: 'operator/changing-global-fallback', max_model_len: 98_304 }],
+          })
+        }
+        throw new Error(`refused ${url.origin}`)
+      }) as typeof fetch
+      try {
+        await ensureLocalHealth({ force: true })
+        expect(unavailableReason('changing-global-fallback-local')).toBe(
+          'endpoint unreachable — refused http://127.0.0.1:19003',
+        )
+
+        process.env.ORCH_MODEL_HOST_URL = 'http://127.0.0.1:19004/v1'
+        await ensureLocalHealth()
+
+        expect(unavailableReason('changing-global-fallback-local')).toBeNull()
+        expect(fetched).toContain('http://127.0.0.1:19004')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
   })
 
   describe('without a configured global endpoint', () => {
