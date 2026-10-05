@@ -31,6 +31,13 @@ export type Environment = Record<string, string | undefined>
 export type BoardActor =
   | { kind: 'operator'; session: null }
   | { kind: 'architect'; session: string }
+export type BoardOrigin = {
+  kind: string
+  session: string | null
+  harness: string | null
+  project: string | null
+  runId: string | null
+}
 export type PostNoticeResult = { id: number; dropped: boolean; reached: number; warning?: string }
 export class BoardPostRateLimitError extends Error {
   constructor() {
@@ -489,8 +496,18 @@ export function hasReceipt(messageId: number, reader: string): boolean {
   )
 }
 
-export function originText(message: MessageRow): string {
-  if (message.author_kind === 'operator') return 'operator'
-  if (message.author_kind === 'worker') return `worker run ${message.author_run_id ?? 'unknown'}`
-  return `architect ${message.author_session ?? 'unknown'} (${message.author_harness ?? 'unknown harness'}, ${message.author_project ?? 'unknown project'})`
+export function boardOrigin(message: MessageRow): BoardOrigin {
+  return {
+    kind: message.author_kind,
+    session: message.author_session,
+    harness: message.author_harness,
+    project: message.author_project,
+    runId: message.author_run_id === null ? null : String(message.author_run_id),
+  }
+}
+
+export function originText(origin: BoardOrigin): string {
+  if (origin.kind === 'operator') return 'operator'
+  if (origin.kind === 'worker') return `worker run ${origin.runId ?? 'unknown'}`
+  return `architect ${origin.session ?? 'unknown'} (${origin.harness ?? 'unknown harness'}, ${origin.project ?? 'unknown project'})`
 }

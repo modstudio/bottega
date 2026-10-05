@@ -37,15 +37,32 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertIn("filed issue", text)
         self.assertIn("Dropped board notices (orch board read --all).", text)
 
-    def test_board_slice_preserves_ids_for_post_emit_delivery(self):
+    def test_board_slice_accepts_string_ids_for_post_emit_delivery(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{"id": "7", "text": "notice one"}, {"id": "8", "text": "notice two"}]),
+        )
+        self.assertEqual(
+            session_brief._board_slice(completed),
+            ("notice one\n\nnotice two", ["7", "8"]),
+        )
+
+    def test_board_slice_keeps_accepting_integer_ids_for_post_emit_delivery(self):
         completed = SimpleNamespace(
             returncode=0,
             stdout=json.dumps([{"id": 7, "text": "notice one"}, {"id": 8, "text": "notice two"}]),
         )
         self.assertEqual(
             session_brief._board_slice(completed),
-            ("notice one\n\nnotice two", [7, 8]),
+            ("notice one\n\nnotice two", ["7", "8"]),
         )
+
+    def test_board_slice_rejects_a_non_digit_string_id(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{"id": "not-an-id", "text": "notice"}]),
+        )
+        self.assertEqual(session_brief._board_slice(completed), ("", []))
 
     def test_board_dropped_for_budget_has_no_post_emit_delivery_ids(self):
         board = "board notice " * 30

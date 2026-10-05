@@ -173,15 +173,19 @@ def _board_slice(completed):
         return "", []
     try:
         rows = json.loads(completed.stdout)
+        def board_id(row):
+            value = row.get("id") if isinstance(row, dict) else None
+            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                return str(value)
+            if isinstance(value, str) and value.isascii() and value.isdigit() and value[0] != "0":
+                return value
+            raise ValueError("invalid board notice id")
+
         if not isinstance(rows, list) or not all(
-            isinstance(row, dict)
-            and isinstance(row.get("id"), int)
-            and row["id"] > 0
-            and isinstance(row.get("text"), str)
-            for row in rows
+            isinstance(row, dict) and isinstance(row.get("text"), str) for row in rows
         ):
             raise ValueError("invalid board notice response")
-        return "\n\n".join(row["text"] for row in rows), [row["id"] for row in rows]
+        return "\n\n".join(row["text"] for row in rows), [board_id(row) for row in rows]
     except Exception:
         return "", []
 

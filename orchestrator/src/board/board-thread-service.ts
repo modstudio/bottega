@@ -17,6 +17,7 @@ import {
   addressed,
   authorWindowDecision,
   boardActor,
+  boardOrigin,
   hasReceipt,
   insertRootMessage,
   type MessageRow,
@@ -35,22 +36,6 @@ import {
 } from './board-thread-policy.ts'
 
 type Environment = Record<string, string | undefined>
-
-type Origin = {
-  kind: string
-  session: string | null
-  harness: string | null
-  project: string | null
-  runId: number | null
-}
-
-const origin = (row: MessageRow): Origin => ({
-  kind: row.author_kind,
-  session: row.author_session,
-  harness: row.author_harness,
-  project: row.author_project,
-  runId: row.author_run_id,
-})
 
 const authorReader = (row: MessageRow) => row.author_session ?? OPERATOR_READER
 
@@ -208,7 +193,7 @@ export function readThread(id: number, env: Environment = process.env, clock = D
       title: root.title,
       body: root.body,
       audience: root.audience,
-      origin: origin(root),
+      origin: boardOrigin(root),
       senderTags: messageTags(root.id)
         .filter((tag) => tag.origin === 'sender')
         .map(({ kind, value }) => ({ kind, value })),
@@ -225,7 +210,7 @@ export function readThread(id: number, env: Environment = process.env, clock = D
     replies: replies.map((reply) => ({
       id: reply.id,
       body: reply.body,
-      origin: origin(reply),
+      origin: boardOrigin(reply),
       createdAt: reply.created_at,
     })),
   }
@@ -287,8 +272,8 @@ async function filePendingNote(
         text: acceptedAnswerNoteText({
           title: question.title ?? '',
           replyBody: reply.body,
-          askerOrigin: originText(question),
-          answererOrigin: originText(reply),
+          askerOrigin: originText(boardOrigin(question)),
+          answererOrigin: originText(boardOrigin(reply)),
         }),
         new: true,
       },
