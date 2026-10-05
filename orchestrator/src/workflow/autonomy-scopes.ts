@@ -80,9 +80,9 @@ export async function resolveProjectAutonomy(
   stages: readonly AutonomyStage[] = [],
   hostedFallback?: { user: AutonomySettings; space: AutonomySettings },
 ): Promise<AutonomyResolution> {
-  if (session.release !== undefined) {
+  if (session.shipTo !== undefined) {
     throw new Error(
-      'release autonomy is operator-owned and cannot be set at session scope; use orch config set autonomy.release <value>',
+      'ship to is operator-owned and cannot be set at session scope; use orch config set autonomy.ship-to <value>',
     )
   }
   const registered = projectByName(project, d)

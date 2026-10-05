@@ -128,18 +128,18 @@ describe('orch MCP', () => {
     }
   })
 
-  test('worker-facing workflow tools refuse a session release override', async () => {
-    const project = 'mcp-release-autonomy'
+  test('worker-facing workflow tools refuse session ship-to names', async () => {
+    const project = 'mcp-ship-to'
     upsertProject({
       name: project,
-      path: '/mcp-release-autonomy',
+      path: '/mcp-ship-to',
       stack: 'bun',
       settings: {
         gate: 'bun run check',
         trunk: 'main',
         docs: { protocol: 'orch-docs' },
         tracker: { kind: 'hub', protocol: 'hub' },
-        autonomy: { release: 'push' },
+        autonomy: { shipTo: 'branch' },
       },
     })
     const server = createDocsMcpServer()
@@ -151,7 +151,7 @@ describe('orch MCP', () => {
       for (const request of [
         {
           name: 'compose_workflow',
-          arguments: { slug: 'ship', project, mode: 'default', autonomy: 'release=promote' },
+          arguments: { slug: 'ship', project, mode: 'default', autonomy: 'ship-to=production' },
         },
         {
           name: 'get_workflow_step',
@@ -167,7 +167,7 @@ describe('orch MCP', () => {
         const result = await client.callTool(request)
         expect(result.isError).toBe(true)
         expect((result.content as { text: string }[])[0]!.text).toContain(
-          'use orch config set autonomy.release <value>',
+          'use orch config set autonomy.ship-to <value>',
         )
       }
     } finally {

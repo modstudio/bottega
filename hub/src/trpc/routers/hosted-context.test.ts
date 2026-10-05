@@ -186,7 +186,33 @@ describe('hosted context router', () => {
     expect(result.mode).toBe('hosted')
     expect(result.stages).toContain('review')
     expect(result.user.stages.review).toEqual({ value: 'auto', rowVersion: 3 })
-    expect(result.space.release).toEqual({ value: 'land', rowVersion: 2 })
+    expect(result.space.shipTo).toEqual({ value: 'trunk', rowVersion: 2 })
+  })
+
+  test('autonomy.get gives the stored ship-to key precedence over its release alias', async () => {
+    const client = fakeClient()
+    client.configEntries = mock(async () => [
+      {
+        key: 'autonomy.release',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'promote',
+        rowVersion: 2,
+        updatedAt: at,
+      },
+      {
+        key: 'autonomy.ship-to',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'trunk',
+        rowVersion: 3,
+        updatedAt: at,
+      },
+    ])
+    expect((await caller(client).autonomy.get({ project: 'alpha' })).user.shipTo).toEqual({
+      value: 'trunk',
+      rowVersion: 3,
+    })
   })
 
   test('autonomy.set writes a versioned user stage and returns fresh entries', async () => {
@@ -204,16 +230,16 @@ describe('hosted context router', () => {
     })
   })
 
-  test('autonomy.setRelease writes a versioned user release', async () => {
+  test('autonomy.setShipTo writes a versioned user ship-to level', async () => {
     const client = fakeClient()
-    await caller(client).autonomy.setRelease({
+    await caller(client).autonomy.setShipTo({
       project: 'alpha',
-      value: 'promote',
+      value: 'production',
       expectedRowVersion: null,
     })
-    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.release', {
+    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.ship-to', {
       scope: 'user',
-      value: 'promote',
+      value: 'production',
       expectedRowVersion: null,
     })
   })

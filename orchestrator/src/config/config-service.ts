@@ -445,7 +445,8 @@ export async function deleteEntry(
 
 export function setMachineEntry(key: string, value: string) {
   setMachineAutonomy(key, value)
-  return listMachineAutonomy().find((row) => row.key === key)!
+  const storedKey = key === 'autonomy.release' ? 'autonomy.ship-to' : key
+  return listMachineAutonomy().find((row) => row.key === storedKey)!
 }
 
 export function deleteMachineEntry(key: string): void {

@@ -52,12 +52,12 @@ import {
   type RulingListRow,
   RulingListSchema,
 } from '../../shared/orch-contract.ts'
-import { RELEASE_AUTONOMY_VALUES } from '../../shared/release-autonomy.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
 } from '../../shared/settings-summary.ts'
+import { SHIP_TO_VALUES } from '../../shared/ship-to.ts'
 
 export type {
   OperatorWaitingItem,
@@ -592,8 +592,8 @@ const ContextSchema = z.discriminatedUnion('registered', [
     registered: z.literal(true),
     project: z.string(),
     rulings: z.object({ value: z.enum(['agent', 'user']), scope: z.string() }),
-    release: z.object({
-      value: z.enum(RELEASE_AUTONOMY_VALUES),
+    shipTo: z.object({
+      value: z.enum(SHIP_TO_VALUES),
       scope: z.string(),
       landing: z.string().nullable(),
       production: z.string().nullable(),

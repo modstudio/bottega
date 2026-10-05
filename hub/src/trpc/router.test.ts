@@ -64,8 +64,8 @@ const contextGet = mock(async (_cwd: string) => ({
   registered: true as const,
   project: 'alpha',
   rulings: { value: 'user' as const, scope: 'built-in' },
-  release: {
-    value: 'land' as const,
+  shipTo: {
+    value: 'trunk' as const,
     scope: 'built-in',
     landing: 'main',
     production: null,
@@ -640,7 +640,7 @@ describe('managed context', () => {
       registered: true,
       project: 'alpha',
       rulings: { value: 'user', scope: 'built-in' },
-      release: { value: 'land', scope: 'built-in', landing: 'main', production: null },
+      shipTo: { value: 'trunk', scope: 'built-in', landing: 'main', production: null },
       stages: [{ stage: 'review', agreed: true, value: 'review', scope: 'built-in', steps: 1 }],
       text: 'before',
     })
@@ -648,7 +648,7 @@ describe('managed context', () => {
       registered: true,
       project: 'alpha',
       rulings: { value: 'user', scope: 'hosted user' },
-      release: { value: 'land', scope: 'built-in', landing: 'main', production: null },
+      shipTo: { value: 'trunk', scope: 'built-in', landing: 'main', production: null },
       stages: [{ stage: 'review', agreed: true, value: 'auto', scope: 'hosted user', steps: 1 }],
       text: 'after',
     })
@@ -664,11 +664,14 @@ describe('managed context', () => {
     )
   })
 
-  test('sets the exact hosted user release key', async () => {
-    const result = await caller.context.autonomy.setRelease({ project: 'alpha', value: 'promote' })
-    expect(configSet).toHaveBeenLastCalledWith('autonomy.release', 'promote')
+  test('sets the exact hosted user ship-to key', async () => {
+    const result = await caller.context.autonomy.setShipTo({
+      project: 'alpha',
+      value: 'production',
+    })
+    expect(configSet).toHaveBeenLastCalledWith('autonomy.ship-to', 'production')
     expect(contextGet).toHaveBeenLastCalledWith('/fixtures/repos/alpha')
-    expect(result.registered && result.release.value).toBe('land')
+    expect(result.registered && result.shipTo.value).toBe('trunk')
   })
 
   test('setting a preset clears user stage overrides and returns the fresh preset', async () => {
@@ -772,22 +775,22 @@ describe('managed context', () => {
   test('writes and removes machine autonomy and reports machine values on reads', async () => {
     machineConfigList.mockResolvedValueOnce([
       { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
-      { key: 'autonomy.release', value: 'promote', scope: 'local user' },
+      { key: 'autonomy.ship-to', value: 'production', scope: 'local user' },
       { key: 'autonomy.rulings', value: 'agent', scope: 'local user' },
     ])
     const read = await caller.context.autonomy.get({ project: 'alpha' })
     expect(read.registered && read.stages[0]?.machineValue).toBe('auto')
-    expect(read.registered && read.release.machineValue).toBe('promote')
+    expect(read.registered && read.shipTo.machineValue).toBe('production')
     expect(read.registered && read.rulings.machineValue).toBe('agent')
 
     machineConfigList.mockResolvedValueOnce([
       { key: 'autonomy.stage.review', value: 'invalid-stage', scope: 'local user' },
-      { key: 'autonomy.release', value: 'invalid-release', scope: 'local user' },
+      { key: 'autonomy.ship-to', value: 'invalid-ship-to', scope: 'local user' },
       { key: 'autonomy.rulings', value: 'invalid-rulings', scope: 'local user' },
     ])
     const invalidRead = await caller.context.autonomy.get({ project: 'alpha' })
     expect(invalidRead.registered && invalidRead.stages[0]?.machineValue).toBeUndefined()
-    expect(invalidRead.registered && invalidRead.release.machineValue).toBeUndefined()
+    expect(invalidRead.registered && invalidRead.shipTo.machineValue).toBeUndefined()
     expect(invalidRead.registered && invalidRead.rulings.machineValue).toBeUndefined()
 
     machineConfigList.mockResolvedValueOnce([
@@ -802,13 +805,13 @@ describe('managed context', () => {
     expect(machineConfigSet).toHaveBeenLastCalledWith('autonomy.stage.review', 'review')
 
     machineConfigList
-      .mockResolvedValueOnce([{ key: 'autonomy.release', value: 'land', scope: 'local user' }])
+      .mockResolvedValueOnce([{ key: 'autonomy.ship-to', value: 'trunk', scope: 'local user' }])
       .mockResolvedValueOnce([])
     const cleared = await caller.context.autonomy.clearMachine({
       project: 'alpha',
-      kind: 'release',
+      kind: 'shipTo',
     })
-    expect(machineConfigDelete).toHaveBeenLastCalledWith('autonomy.release')
+    expect(machineConfigDelete).toHaveBeenLastCalledWith('autonomy.ship-to')
     expect(cleared.removed).toBe(true)
   })
 

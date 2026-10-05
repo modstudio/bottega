@@ -254,7 +254,21 @@ export function upsertProject(p: {
   settings?: ProjectSettings
 }): void {
   const database = writableDb()
-  writeProjectRegisterRow(database, p)
+  writeProjectRegisterRow(database, { ...p, settings: projectSettingsForStorage(p.settings) })
+}
+
+function projectSettingsForStorage(
+  settings: ProjectSettings | undefined,
+): ProjectSettings | undefined {
+  if (!settings?.autonomy) return settings
+  const { shipTo, ...autonomy } = validateAutonomySettings(settings.autonomy, 'project')
+  return {
+    ...settings,
+    autonomy: {
+      ...autonomy,
+      ...(shipTo === undefined ? {} : { 'ship-to': shipTo }),
+    } as ProjectSettings['autonomy'],
+  }
 }
 
 export async function writeHostedProject(p: {
@@ -266,7 +280,7 @@ export async function writeHostedProject(p: {
   settings?: ProjectSettings
   retiredAt?: string | null
 }): Promise<void> {
-  await writeProjectToHostedRecord(p)
+  await writeProjectToHostedRecord({ ...p, settings: projectSettingsForStorage(p.settings) })
 }
 
 export async function pushProjects(): Promise<string[]> {
@@ -294,7 +308,9 @@ export function setProjectRecordSpace(name: string, space: string): void {
   const malformed = validateStoredProjectSettings(settings, project.path)
   if (malformed.length) throw new Error(malformed.join('\n'))
   writableDb()
-  db().query('UPDATE project SET settings=? WHERE id=?').run(JSON.stringify(settings), project.id)
+  db()
+    .query('UPDATE project SET settings=? WHERE id=?')
+    .run(JSON.stringify(projectSettingsForStorage(settings)), project.id)
 }
 
 /** Local rename preconditions: existence, a non-empty target, and a free name. */

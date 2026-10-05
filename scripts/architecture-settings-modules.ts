@@ -29,7 +29,7 @@ export const settingsModules: SettingsModule[] = [
     'node:readline/promises',
     'commander',
     '../../../shared/config-client.ts',
-    '../../../shared/release-autonomy.ts',
+    '../../../shared/ship-to.ts',
     '../config/config-service.ts',
     '../run/run-process.ts',
     './support.ts',

@@ -12,7 +12,7 @@ import {
   type AutonomyValue,
   autonomyStages,
   catalogueStepsForAutonomy,
-  type ReleaseValue,
+  type ShipTo,
   type StageAutonomyValue,
 } from './autonomy.ts'
 import { HOSTED_AUTONOMY_SCOPE_NAMES, resolveProjectAutonomy } from './autonomy-scopes.ts'
@@ -28,15 +28,15 @@ type ArchitectSessionContext =
       project: string
       rulings: { value: 'agent' | 'user'; scope: string }
       stages: StageSlice[]
-      release: ReleaseSlice
+      shipTo: ShipToSlice
       warnings?: string[]
       stale?: true
       resolvedAt?: string
       text: string
     }
 
-type ReleaseSlice = {
-  value: ReleaseValue
+type ShipToSlice = {
+  value: ShipTo
   scope: string
   landing: string | null
   production: string | null
@@ -85,34 +85,34 @@ function stageLine(slice: StageSlice): string {
     .join('; ')}`
 }
 
-function releaseLine(release: ReleaseSlice): string {
+function shipToLine(shipTo: ShipToSlice): string {
   const phrase =
-    release.value === 'push'
-      ? 'push the branch only'
-      : release.value === 'land'
-        ? release.landing
-          ? `land to ${release.landing}`
+    shipTo.value === 'branch'
+      ? 'push the branch only; nothing is merged'
+      : shipTo.value === 'trunk'
+        ? shipTo.landing
+          ? `merge into ${shipTo.landing}`
           : 'no landing branch declared'
-        : !release.landing
+        : !shipTo.landing
           ? 'no landing branch declared'
-          : release.production
-            ? `land to ${release.landing}, then promote to ${release.production}`
-            : `no production branch declared; lands to ${release.landing}`
-  return `release: ${release.value} (${phrase}) (${release.scope})`
+          : shipTo.production
+            ? `merge into ${shipTo.landing}, then promote to ${shipTo.production}`
+            : `no production branch declared; merges into ${shipTo.landing}`
+  return `ship to: ${shipTo.value} (${phrase}) (${shipTo.scope})`
 }
 
 function renderSlice(
   project: string,
   rulings: { value: 'agent' | 'user'; scope: string },
   stages: StageSlice[],
-  release: ReleaseSlice,
+  shipTo: ShipToSlice,
   warnings: string[],
 ): string {
   return [
     `Autonomy for ${project}, resolved now from ${PLATFORM_NAME}; change it with ${AUTONOMY_SETTER}`,
     `rulings: ${rulings.value} (${rulings.scope})`,
     ...stages.map(stageLine),
-    releaseLine(release),
+    shipToLine(shipTo),
     ...warnings,
   ].join('\n')
 }
@@ -147,12 +147,12 @@ export function staleSessionContext(
     }
   })
   const rulings = { ...slice.rulings, scope: staleScope(slice.rulings.scope) }
-  const release = { ...slice.release, scope: staleScope(slice.release.scope) }
+  const shipTo = { ...slice.shipTo, scope: staleScope(slice.shipTo.scope) }
   const warnings = slice.warnings ?? []
   const lines = [
     `rulings: ${rulings.value} (${rulings.scope})`,
     ...stages.map(stageLine),
-    releaseLine(release),
+    shipToLine(shipTo),
     ...warnings,
   ]
   if (stale)
@@ -163,10 +163,10 @@ export function staleSessionContext(
     ...slice,
     rulings,
     stages,
-    release,
+    shipTo,
     ...(warnings.length ? { warnings } : {}),
     ...(stale ? { stale: true, resolvedAt } : {}),
-    text: stale ? lines.join('\n') : renderSlice(slice.project, rulings, stages, release, warnings),
+    text: stale ? lines.join('\n') : renderSlice(slice.project, rulings, stages, shipTo, warnings),
   }
 }
 
@@ -216,8 +216,8 @@ async function architectSessionContext(
     return resolved ? [{ stage, agreed: true as const, ...resolved, steps: 0 }] : []
   })
   const rulings = { value: resolution.rulings.value, scope: resolution.rulings.scope }
-  const release: ReleaseSlice = {
-    ...resolution.release,
+  const shipTo: ShipToSlice = {
+    ...resolution.shipTo,
     landing: project.settings.trunk ?? null,
     production: project.settings.productionBranch ?? null,
   }
@@ -227,9 +227,9 @@ async function architectSessionContext(
     project: project.name,
     rulings,
     stages,
-    release,
+    shipTo,
     ...(warnings.length ? { warnings } : {}),
-    text: renderSlice(project.name, rulings, stages, release, warnings),
+    text: renderSlice(project.name, rulings, stages, shipTo, warnings),
   } satisfies ArchitectSessionContext
   if (resolution.hosted?.status === 'unavailable' && cached)
     return staleSessionContext(
