@@ -78,6 +78,7 @@ export const mcpModules: McpModule[] = [
     '../workflow/autonomy-scopes.ts',
     '../workflow/workflow-render.ts',
     '../workflow/workflow-cursor.ts',
+    '../workflow/workflow-cursor-selection.ts',
     '../workflow/workflows.ts',
   ]),
 ]

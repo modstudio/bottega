@@ -24,9 +24,9 @@ import {
   listWorkflowCursors,
   nextWorkflowStep,
   renderWorkflowCursorLine,
-  resolveWorkflowCursorMode,
   ruleWorkflow,
 } from './workflow-cursor.ts'
+import { resolveWorkflowCursorMode } from './workflow-cursor-selection.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,

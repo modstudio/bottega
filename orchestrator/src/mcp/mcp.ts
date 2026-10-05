@@ -41,9 +41,9 @@ import {
   getWorkflowStepWithCursor,
   mcpWorkflowCursorContext,
   nextWorkflowStep,
-  resolveWorkflowCursorMode,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
+import { resolveWorkflowCursorMode } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
 import {

@@ -12,9 +12,12 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
+import {
+  applyCursorArguments,
+  workflowKeyOf as keyOf,
+} from './workflow-cursor-arguments.ts'
 import { type SelectableCursorRow, selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
-  type ArgumentReboundEvent,
   type ClosedStep,
   type CursorTrailEntry,
   currentStepActivatedAt,
@@ -43,13 +46,7 @@ import {
 } from './workflow-floor-evidence.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import {
-  composeWorkflow,
-  getWorkflowStep,
-  productionWorkflows,
-  resolveWorkflowMode,
-  showWorkflow,
-} from './workflows.ts'
+import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 export type WorkflowCursorContext = {
   session?: string | null
@@ -87,8 +84,6 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
 })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
-/** A cursor is keyed by the task key the caller passed; production's argument list never decides identity. */
-const keyOf = (args: Record<string, string>): string => args.key?.trim() ?? ''
 const instanceOf = (key: string): string => (key ? '' : randomUUID())
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
@@ -138,159 +133,6 @@ function findCursor(
     context.session,
     d,
   ) as CursorRow | null
-}
-
-export function resolveWorkflowCursorMode(
-  slug: string,
-  project: string,
-  requested: string | undefined,
-  args: Record<string, string>,
-  context: WorkflowCursorContext,
-  caller: string,
-  remedy: string,
-  d: Database = db(),
-  cursor?: number,
-): string {
-  if (cursor !== undefined) {
-    const row = selectWorkflowCursor(
-      {
-        project,
-        workflow: slug,
-        ...(requested ? { mode: requested } : {}),
-        key: keyOf(args) || undefined,
-      },
-      cursor,
-      context.session,
-      d,
-    )
-    return row!.mode_slug
-  }
-  if (requested) return requested
-  const key = keyOf(args)
-  const rows = d
-    .query(
-      `SELECT DISTINCT mode_slug FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND workflow_key=?
-         AND ${key ? "instance_id=''" : 'session_id=?'}
-         AND state NOT IN ('done','abandoned')
-       ORDER BY mode_slug`,
-    )
-    .all(...(key ? [project, slug, key] : [project, slug, key, context.session ?? ''])) as {
-    mode_slug: string
-  }[]
-  if (rows.length === 1) return rows[0]!.mode_slug
-  if (rows.length > 1) {
-    throw new Error(
-      `${caller} cannot resolve a mode for workflow "${slug}"; active cursor modes: ` +
-        `${rows.map(({ mode_slug }) => mode_slug).join(', ')}; ${remedy}`,
-    )
-  }
-  const definition = showWorkflow(slug, undefined, d).definition
-  const mode = resolveWorkflowMode(definition)
-  if (mode) return mode.slug
-  throw new Error(
-    `${caller} cannot resolve a default mode for workflow "${slug}"; ` +
-      `modes: ${definition.modes.map(({ slug: modeSlug }) => modeSlug).join(', ')}; ${remedy}`,
-  )
-}
-
-export type CursorArgumentDecision =
-  | {
-      action: 'merge'
-      args: Record<string, string>
-      rebindings: Array<{ name: string; oldValue: string; newValue: string }>
-    }
-  | { action: 'refuse'; reason: string }
-
-export function decideCursorArguments(
-  stored: Record<string, string>,
-  supplied: Record<string, string>,
-  rebindable: ReadonlySet<string>,
-): CursorArgumentDecision {
-  const merged = { ...stored }
-  const rebindings: Array<{ name: string; oldValue: string; newValue: string }> = []
-  for (const [name, suppliedValue] of Object.entries(supplied)) {
-    if (!suppliedValue.trim()) continue
-    const storedValue = stored[name]
-    if (storedValue?.trim() && storedValue !== suppliedValue) {
-      if (name !== 'key' && rebindable.has(name)) {
-        merged[name] = suppliedValue
-        rebindings.push({ name, oldValue: storedValue, newValue: suppliedValue })
-        continue
-      }
-      return {
-        action: 'refuse',
-        reason:
-          `workflow argument "${name}" conflicts with the cursor: stored value "${storedValue}", ` +
-          `supplied value "${suppliedValue}"; run orch workflow abandon for this cursor, then compose again`,
-      }
-    }
-    if (!storedValue?.trim()) merged[name] = suppliedValue
-  }
-  return { action: 'merge', args: merged, rebindings }
-}
-
-function cursorRebindableArguments(row: CursorRow, d: Database): Set<string> {
-  const current = productionWorkflows(d).find(({ slug }) => slug === row.workflow_slug)
-  const definitions = [
-    showWorkflow(row.workflow_slug, row.workflow_version, d).definition,
-    ...(current ? [current.definition] : []),
-  ]
-  return new Set(
-    definitions
-      .flatMap((definition) => definition.arguments)
-      .filter((argument) => argument.name !== 'key' && argument.rebind === true)
-      .map((argument) => argument.name),
-  )
-}
-
-function applyCursorArguments(
-  row: CursorRow,
-  supplied: Record<string, string>,
-  d: Database,
-): Record<string, string> {
-  const decision = decideCursorArguments(
-    JSON.parse(row.args) as Record<string, string>,
-    supplied,
-    cursorRebindableArguments(row, d),
-  )
-  if (decision.action === 'refuse')
-    throw new Error(
-      `${decision.reason.replace(/; run orch workflow abandon for this cursor, then compose again$/, '')}; ` +
-        `orch workflow abandon --cursor ${row.id} --reason "<why>"`,
-    )
-  const encoded = JSON.stringify(decision.args)
-  if (decision.rebindings.length) {
-    const at = nowIso()
-    const trail = JSON.parse(row.closed) as CursorTrailEntry[]
-    trail.push(
-      ...decision.rebindings.map(
-        ({ name, oldValue, newValue }): ArgumentReboundEvent => ({
-          event: 'argument-rebound',
-          name,
-          oldValue,
-          newValue,
-          at,
-        }),
-      ),
-    )
-    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE id=?').run(
-      encoded,
-      JSON.stringify(trail),
-      at,
-      row.id,
-    )
-    row.args = encoded
-    row.closed = JSON.stringify(trail)
-  } else if (encoded !== row.args) {
-    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE id=?').run(
-      encoded,
-      nowIso(),
-      row.id,
-    )
-    row.args = encoded
-  }
-  return decision.args
 }
 
 /** The session that drove this cursor before the current one took it over, or null. */

@@ -5,13 +5,13 @@ import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
-  decideCursorArguments,
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
   ruleWorkflow,
   workflowCursorProjectScope,
 } from './workflow-cursor.ts'
+import { decideCursorArguments } from './workflow-cursor-arguments.ts'
 import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
