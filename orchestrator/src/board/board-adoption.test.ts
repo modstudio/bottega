@@ -14,7 +14,7 @@ import {
 } from './board-adoption-policy.ts'
 import { claimBoardNotices } from './board-delivery.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
-import { postNotice } from './board-service.ts'
+import { postNotice, withdrawNotice } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z')
@@ -295,6 +295,37 @@ test.each(['notice', 'claim'] as const)(
     ).toBeNull()
   },
 )
+
+test('withdrawing a row after an unexpected refusal drops its pending ledger row from the rerun', async () => {
+  presence()
+  const local = postNotice(
+    { audience: 'session:reader', title: 'blocked', body: 'blocked' },
+    {},
+    NOW,
+  )
+  let postAttempts = 0
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage() {
+      postAttempts++
+      throw new RecordApiRequestError('hosted policy rejected this row', 'refused')
+    },
+  }
+
+  await expect(adoptHostedBoard({ confirm: 1, clock: NOW, client })).rejects.toThrow(
+    `withdraw local notice ${local.id}`,
+  )
+  withdrawNotice(local.id, {}, NOW + 1)
+
+  const result = await adoptHostedBoard({ confirm: 0, clock: NOW + 2, client })
+
+  expect(result).toMatchObject({ status: 'adopted', uploaded: 0, refused: 0, remaining: 0 })
+  expect(postAttempts).toBe(1)
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toEqual({ value: '1' })
+})
 
 test('a run-tied claim without a hosted run id stays live as a lasting refusal and does not block the mark', async () => {
   const run = db()

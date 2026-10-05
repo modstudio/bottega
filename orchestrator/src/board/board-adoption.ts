@@ -70,6 +70,10 @@ function ledger(database: Database): Map<string, LedgerRow> {
   )
 }
 
+function ledgerKeepsCandidate(row: LedgerRow | undefined): boolean {
+  return row?.state === 'uploaded' || row?.state === 'refused'
+}
+
 function candidateRows(
   clock: number,
   database: Database,
@@ -93,7 +97,7 @@ function candidateRows(
         live,
         accepted: root.accepted_reply_id !== null,
         machine: parseAudience(root.audience).kind === 'machine',
-        recorded: Boolean(prior),
+        recorded: ledgerKeepsCandidate(prior),
       },
     ]
   })
@@ -101,7 +105,7 @@ function candidateRows(
   const claimFacts = claims.map(
     (row): CandidateFact => ({
       candidate: { kind: 'claim', id: row.id, createdAt: row.lapses_at, row },
-      recorded: recorded.has(`claim:${row.id}`),
+      recorded: ledgerKeepsCandidate(recorded.get(`claim:${row.id}`)),
       live: claimIsLive({
         closed: row.closed_at !== null,
         lapsesAt: Date.parse(row.lapses_at),
