@@ -4,10 +4,11 @@
  * A separate file so the preloaded migrated store and the process-wide lease
  * handle are isolated from the larger behavioral fixture.
  */
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 
-const { acquireLease, releaseLease, leaseHolder, withLease } = await import('./collect.ts')
+const { COLLECT_LEASE_MS, acquireLease, releaseLease, leaseHolder, watch, withLease } =
+  await import('./collect.ts')
 
 beforeAll(resetFixtureStore)
 
@@ -69,5 +70,119 @@ describe('collect lease', () => {
       ),
     ).rejects.toThrow('leg failed')
     expect(leaseHolder()).toBeNull()
+  })
+
+  test('a watch cycle releases the lease before stop', async () => {
+    let cycleFinished!: () => void
+    const finished = new Promise<void>((resolve) => {
+      cycleFinished = resolve
+    })
+    const stop = watch('watcher', undefined, {
+      initial: async () => {
+        cycleFinished()
+      },
+      fast: async () => {},
+      slow: async () => {},
+    })
+    await finished
+    await Bun.sleep(0)
+
+    let explicitRan = false
+    const result = await withLease(
+      'explicit',
+      async () => {
+        explicitRan = true
+      },
+      0,
+    )
+    expect(result.ran).toBeTrue()
+    expect(explicitRan).toBeTrue()
+    await stop()
+  })
+
+  test('a long one-shot renews until its callback finishes', async () => {
+    let now = Date.now()
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    let finish!: () => void
+    const canFinish = new Promise<void>((resolve) => (finish = resolve))
+    let started!: () => void
+    const didStart = new Promise<void>((resolve) => (started = resolve))
+    try {
+      const running = withLease(
+        'long-one-shot',
+        async () => {
+          started()
+          await canFinish
+        },
+        0,
+        5,
+      )
+      await didStart
+      now += COLLECT_LEASE_MS + 1
+      await Bun.sleep(10)
+      expect(acquireLease('competitor')).toBeFalse()
+      finish()
+      expect((await running).ran).toBeTrue()
+      expect(acquireLease('competitor')).toBeTrue()
+      releaseLease('competitor')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  test('a long watch cycle renews until its work finishes', async () => {
+    let now = Date.now()
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    let finish!: () => void
+    const canFinish = new Promise<void>((resolve) => (finish = resolve))
+    let started!: () => void
+    const didStart = new Promise<void>((resolve) => (started = resolve))
+    const stop = watch('long-watch', undefined, {
+      initial: async () => {
+        started()
+        await canFinish
+      },
+      fast: async () => {},
+      slow: async () => {},
+      renewEveryMs: 5,
+    })
+    try {
+      await didStart
+      now += COLLECT_LEASE_MS + 1
+      await Bun.sleep(10)
+      expect(acquireLease('competitor')).toBeFalse()
+      finish()
+      await stop()
+      expect(acquireLease('competitor')).toBeTrue()
+      releaseLease('competitor')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  test('a watch cycle that loses its lease stops before the next leg', async () => {
+    const legs: string[] = []
+    let report!: (error: Error) => void
+    const reported = new Promise<Error>((resolve) => (report = resolve))
+    const stop = watch('losing-watch', report, {
+      initial: async (guard) => {
+        legs.push('first')
+        releaseLease('losing-watch')
+        expect(acquireLease('takeover')).toBeTrue()
+        guard.assertHeld('first')
+        legs.push('second')
+      },
+      fast: async () => {},
+      slow: async () => {},
+    })
+    try {
+      const error = await reported
+      expect(error.message).toContain('takeover holds the collect lease')
+      expect(error.message).toContain('stopped after first')
+      expect(legs).toEqual(['first'])
+    } finally {
+      releaseLease('takeover')
+      await stop()
+    }
   })
 })

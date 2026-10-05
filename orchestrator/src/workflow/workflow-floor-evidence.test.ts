@@ -9,10 +9,21 @@ import {
   hubTaskReadRefusal,
 } from './workflow-floor-evidence.ts'
 
-test('missing hub task refusal names collection lag and its remedy', () => {
+test('missing hub task refusal names the fresh tracker read', () => {
   expect(hubTaskReadRefusal('DEV-1070', 1, 'no task DEV-1070\n', '')).toBe(
-    '--task DEV-1070 could not be read through hub: no task DEV-1070; hub may not have collected a recently created task yet; run hub collect --only tasks, then retry',
+    "--task DEV-1070 was not found in the project's tracker; hub task show DEV-1070 --json --fresh attempted the registered tracker read: no task DEV-1070",
   )
+})
+
+test.each([
+  'tracker failed with token=abcdefghijklmnopqrstuvwxyz123456',
+  'tracker failed with Authorization: Bearer fixture-value',
+])('fresh tracker refusal withholds sensitive detail: %s', (detail) => {
+  const refusal = hubTaskReadRefusal('DEV-1070', 1, detail, '')
+  expect(refusal).toBe(
+    "--task DEV-1070 could not be read through the project's tracker by hub task show DEV-1070 --json --fresh: detail withheld",
+  )
+  expect(refusal).not.toContain(detail)
 })
 
 test('checkout evidence accepts a commit from the cursor branch', () => {
@@ -86,7 +97,13 @@ const matchingCheckout = {
 }
 
 const ports: FloorEvidencePorts = {
-  readTask: (key) => ({ key, status: 'done', statusCategory: 'done', commentIds: [4] }),
+  readTask: (key) => ({
+    key,
+    status: 'done',
+    statusCategory: 'done',
+    commentIds: ['4', '01a10c8d-164d-71e9-b8a9-a59f15256556'],
+    commentsVerifiable: true,
+  }),
   runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
@@ -463,6 +480,62 @@ test('a foreign task comment is refused and a matching comment is allowed', () =
     ref: 'task:DEV-977#comment:4',
     exists: true,
   })
+  expect(
+    gather(d, { artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556' }).artifact,
+  ).toEqual({
+    ref: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
+    exists: true,
+  })
+})
+
+test('a task artifact requires the fresh task key to match the cursor', () => {
+  const d = database()
+  expect(gather(d, { artifact: 'task:DEV-977' }).artifact).toEqual({
+    ref: 'task:DEV-977',
+    exists: true,
+  })
+  expect(() => gather(d, { artifact: 'task:DEV-1' })).toThrow(
+    "--artifact task:DEV-1 task key is DEV-1, not this cursor's DEV-977",
+  )
+})
+
+test('every workflow task read requests a fresh tracker read through its port', () => {
+  const calls: Array<{ key: string; fresh: true }> = []
+  gather(
+    database(),
+    { task: 'DEV-977' },
+    {
+      readTask: (key, options) => {
+        calls.push({ key, ...options })
+        return {
+          key,
+          status: 'done',
+          statusCategory: 'done',
+          commentIds: [],
+          commentsVerifiable: true,
+        }
+      },
+    },
+  )
+  expect(calls).toEqual([{ key: 'DEV-977', fresh: true }])
+})
+
+test('a tracker without comment ids names the task artifact remedy', () => {
+  expect(() =>
+    gather(
+      database(),
+      { artifact: 'task:DEV-977#comment:uuid' },
+      {
+        readTask: (key) => ({
+          key,
+          status: 'done',
+          statusCategory: 'done',
+          commentIds: [],
+          commentsVerifiable: false,
+        }),
+      },
+    ),
+  ).toThrow('use --artifact task:DEV-977 to verify the task instead')
 })
 
 test('a snapshot plus a merged PR satisfies tracker evidence', () => {

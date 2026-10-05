@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
@@ -71,11 +72,12 @@ type HubTaskRead = {
   key: string
   status: string | null
   statusCategory: string | null
-  commentIds: number[]
+  commentIds: Array<string | number>
+  commentsVerifiable?: boolean
 }
 
 export type FloorEvidencePorts = {
-  readTask?: (key: string) => HubTaskRead
+  readTask?: (key: string, options: { fresh: true }) => HubTaskRead
   runHasArtifacts?: (runId: number) => boolean
   resolveCheckout?: (
     cwd: string,
@@ -87,7 +89,7 @@ export type FloorEvidencePorts = {
 
 function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
   const [hub, ...prefix] = bottegaEntryArgv('hub')
-  const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json'], {
+  const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json', '--fresh'], {
     cwd,
     encoding: 'utf8',
     env: process.env,
@@ -97,7 +99,8 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
   }
   const parsed = JSON.parse(result.stdout) as {
     task?: { key?: string; status?: string | null; status_category?: string | null }
-    comments?: Array<{ id?: number }>
+    comments?: Array<{ id?: number | string }>
+    tracker_comments_verifiable?: boolean
   }
   if (!parsed.task?.key) throw new Error(`--task ${key} was not a hub task show record`)
   return {
@@ -106,7 +109,11 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     statusCategory: parsed.task.status_category ?? null,
     commentIds: (parsed.comments ?? [])
       .map((comment) => comment.id)
-      .filter((id): id is number => Number.isInteger(id)),
+      .filter((id): id is number | string =>
+        typeof id === 'string' ? id.length > 0 : Number.isInteger(id),
+      )
+      .map(String),
+    commentsVerifiable: parsed.tracker_comments_verifiable !== false,
   }
 }
 
@@ -116,14 +123,24 @@ export function hubTaskReadRefusal(
   stderr: string,
   stdout: string,
 ): string {
-  const detail = stderr.trim() || stdout.trim() || `hub exited ${status}`
-  if (detail.split('\n').some((line) => line.trim() === `no task ${key}`))
-    return `--task ${key} could not be read through hub: no task ${key}; hub may not have collected a recently created task yet; run hub collect --only tasks, then retry`
-  return `--task ${key} could not be read through hub: ${detail}`
+  const rawDetail = stderr.trim() || stdout.trim() || `hub exited ${status}`
+  const detail =
+    containsSecretShaped(rawDetail) || /\b(?:proxy-)?authorization\b/i.test(rawDetail)
+      ? 'detail withheld'
+      : rawDetail
+  const attempted = `hub task show ${key} --json --fresh`
+  if (
+    rawDetail.split('\n').some((line) => {
+      const text = line.trim()
+      return text === `no task ${key}` || text.includes(`task ${key} was not found in project`)
+    })
+  )
+    return `--task ${key} was not found in the project's tracker; ${attempted} attempted the registered tracker read: ${detail}`
+  return `--task ${key} could not be read through the project's tracker by ${attempted}: ${detail}`
 }
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
-  readTask: readHubTask,
+  readTask: (key) => readHubTask(key),
   runHasArtifacts: runHasRecordedArtifacts,
   viewPullRequest: (project, number) => {
     const row = projectByName(project)
@@ -481,6 +498,30 @@ function resolveNumericArtifact(
   throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
 }
 
+function resolveTaskArtifact(
+  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
+  raw: string,
+  identity: CursorIdentity,
+  ports: FloorEvidencePorts,
+): { ref: string; exists: boolean } {
+  if (identity.workflowKey && ref.key !== identity.workflowKey)
+    throw new Error(
+      `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
+    )
+  const readTask = ports.readTask
+  if (!readTask)
+    throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
+  const task = readTask(ref.key, { fresh: true })
+  if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
+  if (task.commentsVerifiable === false)
+    throw new Error(
+      `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
+    )
+  if (!task.commentIds.map(String).includes(ref.id))
+    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
+  return { ref: raw, exists: true }
+}
+
 function resolveArtifact(
   ref: ArtifactRef,
   raw: string,
@@ -529,17 +570,7 @@ function resolveArtifact(
       exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(ref.id),
     }
   }
-  if (identity.workflowKey && ref.key !== identity.workflowKey)
-    throw new Error(
-      `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
-    )
-  const readTask = ports.readTask
-  if (!readTask)
-    throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
-  const task = readTask(ref.key)
-  if (!task.commentIds.includes(ref.id))
-    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  return { ref: raw, exists: true }
+  return resolveTaskArtifact(ref, raw, identity, ports)
 }
 
 function gatherTask(
@@ -552,7 +583,7 @@ function gatherTask(
     throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
   const readTask = ports.readTask
   if (!readTask) throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
-  const task = readTask(key)
+  const task = readTask(key, { fresh: true })
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null
   let mergedPullRequest = false

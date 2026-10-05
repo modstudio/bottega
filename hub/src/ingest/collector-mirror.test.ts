@@ -63,7 +63,7 @@ mock.module('../mcp.ts', () => ({
       const prefix = stopal ? 'STO' : 'ALP'
       const status = trackerStatuses[prefix] ?? 'started'
       return {
-        tasks: [
+        tasks: trackerTaskOverrides[prefix] ?? [
           {
             id: `tracker-${prefix.toLowerCase()}-1`,
             short_id: `${prefix}-1`,
@@ -82,6 +82,7 @@ let refuseMirror = false
 let refuseIdentity = false
 let changeActiveSpace = false
 const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started' }
+const trackerTaskOverrides: Record<string, Array<Record<string, unknown>> | undefined> = {}
 const mirrored = new Map<string, string[]>()
 const mirroredEvents: Array<{ task_key: string; project_name: string }> = []
 mock.module('../task-client.ts', () => ({
@@ -120,6 +121,7 @@ mock.module('../task-client.ts', () => ({
 const { db, writeTransaction } = await import('../db.ts')
 const { ingestGit } = await import('./git.ts')
 const { ingestTrackers } = await import('./trackers.ts')
+const { refreshTrackerTask } = await import('../tracker-task-cli.ts')
 
 beforeEach(() => {
   writeTransaction((conn) => {
@@ -145,6 +147,8 @@ beforeEach(() => {
   changeActiveSpace = false
   trackerStatuses.ALP = 'started'
   trackerStatuses.STO = 'started'
+  delete trackerTaskOverrides.ALP
+  delete trackerTaskOverrides.STO
 })
 
 test('a refused tracker mirror still writes locally and retries the persisted task id', async () => {
@@ -223,6 +227,93 @@ test('tracker status events use the same project-space filter as task snapshots'
     { project: 'stopal', count: 1 },
   ])
   expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha'])
+})
+
+test('a fresh transition is mirrored exactly once by the following collect', async () => {
+  await ingestTrackers()
+
+  await refreshTrackerTask('ALP-1', 'alpha', {
+    registeredProjects: () => [project],
+    sourceFor: () => ({
+      project: 'alpha',
+      env: 'ALPHA',
+      fetch: async () => [],
+      lookup: async () => ({
+        externalId: 'tracker-alp-1',
+        key: 'ALP-1',
+        project: 'alpha',
+        title: 'Collected task',
+        status: 'completed',
+        category: 'open',
+        updatedAt: null,
+        assignee: null,
+      }),
+    }),
+    readCredentials: async () => ({ url: 'https://alpha.example.test', token: 'tracker-token' }),
+    connect: async () => ({
+      callTool: async () => ({}),
+      close: async () => {},
+    }),
+  })
+
+  expect(mirroredEvents).toEqual([])
+  trackerStatuses.ALP = 'completed'
+  await ingestTrackers()
+  expect(mirroredEvents).toEqual([
+    expect.objectContaining({
+      task_key: 'ALP-1',
+      project_name: 'alpha',
+    }),
+  ])
+})
+
+test('a collected key change records and mirrors the external-id transition', async () => {
+  await ingestTrackers()
+  mirroredEvents.length = 0
+  trackerTaskOverrides.ALP = [
+    {
+      id: 'tracker-alp-1',
+      short_id: 'ALP-RENAMED',
+      summary: 'Collected task',
+      status: 'completed',
+      status_category: 'completed',
+    },
+  ]
+
+  const results = await ingestTrackers()
+
+  expect(results.find((result) => result.project === 'alpha')?.changed).toBe(1)
+  expect(mirroredEvents).toEqual([
+    expect.objectContaining({ task_key: 'ALP-RENAMED', project_name: 'alpha' }),
+  ])
+})
+
+test('a key arriving twice records and mirrors only its final transition', async () => {
+  await ingestTrackers()
+  mirroredEvents.length = 0
+  trackerTaskOverrides.ALP = [
+    {
+      id: 'tracker-alp-1',
+      short_id: 'ALP-1',
+      summary: 'Collected task',
+      status: 'started',
+      status_category: 'started',
+    },
+    {
+      id: 'tracker-alp-1',
+      short_id: 'ALP-1',
+      summary: 'Collected task',
+      status: 'completed',
+      status_category: 'completed',
+    },
+  ]
+
+  const results = await ingestTrackers()
+
+  expect(results.find((result) => result.project === 'alpha')?.changed).toBe(1)
+  expect(mirroredEvents).toEqual([
+    expect.objectContaining({ task_key: 'ALP-1', project_name: 'alpha' }),
+  ])
 })
 
 test('an unreadable identity keeps collected tasks local and performs no hosted writes', async () => {

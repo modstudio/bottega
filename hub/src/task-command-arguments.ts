@@ -73,7 +73,15 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
       ['--json'],
     ),
   ],
-  ['show', shape(1, 'hub task show <KEY> [--project X] [--json]', ['--project'], ['--json'])],
+  [
+    'show',
+    shape(
+      1,
+      'hub task show <KEY> [--project X] [--json] [--fresh]',
+      ['--project'],
+      ['--json', '--fresh'],
+    ),
+  ],
   [
     'set',
     shape(

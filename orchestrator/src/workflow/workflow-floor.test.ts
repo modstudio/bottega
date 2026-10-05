@@ -443,8 +443,14 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('task:DEV-977#comment:4')).toEqual({
     kind: 'comment',
     key: 'DEV-977',
-    id: 4,
+    id: '4',
   })
+  expect(parseArtifactRef('task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556')).toEqual({
+    kind: 'comment',
+    key: 'DEV-977',
+    id: '01a10c8d-164d-71e9-b8a9-a59f15256556',
+  })
+  expect(parseArtifactRef('task:DEV-977')).toEqual({ kind: 'task', key: 'DEV-977' })
   expect(parseArtifactRef('probe:12')).toEqual({ kind: 'probe', id: 12 })
   expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
   expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
