@@ -73,6 +73,8 @@ export async function refreshTrackerTask(
   const resolved = await (dependencies.readCredentials ?? credentials)(source.env)
   if (!resolved) throw new Error(`credentials for ${project.name} tracker do not resolve`)
   let client: (ToolCaller & { close(): Promise<void> }) | null = null
+  let result!: FreshTaskResult
+  let operationFailure: unknown
   try {
     client = dependencies.connect
       ? await dependencies.connect(resolved.url, resolved.token)
@@ -96,18 +98,22 @@ export async function refreshTrackerTask(
       throw new Error(
         `${leased.heldBy ?? 'another process'} holds the collect lease; fresh task read was not performed`,
       )
-    return { trackerRead: true, commentsVerifiable: false, shown: leased.value }
+    result = { trackerRead: true, commentsVerifiable: false, shown: leased.value }
   } catch (error) {
-    throw new Error(failureDetail(error, resolved.token))
-  } finally {
-    if (client) {
-      try {
-        await client.close()
-      } catch (error) {
-        throw new Error(failureDetail(error, resolved.token))
-      }
+    operationFailure = error
+  }
+
+  let closeFailure: unknown
+  if (client) {
+    try {
+      await client.close()
+    } catch (error) {
+      closeFailure = error
     }
   }
+  const failure = closeFailure ?? operationFailure
+  if (failure !== undefined) throw new Error(failureDetail(failure, resolved.token))
+  return result
 }
 
 export async function createTrackerOwnedTask(
