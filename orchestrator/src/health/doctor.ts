@@ -62,6 +62,11 @@ export function canonEvalDoctorDecision(input: {
   return { result, unavailableReason: input.currentCanonError }
 }
 
+/** ACP is optional because built-in Codex writing jobs use the CLI transport. */
+export function doctorAcpStatus(gap: string | null): string {
+  return gap ? `informational — ${gap}` : 'ready'
+}
+
 function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | undefined) {
   const registration = registeredLocalAgent(agentRows(), baseUrl)
   const contextTokens = registration ? registeredContextTokens(registration) : null
@@ -312,7 +317,7 @@ export async function doctorCommand(
   )
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
-  log(`acp            ${acpGap ?? 'ready'}`)
+  log(`acp            ${doctorAcpStatus(acpGap)}`)
   const configuredUrl = modelHostUrl()
   const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
   for (const line of local.lines) log(line)

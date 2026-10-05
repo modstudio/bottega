@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
@@ -30,8 +30,6 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
   const env = {
     ...process.env,
     BOTTEGA_STATE_HOME: stateHome,
-    CLAUDE_CODE_SESSION_ID: 'DEV-997-binary-smoke',
-    ...(recordApiUrl ? { ORCH_RECORD_API_URL: recordApiUrl } : {}),
     ...(securityBin
       ? {
           PATH: [harnessBin, securityBin, '/usr/bin', '/bin'].filter(Boolean).join(':'),
@@ -40,9 +38,15 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
     ...(mcpRecord ? { SMOKE_MCP_RECORD: mcpRecord } : {}),
     ...(mcpState ? { SMOKE_MCP_STATE: mcpState } : {}),
   }
-  delete env.ORCH_DB
-  delete env.ORCH_DB_WRITE
-  delete env.ORCH_RECORD_URL
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('ORCH_') || key.startsWith('CLAUDE_') || key.startsWith('ANTHROPIC_')) {
+      delete env[key]
+    }
+  }
+  env.CLAUDE_CODE_SESSION_ID = 'DEV-997-binary-smoke'
+  env.ORCH_EMBED_URL = 'http://127.0.0.1:1/v1/embeddings'
+  env.ORCH_RERANK_URL = 'http://127.0.0.1:1/v1/rerank'
+  if (recordApiUrl) env.ORCH_RECORD_API_URL = recordApiUrl
   delete env.HUB_HOSTED_URL
   delete env.HUB_DB
   return env
@@ -169,8 +173,9 @@ try {
   mkdirSync(mcpState)
   const fakeHarness = `#!/bin/sh
 harness="\${0##*/}"
-record="\${SMOKE_MCP_RECORD:?}"
-state="\${SMOKE_MCP_STATE:?}"
+smoke_root=$(dirname "$(dirname "$0")")
+record="\${SMOKE_MCP_RECORD:-$smoke_root/mcp-argv.log}"
+state="\${SMOKE_MCP_STATE:-$smoke_root/mcp-state}"
 printf '%s' "$harness" >> "$record"
 for arg in "$@"; do printf '\\t%s' "$arg" >> "$record"; done
 printf '\\n' >> "$record"
@@ -212,6 +217,27 @@ if [ "$1" = "mcp" ] && [ "$2" = "get" ]; then
   fi
   exit 0
 fi
+if [ "$harness" = "codex" ] && [ "$1" = "exec" ]; then
+  output=''
+  previous=''
+  for arg in "$@"; do
+    if [ "$previous" = "-o" ]; then output="$arg"; fi
+    previous="$arg"
+  done
+  printf 'guarded binary commit\n' > binary-smoke.txt
+  git add binary-smoke.txt
+  git commit -m 'DEV-1091 guarded binary smoke'
+  hooks=$(git config --path core.hooksPath)
+  printf '%s\n' "$PWD" > "$state/writing-worktree"
+  printf '%s\n' "$hooks" > "$state/writing-hooks"
+  git branch --show-current > "$state/writing-branch"
+  reply='{"status":"done","summary":"The guarded commit completed.","files_changed":["binary-smoke.txt"],"questions":null,"deviations":null,"blockers":null,"tests":null}'
+  if [ -n "$output" ]; then printf '%s\n' "$reply" > "$output"; fi
+  printf '%s\n' '{"type":"thread.started","thread_id":"binary-smoke-thread"}'
+  printf '{"type":"item.completed","item":{"type":"agent_message","text":%s}}\n' "$reply"
+  printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+  exit 0
+fi
 exit 0
 `
   for (const harness of ['claude', 'codex']) {
@@ -247,6 +273,12 @@ exit 0
     throw new Error('help and version commands created the state directory')
   await smoke(orch, ['jobs'], stateHome, 'implement')
   await smoke(binary, ['orch', 'jobs'], stateHome)
+  const agentList = await smoke(binary, ['orch', 'agent', 'list'], stateHome)
+  for (const builtIn of ['codex', 'grok']) {
+    if (!agentList.split('\n').some((line) => line.startsWith(`${builtIn} `))) {
+      throw new Error(`orch agent list did not show built-in agent ${builtIn}`)
+    }
+  }
   await smoke(binary, ['hub', 'task', 'list'], stateHome)
   if (!existsSync(join(stateHome, 'orchestrator', 'orch.db'))) {
     throw new Error('orch jobs did not create the orchestrator store')
@@ -367,6 +399,18 @@ exit 0
     smokeStore
       .query('INSERT INTO project (name, path, stack, canon, settings) VALUES (?, ?, ?, 0, ?)')
       .run('binary-smoke', realpathSync(probeRepository), 'fixture', '{}')
+    const codexCaps = JSON.parse(
+      (smokeStore.query('SELECT caps FROM agent WHERE name = ?').get('codex') as { caps: string })
+        .caps,
+    ) as Record<string, unknown>
+    smokeStore
+      .query('UPDATE agent SET caps = ?, probed_at = ?, probe_result = ? WHERE name = ?')
+      .run(
+        JSON.stringify({ ...codexCaps, replyFile: true }),
+        new Date().toISOString(),
+        '{"ok":true,"source":"compiled binary smoke fixture"}',
+        'codex',
+      )
   } finally {
     smokeStore.close()
   }
@@ -378,6 +422,39 @@ exit 0
     0,
     probeRepository,
   )
+  await smoke(
+    binary,
+    [
+      'orch',
+      'do',
+      'implement',
+      '--agent',
+      'codex',
+      '--base',
+      'main',
+      '--follow',
+      '--cwd',
+      probeRepository,
+      'Make the binary smoke fixture commit.',
+    ],
+    stateHome,
+    undefined,
+    0,
+    probeRepository,
+  )
+  const writingWorktree = readFileSync(join(mcpState, 'writing-worktree'), 'utf8').trim()
+  const writingHooks = resolve(readFileSync(join(mcpState, 'writing-hooks'), 'utf8').trim())
+  if (writingHooks.startsWith(`${resolve(writingWorktree)}/`)) {
+    throw new Error(`shared ref guard was installed inside writing worktree ${writingWorktree}`)
+  }
+  const writingBranch = readFileSync(join(mcpState, 'writing-branch'), 'utf8').trim()
+  const guardedSubject = await run(
+    ['git', 'log', '-1', '--format=%s', writingBranch],
+    probeRepository,
+  )
+  if (guardedSubject !== 'DEV-1091 guarded binary smoke') {
+    throw new Error(`guarded binary commit was not created: ${guardedSubject}`)
+  }
   const extractedRuntime = join(stateHome, 'runtime', '0.1.0', 'sandbox-runtime')
   if (!existsSync(extractedRuntime)) {
     throw new Error(`sandbox workflow probe did not extract ${extractedRuntime}`)

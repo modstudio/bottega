@@ -20,9 +20,11 @@ import {
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db, ROOT } from '../database/db.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { db } from '../database/db.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-environment.ts'
 import { ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
+import { resolveRefGuardHook } from './ref-guard-runtime.ts'
 
 export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string
@@ -39,8 +41,8 @@ const WORKER_PRE_PUSH =
   '#!/bin/sh\necho "workers never push; the architect pushes after review" >&2\nexit 1\n'
 
 function workerCommitMsg(): string {
-  const checker = realpathSync(join(ROOT, 'src', 'check', 'check-attribution.ts'))
-  return `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(checker)} "$1"\n`
+  const checker = bottegaEntryArgv('check-attribution').map(shellQuote).join(' ')
+  return `#!/bin/sh\nexec ${checker} "$1"\n`
 }
 
 function sharedRefGuardWrapper(hookDir: string, guard: string, original: string): string {
@@ -305,7 +307,7 @@ export function prepareSharedRefGuard(
       : resolve(cwd, configured)
     : join(paths.commonDir, 'hooks')
 
-  const guard = realpathSync(join(ROOT, 'hooks', 'reference-transaction'))
+  const guard = resolveRefGuardHook()
   const originalReferenceHook = join(originalDir, 'reference-transaction')
   const installed = join(hookDir, 'reference-transaction')
   const installedGuard = installedRefGuard(installed, guard)
@@ -397,7 +399,10 @@ export function prepareSharedRefGuard(
 export function removeSharedRefGuard(cwd: string, runId: number): void {
   const commonDir = commonGitDir(cwd)
   if (!commonDir) return
-  rmSync(join(commonDir, 'orch-guards', String(runId)), { recursive: true, force: true })
+  rmSync(join(commonDir, 'orch-guards', String(runId)), {
+    recursive: true,
+    force: true,
+  })
 }
 
 /**
@@ -407,17 +412,20 @@ export function removeSharedRefGuard(cwd: string, runId: number): void {
  */
 export function assertSharedRefGuardOutsideWritableRoots(
   hookDir: string,
+  guardPath: string,
   writableRoots: string[],
 ): void {
-  const published = realpathSync(hookDir)
+  const protectedPaths = [realpathSync(hookDir), realpathSync(guardPath)]
   for (const root of writableRoots) {
     const canonicalRoot = realpathSync(root)
-    const rel = relative(canonicalRoot, published)
-    if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) {
-      throw new Error(
-        `THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE invariant failed: ` +
-          `${published} is inside writable root ${canonicalRoot}`,
-      )
+    for (const protectedPath of protectedPaths) {
+      const rel = relative(canonicalRoot, protectedPath)
+      if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) {
+        throw new Error(
+          `THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE invariant failed: ` +
+            `${protectedPath} is inside writable root ${canonicalRoot}`,
+        )
+      }
     }
   }
 }

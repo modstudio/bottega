@@ -472,9 +472,16 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
+    '../../../shared/self-spawn.ts',
     '../../../shared/process-identity.ts',
     '../worktree/worktree-attribution.ts',
     '../git/git-environment.ts',
+    './ref-guard-runtime.ts',
+  ]),
+  module('orchestrator/src/resources/ref-guard-runtime.ts', [
+    '../../../shared/embedded-assets.ts',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
   ]),
   module('orchestrator/src/reclaim/reclaim-residue-policy.ts', []),
   module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
@@ -554,6 +561,7 @@ export const modules: ArchitectureModule[] = [
     'node:stream',
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
+    '../../../shared/embedded-assets.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',
     '../../../shared/state-directory.ts',

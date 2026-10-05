@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { registerEmbeddedAssets } from '../shared/embedded-assets.ts'
+import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
 import { distributionManifest, releaseVersion, run } from './build-release.ts'
 import { requireReleaseBun } from './release-config.ts'
@@ -83,7 +83,10 @@ export function parseBinaryTarget(value: string): BinaryTarget {
   )
 }
 
-function targetParts(target: BinaryTarget): { platform: NodeJS.Platform; arch: string } {
+function targetParts(target: BinaryTarget): {
+  platform: NodeJS.Platform
+  arch: string
+} {
   const [os, arch] = target.split('-')
   return { platform: os === 'darwin' ? 'darwin' : 'linux', arch }
 }
@@ -117,7 +120,7 @@ export async function buildBinary(
     writeFileSync(
       assets,
       generatedAssetModule(
-        await migrationAssetPaths(),
+        [...(await migrationAssetPaths()), REF_GUARD_RUNTIME_ASSET.packagePath],
         [...(await webAssetPaths()), ...sandboxRuntimePayloadPaths(platform, arch)],
         manifest,
       ),

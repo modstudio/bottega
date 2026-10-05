@@ -4,6 +4,7 @@ export const releaseModules = [
     allowed: [
       'hub/src/cli.ts',
       'orchestrator/src/ask/ask-proxy.ts',
+      'orchestrator/src/check/check-attribution.ts',
       'orchestrator/src/cli/orch.ts',
       'orchestrator/src/run/exec.ts',
       'retrieval/src/search-cli.ts',
