@@ -547,6 +547,13 @@
       "when": 1790884800005,
       "tag": "0077_board_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1790884800006,
+      "tag": "0078_board_claims",
+      "breakpoints": true
     }
   ]
 }

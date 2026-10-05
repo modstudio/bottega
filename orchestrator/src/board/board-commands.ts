@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
   acknowledgeNotice,
   claimNotices,
@@ -18,7 +19,7 @@ import {
   replyToThread,
 } from './board-thread-service.ts'
 
-function parseBoardDuration(value: string): number {
+export function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
   if (!match) throw new Error(`invalid duration ${value}; use a positive value such as 30m or 1d`)
   const amount = Number(match[1])
@@ -33,6 +34,7 @@ const collect = (value: string, values: string[] = []) => [...values, value]
 
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
+  registerBoardClaimCommands(board, parseBoardDuration)
   board.command('presence').action(() => {
     recordPresence()
   })

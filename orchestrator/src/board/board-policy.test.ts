@@ -115,7 +115,7 @@ test('worker audiences resolve projects, runs, and machines without leaking sess
 
 test('unsupported audience refusal lists every accepted form', () => {
   expect(() => parseAudience('everyone')).toThrow(
-    'unsupported board audience everyone; use operator, architects, project:<name>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
+    'unsupported board audience everyone; use operator, architects, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
   )
 })
 
@@ -143,6 +143,14 @@ test('operator and machine ack-required notices interrupt', () => {
   ).toBe(false)
   expect(
     shouldInterrupt({ authorKind: 'architect', audienceKind: 'machine', ackRequired: true }),
+  ).toBe(true)
+  expect(
+    shouldInterrupt({
+      authorKind: 'architect',
+      audienceKind: 'session',
+      ackRequired: false,
+      claimConflict: true,
+    }),
   ).toBe(true)
 })
 

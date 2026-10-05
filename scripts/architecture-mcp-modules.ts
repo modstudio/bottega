@@ -19,6 +19,12 @@ export const mcpModules: McpModule[] = [
     '../board/board-service.ts',
     '../board/board-suggestions.ts',
     '../board/board-thread-service.ts',
+    './mcp-board-claim-tools.ts',
+  ]),
+  module('orchestrator/src/mcp/mcp-board-claim-tools.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../board/board-claim-service.ts',
   ]),
   module('orchestrator/src/mcp/hub-notes.ts', [
     'zod',

@@ -369,6 +369,7 @@ export function claimInterruptNotices(session: string, clock = Date.now()) {
           authorKind: row.author_kind,
           audienceKind: parseAudience(row.audience!).kind,
           ackRequired: row.ack_required === 1,
+          claimConflict: row.claim_id !== null,
         }) &&
         !wasDelivered(row.id, session),
     )

@@ -15,6 +15,7 @@ export const cleanupBoundarySpecs = [
       './claim-reconciliation.ts',
       '../close/close-out.ts',
       '../board/board-service.ts',
+      '../board/board-claim-service.ts',
       '../database/db.ts',
       '../evidence/unjudged-expiry.ts',
       '../resources/docker-resources.ts',

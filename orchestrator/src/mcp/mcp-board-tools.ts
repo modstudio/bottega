@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import {
   acknowledgeNotice,
@@ -24,6 +25,7 @@ const result = (value: unknown) => ({
 })
 
 export function registerBoardTools(server: McpServer): void {
+  registerBoardClaimTools(server)
   server.registerTool(
     'board_ask',
     {

@@ -2,6 +2,7 @@ import { hostname } from 'node:os'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import {
   architectIdentity,
@@ -65,6 +66,7 @@ export type MessageRow = {
   note_id: number | null
   note_pending_error: string | null
   note_filing_started_at: string | null
+  claim_id: number | null
 }
 
 const NO_REACH_WARNING = 'reached no live session; re-address it or wait for a matching session'
@@ -94,13 +96,14 @@ export function boardActor(env: Environment = process.env): BoardActor {
   return { kind: 'operator', session: null }
 }
 
-function presenceFacts(database = db()) {
+function presenceFacts(database = db(), at = Date.now()) {
   const architects = (
-    database.query('SELECT session_id,project,machine,last_seen FROM presence').all() as {
+    database.query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence').all() as {
       session_id: string
       project: string
       machine: string
       last_seen: string
+      current_task_key: string | null
     }[]
   ).map((row) => ({
     reader: row.session_id,
@@ -108,6 +111,7 @@ function presenceFacts(database = db()) {
     project: row.project,
     machine: row.machine,
     lastSeen: Date.parse(row.last_seen),
+    taskKeys: new Set(row.current_task_key ? [row.current_task_key] : []),
   }))
   const liveTurns = database
     .query(
@@ -120,16 +124,40 @@ function presenceFacts(database = db()) {
        ), live_roots AS (
          SELECT root_id FROM ranked WHERE rank=1 AND status IN ('running','asking')
        )
-       SELECT run.id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn
+       SELECT run.id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn,
+              root.launch_key
        FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_id,run.id)
-       ORDER BY root_id,turn DESC`,
+       JOIN run root ON root.id=COALESCE(run.parent_run_id,run.id)
+       ORDER BY root_id,run.turn DESC`,
     )
-    .all() as { id: number; root_id: number; repo: string | null; status: string; turn: number }[]
+    .all() as { id: number; root_id: number; repo: string | null; status: string; turn: number; launch_key: string | null }[]
   const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number> }>()
   for (const row of liveTurns) {
     const current = workers.get(row.root_id)
     if (!current) workers.set(row.root_id, { ...row, runIds: new Set([row.id, row.root_id]) })
     else current.runIds.add(row.id)
+  }
+  const claims = database
+    .query(
+      `SELECT claim.holder_kind,claim.holder_session,claim.subject_value,claim.lapses_at,
+              latest.status run_status
+       FROM board_claim claim
+       LEFT JOIN run member ON member.id=claim.run_id
+       LEFT JOIN run latest ON latest.id=(
+         SELECT id FROM run
+         WHERE id=COALESCE(member.parent_run_id,member.id)
+            OR parent_run_id=COALESCE(member.parent_run_id,member.id)
+         ORDER BY turn DESC,id DESC LIMIT 1)
+       WHERE claim.closed_at IS NULL AND claim.subject_kind='task'`,
+    )
+    .all() as { holder_kind: 'operator' | 'architect'; holder_session: string | null; subject_value: string; lapses_at: string; run_status: string | null }[]
+  const claimReaders = new Map<string, { role: 'operator' | 'architect'; taskKeys: Set<string> }>()
+  for (const claim of claims) {
+    if (!claimIsLive({ closed: false, lapsesAt: Date.parse(claim.lapses_at), runStatus: claim.run_status, now: at })) continue
+    const reader = claim.holder_kind === 'operator' ? OPERATOR_READER : claim.holder_session!
+    const fact = claimReaders.get(reader) ?? { role: claim.holder_kind, taskKeys: new Set<string>() }
+    fact.taskKeys.add(claim.subject_value)
+    claimReaders.set(reader, fact)
   }
   return [
     ...architects,
@@ -140,6 +168,15 @@ function presenceFacts(database = db()) {
       machine: hostname(),
       live: true,
       runIds: row.runIds,
+      taskKeys: new Set(row.launch_key ? [row.launch_key] : []),
+    })),
+    ...[...claimReaders].map(([reader, fact]) => ({
+      reader,
+      role: fact.role,
+      project: '',
+      machine: hostname(),
+      live: true,
+      taskKeys: fact.taskKeys,
     })),
   ]
 }
@@ -151,7 +188,7 @@ export function recipients(
   database = db(),
 ): string[] {
   const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, presenceFacts(database), at, SESSION_LIVE_MS)
+  const coarse = resolveAudience(audience, presenceFacts(database, at), at, SESSION_LIVE_MS)
   if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
   return coarse.filter((reader) => {
     const run = /^run:(\d+)$/.exec(reader)

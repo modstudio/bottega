@@ -16,7 +16,7 @@ function distinct(values: string[]): string[] {
   return [...new Set(values)]
 }
 
-function pathTagRefusal(value: string): string | null {
+export function pathTagRefusal(value: string): string | null {
   if (!value.trim()) return 'board path tag is empty; provide a repository-relative glob'
   if (isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value))
     return `board path tag ${value} is absolute; provide a repository-relative glob`
