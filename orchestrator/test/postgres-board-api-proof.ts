@@ -559,4 +559,255 @@ export function registerBoardApiProofs(input: {
     )
     expect((await post(tokenA, notice(newRecordId(), 'operator', other))).status).toBe(200)
   })
+
+  const askAndAnswer = async (session: string) => {
+    const questionId = newRecordId()
+    const replyId = newRecordId()
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages`, {
+          method: 'PUT',
+          headers: headers(tokenA),
+          body: JSON.stringify({
+            id: questionId,
+            kind: 'question',
+            audience: `project:${PROJECT}`,
+            title: 'Q',
+            body: 'Q',
+            expiresAt,
+            authorSession: session,
+          }),
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
+          method: 'POST',
+          headers: headers(tokenB),
+          body: JSON.stringify({ id: replyId, body: 'A', authorSession: `${session}-answer` }),
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
+          method: 'POST',
+          headers: headers(tokenA),
+          body: JSON.stringify({ replyId, authorSession: session }),
+        })
+      ).status,
+    ).toBe(200)
+    return questionId
+  }
+
+  const seedOwnedRun = (ownerUserId: string) => {
+    const machineId = newRecordId()
+    const runId = newRecordId()
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO machine (id, user_id, name, registered_at, last_seen)
+         VALUES ('${machineId}', '${ownerUserId}', 'board-api-machine', now(), now());
+       INSERT INTO run (
+         id, space_id, project_id, machine_id, local_id, started_by_user_id, started_at, agent, job,
+         prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
+         automatic_failover, work_preserved, created_at, updated_at
+       ) VALUES (
+         '${runId}', '${spaceA}', '${IDS.project}', '${machineId}', 1, '${ownerUserId}',
+         now(), 'proof', 'proof', 'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()
+       );`,
+    )
+    return { machineId, runId }
+  }
+
+  test('reply twice with the same id to a project-scoped thread is idempotent', async () => {
+    const session = caseSession('reply-idempotent')
+    const questionId = newRecordId()
+    const replyId = newRecordId()
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages`, {
+          method: 'PUT',
+          headers: headers(tokenA),
+          body: JSON.stringify({
+            id: questionId,
+            kind: 'question',
+            audience: `project:${PROJECT}`,
+            title: 'Idempotent reply',
+            body: 'Q',
+            expiresAt,
+            authorSession: session,
+          }),
+        })
+      ).status,
+    ).toBe(200)
+    const replyBody = { id: replyId, body: 'Same answer', authorSession: `${session}-answer` }
+    const reply = (body: Record<string, unknown>) =>
+      fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
+        method: 'POST',
+        headers: headers(tokenB),
+        body: JSON.stringify(body),
+      })
+    const first = await reply(replyBody)
+    const again = await reply(replyBody)
+    const different = await reply({ ...replyBody, body: 'Other answer' })
+    expect(first.status).toBe(200)
+    expect(again.status).toBe(200)
+    expect(((await again.json()) as { id: string }).id).toBe(replyId)
+    expect(different.status).toBe(409)
+  })
+
+  test('complete twice with different note ids keeps the first', async () => {
+    const session = caseSession('filing-complete-twice')
+    const questionId = await askAndAnswer(session)
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
+          method: 'POST',
+          headers: headers(tokenA),
+          body: JSON.stringify({ authorSession: session }),
+        })
+      ).status,
+    ).toBe(200)
+    const firstNote = newRecordId()
+    const secondNote = newRecordId()
+    const complete = (noteId: string) =>
+      fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/complete`, {
+        method: 'POST',
+        headers: headers(tokenA),
+        body: JSON.stringify({ noteId, authorSession: session }),
+      })
+    expect((await complete(firstNote)).status).toBe(200)
+    expect((await complete(secondNote)).status).toBe(409)
+    const thread = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    expect((thread.root as { noteId: string }).noteId).toBe(firstNote)
+  })
+
+  test('fail after complete is refused and leaves no error', async () => {
+    const session = caseSession('filing-fail-after-complete')
+    const questionId = await askAndAnswer(session)
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
+          method: 'POST',
+          headers: headers(tokenA),
+          body: JSON.stringify({ authorSession: session }),
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/complete`, {
+          method: 'POST',
+          headers: headers(tokenA),
+          body: JSON.stringify({ noteId: newRecordId(), authorSession: session }),
+        })
+      ).status,
+    ).toBe(200)
+    const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
+      method: 'POST',
+      headers: headers(tokenA),
+      body: JSON.stringify({ error: 'hub unavailable', authorSession: session }),
+    })
+    expect(failed.status).toBe(409)
+    const thread = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    expect((thread.root as { notePendingError: string | null }).notePendingError).toBeNull()
+  })
+
+  test('fail without a take is refused', async () => {
+    const session = caseSession('filing-fail-without-take')
+    const questionId = await askAndAnswer(session)
+    const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
+      method: 'POST',
+      headers: headers(tokenA),
+      body: JSON.stringify({ error: 'hub unavailable', authorSession: session }),
+    })
+    expect(failed.status).toBe(409)
+    expect(JSON.stringify(await failed.json())).toContain('not held')
+  })
+
+  test('filing-fail secret-shaped error is refused without echoing the text', async () => {
+    const session = caseSession('filing-fail-secret')
+    const questionId = await askAndAnswer(session)
+    expect(
+      (
+        await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
+          method: 'POST',
+          headers: headers(tokenA),
+          body: JSON.stringify({ authorSession: session }),
+        })
+      ).status,
+    ).toBe(200)
+    const secret = 'password=supersecretvalue'
+    const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
+      method: 'POST',
+      headers: headers(tokenA),
+      body: JSON.stringify({ error: secret, authorSession: session }),
+    })
+    expect(failed.status).toBe(400)
+    const text = JSON.stringify(await failed.json())
+    expect(text).toContain('secret-shaped')
+    expect(text).not.toContain(secret)
+    const thread = await json(
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+    )
+    expect((thread.root as { notePendingError: string | null }).notePendingError).toBeNull()
+  })
+
+  test('a post naming another user run is refused', async () => {
+    const { runId } = seedOwnedRun(userB)
+    const posted = await post(
+      tokenA,
+      notice(newRecordId(), 'operator', caseSession('foreign-run-post'), { authorRunId: runId }),
+    )
+    expect(posted.status).toBe(400)
+    expect(JSON.stringify(await posted.json())).toContain('authorRunId')
+  })
+
+  test('a claim take naming another user run is refused', async () => {
+    const { runId } = seedOwnedRun(userB)
+    const taken = await fetch(`${origin}/v1/board/claims`, {
+      method: 'PUT',
+      headers: headers(tokenA),
+      body: JSON.stringify({
+        id: newRecordId(),
+        project: PROJECT,
+        subject: `resource:foreign-run-${runId.slice(0, 8)}`,
+        holderSession: caseSession('foreign-run-claim'),
+        runId,
+      }),
+    })
+    expect(taken.status).toBe(400)
+    expect(JSON.stringify(await taken.json())).toContain('runId')
+  })
+
+  test('the caller own run and machine are accepted', async () => {
+    const { machineId, runId } = seedOwnedRun(userA)
+    const posted = await post(
+      tokenA,
+      notice(newRecordId(), 'operator', caseSession('own-run-post'), {
+        authorRunId: runId,
+        authorMachineId: machineId,
+      }),
+    )
+    expect(posted.status).toBe(200)
+    expect(((await posted.json()) as { origin: { runId: string } }).origin.runId).toBe(runId)
+    const taken = await fetch(`${origin}/v1/board/claims`, {
+      method: 'PUT',
+      headers: headers(tokenA),
+      body: JSON.stringify({
+        id: newRecordId(),
+        project: PROJECT,
+        subject: `resource:own-run-${runId.slice(0, 8)}`,
+        holderSession: caseSession('own-run-claim'),
+        runId,
+      }),
+    })
+    expect(taken.status).toBe(200)
+  })
 }
