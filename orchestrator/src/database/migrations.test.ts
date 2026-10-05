@@ -116,6 +116,7 @@ test('board origin snapshot migration backfills an existing architect notice', (
       '0075_board_message_tags',
       '0076_board_worker_suggestions',
       '0077_board_threads',
+      '0078_board_claims',
     ])
     expect(database.query('SELECT author_harness,author_project FROM board_message').get()).toEqual(
       { author_harness: 'claude-code', author_project: 'posting-project' },
@@ -166,6 +167,7 @@ test('board worker suggestion migration preserves messages, receipts, and tags',
     expect(applyMigrations(database)).toEqual([
       '0076_board_worker_suggestions',
       '0077_board_threads',
+      '0078_board_claims',
     ])
     expect(
       database
@@ -223,7 +225,7 @@ test('board thread migration preserves existing messages, receipts, and tags', (
       )
       .run(message.id)
 
-    expect(applyMigrations(database)).toEqual(['0077_board_threads'])
+    expect(applyMigrations(database)).toEqual(['0077_board_threads', '0078_board_claims'])
     expect(
       database
         .query(
@@ -247,6 +249,45 @@ test('board thread migration preserves existing messages, receipts, and tags', (
       value: 'gate',
       origin: 'sender',
     })
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
+test('board claim migration preserves existing board rows and adds their nullable claim link', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-board-claims-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex((entry) => entry.tag === '0078_board_claims')
+  const prior = journal.slice(0, migration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    database
+      .query(
+        `INSERT INTO board_message
+         (kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at)
+         VALUES ('notice','architect','author','operator','Title','Body',0,'2026-10-03','2026-10-02')`,
+      )
+      .run()
+    expect(applyMigrations(database)).toEqual(['0078_board_claims'])
+    expect(database.query('SELECT title,body,claim_id FROM board_message').get()).toEqual({
+      title: 'Title',
+      body: 'Body',
+      claim_id: null,
+    })
+    expect(
+      database
+        .query("SELECT name FROM sqlite_master WHERE type='table' AND name='board_claim'")
+        .get(),
+    ).toEqual({ name: 'board_claim' })
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })
@@ -480,6 +521,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       '0075_board_message_tags',
       '0076_board_worker_suggestions',
       '0077_board_threads',
+      '0078_board_claims',
     ])
     expect(database.query('SELECT action,reason FROM run_mutation_audit').get()).toEqual({
       action: 'answer',
@@ -593,6 +635,7 @@ test('agent operator migration preserves cost facts and the routing free set', (
       '0075_board_message_tags',
       '0076_board_worker_suggestions',
       '0077_board_threads',
+      '0078_board_claims',
     ])
     const after = database
       .query("SELECT name FROM agent WHERE billing IN ('free','none') ORDER BY name")
@@ -688,6 +731,7 @@ test('project task identity migration backfills ledger project relationships', (
       '0075_board_message_tags',
       '0076_board_worker_suggestions',
       '0077_board_threads',
+      '0078_board_claims',
     ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
@@ -764,6 +808,7 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       '0075_board_message_tags',
       '0076_board_worker_suggestions',
       '0077_board_threads',
+      '0078_board_claims',
     ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',

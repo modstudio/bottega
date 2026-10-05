@@ -393,7 +393,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
   }
 
   async function closeAndPruneTask(key: string) {
-    const { closed, pruned, pruneError } = await closeThenPrune(
+    const { closed, pruned, pruneError, claimReleaseError } = await closeThenPrune(
       key,
       { project: taskFlag('project') },
       taskHas('keep-branches'),
@@ -401,6 +401,13 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       {},
     )
     printRow(closed)
+    if (claimReleaseError) {
+      console.error(`claim release failed: ${claimReleaseError.message}`)
+      console.error(
+        `retry: orch board claim release-task ${closed.key} --project ${closed.project} --json`,
+      )
+      process.exitCode = 1
+    }
     if (pruneError) {
       console.error(`branch prune failed: ${pruneError.message}`)
       console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)

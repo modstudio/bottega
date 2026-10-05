@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
+import type { TaskRow } from './task.ts'
+import { closeThenPrune } from './task-close.ts'
 import { decideTaskClose } from './task-close-decision.ts'
+
+const closedTask = { project: PLATFORM_NAME, key: 'DEV-1' } as TaskRow
 
 describe('task close decision', () => {
   test('closes when every branch is landed', () => {
@@ -42,5 +47,40 @@ describe('task close decision', () => {
       reason:
         'branch classification unavailable: git failed; restore orch and git access, then retry',
     })
+  })
+})
+
+describe('task close claim release', () => {
+  test('releases claims after close even when branches are kept', async () => {
+    let released = ''
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, {
+      close: async () => closedTask,
+      releaseClaims: async (project, key) => {
+        released = `${project}:${key}`
+        return { released: 2 }
+      },
+    })
+    expect(released).toBe(`${PLATFORM_NAME}:DEV-1`)
+    expect(result.claimReleaseError).toBeNull()
+  })
+
+  test('surfaces a claim release error', async () => {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, {
+      close: async () => closedTask,
+      releaseClaims: async () => {
+        throw new Error('orch unavailable')
+      },
+    })
+    expect(result.claimReleaseError?.message).toBe('orch unavailable')
+  })
+
+  test('returns the closed task when claim release fails', async () => {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, {
+      close: async () => closedTask,
+      releaseClaims: async () => {
+        throw new Error('release failed')
+      },
+    })
+    expect(result.closed).toBe(closedTask)
   })
 })

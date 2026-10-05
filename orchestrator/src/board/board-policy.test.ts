@@ -113,9 +113,47 @@ test('worker audiences resolve projects, runs, and machines without leaking sess
   expect(() => parseAudience('session:run:10')).toThrow(/reserved/)
 })
 
+test('task-only facts contribute only to task audiences and every audience is distinct', () => {
+  const facts = [
+    {
+      reader: 'holder',
+      role: 'architect' as const,
+      project: PLATFORM_SLUG,
+      machine: 'host-a',
+      lastSeen: 900,
+      taskKeys: new Set(['DEV-9']),
+    },
+    {
+      reader: 'holder',
+      role: 'architect' as const,
+      project: '',
+      machine: 'host-a',
+      live: true,
+      taskKeys: new Set(['DEV-9']),
+      taskAudienceOnly: true,
+    },
+    {
+      reader: 'stale-holder',
+      role: 'architect' as const,
+      project: '',
+      machine: 'host-a',
+      live: true,
+      taskKeys: new Set(['DEV-9']),
+      taskAudienceOnly: true,
+    },
+  ]
+  expect(resolveAudience(parseAudience('task:DEV-9'), facts, 1_000, 200)).toEqual([
+    'holder',
+    'stale-holder',
+  ])
+  expect(resolveAudience(parseAudience('architects'), facts, 1_000, 200)).toEqual(['holder'])
+  expect(resolveAudience(parseAudience('machine:host-a'), facts, 1_000, 200)).toEqual(['holder'])
+  expect(resolveAudience(parseAudience('session:stale-holder'), facts, 1_000, 200)).toEqual([])
+})
+
 test('unsupported audience refusal lists every accepted form', () => {
   expect(() => parseAudience('everyone')).toThrow(
-    'unsupported board audience everyone; use operator, architects, project:<name>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
+    'unsupported board audience everyone; use operator, architects, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
   )
 })
 
@@ -143,6 +181,14 @@ test('operator and machine ack-required notices interrupt', () => {
   ).toBe(false)
   expect(
     shouldInterrupt({ authorKind: 'architect', audienceKind: 'machine', ackRequired: true }),
+  ).toBe(true)
+  expect(
+    shouldInterrupt({
+      authorKind: 'architect',
+      audienceKind: 'session',
+      ackRequired: false,
+      claimConflict: true,
+    }),
   ).toBe(true)
 })
 

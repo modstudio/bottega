@@ -16,6 +16,7 @@ import {
   readThread,
   replyToThread,
 } from '../board/board-thread-service.ts'
+import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 
 const result = (value: unknown) => ({
   content: [
@@ -24,6 +25,7 @@ const result = (value: unknown) => ({
 })
 
 export function registerBoardTools(server: McpServer): void {
+  registerBoardClaimTools(server)
   server.registerTool(
     'board_ask',
     {

@@ -455,6 +455,18 @@ export const pruneTaskBranches = (project: string, key: string): Promise<BranchP
     '--json',
   ])
 
+/** Ask orchestrator to close every live claim when its task closes. */
+export const releaseTaskClaims = (project: string, key: string): Promise<{ released: number }> =>
+  jsonDocument<{ released: number }>([
+    'board',
+    'claim',
+    'release-task',
+    key,
+    '--project',
+    project,
+    '--json',
+  ])
+
 export const state = (days: number | null) =>
   json(['state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
 

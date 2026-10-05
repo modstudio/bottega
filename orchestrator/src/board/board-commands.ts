@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
   acknowledgeNotice,
   claimNotices,
@@ -33,6 +34,7 @@ const collect = (value: string, values: string[] = []) => [...values, value]
 
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
+  registerBoardClaimCommands(board, parseBoardDuration)
   board.command('presence').action(() => {
     recordPresence()
   })
