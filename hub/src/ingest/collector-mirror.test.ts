@@ -120,6 +120,7 @@ mock.module('../task-client.ts', () => ({
 const { db, writeTransaction } = await import('../db.ts')
 const { ingestGit } = await import('./git.ts')
 const { ingestTrackers } = await import('./trackers.ts')
+const { refreshTrackerTask } = await import('../tracker-task-cli.ts')
 
 beforeEach(() => {
   writeTransaction((conn) => {
@@ -223,6 +224,44 @@ test('tracker status events use the same project-space filter as task snapshots'
     { project: 'stopal', count: 1 },
   ])
   expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha'])
+})
+
+test('a transition mirrored by a fresh read is not mirrored again by the following collect', async () => {
+  await ingestTrackers()
+
+  await refreshTrackerTask('ALP-1', 'alpha', {
+    registeredProjects: () => [project],
+    sourceFor: () => ({
+      project: 'alpha',
+      env: 'ALPHA',
+      fetch: async () => [],
+      lookup: async () => ({
+        externalId: 'tracker-alp-1',
+        key: 'ALP-1',
+        project: 'alpha',
+        title: 'Collected task',
+        status: 'completed',
+        category: 'open',
+        updatedAt: null,
+        assignee: null,
+      }),
+    }),
+    readCredentials: async () => ({ url: 'https://alpha.example.test', token: 'tracker-token' }),
+    connect: async () => ({
+      callTool: async () => ({}),
+      close: async () => {},
+    }),
+  })
+
+  expect(mirroredEvents).toEqual([
+    expect.objectContaining({
+      task_key: 'ALP-1',
+      project_name: 'alpha',
+    }),
+  ])
+  trackerStatuses.ALP = 'completed'
+  await ingestTrackers()
+  expect(mirroredEvents).toHaveLength(1)
 })
 
 test('an unreadable identity keeps collected tasks local and performs no hosted writes', async () => {
