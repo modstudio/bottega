@@ -77,6 +77,7 @@ export const modules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
+  module('orchestrator/src/refusal-error.ts', []),
   module('orchestrator/src/worker-store-write.ts', []),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/self-spawn.ts',

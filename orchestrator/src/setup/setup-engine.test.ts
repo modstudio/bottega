@@ -489,7 +489,7 @@ test('emits manual MCP instructions for an installed harness without CLI support
     machineWithMcp('goose', { support: 'manual', registrations: {} }),
     [],
     [],
-    [{ name: 'goose', harness: 'goose', enabled: true }],
+    [{ name: 'goose', harness: 'goose', enabled: true, probePassed: false }],
     [],
     [orchServer],
   )
@@ -518,10 +518,11 @@ function machineWithHarness(
   } as SetupFacts
 }
 
-const agent = (name: string, enabled = true, harness = name): SetupAgent => ({
+const agent = (name: string, enabled = true, harness = name, probePassed = true): SetupAgent => ({
   name,
   harness,
   enabled,
+  probePassed,
 })
 
 test('notices when an enabled built-in agent harness is absent', () => {
@@ -540,7 +541,7 @@ test('notices when an enabled built-in agent harness is not signed in', () => {
     machineWithHarness('grok', '/bin/grok', 'signed-out'),
     [],
     [],
-    [agent('grok')],
+    [agent('grok', true, 'grok', false)],
   )
   expect(plan.notices).toEqual([
     {
@@ -596,6 +597,32 @@ test('does not notice a ready enabled built-in agent', () => {
     [],
     [],
     [agent('codex')],
+  )
+  expect(plan.notices).toEqual([])
+})
+
+test('notices when an installed signed-in built-in has not passed its probe', () => {
+  const plan = proposeSetup(
+    machineWithHarness('codex', '/bin/codex', 'signed-in'),
+    [],
+    [],
+    [agent('codex', true, 'codex', false)],
+  )
+  expect(plan.notices).toEqual([
+    {
+      message:
+        'codex harness is installed and signed in but the codex agent cannot take repository work until it is probed',
+      fix: 'orch agent probe codex',
+    },
+  ])
+})
+
+test('does not show the probe notice after a built-in passes its probe', () => {
+  const plan = proposeSetup(
+    machineWithHarness('codex', '/bin/codex', 'signed-in'),
+    [],
+    [],
+    [agent('codex', true, 'codex', true)],
   )
   expect(plan.notices).toEqual([])
 })

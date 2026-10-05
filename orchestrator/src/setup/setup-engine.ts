@@ -28,7 +28,12 @@ export type SetupQuestion = {
 }
 
 export type SetupNotice = { message: string; fix: string | null }
-export type SetupAgent = { name: string; harness: string; enabled: number | boolean }
+export type SetupAgent = {
+  name: string
+  harness: string
+  enabled: number | boolean
+  probePassed: number | boolean
+}
 export type SetupLifecycleResolver = (
   worktree: ProjectSettings['worktree'] | null | undefined,
   defaultConfigExists: boolean,
@@ -233,10 +238,16 @@ function builtInAgentNotice(
       fix: `sign in to ${name}, or orch agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
     }
   }
-  return harness.auth === 'unknown'
+  if (harness.auth === 'unknown') {
+    return {
+      message: `the sign-in state of ${name} could not be established`,
+      fix: `check ${name} sign-in and re-run orch setup plan`,
+    }
+  }
+  return !agent.probePassed
     ? {
-        message: `the sign-in state of ${name} could not be established`,
-        fix: `check ${name} sign-in and re-run orch setup plan`,
+        message: `${name} harness is installed and signed in but the ${name} agent cannot take repository work until it is probed`,
+        fix: `orch agent probe ${name}`,
       }
     : null
 }

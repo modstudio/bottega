@@ -17,7 +17,7 @@ import {
 import {
   available,
   ensureLocalHealth,
-  installed,
+  harnessInstalled,
   modelHostModel,
   unavailableReason,
 } from './model-host.ts'
@@ -161,17 +161,52 @@ function listCommand(json: boolean, presentation: Presentation): void {
       )
 }
 
+export function agentReadinessPresentation(facts: {
+  name: string
+  enabled: boolean
+  disabledReason: string | null | undefined
+  executableFound: boolean
+  probedAt: string | null | undefined
+  available: boolean
+  unavailableReason: string | null
+}): string {
+  if (!facts.enabled) return `disabled — ${facts.disabledReason}`
+  if (!facts.executableFound) return 'not installed'
+  if (!facts.probedAt) return `installed but not probed — orch agent probe ${facts.name}`
+  if (!facts.available) return `unavailable — ${facts.unavailableReason}`
+  return 'ready'
+}
+
 export async function agentsCommand(json: boolean, presentation: Presentation): Promise<void> {
   const payload = await agentsPayload()
   if (json) {
     presentation.log(JSON.stringify(payload))
     return
   }
-  for (const agent of Object.values(AGENTS))
+  const rows = Object.values(AGENTS).map((agent) => ({
+    agent,
+    readiness: agentReadinessPresentation({
+      name: agent.name,
+      enabled: agent.enabled !== false,
+      disabledReason: agent.disabledReason,
+      executableFound: harnessInstalled(agent.name),
+      probedAt: agent.probedAt,
+      available: available(agent.name),
+      unavailableReason: unavailableReason(agent.name),
+    }),
+  }))
+  for (const { agent, readiness } of rows)
     presentation.log(
-      `${agent.name.padEnd(7)} ${available(agent.name) ? 'installed' : 'MISSING  '} ${agent.billing.padEnd(13)}${unavailableReason(agent.name) ? ` [${unavailableReason(agent.name)}]` : ''} repo=${agent.caps.readsRepo ? 'y' : 'n'} mcp=${agent.caps.mcp ? 'y' : 'n'} schema=${agent.caps.schema ? 'y' : 'n'}  ${agent.notes}`,
+      `${agent.name.padEnd(7)} ${readiness} ${agent.billing.padEnd(13)} repo=${agent.caps.readsRepo ? 'y' : 'n'} mcp=${agent.caps.mcp ? 'y' : 'n'} schema=${agent.caps.schema ? 'y' : 'n'}  ${agent.notes}`,
     )
-  presentation.log(`\ninstalled: ${installed().join(', ') || 'none'}`)
+  presentation.log(
+    `\nready: ${
+      rows
+        .filter((row) => row.readiness === 'ready')
+        .map((row) => row.agent.name)
+        .join(', ') || 'none'
+    }`,
+  )
 }
 
 export async function agentsPayload() {
