@@ -102,9 +102,15 @@ const HOSTED_COLLECT_LEGS = [
   ['hosted reports', pullHostedReports],
 ] as const
 
-async function hostedCollectLegs(): Promise<CollectLegResult[]> {
+async function hostedCollectLegs(guard?: LeaseGuard): Promise<CollectLegResult[]> {
   const results: CollectLegResult[] = []
-  for (const [source, work] of HOSTED_COLLECT_LEGS) results.push(await settleLeg(source, work))
+  let previous: string | undefined
+  for (const [source, work] of HOSTED_COLLECT_LEGS) {
+    guard?.assertHeld(previous)
+    results.push(await settleLeg(source, work))
+    previous = source
+    guard?.assertHeld(source)
+  }
   return results
 }
 
@@ -114,15 +120,58 @@ const LEASE_RENEW_MS = 20_000
 
 export type LeaseGuard = {
   /** Refuse further work after another holder has taken this lease. */
-  assertHeld(): void
+  assertHeld(afterLeg?: string): void
 }
 
 class LeaseLostError extends Error {
   readonly heldBy: string | null
 
-  constructor(heldBy: string | null) {
-    super(`${heldBy ?? 'another process'} holds the collect lease; leased work was discarded`)
+  constructor(heldBy: string | null, afterLeg?: string) {
+    super(
+      `${heldBy ?? 'another process'} holds the collect lease; collection stopped${
+        afterLeg ? ` after ${afterLeg}` : ''
+      }; a leg already running was allowed to finish`,
+    )
     this.heldBy = heldBy
+  }
+}
+
+type HeldLeaseResult<T> =
+  | { ran: true; value: T }
+  | { ran: false; heldBy: string | null; error: LeaseLostError }
+
+/** Run work under one renewing lease that has already been acquired. */
+async function holdAndRenewLease<T>(
+  holder: string,
+  fn: (guard: LeaseGuard) => Promise<T>,
+  renewEveryMs: number,
+): Promise<HeldLeaseResult<T>> {
+  let lostBy: string | null | undefined
+  const markLost = () => {
+    if (lostBy === undefined) lostBy = leaseHolder()
+  }
+  const guard: LeaseGuard = {
+    assertHeld(afterLeg) {
+      if (lostBy === undefined && leaseHolder() !== holder) markLost()
+      if (lostBy !== undefined) throw new LeaseLostError(lostBy, afterLeg)
+    },
+  }
+  const renewal = setInterval(() => {
+    if (lostBy === undefined && !acquireLease(holder)) markLost()
+  }, renewEveryMs)
+  try {
+    const value = await fn(guard)
+    guard.assertHeld()
+    return { ran: true, value }
+  } catch (error) {
+    if (lostBy !== undefined) {
+      const refusal = error instanceof LeaseLostError ? error : new LeaseLostError(lostBy)
+      return { ran: false, heldBy: lostBy, error: refusal }
+    }
+    throw error
+  } finally {
+    clearInterval(renewal)
+    releaseLease(holder)
   }
 }
 
@@ -210,30 +259,8 @@ export async function withLease<T>(
     if (Date.now() >= deadline) return { ran: false, heldBy: leaseHolder() }
     await new Promise((r) => setTimeout(r, 250))
   }
-  let lostBy: string | null | undefined
-  const markLost = () => {
-    if (lostBy === undefined) lostBy = leaseHolder()
-  }
-  const guard: LeaseGuard = {
-    assertHeld() {
-      if (lostBy === undefined && leaseHolder() !== holder) markLost()
-      if (lostBy !== undefined) throw new LeaseLostError(lostBy)
-    },
-  }
-  const renewal = setInterval(() => {
-    if (lostBy === undefined && !acquireLease(holder)) markLost()
-  }, renewEveryMs)
-  try {
-    const value = await fn(guard)
-    guard.assertHeld()
-    return { ran: true, value }
-  } catch (error) {
-    if (lostBy !== undefined) return { ran: false, heldBy: lostBy }
-    throw error
-  } finally {
-    clearInterval(renewal)
-    releaseLease(holder)
-  }
+  const result = await holdAndRenewLease(holder, fn, renewEveryMs)
+  return result.ran ? result : { ran: false, heldBy: result.heldBy }
 }
 
 export function leaseHolder(): string | null {
@@ -294,15 +321,20 @@ export function runsSince(now = Date.now()): string {
  */
 export async function collectFast(
   dependencies: { runs?: typeof ingestRuns; transcripts?: typeof ingestTranscripts } = {},
+  guard?: LeaseGuard,
 ) {
   const results = [] as CollectLegResult[]
+  guard?.assertHeld()
   results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRuns)(runsSince())))
+  guard?.assertHeld('runs')
   results.push(
     await settleLeg('transcripts', () =>
       (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
     ),
   )
+  guard?.assertHeld('transcripts')
   rollUpDays()
+  guard?.assertHeld('roll up days')
   stamp('collect.at')
   return results
 }
@@ -335,9 +367,11 @@ export async function deliverOperatorNotifications(
 }
 
 /** The remote and commit-shaped legs. */
-async function collectSlow(scheduled = false) {
+async function collectSlow(scheduled = false, guard?: LeaseGuard) {
   const results = [] as CollectLegResult[]
+  guard?.assertHeld()
   results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
+  guard?.assertHeld('git')
   const due = scheduled ? trackerSchedule.due(trackerProjects()) : null
   let trackerResults: TrackerResult[] = []
   results.push(
@@ -348,20 +382,48 @@ async function collectSlow(scheduled = false) {
       if (error) throw new Error(error)
     }),
   )
+  guard?.assertHeld('tasks')
   stamp('collect.slow.at')
-  if (process.env.HUB_HOSTED_URL) results.push(...(await hostedCollectLegs()))
+  if (process.env.HUB_HOSTED_URL) {
+    guard?.assertHeld('tasks')
+    results.push(...(await hostedCollectLegs(guard)))
+    guard?.assertHeld('hosted')
+  }
+  guard?.assertHeld(process.env.HUB_HOSTED_URL ? 'hosted reports' : 'tasks')
   stamp('collect.at')
   return results
 }
 
-export async function collectOnce(since: string, only?: string) {
+const UNGUARDED_LEASE: LeaseGuard = { assertHeld() {} }
+
+export async function collectOnce(
+  since: string,
+  only?: string,
+  guard: LeaseGuard = UNGUARDED_LEASE,
+) {
   const selected = (source: string) => !only || only === source
   const results = [] as CollectLegResult[]
-  if (selected('git')) results.push(await settleLeg('git', () => ingestGit(since.slice(0, 10))))
-  if (selected('runs')) results.push(await settleLeg('runs', () => ingestRuns(since)))
-  if (selected('transcripts'))
+  let previous: string | undefined
+  if (selected('git')) {
+    guard.assertHeld(previous)
+    results.push(await settleLeg('git', () => ingestGit(since.slice(0, 10))))
+    previous = 'git'
+    guard.assertHeld(previous)
+  }
+  if (selected('runs')) {
+    guard.assertHeld(previous)
+    results.push(await settleLeg('runs', () => ingestRuns(since)))
+    previous = 'runs'
+    guard.assertHeld(previous)
+  }
+  if (selected('transcripts')) {
+    guard.assertHeld(previous)
     results.push(await settleLeg('transcripts', () => ingestTranscripts(since)))
+    previous = 'transcripts'
+    guard.assertHeld(previous)
+  }
   if (selected('tasks')) {
+    guard.assertHeld(previous)
     results.push(
       await settleLeg('tasks', async () => {
         const trackerResults = await ingestTrackers()
@@ -377,9 +439,18 @@ export async function collectOnce(since: string, only?: string) {
         if (error) throw new Error(error)
       }),
     )
+    previous = 'tasks'
+    guard.assertHeld(previous)
   }
-  if (!only && process.env.HUB_HOSTED_URL) results.push(...(await hostedCollectLegs()))
+  if (!only && process.env.HUB_HOSTED_URL) {
+    guard.assertHeld(previous)
+    results.push(...(await hostedCollectLegs(guard)))
+    previous = 'hosted reports'
+    guard.assertHeld(previous)
+  }
+  guard.assertHeld(previous)
   rollUpDays()
+  guard.assertHeld('roll up days')
   stamp('collect.at')
   return results
 }
@@ -395,62 +466,61 @@ export function watch(
   holder: string,
   onError = (e: Error) => console.error(`hub: ${e.message}`),
   dependencies: {
-    initial?: () => Promise<unknown>
-    fast?: () => Promise<unknown>
-    slow?: () => Promise<unknown>
+    initial?: (guard: LeaseGuard) => Promise<unknown>
+    fast?: (guard: LeaseGuard) => Promise<unknown>
+    slow?: (guard: LeaseGuard) => Promise<unknown>
     renewEveryMs?: number
   } = {},
 ) {
   let busy = false
   let stopping = false
-  const guard = (work: () => Promise<unknown>) => async () => {
+  const runCycle = (work: (guard: LeaseGuard) => Promise<unknown>) => async () => {
     if (stopping || busy || !acquireLease(holder)) return
     busy = true
-    let lostBy: string | null | undefined
-    const renewal = setInterval(() => {
-      if (lostBy === undefined && !acquireLease(holder)) lostBy = leaseHolder()
-    }, dependencies.renewEveryMs ?? LEASE_RENEW_MS)
     // A failed collect must not stop the loop or take the server down: the
     // stored data is still the last good reading, which is the point of having
     // stored it.
     try {
-      await work()
-      if (lostBy !== undefined)
-        onError(
-          new Error(
-            `${lostBy ?? 'another process'} holds the collect lease; watch cycle result was discarded`,
-          ),
-        )
+      const result = await holdAndRenewLease(
+        holder,
+        work,
+        dependencies.renewEveryMs ?? LEASE_RENEW_MS,
+      )
+      if (!result.ran) onError(result.error)
     } catch (e) {
       onError(e as Error)
     } finally {
-      clearInterval(renewal)
-      releaseLease(holder)
       busy = false
     }
   }
 
-  const fast = guard(
+  const fast = runCycle(
     dependencies.fast ??
-      (async () => {
+      (async (leaseGuard) => {
+        leaseGuard.assertHeld()
         await deliverOperatorNotifications()
+        leaseGuard.assertHeld('operator notifications')
         await deliverOperatorWaitingEmails()
-        await collectFast()
+        leaseGuard.assertHeld('operator waiting emails')
+        await collectFast({}, leaseGuard)
       }),
   )
-  const slow = guard(dependencies.slow ?? (() => collectSlow(true)))
+  const slow = runCycle(dependencies.slow ?? ((leaseGuard) => collectSlow(true, leaseGuard)))
   // The old pair of fire-and-forget calls made `slow` observe `busy` from
   // `fast` and skip the initial tracker pass. Keep both initial legs under the
   // same guard so scheduling starts with a real observation.
   const initial =
     dependencies.initial ??
-    (async () => {
+    (async (leaseGuard) => {
+      leaseGuard.assertHeld()
       await deliverOperatorNotifications()
+      leaseGuard.assertHeld('operator notifications')
       await deliverOperatorWaitingEmails()
-      await collectFast()
-      await collectSlow(true)
+      leaseGuard.assertHeld('operator waiting emails')
+      await collectFast({}, leaseGuard)
+      await collectSlow(true, leaseGuard)
     })
-  void guard(initial)()
+  void runCycle(initial)()
   const a = setInterval(() => void fast(), FAST_MS)
   const b = setInterval(() => void slow(), SLOW_MS)
 

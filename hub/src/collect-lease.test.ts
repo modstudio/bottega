@@ -159,4 +159,30 @@ describe('collect lease', () => {
       clock.mockRestore()
     }
   })
+
+  test('a watch cycle that loses its lease stops before the next leg', async () => {
+    const legs: string[] = []
+    let report!: (error: Error) => void
+    const reported = new Promise<Error>((resolve) => (report = resolve))
+    const stop = watch('losing-watch', report, {
+      initial: async (guard) => {
+        legs.push('first')
+        releaseLease('losing-watch')
+        expect(acquireLease('takeover')).toBeTrue()
+        guard.assertHeld('first')
+        legs.push('second')
+      },
+      fast: async () => {},
+      slow: async () => {},
+    })
+    try {
+      const error = await reported
+      expect(error.message).toContain('takeover holds the collect lease')
+      expect(error.message).toContain('stopped after first')
+      expect(legs).toEqual(['first'])
+    } finally {
+      releaseLease('takeover')
+      await stop()
+    }
+  })
 })

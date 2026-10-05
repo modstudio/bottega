@@ -65,9 +65,9 @@ type CollectorMirrorSkip = {
 }
 
 export type CollectorMirrorPass = {
-  mirrorTasks(rows: readonly CollectedTaskRow[]): Promise<void>
-  mirrorStatusEvents(rows: readonly HostedStatusEvent[]): Promise<void>
-  reportSkipped(formatError?: (error: Error) => string): void
+  mirrorTasks(rows: readonly CollectedTaskRow[]): Promise<boolean>
+  mirrorStatusEvents(rows: readonly HostedStatusEvent[]): Promise<boolean>
+  reportSkipped(): void
 }
 
 /** Load hosted identity once and apply the task project-space rule for one collection pass. */
@@ -125,7 +125,7 @@ export async function createCollectorMirrorPass(
   return {
     async mirrorTasks(rows) {
       const selected = select(rows.map(hostedTaskBody), 'tasks')
-      if (!selected.length) return
+      if (!selected.length) return false
       try {
         const response = await hostedMirrorTasks({
           tasks: selected,
@@ -133,32 +133,35 @@ export async function createCollectorMirrorPass(
         })
         const adoptions: MirrorAdoption[] = response.adoptions ?? []
         persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
+        return true
       } catch (error) {
-        if (refuseChangedSpace(error, selected, 'tasks')) return
+        if (refuseChangedSpace(error, selected, 'tasks')) return false
         throw error
       }
     },
     async mirrorStatusEvents(rows) {
       const selected = select(rows, 'statusEvents')
-      if (!selected.length) return
+      if (!selected.length) return false
       try {
         await hostedMirrorTasks({
           tasks: [],
           statusEvents: selected,
           expectedSpaceId: identity!.activeSpaceId,
         })
+        return true
       } catch (error) {
-        if (!refuseChangedSpace(error, selected, 'statusEvents')) throw error
+        if (refuseChangedSpace(error, selected, 'statusEvents')) return false
+        throw error
       }
     },
-    reportSkipped(formatError = (error) => error.message) {
+    reportSkipped() {
       for (const entry of [...skipped.values()].sort(
         (a, b) => a.project.localeCompare(b.project) || a.reason.localeCompare(b.reason),
       ))
         console.error(
           `hub: ${label} mirror skipped project=${entry.project} reason=${entry.reason} tasks=${entry.tasks} statusEvents=${entry.statusEvents}${
             entry.reason === 'identity-unreadable' && identityError
-              ? ` error=${formatError(identityError)}`
+              ? ` error=${identityError.message}`
               : ''
           }`,
         )

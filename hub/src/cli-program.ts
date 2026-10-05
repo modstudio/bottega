@@ -209,11 +209,11 @@ delegated agent is not idle, and two agents running at once did not take twice
 as long.
 `
 
-async function collect() {
+async function collect(guard?: import('./collect.ts').LeaseGuard) {
   const since = flag('since') ?? hoursAgo(24 * 30)
   const only = flag('only')
   const t0 = Date.now()
-  const results = await collectOnce(since, only)
+  const results = await collectOnce(since, only, guard)
   for (const result of results)
     console.log(`${result.source.padEnd(18)}${result.ok ? 'ok' : `FAILED: ${result.error}`}`)
   console.log(`\ncollected in ${human(Date.now() - t0)}`)

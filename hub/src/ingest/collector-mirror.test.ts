@@ -229,7 +229,7 @@ test('tracker status events use the same project-space filter as task snapshots'
   expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha'])
 })
 
-test('a transition mirrored by a fresh read is not mirrored again by the following collect', async () => {
+test('a fresh transition is mirrored exactly once by the following collect', async () => {
   await ingestTrackers()
 
   await refreshTrackerTask('ALP-1', 'alpha', {
@@ -256,15 +256,15 @@ test('a transition mirrored by a fresh read is not mirrored again by the followi
     }),
   })
 
+  expect(mirroredEvents).toEqual([])
+  trackerStatuses.ALP = 'completed'
+  await ingestTrackers()
   expect(mirroredEvents).toEqual([
     expect.objectContaining({
       task_key: 'ALP-1',
       project_name: 'alpha',
     }),
   ])
-  trackerStatuses.ALP = 'completed'
-  await ingestTrackers()
-  expect(mirroredEvents).toHaveLength(1)
 })
 
 test('a collected key change records and mirrors the external-id transition', async () => {
