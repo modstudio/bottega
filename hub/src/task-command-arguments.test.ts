@@ -58,6 +58,11 @@ describe('task command arguments', () => {
     expect(parse('show', ['DEV-847', 'extra']).ok).toBeFalse()
   })
 
+  test('accepts a fresh task read', () => {
+    const result = parse('show', ['DEV-847', '--json', '--fresh'])
+    expect(result.ok).toBeTrue()
+  })
+
   test('resolves document as an alias of doc', () => {
     const resolved = resolveTaskCommand(['document', 'show', '42'])
     expect(resolved?.command).toBe('doc show')

@@ -82,7 +82,7 @@ import {
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
-import { createTrackerOwnedTask } from './tracker-task-cli.ts'
+import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -548,8 +548,18 @@ async function task(parsed: ParsedTaskArguments | undefined) {
     return
   }
   if (sub === 'show') {
+    const freshness = taskHas('fresh')
+      ? await refreshTrackerTask(parsed?.positionals[0] ?? '', taskFlag('project'))
+      : null
     const shown = showTask(parsed?.positionals[0] ?? '', { project: taskFlag('project') })
-    if (taskHas('json')) console.log(JSON.stringify(shown))
+    if (taskHas('json'))
+      console.log(
+        JSON.stringify(
+          freshness?.trackerRead
+            ? { ...shown, tracker_comments_verifiable: freshness.commentsVerifiable }
+            : shown,
+        ),
+      )
     else {
       printRow(shown.task)
       if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)

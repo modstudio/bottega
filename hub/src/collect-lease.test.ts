@@ -7,7 +7,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 
-const { acquireLease, releaseLease, leaseHolder, withLease } = await import('./collect.ts')
+const { acquireLease, releaseLease, leaseHolder, watch, withLease } = await import('./collect.ts')
 
 beforeAll(resetFixtureStore)
 
@@ -69,5 +69,33 @@ describe('collect lease', () => {
       ),
     ).rejects.toThrow('leg failed')
     expect(leaseHolder()).toBeNull()
+  })
+
+  test('a watch cycle releases the lease before stop', async () => {
+    let cycleFinished!: () => void
+    const finished = new Promise<void>((resolve) => {
+      cycleFinished = resolve
+    })
+    const stop = watch('watcher', undefined, {
+      initial: async () => {
+        cycleFinished()
+      },
+      fast: async () => {},
+      slow: async () => {},
+    })
+    await finished
+    await Bun.sleep(0)
+
+    let explicitRan = false
+    const result = await withLease(
+      'explicit',
+      async () => {
+        explicitRan = true
+      },
+      0,
+    )
+    expect(result.ran).toBeTrue()
+    expect(explicitRan).toBeTrue()
+    await stop()
   })
 })

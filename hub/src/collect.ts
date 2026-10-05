@@ -356,7 +356,15 @@ export async function collectOnce(since: string, only?: string) {
  * it takes a holder name: whichever acquires the lease does the work, and the
  * other waits without duplicating it.
  */
-export function watch(holder: string, onError = (e: Error) => console.error(`hub: ${e.message}`)) {
+export function watch(
+  holder: string,
+  onError = (e: Error) => console.error(`hub: ${e.message}`),
+  dependencies: {
+    initial?: () => Promise<unknown>
+    fast?: () => Promise<unknown>
+    slow?: () => Promise<unknown>
+  } = {},
+) {
   let busy = false
   let stopping = false
   const guard = (work: () => Promise<unknown>) => async () => {
@@ -370,25 +378,32 @@ export function watch(holder: string, onError = (e: Error) => console.error(`hub
     } catch (e) {
       onError(e as Error)
     } finally {
+      releaseLease(holder)
       busy = false
     }
   }
 
-  const fast = guard(async () => {
-    await deliverOperatorNotifications()
-    await deliverOperatorWaitingEmails()
-    await collectFast()
-  })
-  const slow = guard(() => collectSlow(true))
+  const fast = guard(
+    dependencies.fast ??
+      (async () => {
+        await deliverOperatorNotifications()
+        await deliverOperatorWaitingEmails()
+        await collectFast()
+      }),
+  )
+  const slow = guard(dependencies.slow ?? (() => collectSlow(true)))
   // The old pair of fire-and-forget calls made `slow` observe `busy` from
   // `fast` and skip the initial tracker pass. Keep both initial legs under the
   // same guard so scheduling starts with a real observation.
-  void guard(async () => {
-    await deliverOperatorNotifications()
-    await deliverOperatorWaitingEmails()
-    await collectFast()
-    await collectSlow(true)
-  })()
+  const initial =
+    dependencies.initial ??
+    (async () => {
+      await deliverOperatorNotifications()
+      await deliverOperatorWaitingEmails()
+      await collectFast()
+      await collectSlow(true)
+    })
+  void guard(initial)()
   const a = setInterval(() => void fast(), FAST_MS)
   const b = setInterval(() => void slow(), SLOW_MS)
 
