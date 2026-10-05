@@ -240,7 +240,7 @@ export function unavailableReason(name: string): string | null {
   if (a.operatedBy === 'self') {
     // A local agent is only real once its own endpoint is configured. The
     // machine-wide model host is a wake target, not a default for every row.
-    if (!a.baseUrl) return `base URL not set; run orch agent set ${name} --base-url <url>`
+    if (!a.baseUrl) return 'ORCH_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:
     // the env var stayed correct for the whole eleven hours the box was off.
     // Only a probe that has actually run can say no here, so a caller that
