@@ -13,7 +13,7 @@ arguments:
     description: "The branch's worktree path."
   - name: depth
     required: false
-    description: The name of the last release rung to reach; omit it to reach every rung.
+    description: "The name of the last release rung to reach; omit it to reach every rung the operator's level allows."
 modes:
   - slug: full
     title: Ship and promote
@@ -43,4 +43,4 @@ modes:
       - merge-pr
       - design-records
 ---
-Review, gate, merge, promote through the project's release rungs, and close the task at the last rung reached. The `merge` mode stops after merge and leaves promotion and closing to the caller.
+Review, gate, merge, promote through the project's release rungs as far as the operator's level allows, and close the task once no release rung remains unreached. The `merge` mode stops after merge and leaves promotion and closing to the caller.
