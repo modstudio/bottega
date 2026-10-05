@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { BOARD_POST_RATE_LIMIT } from '../src/board/board-policy.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
@@ -129,23 +130,33 @@ export function registerBoardApiProofs(input: {
       body: JSON.stringify(body),
     })
 
-  const notice = (id: string, audience: string, extra: Record<string, unknown> = {}) => ({
+  /** Distinct per case so the author rate cap cannot make a case depend on earlier posts. */
+  const caseSession = (label: string) => `board-api-${label}`
+
+  const notice = (
+    id: string,
+    audience: string,
+    authorSession: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
     id,
     kind: 'notice',
     audience,
     title: `title-${id.slice(0, 8)}`,
     body: `body-${id}`,
     expiresAt,
+    authorSession,
     ...extra,
   })
 
   test('two members see a shared project notice and not each other operator notice', async () => {
+    const session = caseSession('shared-project')
     const projectId = newRecordId()
     const operatorA = newRecordId()
     const operatorB = newRecordId()
-    expect((await post(tokenA, notice(projectId, `project:${PROJECT}`))).status).toBe(200)
-    expect((await post(tokenA, notice(operatorA, 'operator'))).status).toBe(200)
-    expect((await post(tokenB, notice(operatorB, 'operator'))).status).toBe(200)
+    expect((await post(tokenA, notice(projectId, `project:${PROJECT}`, session))).status).toBe(200)
+    expect((await post(tokenA, notice(operatorA, 'operator', session))).status).toBe(200)
+    expect((await post(tokenB, notice(operatorB, 'operator', session))).status).toBe(200)
     const seen = async (token: string, id: string) => {
       const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(token) })
       return thread.status
@@ -159,10 +170,11 @@ export function registerBoardApiProofs(input: {
   })
 
   test('post refuses caller recipientUserIds and claimId at the route edge', async () => {
-    const base = notice(newRecordId(), 'operator')
+    const session = caseSession('route-edge')
+    const base = notice(newRecordId(), 'operator', session)
     const withRecipients = await post(tokenA, { ...base, recipientUserIds: [userB] })
     const withClaim = await post(tokenA, {
-      ...notice(newRecordId(), 'operator'),
+      ...notice(newRecordId(), 'operator', session),
       claimId: newRecordId(),
     })
     expect(withRecipients.status).toBe(400)
@@ -173,7 +185,9 @@ export function registerBoardApiProofs(input: {
 
   test('a user in a different space never sees an operator notice through the change cursor', async () => {
     const id = newRecordId()
-    expect((await post(tokenA, notice(id, 'operator'))).status).toBe(200)
+    expect(
+      (await post(tokenA, notice(id, 'operator', caseSession('operator-cursor')))).status,
+    ).toBe(200)
     const outsider = await json(
       await fetch(`${origin}/v1/board/changes?after=0`, { headers: headers(tokenC) }),
     )
@@ -189,7 +203,9 @@ export function registerBoardApiProofs(input: {
 
   test('a user outside the space sees nothing', async () => {
     const id = newRecordId()
-    expect((await post(tokenA, notice(id, `project:${PROJECT}`))).status).toBe(200)
+    expect(
+      (await post(tokenA, notice(id, `project:${PROJECT}`, caseSession('outside-space')))).status,
+    ).toBe(200)
     const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(tokenC) })
     expect(thread.status).toBe(404)
     const changes = await json(
@@ -201,7 +217,7 @@ export function registerBoardApiProofs(input: {
 
   test('post is idempotent by id and refuses the same id with different content', async () => {
     const id = newRecordId()
-    const body = notice(id, `project:${PROJECT}`)
+    const body = notice(id, `project:${PROJECT}`, caseSession('idempotent'))
     const first = await post(tokenA, body)
     const again = await post(tokenA, body)
     const different = await post(tokenA, { ...body, body: 'other' })
@@ -212,13 +228,14 @@ export function registerBoardApiProofs(input: {
   })
 
   test('a machine audience and a suggestion are refused', async () => {
-    const machine = await post(tokenA, notice(newRecordId(), 'machine:host'))
+    const session = caseSession('refused-kinds')
+    const machine = await post(tokenA, notice(newRecordId(), 'machine:host', session))
     expect(machine.status).toBe(400)
     expect(JSON.stringify(await machine.json())).toContain('machine audiences')
     const suggestion = await fetch(`${origin}/v1/board/messages`, {
       method: 'PUT',
       headers: headers(tokenA),
-      body: JSON.stringify({ ...notice(newRecordId(), 'operator'), kind: 'suggestion' }),
+      body: JSON.stringify({ ...notice(newRecordId(), 'operator', session), kind: 'suggestion' }),
     })
     expect(suggestion.status).toBe(400)
   })
@@ -236,26 +253,30 @@ export function registerBoardApiProofs(input: {
         title: 'Question',
         body: 'What?',
         expiresAt,
-        authorSession: 'asker-session',
+        authorSession: caseSession('reply-accept'),
       }),
     })
     expect(asked.status).toBe(200)
     const replied = await fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
       method: 'POST',
       headers: headers(tokenB),
-      body: JSON.stringify({ id: replyId, body: 'Answer', authorSession: 'answer-session' }),
+      body: JSON.stringify({
+        id: replyId,
+        body: 'Answer',
+        authorSession: caseSession('reply-accept-answer'),
+      }),
     })
     expect(replied.status).toBe(200)
     const accepted = await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
       method: 'POST',
       headers: headers(tokenA),
-      body: JSON.stringify({ replyId, authorSession: 'asker-session' }),
+      body: JSON.stringify({ replyId, authorSession: caseSession('reply-accept') }),
     })
     expect(accepted.status).toBe(200)
     const again = await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
       method: 'POST',
       headers: headers(tokenA),
-      body: JSON.stringify({ replyId, authorSession: 'asker-session' }),
+      body: JSON.stringify({ replyId, authorSession: caseSession('reply-accept') }),
     })
     expect(again.status).toBe(400)
     expect(JSON.stringify(await again.json())).toContain('final')
@@ -276,7 +297,7 @@ export function registerBoardApiProofs(input: {
             title: 'File',
             body: 'Q',
             expiresAt,
-            authorSession: 'lease-asker',
+            authorSession: caseSession('filing-lease'),
           }),
         })
       ).status,
@@ -286,7 +307,11 @@ export function registerBoardApiProofs(input: {
         await fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
           method: 'POST',
           headers: headers(tokenB),
-          body: JSON.stringify({ id: replyId, body: 'A', authorSession: 'lease-answer' }),
+          body: JSON.stringify({
+            id: replyId,
+            body: 'A',
+            authorSession: caseSession('filing-lease-answer'),
+          }),
         })
       ).status,
     ).toBe(200)
@@ -295,7 +320,7 @@ export function registerBoardApiProofs(input: {
         await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
           method: 'POST',
           headers: headers(tokenA),
-          body: JSON.stringify({ replyId, authorSession: 'lease-asker' }),
+          body: JSON.stringify({ replyId, authorSession: caseSession('filing-lease') }),
         })
       ).status,
     ).toBe(200)
@@ -303,7 +328,7 @@ export function registerBoardApiProofs(input: {
       fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
         method: 'POST',
         headers: headers(tokenA),
-        body: JSON.stringify({ authorSession: 'lease-asker' }),
+        body: JSON.stringify({ authorSession: caseSession('filing-lease') }),
       })
     const [first, second] = await Promise.all([take(), take()])
     const statuses = [first.status, second.status].sort()
@@ -312,7 +337,9 @@ export function registerBoardApiProofs(input: {
 
   test('receipts are per reader and idempotent', async () => {
     const id = newRecordId()
-    expect((await post(tokenA, notice(id, `project:${PROJECT}`))).status).toBe(200)
+    expect(
+      (await post(tokenA, notice(id, `project:${PROJECT}`, caseSession('receipts')))).status,
+    ).toBe(200)
     const put = (token: string, session: string) =>
       fetch(`${origin}/v1/board/receipts`, {
         method: 'PUT',
@@ -338,10 +365,11 @@ export function registerBoardApiProofs(input: {
   })
 
   test('the change cursor returns every visible change once including an update', async () => {
+    const session = caseSession('change-cursor')
     const firstId = newRecordId()
     const secondId = newRecordId()
-    expect((await post(tokenA, notice(firstId, `project:${PROJECT}`))).status).toBe(200)
-    expect((await post(tokenA, notice(secondId, `project:${PROJECT}`))).status).toBe(200)
+    expect((await post(tokenA, notice(firstId, `project:${PROJECT}`, session))).status).toBe(200)
+    expect((await post(tokenA, notice(secondId, `project:${PROJECT}`, session))).status).toBe(200)
     const page = async (after: string) =>
       json(
         await fetch(`${origin}/v1/board/changes?after=${after}&limit=1`, {
@@ -375,11 +403,12 @@ export function registerBoardApiProofs(input: {
   })
 
   test('two concurrent writers are visible to a cursor reader', async () => {
+    const session = caseSession('concurrent-writers')
     const left = newRecordId()
     const right = newRecordId()
     const [first, second] = await Promise.all([
-      post(tokenA, notice(left, `project:${PROJECT}`)),
-      post(tokenA, notice(right, `project:${PROJECT}`)),
+      post(tokenA, notice(left, `project:${PROJECT}`, session)),
+      post(tokenA, notice(right, `project:${PROJECT}`, session)),
     ])
     expect(first.status).toBe(200)
     expect(second.status).toBe(200)
@@ -499,15 +528,35 @@ export function registerBoardApiProofs(input: {
     })
     expect(switched.status).toBe(200)
     const id = newRecordId()
-    const posted = await post(tokenA, notice(id, `project:${PROJECT_TWO}`))
+    const posted = await post(
+      tokenA,
+      notice(id, `project:${PROJECT_TWO}`, caseSession('second-space')),
+    )
     expect(posted.status).toBe(200)
     const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(tokenA) })
     expect(thread.status).toBe(200)
   })
 
   test('a row-level security denial is a named refusal not a server error', async () => {
-    const posted = await post(tokenD, notice(newRecordId(), `project:${PROJECT}`))
+    const posted = await post(
+      tokenD,
+      notice(newRecordId(), `project:${PROJECT}`, caseSession('rls-denial')),
+    )
     expect(posted.status).toBe(400)
     expect(JSON.stringify(await posted.json())).toContain('row-level security')
+  })
+
+  test('the author rate cap refuses a further post for one session and accepts another session', async () => {
+    const capped = caseSession('rate-cap')
+    const other = caseSession('rate-cap-other')
+    for (let index = 0; index < BOARD_POST_RATE_LIMIT; index++) {
+      expect((await post(tokenA, notice(newRecordId(), 'operator', capped))).status).toBe(200)
+    }
+    const exceeded = await post(tokenA, notice(newRecordId(), 'operator', capped))
+    expect(exceeded.status).toBe(429)
+    expect(JSON.stringify(await exceeded.json())).toContain(
+      'retry after the ten-minute author window',
+    )
+    expect((await post(tokenA, notice(newRecordId(), 'operator', other))).status).toBe(200)
   })
 }
