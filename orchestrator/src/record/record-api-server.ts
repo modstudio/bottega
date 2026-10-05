@@ -26,7 +26,7 @@ import {
   takeHostedBoardFilingLease,
   withdrawHostedBoardMessage,
 } from './record-board-messages.ts'
-import { putHostedBoardReceipt } from './record-board-receipts.ts'
+import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipts.ts'
 import {
   addDataKeyWraps,
   createDataKey,
@@ -185,6 +185,7 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     failBoardFilingLease: failHostedBoardFilingLease,
     readBoardThread: readHostedBoardThread,
     putBoardReceipt: putHostedBoardReceipt,
+    boardStatus: hostedBoardStatus,
     listBoardChanges: listHostedBoardChanges,
     takeBoardClaim: takeHostedBoardClaim,
     renewBoardClaim: renewHostedBoardClaim,

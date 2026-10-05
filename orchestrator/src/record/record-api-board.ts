@@ -17,6 +17,7 @@ import {
   type HostedBoardReceiptInput,
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
+  type HostedBoardStatus,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
 } from './record-board-contract.ts'
@@ -108,6 +109,7 @@ export type RecordBoardDeps = {
     input: BoardTenant & HostedBoardFilingFailInput & { id: string },
   ): Promise<HostedBoardMessage>
   readBoardThread(input: BoardTenant & { id: string }): Promise<HostedBoardThread>
+  boardStatus(input: BoardTenant & { id: string }): Promise<HostedBoardStatus>
   putBoardReceipt(input: BoardTenant & HostedBoardReceiptInput): Promise<HostedBoardReceipt>
   listBoardChanges(
     input: BoardTenant & { after: string; limit?: number },
@@ -248,6 +250,17 @@ export function registerRecordBoardRoutes(
     if (!id.success) return context.json({ error: 'board thread id must be a uuid' }, 400)
     try {
       return context.json(await deps.readBoardThread({ ...tenant, id: id.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.get('/v1/board/messages/:id/status', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'board message id must be a uuid' }, 400)
+    try {
+      return context.json(await deps.boardStatus({ ...tenant, id: id.data }))
     } catch (error) {
       return writeError(context, error)
     }

@@ -88,6 +88,11 @@ export type HostedBoardChange = {
   receipts: HostedBoardReceipt[]
 }
 
+export type HostedBoardStatus = {
+  message: HostedBoardMessage
+  receipts: HostedBoardReceipt[]
+}
+
 export type HostedBoardClaim = {
   id: string
   project: string
