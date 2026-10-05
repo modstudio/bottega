@@ -659,7 +659,11 @@ export const configDeleteArgv = (key: string, expectedRowVersion?: number) => [
   key,
   ...(expectedRowVersion !== undefined ? ['--expect', String(expectedRowVersion)] : []),
 ]
-export const machineConfigArgv = (operation: 'list' | 'set' | 'delete', key?: string, value?: string) => [
+export const machineConfigArgv = (
+  operation: 'list' | 'set' | 'delete',
+  key?: string,
+  value?: string,
+) => [
   'config',
   operation,
   ...(key ? [key] : []),

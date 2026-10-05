@@ -134,9 +134,7 @@ test('managed context wrappers build exact argv', () => {
     '--machine',
     '--json',
   ])
-  expect(
-    machinePermissionArgv({ operation: 'add', list: 'allow', rule: 'Bash(orch *)' }),
-  ).toEqual([
+  expect(machinePermissionArgv({ operation: 'add', list: 'allow', rule: 'Bash(orch *)' })).toEqual([
     'settings',
     'permission',
     'add',
@@ -147,9 +145,7 @@ test('managed context wrappers build exact argv', () => {
     'Bash(orch *)',
     '--json',
   ])
-  expect(
-    machinePermissionArgv({ operation: 'drop', list: 'ask', rule: 'Bash(rm *)' }),
-  ).toEqual([
+  expect(machinePermissionArgv({ operation: 'drop', list: 'ask', rule: 'Bash(rm *)' })).toEqual([
     'settings',
     'permission',
     'drop',

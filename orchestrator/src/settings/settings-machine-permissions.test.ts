@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
-import { editMachineSettingsPermission } from './settings-machine-permissions.ts'
+import {
+  editMachineSettingsPermission,
+  machinePermissionListPresentation,
+} from './settings-machine-permissions.ts'
 
 const operatorPid = 400
 const inventory = {
@@ -45,4 +48,16 @@ test('machine permission writes retain the worker refusal', () => {
       { ORCH_RUN_ID: 'worker' },
     ),
   ).toThrow('refusing machine permission write from an orch worker run')
+})
+
+test('machine permission listing presents JSON and one line per rule', () => {
+  const overlay = {
+    additions: { allow: ['Bash(git status)'], ask: [], deny: [] },
+    drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
+  }
+  expect(machinePermissionListPresentation(overlay, true)).toEqual([JSON.stringify(overlay)])
+  expect(machinePermissionListPresentation(overlay, false)).toEqual([
+    'allow\tadditions\tBash(git status)',
+    'ask\tdrop\tBash(rm *)',
+  ])
 })

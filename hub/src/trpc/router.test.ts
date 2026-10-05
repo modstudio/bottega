@@ -97,6 +97,24 @@ const configList = mock(
     }>,
 )
 const configDelete = mock(async (_key: string, _expected?: number) => '')
+const machineConfigList = mock(
+  async () => [] as Array<{ key: string; value: string; scope: 'local user' }>,
+)
+const machineConfigSet = mock(async (key: string, value: string) => ({
+  key,
+  value,
+  scope: 'local user' as const,
+}))
+const machineConfigDelete = mock(async (_key: string) => '')
+const machinePermissions = mock(async () => ({
+  additions: { allow: [] as string[], ask: [] as string[], deny: [] as string[] },
+  drop: { allow: [] as string[], ask: [] as string[], deny: [] as string[] },
+}))
+const machinePermission = mock(async (_input: unknown) => ({
+  changed: true,
+  counts: { allow: 1, ask: 0, deny: 0 },
+  message: 'updated machine permissions',
+}))
 const settingsCheck = mock(async (_target: unknown) => ({
   target: { kind: 'user' as const },
   file: { path: '/tmp/settings.json', exists: true },
@@ -138,6 +156,11 @@ mock.module('../orch.ts', () => ({
   configSet,
   configList,
   configDelete,
+  machineConfigList,
+  machineConfigSet,
+  machineConfigDelete,
+  machinePermissions,
+  machinePermission,
   settingsCheck,
   settingsPermission,
   dashboardMutationAvailable,
@@ -698,6 +721,87 @@ describe('managed context', () => {
     expect(configDelete.mock.calls).toHaveLength(deletesBefore)
   })
 
+  test('clears only one hosted stage override and reports an absent override', async () => {
+    const entries = [
+      {
+        key: 'autonomy.preset',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'guided',
+        rowVersion: 1,
+        updatedAt: '2026-09-28T12:00:00.000Z',
+      },
+      {
+        key: 'autonomy.stage.review',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'auto',
+        rowVersion: 2,
+        updatedAt: '2026-09-28T12:00:00.000Z',
+      },
+      {
+        key: 'autonomy.stage.ship',
+        environment: 'default',
+        scope: 'user' as const,
+        value: 'ask',
+        rowVersion: 3,
+        updatedAt: '2026-09-28T12:00:00.000Z',
+      },
+    ]
+    configList
+      .mockResolvedValueOnce(entries)
+      .mockResolvedValueOnce(entries)
+      .mockResolvedValueOnce(entries)
+
+    const result = await caller.context.autonomy.clearStage({
+      project: 'alpha',
+      stage: 'review',
+      expectedRowVersion: 2,
+    })
+
+    expect(result.cleared).toBe(true)
+    expect(configDelete).toHaveBeenLastCalledWith('autonomy.stage.review', 2)
+    expect(configDelete).not.toHaveBeenCalledWith('autonomy.stage.ship', 3)
+
+    configList.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+    await expect(
+      caller.context.autonomy.clearStage({ project: 'alpha', stage: 'review' }),
+    ).resolves.toMatchObject({ cleared: false })
+  })
+
+  test('writes and removes machine autonomy and reports machine values on reads', async () => {
+    machineConfigList.mockResolvedValueOnce([
+      { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
+      { key: 'autonomy.release', value: 'promote', scope: 'local user' },
+      { key: 'autonomy.rulings', value: 'agent', scope: 'local user' },
+    ])
+    const read = await caller.context.autonomy.get({ project: 'alpha' })
+    expect(read.registered && read.stages[0]?.machineValue).toBe('auto')
+    expect(read.registered && read.release.machineValue).toBe('promote')
+    expect(read.registered && read.rulings.machineValue).toBe('agent')
+
+    machineConfigList.mockResolvedValueOnce([
+      { key: 'autonomy.stage.review', value: 'review', scope: 'local user' },
+    ])
+    await caller.context.autonomy.setMachine({
+      project: 'alpha',
+      kind: 'stage',
+      stage: 'review',
+      value: 'review',
+    })
+    expect(machineConfigSet).toHaveBeenLastCalledWith('autonomy.stage.review', 'review')
+
+    machineConfigList
+      .mockResolvedValueOnce([{ key: 'autonomy.release', value: 'land', scope: 'local user' }])
+      .mockResolvedValueOnce([])
+    const cleared = await caller.context.autonomy.clearMachine({
+      project: 'alpha',
+      kind: 'release',
+    })
+    expect(machineConfigDelete).toHaveBeenLastCalledWith('autonomy.release')
+    expect(cleared.removed).toBe(true)
+  })
+
   test('retries a conflicted preset override delete and reports only overrides left', async () => {
     configList
       .mockResolvedValueOnce([
@@ -781,6 +885,29 @@ describe('managed context', () => {
       target: { user: true, owner: 'someone-else' },
     } as never)
     expect(settingsPermission).toHaveBeenLastCalledWith(input)
+  })
+
+  test('reports and edits the machine permission overlay', async () => {
+    machinePermissions.mockResolvedValueOnce({
+      additions: { allow: ['Bash(git status)'], ask: [], deny: [] },
+      drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
+    })
+    await expect(caller.context.settings.get({ user: true })).resolves.toMatchObject({
+      machine: {
+        additions: { allow: ['Bash(git status)'] },
+        drop: { ask: ['Bash(rm *)'] },
+      },
+    })
+    await caller.context.settings.machinePermission({
+      operation: 'drop',
+      list: 'ask',
+      rule: 'Bash(rm *)',
+    })
+    expect(machinePermission).toHaveBeenLastCalledWith({
+      operation: 'drop',
+      list: 'ask',
+      rule: 'Bash(rm *)',
+    })
   })
 
   test('maps a missing signed-in record session to a refusal instead of rows', async () => {

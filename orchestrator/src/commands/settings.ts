@@ -2,11 +2,6 @@
 /** Owns only the `orch settings` grammar and presentation. */
 import type { Command } from 'commander'
 import {
-  readMachinePermissions,
-  type MachinePermissionOverlay,
-} from '../../../shared/machine-config.ts'
-import { SETTINGS_PERMISSION_LISTS } from '../../../shared/settings-summary.ts'
-import {
   settingsAdoptCommand,
   settingsEnvImportCommand,
   settingsRenderWriteCommand,
@@ -21,19 +16,11 @@ import {
   applyMachineSettings,
   printMachineSettingsApplyResults,
 } from '../settings/settings-machine-apply.ts'
-import { editMachineSettingsPermission } from '../settings/settings-machine-permissions.ts'
+import {
+  editMachineSettingsPermission,
+  listMachineSettingsPermissions,
+} from '../settings/settings-machine-permissions.ts'
 import { collect, log, optionFlags } from './support.ts'
-
-export function machinePermissionListPresentation(
-  overlay: MachinePermissionOverlay,
-  json: boolean,
-): string[] {
-  if (json) return [JSON.stringify(overlay)]
-  return SETTINGS_PERMISSION_LISTS.flatMap((list) => [
-    ...overlay.additions[list].map((rule) => `${list}\tadditions\t${rule}`),
-    ...overlay.drop[list].map((rule) => `${list}\tdrop\t${rule}`),
-  ])
-}
 
 export function register(program: Command): void {
   const settings = program.command('settings')
@@ -88,11 +75,7 @@ export function register(program: Command): void {
           'refusing hosted permission listing; run orch settings permission list --machine',
         )
       }
-      for (const line of machinePermissionListPresentation(
-        readMachinePermissions(),
-        Boolean(options.json),
-      ))
-        log(line)
+      for (const line of listMachineSettingsPermissions(Boolean(options.json))) log(line)
     })
   for (const operation of ['add', 'remove'] as const) {
     permission
