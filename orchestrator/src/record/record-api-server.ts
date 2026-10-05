@@ -8,6 +8,25 @@ import {
   recordIdentity,
   setActiveRecordSpaceForSession,
 } from './record-auth.ts'
+import { listHostedBoardChanges } from './record-board-changes.ts'
+import {
+  listHostedBoardClaims,
+  releaseHostedBoardClaim,
+  releaseHostedBoardTaskClaims,
+  renewHostedBoardClaim,
+  takeHostedBoardClaim,
+} from './record-board-claims.ts'
+import {
+  acceptHostedBoardAnswer,
+  completeHostedBoardFilingLease,
+  failHostedBoardFilingLease,
+  postHostedBoardMessage,
+  readHostedBoardThread,
+  replyHostedBoardMessage,
+  takeHostedBoardFilingLease,
+  withdrawHostedBoardMessage,
+} from './record-board-messages.ts'
+import { putHostedBoardReceipt } from './record-board-receipts.ts'
 import {
   addDataKeyWraps,
   createDataKey,
@@ -157,6 +176,21 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     listMachineKeys,
     registerMachineKey,
     revokeMachineKey,
+    postBoardMessage: postHostedBoardMessage,
+    replyBoardMessage: replyHostedBoardMessage,
+    withdrawBoardMessage: withdrawHostedBoardMessage,
+    acceptBoardAnswer: acceptHostedBoardAnswer,
+    takeBoardFilingLease: takeHostedBoardFilingLease,
+    completeBoardFilingLease: completeHostedBoardFilingLease,
+    failBoardFilingLease: failHostedBoardFilingLease,
+    readBoardThread: readHostedBoardThread,
+    putBoardReceipt: putHostedBoardReceipt,
+    listBoardChanges: listHostedBoardChanges,
+    takeBoardClaim: takeHostedBoardClaim,
+    renewBoardClaim: renewHostedBoardClaim,
+    releaseBoardClaim: releaseHostedBoardClaim,
+    listBoardClaims: listHostedBoardClaims,
+    releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
   return Bun.serve({
     hostname: '0.0.0.0',

@@ -157,6 +157,16 @@ test('unsupported audience refusal lists every accepted form', () => {
   )
 })
 
+test('run audience accepts a positive integer or a uuid and refuses other values', () => {
+  expect(parseAudience('run:42')).toEqual({ kind: 'run', value: 42 })
+  expect(parseAudience('run:01990000-0000-7000-8000-0000000000aa')).toEqual({
+    kind: 'run',
+    value: '01990000-0000-7000-8000-0000000000aa',
+  })
+  expect(() => parseAudience('run:0')).toThrow(/positive id/)
+  expect(() => parseAudience('run:not-a-run')).toThrow(/positive id/)
+})
+
 test('run audience policy permits the owner and operator but identifies a foreign owner', () => {
   const audience = parseAudience('run:42')
   expect(runAudienceRefusal(audience, 'architect', 'owner', 'owner')).toBeNull()

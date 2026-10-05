@@ -7,10 +7,12 @@ import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
 import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+import { RecordBoardError } from './record-board-contract.ts'
 import type {
   ConfigEntry,
   ConfigScope,
@@ -208,7 +210,7 @@ type Deps = {
     input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
   ): Promise<MachineKey>
   revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
-}
+} & RecordBoardDeps
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
 const filterSchema = z.string().min(1).optional()
@@ -414,7 +416,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       error instanceof RecordDocError ||
       error instanceof RecordVerdictError ||
       error instanceof ConfigServiceError ||
-      error instanceof RecordProjectError
+      error instanceof RecordProjectError ||
+      error instanceof RecordBoardError
     ) {
       return context.json({ error: error.message }, error.status)
     }
@@ -422,6 +425,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   }
   registerRecordProjectRoutes(app, deps, { scope, noSpace, writeError })
   registerRecordSettingsRoutes(app, deps, { scope, noSpace, writeError })
+  registerRecordBoardRoutes(app, deps, { noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({

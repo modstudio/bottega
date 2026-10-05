@@ -4,11 +4,11 @@ export const BOARD_NOTE_FILING_LEASE_MS = 2 * 60 * 1_000
 
 export type NoteFilingLeaseDecision =
   | { kind: 'take' }
-  | { kind: 'filed'; noteId: number }
+  | { kind: 'filed'; noteId: string | number }
   | { kind: 'in-progress'; retryAt: number }
 
 export function noteFilingLeaseDecision(
-  noteId: number | null,
+  noteId: string | number | null,
   filingStartedAt: string | null,
   clock: number,
 ): NoteFilingLeaseDecision {
@@ -23,7 +23,7 @@ export type ThreadActor =
   | { kind: 'architect'; reader: string }
 
 export type ThreadRootFacts = {
-  id: number
+  id: string | number
   kind: string
   authorReader: string
   audienceKind: Audience['kind']
@@ -55,7 +55,7 @@ export function replyRefusal(input: {
 
 export function acceptRefusal(input: {
   actor: ThreadActor
-  questionId: number
+  questionId: string | number
   questionKind: string
   authorReader: string
   accepted: boolean

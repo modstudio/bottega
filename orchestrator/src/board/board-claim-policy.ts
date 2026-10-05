@@ -1,6 +1,10 @@
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { BOARD_BODY_MAX_CHARS } from './board-policy.ts'
+import { pathTagRefusal } from './board-tags.ts'
+
 export const BOARD_CLAIM_DEFAULT_MS = 4 * 60 * 60 * 1000
-export const BOARD_CLAIM_MAX_MS = 24 * 60 * 60 * 1000
-export const BOARD_CLAIM_RESOURCE_MAX_CHARS = 200
+const BOARD_CLAIM_MAX_MS = 24 * 60 * 60 * 1000
+const BOARD_CLAIM_RESOURCE_MAX_CHARS = 200
 
 export type ClaimActor =
   | { kind: 'operator'; session: null }
@@ -59,3 +63,44 @@ export const mayReleaseClaim = (actor: ClaimActor, holder: ClaimActor): boolean 
   actor.kind === 'operator' || sameClaimHolder(actor, holder)
 
 export const mayForceClaim = (actor: ClaimActor): boolean => actor.kind === 'operator'
+
+export function parseClaimSubject(expression: string): ClaimSubject {
+  const match = /^(task|path|resource):(.*)$/.exec(expression)
+  if (!match)
+    throw new Error(
+      `invalid claim subject ${expression}; use task:<KEY>, path:<glob>, or resource:<name>`,
+    )
+  const kind = match[1] as ClaimSubject['kind']
+  const value = match[2]!.trim()
+  if (!value) throw new Error(`claim ${kind} subject is empty; provide a value after ${kind}:`)
+  if (kind === 'path') {
+    const refusal = pathTagRefusal(value)
+    if (refusal) throw new Error(refusal)
+  }
+  if (kind === 'resource') {
+    if (value.length > BOARD_CLAIM_RESOURCE_MAX_CHARS)
+      throw new Error(
+        `claim resource exceeds ${BOARD_CLAIM_RESOURCE_MAX_CHARS} characters; shorten it`,
+      )
+    if (containsSecretShaped(value))
+      throw new Error('claim resource contains secret-shaped text; remove the credential and retry')
+  }
+  return { kind, value }
+}
+
+export function claimNote(note: string | undefined): string | null | undefined {
+  if (note === undefined) return undefined
+  const value = note.trim()
+  if (!value) return null
+  if (value.length > BOARD_BODY_MAX_CHARS)
+    throw new Error(`claim note exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
+  if (containsSecretShaped(value))
+    throw new Error('claim note contains secret-shaped text; remove the credential and retry')
+  return value
+}
+
+export function claimDurationRefusal(durationMs: number): string | null {
+  if (!Number.isSafeInteger(durationMs) || durationMs <= 0 || durationMs > BOARD_CLAIM_MAX_MS)
+    return `claim duration must be positive and at most ${BOARD_CLAIM_MAX_MS}ms`
+  return null
+}

@@ -1,5 +1,4 @@
 import { hostname } from 'node:os'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
@@ -7,18 +6,17 @@ import { boardContext, boardRunContext } from './board-context.ts'
 import {
   architectIdentity,
   audienceRefusal,
-  BOARD_BODY_MAX_CHARS,
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   BOARD_DEFAULT_EXPIRY_MS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
-  BOARD_TITLE_MAX_CHARS,
   messageIsLive,
   OPERATOR_READER,
   parseAudience,
   postDecision,
   resolveAudience,
   runAudienceRefusal,
+  validatePostNoticeInput,
 } from './board-policy.ts'
 import { boardNoticeMatches } from './board-routing.ts'
 import {
@@ -271,25 +269,6 @@ function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>)
   return row?.session_id ?? null
 }
 
-function validatePostNoticeInput(input: PostNoticeInput): void {
-  if (input.title.length > BOARD_TITLE_MAX_CHARS)
-    throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
-  if (input.body.length > BOARD_BODY_MAX_CHARS)
-    throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
-    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
-  if (
-    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
-  if (!input.title.trim() || !input.body.trim())
-    throw new Error('board notice title and body are required')
-  if (input.deadlineMs !== undefined && !input.ackRequired)
-    throw new Error('a board notice deadline requires acknowledgement to be required')
-}
-
 function postNoticeResult(id: number, dropped: boolean, reached: number): PostNoticeResult {
   return { id, dropped, reached, ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}) }
 }
@@ -369,7 +348,9 @@ export function insertRootMessage(
     audience,
     actor.kind,
     actor.session,
-    audience.kind === 'run' ? runOwnerSession(audience.value, database) : null,
+    audience.kind === 'run' && typeof audience.value === 'number'
+      ? runOwnerSession(audience.value, database)
+      : null,
   )
   if (runRefusal) throw new Error(runRefusal)
   const senderTags = senderBoardTags(input)

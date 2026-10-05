@@ -6,6 +6,21 @@ import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+import type {
+  HostedBoardAcceptInput,
+  HostedBoardChange,
+  HostedBoardClaim,
+  HostedBoardFilingCompleteInput,
+  HostedBoardFilingFailInput,
+  HostedBoardMessage,
+  HostedBoardPostInput,
+  HostedBoardReceipt,
+  HostedBoardReceiptInput,
+  HostedBoardReplyInput,
+  HostedBoardSessionInput,
+  HostedBoardTakeClaimInput,
+  HostedBoardThread,
+} from './record-board-contract.ts'
 import { storedRecordToken } from './record-session.ts'
 import type {
   RecordSettingsPermissionInput,
@@ -153,6 +168,32 @@ export type RecordApiClient = {
     cursor?: string | null
   }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
   counts(): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
+  postBoardMessage(input: HostedBoardPostInput): Promise<HostedBoardMessage>
+  replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
+  withdrawBoardMessage(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
+  acceptBoardAnswer(id: string, input: HostedBoardAcceptInput): Promise<HostedBoardThread>
+  takeBoardFilingLease(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
+  completeBoardFilingLease(
+    id: string,
+    input: HostedBoardFilingCompleteInput,
+  ): Promise<HostedBoardMessage>
+  failBoardFilingLease(id: string, input: HostedBoardFilingFailInput): Promise<HostedBoardMessage>
+  getBoardThread(id: string): Promise<HostedBoardThread>
+  putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
+  listBoardChanges(query: {
+    after?: string
+    limit?: number
+  }): Promise<{ items: HostedBoardChange[]; highestRevision: string | null }>
+  takeBoardClaim(
+    input: HostedBoardTakeClaimInput,
+  ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
+  renewBoardClaim(id: string, input?: { holderSession?: string | null }): Promise<HostedBoardClaim>
+  releaseBoardClaim(
+    id: string,
+    input?: { holderSession?: string | null },
+  ): Promise<HostedBoardClaim>
+  listBoardClaims(project: string): Promise<{ claims: HostedBoardClaim[] }>
+  releaseBoardTaskClaims(input: { project: string; key: string }): Promise<{ released: number }>
 }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
@@ -315,5 +356,60 @@ export function recordApiClient(): RecordApiClient {
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     counts: () => request('/v1/docs/counts'),
+    postBoardMessage: (input) =>
+      request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input) }),
+    replyBoardMessage: (rootId, input) =>
+      request(`/v1/board/messages/${rootId}/replies`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    withdrawBoardMessage: (id, input) =>
+      request(`/v1/board/messages/${id}/withdraw`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+      }),
+    acceptBoardAnswer: (id, input) =>
+      request(`/v1/board/messages/${id}/accept`, { method: 'POST', body: JSON.stringify(input) }),
+    takeBoardFilingLease: (id, input) =>
+      request(`/v1/board/messages/${id}/filing-lease`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+      }),
+    completeBoardFilingLease: (id, input) =>
+      request(`/v1/board/messages/${id}/filing-lease/complete`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    failBoardFilingLease: (id, input) =>
+      request(`/v1/board/messages/${id}/filing-lease/fail`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    getBoardThread: (id) => request(`/v1/board/threads/${id}`),
+    putBoardReceipt: (input) =>
+      request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input) }),
+    listBoardChanges: (query) => {
+      const search = new URLSearchParams()
+      if (query.after) search.set('after', query.after)
+      if (query.limit) search.set('limit', String(query.limit))
+      const suffix = search.toString()
+      return request(`/v1/board/changes${suffix ? `?${suffix}` : ''}`)
+    },
+    takeBoardClaim: (input) =>
+      request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
+    renewBoardClaim: (id, input) =>
+      request(`/v1/board/claims/${id}/renew`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+      }),
+    releaseBoardClaim: (id, input) =>
+      request(`/v1/board/claims/${id}/release`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+      }),
+    listBoardClaims: (project) =>
+      request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
+    releaseBoardTaskClaims: (input) =>
+      request('/v1/board/claims/release-task', { method: 'POST', body: JSON.stringify(input) }),
   }
 }
