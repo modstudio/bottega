@@ -357,7 +357,7 @@ describe('operational monitor conditions', () => {
           since: '2026-09-15T10:00:01.000Z',
           ageMs: 7_199_000,
           detail: `sandbox_dir claim for terminal conversation ${normal} remains claimed; allocation key /runs/sandbox-${normal}`,
-          action: 'run orch sweep',
+          action: 'run orch sweep; orch sweep --dry-run prints why a claim is kept',
         },
       ],
       errors: [`terminal time for conversation ${broken} could not be established`],
@@ -382,7 +382,7 @@ describe('operational monitor conditions', () => {
           ageMs: 3_601_000,
           detail:
             'sandbox_dir claim for terminal conversation 52 remains claimed; allocation key /runs/sandbox-52',
-          action: 'run orch sweep',
+          action: 'run orch sweep; orch sweep --dry-run prints why a claim is kept',
         },
       ],
       errors: [],

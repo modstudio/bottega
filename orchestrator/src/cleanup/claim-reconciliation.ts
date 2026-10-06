@@ -5,7 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { lstatSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
+import {
+  type GitRefObservation,
+  observeGitRef,
+  restoreBranch as restoreProtectedBranch,
+} from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
@@ -24,6 +28,7 @@ type ReconciledKind = (typeof RECONCILED_KINDS)[number]
 type ClaimedRow = {
   id: number
   root_run_id: number
+  run_id: number
   project_id: number | null
   kind: ReconciledKind
   allocation_key: string
@@ -39,6 +44,8 @@ type ClaimedRow = {
 export type ClaimReconciliationObservers = {
   path: (path: string) => { outcome: 'present' | 'absent' | 'failed'; detail?: string }
   ref: (repository: string, ref: string) => GitRefObservation
+  commit: (repository: string, tip: string) => GitRefObservation
+  restoreBranch: typeof restoreProtectedBranch
   trust: GrokTrustObservation
   leaseState: typeof runLeaseState
   pidAlive: typeof pidAlive
@@ -48,6 +55,8 @@ type ClaimSynchronizer = (
   row: Pick<ClaimedRow, 'id' | 'project_path' | 'worktree_path'>,
   reconcile: () => void,
 ) => void
+
+type ReconciliationResult = { action: string; detail?: string }
 
 function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; detail?: string } {
   try {
@@ -64,6 +73,8 @@ function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; 
 const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObservers => ({
   path: observePath,
   ref: observeGitRef,
+  commit: (repository, tip) => observeGitRef(repository, `${tip}^{commit}`),
+  restoreBranch: restoreProtectedBranch,
   trust,
   leaseState: runLeaseState,
   pidAlive,
@@ -72,7 +83,7 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
 function claimedRows(database: Database, projectName: string | undefined): ClaimedRow[] {
   return database
     .query(
-      `SELECT claim.id,claim.root_run_id,claim.project_id,claim.kind,claim.allocation_key,
+      `SELECT claim.id,claim.root_run_id,claim.run_id,claim.project_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
@@ -177,7 +188,7 @@ function conversationFacts(
 ) {
   const turns = database
     .query(
-      `SELECT id,status,pid,agent_pid,branch_kept FROM run
+      `SELECT id,status,pid,agent_pid,branch_kept,branch_kept_tip FROM run
        WHERE id=? OR parent_run_id=? ORDER BY id`,
     )
     .all(row.root_run_id, row.root_run_id) as {
@@ -186,8 +197,17 @@ function conversationFacts(
     pid: number | null
     agent_pid: number | null
     branch_kept: string | null
+    branch_kept_tip: string | null
   }[]
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
+  const keptTurns =
+    row.kind === 'branch'
+      ? turns.filter(
+          (turn) => turn.branch_kept && `refs/heads/${turn.branch_kept}` === row.allocation_key,
+        )
+      : []
+  const claimTurn = keptTurns.find((turn) => turn.id === row.run_id && turn.branch_kept_tip)
+  const tipTurn = claimTurn ?? keptTurns.findLast((turn) => turn.branch_kept_tip)
   return {
     allTurnsTerminal: turns.every((turn) => terminal.has(turn.status)),
     liveLeaseOrPid: turns.some(
@@ -196,11 +216,8 @@ function conversationFacts(
         Boolean(turn.pid && observers.pidAlive(turn.pid)) ||
         Boolean(turn.agent_pid && observers.pidAlive(turn.agent_pid)),
     ),
-    branchKept:
-      row.kind === 'branch' &&
-      turns.some((turn) =>
-        turn.branch_kept ? `refs/heads/${turn.branch_kept}` === row.allocation_key : false,
-      ),
+    branchKept: keptTurns.length > 0,
+    recordedTip: tipTurn?.branch_kept_tip ?? null,
   }
 }
 
@@ -228,15 +245,117 @@ function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconcil
   const repository = owningRepository(row, observers)
   const observation = resourceObservation(row, repository.path, repository.state, observers)
   const conversation = conversationFacts(database, row, observers)
+  const recordedTipObservation =
+    conversation.branchKept &&
+    observation.probe === 'absent' &&
+    conversation.recordedTip &&
+    repository.path &&
+    repository.state !== 'unknown-absent'
+      ? observers.commit(repository.path, conversation.recordedTip)
+      : { outcome: 'absent' as const }
   return {
+    repository,
     observation,
+    conversation,
     ruling: decideAbsentClaim({
       probe: observation.probe,
       owningRepository: repository.state,
       ...conversation,
+      recordedTipProbe: recordedTipObservation.outcome,
       landingInFlight: claimLandingInFlight(database, row),
     }),
   }
+}
+
+type ClaimRulingSnapshot = ReturnType<typeof rulingFor>
+
+function dryRunLine(snapshot: ClaimRulingSnapshot, label: string, branch: string): string {
+  const { ruling, conversation } = snapshot
+  if (ruling.action === 'restore-retained') {
+    return `would restore ${branch} at ${conversation.recordedTip}`
+  }
+  if (ruling.action === 'settle-retained') return `would settle retained ${label}`
+  if (ruling.action === 'release-lost-tip') {
+    return conversation.recordedTip
+      ? `would release, tip ${conversation.recordedTip} is gone: ${label}`
+      : `would release, no tip was recorded: ${label}`
+  }
+  return `would settle absent ${label}`
+}
+
+function settlementDetail(
+  snapshot: ClaimRulingSnapshot,
+  branch: string,
+  retained: boolean,
+): string {
+  const tip = snapshot.conversation.recordedTip
+  if (retained) {
+    return tip ? `branch retained at ${tip}` : `branch ${branch} retained; no tip was recorded`
+  }
+  if (snapshot.ruling.action === 'release-lost-tip') {
+    return tip
+      ? `branch ${branch} lost; tip ${tip} is gone`
+      : `branch ${branch} lost; no tip was recorded`
+  }
+  return snapshot.observation.detail
+}
+
+function reconcileClaimUnderLock(
+  database: Database,
+  claimId: number,
+  observers: ClaimReconciliationObservers,
+  branch: string,
+): ReconciliationResult | null {
+  const row = claimedRow(database, claimId)
+  if (!row) return null
+  const snapshot = rulingFor(database, row, observers)
+  if (snapshot.ruling.action === 'keep') {
+    return { action: 'keep', detail: snapshot.ruling.reason }
+  }
+  if (snapshot.ruling.action === 'restore-retained') {
+    const repository = snapshot.repository.path
+    const tip = snapshot.conversation.recordedTip
+    if (!repository || !tip) return null
+    const restored = observers.restoreBranch(repository, branch, tip)
+    if (!restored.ok) return { action: 'restore-failed', detail: restored.error }
+  }
+  const retained =
+    snapshot.ruling.action === 'settle-retained' || snapshot.ruling.action === 'restore-retained'
+  const changes = writeTransaction(
+    () =>
+      database
+        .query(
+          `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?
+           WHERE id=? AND state='claimed'`,
+        )
+        .run(
+          retained ? 'retained' : 'absent',
+          nowIso(),
+          settlementDetail(snapshot, branch, retained),
+          row.id,
+        ).changes,
+    database,
+  )
+  return changes === 1
+    ? { action: snapshot.ruling.action, detail: snapshot.conversation.recordedTip ?? undefined }
+    : null
+}
+
+function completedLine(result: ReconciliationResult, label: string, branch: string): string {
+  if (result.action === 'keep') {
+    return `kept: ${label}: ${result.detail ?? 'lifecycle guard changed'}`
+  }
+  if (result.action === 'restore-failed') {
+    return `kept: ${label}: restore failed: ${result.detail}`
+  }
+  if (result.action === 'restore-retained') return `restored ${branch} at ${result.detail}`
+  if (result.action === 'settle-retained') return `settled retained ${label}`
+  if (result.action === 'release-lost-tip') {
+    return result.detail
+      ? `released, tip ${result.detail} is gone: ${label}`
+      : `released, no tip was recorded: ${label}`
+  }
+  return `settled absent ${label}`
 }
 
 export function reconcileAbsentClaims(input: {
@@ -245,39 +364,34 @@ export function reconcileAbsentClaims(input: {
   presentation: CleanupPresentation
   trust: GrokTrustObservation
   database?: Database
-  observers?: ClaimReconciliationObservers
+  observers?: Partial<ClaimReconciliationObservers>
   synchronize?: ClaimSynchronizer
 }): void {
   const database = input.database ?? db()
-  const observers = input.observers ?? defaultObservers(input.trust)
+  const observers: ClaimReconciliationObservers = {
+    ...defaultObservers(input.trust),
+    ...input.observers,
+  }
   const synchronize = input.synchronize ?? synchronizeClaim
   for (const row of claimedRows(database, input.project)) {
-    const { ruling } = rulingFor(database, row, observers)
+    const initial = rulingFor(database, row, observers)
+    const { ruling } = initial
     const label = `claim ${row.id} ${row.kind} ${row.allocation_key}`
+    const branch = row.allocation_key.replace(/^refs\/heads\//, '')
     if (ruling.action === 'keep') {
       if (input.dryRun) input.presentation.log(`kept: ${label}: ${ruling.reason}`)
       continue
     }
     if (input.dryRun) {
-      input.presentation.log(`would settle absent ${label}`)
+      input.presentation.log(dryRunLine(initial, label, branch))
       continue
     }
-    let settled = false
+    const completed: { value: ReconciliationResult | null } = { value: null }
     synchronize(row, () => {
-      writeTransaction(() => {
-        const lockedRow = claimedRow(database, row.id)
-        if (!lockedRow) return
-        const locked = rulingFor(database, lockedRow, observers)
-        if (locked.ruling.action === 'keep') return
-        const result = database
-          .query(
-            `UPDATE resource_claim SET state='absent',settled_at=?,settled_detail=?
-             WHERE id=? AND state='claimed'`,
-          )
-          .run(nowIso(), locked.observation.detail, lockedRow.id)
-        settled = result.changes === 1
-      }, database)
+      completed.value = reconcileClaimUnderLock(database, row.id, observers, branch)
     })
-    if (settled) input.presentation.log(`settled absent ${label}`)
+    const result = completed.value
+    if (!result) continue
+    input.presentation.log(completedLine(result, label, branch))
   }
 }

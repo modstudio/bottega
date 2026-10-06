@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
+import { repoRootOf, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
@@ -20,13 +20,7 @@ import {
   reauthorizeRunMutation,
 } from '../run/run-authority.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
-import {
-  branchTip,
-  removeBranch,
-  removeFor,
-  restoreBranch,
-  unmergedBranch,
-} from '../worktree/worktree-remove.ts'
+import { branchTip, removeBranch, removeFor, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { branchDeletableBy } from './branch-deletion-provenance.ts'
 

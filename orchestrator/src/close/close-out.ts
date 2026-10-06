@@ -7,7 +7,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
+import { gitContext, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
@@ -37,7 +37,7 @@ import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { inspectTreeOwnership, worktreeDirty } from '../worktree/worktree-attribution.ts'
-import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
+import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import {
@@ -555,6 +555,14 @@ function attemptCloseOutRun(
         db()
           .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
           .run(turnHead.branch, turnHead.tip, row.id)
+        settleClaims(db(), {
+          rootRunId: row.root_id,
+          kind: 'branch',
+          state: 'retained',
+          settledAt: nowIso(),
+          detail: `branch retained at ${turnHead.tip}`,
+          allocationKey: `refs/heads/${turnHead.branch}`,
+        })
       }
       settleClaims(db(), {
         rootRunId: row.root_id,
