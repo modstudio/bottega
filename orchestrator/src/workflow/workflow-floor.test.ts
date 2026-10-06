@@ -15,6 +15,7 @@ const ruling: Floor = {
   expectedExitCode: 0,
   expectedStatus: 'done',
   requirePullRequest: false,
+  operatorRuling: false,
 }
 const commandExit: Floor = { ...ruling, kind: 'command-exit' }
 const artifact: Floor = { ...ruling, kind: 'recorded-artifact' }
@@ -23,10 +24,17 @@ const tracker: Floor = {
   kind: 'tracker-transition',
   requirePullRequest: true,
 }
+const operatorRuling: Floor = { ...ruling, operatorRuling: true }
 const deferrableExit: Floor = { ...commandExit, deferrable: true }
 
 const answeredRuling: ValidatedEvidence = {
-  ruling: { id: 9, answered: true, boundToCursor: true, boundToStep: true },
+  ruling: {
+    id: 9,
+    answered: true,
+    answeredByOperator: false,
+    boundToCursor: true,
+    boundToStep: true,
+  },
 }
 const gradedReview: ValidatedEvidence = {
   review: { id: 4, allFindingsDisposed: true, allLensesGraded: true },
@@ -79,11 +87,43 @@ test('a fully triaged graded review satisfies a ruling floor', () => {
   })
 })
 
+test('an operator ruling floor requires a bound operator answer', () => {
+  const agentAnswer = answeredRuling
+  const operatorAnswer: ValidatedEvidence = {
+    ruling: { ...answeredRuling.ruling!, answeredByOperator: true },
+  }
+
+  const reviewCategoryTask: ValidatedEvidence = {
+    task: { key: 'DEV-1', status: 'blocked', statusCategory: 'review', mergedPullRequest: true },
+  }
+
+  for (const evidence of [{}, agentAnswer, gradedReview, reviewCategoryTask]) {
+    const decision = decide({ floors: [operatorRuling], evidence })
+    expect(decision.action).toBe('refuse')
+    if (decision.action === 'refuse') {
+      expect(decision.message).toContain('no operator answer on this step')
+      expect(decision.message).toContain('orch workflow await')
+    }
+  }
+  expect(decide({ floors: [operatorRuling], evidence: operatorAnswer })).toMatchObject({
+    action: 'allow',
+    refs: [{ flag: '--ruling', value: '9' }],
+  })
+})
+
 test('an unbound or unanswered ruling does not satisfy', () => {
   expect(
     decide({
       floors: [ruling],
-      evidence: { ruling: { id: 9, answered: true, boundToCursor: true, boundToStep: false } },
+      evidence: {
+        ruling: {
+          id: 9,
+          answered: true,
+          answeredByOperator: false,
+          boundToCursor: true,
+          boundToStep: false,
+        },
+      },
     }).action,
   ).toBe('refuse')
   expect(decide({ floors: [ruling] }).action).toBe('refuse')
@@ -467,6 +507,9 @@ test('catalogueFloors marks deferrable kinds and pull-request tracker floors', (
   expect(catalogueFloors(['tracker-transition'], [], 'active', true)[0]).toMatchObject({
     expectedStatus: 'active',
     requirePullRequest: true,
+  })
+  expect(catalogueFloors(['ruling'], [], 'done', false, true)[0]).toMatchObject({
+    operatorRuling: true,
   })
 })
 

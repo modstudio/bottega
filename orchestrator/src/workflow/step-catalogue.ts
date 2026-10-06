@@ -15,14 +15,16 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
+export type FloorEntry = FloorKind | `{{${string}}}`
 export type CatalogueStep = {
   slug: string
   title: string
   body: string
-  floor: FloorKind[]
+  floor: FloorEntry[]
   deferrable?: FloorKind[]
   expectedStatus?: string
   requirePullRequest?: boolean
+  operatorRuling?: boolean
   job: string | null
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage
@@ -160,10 +162,10 @@ export function compatibleCatalogueStep(step: CatalogueStep): CatalogueStep {
     autonomy: AutonomyValue | 'manual'
     floor: string[]
   }
-  const floor: FloorKind[] = []
+  const floor: FloorEntry[] = []
   for (const kind of legacy.floor) {
     const mapped = kind === 'human-ruling' ? 'ruling' : kind
-    if (isFloorKind(mapped)) floor.push(mapped)
+    if (isFloorKind(mapped) || isFloorPlaceholder(mapped)) floor.push(mapped)
   }
   return {
     ...step,
@@ -202,16 +204,24 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   if (new Set(floor).size !== floor.length) errors.push(`step "${slug}" floor has duplicates`)
   const known = new Set<string>(floorKinds)
   for (const kind of floor)
-    if (!known.has(kind)) errors.push(`step "${slug}" has invalid floor kind "${kind}"`)
+    if (!known.has(kind) && !isFloorPlaceholder(kind))
+      errors.push(`step "${slug}" has invalid floor kind "${kind}"`)
   validateDeferrable(item, floor, errors)
   if (item.requirePullRequest !== undefined && typeof item.requirePullRequest !== 'boolean')
     errors.push(`step "${slug}" requirePullRequest must be a boolean`)
+  if (item.operatorRuling !== undefined && typeof item.operatorRuling !== 'boolean')
+    errors.push(`step "${slug}" operatorRuling must be a boolean`)
+  if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
+    errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   if (
     item.expectedStatus !== undefined &&
     (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
   )
     errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
 }
+
+const isFloorPlaceholder = (value: string): value is `{{${string}}}` =>
+  /^\{\{[^{}]+\}\}$/.test(value)
 
 function validateNeeds(item: Record<string, unknown>, errors: string[]): void {
   const slug = String(item.slug ?? '')

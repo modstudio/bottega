@@ -575,6 +575,13 @@
       "when": 1790884800009,
       "tag": "0081_board_hosted_adoption",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1790884800010,
+      "tag": "0082_workflow_operator_ruling",
+      "breakpoints": true
     }
   ]
 }
