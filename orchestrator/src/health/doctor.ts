@@ -141,6 +141,18 @@ function reportRetrievalCheck(
   if (result.exitCode !== 0) presentation.exitCode(1)
 }
 
+function sandboxRuntimeDoctorLine(runtime: {
+  available: boolean
+  location: string
+  missingSystemDependencies: string[]
+}): string {
+  const status = runtime.available ? 'available' : 'NOT AVAILABLE'
+  const missing = runtime.missingSystemDependencies.length
+    ? `; missing ${runtime.missingSystemDependencies.join(', ')}`
+    : ''
+  return `sandbox        runtime ${status} at ${runtime.location}${missing}`
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,

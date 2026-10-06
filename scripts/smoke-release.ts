@@ -91,7 +91,7 @@ printf '%s\\n' "$doctor_output" | grep -F 'bubblewrap (bwrap) not installed'
 printf '%s\\n' "$doctor_output" | grep -F 'socat not installed'
 
 mkdir -p /tmp/bootstrap-bin /tmp/missing-deps-repository
-printf '%s\\n' '#!/bin/sh' 'if [ "$1" = rev-parse ] && [ "$2" = --show-toplevel ]; then printf "%s\\n" /tmp/missing-deps-repository; exit 0; fi' 'exit 1' > /tmp/bootstrap-bin/git
+printf '%s\\n' '#!/bin/sh' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
 chmod 755 /tmp/bootstrap-bin/git
 PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin /tmp/bin/orch project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete
 set +e
@@ -121,7 +121,7 @@ cp /fake-harness /tmp/fake-bin/codex
 chmod 755 /tmp/fake-bin/codex
 printf '%s\\n' '{}' > /home/smoke/.codex/auth.json
 : > /home/smoke/.codex/config.toml
-sqlite3 /tmp/state/orchestrator/orch.db "UPDATE agent SET caps=json_set(caps, '$.replyFile', json('true')), probed_at=datetime('now'), probe_result='{"ok":true,"source":"release smoke fixture"}' WHERE name='codex';"
+sqlite3 /tmp/state/orchestrator/orch.db "UPDATE agent SET caps=json_set(caps, '$.replyFile', json('true')), probed_at=datetime('now'), probe_result=json_object('ok', json('true'), 'source', 'release smoke fixture') WHERE name='codex';"
 chown -R smoke:smoke /tmp/state /tmp/probe-repository /tmp/mcp-state /home/smoke/.codex
 su -s /bin/sh smoke -c '
   set -eu
@@ -142,7 +142,7 @@ su -s /bin/sh smoke -c '
   /tmp/bin/orch do implement --agent codex --base main --follow --cwd /tmp/probe-repository "Make the release smoke fixture commit."
 '
 writing_worktree=$(cat /tmp/mcp-state/writing-worktree)
-writing_hooks=$(cd "$writing_worktree" && git config --path core.hooksPath)
+writing_hooks=$(cat /tmp/mcp-state/writing-hooks)
 case "$writing_hooks" in
   "$writing_worktree"/*) echo "shared ref guard was installed inside writing worktree $writing_worktree" >&2; exit 1 ;;
 esac
