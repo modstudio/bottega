@@ -265,6 +265,97 @@ function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconcil
   }
 }
 
+type ClaimRulingSnapshot = ReturnType<typeof rulingFor>
+
+function dryRunLine(snapshot: ClaimRulingSnapshot, label: string, branch: string): string {
+  const { ruling, conversation } = snapshot
+  if (ruling.action === 'restore-retained') {
+    return `would restore ${branch} at ${conversation.recordedTip}`
+  }
+  if (ruling.action === 'settle-retained') return `would settle retained ${label}`
+  if (ruling.action === 'release-lost-tip') {
+    return conversation.recordedTip
+      ? `would release, tip ${conversation.recordedTip} is gone: ${label}`
+      : `would release, no tip was recorded: ${label}`
+  }
+  return `would settle absent ${label}`
+}
+
+function settlementDetail(
+  snapshot: ClaimRulingSnapshot,
+  branch: string,
+  retained: boolean,
+): string {
+  const tip = snapshot.conversation.recordedTip
+  if (retained) {
+    return tip ? `branch retained at ${tip}` : `branch ${branch} retained; no tip was recorded`
+  }
+  if (snapshot.ruling.action === 'release-lost-tip') {
+    return tip
+      ? `branch ${branch} lost; tip ${tip} is gone`
+      : `branch ${branch} lost; no tip was recorded`
+  }
+  return snapshot.observation.detail
+}
+
+function reconcileClaimUnderLock(
+  database: Database,
+  claimId: number,
+  observers: ClaimReconciliationObservers,
+  branch: string,
+): ReconciliationResult | null {
+  const row = claimedRow(database, claimId)
+  if (!row) return null
+  const snapshot = rulingFor(database, row, observers)
+  if (snapshot.ruling.action === 'keep') {
+    return { action: 'keep', detail: snapshot.ruling.reason }
+  }
+  if (snapshot.ruling.action === 'restore-retained') {
+    const repository = snapshot.repository.path
+    const tip = snapshot.conversation.recordedTip
+    if (!repository || !tip) return null
+    const restored = observers.restoreBranch(repository, branch, tip)
+    if (!restored.ok) return { action: 'restore-failed', detail: restored.error }
+  }
+  const retained =
+    snapshot.ruling.action === 'settle-retained' || snapshot.ruling.action === 'restore-retained'
+  const changes = writeTransaction(
+    () =>
+      database
+        .query(
+          `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?
+           WHERE id=? AND state='claimed'`,
+        )
+        .run(
+          retained ? 'retained' : 'absent',
+          nowIso(),
+          settlementDetail(snapshot, branch, retained),
+          row.id,
+        ).changes,
+    database,
+  )
+  return changes === 1
+    ? { action: snapshot.ruling.action, detail: snapshot.conversation.recordedTip ?? undefined }
+    : null
+}
+
+function completedLine(result: ReconciliationResult, label: string, branch: string): string {
+  if (result.action === 'keep') {
+    return `kept: ${label}: ${result.detail ?? 'lifecycle guard changed'}`
+  }
+  if (result.action === 'restore-failed') {
+    return `kept: ${label}: restore failed: ${result.detail}`
+  }
+  if (result.action === 'restore-retained') return `restored ${branch} at ${result.detail}`
+  if (result.action === 'settle-retained') return `settled retained ${label}`
+  if (result.action === 'release-lost-tip') {
+    return result.detail
+      ? `released, tip ${result.detail} is gone: ${label}`
+      : `released, no tip was recorded: ${label}`
+  }
+  return `settled absent ${label}`
+}
+
 export function reconcileAbsentClaims(input: {
   dryRun: boolean
   project?: string
@@ -290,83 +381,15 @@ export function reconcileAbsentClaims(input: {
       continue
     }
     if (input.dryRun) {
-      if (ruling.action === 'restore-retained') {
-        input.presentation.log(`would restore ${branch} at ${initial.conversation.recordedTip}`)
-      } else if (ruling.action === 'settle-retained') {
-        input.presentation.log(`would settle retained ${label}`)
-      } else if (ruling.action === 'release-lost-tip') {
-        input.presentation.log(
-          initial.conversation.recordedTip
-            ? `would release, tip ${initial.conversation.recordedTip} is gone: ${label}`
-            : `would release, no tip was recorded: ${label}`,
-        )
-      } else {
-        input.presentation.log(`would settle absent ${label}`)
-      }
+      input.presentation.log(dryRunLine(initial, label, branch))
       continue
     }
     const completed: { value: ReconciliationResult | null } = { value: null }
     synchronize(row, () => {
-      const lockedRow = claimedRow(database, row.id)
-      if (!lockedRow) return
-      const locked = rulingFor(database, lockedRow, observers)
-      if (locked.ruling.action === 'keep') {
-        completed.value = { action: 'keep', detail: locked.ruling.reason }
-        return
-      }
-      if (locked.ruling.action === 'restore-retained') {
-        const repository = locked.repository.path
-        const tip = locked.conversation.recordedTip
-        if (!repository || !tip) return
-        const restored = observers.restoreBranch(repository, branch, tip)
-        if (!restored.ok) {
-          completed.value = { action: 'restore-failed', detail: restored.error }
-          return
-        }
-      }
-      const retained =
-        locked.ruling.action === 'settle-retained' || locked.ruling.action === 'restore-retained'
-      const lost = locked.ruling.action === 'release-lost-tip'
-      const tip = locked.conversation.recordedTip
-      const settledDetail = retained
-        ? tip
-          ? `branch retained at ${tip}`
-          : `branch ${branch} retained; no tip was recorded`
-        : lost
-          ? tip
-            ? `branch ${branch} lost; tip ${tip} is gone`
-            : `branch ${branch} lost; no tip was recorded`
-          : locked.observation.detail
-      let settled = false
-      writeTransaction(() => {
-        const result = database
-          .query(
-            `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?
-             WHERE id=? AND state='claimed'`,
-          )
-          .run(retained ? 'retained' : 'absent', nowIso(), settledDetail, lockedRow.id)
-        settled = result.changes === 1
-      }, database)
-      if (settled) completed.value = { action: locked.ruling.action, detail: tip ?? undefined }
+      completed.value = reconcileClaimUnderLock(database, row.id, observers, branch)
     })
     const result = completed.value
     if (!result) continue
-    if (result.action === 'keep') {
-      input.presentation.log(`kept: ${label}: ${result.detail ?? 'lifecycle guard changed'}`)
-    } else if (result.action === 'restore-failed') {
-      input.presentation.log(`kept: ${label}: restore failed: ${result.detail}`)
-    } else if (result.action === 'restore-retained') {
-      input.presentation.log(`restored ${branch} at ${result.detail}`)
-    } else if (result.action === 'settle-retained') {
-      input.presentation.log(`settled retained ${label}`)
-    } else if (result.action === 'release-lost-tip') {
-      input.presentation.log(
-        result.detail
-          ? `released, tip ${result.detail} is gone: ${label}`
-          : `released, no tip was recorded: ${label}`,
-      )
-    } else {
-      input.presentation.log(`settled absent ${label}`)
-    }
+    input.presentation.log(completedLine(result, label, branch))
   }
 }
