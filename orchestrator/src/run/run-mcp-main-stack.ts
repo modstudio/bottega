@@ -9,15 +9,17 @@ import { shouldDeferCwdMcpPreflight } from './run-mcp-attachment.ts'
 export function prepareRunMcpPreflight(input: {
   mcpRequest: McpRequest | undefined
   callerCwd: string
+  projectName?: string
   forbidsRepo: boolean
   repoJob: boolean
   discoversMcpFromCwd: boolean
   agent: string
 }): { deferredCwdMcpPreflight: boolean; mcpConnection: McpConnection | null } {
-  const project = projectAt(input.callerCwd)
+  const cwdProject = projectAt(input.callerCwd)
+  const project = input.projectName ? projectByName(input.projectName) : cwdProject
   const deferredCwdMcpPreflight = shouldDeferCwdMcpPreflight({
     mcpRequest: input.mcpRequest,
-    callerCwdHasProject: Boolean(project),
+    callerCwdHasProject: Boolean(cwdProject),
     forbidsRepo: input.forbidsRepo,
     repoJob: input.repoJob,
     discoversMcpFromCwd: input.discoversMcpFromCwd,

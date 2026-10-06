@@ -614,6 +614,7 @@ export async function run(opts: {
   let { deferredCwdMcpPreflight, mcpConnection } = prepareRunMcpPreflight({
     mcpRequest,
     callerCwd,
+    projectName: opts.repo,
     forbidsRepo,
     repoJob,
     discoversMcpFromCwd: a.caps.discoversMcpFromCwd,

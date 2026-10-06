@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { upsertProject } from '../project/projects.ts'
 import { run } from './run.ts'
+import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 
 const repositories: string[] = []
 afterEach(() => {
@@ -82,6 +83,33 @@ test('a cwd-discovered MCP run ensures its declared stack before the worker-tree
   expect(dockerCalls.filter((call) => call[1] === 'compose')).toEqual([
     ['docker', 'compose', 'ps', '--status', 'running', '--services', 'db'],
   ])
+})
+
+test('a read-only run without an MCP request starts no project stack', () => {
+  const repository = fixtureRepository()
+  upsertProject({
+    name: 'read-only-no-mcp-stack-fixture',
+    path: repository,
+    settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
+  })
+  const originalSpawnSync = Bun.spawnSync
+  const dockerCalls: string[][] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: object) => {
+    if (args[0] === 'docker') dockerCalls.push(args)
+    return originalSpawnSync(args, options as never)
+  }) as typeof Bun.spawnSync)
+
+  expect(
+    prepareRunMcpPreflight({
+      mcpRequest: undefined,
+      callerCwd: repository,
+      forbidsRepo: false,
+      repoJob: true,
+      discoversMcpFromCwd: false,
+      agent: 'codex',
+    }),
+  ).toEqual({ deferredCwdMcpPreflight: false, mcpConnection: null })
+  expect(dockerCalls).toEqual([])
 })
 
 function fixtureRepository(): string {
