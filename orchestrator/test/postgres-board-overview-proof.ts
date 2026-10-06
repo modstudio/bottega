@@ -86,6 +86,7 @@ export function registerBoardOverviewProof(input: ProofInput): void {
   test('board overview exposes receipt reach only to the notice author', async () => {
     const posted = post(input.tokenA(), 'notice', `project:${PROJECT}`, 'receipt-reach', {
       ackRequired: true,
+      ackDeadline: new Date(Date.parse(input.expiresAt) - 1).toISOString(),
     })
     await body(await posted.response)
     const receipt = (token: string, readerSession: string, acknowledged: boolean) =>
