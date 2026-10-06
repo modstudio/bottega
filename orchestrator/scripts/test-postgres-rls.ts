@@ -118,10 +118,12 @@ try {
     CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -130,6 +132,17 @@ try {
   const hostedTaskIdMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_task_id_migration`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
+  const publicRoleMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/public_role_migration`
+  const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
+
+  const publicRoleMigration = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-public-role-migration.test.ts'],
+    {
+      ORCH_TEST_PUBLIC_ROLE_MIGRATION_URL: publicRoleMigrationUrl,
+      ORCH_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL: publicRoleMigrationSuperuserUrl,
+    },
+  )
+  if (publicRoleMigration !== 0) process.exit(publicRoleMigration)
 
   const recipientMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-recipients.test.ts'],
@@ -209,6 +222,7 @@ try {
         DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
         DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};

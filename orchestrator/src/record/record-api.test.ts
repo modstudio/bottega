@@ -121,6 +121,38 @@ describe('record API', () => {
     expect(await signedResponse.json()).toMatchObject({ error: 'record authentication required' })
   })
 
+  test('only caches a found public doc', async () => {
+    const doc = {
+      id,
+      slug: 'public-guide',
+      title: 'Public guide',
+      body: 'Public body',
+      parentId: null,
+      position: 0,
+      updatedAt: '2026-10-06T18:00:00.000Z',
+      scope: 'global',
+      subject: null,
+    }
+    const app = appWith(null, { readPublicDoc: async () => doc })
+    const found = await app.request(`/public/v1/docs/${id}`, {
+      headers: { 'Fly-Client-IP': '192.0.2.11' },
+    })
+    expect(found.status).toBe(200)
+    expect(found.headers.get('cache-control')).toBe('public, max-age=60')
+
+    const missing = await appWith(null).request(`/public/v1/docs/${id}`, {
+      headers: { 'Fly-Client-IP': '192.0.2.12' },
+    })
+    expect(missing.status).toBe(404)
+    expect(missing.headers.get('cache-control')).toBe('no-store')
+
+    const invalid = await app.request('/public/v1/docs/not-a-uuid', {
+      headers: { 'Fly-Client-IP': '192.0.2.13' },
+    })
+    expect(invalid.status).toBe(400)
+    expect(invalid.headers.get('cache-control')).toBe('no-store')
+  })
+
   test('applies permission adds and removes, refuses stale revisions, and binds user targets', async () => {
     let revision = '01990000-0000-7000-8000-000000000010'
     let settings: OwnedSettings = { permissions: {}, hooks: {}, envKeys: [] }

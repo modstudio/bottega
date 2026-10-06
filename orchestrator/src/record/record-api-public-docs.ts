@@ -71,9 +71,12 @@ export function registerPublicDocRoutes<E extends Env>(
   })
   app.get('/public/v1/docs/:id', async (context) => {
     const id = idSchema.safeParse(context.req.param('id'))
-    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    if (!id.success) {
+      context.header('Cache-Control', 'no-store')
+      return context.json({ error: 'doc id must be a uuid' }, 400)
+    }
     const doc = await deps.readPublicDoc({ url: deps.recordUrl, id: id.data })
-    context.header('Cache-Control', PUBLIC_DOC_CACHE_CONTROL)
+    context.header('Cache-Control', doc ? PUBLIC_DOC_CACHE_CONTROL : 'no-store')
     return doc ? context.json(doc) : context.json({ error: 'doc not found' }, 404)
   })
 }
