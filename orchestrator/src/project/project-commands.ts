@@ -4,6 +4,7 @@
  * not know runs, routing, transports, reviews, the CLI, or worktrees by value.
  */
 import { existsSync } from 'node:fs'
+import { isDeepStrictEqual } from 'node:util'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
@@ -266,7 +267,7 @@ function sameProjectConfiguration(left: Project, right: Project): boolean {
   return (
     left.path === right.path &&
     left.stack === right.stack &&
-    JSON.stringify(left.settings) === JSON.stringify(right.settings)
+    isDeepStrictEqual(left.settings, right.settings)
   )
 }
 
