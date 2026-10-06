@@ -174,8 +174,8 @@ export async function hostedFlightDone(
     filters: { agent: string; project: string; source: string }
     projects: ProjectInput[]
   },
+  now = Date.now(),
 ) {
-  const now = Date.now()
   const { from, to } = bounds(input.hours, now)
   const facts = await windowFacts(databaseUrl, identity, from, to)
   const projectRows = projectsOf(input.projects)
@@ -445,8 +445,12 @@ export async function hostedNotes(
   })
 }
 
-async function hostedCostFacts(databaseUrl: string, identity: TaskIdentity, windowDays: number) {
-  const now = Date.now()
+async function hostedCostFacts(
+  databaseUrl: string,
+  identity: TaskIdentity,
+  windowDays: number,
+  now = Date.now(),
+) {
   const since = new Date(now - windowDays * 86_400_000).toISOString().slice(0, 10)
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const dayRows = rows<Record<string, unknown>>(
@@ -476,13 +480,23 @@ async function hostedCostFacts(databaseUrl: string, identity: TaskIdentity, wind
   })
 }
 
-export async function hostedRatio(databaseUrl: string, identity: TaskIdentity, windowDays = 14) {
-  const facts = await hostedCostFacts(databaseUrl, identity, windowDays)
+export async function hostedRatio(
+  databaseUrl: string,
+  identity: TaskIdentity,
+  windowDays = 14,
+  now = Date.now(),
+) {
+  const facts = await hostedCostFacts(databaseUrl, identity, windowDays, now)
   return projectRatioSummary(facts.dayRows, facts.intervals, facts.now)
 }
 
-export async function hostedSpend(databaseUrl: string, identity: TaskIdentity, windowDays = 14) {
-  const facts = await hostedCostFacts(databaseUrl, identity, windowDays)
+export async function hostedSpend(
+  databaseUrl: string,
+  identity: TaskIdentity,
+  windowDays = 14,
+  now = Date.now(),
+) {
+  const facts = await hostedCostFacts(databaseUrl, identity, windowDays, now)
   const summary = projectRatioSummary(facts.dayRows, facts.intervals, facts.now)
   const from =
     summary.days.find((day) => !day.excluded)?.day ?? new Date(facts.now).toISOString().slice(0, 10)
