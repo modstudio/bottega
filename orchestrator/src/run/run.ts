@@ -43,7 +43,6 @@ import {
   canonSourceInstruction,
   effectiveMcpRequest,
   type McpRequest,
-  probeRequestedMcp,
   requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
@@ -114,6 +113,7 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
+import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -611,17 +611,14 @@ export async function run(opts: {
     prompt += `\n\n${suffix}`
   }
 
-  const callerCwdHasProject = Boolean(projectAt(callerCwd))
-  const deferredCwdMcpPreflight = mcpAttachment.shouldDeferCwdMcpPreflight({
+  let { deferredCwdMcpPreflight, mcpConnection } = prepareRunMcpPreflight({
     mcpRequest,
-    callerCwdHasProject,
+    callerCwd,
     forbidsRepo,
     repoJob,
     discoversMcpFromCwd: a.caps.discoversMcpFromCwd,
+    agent: name,
   })
-  let mcpConnection = deferredCwdMcpPreflight
-    ? null
-    : probeRequestedMcp(mcpRequest, name, callerCwd)
   const attachmentRuling = mcpAttachment.decideMcpAttachment({
     connection: mcpConnection,
     mcpRequest,

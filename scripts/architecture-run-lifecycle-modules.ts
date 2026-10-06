@@ -113,6 +113,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../project/project-lock.ts',
     './run-alive.ts',
   ]),
+  module('orchestrator/src/run/run-mcp-main-stack.ts', [
+    '../mcp/mcp-preflight.ts',
+    '../project/projects.ts',
+    '../resources/main-stack.ts',
+    './run-mcp-attachment.ts',
+  ]),
   module('orchestrator/src/run/run-live.ts', [
     '../agent/agents.ts',
     '../ask/ask.ts',

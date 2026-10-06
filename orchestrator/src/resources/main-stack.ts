@@ -99,15 +99,19 @@ export function ensureMainStackStarted(input: {
       )
   }
   if (input.projectId === 0) return
-  const database = input.database ?? writableDb()
-  writeTransaction(() => {
-    database
-      .query(
-        `INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,?)
-         ON CONFLICT(project_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
-      )
-      .run(input.projectId, nowIso())
-  }, database)
+  try {
+    const database = input.database ?? writableDb()
+    writeTransaction(() => {
+      database
+        .query(
+          `INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,?)
+           ON CONFLICT(project_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
+        )
+        .run(input.projectId, nowIso())
+    }, database)
+  } catch {
+    // The stack is already available. Missing activity only shortens its idle lease.
+  }
 }
 
 export function ensureProjectMainStack(
