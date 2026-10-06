@@ -7,10 +7,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
-import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { callerIdentity, db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
@@ -121,13 +122,17 @@ function requireAnswerAuthority(
     windowMs: authority.windowMs,
   })
   if (decision.kind !== 'refuse') return decision
-  const refusal = {
-    'operator-attribution': '--channel ui requires --from-operator',
-    'dashboard-capability': '--channel ui requires the hub dashboard capability',
-    'session-marker': `--channel ui is refused when ${decision.actor} is set`,
-    'owner-mismatch': `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'} cannot answer it (owner active within the window)`,
-  }[decision.code]
-  throw new Error(refusal)
+  if (decision.code === 'operator-attribution')
+    throw new Error('--channel ui requires --from-operator')
+  if (decision.code === 'dashboard-capability')
+    throw new Error('--channel ui requires the hub dashboard capability')
+  if (decision.code === 'session-marker')
+    throw new Error(`--channel ui is refused when ${decision.actor} is set`)
+  throw new Error(
+    decision.actor
+      ? `run ${requestedId} is owned by session ${decision.owner}; current session ${decision.actor} cannot answer it (owner active within the window)`
+      : `run ${requestedId} is owned by session ${decision.owner}; ${callerIdentityRefusal(callerIdentity(), 'answer')}`,
+  )
 }
 
 function readOpenQuestions(id: number, status: string): OpenQuestion[] {

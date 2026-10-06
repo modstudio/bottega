@@ -2,7 +2,8 @@
 /** Owns authority and audit for workflow-question mutations. Run questions keep run authority. */
 
 import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
+import { callerIdentity, db } from '../database/db.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
@@ -42,10 +43,13 @@ export function authorizeWorkflowQuestionMutation(input: {
   }
   const initial = readFacts()
   const refusal = () => {
-    const actor = input.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'
+    if (!input.actor)
+      throw new Error(
+        `${input.subject} is owned by session ${input.owner}; ${callerIdentityRefusal(callerIdentity(), input.action)}`,
+      )
     throw new Error(
       `${input.subject} is owned by session ${input.owner}; ` +
-        `current session ${actor} cannot ${input.action} it (owner active within the window)`,
+        `current session ${input.actor} cannot ${input.action} it (owner active within the window)`,
     )
   }
   const current = reauthorizeAdoptedMutation(initial, readFacts, refusal)

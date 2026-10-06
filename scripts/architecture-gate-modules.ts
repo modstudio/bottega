@@ -30,6 +30,7 @@ export const gateModules: GateModule[] = [
     'bun:sqlite',
     'node:child_process',
     '../../../shared/secret-shaped.ts',
+    '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../resources/main-stack.ts',

@@ -3,7 +3,8 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
+import { callerIdentity, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
@@ -34,7 +35,7 @@ export function requireBranchRunOwner(
 ): string {
   if (!caller)
     throw new Error(
-      'orch review read is reserved for the branch run owner; CLAUDE_CODE_SESSION_ID is not set',
+      `orch review read is reserved for the branch run owner; ${callerIdentityRefusal(callerIdentity(), 'record an architect read')}`,
     )
   const owner = branchRunOwnerSession(database, project, branch)
   if (!owner)

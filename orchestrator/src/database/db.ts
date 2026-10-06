@@ -6,6 +6,11 @@ import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } f
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  type CallerIdentityResolution,
+  classifyCaller,
+  resolveCallerIdentity,
+} from '../caller-classification.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
 import {
   DATABASE_RESOLUTION,
@@ -15,6 +20,7 @@ import {
   legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
 } from './database-location.ts'
+import { machineIdFromStore, machineIdStored } from './machine-identity-store.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -272,6 +278,11 @@ export function writeTransaction<T>(fn: () => T, database: Database = db(true)):
   return conn.transaction(fn).immediate()
 }
 
+/** Mint the install identity only on a database lifecycle path already authorized to write. */
+export function ensureMachineIdentity(database: Database): void {
+  machineIdFromStore(database, (fn) => writeTransaction(fn, database))
+}
+
 /** Best-effort contention insert; never throws. busyTimeoutMs 0 uses a one-shot connection. */
 export function tryWriteContention(
   row: import('./contention.ts').ContentionWrite,
@@ -459,27 +470,21 @@ export function backfillSpecSha(): { updated: number; missing: number } {
 
 export const nowIso = () => new Date().toISOString()
 
-/**
- * Which Claude session made a call. Recorded so a session can be shown its own
- * unscored backlog: nobody else can judge whether an answer was useful, because
- * nobody else read it.
- *
- * CLAUDE_CODE_SESSION_ID is always set and identifies a session uniquely. The
- * other available identifiers do not do that job:
- *
- *   - CLAUDE_SESSION_ID does not exist. It never has; the fallback was dead.
- *   - CLAUDE_CODE_BRIDGE_SESSION_ID is set only while Remote Control is
- *     connected, and is SHARED between sessions on the same bridge. Preferring
- *     it recorded 26 of 66 runs with no session at all, and filed runs from a
- *     concurrent session onto this one's backlog — which is how a delegated
- *     agent came to be asked to score, and did score, work it had never read.
- *
- * The bridge id is still worth having for a claude.ai link, but it identifies a
- * connection, not a session, so it is never an identity. This returns the
- * primary id or null. A null owner is an unowned root; mutations that need an
- * identity to adopt refuse rather than proceeding under the shared bridge id.
- */
-export const sessionId = (): string | null => process.env.CLAUDE_CODE_SESSION_ID ?? null
+/** Identity result of the architect or local operator making this call. */
+export const callerIdentity = (database?: Database): CallerIdentityResolution => {
+  const caller = classifyCaller(process.env)
+  if (caller.kind !== 'operator') return resolveCallerIdentity(caller, null)
+  // An absent store has no identity to read. A store that exists and refuses to open must say
+  // so: swallowing that refusal would let a command report emptiness for data it never saw.
+  if (!database && !existsSync(DB_PATH)) return resolveCallerIdentity(caller, null)
+  return resolveCallerIdentity(caller, machineIdStored(database ?? db()))
+}
+
+/** Identity of the architect or local operator making this call. */
+export const sessionId = (database?: Database): string | null => {
+  const identity = callerIdentity(database)
+  return identity.kind === 'identity' ? identity.session : null
+}
 
 /**
  * A session seen inside this window is known live. A session outside it is

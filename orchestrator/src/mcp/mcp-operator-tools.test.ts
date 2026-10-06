@@ -310,9 +310,7 @@ describe('operator MCP tools', () => {
     )
     expect(refused.isError).toBe(true)
     expect(refused.content).toEqual([
-      expect.objectContaining({
-        text: expect.stringContaining('refusing document store write from an orch worker run'),
-      }),
+      expect.objectContaining({ text: expect.stringContaining('a worker cannot file its ruling') }),
     ])
   })
 })

@@ -3,7 +3,8 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { db, nowIso, sessionId, writeTransaction } from './database/db.ts'
+import { callerIdentityRefusal } from './caller-classification.ts'
+import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { machineId } from './record/machine-identity.ts'
@@ -159,11 +160,11 @@ function requireJudgeableRun(
   }
   if (!flags.has('force') && owner.verdict === 'anonymous') {
     throw new Error(
-      `run ${id} belongs to session ${owner.owner}, but no session identity is present; --force overrides`,
+      `run ${id} belongs to session ${owner.owner}; ${callerIdentityRefusal(callerIdentity(), 'judge')}; --force overrides`,
     )
   }
   if (!flags.has('force') && owner.verdict === 'unattributed' && !sessionId()) {
-    throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
+    throw new Error(`run ${id} is unowned; ${callerIdentityRefusal(callerIdentity(), 'judge')}`)
   }
   return row
 }
@@ -176,13 +177,13 @@ function refuseForeignScore(
 ): void {
   if (dashboardAuthorized || flags.has('force')) return
   if (!sessionId() && owner.verdict === 'unattributed') {
-    throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
+    throw new Error(`run ${id} is unowned; ${callerIdentityRefusal(callerIdentity(), 'score')}`)
   }
   if (owner.verdict === 'foreign' || owner.verdict === 'anonymous') {
     throw new Error(
       `run ${id} was made by another session — ownership is not established.\n` +
         `  its session:   ${owner.owner}\n` +
-        `  your session:  ${sessionId() ?? 'no session identity is present'}\n\n` +
+        `  your session:  ${sessionId() ?? callerIdentityRefusal(callerIdentity(), 'score')}\n\n` +
         `Scoring it teaches the router something you cannot know. Ask the session\n` +
         `that ran it to score it — on this machine that is a SendMessage away.\n` +
         `If you are certain (correcting a score you know to be wrong), --force.`,

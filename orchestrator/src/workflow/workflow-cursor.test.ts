@@ -657,7 +657,7 @@ describe('workflow cursor adapter', () => {
     }
   })
 
-  test('workflow rule refuses a session-less caller even when the owner is gone', () => {
+  test('a plain operator may rule when the workflow owner is gone', () => {
     const d = database()
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
     awaitWorkflowRuling('ship', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
@@ -665,10 +665,11 @@ describe('workflow cursor adapter', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     delete process.env.CLAUDE_CODE_SESSION_ID
     try {
-      expect(() =>
-        ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
-      ).toThrow('CLAUDE_CODE_SESSION_ID is not set')
-      expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: null })
+      ruleWorkflow('ship', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
+      expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: 'Proceed.' })
+      expect(d.query('SELECT actor_session FROM question_mutation_audit').get()).toEqual({
+        actor_session: expect.stringMatching(/^operator:/),
+      })
     } finally {
       if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = prior

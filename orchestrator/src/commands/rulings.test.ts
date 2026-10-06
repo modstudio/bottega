@@ -60,9 +60,7 @@ test('CLI ruling file --as doc allows an architect caller and refuses a worker c
 
   const refused = answeredQuestion(project)
   process.env.ORCH_RUN_ID = 'ruling-cli-worker'
-  await expect(fileThroughCli(refused)).rejects.toThrow(
-    'refusing document store write from an orch worker run',
-  )
+  await expect(fileThroughCli(refused)).rejects.toThrow('a worker cannot file its ruling')
   expect(db().query('SELECT filed_as FROM question WHERE id=?').get(refused)).toEqual({
     filed_as: null,
   })

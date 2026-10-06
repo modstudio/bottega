@@ -493,7 +493,7 @@ describe('scoped operator docs', () => {
     ).resolves.toMatchObject({ owner, slug: rows[3]!.slug })
   })
 
-  test('write reasons are required and author defaults to the session or unknown', async () => {
+  test('write reasons are required and author defaults to the session or operator', async () => {
     await expect(
       writeDoc({
         scope: 'global',
@@ -513,9 +513,7 @@ describe('scoped operator docs', () => {
     )
     await expect(readDocs('/missing', { reason: ' ' })).rejects.toThrow('reason is required')
 
-    // sessionId() used to fall back to the Remote Control bridge id, which is
-    // set in a real Claude shell; clear the primary or the "unknown" branch
-    // never runs.
+    // A harness session and a plain operator both supply durable authorship.
     const before = process.env.CLAUDE_CODE_SESSION_ID
     const bridgeBefore = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
     try {
@@ -541,7 +539,7 @@ describe('scoped operator docs', () => {
         reason: 'test',
       })
       expect(listDocRevisions('global', null, 'session-author')[0]!.author).toBe('doc-session')
-      expect(listDocRevisions('global', null, 'unknown-author')[0]!.author).toBe('unknown')
+      expect(listDocRevisions('global', null, 'unknown-author')[0]!.author).toMatch(/^operator:/)
     } finally {
       if (before === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = before

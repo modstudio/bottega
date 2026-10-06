@@ -126,6 +126,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'bun:sqlite',
       '../../../shared/record/schema.ts',
       '../../../shared/secret-shaped.ts',
+      '../caller-classification.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',

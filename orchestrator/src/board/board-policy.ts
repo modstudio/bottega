@@ -1,4 +1,5 @@
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { classifyCaller } from '../caller-classification.ts'
 
 export const BOARD_DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000
 export const BOARD_DEFAULT_ACK_DEADLINE_MS = 60 * 60 * 1000
@@ -14,18 +15,12 @@ const RUN_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 export const OPERATOR_READER = 'operator'
 
 export type ArchitectIdentity = { session: string; harness: 'claude-code' }
-const ARCHITECT_IDENTITIES = [
-  { environment: 'CLAUDE_CODE_SESSION_ID', harness: 'claude-code' as const },
-] as const
-
 export function architectIdentity(
   env: Record<string, string | undefined>,
 ): ArchitectIdentity | null {
-  for (const entry of ARCHITECT_IDENTITIES) {
-    const session = env[entry.environment]?.trim()
-    if (session && session !== OPERATOR_READER) return { session, harness: entry.harness }
-  }
-  return null
+  const caller = classifyCaller(env)
+  if (caller.kind !== 'harness' || caller.session === OPERATOR_READER) return null
+  return { session: caller.session, harness: caller.harness }
 }
 
 export type PresenceFact = {

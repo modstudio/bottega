@@ -205,9 +205,10 @@ test('exec detects a chunk-split secret after it rolls out of the retained tail'
   }
 })
 
-test('exec refuses worker depth and missing architect identity', async () => {
+test('exec refuses worker depth and an unsupported harness identity', async () => {
   const priorDepth = process.env.ORCH_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const priorThread = process.env.CODEX_THREAD_ID
   try {
     process.env.ORCH_DEPTH = '1'
     await expect(recordWorkflowExec(['true'], { d: database() })).rejects.toThrow(
@@ -215,14 +216,17 @@ test('exec refuses worker depth and missing architect identity', async () => {
     )
     delete process.env.ORCH_DEPTH
     delete process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CODEX_THREAD_ID = 'unsupported-thread'
     await expect(recordWorkflowExec(['true'], { d: database() })).rejects.toThrow(
-      'CLAUDE_CODE_SESSION_ID is not set',
+      'unsupported harness',
     )
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH
     else process.env.ORCH_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorThread === undefined) delete process.env.CODEX_THREAD_ID
+    else process.env.CODEX_THREAD_ID = priorThread
   }
 })
 

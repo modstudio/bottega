@@ -14,6 +14,7 @@ import {
   shouldInterrupt,
   validatePostNoticeInput,
 } from './board-policy.ts'
+import { boardActor } from './board-store.ts'
 
 test('notice header fields refuse every line separator', () => {
   expect(() => validatePostNoticeInput({ title: 'bad\nvalue', body: 'body' })).toThrow(
@@ -36,6 +37,12 @@ test('architect identity is a table with only the ruled Claude entry', () => {
     harness: 'claude-code',
   })
   expect(architectIdentity({ CODEX_THREAD_ID: 'codex-1' })).toBeNull()
+})
+
+test('an unsupported board caller refusal names its triggering markers', () => {
+  expect(() => boardActor({ CODEX_THREAD_ID: 'codex-1', OTHER_SESSION_ID: 'session-1' })).toThrow(
+    '(CODEX_THREAD_ID, OTHER_SESSION_ID)',
+  )
 })
 
 test('audiences resolve at delivery, including a late joiner', () => {

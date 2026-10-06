@@ -19,8 +19,9 @@ import {
   type MonitorCapability,
 } from '../../../shared/monitor-capability.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
-import { sessionId } from '../database/db.ts'
+import { callerIdentity, sessionId } from '../database/db.ts'
 import {
   displayConditions,
   formatMonitorPass,
@@ -150,7 +151,10 @@ function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }
 
 async function acknowledge(ids: string): Promise<void> {
   const sid = sessionId()
-  if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
+  if (!sid)
+    throw new Error(
+      `monitor notice acknowledgement requires an identity; ${callerIdentityRefusal(callerIdentity(), 'acknowledge notices')}`,
+    )
   if (!deliveryAuthorized())
     throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
   await markMonitorNoticesDeliveredWithHosted(sid, ids.split(',') as MonitorNotice['noticeId'][])
@@ -162,7 +166,10 @@ async function showNotices(
   presentation: Presentation,
 ): Promise<void> {
   const sid = sessionId()
-  if (!sid) throw new Error('monitor notices require CLAUDE_CODE_SESSION_ID')
+  if (!sid)
+    throw new Error(
+      `monitor notices require an identity; ${callerIdentityRefusal(callerIdentity(), 'read monitor notices')}`,
+    )
   const delivery = await claimMonitorNoticesWithHosted(sid, {
     refreshBoard: !skipBoardRefresh,
   })

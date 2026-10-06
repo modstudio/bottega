@@ -170,9 +170,10 @@ test('refuses a worker session', async () => {
   )
 })
 
-test('refuses when the architect session identity is absent', async () => {
+test('refuses an unsupported harness without an architect identity', async () => {
   delete process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CODEX_THREAD_ID = 'unsupported-thread'
   expect(runArchitectGate({ cwd: repositoryPath, d: database() })).rejects.toThrow(
-    'CLAUDE_CODE_SESSION_ID is not set',
+    'unsupported harness',
   )
 })

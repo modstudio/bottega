@@ -44,21 +44,9 @@ describe('session identity is the primary id only', () => {
       ] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         expect(() => adoptRunMutation(authorizeRunMutation(id, action), action)).toThrow(
-          'CLAUDE_CODE_SESSION_ID',
+          'unsupported harness',
         )
       }
-    } finally {
-      restoreSessionEnv(claude, bridge)
-    }
-  })
-
-  test('neither variable yields null', () => {
-    const claude = process.env.CLAUDE_CODE_SESSION_ID
-    const bridge = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
-    try {
-      delete process.env.CLAUDE_CODE_SESSION_ID
-      delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
-      expect(sessionId()).toBeNull()
     } finally {
       restoreSessionEnv(claude, bridge)
     }
@@ -66,8 +54,8 @@ describe('session identity is the primary id only', () => {
 })
 
 describe('who may judge a run', () => {
-  test('a missing caller identity satisfies no owned mutation gate', () => {
-    const id = addRun({ agent: 'codex', job: 'implement', session: 'owner-session' })
+  test('a plain operator may adopt every unowned authoritative mutation', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', session: null })
     const claude = process.env.CLAUDE_CODE_SESSION_ID
     const bridge = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
     delete process.env.CLAUDE_CODE_SESSION_ID
@@ -83,8 +71,8 @@ describe('who may judge a run', () => {
         'retry',
         'continue',
       ] as const) {
-        expect(() => authorizeRunMutation(id, action)).toThrow(
-          'current session no session identity is present',
+        expect(adoptRunMutation(authorizeRunMutation(id, action), action).actor).toMatch(
+          /^operator:/,
         )
       }
     } finally {
