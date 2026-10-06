@@ -14,11 +14,13 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
+import { projectByName } from '../project/projects.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
+import { continuationCheckoutDecision } from './continuation-checkout.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -227,12 +229,16 @@ export async function retryRun(
   let retryAuthority = authorizeRunMutation(id, 'retry')
   const row = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
-          probe, status, failure_kind, mcp, mcp_error,
-          schema_path, model, lens, launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-          keep_tree, keep_tree_until, keep_tree_reason, started_at, repo, project_id,
-          branch_kept, branch_kept_tip
-     FROM run WHERE id = ?`,
+      `SELECT requested.id, COALESCE(requested.parent_run_id,requested.id) root_id,
+          requested.agent, requested.job, requested.cwd, requested.prompt_path,
+          requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
+          requested.schema_path, requested.model, requested.lens, requested.launch_cwd,
+          requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
+          requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
+          requested.started_at, root.repo, root.project_id, root.cwd root_cwd,
+          root.branch_kept, root.branch_kept_tip
+     FROM run requested JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
+     WHERE requested.id = ?`,
     )
     .get(id) as {
     id: number
@@ -240,6 +246,7 @@ export async function retryRun(
     agent: string
     job: string
     cwd: string | null
+    root_cwd: string | null
     prompt_path: string | null
     probe: number
     status: string
@@ -303,6 +310,21 @@ export async function retryRun(
     )
   }
   const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
+  const latestCheckout = db()
+    .query('SELECT cwd FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1')
+    .get(row.root_id, row.root_id) as { cwd: string | null }
+  const rootProject = row.repo ? projectByName(row.repo) : null
+  const checkout = continuationCheckoutDecision({
+    latestCwd: latestCheckout.cwd,
+    rootCwd: row.root_cwd,
+    rootProjectPath: rootProject?.path ?? null,
+  })
+  if (checkout.action === 'refuse') {
+    throw new Error(
+      `run ${row.root_id} cannot be retried: its chain has no available registered repository identity; ` +
+        'dispatch a new run from the registered project checkout',
+    )
+  }
   const continuationInstructions = continuationInstructionsForFreshRetry(
     writesRepo,
     id,
@@ -315,7 +337,6 @@ export async function retryRun(
         id,
         rootId: row.root_id,
         job: row.job,
-        launchCwd: row.launch_cwd,
         launchKey: row.launch_key,
         repo: row.repo,
         projectId: row.project_id,
@@ -368,7 +389,8 @@ export async function retryRun(
         lens: row.lens ?? undefined,
         probe: !!row.probe,
         retryOf: id,
-        cwd: workspace?.cwd ?? row.launch_cwd ?? row.cwd ?? undefined,
+        cwd: workspace?.cwd ?? checkout.cwd,
+        repo: row.repo ?? undefined,
         seed: row.launch_seed ?? undefined,
         key: row.launch_key ?? undefined,
         base: resumeLaunch.base,
@@ -791,6 +813,18 @@ export async function answerRun(
   }
 
   const worktreePath = latest.worktree ?? row.worktree
+  const rootProject = row.repo ? projectByName(row.repo) : null
+  const checkout = continuationCheckoutDecision({
+    latestCwd: latest.cwd,
+    rootCwd: row.cwd,
+    rootProjectPath: rootProject?.path ?? null,
+  })
+  if (checkout.action === 'refuse') {
+    throw new Error(
+      `run ${id} cannot be answered: its chain has no available registered repository identity; ` +
+        'dispatch a new run from the registered project checkout',
+    )
+  }
   /**
    * DETACHED, for the reason `orch do` already is.
    *
@@ -805,7 +839,8 @@ export async function answerRun(
   let childId: number
   try {
     childId = await (helpers.dispatch ?? detach)(row.job, rulingPrompt(answers), {
-      cwd: latest.cwd ?? row.cwd ?? process.cwd(),
+      cwd: checkout.cwd,
+      repo: row.repo ?? undefined,
       ...resumeLaunchForRoot(id),
       transport: chainTransport(id) ?? undefined,
       resume: {
@@ -822,7 +857,7 @@ export async function answerRun(
               base: latest.base_commit ?? row.base_commit ?? '',
               repoRoot:
                 (await import('../git/git-environment.ts')).repoRootOf(worktreePath) ??
-                process.cwd(),
+                checkout.projectPath,
               source: latest.worktree_source ?? row.worktree_source ?? undefined,
             }
           : null,

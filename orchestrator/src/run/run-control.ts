@@ -14,8 +14,9 @@ import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environm
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
-import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
+import { type Project, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
+import { continuationCheckoutDecision } from './continuation-checkout.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
 import { questionOpenSql } from './question-open.ts'
 import {
@@ -353,29 +354,17 @@ function continuationTree(
   id: number,
   row: { branch_kept: string | null; branch_kept_tip: string | null },
   latest: ChainTurn,
-  launchCwd: string | null,
+  project: Project,
 ) {
-  const latestProject = projectAt(latest.cwd ?? launchCwd ?? '')
-  const latestBranchTip =
-    latest.branch && latestProject
-      ? gitContext(
-          latestProject.path,
-          'rev-parse',
-          '--verify',
-          `refs/heads/${latest.branch}^{commit}`,
-        )
-      : null
+  const latestBranchTip = latest.branch
+    ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${latest.branch}^{commit}`)
+    : null
   const branchPlan = continuationBranchPlan({
     latestBranch: latest.branch,
     latestBranchTip,
     rootBranch: row.branch_kept,
   })
   const recordedBranch = branchPlan.branch
-  const project = recordedBranch ? projectAt(latest.cwd ?? launchCwd ?? '') : null
-  if (recordedBranch && !project)
-    throw new Error(
-      `run ${id} cannot be continued: no registered project contains its recorded checkout`,
-    )
   const recordedTreeMatches = Boolean(
     recordedBranch &&
       latest.worktree &&
@@ -426,17 +415,6 @@ function effectiveCheckpointContext(
   return `CHECKPOINT RESUME\nResume from retained work at ${plan.tip}.`
 }
 
-function continuationCwd(
-  plan: ResumeTreePlan | null,
-  recordedTreeMatches: boolean,
-  latestCwd: string | null,
-  projectPath: string | null,
-): string {
-  if (!plan) return latestCwd ?? process.cwd()
-  if (recordedTreeMatches) return latestCwd ?? projectPath!
-  return projectPath!
-}
-
 function inheritedResumeWorktree(
   plan: ResumeTreePlan | null,
   latest: ChainTurn,
@@ -448,7 +426,7 @@ function inheritedResumeWorktree(
     path: latest.worktree,
     branch: latest.branch ?? '',
     base: latest.base_commit ?? '',
-    repoRoot: projectPath ?? process.cwd(),
+    repoRoot: projectPath!,
     source: latest.worktree_source ?? undefined,
   }
 }
@@ -516,13 +494,15 @@ export async function continueRun(
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
-      'SELECT id, job, parent_run_id, status, branch_kept, branch_kept_tip FROM run WHERE id = ?',
+      'SELECT id, job, parent_run_id, status, cwd, repo, branch_kept, branch_kept_tip FROM run WHERE id = ?',
     )
     .get(id) as {
     id: number
     job: string
     parent_run_id: number | null
     status: string
+    cwd: string | null
+    repo: string | null
     branch_kept: string | null
     branch_kept_tip: string | null
   } | null
@@ -575,8 +555,17 @@ export async function continueRun(
       )
       .all(id, id) as ChainTurn[],
   )
-  const launch = db().query('SELECT launch_cwd FROM run WHERE id=?').get(id) as {
-    launch_cwd: string | null
+  const rootProject = row.repo ? projectByName(row.repo) : null
+  const checkout = continuationCheckoutDecision({
+    latestCwd: latest.cwd,
+    rootCwd: row.cwd,
+    rootProjectPath: rootProject?.path ?? null,
+  })
+  if (checkout.action === 'refuse') {
+    throw new Error(
+      `run ${id} cannot be continued: its chain has no available registered repository identity; ` +
+        'dispatch a new run from the registered project checkout',
+    )
   }
   const inheritedLaunch = resumeLaunchForRoot(id)
   const {
@@ -584,7 +573,7 @@ export async function continueRun(
     recordedTreeMatches,
     plan: treePlan,
     branchSource,
-  } = continuationTree(id, row, latest, launch.launch_cwd)
+  } = continuationTree(id, row, latest, rootProject!)
   refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
   const savedCheckpointContext = continuationCheckpointContext({
     database: db(),
@@ -665,7 +654,8 @@ export async function continueRun(
     return adopted
   })
   const childId = await detach(row.job, prompt, {
-    cwd: continuationCwd(treePlan, recordedTreeMatches, latest.cwd, project?.path ?? null),
+    cwd: treePlan && !recordedTreeMatches ? checkout.projectPath : checkout.cwd,
+    repo: row.repo ?? undefined,
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
     resume: {

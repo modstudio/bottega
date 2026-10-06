@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
 import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
-import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
+import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { latestCheckpoint } from './checkpoint.ts'
@@ -38,7 +38,6 @@ export function resolveWritingRetryWorkspace(input: {
   id: number
   rootId: number
   job: string
-  launchCwd: string | null
   launchKey: string | null
   repo: string | null
   projectId: number | null
@@ -62,7 +61,7 @@ export function resolveWritingRetryWorkspace(input: {
     status: string
     pid: number | null
   }
-  const project = projectAt(latest.cwd ?? input.launchCwd ?? '')
+  const project = input.repo ? projectByName(input.repo) : null
   if (!project) {
     throw new Error(
       `run ${input.id} cannot retry on its branch: no registered project contains its recorded checkout`,

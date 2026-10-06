@@ -7,6 +7,7 @@ import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { packedResumePrompt } from './run.ts'
 import { answerRun as answerRunService, retryRun } from './run-answer.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -82,15 +83,16 @@ function insert(status: string, job = 'file-question'): number {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
-     VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
+        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd)
+     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING id`,
       )
-      .get(new Date().toISOString(), job, status) as { id: number }
+      .get(new Date().toISOString(), job, status, dir) as { id: number }
   ).id
 }
 
 const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
+  upsertProject({ name: 'continuation-fixture', path: dir })
   priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
@@ -841,7 +843,12 @@ test('answer refuses an asking run with no vendor session without recording the 
 
 describe('retry command', () => {
   const failed = (job = 'file-question') => {
-    const id = addRun({ agent: 'grok', job, status: 'failed' })
+    const id = addRun({
+      agent: 'grok',
+      job,
+      status: 'failed',
+      repo: 'continuation-fixture',
+    })
     const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
     writeFileSync(prompt, 'What does bar.ts do?')
     db()
@@ -951,7 +958,12 @@ describe('retry command', () => {
 
   test('retry and continue give the same refusal when the chain has no session', async () => {
     for (const command of ['retry', 'continue'] as const) {
-      const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+      const id = addRun({
+        agent: 'codex',
+        job: 'implement',
+        status: 'failed',
+        repo: 'continuation-fixture',
+      })
       const prompt = trackResidue(join(dir, `no-session-${id}.prompt.txt`))
       writeFileSync(prompt, 'continue')
       db()

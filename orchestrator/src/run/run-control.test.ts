@@ -7,6 +7,7 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { packedResumePrompt } from './run.ts'
 import {
@@ -24,15 +25,16 @@ function insert(status: string, job = 'file-question'): number {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
-     VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
+        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd)
+     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING id`,
       )
-      .get(new Date().toISOString(), job, status) as { id: number }
+      .get(new Date().toISOString(), job, status, dir) as { id: number }
   ).id
 }
 
 const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
+  upsertProject({ name: 'continuation-fixture', path: dir })
   priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
@@ -142,6 +144,7 @@ describe('run continuation', () => {
       job: 'implement',
       status: 'failed',
       session: 'orch-test-session',
+      repo: 'continuation-fixture',
     })
 
     await expect(continueRun(root, undefined, limit)).rejects.toThrow(
@@ -202,6 +205,7 @@ describe('run continuation', () => {
       job: 'file-question',
       status: 'failed',
       session: 'orch-test-session',
+      repo: 'continuation-fixture',
     })
     const prior = addRun({
       agent: 'codex',
@@ -212,8 +216,8 @@ describe('run continuation', () => {
       session: 'orch-test-session',
     })
     db()
-      .query('UPDATE run SET vendor_session=? WHERE id IN (?,?)')
-      .run('vendor-session', root, prior)
+      .query('UPDATE run SET vendor_session=?,cwd=? WHERE id IN (?,?)')
+      .run('vendor-session', dir, root, prior)
 
     const resumed = await continueRun(root, 'vendor-session message', limit)
     const artifact = db().query('SELECT prompt_path FROM run WHERE id=?').get(resumed.childId) as {
