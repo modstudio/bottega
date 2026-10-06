@@ -4,6 +4,7 @@ export function deferredWorkerMessageNotice(runId: number, canInjectMidTurn: boo
   if (canInjectMidTurn) return ''
   return (
     'It will NOT reach the running turn unless the worker polls check_orchestrator_messages. ' +
-    `It WILL be included in the next turn's prompt; once this turn ends, run "orch continue ${runId}" to deliver it.`
+    `It is queued for the next turn's prompt. Once this turn ends, run "orch continue ${runId}". ` +
+    'The continuation will deliver it after restoring the recorded checkout, or refuse before creating a turn and tell you to dispatch a new run.'
   )
 }

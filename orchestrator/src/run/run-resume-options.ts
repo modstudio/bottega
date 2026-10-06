@@ -15,4 +15,5 @@ export type RunResumeOptions = {
   sessionId: string | null
   worktree: Worktree | null
   treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
+  readOnlyBase?: string
 }

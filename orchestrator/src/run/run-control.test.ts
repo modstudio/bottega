@@ -25,10 +25,11 @@ function insert(status: string, job = 'file-question'): number {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd)
-     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING id`,
+        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
+                         repo, cwd, worktree)
+     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
       )
-      .get(new Date().toISOString(), job, status, dir) as { id: number }
+      .get(new Date().toISOString(), job, status, dir, dir) as { id: number }
   ).id
 }
 
@@ -216,8 +217,8 @@ describe('run continuation', () => {
       session: 'orch-test-session',
     })
     db()
-      .query('UPDATE run SET vendor_session=?,cwd=? WHERE id IN (?,?)')
-      .run('vendor-session', dir, root, prior)
+      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE id IN (?,?)')
+      .run('vendor-session', dir, dir, root, prior)
 
     const resumed = await continueRun(root, 'vendor-session message', limit)
     const artifact = db().query('SELECT prompt_path FROM run WHERE id=?').get(resumed.childId) as {
@@ -226,5 +227,19 @@ describe('run continuation', () => {
 
     trackResidue(artifact.prompt_path)
     expect(readFileSync(artifact.prompt_path, 'utf8')).toBe('vendor-session message')
+  })
+
+  test('a released reader with an unavailable base refuses before creating a turn', async () => {
+    const root = insert('ok')
+    db()
+      .query('UPDATE run SET vendor_session=?,worktree=NULL,base_commit=? WHERE id=?')
+      .run('vendor-session', 'missing-reader-base', root)
+
+    await expect(continueRun(root, 'deliver queued messages', limit)).rejects.toThrow(
+      'read-only base commit missing-reader-base is unavailable',
+    )
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root)).toEqual({
+      n: 0,
+    })
   })
 })

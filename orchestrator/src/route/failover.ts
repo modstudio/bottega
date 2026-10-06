@@ -74,6 +74,7 @@ export type DetachSpec = {
     sessionId: string | null
     worktree: RetryWorktree | null
     treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
+    readOnlyBase?: string
   }
 }
 

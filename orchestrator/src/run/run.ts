@@ -351,7 +351,8 @@ export async function run(opts: {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
-  const requestedReadOnlyBase = reviewTarget?.commit ?? opts.base ?? 'HEAD'
+  const requestedReadOnlyBase =
+    opts.resume?.readOnlyBase ?? reviewTarget?.commit ?? opts.base ?? 'HEAD'
   const readOnlyBase =
     repoJob && !writesJob && !opts.resume?.worktree
       ? resolveReadOnlyBase(

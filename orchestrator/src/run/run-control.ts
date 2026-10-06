@@ -18,6 +18,10 @@ import { type Project, projectByName, resolvedWorktreeTool } from '../project/pr
 import { chainTransport } from '../route/failover.ts'
 import { continuationCheckoutDecision } from './continuation-checkout.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import {
+  type ContinuationTreeDecision,
+  continuationTreeDecision,
+} from './continuation-tree-decision.ts'
 import { questionOpenSql } from './question-open.ts'
 import {
   continuationBranchAvailability,
@@ -416,10 +420,12 @@ function effectiveCheckpointContext(
 }
 
 function inheritedResumeWorktree(
+  decision: ContinuationTreeDecision,
   plan: ResumeTreePlan | null,
   latest: ChainTurn,
   projectPath: string | null,
 ) {
+  if (decision.action !== 'inherit-present-tree') return null
   if (plan && plan.action !== 'attach-recorded') return null
   if (!latest.worktree) return null
   return {
@@ -494,7 +500,8 @@ export async function continueRun(
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
-      'SELECT id, job, parent_run_id, status, cwd, repo, branch_kept, branch_kept_tip FROM run WHERE id = ?',
+      `SELECT id, job, parent_run_id, status, cwd, repo, base_commit,
+              branch_kept, branch_kept_tip FROM run WHERE id = ?`,
     )
     .get(id) as {
     id: number
@@ -503,6 +510,7 @@ export async function continueRun(
     status: string
     cwd: string | null
     repo: string | null
+    base_commit: string | null
     branch_kept: string | null
     branch_kept_tip: string | null
   } | null
@@ -608,6 +616,32 @@ export async function continueRun(
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.id} (turn ${sessionFrom!.turn})`,
     )
   }
+  const writesRepo = Boolean(job(row.job).needs.writesRepo)
+  const recordedTreePresent = writesRepo
+    ? recordedTreeMatches
+    : Boolean(latest.worktree && existsSync(latest.worktree))
+  const readerBase = latest.base_commit ?? row.base_commit
+  const treeDecision = continuationTreeDecision({
+    writesRepo,
+    recordedTreePresent,
+    writerTreeRecoverable: Boolean(treePlan),
+    baseCommit: readerBase,
+    baseCommitAvailable: Boolean(
+      readerBase &&
+        gitContext(rootProject!.path, 'rev-parse', '--verify', `${readerBase}^{commit}`),
+    ),
+  })
+  if (treeDecision.action === 'refuse') {
+    const detail =
+      treeDecision.reason === 'reader-base-missing'
+        ? 'its read-only base commit was not recorded'
+        : treeDecision.reason === 'reader-base-unavailable'
+          ? `its read-only base commit ${readerBase} is unavailable in project ${row.repo}`
+          : 'its writing tree cannot be recreated from a retained tip'
+    throw new Error(
+      `run ${id} cannot be continued: ${detail}; dispatch a new run from the registered project checkout`,
+    )
+  }
   let prompt: string
   if (checkpointContext) {
     const rootPrompt = db().query('SELECT prompt_path FROM run WHERE id=?').get(id) as {
@@ -654,7 +688,7 @@ export async function continueRun(
     return adopted
   })
   const childId = await detach(row.job, prompt, {
-    cwd: treePlan && !recordedTreeMatches ? checkout.projectPath : checkout.cwd,
+    cwd: treeDecision.action === 'inherit-present-tree' ? checkout.cwd : checkout.projectPath,
     repo: row.repo ?? undefined,
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
@@ -665,8 +699,10 @@ export async function continueRun(
       session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),
       turn: nextTurn,
       sessionId: authority.owner,
-      worktree: inheritedResumeWorktree(treePlan, latest, project?.path ?? null),
+      worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),
       treePlan: recreatedTreePlan(treePlan),
+      readOnlyBase:
+        treeDecision.action === 'provision-reader-tree' ? treeDecision.baseCommit : undefined,
     },
   })
   recordContinuationTreeSource(childId, branchSource, treePlan)
