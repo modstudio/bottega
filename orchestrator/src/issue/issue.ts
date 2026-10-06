@@ -470,6 +470,7 @@ async function verifyOrHandbackFix(
         lens: 'issue-blast-radius',
         key: branchKey,
         carry: true,
+        review: fixRun.worktree.branch,
         prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
         label: `issue ${issue.key} blast radius`,
       })
