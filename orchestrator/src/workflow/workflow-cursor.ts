@@ -404,11 +404,7 @@ function getWorkflowStepWithCursorImpl(
   const { opensCursor, composition, requested, index, input } = prepared
   const decision = decideCursorTransition(
     row ? cursorValue(row.ordinal, row.step_slug, row.state) : null,
-    {
-      kind: 'serve',
-      ordinal: index,
-      slug: requested.slug,
-    },
+    { kind: 'serve', ordinal: index, slug: requested.slug },
   )
   refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
