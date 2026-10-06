@@ -1,6 +1,9 @@
 // concern: workflows
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
+type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
+type TrackerStates = Record<string, TrackerStateCategory>
+
 export const floorKinds = [
   'ruling',
   'command-exit',
@@ -90,6 +93,7 @@ export type ValidatedEvidence = {
     status: string | null
     statusCategory: string | null
     mergedPullRequest: boolean
+    trackerStates: TrackerStates
   }
   deferReason?: string
   satisfy?: ValidatedSatisfy
@@ -233,11 +237,28 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   return gateOk || runOk || probeOk || execOk
 }
 
+function normalizedTrackerWord(value: string): string {
+  return value.toLowerCase().replace(/[ -]+/g, '_')
+}
+
+function expectedTrackerCategory(
+  expectedStatus: string,
+  states: TrackerStates,
+): string | undefined {
+  const mapped = states[expectedStatus] ?? states[normalizedTrackerWord(expectedStatus)]
+  return mapped === 'backlog' ? 'open' : mapped
+}
+
 function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const task = evidence.task
+  const expectedCategory = task
+    ? expectedTrackerCategory(floor.expectedStatus, task.trackerStates)
+    : undefined
   if (
     !task ||
-    (task.status !== floor.expectedStatus && task.statusCategory !== floor.expectedStatus)
+    (task.status !== floor.expectedStatus &&
+      task.statusCategory !== floor.expectedStatus &&
+      task.statusCategory !== expectedCategory)
   )
     return false
   return !floor.requirePullRequest || task.mergedPullRequest
@@ -257,8 +278,14 @@ function trackerReadback(task: NonNullable<ValidatedEvidence['task']>): string {
 
 function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   const pullRequest = floor.requirePullRequest ? ' with a merged pull request for the task key' : ''
+  const expectedCategory = evidence.task
+    ? expectedTrackerCategory(floor.expectedStatus, evidence.task.trackerStates)
+    : undefined
+  const expected = expectedCategory
+    ? `${floor.expectedStatus} (category ${expectedCategory})`
+    : floor.expectedStatus
   return evidence.task
-    ? `; ${trackerReadback(evidence.task)}; expected ${floor.expectedStatus}${pullRequest}`
+    ? `; ${trackerReadback(evidence.task)}; expected ${expected}${pullRequest}`
     : ` reading back as ${floor.expectedStatus}${pullRequest}`
 }
 

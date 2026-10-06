@@ -56,7 +56,13 @@ const passingExec: ValidatedEvidence = {
 }
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
 const closedTask: ValidatedEvidence = {
-  task: { key: 'DEV-977', status: 'done', statusCategory: 'closed', mergedPullRequest: true },
+  task: {
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'closed',
+    mergedPullRequest: true,
+    trackerStates: {},
+  },
 }
 
 const decide = (input: Partial<FloorSatisfactionInput> & Pick<FloorSatisfactionInput, 'floors'>) =>
@@ -97,7 +103,13 @@ test('an operator ruling floor requires a bound operator answer', () => {
   }
 
   const reviewCategoryTask: ValidatedEvidence = {
-    task: { key: 'DEV-1', status: 'blocked', statusCategory: 'review', mergedPullRequest: true },
+    task: {
+      key: 'DEV-1',
+      status: 'blocked',
+      statusCategory: 'review',
+      mergedPullRequest: true,
+      trackerStates: {},
+    },
   }
 
   for (const evidence of [{}, agentAnswer, gradedReview, reviewCategoryTask]) {
@@ -307,6 +319,7 @@ test('tracker-transition accepts a category match and requires a merged pull req
           status: 'complete',
           statusCategory: 'done',
           mergedPullRequest: false,
+          trackerStates: {},
         },
       },
     }).action,
@@ -320,6 +333,7 @@ test('tracker-transition accepts a category match and requires a merged pull req
           status: 'complete',
           statusCategory: 'done',
           mergedPullRequest: false,
+          trackerStates: {},
         },
       },
     }).action,
@@ -332,6 +346,7 @@ test('tracker-transition accepts a category match and requires a merged pull req
         status: 'in_progress',
         statusCategory: 'active',
         mergedPullRequest: true,
+        trackerStates: {},
       },
     },
   })
@@ -340,6 +355,93 @@ test('tracker-transition accepts a category match and requires a merged pull req
     expect(refused.message).toContain(
       'ADN-1039 reads back as in_progress (category active); expected done',
     )
+})
+
+const starshipStates = {
+  backlog: 'backlog',
+  unstarted: 'open',
+  started: 'active',
+  completed: 'done',
+  canceled: 'dropped',
+  'In Review': 'review',
+} as const
+const normalizedStates = { in_review: 'review', queued: 'backlog' } as const
+
+test.each([
+  ['active by mapped category', 'In Progress', 'active', 'started', starshipStates],
+  ['done by mapped category', 'Done', 'done', 'completed', starshipStates],
+  ['review by status name', 'In Review', 'review', 'In Review', starshipStates],
+  ['hub tracker by category', 'in_progress', 'active', 'active', {}],
+  ['a normalized mapped word', 'Review', 'review', 'IN-REVIEW', normalizedStates],
+  ['a backlog mapping normalized to open', 'Todo', 'open', 'queued', normalizedStates],
+] as const)(
+  'tracker-transition accepts %s',
+  (_case, status, statusCategory, expectedStatus, trackerStates) => {
+    expect(
+      decide({
+        floors: [{ ...tracker, expectedStatus, requirePullRequest: false }],
+        evidence: {
+          task: {
+            key: 'STAR-4291',
+            status,
+            statusCategory,
+            mergedPullRequest: false,
+            trackerStates,
+          },
+        },
+      }),
+    ).toMatchObject({ action: 'allow' })
+  },
+)
+
+test.each([
+  [
+    'a mapped tracker word',
+    'started',
+    starshipStates,
+    'floor tracker-transition is unmet; pass --task <KEY>; STAR-4291 reads back as Todo (category open); expected started (category active)',
+  ],
+  [
+    'an unmapped tracker word',
+    'triaged',
+    starshipStates,
+    'floor tracker-transition is unmet; pass --task <KEY>; STAR-4291 reads back as Todo (category open); expected triaged',
+  ],
+] as const)(
+  'tracker-transition refuses %s with the compared expectation',
+  (_case, expectedStatus, trackerStates, message) => {
+    expect(
+      decide({
+        floors: [{ ...tracker, expectedStatus, requirePullRequest: false }],
+        evidence: {
+          task: {
+            key: 'STAR-4291',
+            status: 'Todo',
+            statusCategory: 'open',
+            mergedPullRequest: false,
+            trackerStates,
+          },
+        },
+      }),
+    ).toEqual({ action: 'refuse', message })
+  },
+)
+
+test('tracker-transition still requires a merged pull request after a mapped category match', () => {
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'completed', requirePullRequest: true }],
+      evidence: {
+        task: {
+          key: 'STAR-4291',
+          status: 'Done',
+          statusCategory: 'done',
+          mergedPullRequest: false,
+          trackerStates: starshipStates,
+        },
+      },
+    }),
+  ).toMatchObject({ action: 'refuse' })
 })
 
 test('start closes on the active tracker state without a pull request', () => {
@@ -352,6 +454,7 @@ test('start closes on the active tracker state without a pull request', () => {
           status: 'in_progress',
           statusCategory: 'active',
           mergedPullRequest: false,
+          trackerStates: {},
         },
       },
     }),
@@ -368,6 +471,7 @@ test('close refuses without a merged pull request', () => {
           status: 'done',
           statusCategory: 'done',
           mergedPullRequest: false,
+          trackerStates: {},
         },
       },
     }),
@@ -384,6 +488,7 @@ test('a done task does not satisfy start', () => {
           status: 'done',
           statusCategory: 'done',
           mergedPullRequest: false,
+          trackerStates: {},
         },
       },
     }),
