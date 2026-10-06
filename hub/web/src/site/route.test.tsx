@@ -9,6 +9,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { siteHead } from './route.ts'
 
 test('marketing home metadata reaches the document head', async () => {
@@ -37,7 +38,7 @@ test('marketing home metadata reaches the document head', async () => {
   await router.load()
 
   const document = renderToStaticMarkup(<RouterProvider router={router} />)
-  expect(document).toContain(`<title>Bottega</title>`)
+  expect(document).toContain(`<title>${PLATFORM_NAME}</title>`)
   expect(document).toContain(
     '<meta name="description" content="You keep every decision. Workers do the rest.',
   )
