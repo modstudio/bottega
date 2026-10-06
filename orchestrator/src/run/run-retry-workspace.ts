@@ -1,5 +1,5 @@
 // concern: run-retry-workspace
-/** Resolves and validates the retained branch/tree used by a fresh writing retry. */
+/** Resolves and validates the retained or reprovisioned tree used by a fresh retry. */
 
 import { existsSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
@@ -9,10 +9,16 @@ import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { latestCheckpoint } from './checkpoint.ts'
+import {
+  continuationReadOnlyBase,
+  continuationTreeCwd,
+  requireContinuationTree,
+} from './continuation-tree-service.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { runAlive } from './run-alive.ts'
 import { refuseHeldContinuationBranch } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
+import type { RunResumeOptions } from './run-resume-options.ts'
 import { decideWritingRetryWorkspace, type RetryBranchTipRelation } from './run-retry.ts'
 
 export type WritingRetryWorkspace = {
@@ -20,6 +26,48 @@ export type WritingRetryWorkspace = {
   commit: string
   worktree: Worktree | null
   treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
+}
+
+export function resolveRetryTree(input: {
+  rootId: number
+  projectName: string | null
+  projectPath: string | null
+  readsRepo: boolean
+  writesRepo: boolean
+  checkoutCwd: string
+  recordedWorktree: string | null
+  baseCommit: string | null
+  agent: string
+  sessionId: string | null
+}): { cwd: string; resume: RunResumeOptions | undefined } {
+  if (input.writesRepo) return { cwd: input.checkoutCwd, resume: undefined }
+  const decision = requireContinuationTree({
+    rootId: input.rootId,
+    projectName: input.projectName,
+    projectPath: input.projectPath,
+    readsRepo: input.readsRepo,
+    writesRepo: false,
+    recordedTreeMatches: false,
+    recordedWorktree: input.recordedWorktree,
+    writerTreeRecoverable: false,
+    baseCommit: input.baseCommit,
+  })
+  const resume =
+    decision.action === 'provision-reader-tree'
+      ? {
+          kind: 'retry-root' as const,
+          parent: input.rootId,
+          agent: input.agent,
+          turn: 1,
+          sessionId: input.sessionId,
+          worktree: null,
+          readOnlyBase: continuationReadOnlyBase(decision),
+        }
+      : undefined
+  return {
+    cwd: continuationTreeCwd(decision, input.checkoutCwd, input.projectPath),
+    resume,
+  }
 }
 
 function branchTipRelation(

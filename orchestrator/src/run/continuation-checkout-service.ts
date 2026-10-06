@@ -30,3 +30,23 @@ export function requireContinuationCheckout(input: {
   }
   return { cwd: decision.cwd, project }
 }
+
+export function continuationCheckoutForAnswer(input: {
+  rootId: number
+  skipResume: boolean
+  ownersLive: boolean
+  requiresRepo: boolean
+  latestCwd: string | null
+  rootCwd: string | null
+  rootRepo: string | null
+}): ReturnType<typeof requireContinuationCheckout> | null {
+  if (input.skipResume || input.ownersLive) return null
+  return requireContinuationCheckout({
+    rootId: input.rootId,
+    operation: 'answered',
+    requiresRepo: input.requiresRepo,
+    latestCwd: input.latestCwd,
+    rootCwd: input.rootCwd,
+    rootRepo: input.rootRepo,
+  })
+}

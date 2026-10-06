@@ -19,12 +19,10 @@ import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
-import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import {
-  continuationReadOnlyBase,
-  continuationTreeCwd,
-  requireContinuationTree,
-} from './continuation-tree-service.ts'
+  continuationCheckoutForAnswer,
+  requireContinuationCheckout,
+} from './continuation-checkout-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -66,7 +64,7 @@ import {
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
 } from './run-retry.ts'
-import { resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
+import { resolveRetryTree, resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 
 type RunAnswerHelpers = {
@@ -363,19 +361,18 @@ export async function retryRun(
     retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
     return adoptRunMutation(retryAuthority, 'retry')
   })
-  const retryTreeDecision = writesRepo
-    ? null
-    : requireContinuationTree({
-        rootId: row.root_id,
-        projectName: row.repo,
-        projectPath: checkout.project?.path ?? null,
-        readsRepo,
-        writesRepo,
-        recordedTreeMatches: false,
-        recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
-        writerTreeRecoverable: false,
-        baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
-      })
+  const retryTree = resolveRetryTree({
+    rootId: row.root_id,
+    projectName: row.repo,
+    projectPath: checkout.project?.path ?? null,
+    readsRepo,
+    writesRepo,
+    checkoutCwd: checkout.cwd,
+    recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
+    baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
+    agent,
+    sessionId: retryAuthority.owner,
+  })
   // Detached and followed, exactly like `do`. A retry is usually started
   // BECAUSE the first attempt died; running it as a child of this process
   // would leave it dying the same way.
@@ -411,9 +408,7 @@ export async function retryRun(
         lens: row.lens ?? undefined,
         probe: !!row.probe,
         retryOf: id,
-        cwd:
-          workspace?.cwd ??
-          continuationTreeCwd(retryTreeDecision!, checkout.cwd, checkout.project?.path ?? null),
+        cwd: workspace?.cwd ?? retryTree.cwd,
         repo: row.repo ?? undefined,
         seed: row.launch_seed ?? undefined,
         key: row.launch_key ?? undefined,
@@ -452,17 +447,7 @@ export async function retryRun(
               worktree: workspace.worktree,
               treePlan: workspace.treePlan,
             }
-          : retryTreeDecision?.action === 'provision-reader-tree'
-            ? {
-                kind: 'retry-root',
-                parent: row.root_id,
-                agent,
-                turn: 1,
-                sessionId: retryAuthority.owner,
-                worktree: null,
-                readOnlyBase: continuationReadOnlyBase(retryTreeDecision),
-              }
-            : undefined,
+          : retryTree.resume,
       },
       agent,
     )
@@ -771,17 +756,15 @@ export async function answerRun(
     }
   }
 
-  const checkout =
-    !skipResume && !ownersLive
-      ? requireContinuationCheckout({
-          rootId: id,
-          operation: 'answered',
-          requiresRepo: Boolean(job(row.job).needs.readsRepo),
-          latestCwd: latest.cwd,
-          rootCwd: row.cwd,
-          rootRepo: row.repo,
-        })
-      : null
+  const checkout = continuationCheckoutForAnswer({
+    rootId: id,
+    skipResume,
+    ownersLive,
+    requiresRepo: Boolean(job(row.job).needs.readsRepo),
+    latestCwd: latest.cwd,
+    rootCwd: row.cwd,
+    rootRepo: row.repo,
+  })
 
   const now = new Date(Date.now()).toISOString()
   const upd = db().query(
