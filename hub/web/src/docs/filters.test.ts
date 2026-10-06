@@ -2,12 +2,12 @@ import { expect, test } from 'bun:test'
 import {
   activeFilterCount,
   applyFilters,
+  chooserProject,
   clearStaleFilters,
   EMPTY_FILTERS,
   inAudience,
   inProject,
   offeredFilters,
-  chooserProject,
   projectSubjects,
 } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'

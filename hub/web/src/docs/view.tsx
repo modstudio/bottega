@@ -17,7 +17,7 @@ import {
 import type { DocHeading } from './headings.ts'
 import { docsViewModel } from './model.ts'
 import { SearchDialog } from './search.tsx'
-import { treePath } from './tree.ts'
+import { type BreadcrumbPart, treePath } from './tree.ts'
 import type {
   DocsAudience,
   DocsDoc,
@@ -445,7 +445,7 @@ function DocsReading({
   error,
 }: {
   doc: DocsDoc | null
-  crumbs: readonly string[]
+  crumbs: readonly BreadcrumbPart[]
   around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
   onSelect: (item: DocsTreeItem) => void
   localActions?: ReactNode
@@ -463,9 +463,9 @@ function DocsReading({
           {crumbs.length ? (
             <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
               {crumbs.map((crumb, index) => (
-                <span key={`${index}:${crumb}`} className="contents">
+                <span key={crumb.key} className="contents">
                   {index > 0 ? <span>/</span> : null}
-                  <span>{crumb}</span>
+                  <span>{crumb.label}</span>
                 </span>
               ))}
             </div>

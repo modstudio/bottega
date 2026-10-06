@@ -110,10 +110,15 @@ export function groupRootsBySubject(roots: readonly TreeNode[]): DocsTreeGroup[]
   return groups
 }
 
+export type BreadcrumbPart = { key: string; label: string }
+
 /** Docs, then the subject when there is one, then ancestor titles — not the document itself. */
-export function breadcrumb(selected: DocsTreeItem, ancestors: readonly DocsTreeItem[]): string[] {
-  const parts = ['Docs']
-  if (selected.subject) parts.push(selected.subject)
-  for (const ancestor of ancestors) parts.push(ancestor.title)
+export function breadcrumb(
+  selected: DocsTreeItem,
+  ancestors: readonly DocsTreeItem[],
+): BreadcrumbPart[] {
+  const parts: BreadcrumbPart[] = [{ key: 'docs', label: 'Docs' }]
+  if (selected.subject) parts.push({ key: `subject:${selected.subject}`, label: selected.subject })
+  for (const ancestor of ancestors) parts.push({ key: ancestor.id, label: ancestor.title })
   return parts
 }

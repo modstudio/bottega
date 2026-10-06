@@ -77,77 +77,75 @@ export function DocsPage() {
 
   return (
     <>
-    <DocsView
-      items={catalog.items}
-      selectedId={selected?.id ?? null}
-      audience={audience}
-      onAudience={setAudience}
-      project={project}
-      onProject={setProject}
-      signedIn={signedIn}
-      showProjectChooser={signedIn}
-      doc={reading.document}
-      onSelect={open}
-      searchQuery={searchQuery}
-      onSearchQuery={setSearchQuery}
-      searchResults={results.items}
-      framed={hosted && !signedIn}
-      loading={catalog.isPending}
-      error={catalog.error?.message ?? reading.error?.message ?? results.error?.message ?? null}
-      createAction={
-        source === 'local' ? (
-          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-            <Plus size={14} />
-            New doc
-          </Button>
-        ) : null
-      }
-      localActions={
-        source === 'local' && selected ? (
-          <div className="flex shrink-0 gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                void navigate({
-                  to: '/docs/$scope/$subject/$slug',
-                  params: {
-                    scope: selected.scope,
-                    subject: selected.subject ?? '_',
-                    slug: selected.slug,
-                  },
-                  search: { edit: true },
-                })
-              }
-            >
-              <Pencil size={14} />
-              Edit
+      <DocsView
+        items={catalog.items}
+        selectedId={selected?.id ?? null}
+        audience={audience}
+        onAudience={setAudience}
+        project={project}
+        onProject={setProject}
+        signedIn={signedIn}
+        showProjectChooser={signedIn}
+        doc={reading.document}
+        onSelect={open}
+        searchQuery={searchQuery}
+        onSearchQuery={setSearchQuery}
+        searchResults={results.items}
+        framed={hosted && !signedIn}
+        loading={catalog.isPending}
+        error={catalog.error?.message ?? reading.error?.message ?? results.error?.message ?? null}
+        createAction={
+          source === 'local' ? (
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              <Plus size={14} />
+              New doc
             </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                void navigate({
-                  to: '/docs/$scope/$subject/$slug',
-                  params: {
-                    scope: selected.scope,
-                    subject: selected.subject ?? '_',
-                    slug: selected.slug,
-                  },
-                  search: { history: true },
-                })
-              }
-            >
-              <History size={14} />
-              History
-            </Button>
-          </div>
-        ) : null
-      }
-    />
-      {source === 'local' && creating ? (
-        <CreateDocDialog open onOpenChange={setCreating} />
-      ) : null}
+          ) : null
+        }
+        localActions={
+          source === 'local' && selected ? (
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  void navigate({
+                    to: '/docs/$scope/$subject/$slug',
+                    params: {
+                      scope: selected.scope,
+                      subject: selected.subject ?? '_',
+                      slug: selected.slug,
+                    },
+                    search: { edit: true },
+                  })
+                }
+              >
+                <Pencil size={14} />
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  void navigate({
+                    to: '/docs/$scope/$subject/$slug',
+                    params: {
+                      scope: selected.scope,
+                      subject: selected.subject ?? '_',
+                      slug: selected.slug,
+                    },
+                    search: { history: true },
+                  })
+                }
+              >
+                <History size={14} />
+                History
+              </Button>
+            </div>
+          ) : null
+        }
+      />
+      {source === 'local' && creating ? <CreateDocDialog open onOpenChange={setCreating} /> : null}
     </>
   )
 }

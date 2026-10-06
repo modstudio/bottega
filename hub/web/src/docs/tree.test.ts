@@ -77,13 +77,17 @@ test('the tree path includes the document; the breadcrumb does not', () => {
   const tree = buildDocTree([item({ id: 'g', title: 'Getting started' }), child])
   const path = treePath(tree, 'r')
   expect(path.map((node) => node.title)).toEqual(['Getting started', 'Your first run'])
-  expect(breadcrumb(child, path.slice(0, -1))).toEqual(['Docs', 'atlas', 'Getting started'])
+  expect(breadcrumb(child, path.slice(0, -1))).toEqual([
+    { key: 'docs', label: 'Docs' },
+    { key: 'subject:atlas', label: 'atlas' },
+    { key: 'g', label: 'Getting started' },
+  ])
   expect(treePath(tree, 'missing')).toEqual([])
 })
 
 test('a document with no subject omits the subject from the breadcrumb', () => {
   const root = item({ id: 's', title: 'Shared note', subject: null })
-  expect(breadcrumb(root, [])).toEqual(['Docs'])
+  expect(breadcrumb(root, [])).toEqual([{ key: 'docs', label: 'Docs' }])
 })
 
 test('All projects groups roots by subject, Shared last, and does not regroup a single project', () => {

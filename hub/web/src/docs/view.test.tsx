@@ -116,9 +116,20 @@ test('the filter button is absent when documents cannot use a filter', () => {
 })
 
 test('All projects groups roots by subject, and a single project does not', () => {
-  const grouped = render({ project: 'all', selectedId: '1' })
+  const extra: DocsTreeItem = {
+    id: 'shared',
+    slug: 'shared-note',
+    title: 'Shared note',
+    parentId: null,
+    position: 2,
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    scope: 'global',
+    subject: null,
+    audience: 'user',
+  }
+  const grouped = render({ items: [...items, extra], project: 'all', selectedId: '1' })
   expect(grouped).toContain('Shared')
-  const one = render({ project: 'atlas', selectedId: '1' })
+  const one = render({ items: [...items, extra], project: 'atlas', selectedId: '1' })
   expect(one).not.toContain('Shared')
 })
 
