@@ -127,7 +127,7 @@ test('hosted board procedures map record responses to the shared browser contrac
   const status = await caller.status({ id: rootId })
   const posted = await caller.post({
     audience: 'task:DEV-1121',
-    project: 'bottega',
+    project: 'workshop',
     title: 'Notice',
     body: 'Body',
     ackRequired: true,
@@ -157,7 +157,7 @@ test('hosted board procedures map record responses to the shared browser contrac
   expect(calls.find((call) => call.operation === 'post')?.input).toMatchObject({
     id: mintedPostId,
     kind: 'notice',
-    project: 'bottega',
+    project: 'workshop',
     ackDeadline: new Date(now + 10 * 60_000).toISOString(),
     expiresAt: new Date(now + 6 * 3_600_000).toISOString(),
   })

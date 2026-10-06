@@ -126,7 +126,7 @@ describe('record client', () => {
       title: 'Hosted notice',
       body: 'Body',
       expiresAt: '2026-10-07T12:00:00.000Z',
-      project: 'bottega',
+      project: 'workshop',
     })
     await client.boardReply(boardRootId, { id: boardReplyId, body: 'Reply' })
     await client.boardAccept(boardRootId, boardReplyId)
@@ -158,7 +158,7 @@ describe('record client', () => {
           title: 'Hosted notice',
           body: 'Body',
           expiresAt: '2026-10-07T12:00:00.000Z',
-          project: 'bottega',
+          project: 'workshop',
         },
       },
       {
