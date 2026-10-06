@@ -118,9 +118,9 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
       try {
         const [stdout, processResult] = await Promise.all([stdoutTask, p])
         const stderr = processResult.stderr
+        const signal = processResult.signal ?? null
         const exitCode =
-          processResult.exitCode ??
-          (processResult.signal ? 128 + (osConstants.signals[processResult.signal] ?? 0) : 1)
+          processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
         const reply = opts.agent.parseReply?.(stdout)
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
@@ -174,6 +174,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           stopReason,
           error: replyError,
           exitCode,
+          signal,
           pid: p.pid ?? null,
           events,
           asking: false,

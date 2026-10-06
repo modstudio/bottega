@@ -160,6 +160,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-process.ts',
   ]),
   module('orchestrator/src/live-outcome.ts', [
+    '../../shared/secret-shaped.ts',
     './failure/failure.ts',
     './outcome.ts',
     './run/run-process.ts',

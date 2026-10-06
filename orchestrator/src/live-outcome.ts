@@ -1,8 +1,11 @@
 // concern: live-outcome
+import { containsSecretShaped } from '../../shared/secret-shaped.ts'
 import { classify, FAILS_OVER, type FailureKind, isNonAnswer } from './failure/failure.ts'
 import type { OutcomeInputs } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
 import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
+
+const SECRET_SHAPED_STDERR = '[withheld: secret-shaped content]'
 
 export type LiveOutcomeFacts = {
   writesJob: boolean
@@ -26,6 +29,7 @@ export type LiveOutcomeFacts = {
   stderr: string
   stdout: string
   exitCode: number
+  signal: string | null
   sandbox: 'host' | 'srt'
   boundMs: number
   agentName: string
@@ -122,6 +126,50 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   }
 }
 
+export type CompletedReplyEndedFacts = {
+  exitCode: number
+  failoverTerminal: string
+  signal: string | null
+  lastVendorEventType: string | null
+  stderr: string
+}
+
+/** Type of the last stdout JSONL object, including a line the vendor parser ignored. */
+export function lastStdoutJsonlType(stdout: string): string | null {
+  const line =
+    stdout
+      .split('\n')
+      .findLast((candidate) => candidate.trim())
+      ?.trim() ?? ''
+  if (!line.startsWith('{')) return null
+  try {
+    const raw: unknown = JSON.parse(line)
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+    const type = (raw as { type?: unknown }).type
+    return typeof type === 'string' && type ? type : null
+  } catch {
+    return null
+  }
+}
+
+export function composeCompletedReplyEndedError(facts: CompletedReplyEndedFacts): string {
+  const notice =
+    `the worker completed and wrote its reply, then the process ended ` +
+    `(exit ${facts.exitCode}). Its work is in the worktree; resume or read the diff.`
+  const head = facts.failoverTerminal ? `${facts.failoverTerminal}\n${notice}` : notice
+  const lines = [errorTail(head)]
+  const signal = facts.signal?.trim() ?? ''
+  if (signal) lines.push(`signal: ${signal}`)
+  const eventType = facts.lastVendorEventType?.trim() ?? ''
+  if (eventType) lines.push(`last vendor event: ${eventType}`)
+  const stderr = facts.stderr.trim()
+  if (stderr) {
+    const body = containsSecretShaped(stderr) ? SECRET_SHAPED_STDERR : stderr
+    lines.push(`vendor stderr: ${errorTail(body)}`)
+  }
+  return lines.join('\n')
+}
+
 function withVendorStderrTail(facts: LiveOutcomeFacts, error: string | null): string | null {
   if (facts.exitCode === 0 || facts.stdout.trim()) return error
   const prefix = facts.stderr.trim() ? errorTail(facts.stderr) : ''
@@ -133,6 +181,16 @@ function withVendorStderrTail(facts: LiveOutcomeFacts, error: string | null): st
 
 function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): string | null {
   const { inputs } = calculated
+  const completedReplyEndedError = () =>
+    composeCompletedReplyEndedError({
+      exitCode: facts.exitCode,
+      failoverTerminal: FAILS_OVER.includes(inputs.completedContractFailureKind)
+        ? calculated.completedContractTerminal
+        : '',
+      signal: facts.signal,
+      lastVendorEventType: lastStdoutJsonlType(facts.stdout),
+      stderr: facts.stderr,
+    })
   const rules: Array<[boolean, () => string | null]> = [
     [facts.idleKilled && inputs.completedReply, () => null],
     [facts.idleKilled && (facts.collectedAsking || facts.acceptedQuestions), () => null],
@@ -155,17 +213,7 @@ function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): st
     [Boolean(facts.replyError), () => errorTail(facts.replyError!)],
     [inputs.nonAnswer, () => errorTail(facts.output)],
     [facts.contractStatus === 'refused', () => null],
-    [
-      facts.exitCode !== 0 && facts.contractStatus === 'done',
-      () =>
-        errorTail(
-          (FAILS_OVER.includes(inputs.completedContractFailureKind)
-            ? `${calculated.completedContractTerminal}\n`
-            : '') +
-            `the worker completed and wrote its reply, then the process ended ` +
-            `(exit ${facts.exitCode}). Its work is in the worktree; resume or read the diff.`,
-        ),
-    ],
+    [facts.exitCode !== 0 && facts.contractStatus === 'done', completedReplyEndedError],
     [
       inputs.missingRequiredContract,
       () =>
@@ -180,6 +228,7 @@ function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): st
     : facts.exitCode === 0 && facts.output
       ? null
       : calculated.defaultError
+  if (matched?.[1] === completedReplyEndedError) return error
   return withVendorStderrTail(facts, error)
 }
 

@@ -170,6 +170,8 @@ export type TransportResult = {
   stopReason: string | null
   error: string | null
   exitCode: number
+  /** POSIX signal name when the child died by signal. */
+  signal?: string | null
   pid: number | null
   events: NormalizedEvent[]
   asking: boolean

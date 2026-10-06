@@ -745,6 +745,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       stderr,
       stdout,
       exitCode,
+      signal: collected.signal ?? null,
       sandbox: sandboxSelection.sandbox,
       boundMs,
       agentName: name,
