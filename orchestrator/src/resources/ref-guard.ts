@@ -20,11 +20,11 @@ import {
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-environment.ts'
 import { ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
 import { resolveRefGuardHook } from './ref-guard-runtime.ts'
+import { installWorkerHooks } from './worker-hooks.ts'
 
 export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string
@@ -37,13 +37,6 @@ export type SharedRefGuardEnvironment = {
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 const REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'
-const WORKER_PRE_PUSH =
-  '#!/bin/sh\necho "workers never push; the architect pushes after review" >&2\nexit 1\n'
-
-function workerCommitMsg(): string {
-  const checker = bottegaEntryArgv('check-attribution').map(shellQuote).join(' ')
-  return `#!/bin/sh\nexec ${checker} "$1"\n`
-}
 
 function sharedRefGuardWrapper(hookDir: string, guard: string, original: string): string {
   const guardMarker = Buffer.from(guard).toString('base64')
@@ -237,40 +230,8 @@ function verifiedSharedRefGuardEnvironment(
   if (!verified?.executable) {
     throw new Error(`refusing to expose unverified shared ref guard hooks path: ${hookDir}`)
   }
-  installWorkerHook(hookDir, 'pre-push', WORKER_PRE_PUSH)
-  installWorkerHook(hookDir, 'commit-msg', workerCommitMsg())
+  installWorkerHooks(hookDir)
   return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
-}
-
-function verifiedWorkerHook(installed: string, content: string): boolean {
-  if (!pathEntryExists(installed)) return false
-  try {
-    accessSync(installed, constants.X_OK)
-    return readFileSync(installed, 'utf8') === content
-  } catch {
-    return false
-  }
-}
-
-function installWorkerHook(hookDir: string, name: string, content: string): void {
-  const installed = join(hookDir, name)
-  if (pathEntryExists(installed)) {
-    if (verifiedWorkerHook(installed, content)) return
-    throw new Error(`refusing to replace unrecognized worker ${name} hook ${installed}`)
-  }
-  let fd: number | null = null
-  try {
-    fd = openSync(installed, 'wx', 0o600)
-    writeFileSync(fd, content)
-    fchmodSync(fd, 0o755)
-    fsyncSync(fd)
-    closeSync(fd)
-    fd = null
-  } catch (error) {
-    if (fd !== null) closeSync(fd)
-    if (verifiedWorkerHook(installed, content)) return
-    throw error
-  }
 }
 
 function refGuardPaths(cwd: string, readonlyRepoRoot?: string): { commonDir: string } {

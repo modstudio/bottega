@@ -472,17 +472,18 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
-    '../../../shared/self-spawn.ts',
     '../../../shared/process-identity.ts',
     '../worktree/worktree-attribution.ts',
     '../git/git-environment.ts',
     './ref-guard-runtime.ts',
+    './worker-hooks.ts',
   ]),
   module('orchestrator/src/resources/ref-guard-runtime.ts', [
     '../../../shared/embedded-assets.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',
   ]),
+  module('orchestrator/src/resources/worker-hooks.ts', ['../../../shared/self-spawn.ts']),
   module('orchestrator/src/reclaim/reclaim-residue-policy.ts', []),
   module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
