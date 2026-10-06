@@ -2,7 +2,6 @@
 /** Owns cursor-local text attachments and the pure decisions governing their lifetime. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
-import type { WorkflowFactSource } from '../project/project-injection.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -71,7 +70,7 @@ export function attachedTextReferenceMeetsFloor(input: {
 }
 
 export function workflowTextFacts(
-  needs: readonly WorkflowFactSource[],
+  needs: readonly string[],
   rows: readonly WorkflowTextRow[],
 ): { workflowText: { stepSlug: string; body: string }[] } | Record<string, never> {
   if (!needs.includes('workflow-text')) return {}
@@ -79,6 +78,15 @@ export function workflowTextFacts(
     workflowText: [...rows]
       .sort((left, right) => left.stepOrdinal - right.stepOrdinal || left.id - right.id)
       .map(({ stepSlug, body }) => ({ stepSlug, body })),
+  }
+}
+
+export function withWorkflowTextFacts<
+  Step extends { needs: readonly string[]; facts: Record<string, unknown> },
+>(step: Step, cursorId: number, d: Database): Step {
+  return {
+    ...step,
+    facts: { ...step.facts, ...workflowTextFacts(step.needs, workflowTextRows(cursorId, d)) },
   }
 }
 

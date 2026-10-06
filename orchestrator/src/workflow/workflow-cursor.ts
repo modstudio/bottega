@@ -15,8 +15,10 @@ import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import {
+  cursorName,
   formatCursorOpened,
   formatCursorResumed,
+  shellWord,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
 import {
@@ -33,7 +35,7 @@ import {
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
-  type CursorValue,
+  cursorValue,
   decideCursorStart,
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
@@ -54,10 +56,8 @@ import {
 } from './workflow-floor-evidence.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { deleteWorkflowText, workflowTextFacts, workflowTextRows } from './workflow-text.ts'
+import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
-
-export type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 
 type CursorRow = SelectableCursorRow & {
   workflow_version: number
@@ -78,30 +78,6 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
   instance: MCP_INSTANCE,
 })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
-
-const instanceOf = (key: string): string => (key ? '' : randomUUID())
-const shellWord = (value: string) =>
-  /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
-const cursorName = (slug: string, mode: string, key: string, capitalized = false) =>
-  `${capitalized ? 'Workflow' : 'workflow'} ${slug}${key ? ` for ${key}` : ` (${mode})`}`
-
-const cursorValue = (row: CursorRow): CursorValue => ({
-  ordinal: row.ordinal,
-  stepSlug: row.step_slug,
-  state: row.state,
-})
-
-function withWorkflowTextFacts<
-  Step extends {
-    needs: readonly import('../project/project-injection.ts').WorkflowFactSource[]
-    facts: Record<string, unknown>
-  },
->(step: Step, cursorId: number, d: Database): Step {
-  return {
-    ...step,
-    facts: { ...step.facts, ...workflowTextFacts(step.needs, workflowTextRows(cursorId, d)) },
-  }
-}
 
 function closeOpenWorkflowQuestion(
   cursorId: number,
@@ -153,7 +129,7 @@ function insertCursor(
   autonomy?: AutonomyResolution,
 ): CursorRow {
   const key = keyOf(composition.arguments)
-  const instance = instanceOf(key)
+  const instance = key ? '' : randomUUID()
   const at = nowIso()
   const existing = key
     ? findCursor(
@@ -426,11 +402,14 @@ function getWorkflowStepWithCursorImpl(
   )
   let { row } = prepared
   const { opensCursor, composition, requested, index, input } = prepared
-  const decision = decideCursorTransition(row ? cursorValue(row) : null, {
-    kind: 'serve',
-    ordinal: index,
-    slug: requested.slug,
-  })
+  const decision = decideCursorTransition(
+    row ? cursorValue(row.ordinal, row.step_slug, row.state) : null,
+    {
+      kind: 'serve',
+      ordinal: index,
+      slug: requested.slug,
+    },
+  )
   refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = insertCursor(composition, context, d, autonomy)
@@ -653,7 +632,7 @@ function nextWorkflowStepImpl(
   }
   const composition = cursorComposition(row, d)
   const next = composition.steps[row.ordinal + 1] ?? null
-  const decision = decideCursorTransition(cursorValue(row), {
+  const decision = decideCursorTransition(cursorValue(row.ordinal, row.step_slug, row.state), {
     kind: 'next',
     total: composition.steps.length,
     nextSlug: next?.slug ?? null,
