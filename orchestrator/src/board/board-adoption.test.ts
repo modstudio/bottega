@@ -23,14 +23,29 @@ import { askQuestion, replyToThread } from './board-thread-service.ts'
 const NOW = Date.parse('2026-10-05T12:00:00.000Z')
 const ENV = { CLAUDE_CODE_SESSION_ID: 'reader', ORCH_RECORD_API_URL: 'https://record.test' }
 
-function presence() {
+function presence(session = 'reader', lastSeen = NOW) {
   db()
     .query(
       `INSERT INTO presence
        (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('reader','claude','architect','machine',?,'/tmp',NULL,?,?)`,
+       VALUES (?,'claude','architect','machine',?,'/tmp',NULL,?,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(NOW - 1_000).toISOString(), new Date(NOW).toISOString())
+    .run(
+      session,
+      PLATFORM_SLUG,
+      new Date(lastSeen - 1_000).toISOString(),
+      new Date(lastSeen).toISOString(),
+    )
+}
+
+function receipt(messageId: number, reader: string) {
+  db()
+    .query(
+      `INSERT OR REPLACE INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,1,?,NULL)`,
+    )
+    .run(messageId, reader, new Date(NOW).toISOString())
 }
 
 function claim(runId: number | null = null) {
@@ -586,6 +601,172 @@ test('a receipt network failure stops adoption with its mark unset', async () =>
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
   ).toBeNull()
+})
+
+test('the plan and upload include only receipts for readers that are still around', async () => {
+  presence('live-reader')
+  const finishedRun = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES (?,'codex','implement','sha',1,'prompt','ok',1) RETURNING id`,
+    )
+    .get(new Date(NOW - 1_000).toISOString()) as { id: number }
+  const notice = postNotice(
+    { audience: 'session:live-reader', title: 'reader liveness', body: 'receipt' },
+    {},
+    NOW,
+  )
+  receipt(notice.id, 'live-reader')
+  receipt(notice.id, 'long-gone-reader')
+  receipt(notice.id, `run:${finishedRun.id}`)
+  const readers: string[] = []
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async putBoardReceipt(input) {
+      readers.push(input.readerSession)
+      return base.putBoardReceipt(input)
+    },
+  }
+
+  const plan = await adoptHostedBoard({ clock: () => NOW, client })
+  expect(plan).toMatchObject({ status: 'plan', total: 1, receipts: 1 })
+  expect(plan.note).toContain('Hosted reach counts readers from adoption onward.')
+  await adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
+
+  expect(readers).toEqual(['live-reader'])
+})
+
+test('a receipt network failure resumes after recorded successes and sends only the remainder', async () => {
+  for (const reader of ['resume-a', 'resume-b', 'resume-c']) presence(reader)
+  const notice = postNotice(
+    { audience: 'session:resume-a', title: 'resumable receipts', body: 'receipt' },
+    {},
+    NOW,
+  )
+  for (const reader of ['resume-a', 'resume-b', 'resume-c']) receipt(notice.id, reader)
+  const firstRequests: string[] = []
+  const base = capturingClient([]).client
+  const failingClient: RecordApiClient = {
+    ...base,
+    async putBoardReceipt(input) {
+      firstRequests.push(input.readerSession)
+      if (input.readerSession === 'resume-b')
+        throw new RecordApiRequestError('record API 500', 'unreachable')
+      return base.putBoardReceipt(input)
+    },
+  }
+
+  await expect(
+    adoptHostedBoard({ confirm: 1, clock: () => NOW, client: failingClient }),
+  ).rejects.toThrow('record API 500')
+  expect(firstRequests).toEqual(['resume-a', 'resume-b'])
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toBeNull()
+
+  const resumedRequests: string[] = []
+  const resumedClient: RecordApiClient = {
+    ...base,
+    async putBoardReceipt(input) {
+      resumedRequests.push(input.readerSession)
+      return base.putBoardReceipt(input)
+    },
+  }
+  const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW + 1, client: resumedClient })
+
+  expect(resumedRequests).toEqual(['resume-b', 'resume-c'])
+  expect(result.status).toBe('adopted')
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toEqual({ value: '1' })
+})
+
+test('an install with uploaded message ledger rows and no receipt ledger completes with the same confirmation', async () => {
+  presence('stuck-reader')
+  for (let index = 0; index < 6; index++) {
+    const notice = postNotice(
+      {
+        audience: 'session:stuck-reader',
+        title: `stuck ${index}`,
+        body: 'receipt',
+      },
+      {},
+      NOW + index,
+    )
+    const hostedId = `01990000-0000-7000-8000-00000000010${index}`
+    db()
+      .query(
+        `INSERT INTO board_hosted_adoption_ledger
+         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at)
+         VALUES ('notice',?,?,'uploaded',NULL,?,?)`,
+      )
+      .run(notice.id, hostedId, new Date(NOW).toISOString(), new Date(NOW).toISOString())
+    db()
+      .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
+      .run(new Date(NOW + 10).toISOString(), notice.id)
+    receipt(notice.id, 'stuck-reader')
+  }
+  const calls: string[] = []
+  const client = capturingClient(calls).client
+
+  const result = await adoptHostedBoard({ confirm: 6, clock: () => NOW + 20, client })
+
+  expect(result.status).toBe('adopted')
+  expect(calls.filter((call) => call.startsWith('post:'))).toEqual([])
+  expect(calls.filter((call) => call === 'receipt')).toHaveLength(6)
+  expect(db().query('SELECT count(*) count FROM board_hosted_adoption_receipt').get()).toEqual({
+    count: 6,
+  })
+})
+
+test('a refused receipt is recorded as skipped and is not sent again on a rerun', async () => {
+  presence('refused-a')
+  presence('refused-b')
+  const notice = postNotice(
+    { audience: 'session:refused-a', title: 'refused receipt', body: 'receipt' },
+    {},
+    NOW,
+  )
+  receipt(notice.id, 'refused-a')
+  receipt(notice.id, 'refused-b')
+  const firstRequests: string[] = []
+  const base = capturingClient([]).client
+  const firstClient: RecordApiClient = {
+    ...base,
+    async putBoardReceipt(input) {
+      firstRequests.push(input.readerSession)
+      if (input.readerSession === 'refused-a')
+        throw new RecordApiRequestError('receipt is no longer visible', 'refused')
+      throw new RecordApiRequestError('record API 500', 'unreachable')
+    },
+  }
+
+  await expect(
+    adoptHostedBoard({ confirm: 1, clock: () => NOW, client: firstClient }),
+  ).rejects.toThrow('record API 500')
+  expect(firstRequests).toEqual(['refused-a', 'refused-b'])
+  expect(
+    db()
+      .query(
+        'SELECT state,refusal FROM board_hosted_adoption_receipt WHERE local_message_id=? AND reader_session=?',
+      )
+      .get(notice.id, 'refused-a'),
+  ).toEqual({ state: 'skipped', refusal: 'receipt is no longer visible' })
+
+  const resumedRequests: string[] = []
+  const resumedClient: RecordApiClient = {
+    ...base,
+    async putBoardReceipt(input) {
+      resumedRequests.push(input.readerSession)
+      return base.putBoardReceipt(input)
+    },
+  }
+  const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW + 1, client: resumedClient })
+
+  expect(resumedRequests).toEqual(['refused-b'])
+  expect(result).toMatchObject({ status: 'adopted', skippedReceipts: 0 })
 })
 
 test('records a hosted claim conflict as a lasting refusal and still adopts', async () => {

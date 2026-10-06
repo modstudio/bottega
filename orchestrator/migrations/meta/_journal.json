@@ -596,6 +596,13 @@
       "when": 1790884800012,
       "tag": "0084_main_stack_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "6",
+      "when": 1790884800013,
+      "tag": "0085_board_hosted_adoption_receipts",
+      "breakpoints": true
     }
   ]
 }
