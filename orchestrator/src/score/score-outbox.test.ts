@@ -6,6 +6,7 @@ import {
   backfillScoreRecords,
   buildScoreRecordPayload,
   enqueueScoreRecord,
+  reviewGradesForVerdict,
   SCORE_RECORD_PAYLOAD_COLUMNS,
 } from './score-outbox.ts'
 
@@ -32,6 +33,34 @@ function scoredRun(recordId: string | null = RECORD_ID): Database {
     .run(STAMP)
   return database
 }
+
+const STORED_GRADES = {
+  reproduced: 'all' as const,
+  coverage: 'adequate' as const,
+  limits: 'named' as const,
+  overlap: 'alone' as const,
+}
+
+test('delivery none omits stored review grades', () => {
+  expect(reviewGradesForVerdict('none', STORED_GRADES)).toEqual({
+    reproduced: null,
+    coverage: null,
+    limits: null,
+    overlap: null,
+  })
+})
+
+test.each(['partial', 'full'] as const)(
+  'delivery %s preserves stored review grades',
+  (delivery) => {
+    expect(reviewGradesForVerdict(delivery, STORED_GRADES)).toEqual(STORED_GRADES)
+  },
+)
+
+test('a verdict without a lens remains without review grades', () => {
+  const absent = { reproduced: null, coverage: null, limits: null, overlap: null }
+  expect(reviewGradesForVerdict('full', absent)).toEqual(absent)
+})
 
 test('score payload maps every hosted verdict field', () => {
   const payload = sanitizeOutboxPayload(
