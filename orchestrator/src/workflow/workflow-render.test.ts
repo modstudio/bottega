@@ -182,11 +182,19 @@ describe('workflow rendering', () => {
   test('an ask step relaxed to auto names its recording and escalation duties', () => {
     const d = database()
     const rendered = renderWorkflowStep(
-      getWorkflowStep('ship', 'fixture', 'ship-triage', args, d, { mode: 'default' }, {
-        steps: { 'ship-triage': { value: 'auto', scope: 'test' } },
-        rulings: { value: 'agent', scope: 'test' },
-        shipTo: { value: 'trunk', scope: 'test' },
-      }),
+      getWorkflowStep(
+        'ship',
+        'fixture',
+        'ship-triage',
+        args,
+        d,
+        { mode: 'default' },
+        {
+          steps: { 'ship-triage': { value: 'auto', scope: 'test' } },
+          rulings: { value: 'agent', scope: 'test' },
+          shipTo: { value: 'trunk', scope: 'test' },
+        },
+      ),
     )
 
     expect(rendered).toContain(
