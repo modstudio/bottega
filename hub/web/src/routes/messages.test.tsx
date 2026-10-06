@@ -19,7 +19,7 @@ test('messages render notice reach and question replies from the preloaded list'
         id: '1',
         kind: 'notice',
         title: 'Release notice',
-        audience: 'project:bottega',
+        audience: 'project:workshop',
         origin,
         senderTags: [],
         createdAt: '2026-10-05T12:00:00.000Z',

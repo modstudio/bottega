@@ -33,6 +33,109 @@ type Receipt = {
   acknowledgedAt: string | null
 }
 
+function MessageReceipts({
+  root,
+  receipts,
+  unacknowledged,
+}: {
+  root: Message
+  receipts: Receipt[]
+  unacknowledged: string[]
+}) {
+  return (
+    <FieldSection title="Receipts">
+      {receipts.length ? (
+        <ul className="grid gap-2">
+          {receipts.map((receipt) => (
+            <li key={receipt.readerSession}>
+              <strong>{receipt.readerSession}</strong> · delivered {timestamp(receipt.deliveredAt)}{' '}
+              · acknowledged {timestamp(receipt.acknowledgedAt)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-text-muted">This message reached no session.</p>
+      )}
+      {root.kind === 'notice' && root.ackRequired && unacknowledged.length ? (
+        <p>
+          <strong>Not acknowledged:</strong> {unacknowledged.join(', ')}
+        </p>
+      ) : null}
+    </FieldSection>
+  )
+}
+
+function MessageReplies({
+  root,
+  replies,
+  replyBody,
+  replyPending,
+  acceptPending,
+  onReplyBody,
+  onReply,
+  onAccept,
+}: {
+  root: Message
+  replies: Reply[]
+  replyBody: string
+  replyPending: boolean
+  acceptPending: boolean
+  onReplyBody: (value: string) => void
+  onReply: () => void
+  onAccept: (replyId: string) => void
+}) {
+  return (
+    <FieldSection title="Replies">
+      {replies.length ? (
+        <ol className="grid gap-4">
+          {replies.map((item) => (
+            <li key={item.id} className="border-border-subtle border-b pb-4 last:border-b-0">
+              <p className="text-sm text-text-muted">
+                {originText(item.origin)} · {timestamp(item.createdAt)}
+              </p>
+              <blockquote className="mt-2 border-border-strong border-l-2 pl-3">
+                <pre className="whitespace-pre-wrap font-sans">{item.body}</pre>
+              </blockquote>
+              {root.kind === 'question' && !root.acceptedReplyId ? (
+                <Button
+                  className="mt-3"
+                  size="sm"
+                  disabled={acceptPending}
+                  onClick={() => onAccept(item.id)}
+                >
+                  Accept this answer
+                </Button>
+              ) : root.acceptedReplyId === item.id ? (
+                <Badge tone="success">Accepted answer</Badge>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-text-muted">No replies yet.</p>
+      )}
+      {root.kind === 'question' ? (
+        <div className="grid gap-2">
+          <Textarea
+            aria-label="Reply"
+            placeholder="Write a reply"
+            value={replyBody}
+            onChange={(event) => onReplyBody(event.target.value)}
+          />
+          <Button
+            className="justify-self-start"
+            variant="primary"
+            disabled={replyPending || !replyBody.trim()}
+            onClick={onReply}
+          >
+            {replyPending ? 'Replying...' : 'Reply'}
+          </Button>
+        </div>
+      ) : null}
+    </FieldSection>
+  )
+}
+
 export const Route = createFileRoute('/messages/$id')({ component: MessageDetailRoute })
 
 function timestamp(value: string | null) {
@@ -125,73 +228,21 @@ function LocalMessageDetail() {
           <pre className="whitespace-pre-wrap font-sans">{root.body ?? ''}</pre>
         </blockquote>
       </FieldSection>
-      <FieldSection title="Receipts">
-        {receipts.length ? (
-          <ul className="grid gap-2">
-            {receipts.map((receipt) => (
-              <li key={receipt.readerSession}>
-                <strong>{receipt.readerSession}</strong> · delivered{' '}
-                {timestamp(receipt.deliveredAt)} · acknowledged {timestamp(receipt.acknowledgedAt)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-text-muted">This message reached no session.</p>
-        )}
-        {root.kind === 'notice' && root.ackRequired && status.data?.unacknowledged?.length ? (
-          <p>
-            <strong>Not acknowledged:</strong> {status.data.unacknowledged.join(', ')}
-          </p>
-        ) : null}
-      </FieldSection>
-      <FieldSection title="Replies">
-        {replies.length ? (
-          <ol className="grid gap-4">
-            {replies.map((item) => (
-              <li key={item.id} className="border-border-subtle border-b pb-4 last:border-b-0">
-                <p className="text-sm text-text-muted">
-                  {originText(item.origin)} · {timestamp(item.createdAt)}
-                </p>
-                <blockquote className="mt-2 border-border-strong border-l-2 pl-3">
-                  <pre className="whitespace-pre-wrap font-sans">{item.body}</pre>
-                </blockquote>
-                {root.kind === 'question' && !root.acceptedReplyId ? (
-                  <Button
-                    className="mt-3"
-                    size="sm"
-                    disabled={accept.isPending}
-                    onClick={() => accept.mutate({ questionId: id, replyId: item.id })}
-                  >
-                    Accept this answer
-                  </Button>
-                ) : root.acceptedReplyId === item.id ? (
-                  <Badge tone="success">Accepted answer</Badge>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="text-text-muted">No replies yet.</p>
-        )}
-        {root.kind === 'question' ? (
-          <div className="grid gap-2">
-            <Textarea
-              aria-label="Reply"
-              placeholder="Write a reply"
-              value={replyBody}
-              onChange={(event) => setReplyBody(event.target.value)}
-            />
-            <Button
-              className="justify-self-start"
-              variant="primary"
-              disabled={reply.isPending || !replyBody.trim()}
-              onClick={() => reply.mutate({ id, body: replyBody })}
-            >
-              {reply.isPending ? 'Replying...' : 'Reply'}
-            </Button>
-          </div>
-        ) : null}
-      </FieldSection>
+      <MessageReceipts
+        root={root}
+        receipts={receipts}
+        unacknowledged={status.data?.unacknowledged ?? []}
+      />
+      <MessageReplies
+        root={root}
+        replies={replies}
+        replyBody={replyBody}
+        replyPending={reply.isPending}
+        acceptPending={accept.isPending}
+        onReplyBody={setReplyBody}
+        onReply={() => reply.mutate({ id, body: replyBody })}
+        onAccept={(replyId) => accept.mutate({ questionId: id, replyId })}
+      />
       {actionError ? (
         <p data-tone="error" className="mt-3 text-status-text">
           {actionError.message}

@@ -92,7 +92,7 @@ function responseText(row: MessageRow) {
   return `${row.replyCount ?? 0} ${row.replyCount === 1 ? 'reply' : 'replies'} · ${row.acceptedReplyId ? 'answer accepted' : 'no answer accepted'}`
 }
 
-export function MessagesList({
+function MessagesList({
   rows,
   warning,
   selectedId,
@@ -164,7 +164,7 @@ export function MessagesList({
   )
 }
 
-export function LocalMessagesPage() {
+function LocalMessagesPage() {
   const navigate = useNavigate()
   const panel = useDetailPanel()
   const selectedId = useParams({ strict: false }).id
