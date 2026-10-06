@@ -30,7 +30,13 @@ export function resultCommand(
   scoreSuffix: (jobName: string) => string,
   presentation: Presentation,
 ): void {
-  collectResult(database, argv, scoreSuffix, presentation)
+  collectResult(
+    database,
+    argv,
+    scoreSuffix,
+    presentation,
+    (jobName) => !isSyntheticLifecycleJob(jobName) && Boolean(job(jobName).needs.writesRepo),
+  )
   const chain = resolveFailover(database, Number(argv[1]))
   const row = database
     .query('SELECT job, status, latency_ms, probe, output_path FROM run WHERE id=?')
