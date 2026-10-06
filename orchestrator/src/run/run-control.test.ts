@@ -7,6 +7,7 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { packedResumePrompt } from './run.ts'
 import {
@@ -24,15 +25,17 @@ function insert(status: string, job = 'file-question'): number {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
-     VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
+        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
+                         repo, cwd, worktree)
+     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
       )
-      .get(new Date().toISOString(), job, status) as { id: number }
+      .get(new Date().toISOString(), job, status, dir, dir) as { id: number }
   ).id
 }
 
 const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
+  upsertProject({ name: 'continuation-fixture', path: dir })
   priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
@@ -142,6 +145,7 @@ describe('run continuation', () => {
       job: 'implement',
       status: 'failed',
       session: 'orch-test-session',
+      repo: 'continuation-fixture',
     })
 
     await expect(continueRun(root, undefined, limit)).rejects.toThrow(
@@ -202,6 +206,7 @@ describe('run continuation', () => {
       job: 'file-question',
       status: 'failed',
       session: 'orch-test-session',
+      repo: 'continuation-fixture',
     })
     const prior = addRun({
       agent: 'codex',
@@ -212,8 +217,8 @@ describe('run continuation', () => {
       session: 'orch-test-session',
     })
     db()
-      .query('UPDATE run SET vendor_session=? WHERE id IN (?,?)')
-      .run('vendor-session', root, prior)
+      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE id IN (?,?)')
+      .run('vendor-session', dir, dir, root, prior)
 
     const resumed = await continueRun(root, 'vendor-session message', limit)
     const artifact = db().query('SELECT prompt_path FROM run WHERE id=?').get(resumed.childId) as {
@@ -222,5 +227,35 @@ describe('run continuation', () => {
 
     trackResidue(artifact.prompt_path)
     expect(readFileSync(artifact.prompt_path, 'utf8')).toBe('vendor-session message')
+  })
+
+  test('a released reader with an unavailable base refuses before creating a turn', async () => {
+    const root = insert('ok')
+    db()
+      .query('UPDATE run SET vendor_session=?,worktree=NULL,base_commit=? WHERE id=?')
+      .run('vendor-session', 'missing-reader-base', root)
+
+    await expect(continueRun(root, 'deliver queued messages', limit)).rejects.toThrow(
+      'read-only base commit missing-reader-base is unavailable',
+    )
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root)).toEqual({
+      n: 0,
+    })
+  })
+
+  test('a repository-free continuation needs neither a project nor a reader base', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'summarize',
+      status: 'ok',
+      session: 'orch-test-session',
+    })
+    db()
+      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=NULL,base_commit=NULL WHERE id=?')
+      .run('vendor-session', dir, root)
+
+    const resumed = await continueRun(root, 'summarize one more thing', limit)
+
+    expect(resumed).toEqual({ childId: expect.any(Number), job: 'summarize' })
   })
 })

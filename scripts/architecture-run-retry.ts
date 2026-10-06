@@ -19,14 +19,15 @@ export const runRetryModuleSpecs = [
       '../worktree/worktree-types.ts',
       './branch-owner-guard.ts',
       './checkpoint.ts',
+      './continuation-tree-service.ts',
       './resume-tree.ts',
       './run-retry.ts',
       './run-alive.ts',
       './run-control.ts',
       './run-lease.ts',
     ],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['./run-resume-options.ts'],
     reason:
-      'Keep writing-retry workspace resolution independent of contracts, transports, routing, reviews, and the CLI.',
+      'Keep retry workspace resolution independent of contracts, transports, routing, reviews, and the CLI.',
   },
 ] as const

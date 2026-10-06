@@ -19,6 +19,10 @@ import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
+import {
+  continuationCheckoutForAnswer,
+  requireContinuationCheckout,
+} from './continuation-checkout-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -60,7 +64,7 @@ import {
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
 } from './run-retry.ts'
-import { resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
+import { resolveRetryTree, resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 
 type RunAnswerHelpers = {
@@ -227,12 +231,16 @@ export async function retryRun(
   let retryAuthority = authorizeRunMutation(id, 'retry')
   const row = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
-          probe, status, failure_kind, mcp, mcp_error,
-          schema_path, model, lens, launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-          keep_tree, keep_tree_until, keep_tree_reason, started_at, repo, project_id,
-          branch_kept, branch_kept_tip
-     FROM run WHERE id = ?`,
+      `SELECT requested.id, COALESCE(requested.parent_run_id,requested.id) root_id,
+          requested.agent, requested.job, requested.cwd, requested.prompt_path,
+          requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
+          requested.schema_path, requested.model, requested.lens, requested.launch_cwd,
+          requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
+          requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
+          requested.started_at, root.repo, root.project_id, root.cwd root_cwd,
+          root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip
+     FROM run requested JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
+     WHERE requested.id = ?`,
     )
     .get(id) as {
     id: number
@@ -240,6 +248,8 @@ export async function retryRun(
     agent: string
     job: string
     cwd: string | null
+    root_cwd: string | null
+    root_base_commit: string | null
     prompt_path: string | null
     probe: number
     status: string
@@ -278,6 +288,7 @@ export async function retryRun(
     )
     .all(row.root_id, row.root_id) as { id: number; question: string; answer: string }[]
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
+  const readsRepo = Boolean(job(row.job).needs.readsRepo)
   const agent = options.agent ?? row.agent
   const preliminaryPath = decideRetryConversation({
     writesRepo,
@@ -303,6 +314,24 @@ export async function retryRun(
     )
   }
   const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
+  const latestCheckout = db()
+    .query(
+      `SELECT cwd,worktree,base_commit FROM run
+       WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+    )
+    .get(row.root_id, row.root_id) as {
+    cwd: string | null
+    worktree: string | null
+    base_commit: string | null
+  }
+  const checkout = requireContinuationCheckout({
+    rootId: row.root_id,
+    operation: 'retried',
+    requiresRepo: readsRepo,
+    latestCwd: latestCheckout.cwd,
+    rootCwd: row.root_cwd,
+    rootRepo: row.repo,
+  })
   const continuationInstructions = continuationInstructionsForFreshRetry(
     writesRepo,
     id,
@@ -315,7 +344,6 @@ export async function retryRun(
         id,
         rootId: row.root_id,
         job: row.job,
-        launchCwd: row.launch_cwd,
         launchKey: row.launch_key,
         repo: row.repo,
         projectId: row.project_id,
@@ -332,6 +360,18 @@ export async function retryRun(
   retryAuthority = writeTransaction(() => {
     retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
     return adoptRunMutation(retryAuthority, 'retry')
+  })
+  const retryTree = resolveRetryTree({
+    rootId: row.root_id,
+    projectName: row.repo,
+    projectPath: checkout.project?.path ?? null,
+    readsRepo,
+    writesRepo,
+    checkoutCwd: checkout.cwd,
+    recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
+    baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
+    agent,
+    sessionId: retryAuthority.owner,
   })
   // Detached and followed, exactly like `do`. A retry is usually started
   // BECAUSE the first attempt died; running it as a child of this process
@@ -368,7 +408,8 @@ export async function retryRun(
         lens: row.lens ?? undefined,
         probe: !!row.probe,
         retryOf: id,
-        cwd: workspace?.cwd ?? row.launch_cwd ?? row.cwd ?? undefined,
+        cwd: workspace?.cwd ?? retryTree.cwd,
+        repo: row.repo ?? undefined,
         seed: row.launch_seed ?? undefined,
         key: row.launch_key ?? undefined,
         base: resumeLaunch.base,
@@ -406,7 +447,7 @@ export async function retryRun(
               worktree: workspace.worktree,
               treePlan: workspace.treePlan,
             }
-          : undefined,
+          : retryTree.resume,
       },
       agent,
     )
@@ -715,6 +756,16 @@ export async function answerRun(
     }
   }
 
+  const checkout = continuationCheckoutForAnswer({
+    rootId: id,
+    skipResume,
+    ownersLive,
+    requiresRepo: Boolean(job(row.job).needs.readsRepo),
+    latestCwd: latest.cwd,
+    rootCwd: row.cwd,
+    rootRepo: row.repo,
+  })
+
   const now = new Date(Date.now()).toISOString()
   const upd = db().query(
     `UPDATE question
@@ -805,7 +856,8 @@ export async function answerRun(
   let childId: number
   try {
     childId = await (helpers.dispatch ?? detach)(row.job, rulingPrompt(answers), {
-      cwd: latest.cwd ?? row.cwd ?? process.cwd(),
+      cwd: checkout!.cwd,
+      repo: row.repo ?? undefined,
       ...resumeLaunchForRoot(id),
       transport: chainTransport(id) ?? undefined,
       resume: {
@@ -822,7 +874,8 @@ export async function answerRun(
               base: latest.base_commit ?? row.base_commit ?? '',
               repoRoot:
                 (await import('../git/git-environment.ts')).repoRootOf(worktreePath) ??
-                process.cwd(),
+                checkout!.project?.path ??
+                checkout!.cwd,
               source: latest.worktree_source ?? row.worktree_source ?? undefined,
             }
           : null,

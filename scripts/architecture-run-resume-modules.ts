@@ -19,4 +19,20 @@ export const runResumeModuleSpecs = [
     file: 'orchestrator/src/run/continuation-checkpoint-context.ts',
     allowed: ['bun:sqlite', './checkpoint.ts', './resume-tree.ts'],
   },
+  {
+    file: 'orchestrator/src/run/continuation-checkout.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/run/continuation-checkout-service.ts',
+    allowed: ['../project/projects.ts', './continuation-checkout.ts'],
+  },
+  {
+    file: 'orchestrator/src/run/continuation-tree-decision.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/run/continuation-tree-service.ts',
+    allowed: ['node:fs', '../git/git-environment.ts', './continuation-tree-decision.ts'],
+  },
 ] as const
