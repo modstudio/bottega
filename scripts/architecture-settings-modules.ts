@@ -65,6 +65,7 @@ export const settingsModules: SettingsModule[] = [
     '../doc/docs.ts',
     '../project/project-lock.ts',
     '../record/record-cache.ts',
+    '../record/record-write-authority.ts',
     '../run/run-process.ts',
     './settings.ts',
     './settings-env.ts',

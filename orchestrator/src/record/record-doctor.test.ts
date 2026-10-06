@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
+  decideRecordDoctorAvailability,
   localQuestionCountForSpace,
   outboxQuarantineCheck,
   outboxRetiredParentCheck,
@@ -11,6 +12,17 @@ import {
 } from './record-doctor.ts'
 
 describe('record doctor decisions', () => {
+  test('a never-bound install treats hosted checks as not applicable', () => {
+    expect(decideRecordDoctorAvailability({ installBound: false, recordUrlSet: false })).toEqual({
+      endpoint: {
+        name: 'hosted record configured',
+        status: 'skipped',
+        detail: 'no hosted record is configured for this install',
+      },
+      hostedChecksDetail: 'not applicable: no hosted record is configured for this install',
+    })
+  })
+
   test('fails its exit code exactly when a named check fails', () => {
     expect(recordDoctorExitCode([{ name: 'ready', status: 'pass' }])).toBe(0)
     expect(

@@ -6,8 +6,11 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
+import { db } from '../database/db.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberHostedRecord } from '../record/install-binding.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import {
   settingsImportCommand,
@@ -17,9 +20,13 @@ import {
 
 const roots: string[] = []
 const priorHome = process.env.HOME
+const priorApiUrl = process.env.ORCH_RECORD_API_URL
 afterEach(() => {
   if (priorHome === undefined) delete process.env.HOME
   else process.env.HOME = priorHome
+  if (priorApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = priorApiUrl
+  installRecordSessionRunner(null)
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -82,6 +89,53 @@ function presentation() {
 }
 
 describe('settings import', () => {
+  test('a bound install without an endpoint refuses a user write before identity side effects', async () => {
+    const root = fixtureProject('bound-user')
+    delete process.env.ORCH_RECORD_API_URL
+    rememberHostedRecord()
+
+    let keychainCalls = 0
+    installRecordSessionRunner(() => {
+      keychainCalls += 1
+      throw new Error('unexpected keychain access')
+    })
+    const apiCalls: string[] = []
+    const client = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...client,
+      whoami: async () => {
+        apiCalls.push('whoami')
+        throw new Error('unexpected hosted identity lookup')
+      },
+      upsertDoc: async (input) => {
+        apiCalls.push('upsertDoc')
+        return client.upsertDoc(input)
+      },
+    })
+    const metadataBefore = db()
+      .query<{ key: string; value: string }, []>('SELECT key, value FROM schema_meta ORDER BY key')
+      .all()
+
+    await expect(
+      settingsImportCommand(presentation().flags({ user: true }), presentation().port(root)),
+    ).rejects.toThrow(/bound to a hosted record[\s\S]*orch record doctor/)
+
+    expect(keychainCalls).toBe(0)
+    expect(apiCalls).toEqual([])
+    expect(
+      db()
+        .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM doc WHERE scope='settings'")
+        .get()?.count,
+    ).toBe(0)
+    expect(
+      db()
+        .query<{ key: string; value: string }, []>(
+          'SELECT key, value FROM schema_meta ORDER BY key',
+        )
+        .all(),
+    ).toEqual(metadataBefore)
+  })
+
   test('extracts only owned keys into the store', async () => {
     const root = fixtureProject('alpha')
     const shown = presentation()

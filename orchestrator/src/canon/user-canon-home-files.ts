@@ -42,6 +42,14 @@ export type UserCanonHomePlan = {
   deletes: PlannedUserCanonDelete[]
 }
 
+export type UserCanonHomePlanDecision =
+  | { action: 'apply'; plans: UserCanonHomePlan[] }
+  | { action: 'refuse-empty-store'; plans: []; refused: UserCanonHomePlan[] }
+
+export const EMPTY_USER_CANON_STORE_REFUSAL =
+  'this store holds no user canon while the home has files another store marked as managed; ' +
+  'keep them by importing with `orch canon import --user`; or remove the files yourself'
+
 type CollectedFileState = { collectedText: string; collectedMode: number }
 type PlannedUserCanonWriteBase = {
   slug: string
@@ -104,6 +112,17 @@ export function userCanonHomeInstallationStatus(target: UserCanonHomeTarget): st
 
 export function userCanonHomePlanDrift(plan: UserCanonHomePlan): number {
   return plan.writes.length + plan.adopts.length + plan.deletes.length
+}
+
+/** Prevents an empty store from treating another store's managed files as stale rows. */
+export function decideUserCanonHomePlanApplication(
+  rowCount: number,
+  plans: UserCanonHomePlan[],
+): UserCanonHomePlanDecision {
+  const refused = rowCount === 0 ? plans.filter((plan) => plan.deletes.length > 0) : []
+  return refused.length > 0
+    ? { action: 'refuse-empty-store', plans: [], refused }
+    : { action: 'apply', plans }
 }
 
 export function collectUserCanonHome(target: UserCanonHomeTarget): UserCanonHomeFile[] {

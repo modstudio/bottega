@@ -84,6 +84,19 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
   ]),
+  module('orchestrator/src/doc/doc-owner.ts', [
+    '../record/record-attribution.ts',
+    '../record/record-auth.ts',
+    '../record/machine-identity.ts',
+    '../record/record-write-authority.ts',
+  ]),
+  module('orchestrator/src/doc/local-doc-write.ts', [
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    './doc-read-store.ts',
+    './doc-revision-store.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/doc-canon-tree.ts', [
     'node:fs',
     '../../../shared/git.ts',
@@ -447,12 +460,10 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
-  module('orchestrator/src/project/project-write-decision.ts', []),
   module('orchestrator/src/project/project-hosted-write.ts', [
-    '../record/install-binding.ts',
     '../record/record-api-client.ts',
+    '../record/record-write-authority.ts',
     './project-settings.ts',
-    './project-write-decision.ts',
   ]),
   module('orchestrator/src/release/release-decision.ts', []),
   module('orchestrator/src/release/release-service.ts', [

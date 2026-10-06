@@ -166,13 +166,13 @@ describe('decideDocRevisionWrite', () => {
     })
   })
 
-  test('refuses an existing canon row whose hosted revision is absent without inventing a token', () => {
+  test('refuses an existing canon row whose revision is absent without inventing a token', () => {
     const decision = decideDocRevisionWrite({ current: null, isCreate: false, scope: 'canon' })
     expect(decision).toEqual({
       allow: false,
       reason:
-        "refusing canon write: this hosted row's latest revision is missing, so its revision cannot be checked\n" +
-        'cleared by: orch record migrate',
+        "refusing canon write: this row's latest revision is missing, so its revision cannot be checked\n" +
+        'cleared by: repair the document revision state, then retry the write',
     })
     if (!decision.allow) expect(decision.reason).not.toContain('--expect')
   })

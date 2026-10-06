@@ -127,6 +127,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/project/project-lock.ts',
       'orchestrator/src/record/record-cache.ts',
+      'orchestrator/src/record/record-write-authority.ts',
       'orchestrator/src/run/run-process.ts',
       `${source}settings.ts`,
       `${source}settings-env.ts`,

@@ -11,7 +11,10 @@ import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
+  decideUserCanonHomePlanApplication,
+  EMPTY_USER_CANON_STORE_REFUSAL,
   planUserCanonHome,
+  type UserCanonHomePlan,
   userCanonHomeInstallationStatus,
   userCanonHomeOverridesStatus,
   userCanonHomePlanDrift,
@@ -22,6 +25,20 @@ type UserCanonFlags = { has(name: string): boolean }
 type UserCanonPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
+}
+
+function applicableUserCanonHomePlans(
+  decision: ReturnType<typeof decideUserCanonHomePlanApplication>,
+): UserCanonHomePlan[] {
+  if (decision.action === 'apply') return decision.plans
+  throw new Error(
+    decision.refused
+      .map(
+        (plan) =>
+          `${plan.home.mapping.harness} ${plan.home.path}: refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`,
+      )
+      .join('\n'),
+  )
 }
 
 function printFindings(findings: Finding[], log: (...values: unknown[]) => void): void {
@@ -143,18 +160,20 @@ export async function userCanonHydrateCommand(
         adopt: flags.has('adopt'),
       }),
     )
-  for (const plan of plans) {
+  const decision = decideUserCanonHomePlanApplication(rows.length, plans)
+  const applicablePlans = applicableUserCanonHomePlans(decision)
+  for (const plan of applicablePlans) {
     for (const row of plan.writes) presentation.log(`write ${row.path}`)
     for (const row of plan.adopts) presentation.log(`adopt ${row.path}`)
     for (const row of plan.deletes) presentation.log(`delete ${row.path}`)
   }
-  const count = plans.reduce((sum, plan) => sum + userCanonHomePlanDrift(plan), 0)
+  const count = applicablePlans.reduce((sum, plan) => sum + userCanonHomePlanDrift(plan), 0)
   if (flags.has('check')) {
     if (count) presentation.exitCode(1)
     return
   }
   const dryRun = flags.has('dry-run')
-  const result = applyUserCanonHomePlans(plans, process.env, dryRun)
+  const result = applyUserCanonHomePlans(applicablePlans, process.env, dryRun)
   for (const path of result.backups) presentation.log(`backup ${path}`)
   for (const failure of result.cleanupFailures) {
     presentation.log(`quarantine cleanup failed; committed hydrate retained ${failure}`)

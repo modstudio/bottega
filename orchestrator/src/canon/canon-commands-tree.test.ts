@@ -53,7 +53,7 @@ test('project canon import refuses a tree-aware broken reference before the host
     }
 
     await dispatchCanonCommand(['canon', 'import'], flags, presentation)
-    expect(hostedWrites).toBe(1)
+    expect(hostedWrites).toBe(0)
     spawnFixtureGitSync(['rm', '-f', '.agents/reference/target.md'], { cwd: root })
 
     values.set('dry-run', 'true')
@@ -66,7 +66,7 @@ test('project canon import refuses a tree-aware broken reference before the host
     await expect(dispatchCanonCommand(['canon', 'import'], flags, presentation)).rejects.toThrow(
       'canon/reference-path',
     )
-    expect(hostedWrites).toBe(1)
+    expect(hostedWrites).toBe(0)
     expect(getDoc('canon', 'canon-import-reference', '.agents/reference/target.md')).not.toBeNull()
   } finally {
     rmSync(root, { recursive: true, force: true })

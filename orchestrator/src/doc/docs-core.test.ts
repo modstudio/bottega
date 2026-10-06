@@ -3,10 +3,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { consumeDoc, importDocs, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
+import { rememberHostedRecord } from '../record/install-binding.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
@@ -20,10 +25,105 @@ import {
   listDocs,
   importDocs as readDocs,
   restoreDoc,
+  signedInDocOwner,
   setDoc as writeDoc,
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('never-bound document lifecycle stays local and rejects a stale revision', async () => {
+    const calls: string[] = []
+    const client = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...client,
+      upsertDoc: async () => {
+        calls.push('upsert')
+        throw new Error('unexpected hosted upsert')
+      },
+      consumeDoc: async () => {
+        calls.push('consume')
+        throw new Error('unexpected hosted consume')
+      },
+      deleteDoc: async () => {
+        calls.push('delete')
+        throw new Error('unexpected hosted delete')
+      },
+      restoreDoc: async () => {
+        calls.push('restore')
+        throw new Error('unexpected hosted restore')
+      },
+    })
+    const created = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'local-lifecycle',
+      title: 'Local lifecycle',
+      body: '---\nstatus: open\n---\n\nLocal.',
+      delivery: 'demand',
+      reason: 'create local document',
+    })
+    const updated = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: created.slug,
+      title: created.title,
+      body: created.body,
+      delivery: 'demand',
+      reason: 'update local document',
+      expectedRevision: created.revision!,
+    })
+    await expect(
+      writeDoc({
+        scope: 'global',
+        subject: null,
+        slug: created.slug,
+        title: created.title,
+        body: created.body,
+        delivery: 'demand',
+        reason: 'stale local update',
+        expectedRevision: created.revision!,
+      }),
+    ).rejects.toThrow('refusing stale document update')
+    const consumed = await consumeDocument('global', null, created.slug, {
+      reason: 'consume local document',
+      expectedRevision: updated.revision!,
+    })
+    await deleteDoc('global', null, created.slug, {
+      reason: 'remove local document',
+      expectedRevision: consumed.revision!,
+    })
+    const history = listDocRevisions('global', null, created.slug)
+    const restored = await restoreDoc('global', null, created.slug, history.at(-1)!.id, {
+      reason: 'restore local document',
+      expectedRevision: history[0]!.record_id!,
+    })
+    expect(restored).toBeTruthy()
+    expect(calls).toEqual([])
+  })
+
+  test('never-bound owned documents use one stable operator identity across harness sessions', async () => {
+    process.env.CLAUDE_CODE_SESSION_ID = 'harness-one'
+    const first = await signedInDocOwner()
+    process.env.CLAUDE_CODE_SESSION_ID = 'harness-two'
+    expect(await signedInDocOwner()).toBe(first)
+    expect(first).toMatch(/^operator:/)
+  })
+
+  test('a bound install without an endpoint refuses before writing locally', async () => {
+    rememberHostedRecord()
+    await expect(
+      writeDoc({
+        scope: 'global',
+        subject: null,
+        slug: 'bound-refusal',
+        title: 'Bound refusal',
+        body: 'No write.',
+        delivery: 'demand',
+        reason: 'prove refusal',
+      }),
+    ).rejects.toThrow(/bound to a hosted record[\s\S]*orch record doctor/)
+    expect(getDoc('global', null, 'bound-refusal')).toBeNull()
+  })
+
   test('owned settings are visible only through their owner address locally', async () => {
     const owner = '01990000-0000-7000-8000-000000000092'
     const created = await writeDoc({
@@ -181,7 +281,7 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('canon mutation reports a missing hosted revision without suggesting an unusable token', async () => {
+  test('canon mutation reports a missing revision without suggesting an unusable token', async () => {
     const created = await writeDoc({
       scope: 'canon',
       subject: null,
@@ -195,8 +295,8 @@ describe('scoped operator docs', () => {
     await expect(
       deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
     ).rejects.toThrow(
-      "this hosted row's latest revision is missing, so its revision cannot be checked\n" +
-        'cleared by: orch record migrate',
+      "this row's latest revision is missing, so its revision cannot be checked\n" +
+        'cleared by: repair the document revision state, then retry the write',
     )
   })
 
@@ -358,6 +458,7 @@ describe('scoped operator docs', () => {
       listDocRevisions('global', null, 'revision-life').at(-1)!.id,
       { author: 'restorer', reason: 'bring it back' },
     )
+    expect(restored.record_id).not.toBe(beforeDelete.record_id)
     const revisions = listDocRevisions('global', null, 'revision-life').reverse()
     expect(revisions.map((revision) => revision.op)).toEqual([
       'create',
