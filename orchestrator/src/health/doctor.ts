@@ -32,6 +32,7 @@ import {
   RESOURCE_CLAIM_MIGRATION,
 } from '../resources/resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
+import type { RuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -141,16 +142,10 @@ function reportRetrievalCheck(
   if (result.exitCode !== 0) presentation.exitCode(1)
 }
 
-function sandboxRuntimeDoctorLine(runtime: {
-  available: boolean
-  location: string
-  missingSystemDependencies: string[]
-}): string {
-  const status = runtime.available ? 'available' : 'NOT AVAILABLE'
-  const missing = runtime.missingSystemDependencies.length
-    ? `; missing ${runtime.missingSystemDependencies.join(', ')}`
-    : ''
-  return `sandbox        runtime ${status} at ${runtime.location}${missing}`
+function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
+  return runtime.available
+    ? `sandbox        runtime available at ${runtime.location}`
+    : `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.remedy}`
 }
 
 export async function doctorCommand(

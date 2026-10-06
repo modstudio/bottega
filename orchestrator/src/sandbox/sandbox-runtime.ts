@@ -30,7 +30,6 @@ export const SRT_LIBRARY = join(
 )
 
 let sandboxInitialized = false
-type RuntimeLocation = string
 type ExtractedRuntime = {
   root: string
   javaAgentJarPath: string
@@ -60,14 +59,14 @@ function payloads(assets: SandboxRuntimeAssets): SandboxRuntimePayload[] {
   return Object.values(assets)
 }
 
-type RuntimeAvailability = {
+export type RuntimeAvailability = {
   available: boolean
-  location: RuntimeLocation
+  location: string
   missingSystemDependencies: string[]
   remedy: string
 }
 
-type RuntimeAvailabilityFacts = {
+export type RuntimeAvailabilityFacts = {
   location: string
   runtimePresent: boolean
   sourceCheckout: boolean
