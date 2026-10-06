@@ -6,7 +6,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
+import {
+  callerIdentity,
+  db,
+  nowIso,
+  sessionId,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
@@ -206,7 +214,7 @@ export async function recordWorkflowExec(
     throw new Error('orch workflow exec is reserved for architect sessions; ORCH_DEPTH is set')
   if (!sessionId())
     throw new Error(
-      'orch workflow exec is reserved for architect sessions; CLAUDE_CODE_SESSION_ID is not set',
+      `orch workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
     )
   const cwd = input.cwd ?? process.cwd()
   if (input.registeredProject === false)

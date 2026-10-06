@@ -1,4 +1,5 @@
 import { hostname } from 'node:os'
+import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { reapHostedBoardCache } from './board-hosted-cache.ts'
@@ -32,8 +33,6 @@ import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
 export { requireRealSession } from './board-policy.ts'
 
-const workerMarked = (env: Environment) => Boolean(env.ORCH_RUN_ID || env.ORCH_DEPTH)
-
 export type { PostNoticeInput, PostNoticeResult }
 export { boardActor }
 
@@ -47,7 +46,7 @@ export function recordPresence(
   env: Environment = process.env,
   at = nowIso(),
 ): boolean {
-  if (workerMarked(env)) return false
+  if (classifyCaller(env).kind === 'worker') return false
   if (
     env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
     env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')

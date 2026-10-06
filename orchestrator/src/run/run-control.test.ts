@@ -40,7 +40,7 @@ beforeEach(() => {
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
-  process.env.ORCH_DEPTH = '0'
+  delete process.env.ORCH_DEPTH
   process.env.ORCH_EXEC_PATH = '/usr/bin/true'
 })
 afterEach(() => {

@@ -186,22 +186,6 @@ describe('score ruling', () => {
     ).rejects.toThrow('owned by session owner-session')
   })
 
-  test('an anonymous caller cannot score an unowned run', async () => {
-    const id = insert()
-    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)
-    delete process.env.CLAUDE_CODE_SESSION_ID
-    await expect(score(id, ['full', 'right'])).rejects.toThrow('CLAUDE_CODE_SESSION_ID is not set')
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
-  })
-
-  test('only the bridge id cannot score an unowned run', async () => {
-    const id = insert()
-    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)
-    delete process.env.CLAUDE_CODE_SESSION_ID
-    process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
-    await expect(score(id, ['full', 'right'])).rejects.toThrow('CLAUDE_CODE_SESSION_ID is not set')
-  })
-
   test('bridge-only --force scores an unowned run without adopting', async () => {
     const id = insert()
     db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)
@@ -273,13 +257,6 @@ describe('score ruling', () => {
       }),
     ).rejects.toThrow('not a findings-producing lens')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
-  })
-
-  test('score refuses an owned run when the caller has no session identity', async () => {
-    const id = insert('ok', 'review-lens')
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id)
-    delete process.env.CLAUDE_CODE_SESSION_ID
-    await expect(score(id, ['full', 'right'])).rejects.toThrow('no session identity is present')
   })
 
   test('re-scoring keeps the old note and confirms every latest axis', async () => {

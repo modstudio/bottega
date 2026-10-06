@@ -1,4 +1,5 @@
 import { hostname } from 'node:os'
+import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
@@ -82,14 +83,9 @@ export type MessageRow = {
 
 const NO_REACH_WARNING = 'reached no live session; re-address it or wait for a matching session'
 
-const workerMarked = (env: Environment) => Boolean(env.ORCH_RUN_ID || env.ORCH_DEPTH)
-const unrecognizedSessionMarked = (env: Environment) =>
-  Object.entries(env).some(
-    ([key, value]) => Boolean(value?.trim()) && /(?:SESSION_ID|THREAD_ID)$/.test(key),
-  )
-
 export function boardActor(env: Environment = process.env): BoardActor {
-  if (workerMarked(env))
+  const caller = classifyCaller(env)
+  if (caller.kind === 'worker')
     throw new Error('workers cannot use the architect notice board in this slice')
   if (
     env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
@@ -100,9 +96,13 @@ export function boardActor(env: Environment = process.env): BoardActor {
     )
   const identity = architectIdentity(env)
   if (identity) return { kind: 'architect', session: identity.session }
-  if (unrecognizedSessionMarked(env))
+  if (caller.kind === 'unsupported-harness')
     throw new Error(
-      'this harness has no recognized architect identity; use a supported architect harness or post from an operator terminal',
+      `this harness has no recognized architect identity (${caller.markers.join(', ')}); use a supported architect harness or post from an operator terminal`,
+    )
+  if (caller.kind === 'reserved-operator-session')
+    throw new Error(
+      'operator: session ids are reserved; use a real architect session id or post from an operator terminal',
     )
   return { kind: 'operator', session: null }
 }

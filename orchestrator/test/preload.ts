@@ -15,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
+import { WORKER_ENVIRONMENT_MARKERS } from '../src/caller-classification.ts'
 
 const discoveryEnv = Object.fromEntries(
   Object.entries(process.env).filter(
@@ -181,10 +182,15 @@ const { db } = await import('../src/database/db.ts')
  */
 let sequence: { name: string; seq: number }[] = []
 let childrenBeforeTest = new Set<string>()
+let callerEnvironmentBeforeTest: Record<string, string | undefined> = {}
+const callerEnvironmentKey = (key: string) =>
+  WORKER_ENVIRONMENT_MARKERS.includes(key as (typeof WORKER_ENVIRONMENT_MARKERS)[number]) ||
+  /(?:SESSION_ID|THREAD_ID)$/.test(key)
 
 beforeAll(() => {
-  delete process.env.ORCH_RUN_ID
-  delete process.env.ORCH_DEPTH
+  for (const key of Object.keys(process.env)) {
+    if (callerEnvironmentKey(key)) delete process.env[key]
+  }
   for (const [key, value] of Object.entries(process.env)) {
     if (!gitConfigEnvironmentName.test(key) || value === undefined) continue
     inheritedGitConfig[key] = value
@@ -193,6 +199,9 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  callerEnvironmentBeforeTest = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => callerEnvironmentKey(key)),
+  )
   installRecordApiClient(createMemoryRecordApiClient())
   registerStandardTransports()
   assertTestHubDatabase()
@@ -222,6 +231,13 @@ beforeEach(() => {
     }
   }
   childrenBeforeTest = new Set(readdirSync(dir))
+})
+
+afterEach(() => {
+  for (const key of Object.keys(process.env)) {
+    if (callerEnvironmentKey(key)) delete process.env[key]
+  }
+  Object.assign(process.env, callerEnvironmentBeforeTest)
 })
 
 /**

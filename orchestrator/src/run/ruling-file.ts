@@ -3,8 +3,16 @@
 
 import { FILING_DOC_SCOPES, type FilingDocScope, resolveDocSubject } from '../../../shared/docs.ts'
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import {
+  callerIdentity,
+  db,
+  nowIso,
+  sessionId,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
@@ -170,9 +178,22 @@ function refusal(
       `Pass --from-operator to file under another scope or subject`
     )
   }
+  return ownerRefusal(row, authority, decision)
+}
+
+function ownerRefusal(
+  row: QuestionRow,
+  authority: RootAuthority,
+  decision: Exclude<ReturnType<typeof fileRulingDecision>, { kind: 'allow' }>,
+): string {
+  if (!decision.actor && !authority.actor)
+    return (
+      `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
+      callerIdentityRefusal(callerIdentity(), 'file its ruling')
+    )
   return (
     `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
-    `current session ${decision.actor ?? authority.actor ?? 'no session identity is present'} cannot file its ruling ` +
+    `current session ${decision.actor ?? authority.actor} cannot file its ruling ` +
     '(owner active within the window)'
   )
 }

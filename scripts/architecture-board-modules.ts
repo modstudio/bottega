@@ -81,7 +81,10 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-tags.ts',
   ]),
-  module('orchestrator/src/board/board-policy.ts', ['../../../shared/secret-shaped.ts']),
+  module('orchestrator/src/board/board-policy.ts', [
+    '../../../shared/secret-shaped.ts',
+    '../caller-classification.ts',
+  ]),
   module('orchestrator/src/board/board-tags.ts', ['node:path']),
   module('orchestrator/src/board/board-routing.ts', ['./board-tags.ts']),
   module('orchestrator/src/board/board-context.ts', [
@@ -98,6 +101,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-answer-note.ts', ['../mcp/hub-notes.ts']),
   module('orchestrator/src/board/board-store.ts', [
     'node:os',
+    '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './board-claim-policy.ts',
@@ -109,6 +113,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-service.ts', [
     'node:os',
+    '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './board-hosted-cache.ts',

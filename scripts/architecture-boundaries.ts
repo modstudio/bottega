@@ -481,6 +481,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       '../../shared/record/schema.ts',
+      './caller-classification.ts',
       './database/db.ts',
       './evidence/unjudged-expiry.ts',
       './score/duel.ts',
@@ -509,7 +510,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'machine-identity-boundary',
     'orchestrator/src/record/machine-identity.ts',
-    ['node:os', '../../../shared/record/schema.ts', '../database/db.ts'],
+    ['node:os', '../database/db.ts', '../database/machine-identity-store.ts'],
     'Enforce the machine-identity concern boundary.',
   ),
   ...mcpBoundarySpecs,
@@ -529,6 +530,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/install-root.ts',
       '../../../shared/monitor-capability.ts',
       '../../../shared/process-identity.ts',
+      '../caller-classification.ts',
       '../database/db.ts',
       '../canon/evals.ts',
       './monitor.ts',

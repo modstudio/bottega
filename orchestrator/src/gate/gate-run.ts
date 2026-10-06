@@ -3,7 +3,15 @@
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
+import {
+  callerIdentity,
+  db,
+  nowIso,
+  sessionId,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import {
@@ -110,7 +118,7 @@ export async function runArchitectGate(input: {
   const caller = sessionId()
   if (!caller)
     throw new Error(
-      'orch gate run is reserved for architect sessions; CLAUDE_CODE_SESSION_ID is not set',
+      `orch gate run is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'run the gate')}`,
     )
   const cwd = input.cwd ?? process.cwd()
   const project = projectAt(cwd, input.d ?? db())

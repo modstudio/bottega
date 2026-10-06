@@ -3,7 +3,8 @@
  * Knows root ownership, adoption, and mutation audit. Must not know routing, transports, CLI adapters, worktrees, or reviews.
  */
 import type { Database } from 'bun:sqlite'
-import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
+import { callerIdentity, db, nowIso, sessionId, writableDb } from '../database/db.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
@@ -87,11 +88,14 @@ export function runMutationActor(runId: number): RootAuthority {
 }
 
 function refuseRunMutation(authority: RootAuthority, action: RunMutationAction | 'receipt'): never {
-  const actor =
-    authority.actor ?? 'no session identity is present; CLAUDE_CODE_SESSION_ID is not set'
+  if (!authority.actor) {
+    throw new Error(
+      `run ${authority.runId} is owned by session ${authority.owner}; ${callerIdentityRefusal(callerIdentity(), action)}`,
+    )
+  }
   throw new Error(
     `run ${authority.runId} is owned by session ${authority.owner}; ` +
-      `current session ${actor} cannot ${action} it (owner active within the window)`,
+      `current session ${authority.actor} cannot ${action} it (owner active within the window)`,
   )
 }
 
@@ -166,7 +170,9 @@ export function adoptRunMutation(
 ): RootAuthority {
   if (authority.owner) return authority
   if (!authority.actor) {
-    throw new Error(`run ${authority.runId} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
+    throw new Error(
+      `run ${authority.runId} is unowned; ${callerIdentityRefusal(callerIdentity(), action)}`,
+    )
   }
   const claimed = database
     .query('UPDATE run SET session_id=? WHERE id=? AND session_id IS NULL')

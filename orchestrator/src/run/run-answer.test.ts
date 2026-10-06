@@ -98,7 +98,7 @@ beforeEach(() => {
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
-  process.env.ORCH_DEPTH = '0'
+  delete process.env.ORCH_DEPTH
   process.env.ORCH_EXEC_PATH = '/usr/bin/true'
 })
 afterEach(() => {
@@ -721,7 +721,7 @@ test('answer rejects a fixture ruling from a non-owning session without writing 
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
 })
 
-test('answer refuses a session-less caller even when the owner is gone', async () => {
+test('a plain operator answers a run whose owner is gone', async () => {
   const id = insert('asking', 'implement')
   db()
     .query('UPDATE run SET session_id=?,started_at=?,last_event_at=? WHERE id=?')
@@ -731,10 +731,18 @@ test('answer refuses a session-less caller even when the owner is gone', async (
     .run(id, new Date().toISOString(), 'which?')
   delete process.env.CLAUDE_CODE_SESSION_ID
 
-  await expect(
-    answerRun(id, { argv: ['anonymous ruling'], recordOnly: true, flags }, helpers),
-  ).rejects.toThrow('CLAUDE_CODE_SESSION_ID is not set')
-  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+  await answerRun(id, { argv: ['operator ruling'], recordOnly: true, flags }, helpers)
+  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({
+    answer: 'operator ruling',
+  })
+  expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+    session_id: 'gone-owner',
+  })
+  expect(db().query('SELECT actor_session FROM run_mutation_audit WHERE run_id=?').get(id)).toEqual(
+    {
+      actor_session: expect.stringMatching(/^operator:/),
+    },
+  )
 })
 
 test('UI operator answers require the hub dashboard capability', async () => {
@@ -889,7 +897,7 @@ describe('retry command', () => {
     delete process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
     await expect(retry(id)).rejects.toThrow(
-      `run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`,
+      `run ${id} is unowned; this caller is an unsupported harness (`,
     )
     expect(db().query('SELECT COUNT(*) n FROM run WHERE retry_of=?').get(id)).toEqual({ n: 0 })
   })

@@ -76,6 +76,7 @@ export const modules: ArchitectureModule[] = [
   ...runLivenessModuleSpecs.map((spec) =>
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
+  module('orchestrator/src/caller-classification.ts', []),
   module('orchestrator/src/artifact-paths.ts', ['node:path']),
   module('orchestrator/src/refusal-error.ts', []),
   module('orchestrator/src/worker-store-write.ts', []),
@@ -470,6 +471,10 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/state-directory.ts',
     '../project/project-settings.ts',
   ]),
+  module('orchestrator/src/database/machine-identity-store.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+  ]),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
     '../../../shared/process-identity.ts',
@@ -527,6 +532,7 @@ export const modules: ArchitectureModule[] = [
     'bun:sqlite',
     '../../../shared/record/schema.ts',
     '../../../shared/secret-shaped.ts',
+    '../caller-classification.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
