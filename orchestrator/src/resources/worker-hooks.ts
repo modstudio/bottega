@@ -26,9 +26,15 @@ const LEGACY_WORKER_PRE_PUSH =
   '#!/bin/sh\necho "workers never push; the architect pushes after review" >&2\nexit 1\n'
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-function workerPrePush(temporaryDirectory: string): string {
-  const installerTmp = realpathSync(temporaryDirectory)
-  const systemTmp = realpathSync('/tmp')
+function workerPrePush(scratchRoots: string[]): string {
+  const roots = [...new Set(scratchRoots.map((root) => realpathSync(root)))]
+  const scratchCases = roots
+    .map(
+      (root) => `  case "$candidate/" in
+    ${shellQuote(`${root}/`)}*) return 0 ;;
+  esac`,
+    )
+    .join('\n')
   return `#!/bin/sh
 refuse() {
   echo "workers never push; the architect pushes after review" >&2
@@ -54,17 +60,9 @@ esac
 destination_path=$(cd "$destination" 2>/dev/null && pwd -P) ||
   refuse "destination path cannot be resolved"
 
-system_tmp=${shellQuote(systemTmp)}
-installer_tmp=${shellQuote(installerTmp)}
-
 is_scratch_path() {
   candidate=$1
-  case "$candidate/" in
-    "$system_tmp/"*) return 0 ;;
-  esac
-  case "$candidate/" in
-    "$installer_tmp/"*) return 0 ;;
-  esac
+${scratchCases}
   return 1
 }
 
@@ -77,6 +75,8 @@ destination_common=$(cd "$destination_common" 2>/dev/null && pwd -P) ||
   refuse "destination common directory cannot be resolved"
 [ "$destination_common" != "$guarded_common" ] ||
   refuse "push targets the guarded repository"
+is_scratch_path "$destination_common" ||
+  refuse "destination common directory is not under a scratch location"
 
 is_bare=$(git rev-parse --is-bare-repository 2>/dev/null) ||
   refuse "pushing repository location cannot be resolved"
@@ -92,6 +92,8 @@ case "$is_bare" in
 esac
 is_scratch_path "$source_path" ||
   refuse "pushing repository is not a local scratch repository"
+is_scratch_path "$current_common" ||
+  refuse "pushing repository common directory is not under a scratch location"
 
 exit 0
 `
@@ -204,11 +206,10 @@ export function installWorkerHook(hookDir: string, name: WorkerHookName, content
   }
 }
 
-export function installWorkerHooks(hookDir: string, temporaryDirectory = tmpdir()): void {
-  installWorkerHook(
-    hookDir,
-    'pre-push',
-    markedWorkerHook('pre-push', workerPrePush(temporaryDirectory)),
-  )
+export function installWorkerHooks(
+  hookDir: string,
+  scratchRoots: string[] = [tmpdir(), '/tmp'],
+): void {
+  installWorkerHook(hookDir, 'pre-push', markedWorkerHook('pre-push', workerPrePush(scratchRoots)))
   installWorkerHook(hookDir, 'commit-msg', workerCommitMsg())
 }

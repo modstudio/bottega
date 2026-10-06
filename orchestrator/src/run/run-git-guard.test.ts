@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { git, gitOk } from '../git/git-environment.ts'
 import { workerGitConfigEnvironment } from './run-git-guard.ts'
 
-test('reader launch installs and selects an unconditional worker pre-push guard', () => {
+test('reader launch installs and selects a worker pre-push guard for the guarded origin', () => {
   const repoRoot = mkdtempSync(join(tmpdir(), 'orch-reader-guard-main-'))
   const path = join(repoRoot, '.claude', 'worktrees', 'orch-832')
   try {
@@ -39,7 +39,17 @@ test('reader launch installs and selects an unconditional worker pre-push guard'
     expect(readFileSync(prePush, 'utf8')).toContain(
       'workers never push; the architect pushes after review',
     )
-    const hook = Bun.spawnSync([prePush], { stdout: 'pipe', stderr: 'pipe' })
+    const workerEnv = {
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      HOME: repoRoot,
+      ...environment,
+    }
+    const hook = Bun.spawnSync([prePush, 'origin', path], {
+      cwd: repoRoot,
+      env: workerEnv,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
     expect(hook.exitCode).not.toBe(0)
     expect(hook.stderr.toString()).toContain(
       'workers never push; the architect pushes after review',
@@ -47,7 +57,7 @@ test('reader launch installs and selects an unconditional worker pre-push guard'
     expect(hook.stderr.toString()).toContain('push originates from the guarded repository')
     const push = Bun.spawnSync(['git', 'push', repoRoot, 'HEAD:refs/heads/x'], {
       cwd: path,
-      env: { ...process.env, ...environment },
+      env: workerEnv,
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -87,7 +97,11 @@ test('writer launch refuses pushes and attributed commits without enforcing task
       true,
       'implement',
     )!
-    const workerEnv = { ...process.env, ...environment }
+    const workerEnv = {
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      HOME: repoRoot,
+      ...environment,
+    }
     const push = Bun.spawnSync(['git', 'push', repoRoot, 'HEAD:refs/heads/pushed'], {
       cwd: path,
       env: workerEnv,
