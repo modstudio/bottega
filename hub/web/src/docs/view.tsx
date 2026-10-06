@@ -192,8 +192,10 @@ function TreeRow({
           aria-current={current ? 'page' : undefined}
           onClick={() => onSelect(item)}
           className={classes(
-            'min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-text-secondary hover:bg-control-hover',
-            current && 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover',
+            'min-w-0 flex-1 rounded-sm px-2 py-1 text-left',
+            current
+              ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
+              : 'text-text-secondary hover:bg-control-hover',
           )}
         >
           {node.title}
@@ -398,40 +400,42 @@ function DocsRail({
   return (
     <nav
       aria-label="Documents"
-      className="max-h-[min(24rem,70dvh)] overflow-y-auto border-border-default border-b p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--topbar-h)-3.5rem)] lg:border-r lg:border-b-0"
+      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--topbar-h)-3.5rem)] lg:border-r lg:border-b-0"
     >
       <button
         type="button"
         onClick={onSearch}
-        className="mb-4 flex w-full items-center justify-between text-left text-md text-text-muted"
+        className="mb-4 flex w-full shrink-0 items-center justify-between text-left text-md text-text-muted"
       >
         <span>Search docs</span>
         <Kbd>/</Kbd>
       </button>
-      {loading ? <p className="text-md text-text-muted">Loading docs…</p> : null}
-      {hasTree ? (
-        groups ? (
-          <GroupedTree
-            groups={groups}
-            selectedId={selectedId}
-            collapsed={collapsed}
-            onToggle={onToggle}
-            onSelect={onSelect}
-          />
-        ) : (
-          <TreeList
-            nodes={tree}
-            selectedId={selectedId}
-            collapsed={collapsed}
-            onToggle={onToggle}
-            onSelect={onSelect}
-          />
-        )
-      ) : loading ? null : (
-        <p className="mt-4 text-md text-text-muted">
-          {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
-        </p>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {loading ? <p className="text-md text-text-muted">Loading docs…</p> : null}
+        {hasTree ? (
+          groups ? (
+            <GroupedTree
+              groups={groups}
+              selectedId={selectedId}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          ) : (
+            <TreeList
+              nodes={tree}
+              selectedId={selectedId}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          )
+        ) : loading ? null : (
+          <p className="mt-4 text-md text-text-muted">
+            {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
+          </p>
+        )}
+      </div>
     </nav>
   )
 }
