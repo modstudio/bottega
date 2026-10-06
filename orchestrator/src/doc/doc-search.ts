@@ -3,7 +3,6 @@
 
 import { DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { validateDocAddressFilter } from './docs.ts'
 
 type Runner = (argv: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 
@@ -53,7 +52,6 @@ export async function searchDocs(
   filter: { scope?: string; subject?: string } = {},
   runner: Runner = runRetrieval,
 ) {
-  validateDocAddressFilter(filter)
   const argv = [query, '--k', String(k), '--json']
   if (filter.scope !== undefined) argv.push('--scope', filter.scope)
   if (filter.subject !== undefined) argv.push('--subject', filter.subject)

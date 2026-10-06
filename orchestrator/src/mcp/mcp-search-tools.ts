@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { searchProjectCode } from '../code/code-search.ts'
 import { searchDocs } from '../doc/doc-search.ts'
+import { validateDocAddressFilter } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 
 type SearchDocs = typeof searchDocs
@@ -29,8 +30,11 @@ export function registerSearchTools(
         subject: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ query, k, scope, subject }) =>
-      text(await dependencies.searchDocs(query, k ?? 5, { scope, subject })),
+    async ({ query, k, scope, subject }) => {
+      const filter = { scope, subject }
+      validateDocAddressFilter(filter)
+      return text(await dependencies.searchDocs(query, k ?? 5, filter))
+    },
   )
 
   server.registerTool(

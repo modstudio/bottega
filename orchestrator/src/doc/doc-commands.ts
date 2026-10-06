@@ -24,6 +24,7 @@ import {
   setDoc,
   signedInDocOwner,
   storedDocsHaveRepositoryReferences,
+  validateDocAddressFilter,
 } from './docs.ts'
 
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -107,10 +108,12 @@ async function semanticSearch(
     throw new Error('orch doc search "<query>" [--scope S] [--subject X] [--k N] [--json]')
   const rawK = flags.flag('k') ?? '5'
   if (!/^\d+$/.test(rawK) || Number(rawK) < 1) throw new Error('--k must be a positive integer')
-  const output = await searchDocs(query, Number(rawK), {
+  const filter = {
     ...(flags.has('scope') ? { scope: flags.flag('scope') } : {}),
     ...(flags.has('subject') ? { subject: flags.flag('subject') } : {}),
-  })
+  }
+  validateDocAddressFilter(filter)
+  const output = await searchDocs(query, Number(rawK), filter)
   if (flags.has('json')) {
     presentation.log(JSON.stringify(output))
     return

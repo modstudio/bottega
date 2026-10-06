@@ -1,9 +1,12 @@
 import { expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { upsertProject } from '../project/projects.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 
 test('search_docs accepts and forwards optional address filters', async () => {
+  upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
   const seen: unknown[] = []
   const server = new McpServer({ name: 'orch-search-test', version: '1.0.0' })
   registerSearchTools(server, {
@@ -25,11 +28,11 @@ test('search_docs accepts and forwards optional address filters', async () => {
   try {
     const result = await client.callTool({
       name: 'search_docs',
-      arguments: { query: 'meaning', k: 3, scope: 'canon', subject: 'bottega' },
+      arguments: { query: 'meaning', k: 3, scope: 'canon', subject: PLATFORM_SLUG },
     })
     expect(result.isError).not.toBe(true)
     expect(seen).toEqual([
-      { query: 'meaning', k: 3, filter: { scope: 'canon', subject: 'bottega' } },
+      { query: 'meaning', k: 3, filter: { scope: 'canon', subject: PLATFORM_SLUG } },
     ])
   } finally {
     await client.close()

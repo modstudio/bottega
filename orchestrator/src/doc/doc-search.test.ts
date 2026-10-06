@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { upsertProject } from '../project/projects.ts'
 import { checkRetrieval, searchDocs } from './doc-search.ts'
 
 test('orch adapter parses the retrieval JSON contract', async () => {
@@ -34,7 +33,6 @@ test('orch adapter parses the retrieval JSON contract', async () => {
 })
 
 test('orch adapter forwards optional document address filters', async () => {
-  upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
   const seen: string[][] = []
   const output = {
     query: 'meaning',

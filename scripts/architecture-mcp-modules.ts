@@ -76,6 +76,7 @@ export const mcpModules: McpModule[] = [
     'zod',
     '../code/code-search.ts',
     '../doc/doc-search.ts',
+    '../doc/docs.ts',
     '../project/projects.ts',
   ]),
   module('orchestrator/src/mcp/mcp-prompts.ts', [
