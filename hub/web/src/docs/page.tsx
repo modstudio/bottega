@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMatch, useNavigate } from '@tanstack/react-router'
 import { History, Pencil } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { isHostedMode } from '@/lib/hub-mode'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
@@ -39,6 +39,10 @@ export function DocsPage() {
       null
     )
   }, [catalog.items, params, search?.id])
+  const selectedAudience = selected?.audience
+  useEffect(() => {
+    if (selectedAudience) setAudience(selectedAudience)
+  }, [selectedAudience])
   const reading = useDocsDocument(source, selected)
   const results = useDocsSearch(source, searchQuery, audience, project)
 
