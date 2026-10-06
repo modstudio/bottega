@@ -48,12 +48,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 375,
+    line: 377,
     reason: 'the checkout codex-acp candidate is guarded by the embedded-manifest branch',
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 431,
+    line: 433,
     reason:
       'ACP SDK presence is resolved for doctor; the SDK is imported by the ACP transport, not loaded as the compiled schema validator',
   },
