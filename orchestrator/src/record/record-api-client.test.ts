@@ -49,6 +49,9 @@ describe('record API client test safety', () => {
     try {
       const client = recordApiClient()
       const id = newRecordId()
+      await expect(
+        client.listBoardMessages({ kind: 'question', open: true, includeEnded: false }),
+      ).rejects.toThrow(/nope/)
       await expect(client.getBoardThread(id)).rejects.toThrow(/nope/)
       await expect(client.getBoardStatus(id)).rejects.toThrow(/nope/)
       await expect(
@@ -62,19 +65,23 @@ describe('record API client test safety', () => {
         }),
       ).rejects.toThrow(/cleared by: orch record doctor/)
       expect(calls[0]).toMatchObject({
-        url: `https://api.example.test/v1/board/threads/${id}`,
+        url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false',
         method: 'GET',
       })
       expect(calls[1]).toMatchObject({
-        url: `https://api.example.test/v1/board/messages/${id}/status`,
+        url: `https://api.example.test/v1/board/threads/${id}`,
         method: 'GET',
       })
       expect(calls[2]).toMatchObject({
+        url: `https://api.example.test/v1/board/messages/${id}/status`,
+        method: 'GET',
+      })
+      expect(calls[3]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages',
         method: 'PUT',
         body: { id, kind: 'notice', audience: 'operator', title: 'T', body: 'B' },
       })
-      const posted = calls[2]?.body as Record<string, unknown>
+      const posted = calls[3]?.body as Record<string, unknown>
       expect(posted).not.toHaveProperty('recipientUserIds')
       expect(posted).not.toHaveProperty('claimId')
     } finally {

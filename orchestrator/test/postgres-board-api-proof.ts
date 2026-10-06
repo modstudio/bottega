@@ -1,4 +1,3 @@
-import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import {
@@ -6,15 +5,14 @@ import {
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from '../src/board/board-hosted-cache.ts'
-import { BOARD_HOSTED_ADOPTED_KEY } from '../src/board/board-mode.ts'
 import { BOARD_POST_RATE_LIMIT } from '../src/board/board-policy.ts'
-import { applyMigrations } from '../src/database/migrations.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
-import { postgresBoardCacheClient } from './postgres-board-cache-client.ts'
+import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
+import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
 
@@ -163,21 +161,7 @@ export function registerBoardApiProofs(input: {
     ...extra,
   })
 
-  const cacheStore = (session: string) => {
-    const store = new Database(':memory:')
-    applyMigrations(store)
-    store
-      .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
-      .run(BOARD_HOSTED_ADOPTED_KEY, '1')
-    store
-      .query(
-        `INSERT INTO presence
-         (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-         VALUES (?,'claude','architect','machine-b',?,'/tmp',NULL,?,?)`,
-      )
-      .run(session, PROJECT, '2026-10-05T00:00:00.000Z', '2098-01-01T00:00:00.000Z')
-    return store
-  }
+  const cacheStore = (session: string) => postgresBoardCacheStore(session, PROJECT)
 
   const cacheClient = (token: string): RecordApiClient => postgresBoardCacheClient(origin, token)
 
@@ -189,6 +173,20 @@ export function registerBoardApiProofs(input: {
     expiresAt,
     caseSession,
     succeeds: input.succeeds,
+  })
+
+  registerBoardOverviewProof({
+    origin: () => origin,
+    tokenA: () => tokenA,
+    tokenB: () => tokenB,
+    tokenC: () => tokenC,
+    tokenD: () => tokenD,
+    userA: () => userA,
+    userB: () => userB,
+    userD: () => userD,
+    succeeds: input.succeeds,
+    expiresAt,
+    caseSession,
   })
 
   test('two machine caches deliver a shared notice once and keep another user operator notice out', async () => {

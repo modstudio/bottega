@@ -119,6 +119,37 @@ test('board status binds the caller tenant and returns the service view', async 
   expect(await response.json()).toEqual(expected)
 })
 
+test('board list validates filters and binds every caller space', async () => {
+  const expected = { messages: [], truncated: false }
+  const app = appWith(identity, {
+    listBoardMessages: async (input: {
+      userId: string
+      spaceIds: string[]
+      kind?: string
+      open?: boolean
+      includeEnded?: boolean
+    }) => {
+      expect(input).toMatchObject({
+        userId: identity.user.id,
+        kind: 'question',
+        open: true,
+        includeEnded: false,
+      })
+      expect(input.spaceIds).toEqual(['space-a', 'space-b'])
+      return expected
+    },
+  })
+  const response = await app.request(
+    '/v1/board/messages?kind=question&open=true&includeEnded=false',
+  )
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual(expected)
+
+  const invalid = await app.request('/v1/board/messages?open=maybe')
+  expect(invalid.status).toBe(400)
+  expect(await invalid.json()).toEqual({ error: 'invalid board messages query' })
+})
+
 test('board post refuses caller recipientUserIds and claimId at the route edge', async () => {
   const app = appWith(identity)
   const base = {

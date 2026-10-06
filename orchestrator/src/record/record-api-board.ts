@@ -12,6 +12,8 @@ import {
   type HostedBoardFilingCompleteInput,
   type HostedBoardFilingFailInput,
   type HostedBoardMessage,
+  type HostedBoardOverview,
+  type HostedBoardOverviewFilters,
   type HostedBoardPostInput,
   type HostedBoardReceipt,
   type HostedBoardReceiptInput,
@@ -90,6 +92,7 @@ const holderBody = z.object({ holderSession: sessionSchema }).strict()
 const releaseTaskSchema = z.object({ project: z.string().min(1), key: z.string().min(1) }).strict()
 
 export type RecordBoardDeps = {
+  listBoardMessages(input: BoardTenant & HostedBoardOverviewFilters): Promise<HostedBoardOverview>
   postBoardMessage(input: BoardTenant & HostedBoardPostInput): Promise<HostedBoardMessage>
   replyBoardMessage(
     input: BoardTenant & HostedBoardReplyInput & { rootId: string },
@@ -154,6 +157,29 @@ export function registerRecordBoardRoutes(
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 
+  app.get('/v1/board/messages', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    const query = z
+      .object({
+        kind: z.enum(['notice', 'question']).optional(),
+        open: z
+          .enum(['true', 'false'])
+          .optional()
+          .transform((value) => value === 'true'),
+        includeEnded: z
+          .enum(['true', 'false'])
+          .optional()
+          .transform((value) => value === 'true'),
+      })
+      .safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid board messages query' }, 400)
+    try {
+      return context.json(await deps.listBoardMessages({ ...tenant, ...query.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
   app.put('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
     if (!tenant) return helpers.noSpace(context)

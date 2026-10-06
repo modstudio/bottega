@@ -152,6 +152,14 @@ export const recordModules: RecordModule[] = [
     './record-board-receipts.ts',
     './record-board-tx.ts',
   ]),
+  module('orchestrator/src/record/record-board-overview.ts', [
+    'bun',
+    '../board/board-tags.ts',
+    './record-board-contract.ts',
+    './record-board-messages.ts',
+    './record-board-receipts.ts',
+    './record-board-tx.ts',
+  ]),
   module('orchestrator/src/record/record-board-claims.ts', [
     'bun',
     '../../../shared/record/schema.ts',

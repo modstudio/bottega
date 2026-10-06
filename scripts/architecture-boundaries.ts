@@ -689,6 +689,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-board-messages.ts',
       './record-board-changes.ts',
       './record-board-claims.ts',
+      './record-board-overview.ts',
       './record-board-receipts.ts',
     ],
     'Enforce the record-api-server concern boundary.',
