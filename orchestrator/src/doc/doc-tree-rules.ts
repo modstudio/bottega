@@ -21,7 +21,11 @@ export type DocumentTreeWrite = DocumentTreeNode & {
   spaceMatches?: boolean
 }
 
-function childAudienceRefusal(input: DocumentTreeWrite, address: string, set: string): string | null {
+function childAudienceRefusal(
+  input: DocumentTreeWrite,
+  address: string,
+  set: string,
+): string | null {
   if (
     input.priorAudience === undefined ||
     input.priorAudience === input.audience ||

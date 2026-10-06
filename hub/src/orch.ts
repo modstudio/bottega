@@ -918,6 +918,20 @@ function docAddressFlags(input: DocArgvInput): string[] {
   ]
 }
 
+function docSetFlags(input: DocArgvInput): string[] {
+  return [
+    ...(input.delivery ? ['--delivery', input.delivery] : []),
+    ...(input.audience ? ['--audience', input.audience] : []),
+    ...(input.parentSlug === null
+      ? ['--no-parent']
+      : input.parentSlug
+        ? ['--parent', input.parentSlug]
+        : []),
+    ...(input.position !== undefined ? ['--position', String(input.position)] : []),
+    ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
+  ]
+}
+
 export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
   switch (op) {
     case 'list':
@@ -942,15 +956,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         input.reason!,
         '--author',
         'hub-dashboard',
-        ...(input.delivery ? ['--delivery', input.delivery] : []),
-        ...(input.audience ? ['--audience', input.audience] : []),
-        ...(input.parentSlug === null
-          ? ['--no-parent']
-          : input.parentSlug
-            ? ['--parent', input.parentSlug]
-            : []),
-        ...(input.position !== undefined ? ['--position', String(input.position)] : []),
-        ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
+        ...docSetFlags(input),
         '--json',
       ]
     case 'remove':

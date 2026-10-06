@@ -3,7 +3,6 @@ import {
   canonRemovalRefusal,
   decideDocRevisionWrite,
   globalCanonWriteTargets,
-  ownerVisible,
   refuseCanonWrite,
   refuseOwnedDocAddress,
   refuseSettingsAddress,
@@ -100,15 +99,6 @@ describe('globalCanonWriteTargets', () => {
     const managed = candidate('managed', true)
     expect(userCanonWriteTargets([candidate('unmanaged'), managed])).toEqual([managed])
     expect(userCanonWriteTargets([])).toEqual([null])
-  })
-})
-
-describe('ownerVisible', () => {
-  test('shares unowned rows and restricts owned rows to their owner', () => {
-    expect(ownerVisible(null, null)).toBe(true)
-    expect(ownerVisible('user-1', 'user-1')).toBe(true)
-    expect(ownerVisible('user-1', 'user-2')).toBe(false)
-    expect(ownerVisible('user-1', null)).toBe(false)
   })
 })
 

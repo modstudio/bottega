@@ -28,11 +28,6 @@ export type CanonRow = { slug: string; body: string }
 export type CanonWriteTree = { project: { name: string }; root: string }
 export { composeCanonRows }
 
-/** Owned rows are visible only to their signed-in owner; unowned rows remain shared. */
-export function ownerVisible(owner: string | null, signedInUserId: string | null): boolean {
-  return owner === null || owner === signedInUserId
-}
-
 export type GlobalCanonWriteTarget = {
   name: string
   path: string

@@ -36,15 +36,18 @@ import {
   type Doc,
   type DocRevision,
   type DocRevisionMetadata,
+  getDocStore,
   listDocMetadataStore,
   listDocsStore,
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
+import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import {
   assertLocalDocRemovalAllowed,
   localDocTreeFields,
   localParentRecordId,
+  localRestoredParentSlug,
 } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
@@ -79,7 +82,6 @@ import {
   forcedDocDelivery,
   globalCanonWriteTargets,
   importedDocDelivery,
-  ownerVisible,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
@@ -182,9 +184,6 @@ function assertInjectSize(input: {
   }
 }
 
-const LATEST_REVISION_SQL =
-  '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
-
 function validScope(scope: string): asserts scope is DocScope {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
@@ -202,39 +201,26 @@ function validateSubject(scope: DocScope, subject: string): void {
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
   if (subjectKind === null) throw new Error(`${scope} docs take no subject; remove --subject`)
   if (subjectKind === 'project' && !projectByName(subject)) {
-    throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
+    throw new Error(
+      `unknown project subject "${subject}"; valid values: ${validDocSubjects(scope)}`,
+    )
   }
   if (
     subjectKind === 'stack' &&
     !db().query('SELECT 1 FROM project WHERE stack=? AND retired_at IS NULL LIMIT 1').get(subject)
   ) {
-    throw new Error(`unknown stack subject "${subject}"; valid values: ${validSubjects(scope)}`)
+    throw new Error(`unknown stack subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
   }
   if (subjectKind === 'agent' && !AGENTS[subject]) {
-    throw new Error(`unknown agent subject "${subject}"; valid values: ${validSubjects(scope)}`)
+    throw new Error(`unknown agent subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
   }
   if (subjectKind === 'job' && !JOBS[subject]) {
-    throw new Error(`unknown job subject "${subject}"; valid values: ${validSubjects(scope)}`)
-  }
-}
-
-function validateHistoricAddress(scope: string, slug: string): asserts scope is DocScope {
-  validScope(scope)
-  if (scope === 'canon') {
-    if (!slug || slug.startsWith('/') || slug.includes('..')) {
-      throw new Error('invalid canon slug; use a repository-relative canon mirror path')
-    }
-    return
-  }
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug) || slug.length > 64) {
-    throw new Error(
-      'invalid slug; use 1-64 lowercase letters, digits, or hyphens, starting with a letter or digit',
-    )
+    throw new Error(`unknown job subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
   }
 }
 
 function validate(scope: string, subject: string | null, slug: string): asserts scope is DocScope {
-  validateHistoricAddress(scope, slug)
+  validateHistoricDocAddress(scope, slug)
   if (DOC_SCOPE_ALLOWS_OWNER[scope] && subject === null) return
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
   if (subjectKind === null) {
@@ -242,67 +228,18 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
     return
   }
   if (!subject)
-    throw new Error(`${scope} docs require --subject; valid values: ${validSubjects(scope)}`)
+    throw new Error(`${scope} docs require --subject; valid values: ${validDocSubjects(scope)}`)
   validateSubject(scope, subject)
 }
 
-export function docSubjects(): {
-  project: string[]
-  stack: string[]
-  agent: string[]
-  job: string[]
-} {
-  return {
-    project: (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
-      (r) => r.name,
-    ),
-    stack: (
-      db()
-        .query('SELECT DISTINCT stack FROM project WHERE stack IS NOT NULL ORDER BY stack')
-        .all() as { stack: string }[]
-    ).map((r) => r.stack),
-    agent: Object.keys(AGENTS).sort(),
-    job: Object.keys(JOBS).sort(),
-  }
-}
-
-function validSubjects(scope: DocScope): string {
-  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
-  if (subjectKind === null) return '(none)'
-  const values =
-    subjectKind === 'project'
-      ? (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
-          (r) => r.name,
-        )
-      : subjectKind === 'stack'
-        ? (
-            db()
-              .query('SELECT DISTINCT stack FROM project WHERE stack IS NOT NULL ORDER BY stack')
-              .all() as { stack: string }[]
-          ).map((r) => r.stack)
-        : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
-  return values.join(', ') || '(none)'
-}
+export { docSubjects }
 
 export const listDocs = listDocsStore
 /** A browsable projection: body contents are fetched only through getDoc. */
 export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] =>
   listDocMetadataStore(filters)
 
-export function getDoc(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  owner: string | null = null,
-): Doc | null {
-  validScope(scope)
-  const row = db()
-    .query(
-      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope = ? AND d.subject IS ? AND d.owner IS ? AND d.slug = ?`,
-    )
-    .get(scope, subject, owner, slug) as Doc | null
-  return row && ownerVisible(row.owner, owner) ? row : null
-}
+export const getDoc = getDocStore
 
 export { signedInDocOwner } from './doc-owner.ts'
 
@@ -617,7 +554,7 @@ export async function consumeDoc(
 ): Promise<Doc & { already_consumed: boolean }> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
-  validateHistoricAddress(scope, slug)
+  validateHistoricDocAddress(scope, slug)
   const identity = docWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
@@ -931,7 +868,7 @@ export function listDocRevisions(
   slug: string,
   owner: string | null = null,
 ): DocRevisionMetadata[] {
-  validateHistoricAddress(scope, slug)
+  validateHistoricDocAddress(scope, slug)
   return db()
     .query(
       `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
@@ -956,7 +893,7 @@ export async function restoreDoc(
 ): Promise<Doc> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
-  validateHistoricAddress(scope, slug)
+  validateHistoricDocAddress(scope, slug)
   const identity = docWriteIdentity(context)
   const revision = getDocRevision(revisionId, owner)
   if (
@@ -998,19 +935,12 @@ export async function restoreDoc(
     getDoc(scope, subject, slug, owner),
   )
   const liveRecordId = getDoc(scope, subject, slug, owner)?.record_id
-  const restoredParentSlug =
-    revision.parent_id == null
-      ? null
-      : ((
-          db().query('SELECT slug FROM doc WHERE id=?').get(revision.parent_id) as {
-            slug: string
-          } | null
-        )?.slug ?? null)
-  if (revision.parent_id !== null && restoredParentSlug === null) {
-    throw new Error(
-      `refusing to restore ${scope}/${subject ?? '_'}/${slug}: revision parent ${revision.parent_id} no longer exists; cleared by: restore the parent first or run orch doc restore ${slug} with a revision recorded without a parent`,
-    )
-  }
+  const restoredParentSlug = localRestoredParentSlug({
+    scope,
+    subject,
+    slug,
+    parentId: revision.parent_id,
+  })
   const tree = localDocTreeFields(
     {
       scope,

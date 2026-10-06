@@ -2,7 +2,7 @@
 /** Applies document tree policy to local-store facts and maps local parents to hosted ids. */
 import { DOC_AUDIENCES, type DocAudience } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
-import { type Doc, LATEST_REVISION_SQL } from './doc-read-store.ts'
+import type { Doc } from './doc-read-store.ts'
 import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
 
 type TreeWriteInput = {
@@ -13,6 +13,9 @@ type TreeWriteInput = {
   audience?: DocAudience
   parentSlug?: string | null
   position?: number
+  title?: string
+  body?: string
+  delivery?: string
 }
 
 export type LocalDocTreeFields = {
@@ -30,7 +33,7 @@ function treeDoc(
 ): Doc | null {
   return db()
     .query(
-      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
+      `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(scope, subject, owner, slug) as Doc | null
 }
@@ -65,7 +68,7 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
     ancestor = ancestor.parent_id
       ? (db()
           .query(
-            `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
+            `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
           )
           .get(ancestor.parent_id) as Doc | null)
       : null
@@ -120,4 +123,22 @@ export function localParentRecordId(doc: {
     )
   }
   return recordId
+}
+
+export function localRestoredParentSlug(input: {
+  scope: string
+  subject: string | null
+  slug: string
+  parentId: number | null
+}): string | null {
+  if (input.parentId === null) return null
+  const parent = db().query('SELECT slug FROM doc WHERE id=?').get(input.parentId) as {
+    slug: string
+  } | null
+  if (!parent) {
+    throw new Error(
+      `refusing to restore ${input.scope}/${input.subject ?? '_'}/${input.slug}: revision parent ${input.parentId} no longer exists; cleared by: restore the parent first or run orch doc restore ${input.slug} with a revision recorded without a parent`,
+    )
+  }
+  return parent.slug
 }

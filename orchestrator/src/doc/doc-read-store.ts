@@ -77,6 +77,27 @@ export type DocRevisionMetadata = Omit<
 const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
+function treeColumns(database: Database): boolean {
+  return Boolean(
+    database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audience'").get(),
+  )
+}
+
+function docTreeSelect(database: Database): { columns: string; join: string; position: string } {
+  return treeColumns(database)
+    ? {
+        columns: 'd.*, p.slug AS parent_slug',
+        join: ' LEFT JOIN doc p ON p.id=d.parent_id',
+        position: 'd.position',
+      }
+    : {
+        columns:
+          "d.*, 'technical' AS audience, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
+        join: '',
+        position: '0+0',
+      }
+}
+
 function validScope(scope: string): void {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
@@ -114,6 +135,22 @@ function addressFilters(filters: {
   return { where, values }
 }
 
+export function getDocStore(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null = null,
+  database: Database = db(),
+): Doc | null {
+  validScope(scope)
+  const tree = docTreeSelect(database)
+  return database
+    .query(
+      `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join} WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
+    )
+    .get(scope, subject, owner, slug) as Doc | null
+}
+
 export function listDocsStore(
   filters: {
     scope?: string
@@ -124,15 +161,18 @@ export function listDocsStore(
   database: Database = db(),
 ): Doc[] {
   const { where, values } = addressFilters(filters)
+  const tree = docTreeSelect(database)
   if (filters.audience !== undefined) {
     validAudience(filters.audience)
-    where.push('d.audience = ?')
-    values.push(filters.audience)
+    if (treeColumns(database)) {
+      where.push('d.audience = ?')
+      values.push(filters.audience)
+    } else if (filters.audience === 'user') where.push('0')
   }
   return database
     .query(
-      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-        "ORDER BY d.scope, COALESCE(d.subject, ''), d.position, d.title",
+      `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
+        `ORDER BY d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
     )
     .all(...values) as Doc[]
 }

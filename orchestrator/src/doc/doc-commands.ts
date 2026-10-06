@@ -195,6 +195,73 @@ function handledReadDocCommand(
   return true
 }
 
+function setTreeOptions(flags: DocFlags): {
+  audience: ReturnType<typeof docAudience>
+  parentSlug: string | null | undefined
+  position: number | undefined
+} {
+  const { has, flag } = flags
+  const audience = docAudience(flag('audience'))
+  if (has('parent') && has('no-parent')) throw new Error('use --parent or --no-parent, not both')
+  const parentSlug = has('no-parent') ? null : has('parent') ? flag('parent') : undefined
+  if (has('parent') && !parentSlug?.trim()) throw new Error('--parent requires a slug')
+  return { audience, parentSlug, position: docPosition(flag('position')) }
+}
+
+async function handleSetDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+): Promise<boolean> {
+  if (sub !== 'set') return false
+  const { has, flag } = flags
+  const slug = argv[2]
+  const title = flag('title')
+  const reason = flag('reason')
+  if (!slug || !address.scope || title === undefined || !reason?.trim()) {
+    throw new Error(
+      'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
+    )
+  }
+  const canonTree = commandCanonTree(address.scope, address.subject, flags, presentation)
+  const body = flag('file')
+    ? readFileSync(flag('file')!, 'utf8')
+    : !presentation.stdinIsTTY
+      ? await presentation.stdinText()
+      : (() => {
+          throw new Error('no body: pass --file F or pipe markdown on stdin')
+        })()
+  const delivery = docDelivery(flag('delivery'))
+  const tree = setTreeOptions(flags)
+  const forceInject = flag('force-inject')
+  if (has('force-inject') && !forceInject?.trim())
+    throw new Error('--force-inject requires a non-empty reason')
+  const doc = await setDoc({
+    ...address,
+    scope: address.scope,
+    slug,
+    title,
+    body,
+    reason,
+    author: flag('author'),
+    forceInject,
+    delivery,
+    ...tree,
+    expectedRevision: flag('expect'),
+    canonTree,
+  })
+  const root = repoRootForDoc(doc, canonTree?.root)
+  const warnings = root ? checkDoc(body, { repoRoot: root }) : []
+  if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
+  else {
+    presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+    for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
+  }
+  return true
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -208,58 +275,7 @@ export async function docCommand(
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
-  if (sub === 'set') {
-    const slug = argv[2]
-    const title = flag('title')
-    const reason = flag('reason')
-    if (!slug || !scope || title === undefined || !reason?.trim()) {
-      throw new Error(
-        'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
-      )
-    }
-    const canonTree = commandCanonTree(scope, subject, flags, presentation)
-    const body = flag('file')
-      ? readFileSync(flag('file')!, 'utf8')
-      : !presentation.stdinIsTTY
-        ? await presentation.stdinText()
-        : (() => {
-            throw new Error('no body: pass --file F or pipe markdown on stdin')
-          })()
-    const delivery = docDelivery(flag('delivery'))
-    const audience = docAudience(flag('audience'))
-    if (has('parent') && has('no-parent')) throw new Error('use --parent or --no-parent, not both')
-    const parentSlug = has('no-parent') ? null : has('parent') ? flag('parent') : undefined
-    if (has('parent') && !parentSlug?.trim()) throw new Error('--parent requires a slug')
-    const position = docPosition(flag('position'))
-    const forceInject = flag('force-inject')
-    if (has('force-inject') && !forceInject?.trim())
-      throw new Error('--force-inject requires a non-empty reason')
-    const doc = await setDoc({
-      scope,
-      subject,
-      owner,
-      slug,
-      title,
-      body,
-      reason,
-      author: flag('author'),
-      forceInject,
-      delivery,
-      audience,
-      parentSlug,
-      position,
-      expectedRevision: flag('expect'),
-      canonTree,
-    })
-    const root = repoRootForDoc(doc, canonTree?.root)
-    const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-    if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
-    else {
-      presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
-      for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
-    }
-    return
-  }
+  if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)

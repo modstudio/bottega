@@ -4,6 +4,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -84,12 +85,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
   ]),
-  module('orchestrator/src/doc/doc-tree-rules.ts', [], ['../../../shared/docs.ts']),
-  module('orchestrator/src/doc/local-doc-tree-service.ts', [
-    '../database/db.ts',
-    './doc-read-store.ts',
-    './doc-tree-rules.ts',
-  ], ['../../../shared/docs.ts']),
+  ...docModules,
   module('orchestrator/src/doc/doc-owner.ts', [
     '../record/record-attribution.ts',
     '../record/record-auth.ts',
@@ -97,6 +93,7 @@ export const modules: ArchitectureModule[] = [
     '../record/record-write-authority.ts',
   ]),
   module('orchestrator/src/doc/local-doc-write.ts', [
+    '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
     './doc-read-store.ts',
