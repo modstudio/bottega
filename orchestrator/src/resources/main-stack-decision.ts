@@ -10,13 +10,6 @@ export function decideTerminalDockerInventory(facts: {
   return facts.chainHasRecordedWorktree ? 'take' : 'skip'
 }
 
-export function classifyMainStackState(facts: {
-  containerCount: number
-  runningContainerCount: number
-}): 'running' | 'stopped' {
-  return facts.runningContainerCount > 0 ? 'running' : 'stopped'
-}
-
 export type WorktreeResourceFacts = {
   attributable: boolean
   mainCheckout: boolean

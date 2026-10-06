@@ -110,6 +110,21 @@ export function ensureMainStackStarted(input: {
   }, database)
 }
 
+export function ensureProjectMainStack(
+  project: Project,
+  consumer: MainStackConsumer,
+  database?: Database,
+): void {
+  ensureMainStackStarted({
+    projectId: project.id,
+    projectName: project.name,
+    projectPath: project.path,
+    declaration: project.settings.mainStack,
+    consumer,
+    database,
+  })
+}
+
 function runningMainStackPaths(): CommandResult {
   let result: ReturnType<typeof Bun.spawnSync>
   const command = [
