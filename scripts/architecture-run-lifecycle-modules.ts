@@ -56,6 +56,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../dispatch/prompt-retarget.ts',
     '../../../shared/record/schema.ts',
     '../resources/resource-claims.ts',
+    '../resources/main-stack.ts',
     '../resources/resource-ownership.ts',
     '../review/review-target.ts',
     './run-artifacts.ts',
@@ -111,6 +112,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/database-location.ts',
     '../project/project-lock.ts',
     './run-alive.ts',
+  ]),
+  module('orchestrator/src/run/run-mcp-main-stack.ts', [
+    '../mcp/mcp-preflight.ts',
+    '../project/projects.ts',
+    '../resources/main-stack.ts',
+    './run-mcp-attachment.ts',
   ]),
   module('orchestrator/src/run/run-live.ts', [
     '../agent/agents.ts',

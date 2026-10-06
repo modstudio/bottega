@@ -2,15 +2,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import type { Project } from '../project/projects.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
-import {
-  classifyMainStackState,
-  decideMainStackIdleStop,
-  decideMainStackStart,
-} from './main-stack-decision.ts'
+import { decideMainStackEnsure, decideMainStackIdleStop } from './main-stack-decision.ts'
 
 export const MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT = 4 * 60 * 60 * 1_000
 const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'ORCH_MAIN_STACK_IDLE_STOP_AFTER_MS'
@@ -58,38 +55,78 @@ export function mainStackIdleStopAfterMs(
   return value
 }
 
-function stackState(projectPath: string): 'running' | 'stopped' | 'unknown' {
-  const all = dockerCompose(projectPath, ['ps', '--all', '--quiet'])
-  if (!all.ok) return 'unknown'
-  const running = dockerCompose(projectPath, ['ps', '--status', 'running', '--quiet'])
-  if (!running.ok) return 'unknown'
-  const allServices = all.output.split('\n').filter(Boolean)
-  const runningServices = running.output.split('\n').filter(Boolean)
-  return classifyMainStackState({
-    containerCount: allServices.length,
-    runningContainerCount: runningServices.length,
-  })
-}
-
 /** Start a declared consumer's main stack before the consumer runs. */
 export function ensureMainStackStarted(input: {
+  projectId: number
+  projectName: string
   projectPath: string
-  declaredConsumers: MainStackConsumer[] | undefined
+  declaration: { consumers: MainStackConsumer[]; requiredServices?: string[] } | undefined
   consumer: MainStackConsumer
+  database?: Database
 }): void {
-  if (!input.declaredConsumers?.includes(input.consumer)) return
-  const state = stackState(input.projectPath)
-  const decision = decideMainStackStart({
+  if (!input.declaration?.consumers.includes(input.consumer)) return
+  const required = input.declaration.requiredServices
+  const observed = dockerCompose(input.projectPath, [
+    'ps',
+    '--status',
+    'running',
+    '--services',
+    ...(required ?? []),
+  ])
+  const decision = decideMainStackEnsure({
     consumer: input.consumer,
-    declaredConsumers: input.declaredConsumers,
-    stackState: state,
+    declaration: input.declaration,
+    observed: observed.ok
+      ? { runningServices: observed.output.split('\n').filter(Boolean) }
+      : 'unknown',
   })
-  if (decision === 'report') {
-    throw new Error(`cannot ascertain main stack state in ${input.projectPath}`)
+  const command = ['docker', 'compose', 'up', '-d', '--wait', ...(required ?? [])].join(' ')
+  if (decision === 'refuse') {
+    throw new Error(
+      `cannot ascertain main stack for ${input.projectName}, required by ${input.consumer}, from registered main checkout ${input.projectPath}: ${observed.ok ? 'unknown state' : observed.reason}; run ${command} there, then retry`,
+    )
   }
-  if (decision === 'continue') return
-  const started = dockerCompose(input.projectPath, ['up', '-d', '--wait'])
-  if (!started.ok) throw new Error(started.reason)
+  if (decision === 'start-stack' || decision === 'start-services') {
+    const started = dockerCompose(input.projectPath, [
+      'up',
+      '-d',
+      '--wait',
+      ...(decision === 'start-services' ? (required ?? []) : []),
+    ])
+    if (!started.ok)
+      throw new Error(
+        `main stack for ${input.projectName}, required by ${input.consumer}, did not become healthy from registered main checkout ${input.projectPath}: ${started.reason}; run ${command} there, then retry`,
+      )
+  }
+  if (input.projectId === 0) return
+  try {
+    const database = input.database ?? writableDb()
+    writeTransaction(() => {
+      database
+        .query(
+          `INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,?)
+           ON CONFLICT(project_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
+        )
+        .run(input.projectId, nowIso())
+    }, database)
+  } catch {
+    // The stack is already available. Missing activity only shortens its idle lease.
+  }
+}
+
+export function ensureProjectMainStack(
+  project: Project,
+  consumer: MainStackConsumer,
+  database?: Database,
+): void {
+  ensureMainStackStarted({
+    projectId: project.id,
+    projectName: project.name,
+    projectPath: project.path,
+    declaration: project.settings.mainStack,
+    consumer,
+    database,
+  })
 }
 
 function runningMainStackPaths(): CommandResult {
@@ -121,10 +158,13 @@ function runningMainStackPaths(): CommandResult {
 function latestActivity(
   database: Database,
   projectId: number,
+  nowMs: number,
 ): {
   liveRun: boolean
+  liveSession: boolean
   lastWorktreeCreatedAtMs: number | null
   lastGateAtMs: number | null
+  lastEnsureAtMs: number | null
 } {
   const liveRows = database
     .query("SELECT id,status,pid FROM run WHERE project_id=? AND status IN ('running','asking')")
@@ -145,6 +185,18 @@ function latestActivity(
        JOIN run r ON r.id=g.run_id WHERE r.project_id=?`,
     )
     .get(projectId) as { value: string | null }
+  const project = database.query('SELECT name FROM project WHERE id=?').get(projectId) as {
+    name: string
+  }
+  const sessionCutoff = new Date(nowMs - SESSION_LIVE_MS).toISOString()
+  const liveSession = Boolean(
+    database
+      .query("SELECT 1 FROM presence WHERE role='architect' AND project=? AND last_seen>=? LIMIT 1")
+      .get(project.name, sessionCutoff),
+  )
+  const ensured = database
+    .query('SELECT last_ensured_at value FROM main_stack_activity WHERE project_id=?')
+    .get(projectId) as { value: string | null } | null
   const recordedTime = (value: string | null): number | null => {
     if (value === null) return null
     const parsed = Date.parse(value)
@@ -153,8 +205,10 @@ function latestActivity(
   }
   return {
     liveRun,
+    liveSession,
     lastWorktreeCreatedAtMs: recordedTime(created.value),
     lastGateAtMs: recordedTime(gated.value),
+    lastEnsureAtMs: recordedTime(ensured?.value ?? null),
   }
 }
 
@@ -183,7 +237,7 @@ export function sweepIdleMainStacks(input: {
     if (!runningPaths.has(project.path)) continue
     let activity: ReturnType<typeof latestActivity>
     try {
-      activity = latestActivity(input.database, project.id)
+      activity = latestActivity(input.database, project.id, input.nowMs ?? Date.now())
     } catch (error) {
       input.error(`main stack ${project.name}: idleness unavailable: ${(error as Error).message}`)
       failed = true

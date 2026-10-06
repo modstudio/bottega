@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import {
   boundedGateOutputTail,
   GATE_OUTPUT_TAIL_BYTES,
@@ -95,6 +96,14 @@ export async function runArchitectGate(input: {
       `orch gate run: project ${project.name} has no registered gate; set settings.gate`,
     )
   }
+  ensureMainStackStarted({
+    projectId: project.id,
+    projectName: project.name,
+    projectPath: project.path,
+    declaration: project.settings.mainStack,
+    consumer: 'gate',
+    database: input.d,
+  })
   const command = resolveGateCommand(gate, project.path)
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const ran = await (input.runner ?? defaultRunner)({ command, cwd, write })

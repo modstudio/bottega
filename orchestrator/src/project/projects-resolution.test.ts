@@ -71,10 +71,15 @@ describe('projects are data, not code', () => {
       validateProjectSettings({ mainStack: { consumers: ['gate', 'worktree-create'] } }),
     ).toEqual([])
     expect(
+      validateProjectSettings({
+        mainStack: { consumers: ['mcp'], requiredServices: ['db', 'cache'] },
+      }),
+    ).toEqual([])
+    expect(
       validateProjectSettings({ mainStack: { consumers: ['unknown'] } } as unknown as Parameters<
         typeof validateProjectSettings
       >[0]),
-    ).toEqual(['mainStack.consumers entries must be gate or worktree-create'])
+    ).toEqual(['mainStack.consumers entries must be gate, mcp, or worktree-create'])
   })
 
   test('checks accept the optional policy shapes', () => {

@@ -20,6 +20,7 @@ import { runAlive } from './run-alive.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
+import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 
 /**
@@ -90,6 +91,7 @@ export async function detach(
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
     if (!selectedAgent) throw new Error('MCP preflight requires the selected agent')
+    ensureDispatchMcpMainStack({ mcpRequest, cwd, projectName: spec.repo })
     preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
   }
   const runsDir = RUNS_DIR

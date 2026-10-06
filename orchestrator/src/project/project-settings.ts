@@ -8,7 +8,7 @@ import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import type { DocsSettings, ReleaseSettings } from './project-injection.ts'
 
-export type MainStackConsumer = 'gate' | 'worktree-create'
+export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
@@ -98,7 +98,7 @@ export type WorktreeTool = {
 
 export type ProjectSettings = {
   /** Main-checkout stack consumers that require start-on-demand. */
-  mainStack?: { consumers: MainStackConsumer[] }
+  mainStack?: { consumers: MainStackConsumer[]; requiredServices?: string[] }
   /** Local opt-ins for semantic search corpora. */
   search?: { code?: boolean }
   autonomy?: AutonomySettings

@@ -48,23 +48,28 @@ function gatePlan(runId: number): {
   baseCommit: string
   trunk: string | null
   mainStackConsumers: MainStackConsumer[] | undefined
+  mainStackRequiredServices: string[] | undefined
+  projectId: number
+  projectName: string
 } {
   const row = db()
     .query(
-      `SELECT r.worktree,r.base_commit,p.settings
+      `SELECT r.worktree,r.base_commit,p.id project_id,p.name project_name,p.settings
        FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
     )
     .get(runId) as {
     worktree: string | null
     base_commit: string | null
     settings: string | null
+    project_id: number
+    project_name: string
   } | null
   if (!row?.worktree) throw new Error(`run ${runId} has no recorded worktree`)
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
   const settings = JSON.parse(row.settings ?? '{}') as {
     gate?: unknown
     trunk?: unknown
-    mainStack?: { consumers?: MainStackConsumer[] }
+    mainStack?: { consumers?: MainStackConsumer[]; requiredServices?: string[] }
   }
   if (typeof settings.gate !== 'string' || !settings.gate.trim()) {
     throw new Error(`run ${runId}'s project has no registered gate`)
@@ -76,6 +81,9 @@ function gatePlan(runId: number): {
     trunk:
       typeof settings.trunk === 'string' && settings.trunk.trim() ? settings.trunk.trim() : null,
     mainStackConsumers: settings.mainStack?.consumers,
+    mainStackRequiredServices: settings.mainStack?.requiredServices,
+    projectId: row.project_id,
+    projectName: row.project_name,
   }
 }
 
@@ -157,8 +165,15 @@ function startGateExecution(
       const mainCheckout = environment.ORCH_MAIN_CHECKOUT
       if (!mainCheckout) throw new Error(`run ${request.run_id} has no recorded main checkout`)
       ensureMainStackStarted({
+        projectId: plan.projectId,
+        projectName: plan.projectName,
         projectPath: mainCheckout,
-        declaredConsumers: plan.mainStackConsumers,
+        declaration: plan.mainStackConsumers
+          ? {
+              consumers: plan.mainStackConsumers,
+              requiredServices: plan.mainStackRequiredServices,
+            }
+          : undefined,
         consumer: 'gate',
       })
       command = resolveGateCommand(plan.command, plan.worktree)

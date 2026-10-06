@@ -33,6 +33,7 @@ import {
 import { readMcpConfig, wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, stackAt } from '../project/projects.ts'
+import { ensureProjectMainStack } from '../resources/main-stack.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
@@ -671,6 +672,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               band: RECIPE_PORT_BAND,
             }),
           )
+        const callerProject = projectAt(callerCwd)
         worktree = withWorktreeCreateLock(repoRoot, () => {
           assertBranchHasNoAliveOwner({
             branch: existingBranch,
@@ -686,7 +688,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           const created = createWorkerWorktree({
             tool: creationTool,
             cwd: callerCwd,
-            mainProjectPath: projectAt(callerCwd)?.path ?? repoRoot,
+            mainProjectPath: callerProject?.path ?? repoRoot,
             runId: claim.id,
             writes: writesJob,
             readOnlyBase: readOnlyBase!,
@@ -705,7 +707,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,
             recordRecipeResource,
             claimRecipePort: claimRecipeServePort,
-            mainStackConsumers: projectAt(callerCwd)?.settings.mainStack?.consumers,
+            mainStackConsumers: callerProject?.settings.mainStack?.consumers,
+            mainStackRequiredServices: callerProject?.settings.mainStack?.requiredServices,
+            mainStackProject: callerProject ?? undefined,
             provisionTimeoutMs: timeoutMs,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
@@ -715,32 +719,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           if (current.status === 'stopped') {
             const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
             settleCreateTimeBranchCleanup(restored, claim.id)
-            if (cleanup.removed) {
-              db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
-            }
+            if (cleanup.removed) db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
             throw new Error(
               `run ${claim.id} was stopped during worktree creation; cleanup: ` +
                 `${cleanup.removed ? 'removed' : cleanup.detail}`,
             )
           }
           try {
-            // Carrying is opt-in, default off. That will look wrong: the
-            // function exists so an architect iterating on unfinished work can
-            // dispatch a run and have the worker see it. The asymmetry is what
-            // decides it. Not carrying fails as a worker that lacks context and
-            // says so — visible, recoverable, cheap. Carrying fails as another
-            // author's half-finished work inside a diff that is then judged,
-            // scored and possibly landed as the worker's — silent, and it
-            // corrupts the evidence the whole system runs on. The case the
-            // function exists for is still there: pass --carry.
-            //
-            // An explicit review from trunk deliberately selects a branch that
-            // need not descend from the caller. An overlay still comes only
-            // from that branch's own checkout, where the ancestry guard remains
-            // the protection against carrying reversions onto a newer tip.
-            // A tree rebuilt for a resume holds the chain's own tip, which the
-            // caller checkout need not contain; the ancestry guard protects new
-            // dispatches only, and nothing is carried into a rebuilt resume.
+            // Carry only by request; resumes and explicit reviews have their own ancestry.
             if (
               shouldAssertCallerAncestry(Boolean(opts.carry), Boolean(resumePlan)) &&
               !resolvedTaskBranch &&
@@ -942,6 +928,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       const project = projectAt(callerCwd)
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
+      ensureProjectMainStack(project, 'mcp')
       const config = prepareWorkerMcpConfig(
         cwd,
         project.path,

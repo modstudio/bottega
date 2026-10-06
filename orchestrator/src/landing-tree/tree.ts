@@ -250,6 +250,8 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         claimRecipePort: claimRecipeServePort,
         templateBaseRef: templateBase,
         mainStackConsumers: project.settings.mainStack?.consumers,
+        mainStackRequiredServices: project.settings.mainStack?.requiredServices,
+        mainStackProject: { id: project.id, name: project.name },
       })
     })
     const actualBranch = branchOf(created.path)

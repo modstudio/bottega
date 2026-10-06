@@ -589,6 +589,13 @@
       "when": 1790884800011,
       "tag": "0083_workflow_step_text",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "6",
+      "when": 1790884800012,
+      "tag": "0084_main_stack_activity",
+      "breakpoints": true
     }
   ]
 }

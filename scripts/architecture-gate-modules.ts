@@ -32,6 +32,7 @@ export const gateModules: GateModule[] = [
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../resources/main-stack.ts',
     './gate-decision.ts',
   ]),
 ]
