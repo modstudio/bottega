@@ -130,13 +130,6 @@ describe('file ruling decision', () => {
     expect(decide({ scope: 'machine' })).toEqual({ kind: 'refuse', code: 'foreign-project' })
   })
 
-  test('allows a matching resume project subject on the owner path', () => {
-    expect(decide({ scope: 'resume', subject: PLATFORM_SLUG })).toEqual({
-      kind: 'allow',
-      operator: false,
-    })
-  })
-
   test('allows another project address on the operator path', () => {
     expect(decide({ fromOperator: true, subject: 'other-project' })).toEqual({
       kind: 'allow',

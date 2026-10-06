@@ -1,7 +1,6 @@
 // concern: ruling-file
 /** Decides whether a ruling may be filed, without touching process or database state. */
 
-import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import type { RunMutationOwnerFacts } from './run-mutation-owner.ts'
@@ -40,9 +39,8 @@ function ownerAddress(input: {
   runProject: string | null
 }): 'foreign-project' | null {
   if (input.operator || input.requested !== 'doc') return null
-  const projectSubject = docScopeHasProjectSubject(input.scope)
-  const subject = input.subject ?? (projectSubject ? input.runProject : undefined)
-  if (projectSubject && subject === input.runProject) return null
+  const subject = input.subject ?? (input.scope === 'project' ? input.runProject : undefined)
+  if (input.scope === 'project' && subject === input.runProject) return null
   return 'foreign-project'
 }
 
