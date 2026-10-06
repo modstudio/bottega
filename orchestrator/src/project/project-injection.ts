@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import {
   refuseHubActionOverrides,
+  refuseNonCursorProjectId,
   resolveTrackerAgentActions,
   TRACKER_PROTOCOLS,
   type TrackerAction,
@@ -41,7 +42,10 @@ const trunkSchema = z.string().trim().min(1)
 const trackerSchema = strictObject({
   ...trackerSettingsShape,
   protocol: z.enum(TRACKER_PROTOCOLS),
-}).superRefine(refuseHubActionOverrides)
+}).superRefine((tracker, context) => {
+  refuseHubActionOverrides(tracker, context)
+  refuseNonCursorProjectId(tracker, context)
+})
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
