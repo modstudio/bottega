@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
@@ -482,7 +483,7 @@ function requireDoc(flag: string, docId: number, identity: CursorIdentity, d: Da
   if (!row) throw new Error(`${flag} does not exist`)
   const scoped =
     row.project_name === identity.project ||
-    (row.scope === 'project' && row.subject === identity.project)
+    (docScopeHasProjectSubject(row.scope) && row.subject === identity.project)
   if (!scoped)
     throw new Error(
       `${flag} is scoped to ${row.project_name ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,

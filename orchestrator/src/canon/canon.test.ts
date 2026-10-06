@@ -730,7 +730,7 @@ describe('scoped operator docs', () => {
     const options = {
       repoRoot: '/fixture',
       trackedFiles: new Set(['scripts/a-reads.php', 'scripts/plain.php']),
-    } as Parameters<typeof checkDoc>[1]
+    }
     expect(checkDoc('`scripts/a-{reads,writes}.php`', options)).toEqual([
       {
         kind: 'path',
@@ -743,7 +743,7 @@ describe('scoped operator docs', () => {
       checkDoc('`scripts/a-{reads,writes}.php`', {
         repoRoot: '/fixture',
         trackedFiles: new Set(['scripts/a-reads.php', 'scripts/a-writes.php']),
-      } as Parameters<typeof checkDoc>[1]),
+      }),
     ).toEqual([])
     expect(checkDoc('`scripts/missing.php`', options)).toEqual([
       {
