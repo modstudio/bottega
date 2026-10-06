@@ -12,6 +12,15 @@ import {
 const WORKER_NOTE_POLL_MS = 100
 type PendingNote = { id: number; run_id: number; text: string; file: string | null }
 
+function storeContention(error: unknown): boolean {
+  const candidate = error as { code?: unknown; message?: unknown }
+  return (
+    candidate?.code === 'SQLITE_BUSY' ||
+    candidate?.code === 'SQLITE_LOCKED' ||
+    /database (?:table )?is locked/i.test(String(candidate?.message))
+  )
+}
+
 function claim(runId: number): PendingNote | null {
   return writeTransaction(() => {
     const row = db()
@@ -119,13 +128,23 @@ export function startWorkerNoteBroker(
   filer: WorkerNoteFiler = fileWorkerNote,
 ): WorkerNoteBroker {
   let closed = false
+  let stopped = false
   let active: Promise<void> | null = null
   const poll = () => {
-    if (closed || active) return
+    if (closed || stopped || active) return
     let request: PendingNote | null
     try {
       request = claim(runId)
-    } catch {
+    } catch (error) {
+      if (!storeContention(error)) {
+        stopped = true
+        clearInterval(timer)
+        appendRunEvent(runId, {
+          ts: nowIso(),
+          type: 'text',
+          text: `worker note broker stopped after claim failure: ${String(error)}`,
+        })
+      }
       return
     }
     if (!request) return

@@ -53,6 +53,7 @@ const testPorts = {
     headIsTipOrAncestor: true,
   }),
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
+  resolveTreeCommit: () => 'abc',
 }
 
 function installEvidence(

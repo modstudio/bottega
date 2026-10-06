@@ -1,6 +1,8 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { runEventsPath } from '../events.ts'
 import { startWorkerNoteBroker } from './worker-note-broker.ts'
 
 afterEach(() => mock.restore())
@@ -95,4 +97,25 @@ test('host broker retries a claim that throws on a later poll tick', async () =>
   } finally {
     await broker.close()
   }
+})
+
+test('host broker records one permanent claim failure and stops polling', async () => {
+  const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+  const database = db()
+  let attempts = 0
+  spyOn(database, 'transaction').mockImplementation((() => {
+    attempts += 1
+    throw new Error('broken claim query')
+  }) as typeof database.transaction)
+
+  const broker = startWorkerNoteBroker(runId)
+  await Bun.sleep(250)
+  expect(attempts).toBe(1)
+  const events = readFileSync(runEventsPath(runId), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { text?: string })
+  expect(events).toHaveLength(1)
+  expect(events[0]?.text).toContain('broken claim query')
+  await broker.close()
 })
