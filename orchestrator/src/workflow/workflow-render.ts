@@ -113,13 +113,21 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
   ].join('\n')
 }
 
+function autonomyInstruction(
+  resolved: WorkflowStep['resolvedAutonomy']['value'],
+  declared: WorkflowStep['autonomy'],
+): string {
+  if (resolved === 'ask')
+    return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
+  if (resolved === 'auto' && declared === 'ask')
+    return 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+  if (resolved === 'review')
+    return 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+  return 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+}
+
 export function renderWorkflowStep(step: WorkflowStep): string {
-  const autonomy =
-    step.resolvedAutonomy.value === 'ask'
-      ? 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
-      : step.resolvedAutonomy.value === 'review'
-        ? 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-        : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+  const autonomy = autonomyInstruction(step.resolvedAutonomy.value, step.autonomy)
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
