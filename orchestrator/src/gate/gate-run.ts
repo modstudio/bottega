@@ -8,6 +8,7 @@ import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import {
   boundedGateOutputTail,
+  decideGateHeadCommit,
   GATE_OUTPUT_TAIL_BYTES,
   resolveGateCommand,
 } from './gate-decision.ts'
@@ -63,21 +64,35 @@ const defaultRunner: ArchitectGateRunner = ({ command, cwd, write }) =>
     })
   })
 
-function headCommit(cwd: string): string {
-  const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' })
-  if (result.status !== 0) {
+function gateHeadCommit(cwd: string): string | null {
+  const head = spawnSync('git', ['rev-parse', '--verify', 'HEAD^{commit}'], {
+    cwd,
+    encoding: 'utf8',
+  })
+  if (head.status !== 0) {
     throw new Error(
-      `orch gate run needs HEAD in ${cwd}: ${result.stderr?.trim() || `git exited ${result.status}`}`,
+      `orch gate run needs HEAD in ${cwd}: ${head.stderr?.trim() || `git exited ${head.status}`}`,
     )
   }
-  return result.stdout.trim()
+  const status = spawnSync('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
+    cwd,
+    encoding: 'utf8',
+  })
+  if (status.status !== 0) {
+    throw new Error(
+      `orch gate run needs git status in ${cwd}: ${status.stderr?.trim() || `git exited ${status.status}`}`,
+    )
+  }
+  return decideGateHeadCommit({
+    headCommit: head.stdout.trim(),
+    porcelainPaths: status.stdout.split('\0').filter(Boolean),
+  })
 }
 
 export async function runArchitectGate(input: {
   cwd?: string
   d?: Database
   runner?: ArchitectGateRunner
-  commit?: string
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   if (process.env.ORCH_DEPTH !== undefined)
@@ -106,6 +121,7 @@ export async function runArchitectGate(input: {
   })
   const command = resolveGateCommand(gate, project.path)
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
+  const commit = gateHeadCommit(cwd)
   const ran = await (input.runner ?? defaultRunner)({ command, cwd, write })
   const tail = boundedGateOutputTail(
     containsSecretShaped(ran.output) ? GATE_OUTPUT_WITHHELD : ran.output,
@@ -128,7 +144,7 @@ export async function runArchitectGate(input: {
         ran.elapsedMs,
         tail,
         command,
-        input.commit ?? headCommit(cwd),
+        commit,
         caller,
         cwd,
       )

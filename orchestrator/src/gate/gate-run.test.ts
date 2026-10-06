@@ -1,14 +1,20 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations } from '../database/migrations.ts'
+import { git } from '../git/git-environment.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
+import { passingGateForCommit } from './gate-passed.ts'
 import { architectGateProcessExitCode, runArchitectGate } from './gate-run.ts'
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 let priorDepth: string | undefined
 let priorSession: string | undefined
+const directories: string[] = []
 beforeEach(() => {
   priorDepth = process.env.ORCH_DEPTH
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -20,19 +26,41 @@ afterEach(() => {
   else process.env.ORCH_DEPTH = priorDepth
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
-const database = () => {
+const database = (path = repositoryPath) => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'fixture',
-    repositoryPath,
+    path,
     'bun',
     JSON.stringify({ gate: 'bun run check' }),
   )
   return d
+}
+
+function temporaryRepository(): string {
+  const path = mkdtempSync(join(tmpdir(), 'orch-architect-gate-'))
+  directories.push(path)
+  git(['init', '--initial-branch=main'], path)
+  writeFileSync(join(path, 'README.md'), 'fixture\n')
+  git(['add', 'README.md'], path)
+  git(
+    [
+      '-c',
+      'user.name=Orch Test',
+      '-c',
+      'user.email=orch@example.invalid',
+      'commit',
+      '-m',
+      'fixture',
+    ],
+    path,
+  )
+  return path
 }
 
 test('maps recorded gate exit codes to process exit codes', () => {
@@ -42,12 +70,13 @@ test('maps recorded gate exit codes to process exit codes', () => {
 })
 
 test('inserts a finished architect row with a null run_id and no tooling paths', async () => {
-  const d = database()
+  const repository = temporaryRepository()
+  const d = database(repository)
+  const commit = git(['rev-parse', 'HEAD'], repository)
   const chunks: string[] = []
   const result = await runArchitectGate({
-    cwd: repositoryPath,
+    cwd: repository,
     d,
-    commit: 'abc',
     write: (chunk) => chunks.push(chunk),
     runner: ({ write }) => {
       write('ok\n')
@@ -75,10 +104,33 @@ test('inserts a finished architect row with a null run_id and no tooling paths',
     finished_at: '2026-09-01T00:00:01.000Z',
     exit_code: 0,
     tooling_paths: '[]',
-    head_commit: 'abc',
-    cwd: repositoryPath,
+    head_commit: commit,
+    cwd: repository,
     output_artifact: null,
   })
+})
+
+test('a dirty tree records no commit and is not a passing gate for HEAD', async () => {
+  const repository = temporaryRepository()
+  const d = database(repository)
+  const commit = git(['rev-parse', 'HEAD'], repository)
+  writeFileSync(join(repository, 'dirty.txt'), 'dirty\n')
+
+  await runArchitectGate({
+    cwd: repository,
+    d,
+    write: () => {},
+    runner: () => ({
+      exitCode: 0,
+      output: '',
+      startedAt: '2026-09-01T00:00:00.000Z',
+      finishedAt: '2026-09-01T00:00:01.000Z',
+      elapsedMs: 1000,
+    }),
+  })
+
+  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+  expect(passingGateForCommit(commit, repository, d).gateId).toBeNull()
 })
 
 test('bounds the recorded tail', async () => {
@@ -87,7 +139,6 @@ test('bounds the recorded tail', async () => {
   await runArchitectGate({
     cwd: repositoryPath,
     d,
-    commit: 'abc',
     write: () => {},
     runner: () => ({
       exitCode: 1,
@@ -107,7 +158,6 @@ test('withholds secret-shaped output', async () => {
   await runArchitectGate({
     cwd: repositoryPath,
     d,
-    commit: 'abc',
     write: () => {},
     runner: () => ({
       exitCode: 0,
@@ -130,7 +180,6 @@ test('refuses a project without a registered gate', async () => {
     runArchitectGate({
       cwd: repositoryPath,
       d,
-      commit: 'abc',
       runner: () => {
         throw new Error('should not run')
       },
