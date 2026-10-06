@@ -17,7 +17,7 @@ import { endpointsFromEnvironment, probeEndpointStatuses } from './services/endp
 
 function usage(): never {
   throw new Error(
-    'usage: bun retrieval/src/search-cli.ts "<query>" [--k N] [--json] [--code --project <path>]',
+    'usage: bun retrieval/src/search-cli.ts "<query>" [--k N] [--json] [--scope S] [--subject X] [--code --project <path>]',
   )
 }
 
@@ -69,12 +69,16 @@ export function parseSearchArguments(argv: string[]): {
   json: boolean
   code: boolean
   projectPath?: string
+  scope?: string
+  subject?: string
 } {
   let query: string | undefined
   let k = 5
   let json = false
   let code = false
   let projectPath: string | undefined
+  let scope: string | undefined
+  let subject: string | undefined
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--json') json = true
@@ -82,6 +86,12 @@ export function parseSearchArguments(argv: string[]): {
     else if (argument === '--project') {
       projectPath = argv[++index]
       if (!projectPath) usage()
+    } else if (argument === '--scope') {
+      scope = argv[++index]
+      if (!scope) usage()
+    } else if (argument === '--subject') {
+      subject = argv[++index]
+      if (!subject) usage()
     } else if (argument === '--k') {
       const value = argv[++index]
       if (!value || !/^\d+$/.test(value)) usage()
@@ -92,7 +102,16 @@ export function parseSearchArguments(argv: string[]): {
   if (!query) usage()
   if (code && !projectPath) usage()
   if (!code && projectPath) usage()
-  return { query, k, json, code, ...(projectPath ? { projectPath } : {}) }
+  if (code && (scope || subject)) usage()
+  return {
+    query,
+    k,
+    json,
+    code,
+    ...(projectPath ? { projectPath } : {}),
+    ...(scope ? { scope } : {}),
+    ...(subject ? { subject } : {}),
+  }
 }
 
 export function formatRefreshSummary(refresh: {
@@ -125,12 +144,12 @@ export async function main(argv: string[]): Promise<void> {
     if (statuses.some((status) => !status.reachable)) process.exitCode = 1
     return
   }
-  const { query, k, json, code, projectPath } = parseSearchArguments(argv)
+  const { query, k, json, code, projectPath, scope, subject } = parseSearchArguments(argv)
   const output = code
     ? CodeSearchOutputSchema.parse(
         await searchCode(await registeredCodeProject(projectPath!), query, k),
       )
-    : DocSearchOutputSchema.parse(await search(query, k))
+    : DocSearchOutputSchema.parse(await search(query, k, { scope, subject }))
   if (json) {
     console.log(JSON.stringify(output))
     return

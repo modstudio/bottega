@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { upsertProject } from '../project/projects.ts'
 import { checkRetrieval, searchDocs } from './doc-search.ts'
 
 test('orch adapter parses the retrieval JSON contract', async () => {
@@ -23,7 +24,7 @@ test('orch adapter parses the retrieval JSON contract', async () => {
     ],
   }
   const seen: string[][] = []
-  const result = await searchDocs('meaning', 1, async (argv) => {
+  const result = await searchDocs('meaning', 1, {}, async (argv) => {
     seen.push(argv)
     return { stdout: JSON.stringify(output), stderr: '', exitCode: 0 }
   })
@@ -32,12 +33,44 @@ test('orch adapter parses the retrieval JSON contract', async () => {
   expect(result).toEqual(output)
 })
 
+test('orch adapter forwards optional document address filters', async () => {
+  upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+  const seen: string[][] = []
+  const output = {
+    query: 'meaning',
+    k: 2,
+    contract: { model: 'model', dimension: 1024, instructionVersion: 'doc-search-v1' },
+    refresh: { embedded: 0, deleted: 0, unchanged: 0, stale: 0 },
+    results: [],
+  }
+  const runner = async (argv: string[]) => {
+    seen.push(argv)
+    return { stdout: JSON.stringify(output), stderr: '', exitCode: 0 }
+  }
+
+  await searchDocs('meaning', 2, {}, runner)
+  await searchDocs('meaning', 2, { scope: 'canon' }, runner)
+  await searchDocs('meaning', 2, { subject: PLATFORM_SLUG }, runner)
+  await searchDocs('meaning', 2, { scope: 'canon', subject: PLATFORM_SLUG }, runner)
+
+  expect(seen).toEqual([
+    ['meaning', '--k', '2', '--json'],
+    ['meaning', '--k', '2', '--json', '--scope', 'canon'],
+    ['meaning', '--k', '2', '--json', '--subject', PLATFORM_SLUG],
+    ['meaning', '--k', '2', '--json', '--scope', 'canon', '--subject', PLATFORM_SLUG],
+  ])
+})
+
 test('orch adapter refuses malformed or failed retrieval output', async () => {
   await expect(
-    searchDocs('meaning', 1, async () => ({ stdout: '{}', stderr: '', exitCode: 0 })),
+    searchDocs('meaning', 1, {}, async () => ({ stdout: '{}', stderr: '', exitCode: 0 })),
   ).rejects.toThrow('invalid JSON contract')
   await expect(
-    searchDocs('meaning', 1, async () => ({ stdout: '', stderr: 'endpoint absent', exitCode: 1 })),
+    searchDocs('meaning', 1, {}, async () => ({
+      stdout: '',
+      stderr: 'endpoint absent',
+      exitCode: 1,
+    })),
   ).rejects.toThrow('endpoint absent')
 })
 

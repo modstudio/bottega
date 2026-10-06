@@ -3,6 +3,7 @@
 
 import { DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { validateDocAddressFilter } from './docs.ts'
 
 type Runner = (argv: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 
@@ -46,8 +47,17 @@ export async function checkRetrieval(runner: Runner = runRetrieval) {
   return runner(['--check'])
 }
 
-export async function searchDocs(query: string, k: number, runner: Runner = runRetrieval) {
-  const result = await runner([query, '--k', String(k), '--json'])
+export async function searchDocs(
+  query: string,
+  k: number,
+  filter: { scope?: string; subject?: string } = {},
+  runner: Runner = runRetrieval,
+) {
+  validateDocAddressFilter(filter)
+  const argv = [query, '--k', String(k), '--json']
+  if (filter.scope !== undefined) argv.push('--scope', filter.scope)
+  if (filter.subject !== undefined) argv.push('--subject', filter.subject)
+  const result = await runner(argv)
   if (result.exitCode !== 0) {
     throw new Error(
       result.stderr.trim() || result.stdout.trim() || `retrieval search exited ${result.exitCode}`,

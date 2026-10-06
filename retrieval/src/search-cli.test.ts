@@ -12,3 +12,20 @@ test('retrieval search accepts options before the query', () => {
     parseSearchArguments(['--code', '--project', '/checkout', '--k', '3', '--json', 'meaning']),
   ).toEqual({ query: 'meaning', k: 3, json: true, code: true, projectPath: '/checkout' })
 })
+
+test('retrieval document search parses address filters', () => {
+  expect(
+    parseSearchArguments(['--scope', 'canon', '--subject', 'bottega', '--k', '3', 'meaning']),
+  ).toEqual({
+    query: 'meaning',
+    k: 3,
+    json: false,
+    code: false,
+    scope: 'canon',
+    subject: 'bottega',
+  })
+})
+
+test('retrieval search refuses an unknown option', () => {
+  expect(() => parseSearchArguments(['meaning', '--invented'])).toThrow('usage:')
+})

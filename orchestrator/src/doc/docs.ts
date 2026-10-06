@@ -173,6 +173,33 @@ function validScope(scope: string): asserts scope is DocScope {
   }
 }
 
+export function validateDocAddressFilter(filter: { scope?: string; subject?: string }): void {
+  if (filter.scope === undefined) return
+  validScope(filter.scope)
+  if (filter.subject === undefined) return
+  validateSubject(filter.scope, filter.subject)
+}
+
+function validateSubject(scope: DocScope, subject: string): void {
+  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
+  if (subjectKind === null) throw new Error(`${scope} docs take no subject; remove --subject`)
+  if (subjectKind === 'project' && !projectByName(subject)) {
+    throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
+  }
+  if (
+    subjectKind === 'stack' &&
+    !db().query('SELECT 1 FROM project WHERE stack=? AND retired_at IS NULL LIMIT 1').get(subject)
+  ) {
+    throw new Error(`unknown stack subject "${subject}"; valid values: ${validSubjects(scope)}`)
+  }
+  if (subjectKind === 'agent' && !AGENTS[subject]) {
+    throw new Error(`unknown agent subject "${subject}"; valid values: ${validSubjects(scope)}`)
+  }
+  if (subjectKind === 'job' && !JOBS[subject]) {
+    throw new Error(`unknown job subject "${subject}"; valid values: ${validSubjects(scope)}`)
+  }
+}
+
 function validateHistoricAddress(scope: string, slug: string): asserts scope is DocScope {
   validScope(scope)
   if (scope === 'canon') {
@@ -198,21 +225,7 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   }
   if (!subject)
     throw new Error(`${scope} docs require --subject; valid values: ${validSubjects(scope)}`)
-  if (subjectKind === 'project' && !projectByName(subject)) {
-    throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
-  }
-  if (
-    subjectKind === 'stack' &&
-    !db().query('SELECT 1 FROM project WHERE stack=? AND retired_at IS NULL LIMIT 1').get(subject)
-  ) {
-    throw new Error(`unknown stack subject "${subject}"; valid values: ${validSubjects(scope)}`)
-  }
-  if (subjectKind === 'agent' && !AGENTS[subject]) {
-    throw new Error(`unknown agent subject "${subject}"; valid values: ${validSubjects(scope)}`)
-  }
-  if (subjectKind === 'job' && !JOBS[subject]) {
-    throw new Error(`unknown job subject "${subject}"; valid values: ${validSubjects(scope)}`)
-  }
+  validateSubject(scope, subject)
 }
 
 export function docSubjects(): {

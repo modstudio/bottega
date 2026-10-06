@@ -6,13 +6,18 @@ import { searchProjectCode } from '../code/code-search.ts'
 import { searchDocs } from '../doc/doc-search.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 
+type SearchDocs = typeof searchDocs
+
 const text = (value: unknown) => ({
   content: [
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
 
-export function registerSearchTools(server: McpServer): void {
+export function registerSearchTools(
+  server: McpServer,
+  dependencies: { searchDocs: SearchDocs } = { searchDocs },
+): void {
   server.registerTool(
     'search_docs',
     {
@@ -20,9 +25,12 @@ export function registerSearchTools(server: McpServer): void {
       inputSchema: z.object({
         query: z.string().trim().min(1),
         k: z.number().int().positive().optional(),
+        scope: z.string().trim().min(1).optional(),
+        subject: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ query, k }) => text(await searchDocs(query, k ?? 5)),
+    async ({ query, k, scope, subject }) =>
+      text(await dependencies.searchDocs(query, k ?? 5, { scope, subject })),
   )
 
   server.registerTool(
