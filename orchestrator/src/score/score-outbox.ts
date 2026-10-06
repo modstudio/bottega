@@ -35,10 +35,22 @@ type LocalScore = {
   overlap: VerdictPayload['overlap']
 }
 
+type ReviewGrades = Pick<VerdictPayload, 'reproduced' | 'coverage' | 'limits' | 'overlap'>
+
+/** Decides which locally stored lens grades belong on the hosted verdict. */
+export function reviewGradesForVerdict(
+  delivery: VerdictPayload['delivery'],
+  grades: ReviewGrades,
+): ReviewGrades {
+  if (delivery !== 'none') return grades
+  return { reproduced: null, coverage: null, limits: null, overlap: null }
+}
+
 export function buildScoreRecordPayload(
   row: LocalScore & { record_id: string },
   machineId: string,
 ): VerdictPayload {
+  const grades = reviewGradesForVerdict(row.delivery, row)
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
@@ -51,10 +63,10 @@ export function buildScoreRecordPayload(
     note: row.note,
     scoredAt: row.scored_at,
     scoredBy: row.scored_by,
-    reproduced: row.reproduced,
-    coverage: row.coverage,
-    limits: row.limits,
-    overlap: row.overlap,
+    reproduced: grades.reproduced,
+    coverage: grades.coverage,
+    limits: grades.limits,
+    overlap: grades.overlap,
     updatedAt: row.scored_at,
   }
 }
