@@ -48,6 +48,13 @@ test('worker hook recognition accepts current, marked, and legacy generated hook
       `#!/bin/sh\n# orch worker pre-push hook\n${LEGACY_PRE_PUSH.slice('#!/bin/sh\n'.length)}`,
     ),
   ).toBe('orch-generated')
+  expect(
+    recognizeWorkerHook(
+      'pre-push',
+      `#!/bin/sh\n# orch worker pre-push hook\n${LEGACY_PRE_PUSH.slice('#!/bin/sh\n'.length)}`,
+      '#!/bin/sh\n# orch worker pre-push hook\nnew hook\n',
+    ),
+  ).toBe('orch-generated')
 })
 
 test('worker hook recognition refuses content outside the generated shapes', () => {
@@ -79,6 +86,22 @@ test('worker hook installer atomically replaces a legacy hook with executable cu
     installWorkerHook(hookDir, 'commit-msg', CURRENT_COMMIT_MSG)
 
     expect(readFileSync(installed, 'utf8')).toBe(CURRENT_COMMIT_MSG)
+    accessSync(installed, constants.X_OK)
+  } finally {
+    rmSync(hookDir, { recursive: true, force: true })
+  }
+})
+
+test('worker hook installer replaces the previous pre-push hook', () => {
+  const hookDir = mkdtempSync(join(tmpdir(), 'orch-worker-hook-'))
+  const installed = join(hookDir, 'pre-push')
+  const current = '#!/bin/sh\n# orch worker pre-push hook\nnew hook\n'
+  try {
+    writeFileSync(installed, LEGACY_PRE_PUSH)
+
+    installWorkerHook(hookDir, 'pre-push', current)
+
+    expect(readFileSync(installed, 'utf8')).toBe(current)
     accessSync(installed, constants.X_OK)
   } finally {
     rmSync(hookDir, { recursive: true, force: true })

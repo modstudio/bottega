@@ -41,9 +41,10 @@ test('reader launch installs and selects an unconditional worker pre-push guard'
     )
     const hook = Bun.spawnSync([prePush], { stdout: 'pipe', stderr: 'pipe' })
     expect(hook.exitCode).not.toBe(0)
-    expect(hook.stderr.toString().trim()).toBe(
+    expect(hook.stderr.toString()).toContain(
       'workers never push; the architect pushes after review',
     )
+    expect(hook.stderr.toString()).toContain('push originates from the guarded repository')
     const push = Bun.spawnSync(['git', 'push', repoRoot, 'HEAD:refs/heads/x'], {
       cwd: path,
       env: { ...process.env, ...environment },
