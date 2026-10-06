@@ -137,6 +137,13 @@ const database = () => {
   return d
 }
 
+const setTrackerStates = (d: Database, name: string, states: Record<string, string>) => {
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({ tracker: { states } }),
+    name,
+  )
+}
+
 const projectId = (d: Database, name: string) =>
   (
     d.query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?').get(name) as {
@@ -225,6 +232,7 @@ test('resolves probe artifacts and task comments through injected ports', () => 
     status: 'done',
     statusCategory: 'done',
     mergedPullRequest: true,
+    trackerStates: {},
   })
 })
 
@@ -554,6 +562,21 @@ test('every workflow task read requests a fresh tracker read through its port', 
   expect(calls).toEqual([{ key: 'DEV-977', fresh: true }])
 })
 
+test("task evidence carries the cursor project's registered tracker states", () => {
+  const d = database()
+  setTrackerStates(d, 'fixture', { started: 'active', completed: 'done' })
+  setTrackerStates(d, 'other', { Doing: 'active' })
+
+  expect(gather(d, { task: 'DEV-977' }).task?.trackerStates).toEqual({
+    started: 'active',
+    completed: 'done',
+  })
+})
+
+test('task evidence carries empty tracker states when the cursor project stores none', () => {
+  expect(gather(database(), { task: 'DEV-977' }).task?.trackerStates).toEqual({})
+})
+
 test('a tracker without comment ids names the task artifact remedy', () => {
   expect(() =>
     gather(
@@ -584,6 +607,7 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
     status: 'done',
     statusCategory: 'done',
     mergedPullRequest: true,
+    trackerStates: {},
   })
 })
 
@@ -602,6 +626,7 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
     status: 'done',
     statusCategory: 'done',
     mergedPullRequest: false,
+    trackerStates: {},
   })
 })
 
@@ -611,6 +636,7 @@ test('no pull request record is gathered as an unmerged tracker fact', () => {
     status: 'done',
     statusCategory: 'done',
     mergedPullRequest: false,
+    trackerStates: {},
   })
 })
 
@@ -636,6 +662,7 @@ test('an unavailable pull request read is gathered as unmerged', () => {
     status: 'done',
     statusCategory: 'done',
     mergedPullRequest: false,
+    trackerStates: {},
   })
 })
 

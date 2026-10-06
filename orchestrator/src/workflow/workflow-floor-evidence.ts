@@ -629,6 +629,7 @@ function gatherTask(
   const readTask = ports.readTask
   if (!readTask) throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
   const task = readTask(key, { fresh: true })
+  const trackerStates = projectByName(identity.project, d)?.settings.tracker?.states ?? {}
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null
   let mergedPullRequest = false
@@ -648,6 +649,7 @@ function gatherTask(
     status: task.status,
     statusCategory: task.statusCategory,
     mergedPullRequest,
+    trackerStates,
   }
 }
 
