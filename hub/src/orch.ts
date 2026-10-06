@@ -19,7 +19,13 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { DOC_SCOPES, type DocScope, type FilingDocScope } from '../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_SCOPES,
+  type DocAudience,
+  type DocScope,
+  type FilingDocScope,
+} from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import type {
   MachineAutonomyEntry,
@@ -558,6 +564,10 @@ export type DocRow = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  audience: DocAudience
+  parent_id: number | null
+  parent_slug: string | null
+  position: number
   revision: string | null
   created_at: string
   updated_at: string
@@ -571,6 +581,10 @@ const DocRowSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
+  audience: z.enum(DOC_AUDIENCES),
+  parent_id: z.number().nullable(),
+  parent_slug: z.string().nullable(),
+  position: z.number().int(),
   revision: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -850,6 +864,7 @@ export type DocSubjects = {
 export type DocListFilters = {
   scope?: string
   subject?: string | null
+  audience?: 'user' | 'technical'
 }
 
 export type DocSetInput = {
@@ -860,6 +875,9 @@ export type DocSetInput = {
   body: string
   reason: string
   delivery?: 'inject' | 'demand'
+  audience?: 'user' | 'technical'
+  parentSlug?: string | null
+  position?: number
   expectedRevision?: string
 }
 
@@ -880,6 +898,9 @@ export type DocArgvInput = {
   body?: string
   reason?: string
   delivery?: 'inject' | 'demand'
+  audience?: 'user' | 'technical'
+  parentSlug?: string | null
+  position?: number
   expectedRevision?: string
   user?: boolean
 }
@@ -897,10 +918,30 @@ function docAddressFlags(input: DocArgvInput): string[] {
   ]
 }
 
+function docSetFlags(input: DocArgvInput): string[] {
+  return [
+    ...(input.delivery ? ['--delivery', input.delivery] : []),
+    ...(input.audience ? ['--audience', input.audience] : []),
+    ...(input.parentSlug === null
+      ? ['--no-parent']
+      : input.parentSlug
+        ? ['--parent', input.parentSlug]
+        : []),
+    ...(input.position !== undefined ? ['--position', String(input.position)] : []),
+    ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
+  ]
+}
+
 export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
   switch (op) {
     case 'list':
-      return ['doc', 'list', ...docAddressFlags(input), '--json']
+      return [
+        'doc',
+        'list',
+        ...docAddressFlags(input),
+        ...(input.audience ? ['--audience', input.audience] : []),
+        '--json',
+      ]
     case 'get':
       return ['doc', 'show', input.slug!, ...docAddressFlags(input), '--json']
     case 'set':
@@ -915,8 +956,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         input.reason!,
         '--author',
         'hub-dashboard',
-        ...(input.delivery ? ['--delivery', input.delivery] : []),
-        ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
+        ...docSetFlags(input),
         '--json',
       ]
     case 'remove':

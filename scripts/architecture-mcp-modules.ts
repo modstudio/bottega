@@ -65,6 +65,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
+    '../../../shared/docs.ts',
     '../canon/canon.ts',
     '../doc/doc-canon-tree.ts',
     '../doc/docs.ts',

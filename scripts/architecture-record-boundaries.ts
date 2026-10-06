@@ -23,7 +23,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
     'record-doc-api-schemas-boundary',
     'orchestrator/src/record/record-api-doc-schemas.ts',
-    ['zod', '../canon/user-canon-home.ts'],
+    ['zod', '../../../shared/docs.ts', '../canon/user-canon-home.ts'],
     'Keep hosted document payload validation independent of SQL and local execution.',
   ),
   boundary(
@@ -60,14 +60,31 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     'orchestrator/src/record/record-docs.ts',
     [
       'bun',
+      '../../../shared/docs.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../canon/canon-import-policy.ts',
       '../doc/doc-write-allowed.ts',
       './record-canon-facts.ts',
+      './record-doc-mapping.ts',
+      './record-doc-tree.ts',
     ],
     'Enforce the record-docs concern boundary.',
     ['../canon/canon-lint.ts'],
+  ),
+  boundary(
+    'record-doc-tree-boundary',
+    'orchestrator/src/record/record-doc-tree.ts',
+    ['bun', '../doc/doc-tree-rules.ts'],
+    'Keep hosted document tree fact gathering limited to SQL and the pure tree decision.',
+    ['../../../shared/docs.ts'],
+  ),
+  boundary(
+    'record-doc-mapping-boundary',
+    'orchestrator/src/record/record-doc-mapping.ts',
+    [],
+    'Keep hosted document row mapping independent of SQL and transports.',
+    ['../../../shared/docs.ts', '../doc/doc-write-allowed.ts'],
   ),
 ]
 
@@ -255,7 +272,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-docs-boundary',
     'shared/record/schema-docs.ts',
-    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', '../docs.ts', './schema.ts'],
     'Enforce the hosted doc schema concern boundary.',
   ),
   boundary(

@@ -1,6 +1,6 @@
 // concern: cli
 /** Registers documentation and register adapters. Must not own their behavior. */
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
 import { docCommand } from '../doc/doc-commands.ts'
 import { portCommand } from '../porting/port-commands.ts'
@@ -10,6 +10,12 @@ import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.t
 import { log, optionFlags, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
+
+class NoParentOption extends Option {
+  override attributeName(): string {
+    return 'noParent'
+  }
+}
 
 export function assertUserCanonHydrateAllowed(
   flags: Flags,
@@ -36,6 +42,10 @@ export function register(program: Command): void {
     .option('--reason <value>')
     .option('--author <value>')
     .option('--delivery <value>')
+    .option('--audience <value>')
+    .option('--parent <slug>')
+    .addOption(new NoParentOption('--no-parent'))
+    .option('--position <value>')
     .option('--force-inject <value>')
     .option('--expect <revision>')
     .option('--cwd <value>')

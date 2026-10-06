@@ -47,6 +47,100 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
 }
 
 describe('record cache pull', () => {
+  test('resolves a child whose parent arrives on a later page', async () => {
+    const childId = newRecordId()
+    const parentId = newRecordId()
+    let page = 0
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => {
+          page++
+          return page === 1
+            ? {
+                items: [
+                  {
+                    id: childId,
+                    scope: 'global',
+                    subject: null,
+                    owner: null,
+                    slug: 'child',
+                    title: 'Child',
+                    body: 'child',
+                    delivery: 'demand',
+                    audience: 'technical',
+                    parentId,
+                    position: 1,
+                    updatedAt: '2026-09-16T00:00:01.000Z',
+                  },
+                ],
+                nextCursor: 'more',
+              }
+            : {
+                items: [
+                  {
+                    id: parentId,
+                    scope: 'global',
+                    subject: null,
+                    owner: null,
+                    slug: 'parent',
+                    title: 'Parent',
+                    body: 'parent',
+                    delivery: 'demand',
+                    audience: 'technical',
+                    parentId: null,
+                    position: 0,
+                    updatedAt: '2026-09-16T00:00:02.000Z',
+                  },
+                ],
+                nextCursor: null,
+              }
+        },
+      }),
+    )
+
+    expect(await pullRecordCache(db())).toMatchObject({ docs: 2 })
+    expect(
+      db()
+        .query<{ parent_slug: string | null }, [string]>(
+          'SELECT parent.slug AS parent_slug FROM doc child LEFT JOIN doc parent ON parent.id=child.parent_id WHERE child.record_id=?',
+        )
+        .get(childId)?.parent_slug,
+    ).toBe('parent')
+  })
+
+  test('reports an unresolved parent and does not advance the cursor', async () => {
+    const childId = newRecordId()
+    const parentId = newRecordId()
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => ({
+          items: [
+            {
+              id: childId,
+              scope: 'global',
+              subject: null,
+              owner: null,
+              slug: 'orphan',
+              title: 'Orphan',
+              body: 'orphan',
+              delivery: 'demand',
+              audience: 'technical',
+              parentId,
+              position: 0,
+              updatedAt: '2026-09-16T00:00:03.000Z',
+            },
+          ],
+          nextCursor: null,
+        }),
+      }),
+    )
+
+    await expect(pullRecordCache(db())).rejects.toThrow(`${childId} -> ${parentId}`)
+    expect(
+      db().query("SELECT value FROM schema_meta WHERE key='record_docs_cursor'").get(),
+    ).toBeNull()
+  })
+
   test('applies an update and a soft delete', async () => {
     const docId = newRecordId()
     const client = clientWith({
@@ -60,6 +154,9 @@ describe('record cache pull', () => {
             title: 'Pulled',
             body: 'from-host',
             delivery: 'inject',
+            audience: 'technical',
+            parentId: null,
+            position: 0,
             createdAt: '2026-09-16T00:00:00.000Z',
             updatedAt: '2026-09-16T00:00:01.000Z',
             deletedAt: null,
@@ -72,6 +169,9 @@ describe('record cache pull', () => {
             title: 'Pulled',
             body: 'from-host',
             delivery: 'inject',
+            audience: 'technical',
+            parentId: null,
+            position: 0,
             createdAt: '2026-09-16T00:00:00.000Z',
             updatedAt: '2026-09-16T00:00:02.000Z',
             deletedAt: '2026-09-16T00:00:02.000Z',

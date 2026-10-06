@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { DOC_AUDIENCES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
@@ -66,9 +67,10 @@ export function registerDocTools(server: McpServer): void {
           .optional()
           .describe('Order by updated_at; omit for scope, subject, slug order.'),
         user: z.boolean().optional(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
       }),
     },
-    async ({ scope, subject, scopes, match, body_match, updated_at_order, user }) => {
+    async ({ scope, subject, scopes, match, body_match, updated_at_order, user, audience }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       const owner = user ? await signedInDocOwner() : null
       return text(
@@ -80,6 +82,7 @@ export function registerDocTools(server: McpServer): void {
           bodyMatch: body_match,
           updatedAtOrder: updated_at_order,
           owner,
+          audience,
         }),
       )
     },
@@ -122,6 +125,9 @@ export function registerDocTools(server: McpServer): void {
         title: z.string(),
         body: z.string(),
         delivery: z.enum(['inject', 'demand']).optional(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
+        parent: z.string().trim().min(1).nullable().optional(),
+        position: z.number().int().optional(),
         force_inject: z
           .string()
           .trim()
@@ -146,6 +152,9 @@ export function registerDocTools(server: McpServer): void {
       title,
       body,
       delivery,
+      audience,
+      parent,
+      position,
       force_inject,
       reason,
       author,
@@ -163,6 +172,9 @@ export function registerDocTools(server: McpServer): void {
           title,
           body,
           delivery,
+          audience,
+          parentSlug: parent,
+          position,
           forceInject: force_inject,
           reason,
           author,

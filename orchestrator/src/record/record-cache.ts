@@ -34,6 +34,7 @@ export async function pullRecordCache(
   const client = recordApiClient()
   let docs = 0
   let cursor = readCursor(local, DOCS_CURSOR)
+  const unresolvedParents = new Map<string, string>()
   for (;;) {
     const page = await client.listDocs({
       updatedSince: cursor,
@@ -43,14 +44,24 @@ export async function pullRecordCache(
     if (!page.items.length) break
     writeTransaction(() => {
       for (const item of page.items) {
-        applyDoc(local, item)
+        applyDoc(local, item, unresolvedParents)
+        resolveRememberedParents(local, unresolvedParents)
         docs++
         if (typeof item.updatedAt === 'string') cursor = item.updatedAt
       }
-      if (cursor) writeCursor(local, DOCS_CURSOR, cursor)
     }, local)
     if (!page.nextCursor) break
   }
+  if (unresolvedParents.size) {
+    const links = [...unresolvedParents]
+      .map(([child, parent]) => `${child} -> ${parent}`)
+      .sort()
+      .join(', ')
+    throw new Error(
+      `record cache could not resolve document parent links ${links}; cleared by: ensure the hosted parent documents are readable and refresh again`,
+    )
+  }
+  if (cursor) writeCursor(local, DOCS_CURSOR, cursor)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -69,10 +80,29 @@ export async function pullRecordCache(
   return { docs, scores }
 }
 
-function applyDoc(local: Database, item: Record<string, unknown>): void {
+function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {
+  for (const [childRecordId, parentRecordId] of unresolved) {
+    const child = local
+      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+      .get(childRecordId)
+    const parent = local
+      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+      .get(parentRecordId)
+    if (!child || !parent) continue
+    local.query('UPDATE doc SET parent_id=? WHERE id=?').run(parent.id, child.id)
+    unresolved.delete(childRecordId)
+  }
+}
+
+function applyDoc(
+  local: Database,
+  item: Record<string, unknown>,
+  unresolvedParents: Map<string, string>,
+): void {
   const recordId = String(item.id)
   const deletedAt = item.deletedAt == null ? null : String(item.deletedAt)
   if (deletedAt) {
+    unresolvedParents.delete(recordId)
     local.query('DELETE FROM doc WHERE record_id=?').run(recordId)
     return
   }
@@ -83,6 +113,18 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
   const title = String(item.title)
   const body = String(item.body)
   const delivery = String(item.delivery)
+  // A record that predates the tree fields omits them; such a document is technical and a root.
+  const audience = item.audience == null ? 'technical' : String(item.audience)
+  const position = item.position == null ? 0 : Number(item.position)
+  const parentRecordId = item.parentId == null ? null : String(item.parentId)
+  const parentId: number | null =
+    parentRecordId == null
+      ? null
+      : (local
+          .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+          .get(parentRecordId)?.id ?? null)
+  if (parentRecordId && parentId == null) unresolvedParents.set(recordId, parentRecordId)
+  else unresolvedParents.delete(recordId)
   const updatedAt = String(item.updatedAt ?? nowIso())
   const createdAt = String(item.createdAt ?? updatedAt)
   const existing = local
@@ -91,9 +133,20 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, subject=?, owner=? WHERE id=?',
       )
-      .run(title, body, delivery, updatedAt, subject, owner, existing.id)
+      .run(
+        title,
+        body,
+        delivery,
+        audience,
+        parentId,
+        position,
+        updatedAt,
+        subject,
+        owner,
+        existing.id,
+      )
     return
   }
   const byAddress = local
@@ -103,16 +156,33 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
     .get(scope, subject, owner, slug)
   if (byAddress) {
     local
-      .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-      .run(title, body, delivery, updatedAt, recordId, byAddress.id)
+      .query(
+        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+      )
+      .run(title, body, delivery, audience, parentId, position, updatedAt, recordId, byAddress.id)
     return
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(scope, subject, owner, null, slug, title, body, delivery, createdAt, updatedAt, recordId)
+    .run(
+      scope,
+      subject,
+      owner,
+      null,
+      slug,
+      title,
+      body,
+      delivery,
+      audience,
+      parentId,
+      position,
+      createdAt,
+      updatedAt,
+      recordId,
+    )
 }
 
 function applyScore(local: Database, item: Record<string, unknown>): void {

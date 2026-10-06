@@ -4,6 +4,7 @@
  * database writes beyond docs, runs, routing, transports, or the CLI.
  */
 import { readFileSync } from 'node:fs'
+import { DOC_AUDIENCES, type DocAudience } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
@@ -76,6 +77,18 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
 function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined {
   if (value === undefined || value === 'inject' || value === 'demand') return value
   throw new Error('--delivery must be inject or demand')
+}
+
+function docAudience(value: string | undefined): DocAudience | undefined {
+  if (value === undefined) return undefined
+  if (DOC_AUDIENCES.includes(value as DocAudience)) return value as DocAudience
+  throw new Error(`--audience must be ${DOC_AUDIENCES.join(' or ')}`)
+}
+
+function docPosition(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  if (!/^-?\d+$/.test(value)) throw new Error('--position must be an integer')
+  return Number(value)
 }
 
 function commandCanonTree(
@@ -152,6 +165,7 @@ function handledReadDocCommand(
       scope: address.scope,
       ...(has('subject') || has('user') ? { subject: address.subject } : {}),
       owner: address.owner,
+      audience: flags.flag('audience'),
     })
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
@@ -174,7 +188,77 @@ function handledReadDocCommand(
   if (!doc)
     throw new Error(`no ${address.scope} doc "${slug}"; use orch doc list --scope ${address.scope}`)
   if (has('json')) presentation.log(JSON.stringify(doc))
-  else presentation.write(doc.body)
+  else
+    presentation.write(
+      `audience: ${doc.audience}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+    )
+  return true
+}
+
+function setTreeOptions(flags: DocFlags): {
+  audience: ReturnType<typeof docAudience>
+  parentSlug: string | null | undefined
+  position: number | undefined
+} {
+  const { has, flag } = flags
+  const audience = docAudience(flag('audience'))
+  if (has('parent') && has('no-parent')) throw new Error('use --parent or --no-parent, not both')
+  const parentSlug = has('no-parent') ? null : has('parent') ? flag('parent') : undefined
+  if (has('parent') && !parentSlug?.trim()) throw new Error('--parent requires a slug')
+  return { audience, parentSlug, position: docPosition(flag('position')) }
+}
+
+async function handleSetDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+): Promise<boolean> {
+  if (sub !== 'set') return false
+  const { has, flag } = flags
+  const slug = argv[2]
+  const title = flag('title')
+  const reason = flag('reason')
+  if (!slug || !address.scope || title === undefined || !reason?.trim()) {
+    throw new Error(
+      'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
+    )
+  }
+  const canonTree = commandCanonTree(address.scope, address.subject, flags, presentation)
+  const body = flag('file')
+    ? readFileSync(flag('file')!, 'utf8')
+    : !presentation.stdinIsTTY
+      ? await presentation.stdinText()
+      : (() => {
+          throw new Error('no body: pass --file F or pipe markdown on stdin')
+        })()
+  const delivery = docDelivery(flag('delivery'))
+  const tree = setTreeOptions(flags)
+  const forceInject = flag('force-inject')
+  if (has('force-inject') && !forceInject?.trim())
+    throw new Error('--force-inject requires a non-empty reason')
+  const doc = await setDoc({
+    ...address,
+    scope: address.scope,
+    slug,
+    title,
+    body,
+    reason,
+    author: flag('author'),
+    forceInject,
+    delivery,
+    ...tree,
+    expectedRevision: flag('expect'),
+    canonTree,
+  })
+  const root = repoRootForDoc(doc, canonTree?.root)
+  const warnings = root ? checkDoc(body, { repoRoot: root }) : []
+  if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
+  else {
+    presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+    for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
+  }
   return true
 }
 
@@ -191,50 +275,7 @@ export async function docCommand(
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
-  if (sub === 'set') {
-    const slug = argv[2]
-    const title = flag('title')
-    const reason = flag('reason')
-    if (!slug || !scope || title === undefined || !reason?.trim()) {
-      throw new Error(
-        'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
-      )
-    }
-    const canonTree = commandCanonTree(scope, subject, flags, presentation)
-    const body = flag('file')
-      ? readFileSync(flag('file')!, 'utf8')
-      : !presentation.stdinIsTTY
-        ? await presentation.stdinText()
-        : (() => {
-            throw new Error('no body: pass --file F or pipe markdown on stdin')
-          })()
-    const delivery = docDelivery(flag('delivery'))
-    const forceInject = flag('force-inject')
-    if (has('force-inject') && !forceInject?.trim())
-      throw new Error('--force-inject requires a non-empty reason')
-    const doc = await setDoc({
-      scope,
-      subject,
-      owner,
-      slug,
-      title,
-      body,
-      reason,
-      author: flag('author'),
-      forceInject,
-      delivery,
-      expectedRevision: flag('expect'),
-      canonTree,
-    })
-    const root = repoRootForDoc(doc, canonTree?.root)
-    const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-    if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
-    else {
-      presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
-      for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
-    }
-    return
-  }
+  if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)

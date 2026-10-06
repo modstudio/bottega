@@ -303,6 +303,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/doc/doc-commands.ts',
     [
       'node:fs',
+      '../../../shared/docs.ts',
       '../canon/canon.ts',
       '../worker-store-write.ts',
       './doc-canon-tree.ts',
@@ -320,7 +321,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'local-doc-revisions-boundary',
     'orchestrator/src/doc/doc-revision-store.ts',
-    ['../database/db.ts', './doc-write-allowed.ts'],
+    ['../../../shared/docs.ts', '../database/db.ts', './doc-write-allowed.ts'],
     'Keep local revision ordering and compare-and-set facts independent of hosted transport and CLI.',
   ),
   boundary(
@@ -624,6 +625,7 @@ export const importBoundaries: ImportBoundary[] = [
       'hono',
       'hono/cors',
       'zod',
+      '../../../shared/docs.ts',
       '../verdict/verdict-payload.ts',
       '../verdict/verdict-rules.ts',
       './record-config.ts',
@@ -660,6 +662,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-api-client-boundary',
     'orchestrator/src/record/record-api-client.ts',
     [
+      '../../../shared/docs.ts',
       '../doc/doc-write-allowed.ts',
       '../verdict/verdict-payload.ts',
       './record-auth.ts',
@@ -729,7 +732,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-push-docs-boundary',
     'orchestrator/src/record/record-push-docs.ts',
-    ['../database/db.ts', './record-api-client.ts', '../doc/doc-write-allowed.ts'],
+    [
+      '../../../shared/docs.ts',
+      '../../../shared/record/schema.ts',
+      '../database/db.ts',
+      './record-api-client.ts',
+      '../doc/doc-write-allowed.ts',
+    ],
     'Enforce the record-push-docs concern boundary.',
   ),
   ...recordReadBoundariesAfterPublish,

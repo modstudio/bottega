@@ -3,6 +3,8 @@
  * Executes local-authoritative document mutations and commits document results locally.
  * Knows the local document and revision stores; must not know hosted transport, write gates, or CLI.
  */
+
+import type { DocAudience } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import type { Doc } from './doc-read-store.ts'
@@ -27,7 +29,7 @@ const LATEST_REVISION_SQL =
 function getDoc(input: Address): Doc | null {
   return db()
     .query(
-      `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?`,
+      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(input.scope, input.subject, input.owner, input.slug) as Doc | null
 }
@@ -37,6 +39,9 @@ type SetInput = Address & {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  audience: DocAudience
+  parentId: number | null
+  position: number
   expectedRevision?: string
   requestedOp?: Extract<DocRevisionOp, 'import'>
   identity: WriteIdentity
@@ -58,13 +63,16 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
           input.title,
           input.body,
           input.delivery,
+          input.audience,
+          input.parentId,
+          input.position,
           at,
           input.recordId,
           existing.id,
@@ -72,8 +80,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -84,6 +92,9 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.title,
           input.body,
           input.delivery,
+          input.audience,
+          input.parentId,
+          input.position,
           at,
           at,
           input.recordId,
@@ -158,6 +169,9 @@ type RestoreInput = Address & {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  audience: DocAudience
+  parentId: number | null
+  position: number
   expectedRevision?: string
   identity: WriteIdentity
 }
@@ -186,13 +200,16 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
           input.title,
           input.body,
           input.delivery,
+          input.audience,
+          input.parentId,
+          input.position,
           at,
           input.recordId,
           existing.id,
@@ -200,8 +217,8 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -212,6 +229,9 @@ export function commitDocRestore(
           input.title,
           input.body,
           input.delivery,
+          input.audience,
+          input.parentId,
+          input.position,
           at,
           at,
           input.recordId,

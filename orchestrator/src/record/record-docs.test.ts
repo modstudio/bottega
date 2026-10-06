@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordDocLintRefusal } from '../doc/doc-write-allowed.ts'
+import { recordDocRevisionIdentityRefusal } from './record-doc-mapping.ts'
 
 const doc = (body: string) => ({
   scope: 'machine',
@@ -21,4 +23,23 @@ describe('record service doc lint', () => {
       ),
     ).toBeNull()
   })
+})
+
+const live = {
+  scope: 'project',
+  subject: PLATFORM_SLUG,
+  owner: null,
+  slug: 'manual',
+}
+
+test('record import and restore refuse revisions from another document identity', () => {
+  expect(
+    recordDocRevisionIdentityRefusal(live, { ...live, slug: 'old-slug' }, 'restore'),
+  ).toBeNull()
+  expect(
+    recordDocRevisionIdentityRefusal(live, { ...live, subject: 'other' }, 'restore'),
+  ).toContain('revision scope, subject, and owner must match')
+  expect(
+    recordDocRevisionIdentityRefusal(live, { ...live, owner: 'other-user' }, 'import'),
+  ).toContain('refusing import')
 })

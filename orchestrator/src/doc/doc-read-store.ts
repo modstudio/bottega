@@ -1,6 +1,6 @@
 /** Owns local document list queries. Must not know hosted transport, canon files, or CLI. */
 import type { Database } from 'bun:sqlite'
-import { DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_SCOPES, type DocAudience, type DocScope } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
 import type { DocRevisionOp } from './doc-write-allowed.ts'
 
@@ -14,6 +14,10 @@ export type Doc = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  audience: DocAudience
+  parent_id: number | null
+  parent_slug: string | null
+  position: number
   created_at: string
   updated_at: string
   record_id: string | null
@@ -21,7 +25,17 @@ export type Doc = {
 }
 export type DocMetadata = Pick<
   Doc,
-  'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at' | 'revision'
+  | 'id'
+  | 'scope'
+  | 'subject'
+  | 'slug'
+  | 'title'
+  | 'audience'
+  | 'parent_id'
+  | 'parent_slug'
+  | 'position'
+  | 'updated_at'
+  | 'revision'
 > & { bytes: number }
 export type DocListFilters = {
   scope?: string
@@ -31,6 +45,7 @@ export type DocListFilters = {
   bodyMatch?: string
   updatedAtOrder?: 'asc' | 'desc'
   owner?: string | null
+  audience?: string
 }
 
 export type DocRevision = {
@@ -45,6 +60,9 @@ export type DocRevision = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  audience: DocAudience
+  parent_id: number | null
+  position: number
   author: string
   reason: string
   session_id: string | null
@@ -59,9 +77,38 @@ export type DocRevisionMetadata = Omit<
 const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
+function treeColumns(database: Database): boolean {
+  return Boolean(
+    database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audience'").get(),
+  )
+}
+
+function docTreeSelect(database: Database): { columns: string; join: string; position: string } {
+  return treeColumns(database)
+    ? {
+        columns: 'd.*, p.slug AS parent_slug',
+        join: ' LEFT JOIN doc p ON p.id=d.parent_id',
+        position: 'd.position',
+      }
+    : {
+        columns:
+          "d.*, 'technical' AS audience, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
+        join: '',
+        position: '0+0',
+      }
+}
+
 function validScope(scope: string): void {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
+  }
+}
+
+function validAudience(audience: string): asserts audience is DocAudience {
+  if (!DOC_AUDIENCES.includes(audience as DocAudience)) {
+    throw new Error(
+      `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
+    )
   }
 }
 
@@ -74,29 +121,58 @@ function addressFilters(filters: {
   const values: string[] = []
   if (filters.scope !== undefined) {
     validScope(filters.scope)
-    where.push('scope = ?')
+    where.push('d.scope = ?')
     values.push(filters.scope)
   }
   if (filters.subject !== undefined) {
-    where.push(filters.subject === null ? 'subject IS NULL' : 'subject = ?')
+    where.push(filters.subject === null ? 'd.subject IS NULL' : 'd.subject = ?')
     if (filters.subject !== null) values.push(filters.subject)
   }
   if (filters.owner !== undefined) {
-    where.push(filters.owner === null ? 'owner IS NULL' : 'owner = ?')
+    where.push(filters.owner === null ? 'd.owner IS NULL' : 'd.owner = ?')
     if (filters.owner !== null) values.push(filters.owner)
-  } else where.push('owner IS NULL')
+  } else where.push('d.owner IS NULL')
   return { where, values }
 }
 
+export function getDocStore(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null = null,
+  database: Database = db(),
+): Doc | null {
+  validScope(scope)
+  const tree = docTreeSelect(database)
+  return database
+    .query(
+      `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join} WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
+    )
+    .get(scope, subject, owner, slug) as Doc | null
+}
+
 export function listDocsStore(
-  filters: { scope?: string; subject?: string | null; owner?: string | null } = {},
+  filters: {
+    scope?: string
+    subject?: string | null
+    owner?: string | null
+    audience?: string
+  } = {},
   database: Database = db(),
 ): Doc[] {
   const { where, values } = addressFilters(filters)
+  const tree = docTreeSelect(database)
+  if (filters.audience !== undefined) {
+    validAudience(filters.audience)
+    if (treeColumns(database)) {
+      where.push('d.audience = ?')
+      values.push(filters.audience)
+    } else if (filters.audience === 'user') where.push('0')
+  }
   return database
     .query(
-      `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-        "ORDER BY scope, COALESCE(subject, ''), slug",
+      `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
+        `ORDER BY d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
     )
     .all(...values) as Doc[]
 }
@@ -109,32 +185,37 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
     throw new Error('use scope or scopes, not both')
   }
   const { where, values } = addressFilters(filters)
+  if (filters.audience !== undefined) {
+    validAudience(filters.audience)
+    where.push('d.audience = ?')
+    values.push(filters.audience)
+  }
   if (filters.scopes !== undefined) {
     if (filters.scopes.length === 0) where.push('0')
     else {
-      where.push(`scope IN (${filters.scopes.map(() => '?').join(', ')})`)
+      where.push(`d.scope IN (${filters.scopes.map(() => '?').join(', ')})`)
       values.push(...filters.scopes)
     }
   }
   if (filters.match !== undefined) {
     where.push(`(
-      instr(lower(title), lower(?)) > 0 OR
-      instr(lower(slug), lower(?)) > 0 OR
-      instr(lower(COALESCE(subject, '')), lower(?)) > 0
+      instr(lower(d.title), lower(?)) > 0 OR
+      instr(lower(d.slug), lower(?)) > 0 OR
+      instr(lower(COALESCE(d.subject, '')), lower(?)) > 0
     )`)
     values.push(filters.match, filters.match, filters.match)
   }
   if (filters.bodyMatch !== undefined) {
-    where.push('instr(lower(body), lower(?)) > 0')
+    where.push('instr(lower(d.body), lower(?)) > 0')
     values.push(filters.bodyMatch)
   }
   const order = filters.updatedAtOrder
-    ? `updated_at ${filters.updatedAtOrder.toUpperCase()}, scope, COALESCE(subject, ''), slug`
-    : "scope, COALESCE(subject, ''), slug"
+    ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
+    : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
   return db()
     .query(
-      `SELECT d.id, d.scope, d.subject, d.slug, d.title, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
-       FROM doc d${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
+      `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+       FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
     )
     .all(...values) as DocMetadata[]
 }

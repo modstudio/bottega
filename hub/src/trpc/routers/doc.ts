@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_SCOPES } from '../../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_SCOPES } from '../../../../shared/docs.ts'
 import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
 import type { Context } from '../context.ts'
 import { fromOrch } from '../orch-error.ts'
@@ -17,6 +17,7 @@ export const docRouter = t.router({
         .object({
           scope: scope.optional(),
           subject: z.string().nullable().optional(),
+          audience: z.enum(DOC_AUDIENCES).optional(),
         })
         .optional(),
     )
@@ -34,6 +35,9 @@ export const docRouter = t.router({
         body: z.string(),
         reason: z.string().trim().min(1, 'Reason is required'),
         delivery: z.enum(['inject', 'demand']).optional(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
+        parentSlug: z.string().nullable().optional(),
+        position: z.number().int().optional(),
         expectedRevision,
       }),
     )
