@@ -305,6 +305,28 @@ describe('record client', () => {
     ])
   })
 
+  test('reads a document from a record that predates the tree fields as a technical root', async () => {
+    const fetch: RecordFetch = async () =>
+      jsonResponse({
+        id: '01990000-0000-7000-8000-0000000000d1',
+        spaceId: '01990000-0000-7000-8000-0000000000a1',
+        spaceName: 'Space',
+        scope: 'project',
+        subject: 'atlas',
+        owner: null,
+        slug: 'guide',
+        title: 'Guide',
+        body: 'Body.',
+        delivery: 'demand',
+        projectName: 'atlas',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+        deletedAt: null,
+      })
+    const doc = await clientWith(fetch).doc('01990000-0000-7000-8000-0000000000d1')
+    expect(doc).toMatchObject({ audience: 'technical', parentId: null, position: 0 })
+  })
+
   test('scores and voids hosted runs without sending a scorer identity', async () => {
     const runId = '01990000-0000-7000-8000-000000000001'
     const requests: { url: string; method: string; body: Record<string, unknown> }[] = []

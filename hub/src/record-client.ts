@@ -216,6 +216,10 @@ const docSchema = DocSchema.extend({
   subject: z.string().nullable(),
   owner: z.string().uuid().nullable(),
   delivery: z.enum(['inject', 'demand']),
+  // A record that predates the tree fields omits them; such a document is a technical root.
+  audience: z.enum(DOC_AUDIENCES).default('technical'),
+  parentId: z.string().uuid().nullable().default(null),
+  position: z.number().int().default(0),
   projectName: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
