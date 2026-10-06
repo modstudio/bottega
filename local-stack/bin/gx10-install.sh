@@ -24,8 +24,8 @@ GPU_UTIL="${GPU_UTIL:-0.50}"
 # model is allowed to do. Keep it in step with the registered agent's
 # contextTokens — `orch doctor` reads the served value back and reports a
 # mismatch rather than letting the two drift.
-# Why 131072 on this host: orch doc show local-model-host-hardware --scope machine
-MAX_LEN="${MAX_LEN:-131072}"
+# Why this value on this host: orch doc show local-model-host-hardware --scope machine
+MAX_LEN="${MAX_LEN:-163840}"
 # Most output tokens any one request may generate, and what a request naming no
 # limit gets: orch doc show local-model-host-hardware --scope machine
 MAX_OUTPUT="${MAX_OUTPUT:-32768}"
