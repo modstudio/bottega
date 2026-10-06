@@ -52,7 +52,10 @@ type LocalRevision = {
 
 type ImportGroup = {
   localDocId: number | null
+  sourceDocId: number
+  localParentId: number | null
   localRevisionIds: number[]
+  localRevisionParentIds: Array<number | null>
   payload: RecordDocImportInput
 }
 
@@ -105,7 +108,10 @@ function groupFromLive(
 ): ImportGroup {
   return {
     localDocId: doc.id,
+    sourceDocId: doc.id,
+    localParentId: doc.parent_id,
     localRevisionIds: revisions.map((row) => row.id),
+    localRevisionParentIds: revisions.map((row) => row.parent_id),
     payload: {
       expectedRevision: revisions.at(-1)?.record_id ?? undefined,
       doc: {
@@ -144,7 +150,10 @@ function groupFromDeleted(
   const projectId = last.project_id ?? deleted.project_id
   return {
     localDocId: null,
+    sourceDocId: last.doc_id,
+    localParentId: last.parent_id,
     localRevisionIds: revisions.map((row) => row.id),
+    localRevisionParentIds: revisions.map((row) => row.parent_id),
     payload: {
       expectedRevision: revisions.at(-1)?.record_id ?? undefined,
       doc: {
@@ -205,22 +214,42 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
     if (seen.has(docId) || list.length === 0) continue
     groups.push(groupFromDeleted(list, names, recordIds))
   }
-  const byRecordId = new Map(groups.map((group) => [group.payload.doc.id, group]))
+  const byLocalId = new Map(groups.map((group) => [group.sourceDocId, group]))
   const ordered: ImportGroup[] = []
-  const visited = new Set<string>()
+  const visited = new Set<number>()
   const visit = (group: ImportGroup): void => {
-    const id = group.payload.doc.id
+    const id = group.sourceDocId
     if (visited.has(id)) return
     visited.add(id)
-    const parent = group.payload.doc.parentId
+    const parent = group.localParentId
     if (parent) {
-      const parentGroup = byRecordId.get(parent)
+      const parentGroup = byLocalId.get(parent)
       if (parentGroup) visit(parentGroup)
     }
     ordered.push(group)
   }
   for (const group of groups) visit(group)
   return ordered
+}
+
+function payloadWithImportedParentIds(
+  group: ImportGroup,
+  importedIds: Map<number, string>,
+): RecordDocImportInput {
+  return {
+    ...group.payload,
+    doc: {
+      ...group.payload.doc,
+      parentId: group.localParentId == null ? null : (importedIds.get(group.localParentId) ?? null),
+    },
+    revisions: group.payload.revisions.map((revision, index) => ({
+      ...revision,
+      parentId:
+        group.localRevisionParentIds[index] == null
+          ? null
+          : (importedIds.get(group.localRevisionParentIds[index]!) ?? null),
+    })),
+  }
 }
 
 async function compareLiveDocs(
@@ -297,8 +326,11 @@ export async function pushDocsCommand(
   if (options.dryRun) return
   writableDb()
   const client = recordApiClient()
+  const importedIds = new Map<number, string>()
+  for (const group of groups) importedIds.set(group.sourceDocId, group.payload.doc.id!)
   for (const group of groups) {
-    const hosted = await client.importDoc(group.payload)
+    const hosted = await client.importDoc(payloadWithImportedParentIds(group, importedIds))
+    importedIds.set(group.sourceDocId, hosted.id)
     recordReturnedIds(local, group, hosted)
   }
   const hosted = await client.counts()

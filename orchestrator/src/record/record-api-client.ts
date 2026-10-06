@@ -59,7 +59,7 @@ export type RecordDocUpsertInput = {
 export type RecordDocImportInput = {
   expectedRevision?: string
   doc: {
-    id: string
+    id?: string
     scope: string
     subject: string | null
     owner?: string | null
@@ -67,9 +67,9 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience: DocAudience
-    parentId: string | null
-    position: number
+    audience?: DocAudience
+    parentId?: string | null
+    position?: number
     projectName?: string | null
     createdAt: string
     updatedAt: string
@@ -84,9 +84,9 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience: DocAudience
-    parentId: string | null
-    position: number
+    audience?: DocAudience
+    parentId?: string | null
+    position?: number
     author: string
     reason: string
     sessionId?: string | null

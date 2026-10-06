@@ -61,3 +61,31 @@ export async function recordTreeWriteRefusal(
     removing: input.removing,
   })
 }
+
+export function recordCanonTreeWriteRefusal(
+  tx: SQL,
+  input: {
+    spaceId: string
+    id: string
+    subject: string | null
+    owner: string | null
+    slug: string
+    prior: Record<string, unknown> | undefined
+    removing?: boolean
+  },
+): Promise<string | null> {
+  return recordTreeWriteRefusal(tx, {
+    spaceId: input.spaceId,
+    id: input.id,
+    scope: 'canon',
+    subject: input.subject,
+    owner: input.owner,
+    slug: input.slug,
+    audience: 'technical',
+    priorAudience:
+      input.prior?.audience == null ? undefined : (String(input.prior.audience) as DocAudience),
+    parentId: input.prior?.parent_id == null ? null : String(input.prior.parent_id),
+    parentWasSpecified: false,
+    removing: input.removing,
+  })
+}

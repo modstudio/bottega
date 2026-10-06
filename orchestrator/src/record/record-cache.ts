@@ -34,6 +34,7 @@ export async function pullRecordCache(
   const client = recordApiClient()
   let docs = 0
   let cursor = readCursor(local, DOCS_CURSOR)
+  const unresolvedParents = new Map<string, string>()
   for (;;) {
     const page = await client.listDocs({
       updatedSince: cursor,
@@ -43,14 +44,24 @@ export async function pullRecordCache(
     if (!page.items.length) break
     writeTransaction(() => {
       for (const item of page.items) {
-        applyDoc(local, item)
+        applyDoc(local, item, unresolvedParents)
+        resolveRememberedParents(local, unresolvedParents)
         docs++
         if (typeof item.updatedAt === 'string') cursor = item.updatedAt
       }
-      if (cursor) writeCursor(local, DOCS_CURSOR, cursor)
     }, local)
     if (!page.nextCursor) break
   }
+  if (unresolvedParents.size) {
+    const links = [...unresolvedParents]
+      .map(([child, parent]) => `${child} -> ${parent}`)
+      .sort()
+      .join(', ')
+    throw new Error(
+      `record cache could not resolve document parent links ${links}; cleared by: ensure the hosted parent documents are readable and refresh again`,
+    )
+  }
+  if (cursor) writeCursor(local, DOCS_CURSOR, cursor)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -69,10 +80,29 @@ export async function pullRecordCache(
   return { docs, scores }
 }
 
-function applyDoc(local: Database, item: Record<string, unknown>): void {
+function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {
+  for (const [childRecordId, parentRecordId] of unresolved) {
+    const child = local
+      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+      .get(childRecordId)
+    const parent = local
+      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+      .get(parentRecordId)
+    if (!child || !parent) continue
+    local.query('UPDATE doc SET parent_id=? WHERE id=?').run(parent.id, child.id)
+    unresolved.delete(childRecordId)
+  }
+}
+
+function applyDoc(
+  local: Database,
+  item: Record<string, unknown>,
+  unresolvedParents: Map<string, string>,
+): void {
   const recordId = String(item.id)
   const deletedAt = item.deletedAt == null ? null : String(item.deletedAt)
   if (deletedAt) {
+    unresolvedParents.delete(recordId)
     local.query('DELETE FROM doc WHERE record_id=?').run(recordId)
     return
   }
@@ -92,11 +122,8 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
       : (local
           .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
           .get(parentRecordId)?.id ?? null)
-  if (parentRecordId && parentId == null) {
-    throw new Error(
-      `record cache cannot map parent ${parentRecordId}; cleared by: refresh the parent document before its child`,
-    )
-  }
+  if (parentRecordId && parentId == null) unresolvedParents.set(recordId, parentRecordId)
+  else unresolvedParents.delete(recordId)
   const updatedAt = String(item.updatedAt ?? nowIso())
   const createdAt = String(item.createdAt ?? updatedAt)
   const existing = local

@@ -30,13 +30,14 @@ function insertDoc(row: {
   projectId?: number | null
   createdAt: string
   updatedAt: string
+  parentId?: number | null
 }): number {
   writableDb()
   return (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, parent_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         row.scope,
@@ -48,6 +49,7 @@ function insertDoc(row: {
         row.delivery,
         row.createdAt,
         row.updatedAt,
+        row.parentId ?? null,
       ) as { id: number }
   ).id
 }
@@ -66,14 +68,15 @@ function insertRevision(row: {
   sessionId?: string | null
   at: string
   projectId?: number | null
+  parentId?: number | null
 }): number {
   writableDb()
   return (
     db()
       .query(
         `INSERT INTO doc_revision
-         (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at, parent_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         row.docId,
@@ -89,6 +92,7 @@ function insertRevision(row: {
         row.reason,
         row.sessionId ?? null,
         row.at,
+        row.parentId ?? null,
       ) as { id: number }
   ).id
 }
@@ -119,7 +123,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     upsertDoc: unused,
     importDoc: async (input) => {
       imports.push(structuredClone(input))
-      const id = input.doc.id
+      const id = input.doc.id!
       const revisionIds = input.revisions.map(() => newRecordId())
       hosted.set(id, { ...input.doc })
       return { id, revisionIds }
@@ -238,6 +242,79 @@ describe('record push-docs grouping', () => {
 })
 
 describe('record push-docs command', () => {
+  test('uses the hosted parent id returned by an earlier import for child and revision', async () => {
+    const parentId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'parent',
+      title: 'Parent',
+      body: 'parent',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    insertRevision({
+      docId: parentId,
+      scope: 'global',
+      subject: null,
+      slug: 'parent',
+      op: 'create',
+      title: 'Parent',
+      body: 'parent',
+      delivery: 'demand',
+      reason: 'create parent',
+      at: OLD,
+    })
+    const childId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'child',
+      title: 'Child',
+      body: 'child',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+      parentId,
+    })
+    insertRevision({
+      docId: childId,
+      scope: 'global',
+      subject: null,
+      slug: 'child',
+      op: 'create',
+      title: 'Child',
+      body: 'child',
+      delivery: 'demand',
+      reason: 'create child',
+      at: OLD,
+      parentId,
+    })
+    const returnedParentId = newRecordId()
+    const { client, imports } = capturingClient({
+      importDoc: async (input) => {
+        imports.push(structuredClone(input))
+        return {
+          id: input.doc.slug === 'parent' ? returnedParentId : input.doc.id!,
+          revisionIds: input.revisions.map(() => newRecordId()),
+        }
+      },
+      getDoc: async (hostedId) => ({
+        id: hostedId,
+        body: hostedId === returnedParentId ? 'parent' : 'child',
+        delivery: 'demand',
+        deletedAt: null,
+      }),
+      counts: async () => ({ docs: 2, revisions: 2, scores: 0, voids: 0 }),
+    })
+    installRecordApiClient(client)
+
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+
+    expect(imports.map((input) => input.doc.slug)).toEqual(['parent', 'child'])
+    expect(imports[1]?.doc.parentId).toBe(returnedParentId)
+    expect(imports[1]?.revisions[0]?.parentId).toBe(returnedParentId)
+  })
+
   test('dry-run prints deleted count and does not import', async () => {
     const liveId = insertDoc({
       scope: 'machine',

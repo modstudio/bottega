@@ -46,7 +46,7 @@ export type RecordDocRevision = {
 export type RecordDocImportInput = {
   expectedRevision?: string
   doc: {
-    id: string
+    id?: string
     scope: string
     subject: string | null
     owner?: string | null
@@ -54,9 +54,9 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience: DocAudience
-    parentId: string | null
-    position: number
+    audience?: DocAudience
+    parentId?: string | null
+    position?: number
     projectName?: string | null
     createdAt: string
     updatedAt: string
@@ -71,14 +71,86 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience: DocAudience
-    parentId: string | null
-    position: number
+    audience?: DocAudience
+    parentId?: string | null
+    position?: number
     author: string
     reason: string
     sessionId?: string | null
     at: string
   }>
+}
+
+export type NormalizedRecordDocImport = {
+  doc: Omit<RecordDocImportInput['doc'], 'id' | 'audience' | 'parentId' | 'position'> & {
+    id: string
+    audience: DocAudience
+    parentId: string | null
+    position: number
+  }
+  revisions: Array<
+    Omit<RecordDocImportInput['revisions'][number], 'audience' | 'parentId' | 'position'> & {
+      audience: DocAudience
+      parentId: string | null
+      position: number
+    }
+  >
+}
+
+type DocIdentity = {
+  scope: string
+  subject: string | null
+  owner?: string | null
+  slug: string
+}
+
+export function normalizeRecordDocImport(
+  input: RecordDocImportInput,
+  mintedId: string,
+): NormalizedRecordDocImport {
+  return {
+    doc: {
+      ...input.doc,
+      id: input.doc.id ?? mintedId,
+      audience: input.doc.audience ?? 'technical',
+      parentId: input.doc.parentId ?? null,
+      position: input.doc.position ?? 0,
+    },
+    revisions: input.revisions.map((revision) => ({
+      ...revision,
+      audience: revision.audience ?? 'technical',
+      parentId: revision.parentId ?? null,
+      position: revision.position ?? 0,
+    })),
+  }
+}
+
+export function recordDocRevisionIdentityRefusal(
+  live: DocIdentity,
+  revision: DocIdentity,
+  operation: 'import' | 'restore',
+): string | null {
+  if (
+    revision.scope === live.scope &&
+    revision.subject === live.subject &&
+    (revision.owner ?? null) === (live.owner ?? null)
+  ) {
+    return null
+  }
+  return `refusing ${operation} for ${live.scope}/${live.subject ?? '_'}/${live.slug}: revision scope, subject, and owner must match the live document; cleared by: ${operation} a revision recorded for that document identity`
+}
+
+export function newerHostedImportRefusal(
+  existing: Record<string, unknown> | undefined,
+  incoming: NormalizedRecordDocImport['doc'],
+): string | null {
+  if (!existing || existing.deleted_at != null || String(existing.body) === incoming.body)
+    return null
+  const hostedUpdated = Date.parse(recordDocIso(existing.updated_at) ?? '')
+  if (!Number.isFinite(hostedUpdated) || hostedUpdated <= Date.parse(incoming.updatedAt))
+    return null
+  const subject = existing.subject == null ? '' : String(existing.subject)
+  return `refusing import: hosted doc at ${String(existing.scope)}/${subject}/${String(existing.slug)} has a different body and newer updated_at`
 }
 
 export const recordDocIso = (value: unknown) =>

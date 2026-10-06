@@ -40,12 +40,43 @@ function childAudienceRefusal(
   return `refusing ${address}: audience change would differ from children ${children.join(', ')}; cleared by: re-parent those children or change their audience before re-running ${set} --audience ${input.audience}`
 }
 
+function canonTreeRefusal(input: DocumentTreeWrite, address: string, set: string): string | null {
+  if (
+    input.scope === 'canon' &&
+    (input.parent !== null ||
+      (input.requestedParentSlug !== undefined && input.requestedParentSlug !== null))
+  ) {
+    return `refusing ${address}: canon documents cannot have a parent; cleared by: re-run ${set} --no-parent`
+  }
+  if (input.parent?.scope === 'canon') {
+    return `refusing ${address}: canon document "${input.parent.slug}" cannot be used as a parent; cleared by: re-run ${set} --no-parent or choose a non-canon parent`
+  }
+  if (input.scope !== 'canon' || !input.children.length) return null
+  return `refusing ${address}: canon documents cannot have children ${input.children
+    .map((child) => child.slug)
+    .sort()
+    .join(
+      ', ',
+    )}; cleared by: re-parent each child with orch doc set <child> --parent <slug> (or --no-parent)`
+}
+
+function audienceScopeRefusal(
+  input: DocumentTreeWrite,
+  address: string,
+  set: string,
+): string | null {
+  return input.audience === 'user' && input.scope !== 'project' && input.scope !== 'global'
+    ? `refusing ${address}: user audience is allowed only for project and global documents; cleared by: re-run ${set} --audience technical`
+    : null
+}
+
 export function documentTreeWriteRefusal(input: DocumentTreeWrite): string | null {
   const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
   const set = `orch doc set ${input.slug} --scope ${input.scope}${input.subject ? ` --subject ${input.subject}` : ''}`
-  if (input.audience === 'user' && input.scope !== 'project' && input.scope !== 'global') {
-    return `refusing ${address}: user audience is allowed only for project and global documents; cleared by: re-run ${set} --audience technical`
-  }
+  const audienceRefusal = audienceScopeRefusal(input, address, set)
+  if (audienceRefusal) return audienceRefusal
+  const canonRefusal = canonTreeRefusal(input, address, set)
+  if (canonRefusal) return canonRefusal
   if (input.removing && input.children.length) {
     return `refusing to remove ${address}: document has children ${input.children
       .map((child) => child.slug)

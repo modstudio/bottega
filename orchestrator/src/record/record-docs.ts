@@ -20,14 +20,17 @@ import {
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
 import {
+  type NormalizedRecordDocImport,
+  newerHostedImportRefusal,
+  normalizeRecordDocImport,
   type RecordDoc,
   type RecordDocImportInput,
   type RecordDocRevision,
-  recordDocIso,
+  recordDocRevisionIdentityRefusal,
   recordDocRevisionRow,
   recordDocRow,
 } from './record-doc-mapping.ts'
-import { recordTreeWriteRefusal } from './record-doc-tree.ts'
+import { recordCanonTreeWriteRefusal, recordTreeWriteRefusal } from './record-doc-tree.ts'
 
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 
@@ -426,10 +429,20 @@ async function writeCanonRows(
   for (const row of input.rows) {
     const prior = existing.get(row.slug)
     const id = prior ? String(prior.id) : newRecordId()
+    assertWrite(
+      await recordCanonTreeWriteRefusal(tx, {
+        spaceId: input.spaceId,
+        id,
+        subject: address.subject,
+        owner: address.owner,
+        slug: row.slug,
+        prior,
+      }),
+    )
     if (prior) {
       await tx`
         UPDATE doc SET title=${row.title}, body=${row.body}, delivery='demand',
-          updated_at=${at}::timestamptz
+          audience='technical', parent_id=NULL, position=0, updated_at=${at}::timestamptz
         WHERE space_id=${input.spaceId}::uuid AND id=${id}::uuid
       `
     } else {
@@ -482,6 +495,17 @@ async function deleteMissingCanonRows(
     const slug = String(prior.slug)
     if (!deletedSlugs.has(slug)) continue
     const id = String(prior.id)
+    assertWrite(
+      await recordCanonTreeWriteRefusal(tx, {
+        spaceId: input.spaceId,
+        id,
+        subject: address.subject,
+        owner: address.owner,
+        slug,
+        prior,
+        removing: true,
+      }),
+    )
     await tx`
       UPDATE doc SET deleted_at=${at}::timestamptz, updated_at=${at}::timestamptz
       WHERE space_id=${input.spaceId}::uuid AND id=${id}::uuid
@@ -729,9 +753,23 @@ export async function restoreRecordDoc(
     `
     if (!revisionRows[0]) throw new RecordDocError('revision not found', 404)
     const revision = revisionRows[0] as Record<string, unknown>
-    const scope = String(revision.scope)
-    const subject = revision.subject == null ? null : String(revision.subject)
-    const slug = String(revision.slug)
+    const live = existing[0] as Record<string, unknown>
+    const scope = String(live.scope)
+    const subject = live.subject == null ? null : String(live.subject)
+    const owner = live.owner_user_id == null ? null : String(live.owner_user_id)
+    const slug = String(live.slug)
+    assertWrite(
+      recordDocRevisionIdentityRefusal(
+        { scope, subject, owner, slug },
+        {
+          scope: String(revision.scope),
+          subject: revision.subject == null ? null : String(revision.subject),
+          owner: revision.owner_user_id == null ? null : String(revision.owner_user_id),
+          slug: String(revision.slug),
+        },
+        'restore',
+      ),
+    )
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
     const audience = String(revision.audience) as DocAudience
@@ -743,7 +781,7 @@ export async function restoreRecordDoc(
         id: input.id,
         scope,
         subject,
-        owner: revision.owner_user_id == null ? null : String(revision.owner_user_id),
+        owner,
         slug,
         audience,
         priorAudience: String(existing[0].audience) as DocAudience,
@@ -751,15 +789,7 @@ export async function restoreRecordDoc(
         parentWasSpecified: true,
       }),
     )
-    const facts = await canonFacts(
-      tx,
-      input.spaceId,
-      scope,
-      subject,
-      slug,
-      body,
-      revision.owner_user_id == null ? null : String(revision.owner_user_id),
-    )
+    const facts = await canonFacts(tx, input.spaceId, scope, subject, slug, body, owner)
     assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
@@ -785,9 +815,9 @@ export async function restoreRecordDoc(
       docId: input.id,
       scope,
       subject,
-      owner: revision.owner_user_id == null ? null : String(revision.owner_user_id),
+      owner,
       slug,
-      projectId: revision.project_id == null ? null : String(revision.project_id),
+      projectId: live.project_id == null ? null : String(live.project_id),
       op: 'restore',
       title: String(revision.title),
       body,
@@ -853,7 +883,7 @@ export async function countRecordDocs(input: Tenant): Promise<{ docs: number; re
 async function existingDocAtAddress(
   tx: SQL,
   spaceId: string,
-  doc: RecordDocImportInput['doc'],
+  doc: NormalizedRecordDocImport['doc'],
 ): Promise<Record<string, unknown> | undefined> {
   const rows = await tx`
     SELECT * FROM doc
@@ -869,22 +899,6 @@ async function existingDocAtAddress(
   return rows[0] as Record<string, unknown> | undefined
 }
 
-function refuseNewerHosted(
-  existing: Record<string, unknown> | undefined,
-  incoming: RecordDocImportInput['doc'],
-): void {
-  if (!existing || existing.deleted_at != null) return
-  if (String(existing.body) === incoming.body) return
-  const hostedUpdated = Date.parse(recordDocIso(existing.updated_at) ?? '')
-  const incomingUpdated = Date.parse(incoming.updatedAt)
-  if (!Number.isFinite(hostedUpdated) || hostedUpdated <= incomingUpdated) return
-  const subject = existing.subject == null ? '' : String(existing.subject)
-  throw new RecordDocError(
-    `refusing import: hosted doc at ${String(existing.scope)}/${subject}/${String(existing.slug)} has a different body and newer updated_at`,
-    409,
-  )
-}
-
 async function writeImportedDoc(
   tx: SQL,
   input: {
@@ -892,7 +906,7 @@ async function writeImportedDoc(
     id: string
     exists: boolean
     projectId: string | null
-    doc: RecordDocImportInput['doc']
+    doc: NormalizedRecordDocImport['doc']
   },
 ): Promise<void> {
   const { doc, spaceId, id, projectId } = input
@@ -924,29 +938,34 @@ async function writeImportedDoc(
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] }> {
+  const { doc, revisions } = normalizeRecordDocImport(input, newRecordId())
   const ownedAddress =
-    refuseOwnedDocAddress(input.doc.scope, input.doc.subject, input.doc.owner) ??
-    refuseSettingsAddress(input.doc.scope, input.doc.subject, input.doc.owner)
+    refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
+    refuseSettingsAddress(doc.scope, doc.subject, doc.owner)
   if (ownedAddress) throw new RecordDocError(ownedAddress)
+  for (const revision of revisions) {
+    assertWrite(recordDocRevisionIdentityRefusal(doc, revision, 'import'))
+  }
   return tenant(input, async (tx) => {
-    const existing = await existingDocAtAddress(tx, input.spaceId, input.doc)
+    const existing = await existingDocAtAddress(tx, input.spaceId, doc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,
       isCreate: !existing,
-      scope: input.doc.scope,
+      scope: doc.scope,
     })
-    if (existing && input.doc.deletedAt !== null && existing.deleted_at == null) {
+    if (existing && doc.deletedAt !== null && existing.deleted_at == null) {
       const subject = existing.subject == null ? '' : String(existing.subject)
       throw new RecordDocError(
         `refusing import at ${String(existing.scope)}/${subject}/${String(existing.slug)}: a deleted import never targets a live row; delete the live doc through the doc service first if deletion is intended`,
         409,
       )
     }
-    refuseNewerHosted(existing, input.doc)
+    const newerHosted = newerHostedImportRefusal(existing, doc)
+    if (newerHosted) throw new RecordDocError(newerHosted, 409)
     assertWrite(
       recordDocLintRefusal(
-        input.doc,
+        doc,
         existing
           ? {
               scope: String(existing.scope),
@@ -957,22 +976,22 @@ export async function importRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await projectId(tx, input.spaceId, input.doc.projectName)
-    const id = existing ? String(existing.id) : input.doc.id
+    const resolvedProject = await projectId(tx, input.spaceId, doc.projectName)
+    const id = existing ? String(existing.id) : doc.id
     assertWrite(
       await recordTreeWriteRefusal(tx, {
         spaceId: input.spaceId,
         id,
-        scope: input.doc.scope,
-        subject: input.doc.subject,
-        owner: input.doc.owner ?? null,
-        slug: input.doc.slug,
-        audience: input.doc.audience,
+        scope: doc.scope,
+        subject: doc.subject,
+        owner: doc.owner ?? null,
+        slug: doc.slug,
+        audience: doc.audience,
         priorAudience:
           existing?.audience == null ? undefined : (String(existing.audience) as DocAudience),
-        parentId: input.doc.parentId,
+        parentId: doc.parentId,
         parentWasSpecified: true,
-        removing: input.doc.deletedAt !== null,
+        removing: doc.deletedAt !== null,
       }),
     )
     await writeImportedDoc(tx, {
@@ -980,18 +999,18 @@ export async function importRecordDoc(
       id,
       exists: Boolean(existing),
       projectId: resolvedProject,
-      doc: input.doc,
+      doc,
     })
     const revisionIds: string[] = []
-    for (const revision of input.revisions) {
+    for (const revision of revisions) {
       revisionIds.push(
         await insertRevision(tx, {
           spaceId: input.spaceId,
           docId: id,
-          scope: revision.scope,
-          subject: revision.subject,
-          owner: revision.owner ?? null,
-          slug: revision.slug,
+          scope: doc.scope,
+          subject: doc.subject,
+          owner: doc.owner ?? null,
+          slug: doc.slug,
           projectId: resolvedProject,
           op: revision.op,
           title: revision.title,

@@ -38,6 +38,30 @@ describe('document tree write rules', () => {
     expect(documentTreeWriteRefusal(base({ parent: { ...base(), slug: 'parent' } }))).toBeNull()
   })
 
+  test('canon documents cannot have a parent or be used as one', () => {
+    expect(
+      documentTreeWriteRefusal(
+        base({
+          scope: 'canon',
+          parent: { ...base(), scope: 'canon', slug: 'parent' },
+        }),
+      ),
+    ).toContain('canon documents cannot have a parent')
+    expect(
+      documentTreeWriteRefusal(
+        base({ parent: { ...base(), scope: 'canon', slug: 'canon-parent' } }),
+      ),
+    ).toContain('cannot be used as a parent')
+    expect(
+      documentTreeWriteRefusal(
+        base({
+          scope: 'canon',
+          children: [{ slug: 'child', audience: 'technical' }],
+        }),
+      ),
+    ).toContain('canon documents cannot have children child')
+  })
+
   test('parent and child audiences must match in both directions', () => {
     expect(
       documentTreeWriteRefusal(base({ audience: 'user', parent: { ...base(), slug: 'parent' } })),
