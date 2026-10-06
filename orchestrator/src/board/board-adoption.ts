@@ -483,46 +483,51 @@ async function uploadOneCandidate(
   }
   try {
     const hostedId = await writeHosted(pending.hosted_id)
-    if (hostedId === null) {
-      writeTransaction(() => {
-        context.database
-          .query(
-            "DELETE FROM board_hosted_adoption_ledger WHERE local_kind=? AND local_id=? AND state='pending'",
-          )
-          .run(candidate.kind, candidate.id)
-      }, context.database)
-      context.dropped.add(candidateKey(candidate))
-      return 'continue'
-    }
+    if (hostedId === null) return dropExpiredCandidate(candidate, context)
     retireCandidate(candidate, pending.hosted_id, hostedId, context.at, context.database)
     if (candidate.kind !== 'reply' && candidate.kind !== 'claim')
       context.hostedRoots.set(candidate.id, hostedId)
     return 'continue'
   } catch (error) {
-    const disposition = uploadErrorDisposition(
-      error instanceof RecordApiRequestError ? error.kind : 'unexpected',
-      error instanceof Error ? error.message : String(error),
-    )
-    if (disposition === 'rate') return 'rate'
-    if (disposition === 'machine')
-      throw new Error(
-        'this machine is not registered under the signed-in user; run orch sync on this machine, then rerun the same orch board adopt command',
-        { cause: error },
-      )
-    if (disposition === 'lasting') {
-      refuseCandidate(
-        candidate,
-        pending.hosted_id,
-        (error as Error).message,
-        context.at,
-        context.database,
-      )
-      return 'continue'
-    }
-    const refusal = unexpectedHostedRefusal(candidate, error)
-    if (refusal) throw refusal
-    throw error
+    return handleUploadError(candidate, pending.hosted_id, error, context)
   }
+}
+
+function dropExpiredCandidate(candidate: Candidate, context: UploadContext): 'continue' {
+  writeTransaction(() => {
+    context.database
+      .query(
+        "DELETE FROM board_hosted_adoption_ledger WHERE local_kind=? AND local_id=? AND state='pending'",
+      )
+      .run(candidate.kind, candidate.id)
+  }, context.database)
+  context.dropped.add(candidateKey(candidate))
+  return 'continue'
+}
+
+function handleUploadError(
+  candidate: Candidate,
+  hostedId: string,
+  error: unknown,
+  context: UploadContext,
+): 'continue' | 'rate' {
+  const disposition = uploadErrorDisposition(
+    error instanceof RecordApiRequestError ? error.kind : 'unexpected',
+    error instanceof Error ? error.message : String(error),
+  )
+  if (disposition === 'rate') return 'rate'
+  if (disposition === 'machine')
+    throw new Error(
+      'this machine is not registered under the signed-in user; run orch sync on this machine, then rerun the same orch board adopt command',
+      { cause: error },
+    )
+  if (disposition === 'lasting') {
+    refuseCandidate(candidate, hostedId, (error as Error).message, context.at, context.database)
+    return 'continue'
+  }
+  const refusal = unexpectedHostedRefusal(candidate, error)
+  if (refusal) throw refusal
+  throw error
 }
 
 async function uploadClaims(context: UploadContext): Promise<BoardAdoptionResult | null> {
