@@ -1,30 +1,67 @@
 # Bottega
 
 A workshop. One designer holds the whole picture, several hands build to that
-design, and nothing ships the designer has not read and signed.
+design, and nothing ships the designer has not read and signed. Bottega is
+orchestration beneath a frontier harness, not a replacement for one. A person or
+architect agent designs, rules and judges; workers execute and never decide.
 
-Bottega runs coding agents under a project's rules. The architect designs,
-rules and judges in a frontier harness; Bottega dispatches the building to
-external agents on flat-rate subscriptions and local models, each in its own
-disposable worktree, under a contract that forbids the worker to decide
-anything. A worker reaching a judgment call stops and asks, and the architect's
-ruling resumes the same worker in the same tree. Every result is reviewed and
-scored, and fidelity is a scored axis, so deviation is measured rather than
-trusted. The scores then route the next job to whichever agent has earned it.
-See `AGENTS.md` for the reasoning.
+## Why it exists
 
-## Today
+Delegating work to cheaper agents is safe only when a guess cannot become a
+commit.
 
-Execution is local. The record of what happened is hosted.
+- A worker that reaches a judgment call stops and asks.
+- Review and fidelity scoring check the result against the specification.
+- Scores route the next job to a worker that has earned it.
+
+## How a change moves
+
+1. `hub task new` creates the task and its key.
+2. Write the specification as the prompt or file for `orch do`.
+3. `orch do` dispatches the work into a disposable worktree.
+4. `orch inbox` shows a worker's question, and `orch answer` records the ruling.
+5. `orch diff` shows the worker's actual changes.
+6. `orch do review-lens` dispatches the required review.
+7. `orch score` records the result and its fidelity to the specification.
+8. `orch pr create` opens the reviewed change for admission.
+
+## What it commits to
+
+- Any frontier harness can hold the deciding role.
+- Vendor agents and local models can work through adapters and earn jobs through
+  measured results.
+- Trackers connect through MCP and map onto one lifecycle.
+- Platform-specific behavior stays behind adapters.
+- Task and document state lives outside the harness.
+- A task runs in isolation and never touches the developer's own data.
+- Setup asks for decisions and never guesses.
+
+## Getting started
+
+Install the binary, run `bottega setup`, probe a worker, create a task and
+delegate it. [The getting-started guide](docs/getting-started.md) walks a fresh
+machine through its first delegated change. The project site is
+[bottega.run](https://bottega.run).
+
+## Local and hosted
+
+Bottega works without a hosted record. An install with no hosted endpoint and
+no prior binding is local-authoritative, so tasks, documents and evidence are
+written locally. When an install is bound to a hosted record, evidence reaches
+the record through an idempotent outbox. Shared state is written through the
+hosted service, and a write is refused rather than queued while that service is
+unreachable.
+
+## Architecture
 
 ```mermaid
 flowchart LR
     H["frontier harness<br/><i>architect · rules · judges</i>"]:::h
     O["<b>orch</b><br/>dispatch · contracts · rulings<br/>worktrees · review · score · route"]:::c
     U["<b>hub</b><br/>tasks · intervals · cost · reports"]:::c
-    W["vendor agents<br/>codex · grok · local models"]:::e
-    OD[("orch.db<br/>runs/ artifacts")]:::s
-    HD[("hub.db<br/>task cache")]:::s
+    W["vendor agents and local models"]:::e
+    OD[("orch.db<br/>runs · artifacts")]:::s
+    HD[("hub.db<br/>local tasks · hosted task cache")]:::s
     RC[("<b>record</b><br/>Postgres + RLS · spaces")]:::r
 
     H --> O
@@ -44,16 +81,16 @@ flowchart LR
 ```
 
 Everything that touches a disk stays on the machine: worktrees, worker
-processes, the gate, run artifacts. Evidence such as runs, verdicts, reviews and
-landings is written locally first and reaches the hosted record through an
-idempotent outbox, so an unreachable record never stops dispatch or scoring.
-Shared state such as tasks and the doc store is written through the hosted
-service, with the local store as a read cache; such a write is refused, never
-queued, while the service is unreachable. The record is multi-tenant: each
-project belongs to one space, set by `settings.space` in the project register.
+processes, the gate and run artifacts. On a hosted-bound install, evidence such
+as runs, verdicts, reviews and landings is written locally first and reaches the
+hosted record through an idempotent outbox. Shared state such as tasks and the
+doc store is written through the hosted service, with the local store as a read
+cache. Each project belongs to the space declared by `settings.space`. When a
+hosted-bound project has no declared space, it belongs to the identity's active
+space.
 
-`hub` reaching `orch` through its binary rather than its database is deliberate.
-A database shared between two concerns is how two concerns quietly become one.
+`hub` reaches `orch` through its binary rather than its database. A database
+shared between two concerns makes the concerns one.
 
 | concern | what it is |
 |---|---|
@@ -64,26 +101,7 @@ A database shared between two concerns is how two concerns quietly become one.
 | `retrieval/` | Embedding and rerank clients, chunking, and the benchmark that measures how often agents find the right source or doc. |
 | `shared/` | The only code any two concerns may both import, including the hosted record schema. |
 
-Concerns do not reach into each other. `bun run check` enforces it, because a
-boundary nobody checks has already drifted.
-
-## Where this is going
-
-Bottega is being made usable by any developer: under any leading harness, on
-macOS or Linux, with the human able to take the deciding role, and working out
-of the box with no tracker and no hosted record. The epic plan, its decisions
-and its order:
-
-    ./bin/hub task doc show 22
-
-The hosting design and its rulings:
-`orch doc show hosting-architecture --scope project --subject bottega`
-
-## Getting started
-
-Install the binary, run `bottega setup`, probe an agent, create a task and
-delegate it: [docs/getting-started.md](docs/getting-started.md) walks a fresh
-machine to a first delegated change.
+Concerns do not reach into each other. `bun run check` enforces the boundary.
 
 ## Working on Bottega
 
@@ -91,13 +109,15 @@ machine to a first delegated change.
     cp .mcp.json.example .mcp.json        # then configure this checkout's MCP servers
     bun run check                          # tests, typecheck, boundaries, brand, canon
 
-Keep checkout-rooted permission rules in `.claude/settings.local.json`. Absolute
-checkout paths are machine-specific, while `.claude/settings.json` is shared by
-every contributor.
+Keep checkout-rooted permission rules in the local Claude settings file.
+Absolute checkout paths are machine-specific, while `.claude/settings.json` is
+shared by every contributor.
 
 Work is tracked in hub, and every task carries a `DEV-` key:
 
     ./bin/hub task list --project bottega
     ./bin/hub task new --project bottega --title "..."
 
-Branches and commit subjects cite the key, and `orch do` requires `--key`.
+Branches and commit subjects cite the key. A writing run requires `orch do
+--key` when its project's branch template contains the key; this repository's
+branch template does.

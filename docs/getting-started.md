@@ -10,6 +10,8 @@ This page takes a fresh machine to a first delegated change.
 
 - macOS or Linux, with `git`. Linux also requires `ripgrep`, `bubblewrap` and
   `socat`, and must permit unprivileged user namespaces for the sandbox.
+- The installer requires `curl` or `wget`, `tar`, and `sha256sum` or `shasum`.
+  Building from a checkout also requires Bun.
 - One agent CLI that Bottega can drive, installed and signed in: `codex` or
   `grok`. Bottega detects them; it never installs or signs in for you.
 - `gh`, signed in, if you want Bottega to open pull requests.
@@ -39,9 +41,11 @@ Run setup from the folder that holds your repositories, or name folders with
 
 Setup inspects the machine and each repository, then asks one question per
 screen with a recommendation preselected: which harnesses should get the
-Bottega MCP server, which task key prefix each project uses, and whether to
-write a starter worktree recipe. It shows the changes and applies them after one
-confirmation. Run it again at any time; it only fills what is missing.
+Bottega MCP server, whether to replace a registration that differs, which task
+key prefix each project uses, whether a detected trunk disagreement should be
+settled, and whether to write a starter worktree recipe. It shows the changes
+and applies them after one confirmation. Run it again at any time; matching
+configuration is left alone.
 
 Setup also lists what it could not do for you, each with the command that fixes
 it. On a new machine expect one for each agent:
@@ -69,7 +73,8 @@ not touched. `orch do` prints a run id and returns.
     orch result 1      # what the agent says it did
     orch diff 1        # what it actually changed
 
-The work is committed on the run's own branch. Nothing is pushed.
+The worker's change is on the run's own branch and may include uncommitted work.
+Nothing is pushed. Close-out preserves uncommitted changes in the run artifacts.
 
 ## Judge it
 
