@@ -33,6 +33,7 @@ import {
 import { readMcpConfig, wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, stackAt } from '../project/projects.ts'
+import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
@@ -706,6 +707,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             recordRecipeResource,
             claimRecipePort: claimRecipeServePort,
             mainStackConsumers: projectAt(callerCwd)?.settings.mainStack?.consumers,
+            mainStackRequiredServices: projectAt(callerCwd)?.settings.mainStack?.requiredServices,
+            mainStackProject: projectAt(callerCwd)
+              ? { id: projectAt(callerCwd)!.id, name: projectAt(callerCwd)!.name }
+              : undefined,
             provisionTimeoutMs: timeoutMs,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
@@ -942,6 +947,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       const project = projectAt(callerCwd)
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
+      ensureMainStackStarted({
+        projectId: project.id,
+        projectName: project.name,
+        projectPath: project.path,
+        declaration: project.settings.mainStack,
+        consumer: 'mcp',
+      })
       const config = prepareWorkerMcpConfig(
         cwd,
         project.path,

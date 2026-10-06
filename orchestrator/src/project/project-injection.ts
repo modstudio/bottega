@@ -118,6 +118,7 @@ type InjectionSettings = {
   worktree?: unknown
   release?: ReleaseSettings
   docs?: DocsSettings
+  mainStack?: { consumers: string[]; requiredServices?: string[] }
 }
 
 type InjectableProject = {
@@ -134,6 +135,7 @@ const injectionSources = [
   'release',
   'docs',
   'stack',
+  'mainStack',
 ] as const
 export type InjectionSource = (typeof injectionSources)[number]
 export const workflowFactSources = [...injectionSources, 'ship-to', 'workflow-text'] as const
@@ -147,6 +149,7 @@ type InjectionValues<Project extends InjectableProject> = {
   release: NonNullable<Project['settings']['release']>
   docs: ResolvedDocs
   stack: NonNullable<Project['stack']>
+  mainStack: { requiredServices: string[]; requiredServicesText: string }
 }
 
 type ResolvedInjection<
@@ -161,6 +164,7 @@ const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
   worktree: `--settings '{"worktree":{}}'`,
   release: `--settings '{"release":{"rungs":[],"mergeMethod":"<merge-method>","requiredChecks":[]}}'`,
   docs: `--settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'`,
+  mainStack: `--settings '{"mainStack":{"consumers":[],"requiredServices":[]}}'`,
 }
 
 function commandFor(project: InjectableProject, source: InjectionSource): string {
@@ -180,7 +184,7 @@ export function resolveInjection<
 ): ResolvedInjection<Project, Needs> {
   const missing = [...new Set(needs)].filter((source) => {
     const value = source === 'stack' ? project.stack : project.settings[source]
-    return value === undefined || value === null
+    return source !== 'mainStack' && (value === undefined || value === null)
   })
   if (missing.length) {
     throw new Error(
@@ -227,6 +231,14 @@ export function resolveInjection<
           ...docs,
           ...(docs.protocol === 'orch-docs' ? {} : { server: project.name }),
           ...docsAdapters[docs.protocol],
+        },
+      })
+    } else if (source === 'mainStack') {
+      const requiredServices = (value as InjectionSettings['mainStack'])?.requiredServices ?? []
+      Object.assign(resolved, {
+        mainStack: {
+          requiredServices,
+          requiredServicesText: requiredServices.join(' ') || 'none',
         },
       })
     } else Object.assign(resolved, { [source]: value })

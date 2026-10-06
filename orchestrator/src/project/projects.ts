@@ -686,14 +686,27 @@ function mainStackProblems(value: ProjectSettings['mainStack']): string[] {
     return ['mainStack must be an object']
   }
   const keys = Object.keys(value)
-  if (keys.some((key) => key !== 'consumers')) return ['mainStack contains unknown settings']
+  if (keys.some((key) => key !== 'consumers' && key !== 'requiredServices'))
+    return ['mainStack contains unknown settings']
   if (!Array.isArray(value.consumers)) return ['mainStack.consumers must be an array']
-  const allowed = new Set(['gate', 'worktree-create'])
+  const allowed = new Set(['gate', 'mcp', 'worktree-create'])
   if (value.consumers.some((consumer) => typeof consumer !== 'string' || !allowed.has(consumer))) {
-    return ['mainStack.consumers entries must be gate or worktree-create']
+    return ['mainStack.consumers entries must be gate, mcp, or worktree-create']
   }
   if (new Set(value.consumers).size !== value.consumers.length) {
     return ['mainStack.consumers entries must be unique']
+  }
+  if (invalidOptionalStringArray(value.requiredServices)) {
+    return ['mainStack.requiredServices must be an array of non-empty service names']
+  }
+  if (value.requiredServices?.some((service) => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(service))) {
+    return ['mainStack.requiredServices entries must be plain service names']
+  }
+  if (
+    value.requiredServices &&
+    new Set(value.requiredServices).size !== value.requiredServices.length
+  ) {
+    return ['mainStack.requiredServices entries must be unique']
   }
   return []
 }

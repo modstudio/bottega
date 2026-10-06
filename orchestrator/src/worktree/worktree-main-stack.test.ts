@@ -33,11 +33,7 @@ test('worktree creation from a non-main cwd starts compose in the registered mai
 
   expect(composeCalls).toEqual([
     {
-      args: ['docker', 'compose', 'ps', '--all', '--quiet'],
-      cwd: registeredMain,
-    },
-    {
-      args: ['docker', 'compose', 'ps', '--status', 'running', '--quiet'],
+      args: ['docker', 'compose', 'ps', '--status', 'running', '--services'],
       cwd: registeredMain,
     },
     {

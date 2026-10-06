@@ -58,6 +58,8 @@ export type CreateWorkerWorktreeOptions = {
   claimRecipePort?: ClaimRecipePort
   templateBaseRef?: string
   mainStackConsumers?: MainStackConsumer[]
+  mainStackRequiredServices?: string[]
+  mainStackProject?: { id: number; name: string }
   provisionTimeoutMs?: number
 }
 
@@ -82,8 +84,15 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
         )
   }
   ensureMainStackStarted({
+    projectId: options.mainStackProject?.id ?? 0,
+    projectName: options.mainStackProject?.name ?? options.mainProjectPath,
     projectPath: options.mainProjectPath,
-    declaredConsumers: options.mainStackConsumers,
+    declaration: options.mainStackConsumers
+      ? {
+          consumers: options.mainStackConsumers,
+          requiredServices: options.mainStackRequiredServices,
+        }
+      : undefined,
     consumer: 'worktree-create',
   })
   if (options.tool) {
