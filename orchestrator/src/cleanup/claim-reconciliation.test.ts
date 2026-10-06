@@ -30,6 +30,22 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
   return { runId, project, repository, branch, ref, claimId, tip }
 }
 
+function markKeptOnAnotherTurn(tip: string | null) {
+  const fixture = keptBranchClaim()
+  db().query('UPDATE run SET branch_kept=NULL,branch_kept_tip=NULL WHERE id=?').run(fixture.runId)
+  const keptTurnId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: fixture.runId,
+    turn: 2,
+  })
+  db()
+    .query('UPDATE run SET branch_kept=?,branch_kept_tip=? WHERE id=?')
+    .run(fixture.branch, tip, keptTurnId)
+  return { ...fixture, tip, keptTurnId }
+}
+
 function linePresentation(lines: string[]): CleanupPresentation {
   return {
     log: (...values) => lines.push(values.join(' ')),
@@ -76,6 +92,63 @@ test('an absent kept branch with a live tip is restored once and settled retaine
     settled_detail: `branch retained at ${fixture.tip}`,
   })
   expect(lines).toEqual([`restored ${fixture.branch} at ${fixture.tip}`])
+})
+
+test("a kept branch recorded by another turn is restored at that turn's tip", () => {
+  const fixture = markKeptOnAnotherTurn('d'.repeat(40))
+  const restored: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project: fixture.project,
+    presentation: linePresentation([]),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      ref: () => ({ outcome: 'absent' }),
+      commit: () => ({ outcome: 'present' }),
+      restoreBranch: (_repository, branch, tip) => {
+        restored.push(`${branch}@${tip}`)
+        return { ok: true }
+      },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(restored).toEqual([`${fixture.branch}@${fixture.tip}`])
+  expect(claimState(fixture.claimId)).toEqual({
+    state: 'retained',
+    settled_detail: `branch retained at ${fixture.tip}`,
+  })
+})
+
+test('a kept branch recorded by another turn without any tip is released with the loss recorded', () => {
+  const fixture = markKeptOnAnotherTurn(null)
+  const lines: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project: fixture.project,
+    presentation: linePresentation(lines),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      ref: () => ({ outcome: 'absent' }),
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(claimState(fixture.claimId)).toEqual({
+    state: 'absent',
+    settled_detail: `branch ${fixture.branch} lost; no tip was recorded`,
+  })
+  expect(lines).toEqual([
+    `released, no tip was recorded: claim ${fixture.claimId} branch ${fixture.ref}`,
+  ])
 })
 
 test('a present kept branch settles retained without restoration', () => {

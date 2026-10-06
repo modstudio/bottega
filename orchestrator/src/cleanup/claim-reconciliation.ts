@@ -200,12 +200,14 @@ function conversationFacts(
     branch_kept_tip: string | null
   }[]
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
-  const claimTurn = turns.find((turn) => turn.id === row.run_id)
-  const branchKept = Boolean(
-    row.kind === 'branch' &&
-      claimTurn?.branch_kept &&
-      `refs/heads/${claimTurn.branch_kept}` === row.allocation_key,
-  )
+  const keptTurns =
+    row.kind === 'branch'
+      ? turns.filter(
+          (turn) => turn.branch_kept && `refs/heads/${turn.branch_kept}` === row.allocation_key,
+        )
+      : []
+  const claimTurn = keptTurns.find((turn) => turn.id === row.run_id && turn.branch_kept_tip)
+  const tipTurn = claimTurn ?? keptTurns.findLast((turn) => turn.branch_kept_tip)
   return {
     allTurnsTerminal: turns.every((turn) => terminal.has(turn.status)),
     liveLeaseOrPid: turns.some(
@@ -214,8 +216,8 @@ function conversationFacts(
         Boolean(turn.pid && observers.pidAlive(turn.pid)) ||
         Boolean(turn.agent_pid && observers.pidAlive(turn.agent_pid)),
     ),
-    branchKept,
-    recordedTip: branchKept ? (claimTurn?.branch_kept_tip ?? null) : null,
+    branchKept: keptTurns.length > 0,
+    recordedTip: tipTurn?.branch_kept_tip ?? null,
   }
 }
 
