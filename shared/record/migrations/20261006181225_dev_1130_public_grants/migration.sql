@@ -14,6 +14,12 @@ BEGIN
   IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'record_public' AND rolbypassrls) THEN
     RAISE EXCEPTION 'dev_1130_public_grants requires record_public to have NOBYPASSRLS. Clear with: ALTER ROLE record_public NOBYPASSRLS;';
   END IF;
+  IF EXISTS (
+    SELECT FROM pg_roles
+    WHERE rolname = 'record_public' AND (rolcreaterole OR rolcreatedb OR rolreplication)
+  ) THEN
+    RAISE EXCEPTION 'record_public must not create roles, create databases or replicate, because SET ROLE confers those attributes. Clear with: ALTER ROLE record_public NOCREATEROLE NOCREATEDB NOREPLICATION;';
+  END IF;
   IF NOT EXISTS (
     SELECT 1
     FROM pg_auth_members membership
