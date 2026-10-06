@@ -9,6 +9,7 @@ export const floorKinds = [
 ] as const
 export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
+export type CommandEvidence = 'gate'
 
 export const floorGuidance = {
   ruling:
@@ -34,7 +35,7 @@ export type Floor = {
   expectedStatus: string
   requirePullRequest: boolean
   operatorRuling: boolean
-  commandEvidence?: 'gate'
+  commandEvidence?: CommandEvidence
 }
 
 export type ArtifactRef =
@@ -160,7 +161,7 @@ export function catalogueFloors(
   expectedStatus = DEFAULT_EXPECTED_STATUS,
   requirePullRequest = false,
   operatorRuling = false,
-  commandEvidence?: 'gate',
+  commandEvidence?: CommandEvidence,
 ): Floor[] {
   return kinds.map((kind) => {
     if (!isFloorKind(kind)) throw new Error(`unknown floor kind "${kind}"`)
@@ -182,7 +183,7 @@ export function catalogueFloorsFor(step: {
   expectedStatus?: string
   requirePullRequest?: boolean
   operatorRuling?: boolean
-  commandEvidence?: 'gate'
+  commandEvidence?: CommandEvidence
 }): Floor[] {
   return catalogueFloors(
     step.floor,
@@ -216,7 +217,10 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
     gate?.finished &&
       gate.exitCode === floor.expectedExitCode &&
       (!floor.commandEvidence ||
-        (gate.project === evidence.tree?.project && gate.commit === evidence.tree?.commit)),
+        (gate.project === evidence.tree?.project &&
+          gate.commit !== null &&
+          evidence.tree?.commit !== null &&
+          gate.commit === evidence.tree?.commit)),
   )
   if (floor.commandEvidence === 'gate') return gateOk
   const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)

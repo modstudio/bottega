@@ -160,12 +160,20 @@ test.each([
     { ...passingGate, gate: { ...passingGate.gate!, project: 'other' } },
     false,
   ],
+  [
+    'unknown gate and tree commits',
+    {
+      gate: { ...passingGate.gate!, commit: null },
+      tree: { ...passingGate.tree!, commit: null },
+    },
+    false,
+  ],
   ['an exec artifact', { ...passingExec, tree: passingGate.tree }, false],
 ] as const)('gate-only command evidence: %s', (_case, evidence, allowed) => {
   const decision = decide({ floors: [{ ...commandExit, commandEvidence: 'gate' }], evidence })
   expect(decision.action).toBe(allowed ? 'allow' : 'refuse')
   if (!allowed && decision.action === 'refuse') {
-    expect(decision.message).toContain('commit abc')
+    expect(decision.message).toContain(`commit ${evidence.tree?.commit ?? '<current tree commit>'}`)
     expect(decision.message).toContain('orch gate run')
   }
 })

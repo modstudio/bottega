@@ -40,12 +40,12 @@ import {
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
 import {
-  type catalogueFloors,
   catalogueFloorsFor,
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   decideFloorSatisfaction,
   type EnforcementMode,
+  type Floor,
   type FloorDecision,
   type OpenObligation,
 } from './workflow-floor.ts'
@@ -537,7 +537,7 @@ function applyFloorDecision(
 function persistFloorClose(
   row: CursorRow,
   decision: Extract<FloorDecision, { action: 'allow' }>,
-  floors: ReturnType<typeof catalogueFloors>,
+  floors: Floor[],
   at: string,
   d: Database,
 ): Pick<ClosedStep, 'evidence' | 'deferred' | 'satisfied'> {

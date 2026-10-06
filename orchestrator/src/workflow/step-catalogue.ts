@@ -12,11 +12,10 @@ import {
   autonomyValues,
 } from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
-import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
+import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`
-type CommandEvidence = 'gate'
 export type CatalogueStep = {
   slug: string
   title: string
