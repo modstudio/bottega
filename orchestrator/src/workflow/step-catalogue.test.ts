@@ -72,6 +72,21 @@ test('operatorRuling requires a ruling floor', () => {
   expect(
     validateStepCatalogue({ steps: [{ ...step, stage: 'ship', operatorRuling: true }] }),
   ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
+          floor: ['{{shipTo.closeFloor}}'],
+          operatorRuling: true,
+        },
+      ],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({ steps: [{ ...step, stage: 'ship', floor: ['prefix {{floor}}'] }] }),
+  ).toContain('step "design" has invalid floor kind "prefix {{floor}}"')
 })
 
 test('orch do dispatches require a prompt or file', () => {

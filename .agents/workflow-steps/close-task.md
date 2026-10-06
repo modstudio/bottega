@@ -2,8 +2,7 @@
 title: Close the task
 stage: ship
 floor:
-  - tracker-transition
-  - ruling
+  - "{{shipTo.closeFloor}}"
 expectedStatus: "{{shipTo.closeState}}"
 operatorRuling: true
 job: null

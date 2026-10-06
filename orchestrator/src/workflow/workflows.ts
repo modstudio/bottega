@@ -18,10 +18,12 @@ import {
 import { decideShipToReach } from './ship-to-reach.ts'
 import {
   compatibleCatalogueStep,
+  type FloorEntry,
   productionStepCatalogue,
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import { type FloorKind, isFloorKind } from './workflow-floor.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string; rebind?: boolean }
@@ -452,6 +454,10 @@ function shipToFact(
     : tracker?.states.review
       ? 'review'
       : 'ask'
+  if (tracker && closeAction === 'done' && !tracker.states.done)
+    throw new Error(
+      `project ${project.name} tracker is missing workflow state "done"; set it with: orch project set ${project.name} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
+    )
   return {
     shipTo: {
       level: autonomy.shipTo.value,
@@ -464,16 +470,32 @@ function shipToFact(
       ...(tracker
         ? {
             closeAction,
+            closeFloor: closeAction === 'ask' ? 'ruling' : 'tracker-transition',
             closeState:
               closeAction === 'done'
                 ? tracker.states.done
                 : closeAction === 'review'
                   ? tracker.states.review
-                  : 'review',
+                  : 'none',
           }
         : {}),
     },
   }
+}
+
+function resolveStepFloors(
+  step: { slug: string; floor: FloorEntry[] },
+  resolve: (template: string) => string,
+): FloorKind[] {
+  return step.floor.map((entry) => {
+    if (isFloorKind(entry)) return entry
+    const value = resolve(entry)
+    if (!isFloorKind(value))
+      throw new Error(
+        `step "${step.slug}" floor placeholder "${entry}" resolved to invalid floor kind "${value}"`,
+      )
+    return value
+  })
 }
 
 const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
@@ -585,6 +607,7 @@ export function composeWorkflow(
       projectFacts,
     ),
   }
+  const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   return {
     workflow: {
       slug,
@@ -608,14 +631,10 @@ export function composeWorkflow(
           stage: step.stage,
           autonomy: step.autonomy,
           resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
-          floor: step.floor,
+          floor: resolveStepFloors(step, (template) => resolveWorkflowTemplate(template, values)),
           deferrable: step.deferrable ?? [],
           expectedStatus: step.expectedStatus
-            ? resolveWorkflowTemplate(step.expectedStatus, {
-                project: projectName,
-                ...args,
-                ...facts,
-              })
+            ? resolveWorkflowTemplate(step.expectedStatus, values)
             : undefined,
           requirePullRequest: Boolean(step.requirePullRequest),
           operatorRuling: Boolean(step.operatorRuling),
@@ -726,6 +745,7 @@ export function getWorkflowStep(
       : undefined
   return {
     ...step,
+    floor: resolveStepFloors(step, resolve),
     expectedStatus: step.expectedStatus ? resolve(step.expectedStatus) : undefined,
     resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
     workflow: slug,

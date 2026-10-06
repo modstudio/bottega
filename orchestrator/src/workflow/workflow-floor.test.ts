@@ -93,7 +93,11 @@ test('an operator ruling floor requires a bound operator answer', () => {
     ruling: { ...answeredRuling.ruling!, answeredByOperator: true },
   }
 
-  for (const evidence of [{}, agentAnswer, gradedReview]) {
+  const reviewCategoryTask: ValidatedEvidence = {
+    task: { key: 'DEV-1', status: 'blocked', statusCategory: 'review', mergedPullRequest: true },
+  }
+
+  for (const evidence of [{}, agentAnswer, gradedReview, reviewCategoryTask]) {
     const decision = decide({ floors: [operatorRuling], evidence })
     expect(decision.action).toBe('refuse')
     if (decision.action === 'refuse') {
