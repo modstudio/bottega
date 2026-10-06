@@ -150,9 +150,10 @@ describe('ACP transport selection', () => {
     expect(() => resolveTransportName('grpc')).toThrow('unknown transport')
   })
 
-  test('the pilot allow-list is the four read-only jobs', () => {
+  test('the pilot allow-list is the five read-only jobs', () => {
     expect(isAcpPilotJob('understand')).toBe(true)
     expect(isAcpPilotJob('file-question')).toBe(true)
+    expect(isAcpPilotJob('canon-lookup')).toBe(true)
     expect(isAcpPilotJob('verify-claim')).toBe(true)
     expect(isAcpPilotJob('summarize')).toBe(true)
     expect(isAcpPilotJob('implement')).toBe(false)

@@ -14,7 +14,13 @@ const requireTransport = createRequire(import.meta.url)
 export const ACP_PILOT_TASK = 'DEV-352'
 
 /** Read-only jobs the ACP pilot may run. Anything else is refused. */
-const ACP_PILOT_JOBS = ['understand', 'file-question', 'verify-claim', 'summarize'] as const
+const ACP_PILOT_JOBS = [
+  'understand',
+  'file-question',
+  'canon-lookup',
+  'verify-claim',
+  'summarize',
+] as const
 
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
