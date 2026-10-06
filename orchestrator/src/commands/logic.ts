@@ -51,7 +51,7 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
-import { workflowCommand } from '../workflow/workflow-commands.ts'
+import { workflowChildCommandInvocation, workflowCommand } from '../workflow/workflow-commands.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
@@ -189,21 +189,15 @@ export function register(program: Command): void {
     .option('--autonomy <value>', '', collect, [])
     .option('--json')
     .action((args, options, command) => {
-      const commandOwnsChildArgv = args[0] === 'exec' || args[0] === 'probe'
-      const invocation = command.parent?.rawArgs ?? []
-      const separator = invocation.indexOf('--')
-      const childArgv = separator < 0 ? [] : invocation.slice(separator + 1)
+      const childInvocation = workflowChildCommandInvocation(
+        args,
+        command.parent?.rawArgs ?? [],
+        options,
+      )
       return workflowCommand(
-        commandOwnsChildArgv
-          ? ['workflow', args[0]!, ...(separator < 0 ? [] : ['--', ...childArgv])]
-          : productArgv('workflow', args, options),
+        childInvocation?.argv ?? productArgv('workflow', args, options),
         presentation,
-        commandOwnsChildArgv
-          ? {
-              cwd: typeof options.cwd === 'string' ? options.cwd : undefined,
-              json: Boolean(options.json),
-            }
-          : undefined,
+        childInvocation?.options,
       )
     })
   program
