@@ -449,15 +449,6 @@ function shipToFact(
   const tracker = needsCloseState
     ? (projectFacts.tracker as { states: Partial<Record<'review' | 'done', string>> })
     : undefined
-  const closeAction = !decision.remaining.length
-    ? 'done'
-    : tracker?.states.review
-      ? 'review'
-      : 'ask'
-  if (tracker && closeAction === 'done' && !tracker.states.done)
-    throw new Error(
-      `project ${project.name} tracker is missing workflow state "done"; set it with: orch project set ${project.name} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
-    )
   return {
     shipTo: {
       level: autonomy.shipTo.value,
@@ -467,19 +458,31 @@ function shipToFact(
       remaining: decision.remaining,
       reachText: decision.reach.join(', ') || 'none',
       remainingText: decision.remaining.join(', ') || 'none',
-      ...(tracker
-        ? {
-            closeAction,
-            closeFloor: closeAction === 'ask' ? 'ruling' : 'tracker-transition',
-            closeState:
-              closeAction === 'done'
-                ? tracker.states.done
-                : closeAction === 'review'
-                  ? tracker.states.review
-                  : 'none',
-          }
-        : {}),
+      ...closeShipToFact(project.name, decision.remaining.length, tracker),
     },
+  }
+}
+
+function closeShipToFact(
+  projectName: string,
+  remaining: number,
+  tracker: { states: Partial<Record<'review' | 'done', string>> } | undefined,
+) {
+  if (!tracker) return {}
+  const closeAction = !remaining ? 'done' : tracker.states.review ? 'review' : 'ask'
+  if (closeAction === 'done' && !tracker.states.done)
+    throw new Error(
+      `project ${projectName} tracker is missing workflow state "done"; set it with: orch project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
+    )
+  return {
+    closeAction,
+    closeFloor: closeAction === 'ask' ? 'ruling' : 'tracker-transition',
+    closeState:
+      closeAction === 'done'
+        ? tracker.states.done
+        : closeAction === 'review'
+          ? tracker.states.review
+          : 'none',
   }
 }
 
