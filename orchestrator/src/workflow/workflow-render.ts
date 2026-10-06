@@ -117,6 +117,8 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   const autonomy =
     step.resolvedAutonomy.value === 'ask'
       ? 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
+      : step.resolvedAutonomy.value === 'auto' && step.autonomy === 'ask'
+        ? 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
       : step.resolvedAutonomy.value === 'review'
         ? 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
         : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'

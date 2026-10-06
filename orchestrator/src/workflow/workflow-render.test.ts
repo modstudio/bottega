@@ -178,4 +178,19 @@ describe('workflow rendering', () => {
       "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.",
     )
   })
+
+  test('an ask step relaxed to auto names its recording and escalation duties', () => {
+    const d = database()
+    const rendered = renderWorkflowStep(
+      getWorkflowStep('ship', 'fixture', 'ship-triage', args, d, { mode: 'default' }, {
+        steps: { 'ship-triage': { value: 'auto', scope: 'test' } },
+        rulings: { value: 'agent', scope: 'test' },
+        shipTo: { value: 'trunk', scope: 'test' },
+      }),
+    )
+
+    expect(rendered).toContain(
+      'Autonomy: auto (test) — rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).',
+    )
+  })
 })
