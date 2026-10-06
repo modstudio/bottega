@@ -66,6 +66,10 @@ type WorkflowCommandOptions = {
   stdinText?: () => Promise<string>
   stdinIsTTY?: () => boolean | undefined
 }
+type WorkflowChildCommandInvocation = {
+  argv: string[]
+  options: Pick<WorkflowCommandOptions, 'cwd' | 'json'>
+}
 type ProbePrintRecord = Pick<ProbeRecord, 'id' | 'withheld'>
 export type CommandOutcome = { exitCode: number; errorLine?: string }
 const positive = (value: string | undefined, label: string): number | undefined => {
@@ -73,6 +77,22 @@ const positive = (value: string | undefined, label: string): number | undefined 
   const n = Number(value)
   if (!Number.isInteger(n) || n < 1) throw new Error(`${label} must be a positive integer`)
   return n
+}
+
+export function workflowChildCommandInvocation(
+  args: string[],
+  rawArgs: string[],
+  options: { cwd?: unknown; json?: unknown },
+): WorkflowChildCommandInvocation | undefined {
+  if (args[0] !== 'exec' && args[0] !== 'probe') return undefined
+  const separator = rawArgs.indexOf('--')
+  return {
+    argv: ['workflow', args[0], ...(separator < 0 ? [] : ['--', ...rawArgs.slice(separator + 1)])],
+    options: {
+      cwd: typeof options.cwd === 'string' ? options.cwd : undefined,
+      json: Boolean(options.json),
+    },
+  }
 }
 
 export async function workflowCommand(

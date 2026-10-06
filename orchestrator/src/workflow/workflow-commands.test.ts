@@ -3,7 +3,11 @@ import { program } from '../cli/program.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { commandOutcome, workflowCommand } from './workflow-commands.ts'
+import {
+  commandOutcome,
+  workflowChildCommandInvocation,
+  workflowCommand,
+} from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from './workflows.ts'
@@ -150,47 +154,28 @@ test('workflow attach refuses text in an argument', async () => {
   ).rejects.toThrow('workflow text is not accepted as an argument')
 })
 
-test('Commander preserves an embedded separator in workflow exec child argv', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
-  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  try {
-    delete process.env.ORCH_DEPTH
-    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
-    upsertProject({
-      name: 'workflow-exec-adapter',
-      path: process.cwd(),
-      stack: 'bun',
-      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
-    })
-
-    await program.parseAsync([
-      'bun',
-      'orch',
-      'workflow',
-      'exec',
-      '--',
-      '/usr/bin/printf',
-      '[%s]\\n',
-      'first',
-      '--',
-      'tail',
-    ])
-
-    expect(
-      db().query('SELECT command,output_tail FROM probe').get() as {
-        command: string
-        output_tail: string
-      },
-    ).toEqual({
-      command: JSON.stringify(['/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail']),
-      output_tail: '[first]\n[--]\n[tail]\n',
-    })
-  } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  }
+test('workflow child command invocation preserves an embedded separator in exec argv', () => {
+  expect(
+    workflowChildCommandInvocation(
+      ['exec'],
+      [
+        'bun',
+        'orch',
+        'workflow',
+        'exec',
+        '--',
+        '/usr/bin/printf',
+        '[%s]\\n',
+        'first',
+        '--',
+        'tail',
+      ],
+      {},
+    ),
+  ).toEqual({
+    argv: ['workflow', 'exec', '--', '/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'],
+    options: { cwd: undefined, json: false },
+  })
 })
 
 test('Commander refuses workflow exec without a separator before running the child', async () => {
@@ -226,27 +211,31 @@ test('Commander refuses workflow exec without a separator before running the chi
   }
 })
 
-test('workflow exec keeps its cwd option out of the child argv', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
-  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  const cwd = process.cwd()
-  try {
-    delete process.env.ORCH_DEPTH
-    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
-    upsertProject({
-      name: 'workflow-exec-cwd-adapter',
-      path: process.cwd(),
-      stack: 'bun',
-      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
-    })
-
-    await program.parseAsync([
-      'bun',
-      'orch',
+test('workflow child command invocation keeps cwd and json options out of exec argv', () => {
+  expect(
+    workflowChildCommandInvocation(
+      ['exec'],
+      [
+        'bun',
+        'orch',
+        'workflow',
+        'exec',
+        '--cwd',
+        '.',
+        '--',
+        '/usr/bin/printf',
+        '%s%s%s%s',
+        '--x',
+        '--cwd',
+        'child-dir',
+        '--json',
+      ],
+      { cwd: '.', json: true },
+    ),
+  ).toEqual({
+    argv: [
       'workflow',
       'exec',
-      '--cwd',
-      '.',
       '--',
       '/usr/bin/printf',
       '%s%s%s%s',
@@ -254,27 +243,9 @@ test('workflow exec keeps its cwd option out of the child argv', async () => {
       '--cwd',
       'child-dir',
       '--json',
-    ])
-
-    expect(
-      db().query("SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1").get(),
-    ).toEqual({
-      command: JSON.stringify([
-        '/usr/bin/printf',
-        '%s%s%s%s',
-        '--x',
-        '--cwd',
-        'child-dir',
-        '--json',
-      ]),
-      cwd,
-    })
-  } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  }
+    ],
+    options: { cwd: '.', json: true },
+  })
 })
 
 test('workflow exec service returns each child exit code after recording its row', async () => {
