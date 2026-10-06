@@ -2,7 +2,7 @@ import type { DocsAudience, DocsTreeItem } from './types.ts'
 
 export type FilterKey = 'scope' | 'delivery'
 export type FilterSelection = Record<FilterKey, string | null>
-export type FilterOption = { value: string; count: number }
+type FilterOption = { value: string; count: number }
 export type OfferedFilter = { key: FilterKey; options: FilterOption[] }
 
 export const EMPTY_FILTERS: FilterSelection = { scope: null, delivery: null }

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
@@ -8,20 +8,14 @@ import { Popover } from '@/ui/popover/popover'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import {
-  activeFilterCount,
-  applyFilters,
-  clearStaleFilters,
   EMPTY_FILTERS,
   type FilterKey,
   type FilterSelection,
-  inAudience,
-  inProject,
-  offeredFilters,
-  projectSubjects,
+  type OfferedFilter,
 } from './filters.ts'
-import { secondLevelHeadings } from './headings.ts'
+import type { DocHeading } from './headings.ts'
+import { docsViewModel } from './model.ts'
 import { SearchDialog } from './search.tsx'
-import { buildDocTree, neighbors, treePath } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -91,13 +85,13 @@ function FilterPanel({
   onChange,
   total,
 }: {
-  offered: ReturnType<typeof offeredFilters>
+  offered: OfferedFilter[]
   chosen: FilterSelection
   onChange: (next: FilterSelection) => void
   total: number
 }) {
   const labels: Record<FilterKey, string> = { scope: 'Scope', delivery: 'Delivery' }
-  const active = activeFilterCount(chosen)
+  const active = Boolean(chosen.scope || chosen.delivery)
   return (
     <div className="w-[min(17.5rem,calc(100vw-2.5rem))]">
       {offered.map((filter) => (
@@ -210,6 +204,281 @@ function TreeList({
   )
 }
 
+function useSearchHotkey(open: () => void) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '/') return
+      const target = event.target
+      if (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      event.preventDefault()
+      open()
+    }
+    window.document.addEventListener('keydown', onKey)
+    return () => window.document.removeEventListener('keydown', onKey)
+  }, [open])
+}
+
+function DocsChrome({
+  audience,
+  onAudience,
+  signedIn,
+  userCount,
+  technicalCount,
+  showProjectChooser,
+  project,
+  onProject,
+  subjects,
+  offered,
+  chosen,
+  onFilters,
+  inView,
+  active,
+}: {
+  audience: DocsAudience
+  onAudience: (audience: DocsAudience) => void
+  signedIn: boolean
+  userCount: number
+  technicalCount: number
+  showProjectChooser: boolean
+  project: string | 'all'
+  onProject: (project: string | 'all') => void
+  subjects: readonly string[]
+  offered: OfferedFilter[]
+  chosen: FilterSelection
+  onFilters: (next: FilterSelection) => void
+  inView: number
+  active: number
+}) {
+  const tabs = [
+    { value: 'user', label: 'User guide', count: userCount },
+    ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
+  ]
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3 border-border-default border-b px-5">
+      <Tabs
+        label="Audience"
+        value={audience}
+        onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
+        items={tabs}
+      />
+      <div className="flex flex-wrap items-center gap-3 py-2">
+        {showProjectChooser ? (
+          <div className="flex items-center gap-2">
+            <span className={eyebrow}>Project</span>
+            <Select
+              label="Project"
+              size="sm"
+              value={project}
+              onChange={(value) => onProject(value === 'all' ? 'all' : value)}
+              options={[
+                ...subjects.map((name) => ({ value: name, label: name })),
+                { value: 'all', label: 'All projects' },
+              ]}
+            />
+          </div>
+        ) : null}
+        {offered.length ? (
+          <Popover
+            label="Filters"
+            align="end"
+            trigger={
+              <Button size="sm">
+                Filter
+                {active ? (
+                  <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
+                    {active}
+                  </span>
+                ) : null}
+              </Button>
+            }
+          >
+            <FilterPanel offered={offered} chosen={chosen} onChange={onFilters} total={inView} />
+          </Popover>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function DocsRail({
+  tree,
+  selectedId,
+  collapsed,
+  onToggle,
+  onSelect,
+  onSearch,
+  loading,
+  audience,
+}: {
+  tree: readonly TreeNode[]
+  selectedId: string | null
+  collapsed: ReadonlySet<string>
+  onToggle: (id: string) => void
+  onSelect: (item: DocsTreeItem) => void
+  onSearch: () => void
+  loading?: boolean
+  audience: DocsAudience
+}) {
+  return (
+    <nav
+      aria-label="Documents"
+      className="border-border-default border-b p-5 lg:border-r lg:border-b-0"
+    >
+      <button
+        type="button"
+        onClick={onSearch}
+        className="mb-4 flex w-full items-center justify-between text-left text-md text-text-muted"
+      >
+        <span>Search docs</span>
+        <Kbd>/</Kbd>
+      </button>
+      {loading ? <p className="text-md text-text-muted">Loading docs…</p> : null}
+      {tree.length ? (
+        <TreeList
+          nodes={tree}
+          selectedId={selectedId}
+          collapsed={collapsed}
+          onToggle={onToggle}
+          onSelect={onSelect}
+        />
+      ) : loading ? null : (
+        <p className="mt-4 text-md text-text-muted">
+          {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
+        </p>
+      )}
+    </nav>
+  )
+}
+
+function DocsReading({
+  doc,
+  crumbs,
+  around,
+  onSelect,
+  localActions,
+  error,
+}: {
+  doc: DocsDoc | null
+  crumbs: readonly DocsTreeItem[]
+  around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
+  onSelect: (item: DocsTreeItem) => void
+  localActions?: ReactNode
+  error?: string | null
+}) {
+  return (
+    <main className="min-w-0 bg-surface-page px-6 py-8 md:px-11 md:py-9">
+      {error ? (
+        <p data-tone="error" className="text-status-text">
+          {error}
+        </p>
+      ) : null}
+      {doc ? (
+        <>
+          {crumbs.length ? (
+            <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
+              <span>Docs</span>
+              {crumbs.map((crumb) => (
+                <span key={crumb.id} className="contents">
+                  <span>/</span>
+                  <span>{crumb.title}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+            <h1 className="font-normal font-serif text-3xl tracking-tight md:text-[2.625rem] md:leading-[1.06]">
+              {doc.title}
+            </h1>
+            {localActions}
+          </div>
+          <div className="mt-6">
+            <Markdown content={doc.body} />
+          </div>
+          <div className="mt-14 flex max-w-[68ch] justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
+            {around.previous ? (
+              <button
+                type="button"
+                className="text-left hover:text-text-primary"
+                onClick={() => onSelect(around.previous!)}
+              >
+                ← {around.previous.title}
+              </button>
+            ) : (
+              <span />
+            )}
+            {around.next ? (
+              <button
+                type="button"
+                className="text-right hover:text-text-primary"
+                onClick={() => onSelect(around.next!)}
+              >
+                {around.next.title} →
+              </button>
+            ) : (
+              <span />
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="text-md text-text-muted">Select a document.</p>
+      )}
+    </main>
+  )
+}
+
+function DocsFacts({
+  doc,
+  headings,
+  signedIn,
+}: {
+  doc: DocsDoc | null
+  headings: readonly DocHeading[]
+  signedIn: boolean
+}) {
+  return (
+    <aside className="hidden border-border-default border-l px-5 py-8 lg:block">
+      {headings.length ? (
+        <section>
+          <span className={eyebrow}>On this page</span>
+          <ul className="mt-2.5 flex list-none flex-col gap-1.5 p-0">
+            {headings.map((heading) => (
+              <li key={heading.id}>
+                <a
+                  href={`#${heading.id}`}
+                  className="text-md text-text-muted hover:text-text-primary"
+                >
+                  {heading.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {doc ? (
+        <section className={headings.length ? 'mt-7' : undefined}>
+          <span className={eyebrow}>About</span>
+          <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
+            <dt className="text-text-muted">Audience</dt>
+            <dd className="m-0 text-text-secondary">
+              {doc.audience === 'user' ? 'User' : 'Technical'}
+            </dd>
+            <dt className="text-text-muted">Updated</dt>
+            <dd className="m-0 text-text-secondary">{updatedLabel(doc.updatedAt)}</dd>
+            {signedIn ? (
+              <>
+                <dt className="text-text-muted">Address</dt>
+                <dd className="m-0 min-w-0 break-words text-text-secondary">
+                  {doc.scope} / {doc.subject ?? '—'} / {doc.slug}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+        </section>
+      ) : null}
+    </aside>
+  )
+}
+
 export function DocsView({
   items,
   selectedId,
@@ -232,44 +501,13 @@ export function DocsView({
   const [searchOpen, setSearchOpen] = useState(false)
   const [chosen, setChosen] = useState<FilterSelection>(EMPTY_FILTERS)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
-
-  const forProject = useMemo(() => inProject(items, project), [items, project])
-  const userCount = useMemo(() => inAudience(forProject, 'user').length, [forProject])
-  const technicalCount = useMemo(() => inAudience(forProject, 'technical').length, [forProject])
-  const forAudience = useMemo(() => inAudience(forProject, audience), [forProject, audience])
-  const stale = useMemo(() => clearStaleFilters(forAudience, chosen), [forAudience, chosen])
+  const model = docsViewModel(items, audience, project, chosen, selectedId, doc)
   useEffect(() => {
-    if (stale.scope !== chosen.scope || stale.delivery !== chosen.delivery) setChosen(stale)
-  }, [stale, chosen])
-  const offered = offeredFilters(forAudience)
-  const visible = applyFilters(forAudience, stale)
-  const tree = useMemo(() => buildDocTree(visible), [visible])
-  const selected = visible.find((item) => item.id === selectedId) ?? null
-  const crumbs = selected ? treePath(tree, selected.id) : []
-  const around = selected ? neighbors(tree, selected.id) : { previous: null, next: null }
-  const headings = doc ? secondLevelHeadings(doc.body) : []
-  const subjects = projectSubjects(items)
-  const active = activeFilterCount(stale)
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== '/') return
-      const target = event.target
-      if (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
-        return
-      }
-      event.preventDefault()
-      setSearchOpen(true)
+    if (model.stale.scope !== chosen.scope || model.stale.delivery !== chosen.delivery) {
+      setChosen(model.stale)
     }
-    window.document.addEventListener('keydown', onKey)
-    return () => window.document.removeEventListener('keydown', onKey)
-  }, [])
-
-  const tabItems = [
-    { value: 'user', label: 'User guide', count: userCount },
-    ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
-  ]
-
+  }, [model.stale, chosen])
+  useSearchHotkey(() => setSearchOpen(true))
   return (
     <div
       className={classes(
@@ -277,191 +515,50 @@ export function DocsView({
         framed ? 'min-h-dvh' : 'min-h-[calc(100dvh-var(--topbar-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >
-      <div className="flex flex-wrap items-end justify-between gap-3 border-border-default border-b px-5">
-        <Tabs
-          label="Audience"
-          value={audience}
-          onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
-          items={tabItems}
-        />
-        <div className="flex flex-wrap items-center gap-3 py-2">
-          {showProjectChooser ? (
-            <div className="flex items-center gap-2">
-              <span className={eyebrow}>Project</span>
-              <Select
-                label="Project"
-                size="sm"
-                value={project}
-                onChange={(value) => onProject(value === 'all' ? 'all' : value)}
-                options={[
-                  ...subjects.map((name) => ({ value: name, label: name })),
-                  { value: 'all', label: 'All projects' },
-                ]}
-              />
-            </div>
-          ) : null}
-          {offered.length ? (
-            <Popover
-              label="Filters"
-              align="end"
-              trigger={
-                <Button size="sm">
-                  Filter
-                  {active ? (
-                    <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
-                      {active}
-                    </span>
-                  ) : null}
-                </Button>
-              }
-            >
-              <FilterPanel
-                offered={offered}
-                chosen={stale}
-                onChange={setChosen}
-                total={forAudience.length}
-              />
-            </Popover>
-          ) : null}
-        </div>
-      </div>
-
+      <DocsChrome
+        audience={audience}
+        onAudience={onAudience}
+        signedIn={signedIn}
+        userCount={model.userCount}
+        technicalCount={model.technicalCount}
+        showProjectChooser={showProjectChooser}
+        project={project}
+        onProject={onProject}
+        subjects={model.subjects}
+        offered={model.offered}
+        chosen={model.stale}
+        onFilters={setChosen}
+        inView={model.inView}
+        active={model.active}
+      />
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
-        <nav
-          aria-label="Documents"
-          className="border-border-default border-b p-5 lg:border-r lg:border-b-0"
-        >
-          <button
-            type="button"
-            onClick={() => setSearchOpen(true)}
-            className="mb-4 flex w-full items-center justify-between text-left text-md text-text-muted"
-          >
-            <span>Search docs</span>
-            <Kbd>/</Kbd>
-          </button>
-          {loading ? <p className="text-md text-text-muted">Loading docs…</p> : null}
-          {tree.length ? (
-            <TreeList
-              nodes={tree}
-              selectedId={selectedId}
-              collapsed={collapsed}
-              onToggle={(id) =>
-                setCollapsed((current) => {
-                  const next = new Set(current)
-                  if (next.has(id)) next.delete(id)
-                  else next.add(id)
-                  return next
-                })
-              }
-              onSelect={onSelect}
-            />
-          ) : loading ? null : (
-            <p className="mt-4 text-md text-text-muted">
-              {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
-            </p>
-          )}
-        </nav>
-
-        <main className="min-w-0 bg-surface-page px-6 py-8 md:px-11 md:py-9">
-          {error ? (
-            <p data-tone="error" className="text-status-text">
-              {error}
-            </p>
-          ) : null}
-          {doc ? (
-            <>
-              {crumbs.length ? (
-                <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
-                  <span>Docs</span>
-                  {crumbs.map((crumb) => (
-                    <span key={crumb.id} className="contents">
-                      <span>/</span>
-                      <span>{crumb.title}</span>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-                <h1 className="font-normal font-serif text-3xl tracking-tight md:text-[2.625rem] md:leading-[1.06]">
-                  {doc.title}
-                </h1>
-                {localActions}
-              </div>
-              <div className="mt-6">
-                <Markdown content={doc.body} />
-              </div>
-              <div className="mt-14 flex max-w-[68ch] justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
-                {around.previous ? (
-                  <button
-                    type="button"
-                    className="text-left hover:text-text-primary"
-                    onClick={() => onSelect(around.previous!)}
-                  >
-                    ← {around.previous.title}
-                  </button>
-                ) : (
-                  <span />
-                )}
-                {around.next ? (
-                  <button
-                    type="button"
-                    className="text-right hover:text-text-primary"
-                    onClick={() => onSelect(around.next!)}
-                  >
-                    {around.next.title} →
-                  </button>
-                ) : (
-                  <span />
-                )}
-              </div>
-            </>
-          ) : (
-            <p className="text-md text-text-muted">Select a document.</p>
-          )}
-        </main>
-
-        <aside className="hidden border-border-default border-l px-5 py-8 lg:block">
-          {headings.length ? (
-            <section>
-              <span className={eyebrow}>On this page</span>
-              <ul className="mt-2.5 flex list-none flex-col gap-1.5 p-0">
-                {headings.map((heading) => (
-                  <li key={heading.id}>
-                    <a
-                      href={`#${heading.id}`}
-                      className="text-md text-text-muted hover:text-text-primary"
-                    >
-                      {heading.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {doc ? (
-            <section className={headings.length ? 'mt-7' : undefined}>
-              <span className={eyebrow}>About</span>
-              <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
-                <dt className="text-text-muted">Audience</dt>
-                <dd className="m-0 text-text-secondary">
-                  {doc.audience === 'user' ? 'User' : 'Technical'}
-                </dd>
-                <dt className="text-text-muted">Updated</dt>
-                <dd className="m-0 text-text-secondary">{updatedLabel(doc.updatedAt)}</dd>
-                {signedIn ? (
-                  <>
-                    <dt className="text-text-muted">Address</dt>
-                    <dd className="m-0 min-w-0 break-words text-text-secondary">
-                      {doc.scope} / {doc.subject ?? '—'} / {doc.slug}
-                    </dd>
-                  </>
-                ) : null}
-              </dl>
-            </section>
-          ) : null}
-        </aside>
+        <DocsRail
+          tree={model.tree}
+          selectedId={selectedId}
+          collapsed={collapsed}
+          onToggle={(id) =>
+            setCollapsed((current) => {
+              const next = new Set(current)
+              if (next.has(id)) next.delete(id)
+              else next.add(id)
+              return next
+            })
+          }
+          onSelect={onSelect}
+          onSearch={() => setSearchOpen(true)}
+          loading={loading}
+          audience={audience}
+        />
+        <DocsReading
+          doc={doc}
+          crumbs={model.crumbs}
+          around={model.around}
+          onSelect={onSelect}
+          localActions={localActions}
+          error={error}
+        />
+        <DocsFacts doc={doc} headings={model.headings} signedIn={signedIn} />
       </div>
-
       <SearchDialog
         open={searchOpen}
         onOpenChange={(open) => {

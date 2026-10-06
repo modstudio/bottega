@@ -21,7 +21,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     position: 2,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
-    subject: 'bottega',
+    subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
     spaceName: 'Workshop',
@@ -35,7 +35,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     position: 2,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
-    subject: 'bottega',
+    subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
   })

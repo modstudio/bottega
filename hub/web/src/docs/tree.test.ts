@@ -10,7 +10,7 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     position: partial.position ?? 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: partial.scope ?? 'project',
-    subject: partial.subject ?? 'bottega',
+    subject: partial.subject ?? 'atlas',
     audience: partial.audience ?? 'user',
     delivery: partial.delivery,
     ...partial,

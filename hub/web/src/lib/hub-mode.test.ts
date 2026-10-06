@@ -70,7 +70,7 @@ test('hosted sign-in frame and docs paths stay reachable without the rail', () =
   expect(isHostedSignInFramePath('/unsubscribe/space/token')).toBe(true)
   expect(isHostedSignInFramePath('/docs')).toBe(false)
   expect(isDocsPath('/docs')).toBe(true)
-  expect(isDocsPath('/docs/project/bottega/first-run')).toBe(true)
+  expect(isDocsPath('/docs/project/atlas/first-run')).toBe(true)
   expect(isDocsPath('/runs')).toBe(false)
 })
 

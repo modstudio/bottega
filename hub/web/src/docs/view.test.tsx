@@ -12,7 +12,7 @@ const items: DocsTreeItem[] = [
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
-    subject: 'bottega',
+    subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
   },
@@ -24,7 +24,7 @@ const items: DocsTreeItem[] = [
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
-    subject: 'bottega',
+    subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
   },
@@ -48,7 +48,7 @@ const items: DocsTreeItem[] = [
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'canon',
-    subject: 'bottega',
+    subject: 'atlas',
     audience: 'technical',
     delivery: 'inject',
   },
@@ -89,7 +89,7 @@ test('the docs page shows audience tabs, the tree, breadcrumb and previous/next'
   expect(html).toContain('Docs')
   expect(html).toContain('Install →')
   expect(html).toContain('On this page')
-  expect(html).toContain('project / bottega / first-run')
+  expect(html).toContain('project / atlas / first-run')
   expect(html).toContain('Search docs')
   expect(html).toContain('Filter')
 })
@@ -104,7 +104,7 @@ test('signed out hides the technical tab, project chooser and address', () => {
   expect(html).toContain('User guide')
   expect(html).not.toContain('Technical')
   expect(html).not.toContain('All projects')
-  expect(html).not.toContain('project / bottega / first-run')
+  expect(html).not.toContain('project / atlas / first-run')
 })
 
 test('the filter button is absent when documents cannot use a filter', () => {

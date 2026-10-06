@@ -18,15 +18,15 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
-    subject: 'bottega',
+    subject: 'atlas',
     audience: 'user',
     ...partial,
   }
 }
 
 const docs: DocsTreeItem[] = [
-  item({ id: '1', title: 'One', scope: 'project', delivery: 'demand', subject: 'bottega' }),
-  item({ id: '2', title: 'Two', scope: 'canon', delivery: 'inject', subject: 'bottega' }),
+  item({ id: '1', title: 'One', scope: 'project', delivery: 'demand', subject: 'atlas' }),
+  item({ id: '2', title: 'Two', scope: 'canon', delivery: 'inject', subject: 'atlas' }),
   item({ id: '3', title: 'Three', scope: 'project', delivery: 'demand', subject: 'starship' }),
   item({
     id: '4',
@@ -73,7 +73,7 @@ test('applying filters keeps matching documents and counts active choices', () =
 })
 
 test('project chooser lists subjects that have documents', () => {
-  expect(projectSubjects(docs)).toEqual(['bottega', 'starship'])
-  expect(inProject(docs, 'bottega').map((row) => row.id)).toEqual(['1', '2'])
+  expect(projectSubjects(docs)).toEqual(['atlas', 'starship'])
+  expect(inProject(docs, 'atlas').map((row) => row.id)).toEqual(['1', '2'])
   expect(inProject(docs, 'all')).toHaveLength(docs.length)
 })

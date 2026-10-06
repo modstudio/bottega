@@ -1,5 +1,5 @@
 export type DocsAudience = 'user' | 'technical'
-export type DocsDelivery = 'inject' | 'demand'
+type DocsDelivery = 'inject' | 'demand'
 
 /** Shared tree item, matching `hub/src/doc-contract.ts`, plus delivery when the source has it. */
 export type DocsTreeItem = {
