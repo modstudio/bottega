@@ -491,6 +491,20 @@ test('a foreign doc is refused and a matching doc is allowed', () => {
   expect(gather(d, { artifact: 'doc:2' }).artifact).toEqual({ ref: 'doc:2', exists: true })
 })
 
+test('a legacy resume doc without a project id is scoped by its project subject', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,created_at,updated_at,project_id)
+     VALUES ('resume','fixture','brief','t','b','demand','t','t',NULL),
+            ('resume','other','foreign-brief','t','b','demand','t','t',NULL)`,
+  ).run()
+
+  expect(gather(d, { artifact: 'doc:1' }).artifact).toEqual({ ref: 'doc:1', exists: true })
+  expect(() => gather(d, { artifact: 'doc:2' })).toThrow(
+    "--artifact doc:2 is scoped to other, not this cursor's fixture",
+  )
+})
+
 test('a foreign task comment is refused and a matching comment is allowed', () => {
   const d = database()
   expect(() => gather(d, { artifact: 'task:DEV-1#comment:4' })).toThrow(

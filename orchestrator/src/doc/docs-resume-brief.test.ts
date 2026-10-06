@@ -1,15 +1,55 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { listOpenResumes, parseResumeFrontmatter, resumeAge } from './docs.ts'
+import {
+  getDoc,
+  listDocRevisions,
+  listOpenResumes,
+  parseResumeFrontmatter,
+  restoreDoc,
+  resumeAge,
+} from './docs.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const knownRepository = repositoryRoot
 const otherRepository = `${repositoryRoot}/hub`
 
 describe('scoped operator docs', () => {
+  test('restoring a resume document writes its registered project id', async () => {
+    upsertProject({
+      name: 'resume-restore',
+      path: process.cwd(),
+      stack: null,
+      canon: true,
+      settings: {},
+    })
+    const project = db().query('SELECT id FROM project WHERE name=?').get('resume-restore') as {
+      id: number
+    }
+    const created = await setDoc({
+      scope: 'resume',
+      subject: 'resume-restore',
+      slug: 'restore-project-id',
+      title: 'Resume',
+      body: '---\nstatus: open\n---\n\nOriginal.',
+    })
+    const createRevision = listDocRevisions('resume', 'resume-restore', 'restore-project-id')[0]!
+    db().query('UPDATE doc SET project_id=NULL WHERE id=?').run(created.id)
+
+    await restoreDoc('resume', 'resume-restore', created.slug, createRevision.id, {
+      reason: 'restore over existing resume',
+    })
+    expect(getDoc('resume', 'resume-restore', created.slug)?.project_id).toBe(project.id)
+
+    await removeDoc('resume', 'resume-restore', created.slug)
+    const restored = await restoreDoc('resume', 'resume-restore', created.slug, createRevision.id, {
+      reason: 'restore removed resume',
+    })
+    expect(restored.project_id).toBe(project.id)
+  })
+
   test('consumeDoc consults and patches a top-level open status after nested consumed status', async () => {
     const body = '---\nmetadata:\n  status: consumed\nstatus: open\n---\n\nBODY\n'
     await setDoc({ scope: 'global', subject: null, slug: 'top-open', title: 'Top open', body })

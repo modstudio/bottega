@@ -41,6 +41,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:child_process',
     'node:fs',
     'node:path',
+    '../../../shared/docs.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
     '../artifact-paths.ts',
