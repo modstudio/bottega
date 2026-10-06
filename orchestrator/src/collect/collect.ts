@@ -304,6 +304,16 @@ export function branchNote(database: Database, runId: number): string {
   return `\n  branch:    ${branch}${turn ? noCommitNote(turn, artifacts) : ''}`
 }
 
+/** Tell the caller how to recover a released writer tree without inspecting lifecycle state. */
+export function releasedWritingTreeNote(
+  facts: { writingRun: boolean; worktree: string | null },
+  runId: number,
+): string {
+  return facts.writingRun && facts.worktree === null
+    ? `\n  open tree:  orch tree open ${runId}`
+    : ''
+}
+
 function shellArg(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
@@ -399,6 +409,7 @@ export function collectResult(
   argv: string[],
   scoreSuffix: (job: string) => string = () => '',
   presentation: CollectResultPresentation = consoleCollectResultPresentation,
+  writingJob: (job: string) => boolean = () => false,
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
@@ -414,7 +425,7 @@ export function collectResult(
       `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
-            review_provenance, provenance_status
+            review_provenance, provenance_status, worktree
        FROM run WHERE id = ?`,
     )
     .get(chain.finalId) as {
@@ -439,6 +450,7 @@ export function collectResult(
     mcp_probe: string | null
     review_provenance: string | null
     provenance_status: string | null
+    worktree: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
 
@@ -538,6 +550,10 @@ export function collectResult(
           : ' · vendor tokens not reported') +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
         branchNote(database, row.id) +
+        releasedWritingTreeNote(
+          { writingRun: writingJob(row.job), worktree: row.worktree },
+          row.id,
+        ) +
         baseNote +
         mcpNote(row) +
         filedNotesNote(row.id) +

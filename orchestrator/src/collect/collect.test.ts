@@ -11,6 +11,7 @@ import {
   collectWait,
   mintedBranchForRun,
   noCommitNote,
+  releasedWritingTreeNote,
   thinOutputWarning,
 } from './collect.ts'
 
@@ -130,6 +131,14 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
+  test.each([
+    ['tree present', { writingRun: true, worktree: '/tmp/tree' }, ''],
+    ['tree released', { writingRun: true, worktree: null }, '\n  open tree:  orch tree open 42'],
+    ['non-writing run', { writingRun: false, worktree: null }, ''],
+  ])('%s controls the open-tree footer', (_name, facts, expected) => {
+    expect(releasedWritingTreeNote(facts, 42)).toBe(expected)
+  })
+
   test('--follow names the branch minted by a writing run', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET minted_branch=? WHERE id=?').run('feature/DEV-498', id)

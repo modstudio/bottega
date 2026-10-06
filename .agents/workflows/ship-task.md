@@ -6,6 +6,7 @@ arguments:
     description: The task key.
   - name: branch
     required: true
+    rebind: true
     description: The branch to ship.
   - name: worktree
     required: true
