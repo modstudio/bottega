@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useRef, useState } from 'react'
 import { sendTimestamp } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
 import { originText } from '@/routes/messages'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
@@ -59,6 +60,7 @@ function MessageReplies({
   replyBody,
   replyPending,
   acceptPending,
+  canAccept,
   onReplyBody,
   onReply,
   onAccept,
@@ -68,6 +70,7 @@ function MessageReplies({
   replyBody: string
   replyPending: boolean
   acceptPending: boolean
+  canAccept: boolean
   onReplyBody: (value: string) => void
   onReply: () => void
   onAccept: (replyId: string) => void
@@ -84,7 +87,7 @@ function MessageReplies({
               <blockquote className="mt-2 border-border-strong border-l-2 pl-3">
                 <pre className="whitespace-pre-wrap font-sans">{item.body}</pre>
               </blockquote>
-              {root.kind === 'question' && !root.acceptedReplyId ? (
+              {root.kind === 'question' && !root.acceptedReplyId && canAccept ? (
                 <Button
                   className="mt-3"
                   size="sm"
@@ -124,6 +127,14 @@ function MessageReplies({
   )
 }
 
+export function AcceptedNoteWarning({ root }: { root: ThreadRoot }) {
+  return root.acceptedReplyId && root.notePendingError ? (
+    <p data-tone="warning" className="mt-3 text-status-text">
+      The answer is accepted and its note has not been filed yet: <q>{root.notePendingError}</q>
+    </p>
+  ) : null
+}
+
 export const Route = createFileRoute('/messages/$id')({ component: MessageDetailRoute })
 
 function MessageDetailRoute() {
@@ -133,11 +144,16 @@ function MessageDetailRoute() {
 function LocalMessageDetail() {
   const { id } = Route.useParams()
   const navigate = useNavigate()
+  const hosted = isHostedMode()
+  const whoami = useQuery({
+    ...trpc.record.whoami.queryOptions(),
+    enabled: hosted,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
   const thread = useQuery(trpc.board.thread.queryOptions({ id }))
   const status = useQuery(trpc.board.status.queryOptions({ id }))
   const [replyBody, setReplyBody] = useState('')
   const [withdrawing, setWithdrawing] = useState(false)
-  const [acceptedNotePendingError, setAcceptedNotePendingError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<{
     action: 'reply' | 'accept' | 'withdraw'
     message: string
@@ -160,10 +176,7 @@ function LocalMessageDetail() {
   )
   const accept = useMutation(
     trpc.board.accept.mutationOptions({
-      onSuccess: async (result) => {
-        setAcceptedNotePendingError(result.notePendingError)
-        await invalidate()
-      },
+      onSuccess: invalidate,
     }),
   )
   const withdraw = useMutation(
@@ -196,6 +209,7 @@ function LocalMessageDetail() {
   if (!root) return null
   const replies = thread.data?.replies ?? []
   const receipts = status.data?.receipts ?? []
+  const canManage = !hosted || whoami.data?.user.id === root.authorUserId
   const runAction = (
     action: 'reply' | 'accept' | 'withdraw',
     mutate: (onError: (error: { message: string }) => void) => void,
@@ -218,7 +232,7 @@ function LocalMessageDetail() {
         ) : null
       }
       footer={
-        root.state === 'open' ? (
+        root.state === 'open' && canManage ? (
           <Button
             variant="danger"
             disabled={withdraw.isPending}
@@ -254,6 +268,7 @@ function LocalMessageDetail() {
         replyBody={replyBody}
         replyPending={reply.isPending}
         acceptPending={accept.isPending}
+        canAccept={canManage}
         onReplyBody={setReplyBody}
         onReply={() =>
           runAction('reply', (onError) => reply.mutate({ id, body: replyBody }, { onError }))
@@ -262,12 +277,7 @@ function LocalMessageDetail() {
           runAction('accept', (onError) => accept.mutate({ questionId: id, replyId }, { onError }))
         }
       />
-      {acceptedNotePendingError ? (
-        <p data-tone="warning" className="mt-3 text-status-text">
-          The answer is accepted and its note has not been filed yet:{' '}
-          <q>{acceptedNotePendingError}</q>
-        </p>
-      ) : null}
+      <AcceptedNoteWarning root={root} />
       {actionError && actionError.action !== 'withdraw' ? (
         <p data-tone="error" className="mt-3 text-status-text">
           {actionError.message}

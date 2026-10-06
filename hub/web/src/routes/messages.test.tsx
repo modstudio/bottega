@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MessagesContent } from '@/routes/messages'
-import { MessageReceipts } from '@/routes/messages.$id'
+import { AcceptedNoteWarning, MessageReceipts } from '@/routes/messages.$id'
 import { queryClient, trpc } from '@/trpc/client'
 
 const origin = {
@@ -153,4 +153,41 @@ test('message receipts with unknown reach list the visible receipts without a re
   expect(html).toContain('architect-session')
   expect(html).not.toContain('reached')
   expect(html).not.toContain('Receipts are visible to the message&#x27;s author only.')
+})
+
+test('accepted answer reports a pending note from the loaded thread root', () => {
+  const html = renderToStaticMarkup(
+    <AcceptedNoteWarning
+      root={{
+        id: '01990000-0000-7000-8000-000000000001',
+        kind: 'question',
+        threadRootId: null,
+        title: 'Question',
+        body: 'Body',
+        audience: 'architects',
+        origin,
+        senderTags: [],
+        createdAt: '2026-10-05T12:00:00.000Z',
+        expiresAt: null,
+        withdrawnAt: null,
+        state: 'accepted',
+        acceptedReplyId: '01990000-0000-7000-8000-000000000002',
+        acceptedBy: null,
+        acceptedAt: '2026-10-05T13:00:00.000Z',
+        noteId: null,
+        notePendingError: 'note filing has not completed',
+        revision: '2',
+        scopeProjectIds: [],
+        recipientUserIds: [],
+        claimId: null,
+        authorUserId: 'user-a',
+        authorSession: null,
+        ackRequired: false,
+        ackDeadline: null,
+        text: null,
+      }}
+    />,
+  )
+  expect(html).toContain('The answer is accepted and its note has not been filed yet:')
+  expect(html).toContain('note filing has not completed')
 })

@@ -7,9 +7,14 @@ import {
 } from '../../../../shared/board-duration.ts'
 import { newRecordId } from '../../../../shared/record/schema.ts'
 import {
+  BoardAcceptInputSchema,
   BoardAcceptResultSchema,
+  BoardIdInputSchema,
+  BoardListInputSchema,
   BoardListResultSchema,
+  BoardPostInputSchema,
   BoardPostResultSchema,
+  BoardReplyInputSchema,
   BoardReplyResultSchema,
   BoardStatusResultSchema,
   BoardThreadResultSchema,
@@ -20,26 +25,6 @@ import type { Context } from '../context.ts'
 import { recordClient } from './record.ts'
 
 const t = initTRPC.context<Context>().create()
-const boardId = z
-  .string()
-  .refine(
-    (id) =>
-      (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))) ||
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
-    'board id must be a positive integer string or UUID',
-  )
-const postInput = z.object({
-  audience: z.string(),
-  project: z.string().optional(),
-  title: z.string().trim().min(1),
-  body: z.string().trim().min(1),
-  task: z.string().optional(),
-  paths: z.array(z.string()).optional(),
-  topics: z.array(z.string()).optional(),
-  ackRequired: z.boolean().optional(),
-  deadline: z.string().optional(),
-  expires: z.string().optional(),
-})
 
 type HostedBoardClient = Pick<
   RecordClient,
@@ -62,6 +47,13 @@ async function call<T>(operation: () => Promise<T>): Promise<T> {
     return await operation()
   } catch (cause) {
     if (cause instanceof TRPCError) throw cause
+    if (cause instanceof z.ZodError)
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message:
+          'the hosted record returned a board response this hub does not understand; the hub and record API versions differ',
+        cause,
+      })
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: cause instanceof Error ? cause.message : String(cause),
@@ -74,24 +66,16 @@ export function createHostedBoardRouter(
   deps: HostedBoardDeps = { clientFor: recordClient, clock: Date.now, newId: newRecordId },
 ) {
   return t.router({
-    list: t.procedure
-      .input(
-        z.object({
-          kind: z.enum(['notice', 'question']).optional(),
-          open: z.boolean().optional(),
-          includeEnded: z.boolean().optional(),
-        }),
-      )
-      .query(({ ctx, input }) =>
-        call(async () => {
-          const result = await deps.clientFor(ctx).boardList(input)
-          return BoardListResultSchema.parse({
-            messages: result.messages,
-            warning: result.truncated ? 'Only the newest messages are listed.' : null,
-          })
-        }),
-      ),
-    thread: t.procedure.input(z.object({ id: boardId })).query(({ ctx, input }) =>
+    list: t.procedure.input(BoardListInputSchema).query(({ ctx, input }) =>
+      call(async () => {
+        const result = await deps.clientFor(ctx).boardList(input)
+        return BoardListResultSchema.parse({
+          messages: result.messages,
+          warning: result.truncated ? 'Only the newest messages are listed.' : null,
+        })
+      }),
+    ),
+    thread: t.procedure.input(BoardIdInputSchema).query(({ ctx, input }) =>
       call(async () => {
         const thread = await deps.clientFor(ctx).boardThread(input.id)
         return BoardThreadResultSchema.parse({
@@ -100,7 +84,7 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    status: t.procedure.input(z.object({ id: boardId })).query(({ ctx, input }) =>
+    status: t.procedure.input(BoardIdInputSchema).query(({ ctx, input }) =>
       call(async () => {
         const status = await deps.clientFor(ctx).boardStatus(input.id)
         return BoardStatusResultSchema.parse({
@@ -112,7 +96,7 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    post: t.procedure.input(postInput).mutation(({ ctx, input }) =>
+    post: t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
       call(async () => {
         const id = deps.newId()
         const now = deps.clock()
@@ -149,38 +133,34 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    reply: t.procedure
-      .input(z.object({ id: boardId, body: z.string().trim().min(1) }))
-      .mutation(({ ctx, input }) =>
-        call(async () => {
-          const message = await deps.clientFor(ctx).boardReply(input.id, {
-            id: deps.newId(),
-            body: input.body,
-          })
-          return BoardReplyResultSchema.parse({
-            id: message.id,
-            rootId: message.threadRootId,
-            dropped: false,
-            reached: null,
-            warning: null,
-          })
-        }),
-      ),
-    accept: t.procedure
-      .input(z.object({ questionId: boardId, replyId: boardId }))
-      .mutation(({ ctx, input }) =>
-        call(async () => {
-          const thread = await deps.clientFor(ctx).boardAccept(input.questionId, input.replyId)
-          return BoardAcceptResultSchema.parse({
-            accepted: input.replyId,
-            questionId: input.questionId,
-            noteId: thread.root.noteId,
-            notePendingError: thread.root.notePendingError,
-            retry: null,
-          })
-        }),
-      ),
-    withdraw: t.procedure.input(z.object({ id: boardId })).mutation(({ ctx, input }) =>
+    reply: t.procedure.input(BoardReplyInputSchema).mutation(({ ctx, input }) =>
+      call(async () => {
+        const message = await deps.clientFor(ctx).boardReply(input.id, {
+          id: deps.newId(),
+          body: input.body,
+        })
+        return BoardReplyResultSchema.parse({
+          id: message.id,
+          rootId: message.threadRootId,
+          dropped: false,
+          reached: null,
+          warning: null,
+        })
+      }),
+    ),
+    accept: t.procedure.input(BoardAcceptInputSchema).mutation(({ ctx, input }) =>
+      call(async () => {
+        const thread = await deps.clientFor(ctx).boardAccept(input.questionId, input.replyId)
+        return BoardAcceptResultSchema.parse({
+          accepted: input.replyId,
+          questionId: input.questionId,
+          noteId: thread.root.noteId,
+          notePendingError: thread.root.notePendingError,
+          retry: null,
+        })
+      }),
+    ),
+    withdraw: t.procedure.input(BoardIdInputSchema).mutation(({ ctx, input }) =>
       call(async () => {
         const message = await deps.clientFor(ctx).boardWithdraw(input.id)
         return BoardWithdrawResultSchema.parse({ withdrawn: message.id })

@@ -198,3 +198,47 @@ test('hosted board post applies the shared default durations', async () => {
     ackDeadline: new Date(now + BOARD_DEFAULT_ACK_DEADLINE_MS).toISOString(),
   })
 })
+
+test('hosted board reports an incompatible shared response as an internal error', async () => {
+  const client = {
+    boardList: async () => ({ messages: [], truncated: false }),
+    boardThread: async () => ({ root: { ...root, title: 42 }, replies: [] }) as never,
+    boardStatus: async () => ({ message: root, receipts: [] }),
+    boardPost: async () => root,
+    boardReply: async () => ({ ...root, id: replyId, threadRootId: rootId }),
+    boardAccept: async () => ({ root, replies: [] }),
+    boardWithdraw: async () => root,
+  }
+  const caller = createHostedBoardRouter({
+    clientFor: () => client,
+    clock: () => now,
+    newId: () => mintedPostId,
+  }).createCaller({})
+
+  await expect(caller.thread({ id: rootId })).rejects.toMatchObject({
+    code: 'INTERNAL_SERVER_ERROR',
+    message:
+      'the hosted record returned a board response this hub does not understand; the hub and record API versions differ',
+  })
+})
+
+test('hosted board keeps an invalid duration as a bad request', async () => {
+  const client = {
+    boardList: async () => ({ messages: [], truncated: false }),
+    boardThread: async () => ({ root, replies: [] }),
+    boardStatus: async () => ({ message: root, receipts: [] }),
+    boardPost: async () => root,
+    boardReply: async () => ({ ...root, id: replyId, threadRootId: rootId }),
+    boardAccept: async () => ({ root, replies: [] }),
+    boardWithdraw: async () => root,
+  }
+  const caller = createHostedBoardRouter({
+    clientFor: () => client,
+    clock: () => now,
+    newId: () => mintedPostId,
+  }).createCaller({})
+
+  await expect(
+    caller.post({ audience: 'architects', title: 'Notice', body: 'Body', expires: 'soon' }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('soon') })
+})

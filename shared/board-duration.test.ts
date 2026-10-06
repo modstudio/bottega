@@ -15,3 +15,10 @@ test('board duration grammar and defaults are shared', () => {
 test.each(['0m', '-1h', 'soon'])('refuses invalid board duration %s', (value) => {
   expect(() => parseBoardDuration(value)).toThrow(`invalid duration ${value}`)
 })
+
+test('refuses a board duration whose milliseconds are not a safe integer', () => {
+  const value = `${Number.MAX_SAFE_INTEGER}d`
+  expect(() => parseBoardDuration(value)).toThrow(
+    `invalid duration ${value}; use a positive value such as 30m or 1d`,
+  )
+})
