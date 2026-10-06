@@ -29,6 +29,11 @@ export type ArchitectGateRunner = (input: {
   write: (chunk: string) => void
 }) => ArchitectGateResult | Promise<ArchitectGateResult>
 
+export type ArchitectGateGitState = (cwd: string) => {
+  headCommit: string
+  porcelainPaths: readonly string[]
+}
+
 export type ArchitectGateRecord = { id: number; exitCode: number }
 
 export function architectGateProcessExitCode(recordedExitCode: number): number {
@@ -64,7 +69,7 @@ const defaultRunner: ArchitectGateRunner = ({ command, cwd, write }) =>
     })
   })
 
-function gateHeadCommit(cwd: string): string | null {
+const observeGitState: ArchitectGateGitState = (cwd) => {
   const head = spawnSync('git', ['rev-parse', '--verify', 'HEAD^{commit}'], {
     cwd,
     encoding: 'utf8',
@@ -83,16 +88,21 @@ function gateHeadCommit(cwd: string): string | null {
       `orch gate run needs git status in ${cwd}: ${status.stderr?.trim() || `git exited ${status.status}`}`,
     )
   }
-  return decideGateHeadCommit({
+  return {
     headCommit: head.stdout.trim(),
     porcelainPaths: status.stdout.split('\0').filter(Boolean),
-  })
+  }
+}
+
+function gateHeadCommit(cwd: string, observe: ArchitectGateGitState): string | null {
+  return decideGateHeadCommit(observe(cwd))
 }
 
 export async function runArchitectGate(input: {
   cwd?: string
   d?: Database
   runner?: ArchitectGateRunner
+  gitState?: ArchitectGateGitState
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   if (process.env.ORCH_DEPTH !== undefined)
@@ -121,7 +131,7 @@ export async function runArchitectGate(input: {
   })
   const command = resolveGateCommand(gate, project.path)
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
-  const commit = gateHeadCommit(cwd)
+  const commit = gateHeadCommit(cwd, input.gitState ?? observeGitState)
   const ran = await (input.runner ?? defaultRunner)({ command, cwd, write })
   const tail = boundedGateOutputTail(
     containsSecretShaped(ran.output) ? GATE_OUTPUT_WITHHELD : ran.output,

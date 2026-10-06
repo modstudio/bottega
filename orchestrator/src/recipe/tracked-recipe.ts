@@ -660,7 +660,7 @@ export function trackedWorktreeAddArgv(input: {
 }
 
 /** Missing optional sources are expected; retain diagnostics for every other skip. */
-export function reportedProvisionSkips(skipped: readonly ProvisionSkip[]): ProvisionSkip[] {
+function reportedProvisionSkips(skipped: readonly ProvisionSkip[]): ProvisionSkip[] {
   return skipped.filter((entry) => entry.reason !== 'missing source')
 }
 
