@@ -1,6 +1,10 @@
 // concern: doc-write-allowed
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
-import { DOC_SCOPE_ALLOWS_OWNER, type DocScope } from '../../../shared/docs.ts'
+import {
+  DOC_SCOPE_ALLOWS_OWNER,
+  type DocScope,
+  docScopeHasProjectSubject,
+} from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
@@ -79,9 +83,7 @@ export function forcedDocDelivery(scope: string): 'demand' | null {
 }
 
 export function docWriteProjectName(scope: string, subject: string | null): string | null {
-  if (scope === 'project') return subject
-  if ((scope === 'canon' || scope === 'settings') && subject) return subject
-  return null
+  return docScopeHasProjectSubject(scope) ? subject : null
 }
 
 export function refuseOwnedDocAddress(

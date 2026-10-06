@@ -57,8 +57,18 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     const at = nowIso()
     if (existing) {
       db()
-        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-        .run(input.title, input.body, input.delivery, at, input.recordId, existing.id)
+        .query(
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?',
+        )
+        .run(
+          input.projectId,
+          input.title,
+          input.body,
+          input.delivery,
+          at,
+          input.recordId,
+          existing.id,
+        )
     } else {
       db()
         .query(
@@ -175,8 +185,18 @@ export function commitDocRestore(
     const at = nowIso()
     if (existing) {
       db()
-        .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-        .run(input.title, input.body, input.delivery, at, input.recordId, existing.id)
+        .query(
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?',
+        )
+        .run(
+          input.projectId,
+          input.title,
+          input.body,
+          input.delivery,
+          at,
+          input.recordId,
+          existing.id,
+        )
     } else {
       db()
         .query(

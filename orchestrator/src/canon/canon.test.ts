@@ -11,6 +11,7 @@ setDefaultTimeout(30_000)
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db, enableSchemaReload, writeTransaction } from '../database/db.ts'
@@ -29,11 +30,14 @@ import {
   splitMigrationSource,
   stripSqlComments,
 } from '../database/migrations.ts'
+import { upsertProject } from '../project/projects.ts'
 import {
+  checkDoc,
   compilePack,
   findingsForPack,
   allNumericLiterals as inspectNumericLiterals,
   numericLiteralReport,
+  repoRootForDoc,
 } from './canon.ts'
 
 const journalLength = () => migrationJournal().length
@@ -689,6 +693,68 @@ describe('stripSqlComments feeds exec text that keeps quoted comment markers', (
 })
 
 describe('scoped operator docs', () => {
+  test('project-subject document roots use the registered project and preserve canon selection', () => {
+    upsertProject({
+      name: 'doc-root-project',
+      path: '/work/doc-root-project',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
+    for (const scope of ['project', 'resume', 'settings', 'canon'] as const) {
+      expect(repoRootForDoc({ scope, subject: 'doc-root-project' }), scope).toBe(
+        '/work/doc-root-project',
+      )
+    }
+    expect(repoRootForDoc({ scope: 'canon', subject: 'doc-root-project' }, '/selected')).toBe(
+      '/selected',
+    )
+    expect(repoRootForDoc({ scope: 'resume', subject: 'unregistered' })).toBeNull()
+    expect(repoRootForDoc({ scope: 'project', subject: null })).toBeNull()
+    const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
+    for (const [scope, subject] of [
+      ['canon', null],
+      ['resume', null],
+      ['settings', null],
+      ['machine', null],
+      ['global', null],
+      ['agent', 'codex'],
+      ['job', 'understand'],
+      ['stack', 'typescript'],
+    ] as const) {
+      expect(repoRootForDoc({ scope, subject }), scope).toBe(root)
+    }
+  })
+
+  test('document path references expand braces while preserving literal behavior', () => {
+    const options = {
+      repoRoot: '/fixture',
+      trackedFiles: new Set(['scripts/a-reads.php', 'scripts/plain.php']),
+    } as Parameters<typeof checkDoc>[1]
+    expect(checkDoc('`scripts/a-{reads,writes}.php`', options)).toEqual([
+      {
+        kind: 'path',
+        token: 'scripts/a-{reads,writes}.php',
+        line: 1,
+        message: 'line 1: `scripts/a-writes.php` is not tracked in /fixture',
+      },
+    ])
+    expect(
+      checkDoc('`scripts/a-{reads,writes}.php`', {
+        repoRoot: '/fixture',
+        trackedFiles: new Set(['scripts/a-reads.php', 'scripts/a-writes.php']),
+      } as Parameters<typeof checkDoc>[1]),
+    ).toEqual([])
+    expect(checkDoc('`scripts/missing.php`', options)).toEqual([
+      {
+        kind: 'path',
+        token: 'scripts/missing.php',
+        line: 1,
+        message: 'line 1: `scripts/missing.php` is not tracked in /fixture',
+      },
+    ])
+  })
+
   test('numeric literal report classifies per clause and excludes non-prose spans', () => {
     const cases: { text: string; expected: [string, string][] }[] = [
       { text: 'The suite currently has 6,676 tests.', expected: [['6,676', 'RESTATED']] },
