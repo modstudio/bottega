@@ -8,7 +8,8 @@ This page takes a fresh machine to a first delegated change.
 
 ## What you need
 
-- macOS or Linux, with `git`.
+- macOS or Linux, with `git`. Linux also requires `ripgrep`, `bubblewrap` and
+  `socat`, and must permit unprivileged user namespaces for the sandbox.
 - One agent CLI that Bottega can drive, installed and signed in: `codex` or
   `grok`. Bottega detects them; it never installs or signs in for you.
 - `gh`, signed in, if you want Bottega to open pull requests.

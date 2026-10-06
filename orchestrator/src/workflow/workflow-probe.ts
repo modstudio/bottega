@@ -60,9 +60,7 @@ async function sandboxedRunner(
 ): Promise<ProbeRunResult> {
   const runtime = sandboxRuntimeAvailability()
   if (!runtime.available) {
-    throw new Error(
-      `orch workflow probe refuses to run unsandboxed; install the sandbox runtime at ${runtime.location} with bun install, then retry`,
-    )
+    throw new Error(`orch workflow probe refuses to run unsandboxed; ${runtime.remedy}`)
   }
   const scratch = mkdtempSync(join(tmpdir(), 'orch-probe-'))
   try {
@@ -77,7 +75,7 @@ async function sandboxedRunner(
       throw new Error(
         `orch workflow probe could not establish a sandbox: ${
           error instanceof Error ? error.message : String(error)
-        }; install the sandbox runtime at ${runtime.location} with bun install, then retry`,
+        }; ${runtime.remedy}`,
       )
     }
     return await streamingRunner(launch, {

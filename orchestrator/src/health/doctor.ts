@@ -330,10 +330,7 @@ export async function doctorCommand(
       }),
     )
     .map((agent) => agent.name)
-  const sandboxRuntime = sandboxRuntimeAvailability()
-  log(
-    `sandbox        runtime ${sandboxRuntime.available ? 'available' : 'NOT AVAILABLE'} at ${sandboxRuntime.location}`,
-  )
+  log(sandboxRuntimeDoctorLine(sandboxRuntimeAvailability()))
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
   log(`acp            ${doctorAcpStatus(acpGap)}`)

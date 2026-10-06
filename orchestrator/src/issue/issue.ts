@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
@@ -22,7 +22,7 @@ import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { srtInstalled } from '../sandbox/sandbox-runtime.ts'
+import { sandboxRuntimeAvailability, srtInstalled } from '../sandbox/sandbox-runtime.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -656,17 +656,18 @@ export async function workIssue(key: string): Promise<void> {
   }
   const reporting = projectByName(issue.reportingProject)
   if (!reporting) throw new Error(`unknown reporting project "${issue.reportingProject}"`)
-  if (!srtInstalled()) {
+  const sandboxRuntime = sandboxRuntimeAvailability()
+  if (!srtInstalled(sandboxRuntime)) {
     const body = [
-      'Coordinator could not attempt this issue because the sandbox runtime is not installed.',
-      `Install it with \`bun install\` at the ${PLATFORM_NAME} repository root, then retry.`,
+      'Coordinator could not attempt this issue because the sandbox runtime is unavailable.',
+      `${sandboxRuntime.remedy[0]!.toUpperCase()}${sandboxRuntime.remedy.slice(1)}.`,
       'No reproduction or gate command was run on the host.',
       `Resume with: orch fix-defect ${issue.key}`,
     ].join('\n\n')
-    await handoff(issue.key, 'Issue handback: sandbox runtime is missing', body)
+    await handoff(issue.key, 'Issue handback: sandbox runtime is unavailable', body)
     await comment(
       issue.key,
-      'Could not attempt: sandbox runtime is missing; no host fallback was used.',
+      'Could not attempt: sandbox runtime is unavailable; no host fallback was used.',
     )
     return
   }
