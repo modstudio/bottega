@@ -16,7 +16,7 @@ import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`
-export type CommandEvidence = 'gate'
+type CommandEvidence = 'gate'
 export type CatalogueStep = {
   slug: string
   title: string
@@ -215,6 +215,20 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     errors.push(`step "${slug}" operatorRuling must be a boolean`)
   if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
+  validateCommandEvidence(item, floor, errors)
+  if (
+    item.expectedStatus !== undefined &&
+    (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
+  )
+    errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
+}
+
+function validateCommandEvidence(
+  item: Record<string, unknown>,
+  floor: string[],
+  errors: string[],
+): void {
+  const slug = String(item.slug ?? '')
   if (item.commandEvidence !== undefined && item.commandEvidence !== 'gate')
     errors.push(`step "${slug}" commandEvidence must be "gate"`)
   if (
@@ -229,11 +243,6 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     item.deferrable.includes('command-exit')
   )
     errors.push(`step "${slug}" cannot defer command-exit when commandEvidence is "gate"`)
-  if (
-    item.expectedStatus !== undefined &&
-    (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
-  )
-    errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
 }
 
 const isFloorPlaceholder = (value: string): value is `{{${string}}}` =>

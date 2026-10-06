@@ -176,6 +176,24 @@ export function catalogueFloors(
   })
 }
 
+export function catalogueFloorsFor(step: {
+  floor: readonly string[]
+  deferrable?: readonly string[]
+  expectedStatus?: string
+  requirePullRequest?: boolean
+  operatorRuling?: boolean
+  commandEvidence?: 'gate'
+}): Floor[] {
+  return catalogueFloors(
+    step.floor,
+    step.deferrable,
+    step.expectedStatus,
+    step.requirePullRequest,
+    step.operatorRuling,
+    step.commandEvidence,
+  )
+}
+
 function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const ruling = evidence.ruling
   const review = evidence.review
