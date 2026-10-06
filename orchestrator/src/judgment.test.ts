@@ -12,7 +12,7 @@ import { judgeRun, scoreRun } from './judgment.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
 import { candidates } from './route/route.ts'
 import { pairPartners } from './score/duel.ts'
-import { VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts'
+import { refuseVerdict, VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -465,6 +465,69 @@ describe('judge ruling', () => {
     expect(
       db().query('SELECT review_id,reproduced FROM review_lens WHERE run_id=?').get(id),
     ).toEqual({ review_id: reviewId, reproduced: 'some' })
+  })
+
+  test('voiding a graded findings run omits grades from its score payload but preserves them locally', async () => {
+    const id = insert('ok', 'review-lens')
+    const output = trackResidue(join(dir, `voided-graded-${id}.json`))
+    writeFileSync(output, JSON.stringify(reviewReply(1)))
+    db()
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .run('correctness', 'm', output, id)
+    await score(id, ['full', 'right'], {
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'absent',
+      overlap: 'alone',
+    })
+    const pendingBefore = db()
+      .query<{ id: number }, []>("SELECT id FROM outbox WHERE kind='score'")
+      .get()!
+
+    await score(id, ['none'], { void: true })
+
+    const pendingAfter = db()
+      .query<{ id: number; payload: string }, []>(
+        "SELECT id,payload FROM outbox WHERE kind='score'",
+      )
+      .get()!
+    expect(pendingAfter.id).toBe(pendingBefore.id)
+    const payload = JSON.parse(pendingAfter.payload) as {
+      delivery: string
+      quality: string | null
+      fidelity: string | null
+      reproduced: string | null
+      coverage: string | null
+      limits: string | null
+      overlap: string | null
+    }
+    expect(payload).toMatchObject({
+      delivery: 'none',
+      reproduced: null,
+      coverage: null,
+      limits: null,
+      overlap: null,
+    })
+    const grades = [payload.reproduced, payload.coverage, payload.limits, payload.overlap]
+    expect(
+      refuseVerdict({
+        delivery: payload.delivery,
+        quality: payload.quality,
+        fidelity: payload.fidelity,
+        job: {
+          writesRepo: false,
+          producesFindings: true,
+          hasAnyReviewGrades: grades.some((grade) => grade !== null),
+          hasRequiredReviewGrades: grades.every((grade) => grade !== null),
+        },
+        failureKind: null,
+      }),
+    ).toBeNull()
+    expect(
+      db()
+        .query('SELECT reproduced,coverage,limits,overlap FROM review_lens WHERE run_id=?')
+        .get(id),
+    ).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
   })
 
   test('an empty lens defaults reproduced and overlap while delivery none captures nothing', async () => {
