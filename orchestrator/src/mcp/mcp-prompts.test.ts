@@ -112,6 +112,25 @@ describe('workflow prompt argument binding', () => {
         reread: [],
       },
     },
+    {
+      received: { mode: 'feature', project: 'starship', autonomy: 'STAR-4291' },
+      expected: {
+        mode: 'feature',
+        project: 'starship',
+        args: { key: 'STAR-4291' },
+        reread: ['read "STAR-4291" as key'],
+      },
+    },
+    {
+      received: { mode: 'feature', project: 'starship', autonomy: 'plan=ask' },
+      expected: {
+        mode: 'feature',
+        project: 'starship',
+        autonomy: 'plan=ask',
+        args: {},
+        reread: [],
+      },
+    },
   ]
 
   test.each(cases)('binds $received', ({ received, expected }) => {

@@ -100,7 +100,8 @@ function bindPromptSlot(
   if (!token) return null
   if (slot === 'mode' && bound.mode === token) return null
   if (slot === 'project' && bound.project === token) return null
-  if (slot === 'autonomy' && !promptAssignment(token, slot, argumentNames)) {
+  // An autonomy override is always key=value, so a bare token there is a misplaced one.
+  if (slot === 'autonomy' && token.includes('=') && !promptAssignment(token, slot, argumentNames)) {
     bound.autonomy = token
     return null
   }
