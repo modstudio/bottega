@@ -360,11 +360,12 @@ function continuationTree(
   id: number,
   row: { branch_kept: string | null; branch_kept_tip: string | null },
   latest: ChainTurn,
-  project: Project,
+  project: Project | null,
 ) {
-  const latestBranchTip = latest.branch
-    ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${latest.branch}^{commit}`)
-    : null
+  const latestBranchTip =
+    latest.branch && project
+      ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${latest.branch}^{commit}`)
+      : null
   const branchPlan = continuationBranchPlan({
     latestBranch: latest.branch,
     latestBranchTip,
@@ -377,7 +378,7 @@ function continuationTree(
       existsSync(latest.worktree) &&
       branchOf(latest.worktree) === recordedBranch,
   )
-  const worktreeTool = resolvedWorktreeTool(project)
+  const worktreeTool = project ? resolvedWorktreeTool(project) : null
   const plan =
     recordedBranch && project
       ? resumeTreePlan({
@@ -565,9 +566,11 @@ export async function continueRun(
       )
       .all(id, id) as ChainTurn[],
   )
+  const jobNeeds = job(row.job).needs
   const checkout = requireContinuationCheckout({
     rootId: id,
     operation: 'continued',
+    requiresRepo: Boolean(jobNeeds.readsRepo),
     latestCwd: latest.cwd,
     rootCwd: row.cwd,
     rootRepo: row.repo,
@@ -617,8 +620,9 @@ export async function continueRun(
   const treeDecision = requireContinuationTree({
     rootId: id,
     projectName: row.repo,
-    projectPath: checkout.project.path,
-    writesRepo: Boolean(job(row.job).needs.writesRepo),
+    projectPath: checkout.project?.path ?? null,
+    readsRepo: Boolean(jobNeeds.readsRepo),
+    writesRepo: Boolean(jobNeeds.writesRepo),
     recordedTreeMatches,
     recordedWorktree: latest.worktree,
     writerTreeRecoverable: Boolean(treePlan),
@@ -670,7 +674,7 @@ export async function continueRun(
     return adopted
   })
   const childId = await detach(row.job, prompt, {
-    cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project.path),
+    cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,

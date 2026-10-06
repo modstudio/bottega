@@ -11,7 +11,8 @@ import {
 export function requireContinuationTree(input: {
   rootId: number
   projectName: string | null
-  projectPath: string
+  projectPath: string | null
+  readsRepo: boolean
   writesRepo: boolean
   recordedTreeMatches: boolean
   recordedWorktree: string | null
@@ -19,6 +20,7 @@ export function requireContinuationTree(input: {
   baseCommit: string | null
 }): ContinuationTreeDecision {
   const decision = continuationTreeDecision({
+    readsRepo: input.readsRepo,
     writesRepo: input.writesRepo,
     recordedTreePresent: input.writesRepo
       ? input.recordedTreeMatches
@@ -27,6 +29,7 @@ export function requireContinuationTree(input: {
     baseCommit: input.baseCommit,
     baseCommitAvailable: Boolean(
       input.baseCommit &&
+        input.projectPath &&
         gitContext(input.projectPath, 'rev-parse', '--verify', `${input.baseCommit}^{commit}`),
     ),
   })
@@ -45,9 +48,11 @@ export function requireContinuationTree(input: {
 export function continuationTreeCwd(
   decision: ContinuationTreeDecision,
   recordedCwd: string,
-  projectPath: string,
+  projectPath: string | null,
 ): string {
-  return decision.action === 'inherit-present-tree' ? recordedCwd : projectPath
+  if (decision.action === 'inherit-present-tree' || decision.action === 'no-tree-required')
+    return recordedCwd
+  return projectPath!
 }
 
 export function continuationReadOnlyBase(decision: ContinuationTreeDecision): string | undefined {

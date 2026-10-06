@@ -6,6 +6,7 @@ describe('continuation tree decision', () => {
     [
       'inherits a present reader tree',
       {
+        readsRepo: true,
         writesRepo: false,
         recordedTreePresent: true,
         writerTreeRecoverable: false,
@@ -17,6 +18,7 @@ describe('continuation tree decision', () => {
     [
       'recreates a released writer tree',
       {
+        readsRepo: true,
         writesRepo: true,
         recordedTreePresent: false,
         writerTreeRecoverable: true,
@@ -28,6 +30,7 @@ describe('continuation tree decision', () => {
     [
       'provisions a released reader tree at its base commit',
       {
+        readsRepo: true,
         writesRepo: false,
         recordedTreePresent: false,
         writerTreeRecoverable: false,
@@ -39,6 +42,7 @@ describe('continuation tree decision', () => {
     [
       'refuses a reader whose base commit is gone',
       {
+        readsRepo: true,
         writesRepo: false,
         recordedTreePresent: false,
         writerTreeRecoverable: false,
@@ -46,6 +50,18 @@ describe('continuation tree decision', () => {
         baseCommitAvailable: false,
       },
       { action: 'refuse', reason: 'reader-base-unavailable' },
+    ],
+    [
+      'repository-free job needs no tree or reader base',
+      {
+        readsRepo: false,
+        writesRepo: false,
+        recordedTreePresent: false,
+        writerTreeRecoverable: false,
+        baseCommit: null,
+        baseCommitAvailable: false,
+      },
+      { action: 'no-tree-required' },
     ],
   ] as const)('%s', (_name, input, expected) => {
     expect(continuationTreeDecision(input)).toEqual(expected)

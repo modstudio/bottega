@@ -242,4 +242,20 @@ describe('run continuation', () => {
       n: 0,
     })
   })
+
+  test('a repository-free continuation needs neither a project nor a reader base', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'summarize',
+      status: 'ok',
+      session: 'orch-test-session',
+    })
+    db()
+      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=NULL,base_commit=NULL WHERE id=?')
+      .run('vendor-session', dir, root)
+
+    const resumed = await continueRun(root, 'summarize one more thing', limit)
+
+    expect(resumed).toEqual({ childId: expect.any(Number), job: 'summarize' })
+  })
 })

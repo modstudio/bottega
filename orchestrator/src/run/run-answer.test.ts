@@ -7,6 +7,7 @@ import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { packedResumePrompt } from './run.ts'
 import { answerRun as answerRunService, retryRun } from './run-answer.ts'
@@ -841,6 +842,23 @@ test('answer refuses an asking run with no vendor session without recording the 
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
 })
 
+test('answer refuses a missing continuation checkout before recording the ruling', async () => {
+  const id = insert('asking')
+  db()
+    .query('UPDATE run SET session_id=?,vendor_session=?,repo=NULL WHERE id=?')
+    .run('orch-test-session', 'vendor-session', id)
+  db()
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .run(id, new Date().toISOString(), 'which?')
+
+  await expect(
+    answerRun(id, { argv: ['use the existing shape'], recordOnly: false, flags }, helpers),
+  ).rejects.toThrow('no available registered repository identity')
+  expect(
+    db().query('SELECT answer,delivery_pending_at FROM question WHERE run_id=?').get(id),
+  ).toEqual({ answer: null, delivery_pending_at: null })
+})
+
 describe('retry command', () => {
   const failed = (job = 'file-question') => {
     const id = addRun({
@@ -953,6 +971,39 @@ describe('retry command', () => {
       mode: 'retry',
       outcome: 'failed',
       error: 'fixture retry dispatch failed',
+    })
+  })
+
+  test('retry provisions a released reader from its recorded base', async () => {
+    const id = failed()
+    const registeredPath = process.cwd()
+    upsertProject({ name: 'continuation-fixture', path: registeredPath })
+    const baseCommit = gitContext(registeredPath, 'rev-parse', '--verify', 'HEAD')!
+    const released = join(dir, `released-reader-${id}`)
+    db()
+      .query('UPDATE run SET cwd=?,worktree=?,base_commit=? WHERE id=?')
+      .run(released, released, baseCommit, id)
+    const dispatchedId = addRun({
+      agent: 'grok',
+      job: 'file-question',
+      status: 'ok',
+      session: 'orch-test-session',
+      repo: 'continuation-fixture',
+    })
+    const dispatched: Parameters<typeof detach>[2][] = []
+    const dispatch: typeof detach = async (_job, _prompt, spec) => {
+      dispatched.push(spec)
+      return dispatchedId
+    }
+
+    await retryRun(id, { flags }, { ...helpers, dispatch })
+
+    expect(dispatched[0]?.cwd).toBe(registeredPath)
+    expect(dispatched[0]?.resume).toMatchObject({
+      kind: 'retry-root',
+      parent: id,
+      worktree: null,
+      readOnlyBase: baseCommit,
     })
   })
 

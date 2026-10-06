@@ -7,21 +7,26 @@ import { continuationCheckoutDecision } from './continuation-checkout.ts'
 export function requireContinuationCheckout(input: {
   rootId: number
   operation: 'continued' | 'answered' | 'retried'
+  requiresRepo: boolean
   latestCwd: string | null
   rootCwd: string | null
   rootRepo: string | null
-}): { cwd: string; project: Project } {
+}): { cwd: string; project: Project | null } {
   const project = input.rootRepo ? projectByName(input.rootRepo) : null
   const decision = continuationCheckoutDecision({
+    requiresRepo: input.requiresRepo,
     latestCwd: input.latestCwd,
     rootCwd: input.rootCwd,
     rootProjectPath: project?.path ?? null,
   })
   if (decision.action === 'refuse') {
+    const detail =
+      decision.reason === 'missing-recorded-cwd'
+        ? 'its chain has no recorded working directory'
+        : 'its chain has no available registered repository identity'
     throw new Error(
-      `run ${input.rootId} cannot be ${input.operation}: its chain has no available registered repository identity; ` +
-        'dispatch a new run from the registered project checkout',
+      `run ${input.rootId} cannot be ${input.operation}: ${detail}; dispatch a new run`,
     )
   }
-  return { cwd: decision.cwd, project: project! }
+  return { cwd: decision.cwd, project }
 }

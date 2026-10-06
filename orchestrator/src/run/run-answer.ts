@@ -20,6 +20,11 @@ import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
+import {
+  continuationReadOnlyBase,
+  continuationTreeCwd,
+  requireContinuationTree,
+} from './continuation-tree-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -235,7 +240,7 @@ export async function retryRun(
           requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
           requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
           requested.started_at, root.repo, root.project_id, root.cwd root_cwd,
-          root.branch_kept, root.branch_kept_tip
+          root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip
      FROM run requested JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
      WHERE requested.id = ?`,
     )
@@ -246,6 +251,7 @@ export async function retryRun(
     job: string
     cwd: string | null
     root_cwd: string | null
+    root_base_commit: string | null
     prompt_path: string | null
     probe: number
     status: string
@@ -284,6 +290,7 @@ export async function retryRun(
     )
     .all(row.root_id, row.root_id) as { id: number; question: string; answer: string }[]
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
+  const readsRepo = Boolean(job(row.job).needs.readsRepo)
   const agent = options.agent ?? row.agent
   const preliminaryPath = decideRetryConversation({
     writesRepo,
@@ -310,11 +317,19 @@ export async function retryRun(
   }
   const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
   const latestCheckout = db()
-    .query('SELECT cwd FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1')
-    .get(row.root_id, row.root_id) as { cwd: string | null }
+    .query(
+      `SELECT cwd,worktree,base_commit FROM run
+       WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+    )
+    .get(row.root_id, row.root_id) as {
+    cwd: string | null
+    worktree: string | null
+    base_commit: string | null
+  }
   const checkout = requireContinuationCheckout({
     rootId: row.root_id,
     operation: 'retried',
+    requiresRepo: readsRepo,
     latestCwd: latestCheckout.cwd,
     rootCwd: row.root_cwd,
     rootRepo: row.repo,
@@ -348,6 +363,19 @@ export async function retryRun(
     retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
     return adoptRunMutation(retryAuthority, 'retry')
   })
+  const retryTreeDecision = writesRepo
+    ? null
+    : requireContinuationTree({
+        rootId: row.root_id,
+        projectName: row.repo,
+        projectPath: checkout.project?.path ?? null,
+        readsRepo,
+        writesRepo,
+        recordedTreeMatches: false,
+        recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
+        writerTreeRecoverable: false,
+        baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
+      })
   // Detached and followed, exactly like `do`. A retry is usually started
   // BECAUSE the first attempt died; running it as a child of this process
   // would leave it dying the same way.
@@ -383,7 +411,9 @@ export async function retryRun(
         lens: row.lens ?? undefined,
         probe: !!row.probe,
         retryOf: id,
-        cwd: workspace?.cwd ?? checkout.cwd,
+        cwd:
+          workspace?.cwd ??
+          continuationTreeCwd(retryTreeDecision!, checkout.cwd, checkout.project?.path ?? null),
         repo: row.repo ?? undefined,
         seed: row.launch_seed ?? undefined,
         key: row.launch_key ?? undefined,
@@ -422,7 +452,17 @@ export async function retryRun(
               worktree: workspace.worktree,
               treePlan: workspace.treePlan,
             }
-          : undefined,
+          : retryTreeDecision?.action === 'provision-reader-tree'
+            ? {
+                kind: 'retry-root',
+                parent: row.root_id,
+                agent,
+                turn: 1,
+                sessionId: retryAuthority.owner,
+                worktree: null,
+                readOnlyBase: continuationReadOnlyBase(retryTreeDecision),
+              }
+            : undefined,
       },
       agent,
     )
@@ -731,6 +771,18 @@ export async function answerRun(
     }
   }
 
+  const checkout =
+    !skipResume && !ownersLive
+      ? requireContinuationCheckout({
+          rootId: id,
+          operation: 'answered',
+          requiresRepo: Boolean(job(row.job).needs.readsRepo),
+          latestCwd: latest.cwd,
+          rootCwd: row.cwd,
+          rootRepo: row.repo,
+        })
+      : null
+
   const now = new Date(Date.now()).toISOString()
   const upd = db().query(
     `UPDATE question
@@ -807,13 +859,6 @@ export async function answerRun(
   }
 
   const worktreePath = latest.worktree ?? row.worktree
-  const checkout = requireContinuationCheckout({
-    rootId: id,
-    operation: 'answered',
-    latestCwd: latest.cwd,
-    rootCwd: row.cwd,
-    rootRepo: row.repo,
-  })
   /**
    * DETACHED, for the reason `orch do` already is.
    *
@@ -828,7 +873,7 @@ export async function answerRun(
   let childId: number
   try {
     childId = await (helpers.dispatch ?? detach)(row.job, rulingPrompt(answers), {
-      cwd: checkout.cwd,
+      cwd: checkout!.cwd,
       repo: row.repo ?? undefined,
       ...resumeLaunchForRoot(id),
       transport: chainTransport(id) ?? undefined,
@@ -846,7 +891,8 @@ export async function answerRun(
               base: latest.base_commit ?? row.base_commit ?? '',
               repoRoot:
                 (await import('../git/git-environment.ts')).repoRootOf(worktreePath) ??
-                checkout.project.path,
+                checkout!.project?.path ??
+                checkout!.cwd,
               source: latest.worktree_source ?? row.worktree_source ?? undefined,
             }
           : null,

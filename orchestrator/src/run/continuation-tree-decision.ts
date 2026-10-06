@@ -2,6 +2,7 @@
 /** Decides how a repository continuation obtains its tree from recorded facts. */
 
 export type ContinuationTreeDecision =
+  | { action: 'no-tree-required' }
   | { action: 'inherit-present-tree' }
   | { action: 'recreate-writer-tree' }
   | { action: 'provision-reader-tree'; baseCommit: string }
@@ -11,12 +12,14 @@ export type ContinuationTreeDecision =
     }
 
 export function continuationTreeDecision(input: {
+  readsRepo: boolean
   writesRepo: boolean
   recordedTreePresent: boolean
   writerTreeRecoverable: boolean
   baseCommit: string | null
   baseCommitAvailable: boolean
 }): ContinuationTreeDecision {
+  if (!input.readsRepo) return { action: 'no-tree-required' }
   if (input.recordedTreePresent) return { action: 'inherit-present-tree' }
   if (input.writesRepo) {
     return input.writerTreeRecoverable
