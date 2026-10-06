@@ -44,6 +44,28 @@ test('maps recorded gate exit codes to process exit codes', () => {
   expect(architectGateProcessExitCode(-1)).toBe(1)
 })
 
+test('a gate that dirties the tree while it runs is not attributed to HEAD', async () => {
+  const d = database()
+  let ran = false
+  await runArchitectGate({
+    cwd: repositoryPath,
+    d,
+    gitState: () => ({ headCommit, porcelainPaths: ran ? [' M formatted.ts'] : [] }),
+    write: () => {},
+    runner: () => {
+      ran = true
+      return {
+        exitCode: 0,
+        output: '',
+        startedAt: '2026-09-01T00:00:00.000Z',
+        finishedAt: '2026-09-01T00:00:01.000Z',
+        elapsedMs: 1000,
+      }
+    },
+  })
+  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+})
+
 test('inserts a finished dirty-tree gate without attributing it to HEAD', async () => {
   const d = database()
   const chunks: string[] = []

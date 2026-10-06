@@ -131,8 +131,11 @@ export async function runArchitectGate(input: {
   })
   const command = resolveGateCommand(gate, project.path)
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
-  const commit = gateHeadCommit(cwd, input.gitState ?? observeGitState)
+  const observe = input.gitState ?? observeGitState
+  const before = gateHeadCommit(cwd, observe)
   const ran = await (input.runner ?? defaultRunner)({ command, cwd, write })
+  // A gate that rewrites the tree while it runs tested something other than HEAD.
+  const commit = before !== null && gateHeadCommit(cwd, observe) === before ? before : null
   const tail = boundedGateOutputTail(
     containsSecretShaped(ran.output) ? GATE_OUTPUT_WITHHELD : ran.output,
     GATE_OUTPUT_TAIL_BYTES,
