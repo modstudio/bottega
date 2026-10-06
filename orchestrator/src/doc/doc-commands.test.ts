@@ -138,6 +138,84 @@ describe('scoped operator docs', () => {
     )
   })
 
+  test('subject-only matches cannot consume the keyword result cap', async () => {
+    upsertProject({ name: 'needle-cap-project', path: '/w/needle-cap-project', settings: {} })
+    for (let index = 0; index < 50; index++) {
+      await setDoc({
+        scope: 'project',
+        subject: 'needle-cap-project',
+        slug: `cap-${index}`,
+        title: `Cap ${index}`,
+        body: 'No body match.',
+      })
+    }
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'cap-body-result',
+      title: 'Body result',
+      body: 'Unique cap needle in this body.',
+    })
+    const listed = await command([
+      'doc',
+      'list',
+      '--match',
+      'needle-cap',
+      '--body-match',
+      'needle-cap',
+      '--json',
+    ])
+    expect(listed.code).toBe(0)
+    expect(JSON.parse(listed.out)).toEqual([])
+
+    const bodyListed = await command([
+      'doc',
+      'list',
+      '--match',
+      'needle',
+      '--body-match',
+      'needle',
+      '--json',
+    ])
+    expect(JSON.parse(bodyListed.out)).toContainEqual(
+      expect.objectContaining({ slug: 'cap-body-result' }),
+    )
+  })
+
+  test('keyword union follows store order regardless of the matching filter', async () => {
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'order-title-result',
+      title: 'Unique order needle title',
+      body: 'No body match.',
+      position: 20,
+    })
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'order-body-result',
+      title: 'Earlier body result',
+      body: 'Unique order needle body.',
+      position: 10,
+    })
+    const listed = await command([
+      'doc',
+      'list',
+      '--scope',
+      'global',
+      '--match',
+      'unique order needle',
+      '--body-match',
+      'unique order needle',
+      '--json',
+    ])
+    expect(JSON.parse(listed.out).map((doc: { slug: string }) => doc.slug)).toEqual([
+      'order-body-result',
+      'order-title-result',
+    ])
+  })
+
   test('orch doc get and list --json expose the latest hosted revision', async () => {
     const stored = await setDoc({
       scope: 'global',

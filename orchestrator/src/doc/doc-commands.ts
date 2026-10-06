@@ -31,6 +31,9 @@ import {
 
 const DOC_KEYWORD_LIST_LIMIT = 50
 
+const compareStoreText = (left: string, right: string) =>
+  Buffer.compare(Buffer.from(left), Buffer.from(right))
+
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type DocPresentation = {
   log(...values: unknown[]): void
@@ -160,11 +163,25 @@ function keywordListDocs(
   match: string | undefined,
   bodyMatch: string | undefined,
 ) {
+  const normalizedMatch = match?.toLocaleLowerCase()
   const metadata = [
-    ...(match !== undefined ? listDocMetadata({ ...filters, match }) : []),
+    ...(match !== undefined
+      ? listDocMetadata({ ...filters, match }).filter((doc) =>
+          [doc.title, doc.slug].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedMatch!),
+          ),
+        )
+      : []),
     ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
   ]
   return [...new Map(metadata.map((doc) => [doc.id, doc])).values()]
+    .sort(
+      (left, right) =>
+        compareStoreText(left.scope, right.scope) ||
+        compareStoreText(left.subject ?? '', right.subject ?? '') ||
+        left.position - right.position ||
+        compareStoreText(left.title, right.title),
+    )
     .slice(0, DOC_KEYWORD_LIST_LIMIT)
     .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null))
     .filter((doc) => doc !== null)

@@ -1,8 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { createRecordClient } from './record-client.ts'
-import type { Context } from './trpc/context.ts'
 
-function publicRecordClient(_ctx: Context) {
+function publicRecordClient() {
   const baseUrl = process.env.HUB_RECORD_API_URL
   if (!baseUrl) {
     throw new TRPCError({
@@ -13,7 +12,6 @@ function publicRecordClient(_ctx: Context) {
   return createRecordClient({ baseUrl, headers: {} })
 }
 
-export const publicDocsTree = (ctx: Context) => publicRecordClient(ctx).publicDocs()
-export const publicDoc = (ctx: Context, id: string) => publicRecordClient(ctx).publicDoc(id)
-export const publicDocSearch = (ctx: Context, query: string) =>
-  publicRecordClient(ctx).publicDocSearch(query)
+export const publicDocsTree = () => publicRecordClient().publicDocs()
+export const publicDoc = (id: string) => publicRecordClient().publicDoc(id)
+export const publicDocSearch = (query: string) => publicRecordClient().publicDocSearch(query)

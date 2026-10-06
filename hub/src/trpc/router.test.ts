@@ -483,6 +483,45 @@ describe('doc router', () => {
     expect(got).toEqual(row)
   })
 
+  test('tree maps local rows to the shared tree contract', async () => {
+    docList.mockResolvedValueOnce([{ ...row, id: 7, parent_id: 3 }])
+    const result = await caller.doc.tree({ scope: 'global', audience: 'technical' })
+    expect(docList).toHaveBeenCalledWith({ scope: 'global', audience: 'technical' })
+    expect(result).toEqual({
+      items: [
+        {
+          id: '7',
+          slug: 'hello',
+          title: 'Hello',
+          parentId: '3',
+          position: 0,
+          updatedAt: '2026-01-01T00:00:00Z',
+          scope: 'global',
+          subject: null,
+          audience: 'technical',
+        },
+      ],
+    })
+  })
+
+  test('read maps a local row to the shared doc contract', async () => {
+    docGet.mockResolvedValueOnce({ ...row, id: 7, parent_id: 3 })
+    const result = await caller.doc.read({ scope: 'global', subject: null, slug: 'hello' })
+    expect(docGet).toHaveBeenCalledWith('global', null, 'hello')
+    expect(result).toEqual({
+      id: '7',
+      slug: 'hello',
+      title: 'Hello',
+      parentId: '3',
+      position: 0,
+      updatedAt: '2026-01-01T00:00:00Z',
+      scope: 'global',
+      subject: null,
+      audience: 'technical',
+      body: 'Hi',
+    })
+  })
+
   test('set passes the input to docSet', async () => {
     const input = {
       scope: 'global' as const,

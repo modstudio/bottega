@@ -3,37 +3,39 @@ import { docSnippet, searchLocalDocs } from './doc-search.ts'
 
 describe('docSnippet', () => {
   test('places a middle match inside a bounded window', () => {
-    const result = docSnippet(`${'a'.repeat(100)}Needle${'b'.repeat(100)}`, 'Title', 'needle')
+    const result = docSnippet(`${'a'.repeat(100)}Needle${'b'.repeat(100)}`, 'needle')
     expect(result.snippet).toBe(`${'a'.repeat(60)}Needle${'b'.repeat(60)}`)
     expect(result.matchPosition).toBe(60)
   })
 
   test('keeps matches at the start and end', () => {
-    expect(docSnippet(`Needle${'b'.repeat(100)}`, 'Title', 'needle')).toEqual({
+    expect(docSnippet(`Needle${'b'.repeat(100)}`, 'needle')).toEqual({
       snippet: `Needle${'b'.repeat(60)}`,
       matchPosition: 0,
     })
-    const end = docSnippet(`${'a'.repeat(100)}Needle`, 'Title', 'needle')
+    const end = docSnippet(`${'a'.repeat(100)}Needle`, 'needle')
     expect(end).toEqual({ snippet: `${'a'.repeat(60)}Needle`, matchPosition: 60 })
   })
 
   test('uses the start of the body for title-only and absent matches', () => {
     const body = 'Body without the term.'
-    expect(docSnippet(body, 'Needle title', 'needle')).toEqual({
-      snippet: body,
-      matchPosition: null,
-    })
-    expect(docSnippet(body, 'Other title', 'needle')).toEqual({
+    expect(docSnippet(body, 'needle')).toEqual({
       snippet: body,
       matchPosition: null,
     })
   })
 
   test('does not split multi-byte code points and reports a usable string position', () => {
-    const result = docSnippet(`${'😀'.repeat(70)}NÉÉDLE`, 'Title', 'néédle')
+    const result = docSnippet(`${'😀'.repeat(70)}NÉÉDLE`, 'néédle')
     expect(result.snippet.startsWith('😀')).toBe(true)
     expect(result.matchPosition).toBe(120)
     expect(result.snippet.slice(result.matchPosition!)).toStartWith('NÉÉDLE')
+  })
+
+  test('reports an original-text offset when an earlier character expands while folding', () => {
+    const result = docSnippet('İfoo', 'foo')
+    expect(result).toEqual({ snippet: 'İfoo', matchPosition: 1 })
+    expect(result.snippet.slice(result.matchPosition!)).toBe('foo')
   })
 })
 

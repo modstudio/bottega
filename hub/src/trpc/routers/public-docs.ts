@@ -6,11 +6,11 @@ import type { Context } from '../context.ts'
 const t = initTRPC.context<Context>().create()
 
 export const publicDocsRouter = t.router({
-  tree: t.procedure.query(({ ctx }) => publicDocsTree(ctx)),
+  tree: t.procedure.query(() => publicDocsTree()),
   get: t.procedure
     .input(z.object({ id: z.string().uuid() }))
-    .query(({ ctx, input }) => publicDoc(ctx, input.id)),
+    .query(({ input }) => publicDoc(input.id)),
   search: t.procedure
     .input(z.object({ query: z.string() }))
-    .query(({ ctx, input }) => publicDocSearch(ctx, input.query)),
+    .query(({ input }) => publicDocSearch(input.query)),
 })
