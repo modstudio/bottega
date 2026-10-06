@@ -36,6 +36,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor.ts', []),
+  module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
     'node:child_process',
@@ -51,6 +52,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './workflow-floor.ts',
+    './workflow-floor-evidence-replay.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-text.ts', [
@@ -86,6 +88,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-outbox.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
+    './workflow-floor-evidence-replay.ts',
     './workflow-render.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',

@@ -18,6 +18,7 @@ import {
   projectByName,
   projects,
   pushProjects,
+  registerBranchCheck,
   removeWrittenProject,
   retiredProjectByName,
   retireWrittenProject,
@@ -242,6 +243,26 @@ function fillAbsentSettings(current: Project, input: FillAbsentProjectInput): Pr
 
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
 export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
+  const snapshot = projectByName(input.name)
+  if (!snapshot) throw new Error(`no project "${input.name}"`)
+  if (input.fill.stack !== undefined && snapshot.stack !== null) {
+    throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
+  }
+  const checkedSettings = fillAbsentSettings(snapshot, input)
+  const malformed = validateProjectSettings(checkedSettings, snapshot.path, {
+    validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
+    currentProjectName: snapshot.name,
+    register: projects(),
+  })
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  const checkedProject: Project = {
+    ...snapshot,
+    stack: input.fill.stack ?? snapshot.stack,
+    settings: checkedSettings,
+  }
+  const incomplete = incompleteWorktreeProblems(checkedProject)
+  if (incomplete.length) throw new Error(incomplete.join('\n'))
+  const branchCheck = registerBranchCheck(checkedProject)
   let candidate: Project | null = null
   writeTransaction(() => {
     const current = projectByName(input.name)
@@ -263,7 +284,7 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
     }
     const incomplete = incompleteWorktreeProblems(next)
     if (incomplete.length) throw new Error(incomplete.join('\n'))
-    assertRegisterBranches(next)
+    assertRegisterBranches(next, branchCheck)
     upsertProject(next)
     candidate = next
   })

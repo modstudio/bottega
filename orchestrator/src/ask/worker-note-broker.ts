@@ -122,7 +122,12 @@ export function startWorkerNoteBroker(
   let active: Promise<void> | null = null
   const poll = () => {
     if (closed || active) return
-    const request = claim(runId)
+    let request: PendingNote | null
+    try {
+      request = claim(runId)
+    } catch {
+      return
+    }
     if (!request) return
     const operation = file(request, filer)
     active = operation

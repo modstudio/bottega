@@ -536,6 +536,7 @@ export function discardWorktree(
     }
     const keptProtectedBranch =
       protectedBranch && row.branch && branchTip(repoRoot, row.branch) ? row.branch : null
+    const forcedMintedBranchRemoved = mintedBranchWasRemoved(force, minted, repoRoot)
     writeTransaction(() => {
       if (auditAuthority) {
         auditAuthority = reauthorizeRunMutation(auditAuthority, 'discard')
@@ -550,7 +551,7 @@ export function discardWorktree(
         detail: r.detail,
         allocationKey: row.worktree,
       })
-      if (force && minted && branchTip(repoRoot, minted) === null) {
+      if (forcedMintedBranchRemoved && minted) {
         settleClaims(db(), {
           rootRunId: row.id,
           kind: 'branch',
@@ -579,6 +580,10 @@ export function discardWorktree(
       options.presentation.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
     }
   })
+}
+
+function mintedBranchWasRemoved(force: boolean, branch: string | null, repoRoot: string): boolean {
+  return Boolean(force && branch && branchTip(repoRoot, branch) === null)
 }
 
 /**
