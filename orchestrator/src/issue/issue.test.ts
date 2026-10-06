@@ -55,6 +55,7 @@ describe('filed issue coordinator inputs', () => {
     expect(fix).toContain("job: 'issue-worker'")
     expect(fix).toContain('seed: fixSeed ?? undefined')
     expect(lens).toContain("job: 'review-lens'")
+    expect(lens).toContain('review: fixRun.worktree.branch')
     expect(lens).not.toContain('seed:')
   })
 
