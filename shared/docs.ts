@@ -18,6 +18,8 @@ export const DOC_SCOPES = [
   'settings',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
+export const DOC_AUDIENCES = ['user', 'technical'] as const
+export type DocAudience = (typeof DOC_AUDIENCES)[number]
 export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
   (scope): scope is Exclude<DocScope, 'canon' | 'settings'> =>
     scope !== 'canon' && scope !== 'settings',

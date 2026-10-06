@@ -83,6 +83,20 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
   const title = String(item.title)
   const body = String(item.body)
   const delivery = String(item.delivery)
+  const audience = String(item.audience)
+  const position = Number(item.position)
+  const parentRecordId = item.parentId == null ? null : String(item.parentId)
+  const parentId: number | null =
+    parentRecordId == null
+      ? null
+      : (local
+          .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+          .get(parentRecordId)?.id ?? null)
+  if (parentRecordId && parentId == null) {
+    throw new Error(
+      `record cache cannot map parent ${parentRecordId}; cleared by: refresh the parent document before its child`,
+    )
+  }
   const updatedAt = String(item.updatedAt ?? nowIso())
   const createdAt = String(item.createdAt ?? updatedAt)
   const existing = local
@@ -91,9 +105,20 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, subject=?, owner=? WHERE id=?',
       )
-      .run(title, body, delivery, updatedAt, subject, owner, existing.id)
+      .run(
+        title,
+        body,
+        delivery,
+        audience,
+        parentId,
+        position,
+        updatedAt,
+        subject,
+        owner,
+        existing.id,
+      )
     return
   }
   const byAddress = local
@@ -103,16 +128,33 @@ function applyDoc(local: Database, item: Record<string, unknown>): void {
     .get(scope, subject, owner, slug)
   if (byAddress) {
     local
-      .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-      .run(title, body, delivery, updatedAt, recordId, byAddress.id)
+      .query(
+        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+      )
+      .run(title, body, delivery, audience, parentId, position, updatedAt, recordId, byAddress.id)
     return
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(scope, subject, owner, null, slug, title, body, delivery, createdAt, updatedAt, recordId)
+    .run(
+      scope,
+      subject,
+      owner,
+      null,
+      slug,
+      title,
+      body,
+      delivery,
+      audience,
+      parentId,
+      position,
+      createdAt,
+      updatedAt,
+      recordId,
+    )
 }
 
 function applyScore(local: Database, item: Record<string, unknown>): void {

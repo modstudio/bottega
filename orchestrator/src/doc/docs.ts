@@ -12,9 +12,11 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  DOC_AUDIENCES,
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
+  type DocAudience,
   type DocScope,
 } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -40,6 +42,7 @@ import {
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
+import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
 import {
   commitDocConsume,
   commitDocRemove,
@@ -146,6 +149,10 @@ function assertInjectSize(input: {
         title: input.title,
         body: input.body,
         delivery: 'inject',
+        audience: 'technical',
+        parent_id: null,
+        parent_slug: null,
+        position: 0,
         created_at: '',
         updated_at: '',
         record_id: null,
@@ -288,7 +295,7 @@ export function getDoc(
   validScope(scope)
   const row = db()
     .query(
-      `SELECT d.*, ${LATEST_REVISION_SQL} AS revision FROM doc d WHERE scope = ? AND subject IS ? AND owner IS ? AND slug = ?`,
+      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope = ? AND d.subject IS ? AND d.owner IS ? AND d.slug = ?`,
     )
     .get(scope, subject, owner, slug) as Doc | null
   return row && ownerVisible(row.owner, owner) ? row : null
@@ -304,7 +311,105 @@ type DocWriteInput = {
   title: string
   body: string
   delivery?: 'inject' | 'demand'
+  audience?: DocAudience
+  parentSlug?: string | null
+  position?: number
 } & DocWriteContext
+
+function docTreeFields(
+  input: DocWriteInput,
+  prior: Doc | null,
+): {
+  audience: DocAudience
+  parentId: number | null
+  parentSlug: string | null
+  position: number
+} {
+  const audience = input.audience ?? prior?.audience ?? 'technical'
+  if (!DOC_AUDIENCES.includes(audience)) {
+    throw new Error(
+      `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
+    )
+  }
+  if (input.position !== undefined && !Number.isInteger(input.position)) {
+    throw new Error('--position must be an integer')
+  }
+  const requestedParentSlug = input.parentSlug
+  const parentSlug =
+    requestedParentSlug === undefined ? (prior?.parent_slug ?? null) : requestedParentSlug
+  const parent = parentSlug
+    ? getDoc(input.scope, input.subject, parentSlug, input.owner ?? null)
+    : null
+  const children = prior
+    ? (db()
+        .query('SELECT slug,audience FROM doc WHERE parent_id=? ORDER BY slug')
+        .all(prior.id) as Array<{ slug: string; audience: DocAudience }>)
+    : []
+  const ancestorSlugs: string[] = []
+  let ancestor = parent
+  const seen = new Set<number>()
+  while (ancestor && !seen.has(ancestor.id)) {
+    seen.add(ancestor.id)
+    ancestorSlugs.push(ancestor.slug)
+    ancestor = ancestor.parent_id
+      ? (db()
+          .query(
+            `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
+          )
+          .get(ancestor.parent_id) as Doc | null)
+      : null
+  }
+  const refusal = documentTreeWriteRefusal({
+    slug: input.slug,
+    scope: input.scope,
+    subject: input.subject,
+    owner: input.owner ?? null,
+    audience,
+    priorAudience: prior?.audience,
+    parent,
+    requestedParentSlug,
+    ancestorSlugs,
+    children,
+  })
+  if (refusal) throw new Error(refusal)
+  return {
+    audience,
+    parentId: parent?.id ?? null,
+    parentSlug,
+    position: input.position ?? prior?.position ?? 0,
+  }
+}
+
+function assertDocRemovalAllowed(doc: Doc): void {
+  const children = db()
+    .query('SELECT slug,audience FROM doc WHERE parent_id=? ORDER BY slug')
+    .all(doc.id) as Array<{ slug: string; audience: DocAudience }>
+  const refusal = documentTreeWriteRefusal({
+    ...doc,
+    parent: null,
+    ancestorSlugs: [],
+    children,
+    removing: true,
+  })
+  if (refusal) throw new Error(refusal)
+}
+
+function parentRecordId(doc: {
+  scope: string
+  subject: string | null
+  owner: string | null
+  parent_id: number | null
+  parent_slug: string | null
+}): string | null {
+  if (doc.parent_id === null) return null
+  const recordId = getDoc(doc.scope, doc.subject, doc.parent_slug!, doc.owner)?.record_id
+  if (!recordId) {
+    throw new Error(
+      `parent "${doc.parent_slug}" has no hosted record id; cleared by: run orch record push-docs before writing this document`,
+    )
+  }
+  return recordId
+}
 
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
@@ -420,6 +525,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
+  const tree = docTreeFields(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
@@ -431,6 +537,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         prior,
         projectId: projectName ? projectByName(input.subject!)!.id : null,
         delivery,
+        ...tree,
         requestedOp,
         identity,
       }),
@@ -443,6 +550,15 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         title: input.title,
         body: input.body,
         delivery,
+        audience: tree.audience,
+        parentRecordId: parentRecordId({
+          scope: input.scope,
+          subject: input.subject,
+          owner,
+          parent_id: tree.parentId,
+          parent_slug: tree.parentSlug,
+        }),
+        position: tree.position,
         projectName,
         reason: identity.reason,
         author: identity.author,
@@ -456,6 +572,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         owner,
         projectId: projectName ? projectByName(input.subject!)!.id : null,
         delivery,
+        ...tree,
         requestedOp,
         identity,
         recordId: hosted.id,
@@ -474,6 +591,9 @@ export async function setDoc(
     title: string
     body: string
     delivery?: 'inject' | 'demand'
+    audience?: DocAudience
+    parentSlug?: string | null
+    position?: number
   } & DocWriteContext,
 ): Promise<Doc> {
   assertWorkerDocStoreWriteAllowed('setDoc')
@@ -532,6 +652,7 @@ export async function removeDoc(
   if (context.canonRemovalDecision !== 'already-decided-next-set') {
     assertCanonRemovalAllowed(doc, context.canonTree)
   }
+  assertDocRemovalAllowed(doc)
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
@@ -546,6 +667,9 @@ export async function removeDoc(
           title: doc.title,
           body: doc.body,
           delivery: doc.delivery,
+          audience: doc.audience,
+          parentRecordId: parentRecordId(doc),
+          position: doc.position,
           reason: identity.reason,
           author: identity.author,
           id: undefined,
@@ -627,6 +751,9 @@ export async function consumeDoc(
           title: doc.title,
           body: doc.body,
           delivery: doc.delivery,
+          audience: doc.audience,
+          parentRecordId: parentRecordId(doc),
+          position: doc.position,
           reason: identity.reason,
           author: identity.author,
           expectedRevision: context.expectedRevision,
@@ -963,6 +1090,35 @@ export async function restoreDoc(
     getDoc(scope, subject, slug, owner),
   )
   const liveRecordId = getDoc(scope, subject, slug, owner)?.record_id
+  const restoredParentSlug =
+    revision.parent_id == null
+      ? null
+      : ((
+          db().query('SELECT slug FROM doc WHERE id=?').get(revision.parent_id) as {
+            slug: string
+          } | null
+        )?.slug ?? null)
+  if (revision.parent_id !== null && restoredParentSlug === null) {
+    throw new Error(
+      `refusing to restore ${scope}/${subject ?? '_'}/${slug}: revision parent ${revision.parent_id} no longer exists; cleared by: restore the parent first or run orch doc restore ${slug} with a revision recorded without a parent`,
+    )
+  }
+  const tree = docTreeFields(
+    {
+      scope,
+      subject,
+      owner,
+      slug,
+      title: revision.title,
+      body: revision.body,
+      delivery: revision.delivery,
+      audience: revision.audience,
+      parentSlug: restoredParentSlug,
+      position: revision.position,
+      ...context,
+    },
+    getDoc(scope, subject, slug, owner),
+  )
   return applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.
@@ -977,6 +1133,7 @@ export async function restoreDoc(
         title: revision.title,
         body: revision.body,
         delivery: revision.delivery,
+        ...tree,
         identity,
         ...context,
       }),
@@ -1007,6 +1164,15 @@ export async function restoreDoc(
           title: revision.title,
           body: revision.body,
           delivery: revision.delivery,
+          audience: revision.audience,
+          parentRecordId: parentRecordId({
+            scope,
+            subject,
+            owner,
+            parent_id: tree.parentId,
+            parent_slug: tree.parentSlug,
+          }),
+          position: revision.position,
           reason: identity.reason,
           author: identity.author,
           op: 'restore',
@@ -1029,6 +1195,7 @@ export async function restoreDoc(
         title: revision.title,
         body: revision.body,
         delivery: revision.delivery,
+        ...tree,
         identity,
         ...context,
         recordId: hosted.id,

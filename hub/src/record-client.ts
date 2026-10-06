@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { DOC_AUDIENCES } from '../../shared/docs.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
@@ -217,6 +218,9 @@ const docSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
+  audience: z.enum(DOC_AUDIENCES),
+  parentId: z.string().uuid().nullable(),
+  position: z.number().int(),
   projectName: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
@@ -236,6 +240,9 @@ const docRevisionSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
+  audience: z.enum(DOC_AUDIENCES),
+  parentId: z.string().uuid().nullable(),
+  position: z.number().int(),
   author: z.string(),
   reason: z.string(),
   sessionId: z.string().nullable(),
@@ -247,6 +254,7 @@ const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
 type RecordDocListInput = {
   scope?: string
   subject?: string
+  audience?: 'user' | 'technical'
   limit?: number
   cursor?: string
   acrossReadableSpaces?: boolean
@@ -481,6 +489,7 @@ export function createRecordClient(options: RecordClientOptions) {
         query('/v1/docs', {
           scope: input.scope,
           subject: input.subject,
+          audience: input.audience,
           limit: input.limit,
           cursor: input.cursor,
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,

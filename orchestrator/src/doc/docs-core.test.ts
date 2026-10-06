@@ -30,6 +30,44 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('audience, parent, and position round trip through set, list, and history', async () => {
+    const parent = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'tree-parent',
+      title: 'Tree parent',
+      body: 'Parent.',
+      delivery: 'demand',
+      audience: 'user',
+      position: 2,
+      reason: 'create tree parent',
+    })
+    const child = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'tree-child',
+      title: 'Tree child',
+      body: 'Child.',
+      delivery: 'demand',
+      audience: 'user',
+      parentSlug: parent.slug,
+      position: 7,
+      reason: 'create tree child',
+    })
+    expect(getDoc('global', null, child.slug)).toMatchObject({
+      audience: 'user',
+      parent_id: parent.id,
+      parent_slug: parent.slug,
+      position: 7,
+    })
+    expect(listDocs({ scope: 'global', audience: 'user' })).toContainEqual(child)
+    expect(getDocRevision(listDocRevisions('global', null, child.slug)[0]!.id)).toMatchObject({
+      audience: 'user',
+      parent_id: parent.id,
+      position: 7,
+    })
+  })
+
   test('never-bound document lifecycle stays local and rejects a stale revision', async () => {
     const calls: string[] = []
     const client = createMemoryRecordApiClient()

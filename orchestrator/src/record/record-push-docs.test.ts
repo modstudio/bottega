@@ -119,9 +119,9 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     upsertDoc: unused,
     importDoc: async (input) => {
       imports.push(structuredClone(input))
-      const id = newRecordId()
+      const id = input.doc.id
       const revisionIds = input.revisions.map(() => newRecordId())
-      hosted.set(id, { id, ...input.doc })
+      hosted.set(id, { ...input.doc })
       return { id, revisionIds }
     },
     importCanon: unused,

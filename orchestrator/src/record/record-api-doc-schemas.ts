@@ -1,6 +1,7 @@
 // concern: record-doc-api-schemas
 /** Validates hosted document import payloads at the HTTP edge. */
 import { z } from 'zod'
+import { DOC_AUDIENCES } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
 
 const isoSchema = z.string().datetime({ offset: true })
@@ -18,6 +19,7 @@ const revisionOpSchema = z.enum([
 export const recordDocImportSchema = z.object({
   expectedRevision: z.string().uuid().optional(),
   doc: z.object({
+    id: z.string().uuid(),
     scope: z.string().min(1),
     subject: z.string().nullable(),
     owner: z.string().uuid().nullable().optional(),
@@ -25,6 +27,9 @@ export const recordDocImportSchema = z.object({
     title: z.string(),
     body: z.string(),
     delivery: deliverySchema,
+    audience: z.enum(DOC_AUDIENCES),
+    parentId: z.string().uuid().nullable(),
+    position: z.number().int(),
     projectName: z.string().nullable().optional(),
     createdAt: isoSchema,
     updatedAt: isoSchema,
@@ -40,6 +45,9 @@ export const recordDocImportSchema = z.object({
       title: z.string(),
       body: z.string(),
       delivery: deliverySchema,
+      audience: z.enum(DOC_AUDIENCES),
+      parentId: z.string().uuid().nullable(),
+      position: z.number().int(),
       author: z.string().trim().min(1),
       reason: z.string().trim().min(1),
       sessionId: z.string().nullable().optional(),

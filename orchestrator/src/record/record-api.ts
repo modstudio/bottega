@@ -5,6 +5,7 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
+import { DOC_AUDIENCES } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
@@ -732,6 +733,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .object({
         scope: filterSchema,
         subject: z.string().optional(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
         updatedSince: z.string().datetime({ offset: true }).optional(),
         limit: limitSchema,
         cursor: z.string().optional(),
@@ -756,6 +758,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       ...tenant,
       scope: query.data.scope,
       subject: query.data.subject === undefined ? undefined : query.data.subject || null,
+      audience: query.data.audience,
       updatedSince: query.data.updatedSince,
       limit: query.data.limit,
       cursor,
@@ -804,6 +807,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         title: z.string(),
         body: z.string(),
         delivery: deliverySchema,
+        audience: z.enum(DOC_AUDIENCES).optional(),
+        parentRecordId: z.string().uuid().nullable().optional(),
+        position: z.number().int().optional(),
         projectName: z.string().nullable().optional(),
         reason: z.string().trim().min(1),
         author: z.string().trim().min(1),

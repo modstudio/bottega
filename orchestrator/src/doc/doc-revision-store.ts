@@ -1,5 +1,7 @@
 // concern: local-doc-revisions
 /** Owns local revision ordering and compare-and-set facts. Must not know hosted transport or CLI. */
+
+import type { DocAudience } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
 import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
 
@@ -13,6 +15,9 @@ type RevisionDoc = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
+  audience: DocAudience
+  parent_id: number | null
+  position: number
 }
 
 export function docWriteIdentity(context: { author?: string; reason: string }): {
@@ -72,8 +77,8 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audience, parent_id, position, author, reason, session_id, at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
@@ -86,6 +91,9 @@ export function insertLocalRevision(
       doc.title,
       doc.body,
       doc.delivery,
+      doc.audience,
+      doc.parent_id,
+      doc.position,
       identity.author,
       identity.reason,
       identity.session,

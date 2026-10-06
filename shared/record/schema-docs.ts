@@ -1,7 +1,18 @@
 // concern: postgres-schema-docs
 /** Knows the hosted operator-document record shape. Must not know local cache or synchronization. */
 import { sql } from 'drizzle-orm'
-import { check, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import {
+  check,
+  foreignKey,
+  integer,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core'
+import { DOC_AUDIENCES } from '../docs.ts'
 import { project, spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -61,6 +72,9 @@ export const doc = pgTable.withRLS(
     title: text().notNull(),
     body: text().notNull(),
     delivery: text().notNull(),
+    audience: text().notNull().default('technical'),
+    parentId: uuid('parent_id'),
+    position: integer().notNull().default(0),
     projectId: uuid('project_id').references(() => project.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -73,6 +87,15 @@ export const doc = pgTable.withRLS(
       sql`${table.scope} IN ('project','machine','agent','job','global','stack','resume','canon','settings')`,
     ),
     check('doc_delivery_check', sql`${table.delivery} IN ('inject','demand')`),
+    check(
+      'doc_audience_check',
+      sql`${table.audience} IN (${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))})`,
+    ),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: 'doc_parent_id_doc_id_fk',
+    }),
     check('doc_subject_check', subjectRule(table.scope, table.subject, table.ownerUserId)),
     check('doc_slug_check', slugRule(table.scope, table.slug)),
     uniqueIndex('doc_live_address')
@@ -105,6 +128,9 @@ export const docRevision = pgTable.withRLS(
     title: text().notNull(),
     body: text().notNull(),
     delivery: text().notNull(),
+    audience: text().notNull().default('technical'),
+    parentId: uuid('parent_id'),
+    position: integer().notNull().default(0),
     author: text().notNull(),
     reason: text().notNull(),
     sessionId: text('session_id'),
@@ -116,6 +142,10 @@ export const docRevision = pgTable.withRLS(
       sql`${table.scope} IN ('project','machine','agent','job','global','stack','resume','canon','settings')`,
     ),
     check('doc_revision_delivery_check', sql`${table.delivery} IN ('inject','demand')`),
+    check(
+      'doc_revision_audience_check',
+      sql`${table.audience} IN (${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))})`,
+    ),
     check(
       'doc_revision_op_check',
       sql`${table.op} IN ('create','set','consume','delete','restore','import','backfill')`,
