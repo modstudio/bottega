@@ -11,6 +11,7 @@ import {
   Inbox,
   Kanban,
   type LucideIcon,
+  MessageSquareText,
   NotebookPen,
   Palette,
   Plane,
@@ -59,6 +60,7 @@ const LOCAL_NAV: NavSection[] = [
         icon: Bot,
         items: [
           { to: '/notes', label: 'Notes', icon: NotebookPen },
+          { to: '/messages', label: 'Messages', icon: MessageSquareText },
           { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
           { to: '/agents', label: 'Agents', icon: Bot },
           { to: '/routing', label: 'Routing', icon: RouteIcon },
@@ -159,6 +161,7 @@ export function isHostedPath(pathname: string) {
     path === '/routing' ||
     path === '/health' ||
     path === '/notes' ||
+    path === '/messages' ||
     path === '/ratio' ||
     path === '/spend' ||
     path === '/settings' ||
@@ -167,6 +170,7 @@ export function isHostedPath(pathname: string) {
     return true
   }
   if (path.startsWith('/runs/')) return true
+  if (path.startsWith('/messages/')) return true
   if (path.startsWith('/flight/tasks/')) return true
   if (path.startsWith('/board/tasks/')) return true
   if (path.startsWith('/done/tasks/')) return true

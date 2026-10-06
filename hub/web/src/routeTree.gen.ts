@@ -22,6 +22,7 @@ import { Route as HealthRouteImport } from './routes/health'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as MembersRouteImport } from './routes/members'
+import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
@@ -34,6 +35,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpendRouteImport } from './routes/spend'
 import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitation.$id'
+import { Route as MessagesIdRouteImport } from './routes/messages.$id'
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
@@ -109,6 +111,11 @@ const MembersRoute = MembersRouteImport.update({
   path: '/members',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotesRoute = NotesRouteImport.update({
   id: '/notes',
   path: '/notes',
@@ -168,6 +175,11 @@ const AcceptInvitationIdRoute = AcceptInvitationIdRouteImport.update({
   id: '/accept-invitation/$id',
   path: '/accept-invitation/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesIdRoute = MessagesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => MessagesRoute,
 } as any)
 const ProjectsNameRoute = ProjectsNameRouteImport.update({
   id: '/$name',
@@ -229,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/jobs': typeof JobsRoute
   '/members': typeof MembersRoute
+  '/messages': typeof MessagesRouteWithChildren
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -241,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
+  '/messages/$id': typeof MessagesIdRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -265,6 +279,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/jobs': typeof JobsRoute
   '/members': typeof MembersRoute
+  '/messages': typeof MessagesRouteWithChildren
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -277,6 +292,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
+  '/messages/$id': typeof MessagesIdRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -302,6 +318,7 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/jobs': typeof JobsRoute
   '/members': typeof MembersRoute
+  '/messages': typeof MessagesRouteWithChildren
   '/notes': typeof NotesRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -314,6 +331,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
+  '/messages/$id': typeof MessagesIdRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -340,6 +358,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/jobs'
     | '/members'
+    | '/messages'
     | '/notes'
     | '/projects'
     | '/ratio'
@@ -352,6 +371,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/spend'
     | '/accept-invitation/$id'
+    | '/messages/$id'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -376,6 +396,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/jobs'
     | '/members'
+    | '/messages'
     | '/notes'
     | '/projects'
     | '/ratio'
@@ -388,6 +409,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/spend'
     | '/accept-invitation/$id'
+    | '/messages/$id'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -412,6 +434,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/jobs'
     | '/members'
+    | '/messages'
     | '/notes'
     | '/projects'
     | '/ratio'
@@ -424,6 +447,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/spend'
     | '/accept-invitation/$id'
+    | '/messages/$id'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -449,6 +473,7 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   JobsRoute: typeof JobsRoute
   MembersRoute: typeof MembersRoute
+  MessagesRoute: typeof MessagesRouteWithChildren
   NotesRoute: typeof NotesRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
@@ -558,6 +583,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MembersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notes': {
       id: '/notes'
       path: '/notes'
@@ -641,6 +673,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/accept-invitation/$id'
       preLoaderRoute: typeof AcceptInvitationIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/messages/$id': {
+      id: '/messages/$id'
+      path: '/$id'
+      fullPath: '/messages/$id'
+      preLoaderRoute: typeof MessagesIdRouteImport
+      parentRoute: typeof MessagesRoute
     }
     '/projects/$name': {
       id: '/projects/$name'
@@ -749,6 +788,18 @@ const FlightRouteChildren: FlightRouteChildren = {
 const FlightRouteWithChildren =
   FlightRoute._addFileChildren(FlightRouteChildren)
 
+interface MessagesRouteChildren {
+  MessagesIdRoute: typeof MessagesIdRoute
+}
+
+const MessagesRouteChildren: MessagesRouteChildren = {
+  MessagesIdRoute: MessagesIdRoute,
+}
+
+const MessagesRouteWithChildren = MessagesRoute._addFileChildren(
+  MessagesRouteChildren,
+)
+
 interface ProjectsRouteChildren {
   ProjectsNameRoute: typeof ProjectsNameRoute
 }
@@ -796,6 +847,7 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   JobsRoute: JobsRoute,
   MembersRoute: MembersRoute,
+  MessagesRoute: MessagesRouteWithChildren,
   NotesRoute: NotesRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
