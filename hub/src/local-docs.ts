@@ -6,12 +6,12 @@ export type LocalDocFilters = Pick<
   'scope' | 'subject' | 'audience'
 >
 
-export function localDocContract(
+function localDocContract(
   row: DocRow,
   includeBody: false,
 ): ReturnType<typeof DocTreeItemSchema.parse>
-export function localDocContract(row: DocRow, includeBody: true): ReturnType<typeof DocSchema.parse>
-export function localDocContract(row: DocRow, includeBody: boolean) {
+function localDocContract(row: DocRow, includeBody: true): ReturnType<typeof DocSchema.parse>
+function localDocContract(row: DocRow, includeBody: boolean) {
   const item = {
     id: String(row.id),
     slug: row.slug,
