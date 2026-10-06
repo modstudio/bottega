@@ -81,6 +81,12 @@ The hosting design and its rulings:
 
 ## Getting started
 
+Install the binary, run `bottega setup`, probe an agent, create a task and
+delegate it: [docs/getting-started.md](docs/getting-started.md) walks a fresh
+machine to a first delegated change.
+
+## Working on Bottega
+
     git config core.hooksPath .githooks   # once per clone
     cp .mcp.json.example .mcp.json        # then configure this checkout's MCP servers
     bun run check                          # tests, typecheck, boundaries, brand, canon
