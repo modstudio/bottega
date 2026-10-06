@@ -18,7 +18,6 @@ beforeEach(() => {
   ]
   identityEnvironment = Object.fromEntries(identityKeys.map((key) => [key, process.env[key]]))
   for (const key of identityKeys) delete process.env[key]
-  process.env.CLAUDE_CODE_SESSION_ID = 'mcp-board-reader'
 })
 
 afterEach(() => {
@@ -81,14 +80,10 @@ test('board_post MCP schema mirrors the title size ceiling before service storag
 })
 
 test('board_read MCP result is the delivery envelope with one normalized notice shape', async () => {
-  db()
-    .query("INSERT OR IGNORE INTO project(name,path,settings) VALUES ('mcp-board',?,'{}')")
-    .run(process.cwd())
-  const posted = postNotice({
-    audience: 'session:mcp-board-reader',
-    title: 'MCP read shape',
-    body: 'Read through the envelope.',
-  })
+  const posted = postNotice(
+    { audience: 'operator', title: 'MCP read shape', body: 'Read through the envelope.' },
+    {},
+  )
   const result = await withBoardClient((client) =>
     client.callTool({ name: 'board_read', arguments: {} }),
   )
