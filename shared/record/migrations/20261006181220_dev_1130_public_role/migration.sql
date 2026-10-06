@@ -26,6 +26,15 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'dev_1130_public_role requires record_actor membership in record_public with INHERIT FALSE and SET TRUE. Clear with: GRANT record_public TO record_actor WITH INHERIT FALSE, SET TRUE;';
   END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_auth_members membership
+    JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+    WHERE granted_role.rolname = 'record_public'
+      AND membership.inherit_option
+  ) THEN
+    RAISE EXCEPTION 'record_public must not be inherited by any member, because its policy would then apply to that member''s ordinary queries. Clear with: REVOKE record_public FROM <member>; then GRANT record_public TO <member> WITH INHERIT FALSE;';
+  END IF;
   SELECT string_agg(format('REVOKE %I FROM record_public;', granted_role.rolname), ' ')
   INTO revoke_memberships
   FROM pg_auth_members membership
