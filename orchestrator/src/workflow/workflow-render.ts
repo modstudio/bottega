@@ -113,7 +113,10 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
   ].join('\n')
 }
 
-function autonomyInstruction(resolved: string, declared: string): string {
+function autonomyInstruction(
+  resolved: WorkflowStep['resolvedAutonomy']['value'],
+  declared: WorkflowStep['autonomy'],
+): string {
   if (resolved === 'ask')
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
   if (resolved === 'auto' && declared === 'ask')
