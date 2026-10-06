@@ -24,13 +24,7 @@ export async function proveProjectSpaceRecordSync(input: {
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
 }): Promise<string[]> {
   const local = new Database(':memory:')
-  local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
-  )`)
-  local.exec(
-    'CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY CHECK (id = 1), bound_at TEXT NOT NULL)',
-  )
+  applyMigrations(local)
   const ids = [newRecordId(), newRecordId()]
   for (const [index, projectName] of ['alpha', 'beta'].entries()) {
     const run = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
@@ -109,13 +103,7 @@ export async function proveScoreRecordSync(input: {
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
 }): Promise<{ actorRead: PsqlResult; otherSpaceRead: PsqlResult; rescoredRead: PsqlResult }> {
   const local = new Database(':memory:')
-  local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT
-  )`)
-  local.exec(
-    'CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY CHECK (id = 1), bound_at TEXT NOT NULL)',
-  )
+  applyMigrations(local)
   const run = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
   const recordId = newRecordId()
   Object.assign(run, {
