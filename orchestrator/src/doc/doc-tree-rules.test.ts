@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocumentTreeWrite, documentTreeWriteRefusal } from './doc-tree-rules.ts'
 
 const base = (overrides: Partial<DocumentTreeWrite> = {}): DocumentTreeWrite => ({
   slug: 'child',
   scope: 'project',
-  subject: 'bottega',
+  subject: PLATFORM_SLUG,
   owner: null,
   audience: 'technical',
   parent: null,

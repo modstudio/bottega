@@ -12,7 +12,6 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  DOC_AUDIENCES,
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
@@ -42,7 +41,11 @@ import {
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
-import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
+import {
+  assertLocalDocRemovalAllowed,
+  localDocTreeFields,
+  localParentRecordId,
+} from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
   commitDocRemove,
@@ -316,101 +319,6 @@ type DocWriteInput = {
   position?: number
 } & DocWriteContext
 
-function docTreeFields(
-  input: DocWriteInput,
-  prior: Doc | null,
-): {
-  audience: DocAudience
-  parentId: number | null
-  parentSlug: string | null
-  position: number
-} {
-  const audience = input.audience ?? prior?.audience ?? 'technical'
-  if (!DOC_AUDIENCES.includes(audience)) {
-    throw new Error(
-      `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
-    )
-  }
-  if (input.position !== undefined && !Number.isInteger(input.position)) {
-    throw new Error('--position must be an integer')
-  }
-  const requestedParentSlug = input.parentSlug
-  const parentSlug =
-    requestedParentSlug === undefined ? (prior?.parent_slug ?? null) : requestedParentSlug
-  const parent = parentSlug
-    ? getDoc(input.scope, input.subject, parentSlug, input.owner ?? null)
-    : null
-  const children = prior
-    ? (db()
-        .query('SELECT slug,audience FROM doc WHERE parent_id=? ORDER BY slug')
-        .all(prior.id) as Array<{ slug: string; audience: DocAudience }>)
-    : []
-  const ancestorSlugs: string[] = []
-  let ancestor = parent
-  const seen = new Set<number>()
-  while (ancestor && !seen.has(ancestor.id)) {
-    seen.add(ancestor.id)
-    ancestorSlugs.push(ancestor.slug)
-    ancestor = ancestor.parent_id
-      ? (db()
-          .query(
-            `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
-          )
-          .get(ancestor.parent_id) as Doc | null)
-      : null
-  }
-  const refusal = documentTreeWriteRefusal({
-    slug: input.slug,
-    scope: input.scope,
-    subject: input.subject,
-    owner: input.owner ?? null,
-    audience,
-    priorAudience: prior?.audience,
-    parent,
-    requestedParentSlug,
-    ancestorSlugs,
-    children,
-  })
-  if (refusal) throw new Error(refusal)
-  return {
-    audience,
-    parentId: parent?.id ?? null,
-    parentSlug,
-    position: input.position ?? prior?.position ?? 0,
-  }
-}
-
-function assertDocRemovalAllowed(doc: Doc): void {
-  const children = db()
-    .query('SELECT slug,audience FROM doc WHERE parent_id=? ORDER BY slug')
-    .all(doc.id) as Array<{ slug: string; audience: DocAudience }>
-  const refusal = documentTreeWriteRefusal({
-    ...doc,
-    parent: null,
-    ancestorSlugs: [],
-    children,
-    removing: true,
-  })
-  if (refusal) throw new Error(refusal)
-}
-
-function parentRecordId(doc: {
-  scope: string
-  subject: string | null
-  owner: string | null
-  parent_id: number | null
-  parent_slug: string | null
-}): string | null {
-  if (doc.parent_id === null) return null
-  const recordId = getDoc(doc.scope, doc.subject, doc.parent_slug!, doc.owner)?.record_id
-  if (!recordId) {
-    throw new Error(
-      `parent "${doc.parent_slug}" has no hosted record id; cleared by: run orch record push-docs before writing this document`,
-    )
-  }
-  return recordId
-}
-
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
     global,
@@ -525,7 +433,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
-  const tree = docTreeFields(input, prior)
+  const tree = localDocTreeFields(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
@@ -551,7 +459,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         body: input.body,
         delivery,
         audience: tree.audience,
-        parentRecordId: parentRecordId({
+        parentRecordId: localParentRecordId({
           scope: input.scope,
           subject: input.subject,
           owner,
@@ -652,7 +560,7 @@ export async function removeDoc(
   if (context.canonRemovalDecision !== 'already-decided-next-set') {
     assertCanonRemovalAllowed(doc, context.canonTree)
   }
-  assertDocRemovalAllowed(doc)
+  assertLocalDocRemovalAllowed(doc)
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
@@ -668,7 +576,7 @@ export async function removeDoc(
           body: doc.body,
           delivery: doc.delivery,
           audience: doc.audience,
-          parentRecordId: parentRecordId(doc),
+          parentRecordId: localParentRecordId(doc),
           position: doc.position,
           reason: identity.reason,
           author: identity.author,
@@ -752,7 +660,7 @@ export async function consumeDoc(
           body: doc.body,
           delivery: doc.delivery,
           audience: doc.audience,
-          parentRecordId: parentRecordId(doc),
+          parentRecordId: localParentRecordId(doc),
           position: doc.position,
           reason: identity.reason,
           author: identity.author,
@@ -1103,7 +1011,7 @@ export async function restoreDoc(
       `refusing to restore ${scope}/${subject ?? '_'}/${slug}: revision parent ${revision.parent_id} no longer exists; cleared by: restore the parent first or run orch doc restore ${slug} with a revision recorded without a parent`,
     )
   }
-  const tree = docTreeFields(
+  const tree = localDocTreeFields(
     {
       scope,
       subject,
@@ -1165,7 +1073,7 @@ export async function restoreDoc(
           body: revision.body,
           delivery: revision.delivery,
           audience: revision.audience,
-          parentRecordId: parentRecordId({
+          parentRecordId: localParentRecordId({
             scope,
             subject,
             owner,

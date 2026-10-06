@@ -2,7 +2,7 @@
 /** Pure document audience and tree policy. Knows no store, transport, or clock. */
 import type { DocAudience } from '../../../shared/docs.ts'
 
-export type DocumentTreeNode = {
+type DocumentTreeNode = {
   slug: string
   scope: string
   subject: string | null
@@ -19,6 +19,21 @@ export type DocumentTreeWrite = DocumentTreeNode & {
   children: Array<Pick<DocumentTreeNode, 'slug' | 'audience'>>
   removing?: boolean
   spaceMatches?: boolean
+}
+
+function childAudienceRefusal(input: DocumentTreeWrite, address: string, set: string): string | null {
+  if (
+    input.priorAudience === undefined ||
+    input.priorAudience === input.audience ||
+    !input.children.some((child) => child.audience !== input.audience)
+  ) {
+    return null
+  }
+  const children = input.children
+    .filter((child) => child.audience !== input.audience)
+    .map((child) => child.slug)
+    .sort()
+  return `refusing ${address}: audience change would differ from children ${children.join(', ')}; cleared by: re-parent those children or change their audience before re-running ${set} --audience ${input.audience}`
 }
 
 export function documentTreeWriteRefusal(input: DocumentTreeWrite): string | null {
@@ -42,17 +57,8 @@ export function documentTreeWriteRefusal(input: DocumentTreeWrite): string | nul
   ) {
     return `refusing ${address}: parent "${input.requestedParentSlug}" does not exist; cleared by: create that document or re-run ${set} --no-parent`
   }
-  if (
-    input.priorAudience !== undefined &&
-    input.priorAudience !== input.audience &&
-    input.children.some((child) => child.audience !== input.audience)
-  ) {
-    const children = input.children
-      .filter((child) => child.audience !== input.audience)
-      .map((child) => child.slug)
-      .sort()
-    return `refusing ${address}: audience change would differ from children ${children.join(', ')}; cleared by: re-parent those children or change their audience before re-running ${set} --audience ${input.audience}`
-  }
+  const childRefusal = childAudienceRefusal(input, address, set)
+  if (childRefusal) return childRefusal
   if (!input.parent) return null
   if (input.parent.deleted) {
     return `refusing ${address}: parent "${input.parent.slug}" is deleted; cleared by: restore the parent or re-run ${set} --no-parent`

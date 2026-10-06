@@ -6,7 +6,6 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
-import { documentTreeWriteRefusal } from '../doc/doc-tree-rules.ts'
 import {
   canonFindingsRefusal,
   consumeDocBody,
@@ -20,6 +19,8 @@ import {
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
+import { recordDocIso, recordDocRevisionRow, recordDocRow } from './record-doc-mapping.ts'
+import { recordTreeWriteRefusal } from './record-doc-tree.ts'
 
 export type RecordDoc = {
   id: string
@@ -136,8 +137,6 @@ export type RecordDocListInput = {
   acrossReadableSpaces: boolean
 }
 
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
-
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
   try {
@@ -147,50 +146,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
     })
   } finally {
     await client.close()
-  }
-}
-
-function docRow(row: Record<string, unknown>): RecordDoc {
-  return {
-    id: String(row.id),
-    spaceId: String(row.space_id),
-    spaceName: String(row.space_name),
-    scope: String(row.scope),
-    subject: row.subject == null ? null : String(row.subject),
-    owner: row.owner_user_id == null ? null : String(row.owner_user_id),
-    slug: String(row.slug),
-    title: String(row.title),
-    body: String(row.body),
-    delivery: String(row.delivery) as DocDelivery,
-    audience: String(row.audience) as DocAudience,
-    parentId: row.parent_id == null ? null : String(row.parent_id),
-    position: Number(row.position),
-    projectName: row.project_name == null ? null : String(row.project_name),
-    createdAt: iso(row.created_at)!,
-    updatedAt: iso(row.updated_at)!,
-    deletedAt: iso(row.deleted_at),
-  }
-}
-
-function revisionRow(row: Record<string, unknown>): RecordDocRevision {
-  return {
-    id: String(row.id),
-    docId: String(row.doc_id),
-    scope: String(row.scope),
-    subject: row.subject == null ? null : String(row.subject),
-    owner: row.owner_user_id == null ? null : String(row.owner_user_id),
-    slug: String(row.slug),
-    op: String(row.op) as DocRevisionOp,
-    title: String(row.title),
-    body: String(row.body),
-    delivery: String(row.delivery) as DocDelivery,
-    audience: String(row.audience) as DocAudience,
-    parentId: row.parent_id == null ? null : String(row.parent_id),
-    position: Number(row.position),
-    author: String(row.author),
-    reason: String(row.reason),
-    sessionId: row.session_id == null ? null : String(row.session_id),
-    at: iso(row.at)!,
   }
 }
 
@@ -253,7 +208,7 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
       ORDER BY d.updated_at, d.id
       LIMIT ${input.limit + 1}
     `
-    return rows.map((row: Record<string, unknown>) => docRow(row))
+    return rows.map((row: Record<string, unknown>) => recordDocRow(row))
   })
 }
 
@@ -266,7 +221,7 @@ export async function getRecordDoc(input: Tenant & { id: string }): Promise<Reco
       LEFT JOIN project p ON p.id=d.project_id
       WHERE d.id=${input.id}::uuid
     `
-    return rows[0] ? docRow(rows[0] as Record<string, unknown>) : null
+    return rows[0] ? recordDocRow(rows[0] as Record<string, unknown>) : null
   })
 }
 
@@ -281,7 +236,7 @@ export async function listRecordDocRevisions(
       WHERE space_id=${String(docs[0]!.space_id)}::uuid AND doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
     `
-    return rows.map((row: Record<string, unknown>) => revisionRow(row))
+    return rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row))
   })
 }
 

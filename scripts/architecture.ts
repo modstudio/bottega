@@ -84,6 +84,12 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
   ]),
+  module('orchestrator/src/doc/doc-tree-rules.ts', [], ['../../../shared/docs.ts']),
+  module('orchestrator/src/doc/local-doc-tree-service.ts', [
+    '../database/db.ts',
+    './doc-read-store.ts',
+    './doc-tree-rules.ts',
+  ], ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-owner.ts', [
     '../record/record-attribution.ts',
     '../record/record-auth.ts',
