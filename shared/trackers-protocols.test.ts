@@ -82,6 +82,9 @@ const project = (name: string, protocol?: string): TrackerProject => ({
         tracker: {
           protocol,
           ...(protocol === 'workspace-mcp' ? { team: 'Platform' } : {}),
+          ...(protocol === 'cursor-mcp'
+            ? { projectId: '019d9699-a223-729f-a032-50de9fdf4303' }
+            : {}),
           envPrefix: 'FIXTURE',
           openStatuses: ['todo'],
           states: { todo: 'open', done: 'done' },
@@ -160,6 +163,23 @@ describe('tracker create protocols', () => {
     ])
   })
 
+  test('cursor-mcp passes the registered project id to task.create', async () => {
+    const fixture = fixtureCaller()
+
+    await createTrackerTask(fixture.caller, project('stopal', 'cursor-mcp'), task)
+    expect(fixture.calls).toEqual([
+      {
+        name: 'task.create',
+        args: {
+          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+          title: 'Move the adapter',
+          description: 'Protocol-neutral body',
+          status: 'todo',
+        },
+      },
+    ])
+  })
+
   for (const [label, properties] of [
     ['both status fields', { team: {}, status: {}, task_status_id: {} }],
     ['neither status field', { summary: {}, description: {}, team: {} }],
@@ -191,10 +211,12 @@ describe('tracker create protocols', () => {
 
   test('cursor-mcp refuses the required field absent from the register', async () => {
     const fixture = fixtureCaller()
+    const missingProjectId = project('stopal', 'cursor-mcp')
+    delete missingProjectId.settings.tracker!.projectId
 
-    await expect(
-      createTrackerTask(fixture.caller, project('stopal', 'cursor-mcp'), task),
-    ).rejects.toThrow('cursor-mcp create refused: required projectId')
+    await expect(createTrackerTask(fixture.caller, missingProjectId, task)).rejects.toThrow(
+      `orch project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+    )
     expect(fixture.calls).toEqual([])
   })
 
@@ -356,10 +378,7 @@ describe('tracker capabilities', () => {
         project: project('external', protocol),
       })
       expect(capabilities).toEqual({
-        create:
-          protocol === 'array-mcp' || protocol === 'workspace-mcp'
-            ? { allowed: true }
-            : { allowed: false, reason: CURSOR_CREATE_REFUSAL },
+        create: { allowed: true },
         setStatus: { allowed: false, reason: TRACKER_STATUS_WRITE_REFUSAL },
         setTitle: { allowed: false, reason: TRACKER_TITLE_WRITE_REFUSAL },
         comment: { allowed: false, reason: TRACKER_COMMENT_WRITE_REFUSAL },
@@ -369,6 +388,18 @@ describe('tracker capabilities', () => {
       })
     })
   }
+
+  test('cursor-mcp create capability refuses without projectId and names the register remedy', () => {
+    const missingProjectId = project('stopal', 'cursor-mcp')
+    delete missingProjectId.settings.tracker!.projectId
+
+    expect(trackerCapabilities({ source: 'mcp', project: missingProjectId }).create).toEqual({
+      allowed: false,
+      reason:
+        `${CURSOR_CREATE_REFUSAL}; set it with: ` +
+        `orch project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+    })
+  })
 
   test('git and unknown MCP provenance are read-only with their own exact reasons', () => {
     const git = trackerCapabilities({

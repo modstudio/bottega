@@ -8,7 +8,11 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
   QUESTION_DELIVERY_OUTCOME_VALUES,
 } from './question-vocabulary.ts'
-import { refuseHubActionOverrides, trackerSettingsShape } from './trackers.ts'
+import {
+  refuseHubActionOverrides,
+  refuseNonCursorProjectId,
+  trackerSettingsShape,
+} from './trackers.ts'
 
 export const DocSearchOutputSchema = z
   .object({
@@ -174,7 +178,10 @@ export type FileRulingResult = z.infer<typeof FileRulingResultSchema>
 
 const OrchTrackerSettingsSchema = z
   .looseObject(trackerSettingsShape)
-  .superRefine(refuseHubActionOverrides)
+  .superRefine((tracker, context) => {
+    refuseHubActionOverrides(tracker, context)
+    refuseNonCursorProjectId(tracker, context)
+  })
 
 export const OrchProjectSchema = z
   .object({

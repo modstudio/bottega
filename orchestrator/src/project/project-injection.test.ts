@@ -88,6 +88,30 @@ describe('project workflow injection', () => {
     ])
   })
 
+  test('accepts a cursor-mcp project UUID and refuses invalid or cross-protocol values', () => {
+    expect(
+      validateProjectSettings({
+        tracker: {
+          protocol: 'cursor-mcp',
+          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+        },
+      }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({
+        tracker: { protocol: 'cursor-mcp', projectId: 'not-a-uuid' },
+      }),
+    ).toEqual([expect.stringContaining('tracker.projectId: Invalid UUID')])
+    expect(
+      validateProjectSettings({
+        tracker: {
+          protocol: 'workspace-mcp',
+          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+        },
+      }),
+    ).toEqual([expect.stringContaining('tracker.projectId: projectId is accepted only by')])
+  })
+
   test('accepts only MCP tool names and refuses every hub action override with a remedy', () => {
     expect(
       validateProjectSettings({

@@ -112,6 +112,7 @@ export const trackerSettingsShape = {
   kind: trackerNameSchema.optional(),
   protocol: z.string().trim().min(1).optional(),
   team: z.string().trim().min(1).optional(),
+  projectId: z.string().uuid().optional(),
   assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
@@ -131,6 +132,20 @@ export function refuseHubActionOverrides(
       code: 'custom',
       path: ['actions'],
       message: 'hub protocol accepts no action overrides; remove tracker.actions',
+    })
+  }
+}
+
+/** The cursor project id is accepted only by the adapter that owns it. */
+export function refuseNonCursorProjectId(
+  tracker: TrackerSettings,
+  context: z.core.$RefinementCtx<TrackerSettings>,
+): void {
+  if (tracker.projectId !== undefined && tracker.protocol !== 'cursor-mcp') {
+    context.addIssue({
+      code: 'custom',
+      path: ['projectId'],
+      message: 'projectId is accepted only by the cursor-mcp protocol; remove tracker.projectId',
     })
   }
 }
@@ -175,6 +190,9 @@ export const documentsRefusal = (protocol: string): string =>
 const workspaceTeamRefusal = (project: TrackerProject): string =>
   `workspace-mcp create refused: project ${project.name} tracker is missing team; ` +
   `set it with: orch project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
+const cursorProjectRefusal = (project: TrackerProject): string =>
+  `${CURSOR_CREATE_REFUSAL}; set it with: orch project set ${project.name} --settings ` +
+  `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
 
 const keyFormat = (project: TrackerProject | null): string | null => {
   const prefixes = project?.settings.keyPrefixes
@@ -239,10 +257,13 @@ export function trackerCapabilities({
   return {
     create:
       protocol === 'array-mcp' ||
-      (protocol === 'workspace-mcp' && Boolean(project.settings.tracker?.team))
+      (protocol === 'workspace-mcp' && Boolean(project.settings.tracker?.team)) ||
+      (protocol === 'cursor-mcp' && Boolean(project.settings.tracker?.projectId))
         ? allow
         : refuse(
-            protocol === 'workspace-mcp' ? workspaceTeamRefusal(project) : CURSOR_CREATE_REFUSAL,
+            protocol === 'workspace-mcp'
+              ? workspaceTeamRefusal(project)
+              : cursorProjectRefusal(project),
           ),
     setStatus: refuse(TRACKER_STATUS_WRITE_REFUSAL),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
@@ -795,9 +816,15 @@ export async function createTrackerTask(
     })
   }
   if (tracker.protocol === 'cursor-mcp') {
-    // Its tool schema requires projectId; the register carries no tracker field
-    // from which that UUID can be obtained.
-    throw new Error(CURSOR_CREATE_REFUSAL)
+    if (!tracker.projectId) {
+      throw new Error(cursorProjectRefusal(project))
+    }
+    return m.callTool(tracker.actions?.create ?? trackerWireAction('cursor-mcp', 'create'), {
+      projectId: tracker.projectId,
+      title: task.title,
+      description: task.body,
+      status: task.status,
+    })
   }
   if (tracker.protocol === 'array-mcp') {
     // The reflected task.create schema establishes these names; the MCP bridge
