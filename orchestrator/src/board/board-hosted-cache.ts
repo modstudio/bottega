@@ -285,7 +285,11 @@ function cachedRows(database: Database): Array<{ message: HostedBoardMessage; ta
   return loadCachedRows(database)
 }
 
-const hostedMessageIsLive = (message: HostedBoardMessage, clock: number): boolean =>
+export function cachedHostedBoardMessages(database: Database = db()): HostedBoardMessage[] {
+  return cachedRows(database).map((row) => row.message)
+}
+
+export const hostedMessageIsLive = (message: HostedBoardMessage, clock: number): boolean =>
   messageIsLive(
     {
       expiresAt: message.expiresAt ? Date.parse(message.expiresAt) : 0,

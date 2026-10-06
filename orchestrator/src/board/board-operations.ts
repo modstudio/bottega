@@ -41,6 +41,7 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
+import { boardThreadState } from './board-thread-policy.ts'
 import {
   acceptAnswer,
   askQuestion,
@@ -223,14 +224,12 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       withdrawnAt: row.withdrawn_at,
-      state:
-        row.accepted_reply_id !== null
-          ? 'accepted'
-          : row.withdrawn_at
-            ? 'withdrawn'
-            : row.expires_at && Date.parse(row.expires_at) <= clock
-              ? 'expired'
-              : 'open',
+      state: boardThreadState({
+        acceptedReplyId: row.accepted_reply_id,
+        withdrawnAt: row.withdrawn_at,
+        expiresAt: row.expires_at,
+        clock,
+      }),
       acceptedReplyId: stringId(row.accepted_reply_id),
       acceptedBy: row.accepted_by,
       acceptedAt: row.accepted_at,
@@ -260,10 +259,13 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
   }
 }
 
-function hostedStatus(value: HostedBoardStatus): BoardStatusResult {
+export function hostedBoardStatusResult(
+  message: HostedBoardMessage,
+  receipts: HostedBoardReceipt[] = [],
+): BoardStatusResult {
   return {
-    message: hostedMessage(value.message),
-    receipts: value.receipts.map((receipt: HostedBoardReceipt) => ({ ...receipt })),
+    message: hostedMessage(message),
+    receipts: receipts.map((receipt) => ({ ...receipt })),
     reached: null,
     acknowledged: null,
     unacknowledged: null,
@@ -500,7 +502,11 @@ export async function boardStatus(id: string, inputContext?: Context) {
   const mode = boardModeForId(id, undefined, c.env)
   const parsed = idForMode(id, mode)
   return mode === 'hosted'
-    ? hostedStatus(await hostedClient(c).getBoardStatus(parsed as string))
+    ? await hostedClient(c)
+        .getBoardStatus(parsed as string)
+        .then((status: HostedBoardStatus) =>
+          hostedBoardStatusResult(status.message, status.receipts),
+        )
     : localStatus(noticeStatus(parsed as number, c.env, c.clock), c.clock)
 }
 

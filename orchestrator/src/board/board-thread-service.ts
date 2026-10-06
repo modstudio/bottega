@@ -30,6 +30,7 @@ import {
 import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,
+  boardThreadState,
   noteFilingLeaseDecision,
   replyRefusal,
   threadParticipants,
@@ -179,13 +180,12 @@ export function readThread(id: number, env: Environment = process.env, clock = D
   const replies = db()
     .query('SELECT * FROM board_message WHERE thread_root_id=? ORDER BY created_at,id')
     .all(root.id) as MessageRow[]
-  const state = root.accepted_reply_id
-    ? 'accepted'
-    : root.withdrawn_at
-      ? 'withdrawn'
-      : root.expires_at && Date.parse(root.expires_at) <= clock
-        ? 'expired'
-        : 'open'
+  const state = boardThreadState({
+    acceptedReplyId: root.accepted_reply_id,
+    withdrawnAt: root.withdrawn_at,
+    expiresAt: root.expires_at,
+    clock,
+  })
   return {
     root: {
       id: root.id,

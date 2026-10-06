@@ -2,6 +2,20 @@ import type { Audience } from './board-policy.ts'
 
 export const BOARD_NOTE_FILING_LEASE_MS = 2 * 60 * 1_000
 
+export type BoardThreadState = 'open' | 'accepted' | 'withdrawn' | 'expired'
+
+export function boardThreadState(input: {
+  acceptedReplyId: string | number | null
+  withdrawnAt: string | null
+  expiresAt: string | null
+  clock: number
+}): BoardThreadState {
+  if (input.acceptedReplyId !== null) return 'accepted'
+  if (input.withdrawnAt !== null) return 'withdrawn'
+  if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'expired'
+  return 'open'
+}
+
 export type NoteFilingLeaseDecision =
   | { kind: 'take' }
   | { kind: 'filed'; noteId: string | number }
