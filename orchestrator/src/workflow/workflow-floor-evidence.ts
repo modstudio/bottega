@@ -251,13 +251,14 @@ function gatherRuling(
       {
         id: number
         answered_at: string | null
+        answerer_kind: string | null
         workflow_cursor_id: number | null
         workflow_step_ordinal: number | null
         workflow_step_slug: string | null
       },
       [number]
     >(
-      `SELECT id,answered_at,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
+      `SELECT id,answered_at,answerer_kind,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
          FROM question WHERE id=?`,
     )
     .get(id)
@@ -265,6 +266,7 @@ function gatherRuling(
   return {
     id,
     answered: row.answered_at !== null,
+    answeredByOperator: row.answerer_kind === 'operator',
     boundToCursor: row.workflow_cursor_id === cursorId,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
   }
@@ -614,6 +616,7 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
         cursor_id: number
         floor: string
         require_pull_request: number
+        operator_ruling: number
         expected_exit_code: number
         expected_status: string
         floor_deferrable: number
@@ -622,7 +625,7 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
       },
       [number]
     >(
-      `SELECT id,cursor_id,floor,require_pull_request,expected_exit_code,expected_status,floor_deferrable,
+      `SELECT id,cursor_id,floor,require_pull_request,operator_ruling,expected_exit_code,expected_status,floor_deferrable,
               satisfied_at,abandoned_at
          FROM workflow_obligation WHERE id=?`,
     )
@@ -636,6 +639,7 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
     expectedExitCode: row.expected_exit_code ?? DEFAULT_EXPECTED_EXIT_CODE,
     expectedStatus: row.expected_status ?? DEFAULT_EXPECTED_STATUS,
     requirePullRequest: row.require_pull_request === 1,
+    operatorRuling: row.operator_ruling === 1,
   }
   return {
     id,

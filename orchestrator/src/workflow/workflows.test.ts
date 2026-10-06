@@ -255,10 +255,10 @@ describe('workflow versions and project composition', () => {
   })
 
   test.each([
-    ['trunk', [{ name: 'production', branch: 'production' }], 'review'],
-    ['trunk', [], 'done'],
-    ['production', [{ name: 'production', branch: 'production' }], 'done'],
-  ] as const)('ship-to %s resolves close state %s', (level, rungs, expected) => {
+    ['trunk', [{ name: 'production', branch: 'production' }], 'review', 'review'],
+    ['trunk', [], 'done', 'done'],
+    ['production', [{ name: 'production', branch: 'production' }], 'done', 'done'],
+  ] as const)('ship-to %s resolves close action and state', (level, rungs, action, state) => {
     const d = database()
     publishShipToFixture(d)
     d.query('UPDATE project SET settings=? WHERE name=?').run(
@@ -281,10 +281,40 @@ describe('workflow versions and project composition', () => {
       autonomy,
     )
 
-    expect(composed.facts.shipTo!.closeState).toBe(expected)
-    expect(composed.steps[0]!.expectedStatus).toBe(expected)
-    expect(served.facts.shipTo!.closeState).toBe(expected)
-    expect(served.expectedStatus).toBe(expected)
+    expect(composed.facts.shipTo).toMatchObject({ closeAction: action, closeState: state })
+    expect(composed.steps[0]!.expectedStatus).toBe(state)
+    expect(served.facts.shipTo).toMatchObject({ closeAction: action, closeState: state })
+    expect(served.expectedStatus).toBe(state)
+  })
+
+  test('a project with a remaining rung and no review state composes and asks', () => {
+    const d = database()
+    publishShipToFixture(d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+        release,
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+    const autonomy = shipToAutonomy('trunk')
+
+    const composed = composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy)
+    const served = getWorkflowStep(
+      'ship-to-fixture',
+      'fixture',
+      'ship-to-fixture',
+      {},
+      d,
+      {},
+      autonomy,
+    )
+
+    expect(composed.facts.shipTo).toMatchObject({ closeAction: 'ask', closeState: 'review' })
+    expect(composed.steps[0]!.expectedStatus).toBe('review')
+    expect(served.facts.shipTo).toMatchObject({ closeAction: 'ask', closeState: 'review' })
+    expect(served.expectedStatus).toBe('review')
   })
 
   test('a project without release settings composes a step needing ship-to', () => {

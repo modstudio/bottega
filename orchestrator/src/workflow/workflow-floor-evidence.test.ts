@@ -181,8 +181,8 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
   const d = database()
   d.query(
     `INSERT INTO question
-      (workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
-     VALUES (1,'2026-09-01','Q?','workflow','2026-09-01','yes',1,'rebase')`,
+      (workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
+     VALUES (1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
   ).run()
   d.query(
     `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
@@ -192,6 +192,7 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
   expect(gathered.ruling).toEqual({
     id: 1,
     answered: true,
+    answeredByOperator: true,
     boundToCursor: true,
     boundToStep: true,
   })
@@ -607,4 +608,18 @@ test('an unavailable pull request read is gathered as unmerged', () => {
 
 test('a missing obligation is gathered as not-found without a floor', () => {
   expect(gather(database(), { satisfies: 99 }).satisfy).toEqual({ id: 99, found: false })
+})
+
+test('an obligation preserves its operator ruling requirement', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO workflow_obligation
+      (cursor_id,step_ordinal,step_slug,floor,operator_ruling,floor_deferrable,reason,created_at)
+     VALUES (1,1,'rebase','ruling',1,1,'operator decides','2026-09-01')`,
+  ).run()
+
+  expect(gather(d, { satisfies: 1 }).satisfy).toMatchObject({
+    found: true,
+    floor: { kind: 'ruling', operatorRuling: true },
+  })
 })

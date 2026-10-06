@@ -539,6 +539,7 @@ function applyFloorDecision(
       step.deferrable ?? [],
       step.expectedStatus,
       Boolean(step.requirePullRequest),
+      Boolean(step.operatorRuling),
     ),
     evidence: gathered,
     enforcement: row.enforcement ?? 'note-only',
@@ -560,9 +561,9 @@ function persistFloorClose(
     const inserted = d
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO workflow_obligation
-          (cursor_id,step_ordinal,step_slug,floor,require_pull_request,expected_exit_code,
-           expected_status,floor_deferrable,reason,session_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+          (cursor_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
+           expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         row.id,
@@ -570,6 +571,7 @@ function persistFloorClose(
         row.step_slug,
         decision.defer.floor,
         floor?.requirePullRequest ? 1 : 0,
+        floor?.operatorRuling ? 1 : 0,
         floor?.expectedExitCode ?? DEFAULT_EXPECTED_EXIT_CODE,
         floor?.expectedStatus ?? DEFAULT_EXPECTED_STATUS,
         floor?.deferrable ? 1 : 0,
@@ -671,6 +673,7 @@ function nextWorkflowStepImpl(
         composition.steps[row.ordinal]!.deferrable ?? [],
         composition.steps[row.ordinal]!.expectedStatus,
         Boolean(composition.steps[row.ordinal]!.requirePullRequest),
+        Boolean(composition.steps[row.ordinal]!.operatorRuling),
       ),
       at,
       d,

@@ -48,6 +48,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         ...(step.deferrable?.length ? { deferrable: step.deferrable } : {}),
         ...(step.expectedStatus ? { expectedStatus: step.expectedStatus } : {}),
         ...(step.requirePullRequest ? { requirePullRequest: true } : {}),
+        ...(step.operatorRuling ? { operatorRuling: true } : {}),
         job: step.job,
         autonomy: step.autonomy,
         needs: step.needs,
@@ -120,6 +121,15 @@ const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { expectedStatus: frontMatter.expectedStatus as string }
 
+const stepBooleanOptionsFrom = (frontMatter: Record<string, unknown>) => ({
+  ...(frontMatter.requirePullRequest === undefined
+    ? {}
+    : { requirePullRequest: frontMatter.requirePullRequest === true }),
+  ...(frontMatter.operatorRuling === undefined
+    ? {}
+    : { operatorRuling: frontMatter.operatorRuling === true }),
+})
+
 export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   const steps: CatalogueStep[] = []
   const workflows: WorkflowTreeStore['workflows'] = []
@@ -138,9 +148,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
           ? {}
           : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
         ...expectedStatusFrom(frontMatter),
-        ...(frontMatter.requirePullRequest === undefined
-          ? {}
-          : { requirePullRequest: frontMatter.requirePullRequest === true }),
+        ...stepBooleanOptionsFrom(frontMatter),
         job: frontMatter.job as string | null,
         autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
         needs: frontMatter.needs as CatalogueStep['needs'],

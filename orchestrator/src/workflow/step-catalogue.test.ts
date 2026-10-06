@@ -63,6 +63,17 @@ test('stored legacy steps normalize without revalidation', () => {
   ).toMatchObject({ autonomy: 'ask', floor: ['ruling'] })
 })
 
+test('operatorRuling requires a ruling floor', () => {
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'ship', floor: ['tracker-transition'], operatorRuling: true }],
+    }),
+  ).toContain('step "design" operatorRuling requires a ruling floor')
+  expect(
+    validateStepCatalogue({ steps: [{ ...step, stage: 'ship', operatorRuling: true }] }),
+  ).toEqual([])
+})
+
 test('orch do dispatches require a prompt or file', () => {
   const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
 

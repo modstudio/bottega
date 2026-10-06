@@ -447,10 +447,11 @@ function shipToFact(
   const tracker = needsCloseState
     ? (projectFacts.tracker as { states: Partial<Record<'review' | 'done', string>> })
     : undefined
-  if (tracker && decision.remaining.length && !tracker.states.review)
-    throw new Error(
-      `project ${project.name} tracker is missing workflow state "review"; set it with: orch project set ${project.name} --settings '{"tracker":{"states":{"<state-name>":"review"}}}'`,
-    )
+  const closeAction = !decision.remaining.length
+    ? 'done'
+    : tracker?.states.review
+      ? 'review'
+      : 'ask'
   return {
     shipTo: {
       level: autonomy.shipTo.value,
@@ -461,7 +462,15 @@ function shipToFact(
       reachText: decision.reach.join(', ') || 'none',
       remainingText: decision.remaining.join(', ') || 'none',
       ...(tracker
-        ? { closeState: decision.remaining.length ? tracker.states.review : tracker.states.done }
+        ? {
+            closeAction,
+            closeState:
+              closeAction === 'done'
+                ? tracker.states.done
+                : closeAction === 'review'
+                  ? tracker.states.review
+                  : 'review',
+          }
         : {}),
     },
   }
@@ -609,6 +618,7 @@ export function composeWorkflow(
               })
             : undefined,
           requirePullRequest: Boolean(step.requirePullRequest),
+          operatorRuling: Boolean(step.operatorRuling),
           needs: step.needs,
         }
       }) ?? [],

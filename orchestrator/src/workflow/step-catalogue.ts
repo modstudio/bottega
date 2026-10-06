@@ -23,6 +23,7 @@ export type CatalogueStep = {
   deferrable?: FloorKind[]
   expectedStatus?: string
   requirePullRequest?: boolean
+  operatorRuling?: boolean
   job: string | null
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage
@@ -206,6 +207,10 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   validateDeferrable(item, floor, errors)
   if (item.requirePullRequest !== undefined && typeof item.requirePullRequest !== 'boolean')
     errors.push(`step "${slug}" requirePullRequest must be a boolean`)
+  if (item.operatorRuling !== undefined && typeof item.operatorRuling !== 'boolean')
+    errors.push(`step "${slug}" operatorRuling must be a boolean`)
+  if (item.operatorRuling === true && !floor.includes('ruling'))
+    errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   if (
     item.expectedStatus !== undefined &&
     (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())

@@ -33,6 +33,7 @@ export type Floor = {
   expectedExitCode: number
   expectedStatus: string
   requirePullRequest: boolean
+  operatorRuling: boolean
 }
 
 export type ArtifactRef =
@@ -59,6 +60,7 @@ export type ValidatedEvidence = {
   ruling?: {
     id: number
     answered: boolean
+    answeredByOperator: boolean
     boundToCursor: boolean
     boundToStep: boolean
   }
@@ -146,6 +148,7 @@ export function catalogueFloors(
   deferrable: readonly string[] = [],
   expectedStatus = DEFAULT_EXPECTED_STATUS,
   requirePullRequest = false,
+  operatorRuling = false,
 ): Floor[] {
   return kinds.map((kind) => {
     if (!isFloorKind(kind)) throw new Error(`unknown floor kind "${kind}"`)
@@ -155,15 +158,23 @@ export function catalogueFloors(
       expectedExitCode: DEFAULT_EXPECTED_EXIT_CODE,
       expectedStatus,
       requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
+      operatorRuling: kind === 'ruling' && operatorRuling,
     }
   })
 }
 
-function rulingMet(evidence: ValidatedEvidence): boolean {
+function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const ruling = evidence.ruling
   const review = evidence.review
-  const question = Boolean(ruling?.answered && ruling.boundToCursor && ruling.boundToStep)
-  const triaged = Boolean(review?.allFindingsDisposed && review.allLensesGraded)
+  const question = Boolean(
+    ruling?.answered &&
+      ruling.boundToCursor &&
+      ruling.boundToStep &&
+      (!floor.operatorRuling || ruling.answeredByOperator),
+  )
+  const triaged = Boolean(
+    !floor.operatorRuling && review?.allFindingsDisposed && review.allLensesGraded,
+  )
   return question || triaged
 }
 
@@ -192,7 +203,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
 }
 
 function floorIsMet(floor: Floor, evidence: ValidatedEvidence): boolean {
-  if (floor.kind === 'ruling') return rulingMet(evidence)
+  if (floor.kind === 'ruling') return rulingMet(floor, evidence)
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact') return evidence.artifact?.exists === true
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
@@ -203,22 +214,28 @@ function trackerReadback(task: NonNullable<ValidatedEvidence['task']>): string {
   return `${task.key} reads back as ${task.status ?? 'unset'} (category ${task.statusCategory ?? 'unset'})`
 }
 
+function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
+  const pullRequest = floor.requirePullRequest ? ' with a merged pull request for the task key' : ''
+  return evidence.task
+    ? `; ${trackerReadback(evidence.task)}; expected ${floor.expectedStatus}${pullRequest}`
+    : ` reading back as ${floor.expectedStatus}${pullRequest}`
+}
+
+function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
+  if (floor.kind === 'ruling' && floor.operatorRuling)
+    return 'floor ruling is unmet: no operator answer on this step; record the question with `orch workflow await`; the operator answers it'
+  return (
+    `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
+    (floor.kind === 'command-exit'
+      ? ` with exit code ${floor.expectedExitCode}`
+      : floor.kind === 'tracker-transition'
+        ? trackerUnmetMessage(floor, evidence)
+        : '')
+  )
+}
+
 function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {
-  return floors
-    .map(
-      (floor) =>
-        `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
-        (floor.kind === 'command-exit'
-          ? ` with exit code ${floor.expectedExitCode}`
-          : floor.kind === 'tracker-transition'
-            ? evidence.task
-              ? `; ${trackerReadback(evidence.task)}; expected ${floor.expectedStatus}` +
-                (floor.requirePullRequest ? ' with a merged pull request for the task key' : '')
-              : ` reading back as ${floor.expectedStatus}` +
-                (floor.requirePullRequest ? ' with a merged pull request for the task key' : '')
-            : ''),
-    )
-    .join('; ')
+  return floors.map((floor) => floorUnmetMessage(floor, evidence)).join('; ')
 }
 
 function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
