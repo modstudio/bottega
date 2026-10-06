@@ -21,17 +21,16 @@ commit.
 3. `orch do` dispatches the work into a disposable worktree.
 4. `orch inbox` shows a worker's question, and `orch answer` records the ruling.
 5. `orch diff` shows the worker's actual changes.
-6. `orch do review-lens` dispatches the required review.
+6. `orch do review-lens` dispatches a review when required.
 7. `orch score` records the result and its fidelity to the specification.
 8. `orch pr create` opens the reviewed change for admission.
 
 ## What it commits to
 
 - Any frontier harness can hold the deciding role.
-- Vendor agents and local models can work through adapters and earn jobs through
-  measured results.
-- Trackers connect through MCP and map onto one lifecycle.
-- Platform-specific behavior stays behind adapters.
+- Any worker can join through an adapter and earn jobs through measured results.
+- Any tracker can connect through MCP and map onto one lifecycle.
+- The core assumes no platform; platform-specific behavior stays behind adapters.
 - Task and document state lives outside the harness.
 - A task runs in isolation and never touches the developer's own data.
 - Setup asks for decisions and never guesses.
@@ -80,14 +79,14 @@ flowchart LR
     classDef e fill:#4a3520,stroke:#d99a4a,color:#faf0e8
 ```
 
-Everything that touches a disk stays on the machine: worktrees, worker
-processes, the gate and run artifacts. On a hosted-bound install, evidence such
-as runs, verdicts, reviews and landings is written locally first and reaches the
-hosted record through an idempotent outbox. Shared state such as tasks and the
-doc store is written through the hosted service, with the local store as a read
-cache. Each project belongs to the space declared by `settings.space`. When a
-hosted-bound project has no declared space, it belongs to the identity's active
-space.
+Execution on the developer's machine stays there: worktrees, worker processes,
+the gate and run artifacts. On a hosted-bound install, evidence such as runs,
+verdicts, reviews and landings is written locally first and reaches the hosted
+record through an idempotent outbox. Shared state such as tasks and the doc
+store is written through the hosted service, with the local store as a read
+cache. In hosted mode, each project belongs to the space declared by
+`settings.space`. When a hosted-bound project has no declared space, it belongs
+to the identity's active space.
 
 `hub` reaches `orch` through its binary rather than its database. A database
 shared between two concerns makes the concerns one.
