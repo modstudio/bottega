@@ -330,6 +330,44 @@ test('withdrawing a row after an unexpected refusal drops its pending ledger row
   ).toEqual({ value: '1' })
 })
 
+test('withdrawing a pending root drops its reply from the rerun', async () => {
+  presence()
+  const question = askQuestion(
+    { audience: 'session:reader', title: 'blocked thread', body: 'blocked question' },
+    {},
+    NOW,
+  )
+  replyToThread(question.id, 'blocked reply', {}, NOW + 1)
+  let postAttempts = 0
+  let replyAttempts = 0
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage() {
+      postAttempts++
+      throw new RecordApiRequestError('hosted policy rejected this row', 'refused')
+    },
+    async replyBoardMessage(rootId, input) {
+      replyAttempts++
+      return base.replyBoardMessage(rootId, input)
+    },
+  }
+
+  await expect(adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })).rejects.toThrow(
+    `withdraw local question ${question.id}`,
+  )
+  withdrawNotice(question.id, {}, NOW + 3)
+
+  const result = await adoptHostedBoard({ confirm: 0, clock: () => NOW + 4, client })
+
+  expect(result).toMatchObject({ status: 'adopted', uploaded: 0, refused: 0, remaining: 0 })
+  expect(postAttempts).toBe(1)
+  expect(replyAttempts).toBe(0)
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toEqual({ value: '1' })
+})
+
 test('a run-tied claim without a hosted run id stays live as a lasting refusal and does not block the mark', async () => {
   const run = db()
     .query(

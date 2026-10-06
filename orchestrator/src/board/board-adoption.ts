@@ -99,7 +99,7 @@ function candidateRows(
     if (row.kind !== 'notice' && row.kind !== 'question' && row.kind !== 'reply') return []
     const root = row.kind === 'reply' ? byId.get(row.thread_root_id!) : row
     const prior = recorded.get(`${row.kind}:${row.id}`)
-    const movedRoot = root && recorded.has(`${root.kind}:${root.id}`)
+    const movedRoot = root && recorded.get(`${root.kind}:${root.id}`)?.state === 'uploaded'
     const live =
       row.kind === 'reply' && movedRoot
         ? rowIsLive({ ...root, withdrawn_at: null }, clock, database)
