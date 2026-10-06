@@ -3,12 +3,15 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
+import { passingGateForCommit } from './gate-passed.ts'
 import { architectGateProcessExitCode, runArchitectGate } from './gate-run.ts'
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 let priorDepth: string | undefined
 let priorSession: string | undefined
+const headCommit = 'a'.repeat(40)
+const cleanGitState = () => ({ headCommit, porcelainPaths: [] })
 beforeEach(() => {
   priorDepth = process.env.ORCH_DEPTH
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -41,13 +44,35 @@ test('maps recorded gate exit codes to process exit codes', () => {
   expect(architectGateProcessExitCode(-1)).toBe(1)
 })
 
-test('inserts a finished architect row with a null run_id and no tooling paths', async () => {
+test('a gate that dirties the tree while it runs is not attributed to HEAD', async () => {
+  const d = database()
+  let ran = false
+  await runArchitectGate({
+    cwd: repositoryPath,
+    d,
+    gitState: () => ({ headCommit, porcelainPaths: ran ? [' M formatted.ts'] : [] }),
+    write: () => {},
+    runner: () => {
+      ran = true
+      return {
+        exitCode: 0,
+        output: '',
+        startedAt: '2026-09-01T00:00:00.000Z',
+        finishedAt: '2026-09-01T00:00:01.000Z',
+        elapsedMs: 1000,
+      }
+    },
+  })
+  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+})
+
+test('inserts a finished dirty-tree gate without attributing it to HEAD', async () => {
   const d = database()
   const chunks: string[] = []
   const result = await runArchitectGate({
     cwd: repositoryPath,
     d,
-    commit: 'abc',
+    gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
     write: (chunk) => chunks.push(chunk),
     runner: ({ write }) => {
       write('ok\n')
@@ -75,10 +100,11 @@ test('inserts a finished architect row with a null run_id and no tooling paths',
     finished_at: '2026-09-01T00:00:01.000Z',
     exit_code: 0,
     tooling_paths: '[]',
-    head_commit: 'abc',
+    head_commit: null,
     cwd: repositoryPath,
     output_artifact: null,
   })
+  expect(passingGateForCommit(headCommit, repositoryPath, d).gateId).toBeNull()
 })
 
 test('bounds the recorded tail', async () => {
@@ -87,7 +113,7 @@ test('bounds the recorded tail', async () => {
   await runArchitectGate({
     cwd: repositoryPath,
     d,
-    commit: 'abc',
+    gitState: cleanGitState,
     write: () => {},
     runner: () => ({
       exitCode: 1,
@@ -107,7 +133,7 @@ test('withholds secret-shaped output', async () => {
   await runArchitectGate({
     cwd: repositoryPath,
     d,
-    commit: 'abc',
+    gitState: cleanGitState,
     write: () => {},
     runner: () => ({
       exitCode: 0,
@@ -130,7 +156,6 @@ test('refuses a project without a registered gate', async () => {
     runArchitectGate({
       cwd: repositoryPath,
       d,
-      commit: 'abc',
       runner: () => {
         throw new Error('should not run')
       },

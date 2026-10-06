@@ -71,12 +71,12 @@ describe('importWorkflowTree', () => {
     ).toBe(production.definition.steps.find((step) => step.slug === 'lens')?.body)
   })
 
-  test('design records compose through orch-docs and array-mcp', () => {
+  test('sync docs composes through orch-docs and array-mcp', () => {
     const d = database()
     const root = fileURLToPath(new URL('../../..', import.meta.url))
     const imported = importWorkflowTree(
       parseWorkflowTree(collectWorkflowTree(root)),
-      'compose design records fixture',
+      'compose sync docs fixture',
       'test',
       d,
     )
@@ -105,7 +105,7 @@ describe('importWorkflowTree', () => {
       const step = getWorkflowStep(
         'ship',
         project,
-        'design-records',
+        'sync-docs',
         { key: 'DEV-945', branch: 'DEV-945-fixture', worktree: '/fixture' },
         d,
       )

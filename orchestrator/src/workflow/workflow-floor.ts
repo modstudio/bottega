@@ -9,6 +9,7 @@ export const floorKinds = [
 ] as const
 export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
+export type CommandEvidence = 'gate'
 
 export const floorGuidance = {
   ruling:
@@ -34,6 +35,7 @@ export type Floor = {
   expectedStatus: string
   requirePullRequest: boolean
   operatorRuling: boolean
+  commandEvidence?: CommandEvidence
 }
 
 export type ArtifactRef =
@@ -66,7 +68,13 @@ export type ValidatedEvidence = {
     boundToStep: boolean
   }
   review?: { id: number; allFindingsDisposed: boolean; allLensesGraded: boolean }
-  gate?: { id: number; finished: boolean; exitCode: number | null }
+  gate?: {
+    id: number
+    finished: boolean
+    exitCode: number | null
+    project: string | null
+    commit: string | null
+  }
   run?: { id: number; terminal: boolean; exitCode: number | null }
   probe?: { id: number; exitCode: number }
   exec?: {
@@ -85,6 +93,7 @@ export type ValidatedEvidence = {
   }
   deferReason?: string
   satisfy?: ValidatedSatisfy
+  tree?: { project: string; commit: string | null }
 }
 
 export type OpenObligation = {
@@ -152,6 +161,7 @@ export function catalogueFloors(
   expectedStatus = DEFAULT_EXPECTED_STATUS,
   requirePullRequest = false,
   operatorRuling = false,
+  commandEvidence?: CommandEvidence,
 ): Floor[] {
   return kinds.map((kind) => {
     if (!isFloorKind(kind)) throw new Error(`unknown floor kind "${kind}"`)
@@ -162,8 +172,27 @@ export function catalogueFloors(
       expectedStatus,
       requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
       operatorRuling: kind === 'ruling' && operatorRuling,
+      ...(kind === 'command-exit' && commandEvidence ? { commandEvidence } : {}),
     }
   })
+}
+
+export function catalogueFloorsFor(step: {
+  floor: readonly string[]
+  deferrable?: readonly string[]
+  expectedStatus?: string
+  requirePullRequest?: boolean
+  operatorRuling?: boolean
+  commandEvidence?: CommandEvidence
+}): Floor[] {
+  return catalogueFloors(
+    step.floor,
+    step.deferrable,
+    step.expectedStatus,
+    step.requirePullRequest,
+    step.operatorRuling,
+    step.commandEvidence,
+  )
 }
 
 function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
@@ -184,7 +213,16 @@ function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
 function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const gate = evidence.gate
   const run = evidence.run
-  const gateOk = Boolean(gate?.finished && gate.exitCode === floor.expectedExitCode)
+  const gateOk = Boolean(
+    gate?.finished &&
+      gate.exitCode === floor.expectedExitCode &&
+      (!floor.commandEvidence ||
+        (gate.project === evidence.tree?.project &&
+          gate.commit !== null &&
+          evidence.tree?.commit !== null &&
+          gate.commit === evidence.tree?.commit)),
+  )
+  if (floor.commandEvidence === 'gate') return gateOk
   const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)
   const probeOk = evidence.probe?.exitCode === floor.expectedExitCode
   const execOk = Boolean(
@@ -227,6 +265,10 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
 function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   if (floor.kind === 'ruling' && floor.operatorRuling)
     return 'floor ruling is unmet: no operator answer on this step; record the question with `orch workflow await`; the operator answers it'
+  if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate') {
+    const commit = evidence.tree?.commit ?? '<current tree commit>'
+    return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`orch gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
+  }
   return (
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
     (floor.kind === 'command-exit'
@@ -251,6 +293,16 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   if (!exec.createdAfterStepActivation)
     return `command-exit evidence exec:${exec.id} predates this step becoming active; ${remedy}`
   return null
+}
+
+function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
+  if (!evidence.ruling || !floors.some((floor) => floor.operatorRuling)) return null
+  return evidence.ruling.answered &&
+    evidence.ruling.answeredByOperator &&
+    evidence.ruling.boundToCursor &&
+    evidence.ruling.boundToStep
+    ? null
+    : 'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it'
 }
 
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
@@ -365,6 +417,8 @@ function finishOf(
 export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDecision {
   if (input.enforcement === 'note-only')
     return { action: 'allow', enforcement: 'note-only', refs: [] }
+  const rulingRefusal = operatorRulingBindingRefusal(input.floors, input.evidence)
+  if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (

@@ -35,4 +35,9 @@ export const gateModules: GateModule[] = [
     '../resources/main-stack.ts',
     './gate-decision.ts',
   ]),
+  module('orchestrator/src/gate/gate-passed.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../project/projects.ts',
+  ]),
 ]

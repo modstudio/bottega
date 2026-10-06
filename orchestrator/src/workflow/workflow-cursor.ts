@@ -40,11 +40,12 @@ import {
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
 import {
-  catalogueFloors,
+  catalogueFloorsFor,
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   decideFloorSatisfaction,
   type EnforcementMode,
+  type Floor,
   type FloorDecision,
   type OpenObligation,
 } from './workflow-floor.ts'
@@ -118,7 +119,6 @@ function findCursor(
   ) as CursorRow | null
 }
 
-/** The session that drove this cursor before the current one took it over, or null. */
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
 
@@ -526,13 +526,7 @@ function applyFloorDecision(
     d,
   })
   return decideFloorSatisfaction({
-    floors: catalogueFloors(
-      step.floor,
-      step.deferrable ?? [],
-      step.expectedStatus,
-      Boolean(step.requirePullRequest),
-      Boolean(step.operatorRuling),
-    ),
+    floors: catalogueFloorsFor(step),
     evidence: gathered,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
@@ -543,7 +537,7 @@ function applyFloorDecision(
 function persistFloorClose(
   row: CursorRow,
   decision: Extract<FloorDecision, { action: 'allow' }>,
-  floors: ReturnType<typeof catalogueFloors>,
+  floors: Floor[],
   at: string,
   d: Database,
 ): Pick<ClosedStep, 'evidence' | 'deferred' | 'satisfied'> {
@@ -657,19 +651,7 @@ function nextWorkflowStepImpl(
     note: note.trim(),
     at,
     ...(review ? { review: true as const } : {}),
-    ...persistFloorClose(
-      row,
-      floor,
-      catalogueFloors(
-        composition.steps[row.ordinal]!.floor,
-        composition.steps[row.ordinal]!.deferrable ?? [],
-        composition.steps[row.ordinal]!.expectedStatus,
-        Boolean(composition.steps[row.ordinal]!.requirePullRequest),
-        Boolean(composition.steps[row.ordinal]!.operatorRuling),
-      ),
-      at,
-      d,
-    ),
+    ...persistFloorClose(row, floor, catalogueFloorsFor(composition.steps[row.ordinal]!), at, d),
   })
   if (
     decision.action === 'finish' ||

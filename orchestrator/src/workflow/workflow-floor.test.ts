@@ -39,7 +39,10 @@ const answeredRuling: ValidatedEvidence = {
 const gradedReview: ValidatedEvidence = {
   review: { id: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
-const passingGate: ValidatedEvidence = { gate: { id: 2, finished: true, exitCode: 0 } }
+const passingGate: ValidatedEvidence = {
+  gate: { id: 2, finished: true, exitCode: 0, project: 'fixture', commit: 'abc' },
+  tree: { project: 'fixture', commit: 'abc' },
+}
 const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
@@ -111,6 +114,18 @@ test('an operator ruling floor requires a bound operator answer', () => {
   })
 })
 
+test('an agent ruling is refused when task evidence also meets an alternative floor', () => {
+  const decision = decide({
+    floors: [artifact, operatorRuling],
+    evidence: { ...presentArtifact, ...answeredRuling },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it',
+  })
+})
+
 test('an unbound or unanswered ruling does not satisfy', () => {
   expect(
     decide({
@@ -134,6 +149,33 @@ test('a finished gate with the expected exit satisfies command-exit', () => {
     action: 'allow',
     refs: [{ flag: '--gate', value: '2' }],
   })
+})
+
+test.each([
+  ['matching commit and zero exit', passingGate, true],
+  ['another commit', { ...passingGate, gate: { ...passingGate.gate!, commit: 'def' } }, false],
+  ['nonzero exit', { ...passingGate, gate: { ...passingGate.gate!, exitCode: 1 } }, false],
+  [
+    "another project's record",
+    { ...passingGate, gate: { ...passingGate.gate!, project: 'other' } },
+    false,
+  ],
+  [
+    'unknown gate and tree commits',
+    {
+      gate: { ...passingGate.gate!, commit: null },
+      tree: { ...passingGate.tree!, commit: null },
+    },
+    false,
+  ],
+  ['an exec artifact', { ...passingExec, tree: passingGate.tree }, false],
+] as const)('gate-only command evidence: %s', (_case, evidence, allowed) => {
+  const decision = decide({ floors: [{ ...commandExit, commandEvidence: 'gate' }], evidence })
+  expect(decision.action).toBe(allowed ? 'allow' : 'refuse')
+  if (!allowed && decision.action === 'refuse') {
+    expect(decision.message).toContain(`commit ${evidence.tree?.commit ?? '<current tree commit>'}`)
+    expect(decision.message).toContain('orch gate run')
+  }
 })
 
 test('a terminal run with the expected exit satisfies command-exit', () => {
@@ -229,13 +271,17 @@ test('a non-zero gate fails unless the floor states otherwise', () => {
   expect(
     decide({
       floors: [commandExit],
-      evidence: { gate: { id: 2, finished: true, exitCode: 1 } },
+      evidence: {
+        gate: { id: 2, finished: true, exitCode: 1, project: null, commit: null },
+      },
     }).action,
   ).toBe('refuse')
   expect(
     decide({
       floors: [{ ...commandExit, expectedExitCode: 1 }],
-      evidence: { gate: { id: 2, finished: true, exitCode: 1 } },
+      evidence: {
+        gate: { id: 2, finished: true, exitCode: 1, project: null, commit: null },
+      },
     }).action,
   ).toBe('allow')
 })
@@ -511,6 +557,9 @@ test('catalogueFloors marks deferrable kinds and pull-request tracker floors', (
   })
   expect(catalogueFloors(['ruling'], [], 'done', false, true)[0]).toMatchObject({
     operatorRuling: true,
+  })
+  expect(catalogueFloors(['command-exit'], [], 'done', false, false, 'gate')[0]).toMatchObject({
+    commandEvidence: 'gate',
   })
 })
 

@@ -19,7 +19,7 @@ import {
   releaseRecipeAllocationClaims,
   settleClaims,
 } from '../resources/resource-claims.ts'
-import { provisionWorktree } from '../worktree/worktree-provision.ts'
+import { type ProvisionSkip, provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
 import { composeProjectName } from './compose-provision-plan.ts'
@@ -659,6 +659,11 @@ export function trackedWorktreeAddArgv(input: {
   ]
 }
 
+/** Missing optional sources are expected; retain diagnostics for every other skip. */
+function reportedProvisionSkips(skipped: readonly ProvisionSkip[]): ProvisionSkip[] {
+  return skipped.filter((entry) => entry.reason !== 'missing source')
+}
+
 export function createTrackedRecipe(
   input: TrackedCreateInput,
   runStep: StepRunner = kernelRunStep,
@@ -708,7 +713,7 @@ export function createTrackedRecipe(
       prepared.recipe.provision ?? [],
       `tracked recipe "${snapshot.source.path}"`,
     )
-    for (const entry of skipped) {
+    for (const entry of reportedProvisionSkips(skipped)) {
       console.error(`orch: provision skipped "${entry.path}": ${entry.reason}`)
     }
   } catch (error) {

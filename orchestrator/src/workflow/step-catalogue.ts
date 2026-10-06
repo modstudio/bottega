@@ -12,7 +12,7 @@ import {
   autonomyValues,
 } from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
-import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
+import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`
@@ -25,6 +25,7 @@ export type CatalogueStep = {
   expectedStatus?: string
   requirePullRequest?: boolean
   operatorRuling?: boolean
+  commandEvidence?: CommandEvidence
   job: string | null
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage
@@ -213,11 +214,34 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     errors.push(`step "${slug}" operatorRuling must be a boolean`)
   if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
+  validateCommandEvidence(item, floor, errors)
   if (
     item.expectedStatus !== undefined &&
     (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
   )
     errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
+}
+
+function validateCommandEvidence(
+  item: Record<string, unknown>,
+  floor: string[],
+  errors: string[],
+): void {
+  const slug = String(item.slug ?? '')
+  if (item.commandEvidence !== undefined && item.commandEvidence !== 'gate')
+    errors.push(`step "${slug}" commandEvidence must be "gate"`)
+  if (
+    item.commandEvidence === 'gate' &&
+    !floor.includes('command-exit') &&
+    !floor.some(isFloorPlaceholder)
+  )
+    errors.push(`step "${slug}" commandEvidence requires a command-exit floor`)
+  if (
+    item.commandEvidence === 'gate' &&
+    Array.isArray(item.deferrable) &&
+    item.deferrable.includes('command-exit')
+  )
+    errors.push(`step "${slug}" cannot defer command-exit when commandEvidence is "gate"`)
 }
 
 const isFloorPlaceholder = (value: string): value is `{{${string}}}` =>

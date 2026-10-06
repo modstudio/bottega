@@ -17,6 +17,7 @@ import { db } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
+import { formatPassingGate, passingGateForCommit } from '../gate/gate-passed.ts'
 import { architectGateProcessExitCode, runArchitectGate } from '../gate/gate-run.ts'
 import { spawnsCommand } from '../health/spawn-commands.ts'
 import {
@@ -379,9 +380,8 @@ export function register(program: Command): void {
       cwd: process.cwd,
     }),
   )
-  program
-    .command('gate')
-    .description('run a project gate as the architect and record the execution')
+  const gate = program.command('gate').description('run or inspect recorded project gates')
+  gate
     .command('run')
     .description('run the registered project gate in this checkout and record a gate_execution row')
     .allowExcessArguments(false)
@@ -389,6 +389,15 @@ export function register(program: Command): void {
       const result = await runArchitectGate({ write: (chunk) => write(chunk) })
       log(String(result.id))
       presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
+    })
+  gate
+    .command('passed <commit>')
+    .description('exit zero when this project has a passing gate recorded for the exact commit')
+    .allowExcessArguments(false)
+    .action((commit) => {
+      const result = passingGateForCommit(commit)
+      log(formatPassingGate(result))
+      presentation.setExitCode(result.gateId === null ? 1 : 0)
     })
   program
     .command('probe <agent>')

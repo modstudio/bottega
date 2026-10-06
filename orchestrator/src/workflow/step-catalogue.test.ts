@@ -89,6 +89,32 @@ test('operatorRuling requires a ruling floor', () => {
   ).toContain('step "design" has invalid floor kind "prefix {{floor}}"')
 })
 
+test('commandEvidence gate requires a non-deferrable command-exit floor', () => {
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'ship', floor: ['command-exit'], commandEvidence: 'gate' }],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'ship', floor: ['ruling'], commandEvidence: 'gate' }],
+    }),
+  ).toContain('step "design" commandEvidence requires a command-exit floor')
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
+          floor: ['command-exit'],
+          deferrable: ['command-exit'],
+          commandEvidence: 'gate',
+        },
+      ],
+    }),
+  ).toContain('step "design" cannot defer command-exit when commandEvidence is "gate"')
+})
+
 test('orch do dispatches require a prompt or file', () => {
   const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
 
