@@ -132,7 +132,7 @@ const injectionSources = [
   'stack',
 ] as const
 export type InjectionSource = (typeof injectionSources)[number]
-export const workflowFactSources = [...injectionSources, 'ship-to'] as const
+export const workflowFactSources = [...injectionSources, 'ship-to', 'workflow-text'] as const
 export type WorkflowFactSource = (typeof workflowFactSources)[number]
 
 type InjectionValues<Project extends InjectableProject> = {

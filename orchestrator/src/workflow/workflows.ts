@@ -425,7 +425,9 @@ type WorkflowNeeds = {
 }
 type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
 const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
-  needs.filter((source): source is InjectionSource => source !== 'ship-to')
+  needs.filter(
+    (source): source is InjectionSource => source !== 'ship-to' && source !== 'workflow-text',
+  )
 
 function shipToFact(
   project: { name: string; settings: { release?: { rungs: { name: string }[] } } },

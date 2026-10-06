@@ -15,8 +15,10 @@ import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import {
+  cursorName,
   formatCursorOpened,
   formatCursorResumed,
+  shellWord,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
 import {
@@ -33,7 +35,7 @@ import {
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
-  type CursorValue,
+  cursorValue,
   decideCursorStart,
   decideCursorTransition,
 } from './workflow-cursor-transition.ts'
@@ -54,9 +56,8 @@ import {
 } from './workflow-floor-evidence.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
-
-export type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 
 type CursorRow = SelectableCursorRow & {
   workflow_version: number
@@ -77,18 +78,6 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
   instance: MCP_INSTANCE,
 })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
-
-const instanceOf = (key: string): string => (key ? '' : randomUUID())
-const shellWord = (value: string) =>
-  /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
-const cursorName = (slug: string, mode: string, key: string, capitalized = false) =>
-  `${capitalized ? 'Workflow' : 'workflow'} ${slug}${key ? ` for ${key}` : ` (${mode})`}`
-
-const cursorValue = (row: CursorRow): CursorValue => ({
-  ordinal: row.ordinal,
-  stepSlug: row.step_slug,
-  state: row.state,
-})
 
 function closeOpenWorkflowQuestion(
   cursorId: number,
@@ -140,7 +129,7 @@ function insertCursor(
   autonomy?: AutonomyResolution,
 ): CursorRow {
   const key = keyOf(composition.arguments)
-  const instance = instanceOf(key)
+  const instance = key ? '' : randomUUID()
   const at = nowIso()
   const existing = key
     ? findCursor(
@@ -413,11 +402,10 @@ function getWorkflowStepWithCursorImpl(
   )
   let { row } = prepared
   const { opensCursor, composition, requested, index, input } = prepared
-  const decision = decideCursorTransition(row ? cursorValue(row) : null, {
-    kind: 'serve',
-    ordinal: index,
-    slug: requested.slug,
-  })
+  const decision = decideCursorTransition(
+    row ? cursorValue(row.ordinal, row.step_slug, row.state) : null,
+    { kind: 'serve', ordinal: index, slug: requested.slug },
+  )
   refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = insertCursor(composition, context, d, autonomy)
@@ -429,14 +417,18 @@ function getWorkflowStepWithCursorImpl(
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
-  const served = getWorkflowStep(
-    slug,
-    project,
-    decision.slug,
-    input.effectiveArgs,
+  const served = withWorkflowTextFacts(
+    getWorkflowStep(
+      slug,
+      project,
+      decision.slug,
+      input.effectiveArgs,
+      d,
+      input.selection,
+      cursorAutonomy(row),
+    ),
+    row.id,
     d,
-    input.selection,
-    cursorAutonomy(row),
   )
   const openNotice = opensCursor
     ? formatCursorOpened({
@@ -636,7 +628,7 @@ function nextWorkflowStepImpl(
   }
   const composition = cursorComposition(row, d)
   const next = composition.steps[row.ordinal + 1] ?? null
-  const decision = decideCursorTransition(cursorValue(row), {
+  const decision = decideCursorTransition(cursorValue(row.ordinal, row.step_slug, row.state), {
     kind: 'next',
     total: composition.steps.length,
     nextSlug: next?.slug ?? null,
@@ -679,6 +671,11 @@ function nextWorkflowStepImpl(
       d,
     ),
   })
+  if (
+    decision.action === 'finish' ||
+    composition.steps[row.ordinal]!.needs.includes('workflow-text')
+  )
+    deleteWorkflowText(row.id, d)
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
@@ -705,18 +702,22 @@ function nextWorkflowStepImpl(
     row.id,
   )
   return renderWorkflowStep({
-    ...getWorkflowStep(
-      slug,
-      project,
-      decision.slug,
-      JSON.parse(row.args),
+    ...withWorkflowTextFacts(
+      getWorkflowStep(
+        slug,
+        project,
+        decision.slug,
+        JSON.parse(row.args),
+        d,
+        {
+          mode,
+          version: row.workflow_version,
+          catalogueVersion: row.catalogue_version,
+        },
+        cursorAutonomy(row),
+      ),
+      row.id,
       d,
-      {
-        mode,
-        version: row.workflow_version,
-        catalogueVersion: row.catalogue_version,
-      },
-      cursorAutonomy(row),
     ),
     cursor: row.id,
   })
@@ -784,6 +785,7 @@ function abandonSelectedWorkflowCursor(
         SET abandoned_at=?, abandoned_reason=?
       WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
   ).run(at, reason.trim(), row.id)
+  deleteWorkflowText(row.id, d)
   d.query(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,

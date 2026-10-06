@@ -17,6 +17,16 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
+export const cursorValue = (
+  ordinal: number,
+  stepSlug: string,
+  state: CursorState,
+): CursorValue => ({
+  ordinal,
+  stepSlug,
+  state,
+})
+
 /** Decide whether starting a cursor needs a new identity slot. */
 export function decideCursorStart(state: CursorState | null): CursorStartDecision {
   if (state === 'done' || state === 'abandoned') return 'retire'

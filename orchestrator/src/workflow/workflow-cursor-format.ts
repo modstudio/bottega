@@ -24,3 +24,9 @@ export function formatCursorResumed(input: {
 }): string {
   return `Cursor ${input.cursor} is already open at step ${input.step} ${input.stepSlug} for ${input.key}.`
 }
+
+export const shellWord = (value: string) =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
+
+export const cursorName = (slug: string, mode: string, key: string, capitalized = false) =>
+  `${capitalized ? 'Workflow' : 'workflow'} ${slug}${key ? ` for ${key}` : ` (${mode})`}`

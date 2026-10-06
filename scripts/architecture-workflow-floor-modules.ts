@@ -50,6 +50,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './workflow-floor.ts',
+    './workflow-text.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-text.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/workflow/workflow-probe.ts', [
     'bun:sqlite',
@@ -86,5 +93,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',
     './workflow-step-reference.ts',
+    './workflow-text.ts',
   ]),
 ]

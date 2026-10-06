@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { program } from '../cli/program.ts'
-import { db } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { commandOutcome, workflowCommand } from './workflow-commands.ts'
@@ -100,6 +100,54 @@ test('workflow exec requires a separator before the child command', async () => 
   expect(workflowCommand(['workflow', 'exec', '/usr/bin/true'], presentation([]))).rejects.toThrow(
     'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
   )
+})
+
+test('workflow attach reads text from stdin and prints its close reference', async () => {
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    process.env.CLAUDE_CODE_SESSION_ID = 'workflow-attach-cli'
+    const cursor = (
+      db()
+        .query<{ id: number }, [string | null]>(
+          `INSERT INTO workflow_cursor
+            (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+             workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+             total_steps,created_at,updated_at,enforcement)
+           VALUES ('fixture','attach-cli','default','','',?,1,1,'{}',0,'research','running',
+                   '[]',NULL,1,'2026-10-05','2026-10-05','floors') RETURNING id`,
+        )
+        .get(sessionId()) as { id: number }
+    ).id
+    const lines: string[] = []
+    await workflowCommand(['workflow', 'attach', '--cursor', String(cursor)], presentation(lines), {
+      stdinIsTTY: () => false,
+      stdinText: async () => 'research from stdin',
+    })
+    expect(lines[0]).toMatch(/^attached-text:\d+$/)
+    expect(
+      db()
+        .query(
+          'SELECT cursor_id,step_ordinal,step_slug,body FROM workflow_step_text WHERE cursor_id=?',
+        )
+        .get(cursor),
+    ).toEqual({
+      cursor_id: cursor,
+      step_ordinal: 1,
+      step_slug: 'research',
+      body: 'research from stdin',
+    })
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('workflow attach refuses text in an argument', async () => {
+  await expect(
+    workflowCommand(['workflow', 'attach', 'argument text', '--cursor', '1'], presentation([]), {
+      stdinIsTTY: () => true,
+    }),
+  ).rejects.toThrow('workflow text is not accepted as an argument')
 })
 
 test('Commander preserves an embedded separator in workflow exec child argv', async () => {

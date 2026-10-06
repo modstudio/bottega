@@ -21,6 +21,7 @@ import {
   parseArtifactRef,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type WorkflowEvidenceInput = {
   ruling?: number
@@ -528,10 +529,38 @@ function resolveArtifact(
   ref: ArtifactRef,
   raw: string,
   identity: CursorIdentity,
+  binding: { cursorId: number; stepOrdinal: number; stepSlug: string },
   d: Database,
   ports: FloorEvidencePorts,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
 ): { ref: string; exists: boolean } {
+  if (ref.kind === 'attached-text') {
+    const row = d
+      .query<
+        { id: number; cursor_id: number; step_ordinal: number; step_slug: string; body: string },
+        [number]
+      >(
+        `SELECT id,cursor_id,step_ordinal,step_slug,body
+           FROM workflow_step_text WHERE id=?`,
+      )
+      .get(ref.id)
+    const attachment: WorkflowTextRow | null = row
+      ? {
+          id: row.id,
+          cursorId: row.cursor_id,
+          stepOrdinal: row.step_ordinal,
+          stepSlug: row.step_slug,
+          body: row.body,
+        }
+      : null
+    return {
+      ref: 'attached-text',
+      exists: attachedTextReferenceMeetsFloor({
+        ...binding,
+        attachment,
+      }),
+    }
+  }
   if (ref.kind === 'id')
     return resolveNumericArtifact(
       ref.id,
@@ -718,6 +747,11 @@ export function gatherValidatedEvidence(input: {
       parsed,
       input.evidence.artifact.trim(),
       input.identity,
+      {
+        cursorId: input.cursorId,
+        stepOrdinal: input.stepOrdinal,
+        stepSlug: input.stepSlug,
+      },
       d,
       ports,
       resolveCheckout,

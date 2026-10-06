@@ -47,6 +47,10 @@ import { resolveWorkflowCursorMode } from '../workflow/workflow-cursor-selection
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
 import {
+  attachWorkflowTextByHandle,
+  WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
+} from '../workflow/workflow-text.ts'
+import {
   composeWorkflow,
   getWorkflowStep,
   listWorkflows,
@@ -473,6 +477,20 @@ export function createDocsMcpServer(): McpServer {
         ),
       )
     },
+  )
+
+  server.registerTool(
+    'attach_workflow_text',
+    {
+      description:
+        'Attach cursor-local working text to the current workflow step and return its evidence reference.',
+      inputSchema: z.object({
+        cursor: z.number().int().positive(),
+        text: z.string().min(1).max(WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES),
+      }),
+    },
+    async ({ cursor, text: body }) =>
+      text(attachWorkflowTextByHandle(cursor, body, mcpWorkflowCursorContext())),
   )
 
   server.registerTool(

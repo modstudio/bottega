@@ -495,6 +495,7 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
   expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
   expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: 8 })
+  expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
   expect(parseArtifactRef('nope')).toMatchObject({ error: expect.stringContaining('--artifact') })
 })
