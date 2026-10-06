@@ -77,6 +77,7 @@ export const BoardPostResultSchema = z.object({
   reached: z.number().int().nonnegative().nullable(),
   warning: z.string().nullable(),
 })
+export const BoardReplyResultSchema = BoardPostResultSchema.extend({ rootId: BoardIdSchema })
 export const BoardThreadResultSchema = z.object({
   root: BoardMessageSchema,
   replies: z.array(
@@ -111,6 +112,7 @@ export const BoardAcceptResultSchema = z.object({
   notePendingError: z.string().nullable(),
   retry: z.string().nullable(),
 })
+export const BoardWithdrawResultSchema = z.object({ withdrawn: BoardIdSchema })
 
 export type BoardListInput = {
   kind?: 'notice' | 'question'
@@ -119,6 +121,7 @@ export type BoardListInput = {
 }
 export type BoardPostInput = {
   audience: string
+  project?: string
   title: string
   body: string
   task?: string

@@ -1,8 +1,6 @@
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { classifyCaller } from '../caller-classification.ts'
 
-export const BOARD_DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000
-export const BOARD_DEFAULT_ACK_DEADLINE_MS = 60 * 60 * 1000
 export const BOARD_POST_RATE_LIMIT = 10
 export const BOARD_POST_RATE_WINDOW_MS = 10 * 60 * 1000
 export const BOARD_DUPLICATE_WINDOW_MS = 10 * 60 * 1000

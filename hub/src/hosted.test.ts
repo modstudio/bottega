@@ -27,6 +27,13 @@ describe('hostedRouter', () => {
   test('exposes the record and hosted context namespaces', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([
+      'board.accept',
+      'board.list',
+      'board.post',
+      'board.reply',
+      'board.status',
+      'board.thread',
+      'board.withdraw',
       'context.autonomy.clearStage',
       'context.autonomy.get',
       'context.autonomy.set',

@@ -1,4 +1,8 @@
 import { hostname } from 'node:os'
+import {
+  BOARD_DEFAULT_ACK_DEADLINE_MS,
+  BOARD_DEFAULT_EXPIRY_MS,
+} from '../../../shared/board-duration.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -7,8 +11,6 @@ import { boardContext, boardRunContext } from './board-context.ts'
 import {
   architectIdentity,
   audienceRefusal,
-  BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,

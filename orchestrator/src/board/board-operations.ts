@@ -1,5 +1,9 @@
 // concern: board-operation-routing
 /** Routes board operations to the local store or hosted record without mixing their writes. */
+import {
+  BOARD_DEFAULT_ACK_DEADLINE_MS,
+  BOARD_DEFAULT_EXPIRY_MS,
+} from '../../../shared/board-duration.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -26,13 +30,7 @@ import {
 } from './board-claim-service.ts'
 import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
-import {
-  architectIdentity,
-  BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
-  OPERATOR_READER,
-  parseAudience,
-} from './board-policy.ts'
+import { architectIdentity, OPERATOR_READER, parseAudience } from './board-policy.ts'
 import {
   acknowledgeNotice,
   noticeStatus,

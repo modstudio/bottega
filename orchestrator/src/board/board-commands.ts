@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import { claimBoardNotices, markBoardNoticesDelivered, readBoardNotices } from './board-delivery.ts'
@@ -16,17 +17,6 @@ import {
 import { listBoardOverview } from './board-overview.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
-
-function parseBoardDuration(value: string): number {
-  const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
-  if (!match) throw new Error(`invalid duration ${value}; use a positive value such as 30m or 1d`)
-  const amount = Number(match[1])
-  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error(`invalid duration ${value}`)
-  const factor = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[
-    match[2] as 'ms' | 's' | 'm' | 'h' | 'd'
-  ]
-  return amount * factor
-}
 
 const collect = (value: string, values: string[] = []) => [...values, value]
 const localBoardId = (value: string): number => {

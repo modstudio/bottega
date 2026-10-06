@@ -19,6 +19,7 @@ test('hosted mode exposes its hosted routes', () => {
       '/health',
       '/jobs',
       '/members',
+      '/messages',
       '/notes',
       '/projects',
       '/ratio',
@@ -35,7 +36,7 @@ test('hosted mode exposes its hosted routes', () => {
   expect(destinations('local').map((item) => item.to)).toContain('/flight')
   expect(destinations('local').map((item) => item.to)).toContain('/context')
   expect(destinations('local').map((item) => item.to)).toContain('/messages')
-  expect(hosted.map((item) => item.to)).not.toContain('/messages')
+  expect(hosted.map((item) => item.to)).toContain('/messages')
   expect(isHostedPath('/messages')).toBe(true)
   expect(isHostedPath('/messages/42')).toBe(true)
   expect(isHostedPath('/runs')).toBe(true)

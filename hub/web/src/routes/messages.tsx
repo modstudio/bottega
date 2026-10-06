@@ -28,16 +28,7 @@ type Filter = 'all' | 'notice' | 'question' | 'open'
 export const Route = createFileRoute('/messages')({ component: MessagesRoute })
 
 function MessagesRoute() {
-  return isHostedMode() ? <HostedMessagesPage /> : <LocalMessagesPage />
-}
-
-export function HostedMessagesPage() {
-  return (
-    <section>
-      <PageHeader title="Messages" />
-      <p>The messages page is not available in the hosted hub yet.</p>
-    </section>
-  )
+  return <LocalMessagesPage />
 }
 
 function listInput(filter: Filter, includeEnded: boolean) {
@@ -252,6 +243,7 @@ function NewMessageDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const [audience, setAudience] = useState('')
+  const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [ackRequired, setAckRequired] = useState(false)
@@ -261,6 +253,7 @@ function NewMessageDialog({
   const [paths, setPaths] = useState('')
   const [topics, setTopics] = useState('')
   const [result, setResult] = useState<string | null>(null)
+  const hosted = isHostedMode()
   const post = useMutation(
     trpc.board.post.mutationOptions({
       onSuccess: async (posted) => {
@@ -271,6 +264,7 @@ function NewMessageDialog({
               : `Message posted and reached ${posted.reached} ${posted.reached === 1 ? 'session' : 'sessions'}.`),
         )
         setAudience('')
+        setProject('')
         setTitle('')
         setBody('')
         setAckRequired(false)
@@ -288,6 +282,7 @@ function NewMessageDialog({
     setResult(null)
     post.mutate({
       audience,
+      ...(hosted && project ? { project } : {}),
       title,
       body,
       ...(task ? { task } : {}),
@@ -319,9 +314,19 @@ function NewMessageDialog({
       <div className="grid gap-4">
         <SettingBlock
           label="Audience"
-          hint="project:<name>, task:<KEY>, session:<id>, run:<id>, architects, or machine:this"
+          hint={
+            hosted
+              ? 'project:<name>, task:<KEY>, session:<id>, run:<id>, or architects'
+              : 'project:<name>, task:<KEY>, session:<id>, run:<id>, architects, or machine:this'
+          }
           control={<Input value={audience} onChange={(event) => setAudience(event.target.value)} />}
         />
+        {hosted ? (
+          <SettingBlock
+            label="Project (optional)"
+            control={<Input value={project} onChange={(event) => setProject(event.target.value)} />}
+          />
+        ) : null}
         <SettingBlock
           label="Title"
           control={<Input value={title} onChange={(event) => setTitle(event.target.value)} />}

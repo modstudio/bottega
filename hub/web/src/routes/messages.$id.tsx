@@ -3,8 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useRef, useState } from 'react'
 import { sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { HostedMessagesPage, originText } from '@/routes/messages'
+import { originText } from '@/routes/messages'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
@@ -21,9 +20,11 @@ type StatusReceipt = BoardOutputs['status']['receipts'][number]
 
 export function MessageReceipts({
   receipts,
+  reached,
   unacknowledged,
 }: {
   receipts: StatusReceipt[]
+  reached: number | null
   unacknowledged: string[]
 }) {
   return (
@@ -38,6 +39,8 @@ export function MessageReceipts({
             </li>
           ))}
         </ul>
+      ) : reached === null ? (
+        <p className="text-text-muted">Receipts are visible to the message's author only.</p>
       ) : (
         <p className="text-text-muted">This message reached no session.</p>
       )}
@@ -124,7 +127,6 @@ function MessageReplies({
 export const Route = createFileRoute('/messages/$id')({ component: MessageDetailRoute })
 
 function MessageDetailRoute() {
-  if (isHostedMode()) return <HostedMessagesPage />
   return <LocalMessageDetail />
 }
 
@@ -135,6 +137,7 @@ function LocalMessageDetail() {
   const status = useQuery(trpc.board.status.queryOptions({ id }))
   const [replyBody, setReplyBody] = useState('')
   const [withdrawing, setWithdrawing] = useState(false)
+  const [acceptedNotePendingError, setAcceptedNotePendingError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<{
     action: 'reply' | 'accept' | 'withdraw'
     message: string
@@ -155,7 +158,14 @@ function LocalMessageDetail() {
       },
     }),
   )
-  const accept = useMutation(trpc.board.accept.mutationOptions({ onSuccess: invalidate }))
+  const accept = useMutation(
+    trpc.board.accept.mutationOptions({
+      onSuccess: async (result) => {
+        setAcceptedNotePendingError(result.notePendingError)
+        await invalidate()
+      },
+    }),
+  )
   const withdraw = useMutation(
     trpc.board.withdraw.mutationOptions({
       onSuccess: async () => {
@@ -233,7 +243,11 @@ function LocalMessageDetail() {
           <pre className="whitespace-pre-wrap font-sans">{root.body ?? ''}</pre>
         </blockquote>
       </FieldSection>
-      <MessageReceipts receipts={receipts} unacknowledged={status.data?.unacknowledged ?? []} />
+      <MessageReceipts
+        receipts={receipts}
+        reached={status.data?.reached ?? null}
+        unacknowledged={status.data?.unacknowledged ?? []}
+      />
       <MessageReplies
         root={root}
         replies={replies}
@@ -248,6 +262,12 @@ function LocalMessageDetail() {
           runAction('accept', (onError) => accept.mutate({ questionId: id, replyId }, { onError }))
         }
       />
+      {acceptedNotePendingError ? (
+        <p data-tone="warning" className="mt-3 text-status-text">
+          The answer is accepted and its note has not been filed yet:{' '}
+          <q>{acceptedNotePendingError}</q>
+        </p>
+      ) : null}
       {actionError && actionError.action !== 'withdraw' ? (
         <p data-tone="error" className="mt-3 text-status-text">
           {actionError.message}

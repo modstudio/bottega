@@ -33,7 +33,7 @@ const quality = z.enum(['wrong', 'mixed', 'right'])
 const fidelity = z.enum(['drifted', 'partial', 'faithful'])
 const HOSTED_STARTED_AT = new Date().toISOString()
 
-function recordClient(ctx: Context) {
+export function recordClient(ctx: Context) {
   const baseUrl = process.env.HUB_RECORD_API_URL
   if (!baseUrl) {
     throw new TRPCError({

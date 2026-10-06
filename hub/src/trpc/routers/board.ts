@@ -35,6 +35,7 @@ async function call<T>(operation: () => Promise<T>): Promise<T> {
 
 const postInput = z.object({
   audience: z.string(),
+  project: z.string().optional(),
   title: z.string().trim().min(1),
   body: z.string().trim().min(1),
   task: z.string().optional(),
@@ -61,7 +62,10 @@ export const boardRouter = t.router({
   status: t.procedure
     .input(z.object({ id: boardId }))
     .query(({ input }) => call(() => boardStatus(input.id))),
-  post: t.procedure.input(postInput).mutation(({ input }) => call(() => boardPost(input))),
+  post: t.procedure.input(postInput).mutation(({ input }) => {
+    const { project: _project, ...localInput } = input
+    return call(() => boardPost(localInput))
+  }),
   reply: t.procedure
     .input(z.object({ id: boardId, body: z.string().trim().min(1) }))
     .mutation(({ input }) => call(() => boardReply(input))),
