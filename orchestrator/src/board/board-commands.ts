@@ -13,6 +13,7 @@ import {
   boardThread,
   boardWithdraw,
 } from './board-operations.ts'
+import { listBoardOverview } from './board-overview.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 
@@ -69,6 +70,26 @@ export function registerBoardCommands(program: Command): void {
   board.command('presence').action(() => {
     recordPresence()
   })
+  board
+    .command('list')
+    .option('--kind <kind>', 'limit to notice or question', (value: string) => {
+      if (value !== 'notice' && value !== 'question')
+        throw new Error('--kind must be notice or question')
+      return value
+    })
+    .option('--open', 'list unanswered questions only')
+    .option('--include-ended', 'include withdrawn and expired roots')
+    .action(async (options) => {
+      console.log(
+        JSON.stringify(
+          await listBoardOverview({
+            kind: options.kind,
+            open: Boolean(options.open),
+            includeEnded: Boolean(options.includeEnded),
+          }),
+        ),
+      )
+    })
   board
     .command('post')
     .requiredOption('--audience <expr>')

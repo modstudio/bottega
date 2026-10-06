@@ -48,6 +48,17 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-service.ts',
   ]),
+  module('orchestrator/src/board/board-overview.ts', [
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    '../record/record-board-contract.ts',
+    './board-delivery.ts',
+    './board-hosted-cache.ts',
+    './board-operations.ts',
+    './board-policy.ts',
+    './board-store.ts',
+    './board-thread-policy.ts',
+  ]),
   module('orchestrator/src/board/board-operations.ts', [
     '../../../shared/record/schema.ts',
     '../database/db.ts',
@@ -63,6 +74,7 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-service.ts',
     './board-store.ts',
+    './board-thread-policy.ts',
     './board-thread-service.ts',
   ]),
   module('orchestrator/src/board/board-claim-policy.ts', [
@@ -135,6 +147,7 @@ export const boardModules: BoardModule[] = [
     './board-adoption.ts',
     './board-claim-commands.ts',
     './board-operations.ts',
+    './board-overview.ts',
     './board-delivery.ts',
     './board-service.ts',
     './board-suggestions.ts',

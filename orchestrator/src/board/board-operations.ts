@@ -41,6 +41,7 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
+import { boardThreadState } from './board-thread-policy.ts'
 import {
   acceptAnswer,
   askQuestion,
@@ -223,14 +224,12 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       withdrawnAt: row.withdrawn_at,
-      state:
-        row.accepted_reply_id !== null
-          ? 'accepted'
-          : row.withdrawn_at
-            ? 'withdrawn'
-            : row.expires_at && Date.parse(row.expires_at) <= clock
-              ? 'expired'
-              : 'open',
+      state: boardThreadState({
+        acceptedReplyId: row.accepted_reply_id,
+        withdrawnAt: row.withdrawn_at,
+        expiresAt: row.expires_at,
+        clock,
+      }),
       acceptedReplyId: stringId(row.accepted_reply_id),
       acceptedBy: row.accepted_by,
       acceptedAt: row.accepted_at,
