@@ -1,10 +1,33 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { registerBoardTools } from './mcp-board-tools.ts'
+
+let identityKeys: string[] = []
+let identityEnvironment: Record<string, string | undefined> = {}
+
+beforeEach(() => {
+  identityKeys = [
+    ...Object.keys(process.env).filter((key) => /(?:SESSION_ID|THREAD_ID)$/.test(key)),
+    'CLAUDE_CODE_SESSION_ID',
+    'ORCH_RUN_ID',
+    'ORCH_DEPTH',
+  ]
+  identityEnvironment = Object.fromEntries(identityKeys.map((key) => [key, process.env[key]]))
+  for (const key of identityKeys) delete process.env[key]
+  process.env.CLAUDE_CODE_SESSION_ID = 'mcp-board-reader'
+})
+
+afterEach(() => {
+  for (const key of identityKeys) {
+    const value = identityEnvironment[key]
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
 
 async function withBoardClient<T>(run: (client: Client) => Promise<T>): Promise<T> {
   const server = new McpServer({ name: 'orch-board-test', version: '1.0.0' })
@@ -58,28 +81,17 @@ test('board_post MCP schema mirrors the title size ceiling before service storag
 })
 
 test('board_read MCP result is the delivery envelope with one normalized notice shape', async () => {
-  const posted = postNotice(
-    { audience: 'operator', title: 'MCP read shape', body: 'Read through the envelope.' },
-    {},
-  )
-  const identityKeys = [
-    'CLAUDE_CODE_SESSION_ID',
-    'CODEX_SESSION_ID',
-    'CODEX_THREAD_ID',
-    'ORCH_RUN_ID',
-    'ORCH_DEPTH',
-  ] as const
-  const identity = Object.fromEntries(identityKeys.map((key) => [key, process.env[key]]))
-  for (const key of identityKeys) delete process.env[key]
+  db()
+    .query("INSERT OR IGNORE INTO project(name,path,settings) VALUES ('mcp-board',?,'{}')")
+    .run(process.cwd())
+  const posted = postNotice({
+    audience: 'session:mcp-board-reader',
+    title: 'MCP read shape',
+    body: 'Read through the envelope.',
+  })
   const result = await withBoardClient((client) =>
     client.callTool({ name: 'board_read', arguments: {} }),
-  ).finally(() => {
-    for (const key of identityKeys) {
-      const value = identity[key]
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
-  })
+  )
   const parsed = JSON.parse((result.content as { type: 'text'; text: string }[])[0]!.text)
   expect(parsed).toEqual({
     notices: [
