@@ -54,7 +54,7 @@ type DispatchPresentation = {
   readPrompt(): Promise<string>
   validateSchema(path: string): unknown
   warnCallerDrift(cwd: string, baseRef?: string): void
-  warnTaskBranchBypass(cwd: string, key: string | null): void
+  warnTaskBranchBypass(cwd: string, key: string | null, base: string | undefined): void
   resolveTaskBranchForDispatch(
     cwd: string,
     key: string,
@@ -63,7 +63,8 @@ type DispatchPresentation = {
   contractConflicts(prompt: string): { line: number; text: string }[]
   warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: number): void
   checkoutHasUncommittedWork(cwd: string): boolean
-  resolveBase(cwd: string, base: string): unknown
+  resolveBase(cwd: string, base: string): string
+  isWorktreeRelativeRef(ref: string): boolean
   implicitReviewWarning(cwd: string): string
   resolveCallerCheckout(cwd?: string): {
     callerCwd: string
@@ -75,6 +76,16 @@ type DispatchPresentation = {
   recordRunWarning(runId: number, warning: string): void
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
+}
+
+export function resolveDispatchBase(
+  cwd: string,
+  base: string,
+  resolve: (cwd: string, base: string) => string,
+  isWorktreeRelative: (ref: string) => boolean,
+): string {
+  const resolved = resolve(cwd, base)
+  return isWorktreeRelative(base) ? resolved : base
 }
 
 function taskBranchBypassWarningKey(
@@ -219,6 +230,7 @@ export async function dispatchCommand(
     warnImplementContractConflicts,
     checkoutHasUncommittedWork,
     resolveBase,
+    isWorktreeRelativeRef,
     implicitReviewWarning,
     resolveCallerCheckout,
     resolveDispatchOptions,
@@ -250,13 +262,14 @@ export async function dispatchCommand(
   assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   // Project-required inputs are knowable before the prompt is read. Checking
   // them afterwards made a missing key pay for stdin and run setup first.
-  const base = flag('base')
+  const requestedBase = flag('base')
+  let base = requestedBase
   const reviewRef = flag('review')
-  if (base) {
+  if (requestedBase) {
     if (jobName !== 'implement' && jobName !== 'fix') {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
-    resolveBase(callerCwd, base)
+    base = resolveDispatchBase(callerCwd, requestedBase, resolveBase, isWorktreeRelativeRef)
   }
   const seed = preflight(
     jobName,
@@ -270,6 +283,8 @@ export async function dispatchCommand(
     reviewRef,
     has('carry'),
     explicitRepo,
+    false,
+    Boolean(requestedCwd),
   )
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
   const taskKeyWarning = await taskKeyWarningForDispatch(
@@ -289,6 +304,7 @@ export async function dispatchCommand(
   warnTaskBranchBypass(
     callerCwd,
     taskBranchBypassWarningKey(base, Boolean(requested.needs.writesRepo), flag('key')),
+    base,
   )
   const resolvedTaskBranch = resolveTaskBranchReuse(
     {

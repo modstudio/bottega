@@ -111,6 +111,7 @@ function assertImplicitReviewTarget(input: {
   hasResolvedReviewTarget: boolean
   rowAlreadyReserved: boolean
   carry: boolean
+  callerChoseCwd: boolean
 }): void {
   if (
     !input.findings ||
@@ -121,15 +122,17 @@ function assertImplicitReviewTarget(input: {
   ) {
     return
   }
-  const refusal = implicitReviewRefusal(
-    measureImplicitReviewTarget(input.cwd, input.carry) ?? {
+  const refusal = implicitReviewRefusal({
+    ...(measureImplicitReviewTarget(input.cwd, input.carry) ?? {
       changedPathCount: null,
       carry: input.carry,
       trunk: '',
       base: '',
       head: '',
-    },
-  )
+      measuredCwd: input.cwd,
+    }),
+    callerChoseCwd: input.callerChoseCwd,
+  })
   if (refusal) throw new Error(refusal)
 }
 
@@ -180,6 +183,7 @@ export function preflight(
   carry = false,
   repo?: string,
   hasResolvedReviewTarget = false,
+  callerChoseCwd = false,
 ): string | undefined {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
@@ -219,6 +223,7 @@ export function preflight(
     hasResolvedReviewTarget,
     rowAlreadyReserved: seedAlreadyValidated,
     carry,
+    callerChoseCwd,
   })
   const repoRoot = repoRootOf(cwd)
   if (jobName === 'review-lens' && repoRoot === null) {

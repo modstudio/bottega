@@ -57,10 +57,29 @@ describe('review target', () => {
         trunk: 'main',
         base: '1234567890abcdef',
         head: 'abcdef1234567890',
+        measuredCwd: '/tmp/main-checkout',
+        callerChoseCwd: false,
       }),
     ).toBe(
       'refused: implicit review target 12345678..abcdef12 against main has no changed paths. Pass --review <branch under review>, or --cwd <worktree of the change>, or --carry for uncommitted work. Prompt text does not select the artifact.',
     )
+  })
+
+  test('an explicitly selected cwd is named and is not offered as a remedy', () => {
+    const refusal = implicitReviewRefusal({
+      changedPathCount: 0,
+      carry: false,
+      trunk: 'main',
+      base: '1234567890abcdef',
+      head: 'abcdef1234567890',
+      measuredCwd: '/tmp/change-tree',
+      callerChoseCwd: true,
+    })
+
+    expect(refusal).toContain('/tmp/change-tree')
+    expect(refusal).not.toContain('--cwd <worktree of the change>')
+    expect(refusal).toContain('--review <branch under review>')
+    expect(refusal).toContain('--carry for uncommitted work')
   })
 
   test('allows changed and unmeasurable implicit targets, including carried changes', () => {
@@ -69,6 +88,8 @@ describe('review target', () => {
       trunk: 'main',
       base: 'base',
       head: 'head',
+      measuredCwd: '/tmp/main-checkout',
+      callerChoseCwd: false,
     }
     expect(implicitReviewRefusal({ ...target, changedPathCount: 1 })).toBeNull()
     expect(implicitReviewRefusal({ ...target, carry: true, changedPathCount: 1 })).toBeNull()
