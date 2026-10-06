@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { dir } from '../../test/preload.ts'
 
@@ -7,9 +7,15 @@ const sourceHook = resolve(import.meta.dir, '../../hooks/no-attribution.py')
 const sourceMarkers = resolve(import.meta.dir, '../../../shared/attribution-markers.json')
 const fixturePath = join(import.meta.dir, 'fixtures/attribution-cases.json')
 const fixtureRunner = resolve(import.meta.dir, '../../test/no-attribution-fixture.py')
+const fixtureRoots: string[] = []
+
+afterEach(() => {
+  for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 function layout(marker: 'valid' | 'absent' | 'unreadable' | 'malformed' = 'valid') {
   const root = mkdtempSync(join(dir, 'attribution-hook-'))
+  fixtureRoots.push(root)
   const hook = join(root, 'orchestrator', 'hooks', 'no-attribution.py')
   const markerFile = join(root, 'shared', 'attribution-markers.json')
   mkdirSync(join(hook, '..'), { recursive: true })
