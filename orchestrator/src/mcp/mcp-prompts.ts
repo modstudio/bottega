@@ -41,13 +41,13 @@ function bindingRefusal(definition: WorkflowDefinition, token: string): string {
 
 type PromptSlot = 'mode' | 'project' | 'autonomy'
 
-function promptAssignment(token: string, slot: PromptSlot, argumentNames: Set<string>) {
+// Neither mode nor project is an autonomy key, so either name is an assignment in every slot.
+function promptAssignment(token: string, argumentNames: Set<string>) {
   const separator = token.indexOf('=')
   if (separator < 1) return null
   const name = token.slice(0, separator)
   const value = token.slice(separator + 1)
-  if (argumentNames.has(name)) return { name, value }
-  if (slot !== 'autonomy' && (name === 'mode' || name === 'project')) return { name, value }
+  if (argumentNames.has(name) || name === 'mode' || name === 'project') return { name, value }
   return null
 }
 
@@ -55,12 +55,11 @@ function placeWorkflowPromptToken(
   definition: WorkflowDefinition,
   bound: BoundWorkflowPromptArguments,
   token: string,
-  slot: PromptSlot,
   modeNames: Set<string>,
   argumentNames: Set<string>,
   isProject: (name: string) => boolean,
 ): string | null {
-  const named = promptAssignment(token, slot, argumentNames)
+  const named = promptAssignment(token, argumentNames)
   let name: string
   let value: string
   if (named) {
@@ -101,19 +100,11 @@ function bindPromptSlot(
   if (slot === 'mode' && bound.mode === token) return null
   if (slot === 'project' && bound.project === token) return null
   // An autonomy override is always key=value, so a bare token there is a misplaced one.
-  if (slot === 'autonomy' && token.includes('=') && !promptAssignment(token, slot, argumentNames)) {
+  if (slot === 'autonomy' && token.includes('=') && !promptAssignment(token, argumentNames)) {
     bound.autonomy = token
     return null
   }
-  return placeWorkflowPromptToken(
-    definition,
-    bound,
-    token,
-    slot,
-    modeNames,
-    argumentNames,
-    isProject,
-  )
+  return placeWorkflowPromptToken(definition, bound, token, modeNames, argumentNames, isProject)
 }
 
 export function bindWorkflowPromptArguments(

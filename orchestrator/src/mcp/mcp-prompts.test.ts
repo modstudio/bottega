@@ -122,13 +122,22 @@ describe('workflow prompt argument binding', () => {
       },
     },
     {
-      received: { mode: 'feature', project: 'starship', autonomy: 'plan=ask' },
+      received: { mode: 'feature', project: 'starship', autonomy: 'preset=autonomous' },
       expected: {
         mode: 'feature',
         project: 'starship',
-        autonomy: 'plan=ask',
+        autonomy: 'preset=autonomous',
         args: {},
         reread: [],
+      },
+    },
+    {
+      received: { mode: 'STAR-4291', project: 'starship', autonomy: 'mode=feature' },
+      expected: {
+        mode: 'feature',
+        project: 'starship',
+        args: { key: 'STAR-4291' },
+        reread: ['read "STAR-4291" as key', 'read "mode=feature" as mode'],
       },
     },
   ]
