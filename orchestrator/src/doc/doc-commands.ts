@@ -156,7 +156,7 @@ async function handledEarlyDocCommand(
 }
 
 function keywordListDocs(
-  filters: Parameters<typeof listDocMetadata>[0],
+  filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
   match: string | undefined,
   bodyMatch: string | undefined,
 ) {
@@ -171,7 +171,7 @@ function keywordListDocs(
 }
 
 function listedDocs(
-  filters: Parameters<typeof listDocMetadata>[0],
+  filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
   match: string | undefined,
   bodyMatch: string | undefined,
 ) {
