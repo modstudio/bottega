@@ -1,26 +1,11 @@
 import { expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { upsertProject } from '../project/projects.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 
-test('search_docs accepts and forwards optional address filters', async () => {
-  upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
-  const seen: unknown[] = []
+test("search_docs refuses an invalid scope with the store's message", async () => {
   const server = new McpServer({ name: 'orch-search-test', version: '1.0.0' })
-  registerSearchTools(server, {
-    searchDocs: async (query, k, filter) => {
-      seen.push({ query, k, filter })
-      return {
-        query,
-        k,
-        contract: { model: 'model', dimension: 1024, instructionVersion: 'doc-search-v1' },
-        refresh: { embedded: 0, deleted: 0, unchanged: 0, stale: 0 },
-        results: [],
-      }
-    },
-  })
+  registerSearchTools(server)
   const client = new Client({ name: 'orch-search-client', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -28,12 +13,12 @@ test('search_docs accepts and forwards optional address filters', async () => {
   try {
     const result = await client.callTool({
       name: 'search_docs',
-      arguments: { query: 'meaning', k: 3, scope: 'canon', subject: PLATFORM_SLUG },
+      arguments: { query: 'meaning', scope: 'invented' },
     })
-    expect(result.isError).not.toBe(true)
-    expect(seen).toEqual([
-      { query: 'meaning', k: 3, filter: { scope: 'canon', subject: PLATFORM_SLUG } },
-    ])
+    expect(result.isError).toBe(true)
+    expect((result.content as { text: string }[])[0]!.text).toContain(
+      'unknown doc scope "invented"; valid scopes:',
+    )
   } finally {
     await client.close()
     await server.close()

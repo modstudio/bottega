@@ -7,18 +7,13 @@ import { searchDocs } from '../doc/doc-search.ts'
 import { validateDocAddressFilter } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 
-type SearchDocs = typeof searchDocs
-
 const text = (value: unknown) => ({
   content: [
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
 
-export function registerSearchTools(
-  server: McpServer,
-  dependencies: { searchDocs: SearchDocs } = { searchDocs },
-): void {
+export function registerSearchTools(server: McpServer): void {
   server.registerTool(
     'search_docs',
     {
@@ -33,7 +28,7 @@ export function registerSearchTools(
     async ({ query, k, scope, subject }) => {
       const filter = { scope, subject }
       validateDocAddressFilter(filter)
-      return text(await dependencies.searchDocs(query, k ?? 5, filter))
+      return text(await searchDocs(query, k ?? 5, filter))
     },
   )
 
