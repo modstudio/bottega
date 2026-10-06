@@ -19,6 +19,7 @@ export function idleBoardDeps(): RecordBoardDeps {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
   return {
+    listBoardMessages: unused,
     postBoardMessage: unused,
     replyBoardMessage: unused,
     withdrawBoardMessage: unused,
@@ -76,6 +77,7 @@ function unusedBoard(): Promise<never> {
 
 export function unusedBoardClientMethods(): Pick<
   RecordApiClient,
+  | 'listBoardMessages'
   | 'postBoardMessage'
   | 'replyBoardMessage'
   | 'withdrawBoardMessage'
@@ -94,6 +96,7 @@ export function unusedBoardClientMethods(): Pick<
   | 'releaseBoardTaskClaims'
 > {
   return {
+    listBoardMessages: unusedBoard,
     postBoardMessage: unusedBoard,
     replyBoardMessage: unusedBoard,
     withdrawBoardMessage: unusedBoard,

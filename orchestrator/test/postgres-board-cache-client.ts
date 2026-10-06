@@ -1,3 +1,6 @@
+import { Database } from 'bun:sqlite'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../src/board/board-mode.ts'
+import { applyMigrations } from '../src/database/migrations.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 
 const headers = (token: string) => ({
@@ -6,6 +9,20 @@ const headers = (token: string) => ({
 })
 
 const json = async (response: Response) => (await response.json()) as Record<string, unknown>
+
+export function postgresBoardCacheStore(session: string, project: string): Database {
+  const store = new Database(':memory:')
+  applyMigrations(store)
+  store.query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  store
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine-b',?,'/tmp',NULL,?,?)`,
+    )
+    .run(session, project, '2026-10-05T00:00:00.000Z', '2098-01-01T00:00:00.000Z')
+  return store
+}
 
 export function postgresBoardCacheClient(origin: string, token: string): RecordApiClient {
   return {

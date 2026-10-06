@@ -2,6 +2,7 @@
 /** Hosted board JSON contract. Must not know SQL or local stores. */
 
 export const BOARD_CHANGES_PAGE_LIMIT = 100
+export const BOARD_MESSAGES_PAGE_LIMIT = 100
 export const BOARD_MESSAGE_REVISION_LOCK_KEY = 968_000_002
 
 export class RecordBoardError extends Error {
@@ -98,6 +99,44 @@ export type HostedBoardChanges = {
 export type HostedBoardStatus = {
   message: HostedBoardMessage
   receipts: HostedBoardReceipt[]
+}
+
+type HostedBoardOverviewBase = {
+  id: string
+  kind: 'notice' | 'question'
+  title: string | null
+  audience: string | null
+  origin: HostedBoardOrigin
+  senderTags: HostedBoardSenderTag[]
+  createdAt: string
+  expiresAt: string | null
+  withdrawnAt: string | null
+  ackRequired: boolean
+  ackDeadline: string | null
+  state: 'open' | 'accepted' | 'withdrawn' | 'expired'
+  reached: number | null
+  acknowledged: number | null
+  unacknowledged: string[] | null
+  store: 'hosted'
+}
+
+export type HostedBoardOverviewEntry =
+  | (HostedBoardOverviewBase & { kind: 'notice' })
+  | (HostedBoardOverviewBase & {
+      kind: 'question'
+      replyCount: number
+      acceptedReplyId: string | null
+    })
+
+export type HostedBoardOverviewFilters = {
+  kind?: 'notice' | 'question'
+  open?: boolean
+  includeEnded?: boolean
+}
+
+export type HostedBoardOverview = {
+  messages: HostedBoardOverviewEntry[]
+  truncated: boolean
 }
 
 export type HostedBoardClaim = {

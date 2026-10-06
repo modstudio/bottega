@@ -13,6 +13,8 @@ import type {
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
   HostedBoardMessage,
+  HostedBoardOverview,
+  HostedBoardOverviewFilters,
   HostedBoardPostInput,
   HostedBoardReceipt,
   HostedBoardReceiptInput,
@@ -169,6 +171,7 @@ export type RecordApiClient = {
     cursor?: string | null
   }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
   counts(): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
+  listBoardMessages(query?: HostedBoardOverviewFilters): Promise<HostedBoardOverview>
   postBoardMessage(input: HostedBoardPostInput): Promise<HostedBoardMessage>
   replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
   withdrawBoardMessage(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
@@ -367,6 +370,14 @@ export function recordApiClient(): RecordApiClient {
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     counts: () => request('/v1/docs/counts'),
+    listBoardMessages: (query = {}) => {
+      const search = new URLSearchParams()
+      if (query.kind) search.set('kind', query.kind)
+      if (query.open !== undefined) search.set('open', String(query.open))
+      if (query.includeEnded !== undefined) search.set('includeEnded', String(query.includeEnded))
+      const suffix = search.toString()
+      return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`)
+    },
     postBoardMessage: (input) =>
       request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input) }),
     replyBoardMessage: (rootId, input) =>

@@ -183,6 +183,19 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'Keep the hosted board change cursor independent of HTTP and local stores.',
   ),
   boundary(
+    'record-board-overview-boundary',
+    'orchestrator/src/record/record-board-overview.ts',
+    [
+      'bun',
+      '../board/board-tags.ts',
+      './record-board-contract.ts',
+      './record-board-messages.ts',
+      './record-board-receipts.ts',
+      './record-board-tx.ts',
+    ],
+    'Keep the hosted board overview independent of HTTP and local stores.',
+  ),
+  boundary(
     'record-board-claims-boundary',
     'orchestrator/src/record/record-board-claims.ts',
     [
