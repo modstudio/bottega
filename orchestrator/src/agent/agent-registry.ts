@@ -281,8 +281,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (name,harness,backend,model,base_url,transport,caps,billing,operated_by,enabled,disabled_reason)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (name,harness,backend,model,base_url,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       name,
@@ -296,6 +296,9 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.backend === 'vendor' ? 'vendor' : 'self',
       input.enabled === false ? 0 : 1,
       input.enabled === false ? input.reason!.trim() : null,
+      input.jobs == null ? null : JSON.stringify(input.jobs),
+      input.preferredJobs === undefined ? null : JSON.stringify(input.preferredJobs),
+      input.maxConcurrent ?? null,
     )
   refreshAgents()
   return agentRows().find((row) => row.name === name)!

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
+import { recordAgentProbe } from '../agent/agent-probe.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -63,6 +64,62 @@ test('the registration probe gates inline and repository jobs', () => {
     db()
       .query("UPDATE agent SET caps = ?, probed_at = ?, probe_result = ? WHERE name = 'codex'")
       .run(original.caps, original.probed_at, original.probe_result)
+    refreshAgents()
+  }
+})
+
+test('rerunning a narrowed file-question probe clears the file-contract refusal', () => {
+  const original = db()
+    .query("SELECT caps, probed_at, probe_result, jobs FROM agent WHERE name = 'codex'")
+    .get() as {
+    caps: string
+    probed_at: string | null
+    probe_result: string | null
+    jobs: string | null
+  }
+  const caps = { ...JSON.parse(original.caps), readsRepo: true, replyFile: false }
+  try {
+    db()
+      .query("UPDATE agent SET caps=?,probed_at=?,probe_result=?,jobs=? WHERE name='codex'")
+      .run(
+        JSON.stringify(caps),
+        '2026-01-01T00:00:00Z',
+        JSON.stringify({ ok: true }),
+        JSON.stringify(['file-question']),
+      )
+    refreshAgents()
+    expect(
+      candidates('file-question').find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({
+      eligible: false,
+      why: 'registration probe predates the file contract; run orch agent probe codex',
+    })
+
+    recordAgentProbe('codex', {
+      harness: 'codex',
+      ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: {
+        ok: true,
+        output: 'REGISTRATION_PROBE_FILE_OK',
+        toolEvents: 1,
+        statuses: ['completed'],
+      },
+      schema: { ok: null, output: 'ok' },
+      file: { ok: true, output: '{"status":"ok"}' },
+      mcp: { verifiable: null, output: 'skipped: not required for declared jobs' },
+      jobs: { 'file-question': { reply: true, tool: true } },
+      contextTokens: null,
+      contextSource: null,
+    })
+
+    expect(
+      candidates('file-question').find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: true, why: '' })
+  } finally {
+    db()
+      .query("UPDATE agent SET caps=?,probed_at=?,probe_result=?,jobs=? WHERE name='codex'")
+      .run(original.caps, original.probed_at, original.probe_result, original.jobs)
     refreshAgents()
   }
 })

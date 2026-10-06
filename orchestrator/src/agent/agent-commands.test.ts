@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { agentReadinessPresentation } from './agent-commands.ts'
+import { agentCommand, agentReadinessPresentation } from './agent-commands.ts'
+import { removeAgent } from './agent-registry.ts'
 
 test('agent presentation distinguishes installation, probe, disabled, and ready states', () => {
   const fixed = [
@@ -47,4 +48,38 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
     'disabled — retired after replacement',
     'ready',
   ])
+})
+
+test('agent add persists job and concurrency flags', async () => {
+  const output: string[] = []
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        'add-flags-test',
+        '--harness',
+        'codex',
+        '--backend',
+        'vendor',
+        '--model',
+        'test-model',
+        '--jobs',
+        'file-question',
+        '--prefer',
+        'file-question',
+        '--max-concurrent',
+        '1',
+      ],
+      { log: (value) => output.push(value), setExitCode: () => {} },
+    )
+
+    expect(JSON.parse(output[0]!)).toMatchObject({
+      jobs: '["file-question"]',
+      preferred_jobs: '["file-question"]',
+      max_concurrent: 1,
+    })
+  } finally {
+    removeAgent('add-flags-test')
+  }
 })
