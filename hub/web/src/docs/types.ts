@@ -13,6 +13,8 @@ export type DocsTreeItem = {
   subject: string | null
   audience: DocsAudience
   delivery?: DocsDelivery
+  /** Set when the adapter says this document belongs to a project. */
+  projectName?: string
 }
 
 export type DocsDoc = DocsTreeItem & { body: string }

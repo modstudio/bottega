@@ -1,3 +1,4 @@
+import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsTreeItem } from './types.ts'
 
 function audienceOf(value: unknown): DocsAudience {
@@ -8,8 +9,22 @@ function deliveryOf(value: unknown): DocsTreeItem['delivery'] {
   return value === 'inject' || value === 'demand' ? value : undefined
 }
 
+function projectNameOf(
+  row: Record<string, unknown>,
+  scope: string,
+  subject: string | null,
+): string | undefined {
+  if (Object.hasOwn(row, 'projectName')) {
+    return typeof row.projectName === 'string' && row.projectName ? row.projectName : undefined
+  }
+  if (subject && docScopeHasProjectSubject(scope)) return subject
+  return undefined
+}
+
 /** Map any document-shaped record onto the shared tree item. */
 export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
+  const scope = String(row.scope ?? '')
+  const subject = row.subject == null ? null : String(row.subject)
   return {
     id: String(row.id),
     slug: String(row.slug ?? ''),
@@ -17,10 +32,11 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     parentId: row.parentId == null ? null : String(row.parentId),
     position: typeof row.position === 'number' ? row.position : 0,
     updatedAt: String(row.updatedAt ?? ''),
-    scope: String(row.scope ?? ''),
-    subject: row.subject == null ? null : String(row.subject),
+    scope,
+    subject,
     audience: audienceOf(row.audience),
     delivery: deliveryOf(row.delivery),
+    projectName: projectNameOf(row, scope, subject),
   }
 }
 
