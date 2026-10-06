@@ -183,6 +183,59 @@ describe('the live ask channel always answers', () => {
     }
   })
 
+  test('run_gate returns at its bound, then rejoins the same execution for its result', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const project = db()
+      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
+      id: number
+    }
+    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    let nowMs = Date.now()
+    let waits = 0
+    const connection = await askClient(run, '', undefined, {
+      fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+      gate: {
+        waitMs: 2,
+        now: () => nowMs,
+        wait: async () => {
+          nowMs += 2
+          waits += 1
+          if (waits === 2) {
+            db()
+              .query(
+                `UPDATE gate_execution
+                    SET finished_at=?,exit_code=0,timed_out=0,elapsed_ms=4,output_tail='passed'
+                  WHERE run_id=?`,
+              )
+              .run(new Date(nowMs).toISOString(), run)
+          }
+        },
+      },
+    })
+    try {
+      const first = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      expect(first.isError).toBeUndefined()
+      expect(resultText(first)).toContain('The gate is still running after')
+      expect(resultText(first)).toContain('ms.')
+      expect(resultText(first)).toContain('Call run_gate again to wait for this same execution')
+
+      const second = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      expect(second.isError).toBeUndefined()
+      expect(resultText(second)).toContain('Gate exit code: 0')
+      expect(resultText(second)).toContain('passed')
+      expect(
+        (
+          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_id=?').get(run) as {
+            n: number
+          }
+        ).n,
+      ).toBe(1)
+    } finally {
+      await connection.close()
+    }
+  })
+
   test('gate_result returns the newest finished gate for the reader project and exact commit', async () => {
     const project = db()
       .query(
