@@ -37,6 +37,8 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
   return (result.content as { type: 'text'; text: string }[])[0]!.text
 }
 
+const createdAt = new Date(Date.now() - 1_000).toISOString()
+
 beforeEach(() => {
   process.env.ORCH_RECORD_API_URL = 'https://record.test'
 })
@@ -52,7 +54,7 @@ describe('the live ask channel always answers', () => {
     const local = postNotice(
       { audience: `run:${run}`, title: 'Local ask', body: 'local ask body' },
       {},
-      Date.parse('2026-10-05T12:00:00.000Z'),
+      Date.parse(createdAt),
     )
     const hosted: HostedBoardMessage = {
       id: newRecordId(),
@@ -69,7 +71,7 @@ describe('the live ask channel always answers', () => {
         runId: null,
       },
       senderTags: [],
-      createdAt: '2026-10-05T12:00:00.000Z',
+      createdAt,
       expiresAt: '2099-01-01T00:00:00.000Z',
       withdrawnAt: null,
       state: 'open',
