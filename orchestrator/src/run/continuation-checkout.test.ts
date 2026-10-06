@@ -27,7 +27,7 @@ describe('continuation checkout decision', () => {
       { latestCwd: '/callers/bottega', rootCwd: '/projects/adanim/root', rootProjectPath: null },
       { action: 'refuse', reason: 'missing-repository-identity' },
     ],
-  ])('%s', (_name, input, expected) => {
+  ] as const)('%s', (_name, input, expected) => {
     expect(continuationCheckoutDecision(input)).toEqual(expected)
   })
 })
