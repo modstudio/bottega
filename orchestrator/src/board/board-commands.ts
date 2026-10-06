@@ -46,6 +46,7 @@ export function registerBoardCommands(program: Command): void {
       console.log(result.note)
       for (const kind of ['notice', 'question', 'reply', 'claim'] as const)
         console.log(`${kind}: ${result.counts[kind]} will be uploaded`)
+      console.log(`receipt: ${result.receipts} will be uploaded`)
       for (const row of result.stays)
         console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
       if (result.status === 'plan')

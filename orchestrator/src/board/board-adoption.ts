@@ -21,12 +21,14 @@ import {
 } from './board-adoption-policy.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
-import { parseAudience } from './board-policy.ts'
+import { OPERATOR_READER, parseAudience } from './board-policy.ts'
 import {
   latestRunStatus,
   type MessageRow,
   messageRows,
   messageTags,
+  presenceFacts,
+  recipients,
   rowIsLive,
 } from './board-store.ts'
 
@@ -41,6 +43,7 @@ type LedgerRow = {
 type BoardAdoptionPlan = {
   total: number
   counts: Record<LocalKind, number>
+  receipts: number
   stays: Array<{ kind: LocalKind; id: number; reason: string }>
   note: string
 }
@@ -173,9 +176,11 @@ function planFor(
   localRows: Map<string, CandidateRow>,
   rows: Map<string, LedgerRow>,
   database: Database,
+  clock: number,
 ) {
   const counts = emptyCounts()
   const stays: BoardAdoptionPlan['stays'] = []
+  const receiptCandidates: Candidate[] = []
   for (const candidate of candidates) {
     const recorded = rows.get(`${candidate.kind}:${candidate.id}`)
     const reason =
@@ -183,13 +188,17 @@ function planFor(
         ? recorded.refusal
         : lastingLocalRefusal(candidate, localRows.get(candidateKey(candidate))!, database)
     if (reason) stays.push({ kind: candidate.kind, id: candidate.id, reason })
-    else counts[candidate.kind]++
+    else {
+      counts[candidate.kind]++
+      receiptCandidates.push(candidate)
+    }
   }
   return {
     total: candidates.length,
     counts,
+    receipts: pendingReceipts(receiptCandidates, database, clock).length,
     stays,
-    note: 'Uploaded rows take the upload time as their creation time; absolute expiry is preserved.',
+    note: 'Uploaded rows take the upload time as their creation time; absolute expiry is preserved. Hosted reach counts readers from adoption onward.',
   } satisfies BoardAdoptionPlan
 }
 
@@ -312,21 +321,11 @@ async function uploadReceipts(
   hostedId: string,
   client: RecordApiClient,
   database: Database,
+  clock: number,
 ): Promise<number> {
   let skipped = 0
-  const receipts = database
-    .query(
-      `SELECT reader_session,audience_at_posting,delivered_at,acknowledged_at
-       FROM board_receipt WHERE message_id=? ORDER BY reader_session`,
-    )
-    .all(messageId) as Array<{
-    reader_session: string
-    audience_at_posting: number
-    delivered_at: string | null
-    acknowledged_at: string | null
-  }>
+  const receipts = pendingReceiptsForMessage(messageId, database, clock)
   for (const receipt of receipts) {
-    if (!receipt.delivered_at && !receipt.acknowledged_at) continue
     try {
       await client.putBoardReceipt({
         messageId: hostedId,
@@ -335,12 +334,89 @@ async function uploadReceipts(
         delivered: Boolean(receipt.delivered_at),
         acknowledged: Boolean(receipt.acknowledged_at),
       })
+      recordReceiptUpload(messageId, receipt.reader_session, 'uploaded', null, database, clock)
     } catch (error) {
-      if (error instanceof RecordApiRequestError && error.kind === 'refused') skipped++
-      else throw error
+      if (!(error instanceof RecordApiRequestError) || error.kind !== 'refused') throw error
+      recordReceiptUpload(
+        messageId,
+        receipt.reader_session,
+        'skipped',
+        error.message,
+        database,
+        clock,
+      )
+      skipped++
     }
   }
   return skipped
+}
+
+type LocalReceipt = {
+  message_id: number
+  reader_session: string
+  audience_at_posting: number
+  delivered_at: string | null
+  acknowledged_at: string | null
+}
+
+function pendingReceipts(
+  candidates: Candidate[],
+  database: Database,
+  clock: number,
+): LocalReceipt[] {
+  return candidates
+    .filter((candidate) => candidate.kind !== 'claim')
+    .flatMap((candidate) => pendingReceiptsForMessage(candidate.id, database, clock))
+}
+
+function pendingReceiptsForMessage(
+  messageId: number,
+  database: Database,
+  clock: number,
+): LocalReceipt[] {
+  const facts = presenceFacts(database, clock)
+  const receipts = database
+    .query(
+      `SELECT r.message_id,r.reader_session,r.audience_at_posting,r.delivered_at,r.acknowledged_at
+       FROM board_receipt r
+       LEFT JOIN board_hosted_adoption_receipt a
+         ON a.local_message_id=r.message_id AND a.reader_session=r.reader_session
+       WHERE r.message_id=? AND a.local_message_id IS NULL
+       ORDER BY r.reader_session`,
+    )
+    .all(messageId) as LocalReceipt[]
+  return receipts.filter(
+    (receipt) =>
+      (receipt.delivered_at !== null || receipt.acknowledged_at !== null) &&
+      (receipt.reader_session === OPERATOR_READER ||
+        recipients(
+          receipt.reader_session.startsWith('run:')
+            ? receipt.reader_session
+            : `session:${receipt.reader_session}`,
+          clock,
+          [],
+          database,
+          facts,
+        ).includes(receipt.reader_session)),
+  )
+}
+
+function recordReceiptUpload(
+  messageId: number,
+  readerSession: string,
+  state: 'uploaded' | 'skipped',
+  refusal: string | null,
+  database: Database,
+  clock: number,
+): void {
+  writeTransaction(() => {
+    database
+      .query(
+        `INSERT INTO board_hosted_adoption_receipt
+         (local_message_id,reader_session,state,refusal,updated_at) VALUES (?,?,?,?,?)`,
+      )
+      .run(messageId, readerSession, state, refusal, new Date(clock).toISOString())
+  }, database)
 }
 
 async function uploadClaim(
@@ -388,7 +464,7 @@ function stoppedAtRateCap(context: UploadContext): BoardAdoptionResult {
   const refused = states.filter((state) => state === 'refused').length
   const remaining = states.filter((state) => !isTerminalLedgerState(state)).length
   return {
-    ...planFor(context.candidates, context.rows, rows, context.database),
+    ...planFor(context.candidates, context.rows, rows, context.database, context.clock()),
     status: 'stopped',
     uploaded,
     refused,
@@ -440,6 +516,7 @@ async function uploadMessages(context: UploadContext): Promise<BoardAdoptionResu
         recorded.hosted_id,
         context.client,
         context.database,
+        context.clock(),
       )
   }
   return null
@@ -567,7 +644,7 @@ export async function adoptHostedBoard(
   const initialLedger = ledger(database)
   const gathered = candidateRows(startedAt, database, initialLedger)
   const { candidates, rows } = gathered
-  const plan = planFor(candidates, rows, initialLedger, database)
+  const plan = planFor(candidates, rows, initialLedger, database, startedAt)
   if (input.confirm === undefined)
     return {
       ...plan,
@@ -621,7 +698,7 @@ export async function adoptHostedBoard(
   }, database)
   const refused = states.filter((state) => state === 'refused').length
   return {
-    ...planFor(candidates, rows, finalRows, database),
+    ...planFor(candidates, rows, finalRows, database, clock()),
     status: 'adopted',
     uploaded: states.length - refused,
     refused,

@@ -64,6 +64,21 @@ function seedLocalBoard(input: ProofInput) {
       created,
       input.project,
     ) as { id: number }
+  const receiptReader = input.caseSession('adopt-receipt')
+  local
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,cwd,first_seen,last_seen)
+       VALUES (?,'claude','architect','adoption-machine',?,'/tmp',?,?)`,
+    )
+    .run(receiptReader, input.project, created, new Date().toISOString())
+  local
+    .query(
+      `INSERT INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,1,?,NULL)`,
+    )
+    .run(notice.id, receiptReader, created)
   const question = local
     .query(
       `INSERT INTO board_message
@@ -100,7 +115,7 @@ function seedLocalBoard(input: ProofInput) {
       created,
       new Date(Date.now() + 3_600_000).toISOString(),
     )
-  return { local, notice }
+  return { local, notice, receiptReader }
 }
 
 export function registerBoardAdoptionProof(input: ProofInput): void {
@@ -113,7 +128,7 @@ export function registerBoardAdoptionProof(input: ProofInput): void {
        VALUES ('${localMachineId}','${input.userId()}','adoption-machine',now(),now())
        ON CONFLICT (id) DO UPDATE SET user_id=excluded.user_id,last_seen=excluded.last_seen;`,
     )
-    const { local, notice } = seedLocalBoard(input)
+    const { local, notice, receiptReader } = seedLocalBoard(input)
     expect(
       await adoptHostedBoard({ confirm: 4, database: local, client: adoptionClient(input) }),
     ).toMatchObject({ status: 'adopted', uploaded: 4 })
@@ -138,6 +153,12 @@ export function registerBoardAdoptionProof(input: ProofInput): void {
     expect(noticeRead.status).toBe(200)
     expect(((await questionRead.json()) as { replies: unknown[] }).replies.length).toBe(1)
     expect(claimsRead.claims.some((row) => row.subject.value === 'adoption-proof')).toBeTrue()
+    const changes = await adoptionClient(input).listBoardChanges({ after: '0', limit: 100 })
+    expect(
+      changes.items
+        .find((item) => item.message.id === hostedNotice)
+        ?.receipts.some((receipt) => receipt.readerSession === receiptReader),
+    ).toBeTrue()
     expect(notice.id).toBeGreaterThan(0)
   })
 }
