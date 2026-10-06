@@ -450,7 +450,41 @@ function trackedPath(files: Set<string>, path: string): boolean {
   return false
 }
 
+export const BRACE_EXPANSION_LIMIT = 32
+
+function braceExpansionGroups(piece: string): { alternatives: number; range: boolean }[] {
+  const groups: { alternatives: number; range: boolean }[] = []
+  const stack: { alternatives: number; range: boolean }[] = []
+  for (let index = 0; index < piece.length; index += 1) {
+    const char = piece[index]
+    if (char === '\\') {
+      index += 1
+      continue
+    }
+    if (char === '{') {
+      stack.push({ alternatives: 1, range: false })
+      continue
+    }
+    const group = stack.at(-1)
+    if (!group) continue
+    if (char === ',') group.alternatives += 1
+    if (char === '.' && piece[index + 1] === '.') group.range = true
+    if (char === '}') groups.push(stack.pop()!)
+  }
+  return groups
+}
+
+export function braceExpansionUpperBound(piece: string): number {
+  let bound = 1
+  for (const group of braceExpansionGroups(piece)) {
+    if (group.range) return Number.POSITIVE_INFINITY
+    bound *= group.alternatives
+  }
+  return bound
+}
+
 function expandedBracePieces(piece: string): string[] {
+  if (braceExpansionUpperBound(piece) > BRACE_EXPANSION_LIMIT) return [piece]
   try {
     return $.braces(piece)
   } catch {

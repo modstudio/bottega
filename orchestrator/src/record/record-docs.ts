@@ -756,6 +756,17 @@ export async function restoreRecordDoc(
     const revision = revisionRows[0] as Record<string, unknown>
     const scope = String(revision.scope)
     const subject = revision.subject == null ? null : String(revision.subject)
+    const revisionProjectId = revision.project_id == null ? null : String(revision.project_id)
+    let restoredProjectId = revisionProjectId
+    const restoredProjectName = docWriteProjectName(scope, subject)
+    if (restoredProjectName) {
+      try {
+        restoredProjectId =
+          (await projectId(tx, input.spaceId, restoredProjectName)) ?? revisionProjectId
+      } catch (error) {
+        if (!(error instanceof RecordDocError) || error.status !== 422) throw error
+      }
+    }
     const slug = String(revision.slug)
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
@@ -784,7 +795,7 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          deleted_at=NULL, updated_at=${now}::timestamptz
+          project_id=${restoredProjectId}::uuid, deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
     const revisionId = await insertRevision(tx, {
@@ -794,7 +805,7 @@ export async function restoreRecordDoc(
       subject,
       owner: revision.owner_user_id == null ? null : String(revision.owner_user_id),
       slug,
-      projectId: revision.project_id == null ? null : String(revision.project_id),
+      projectId: restoredProjectId,
       op: 'restore',
       title: String(revision.title),
       body,

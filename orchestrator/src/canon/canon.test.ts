@@ -32,6 +32,8 @@ import {
 } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
+  BRACE_EXPANSION_LIMIT,
+  braceExpansionUpperBound,
   checkDoc,
   compilePack,
   findingsForPack,
@@ -753,6 +755,16 @@ describe('scoped operator docs', () => {
         message: 'line 1: `scripts/missing.php` is not tracked in /fixture',
       },
     ])
+  })
+
+  test('document path brace expansion is bounded before expansion', () => {
+    const token = `scripts/${'{a,b}'.repeat(16)}.php`
+    expect(braceExpansionUpperBound(token)).toBe(65_536)
+    expect(braceExpansionUpperBound(token)).toBeGreaterThan(BRACE_EXPANSION_LIMIT)
+    expect(
+      checkDoc(`\`${token}\``, { repoRoot: '/fixture', trackedFiles: new Set() }),
+    ).toHaveLength(1)
+    expect(braceExpansionUpperBound('scripts/a-{reads,writes}.php')).toBe(2)
   })
 
   test('numeric literal report classifies per clause and excludes non-prose spans', () => {
