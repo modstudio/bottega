@@ -65,7 +65,8 @@ try {
   const fakeHarness = join(scratch, 'fake-harness')
   writeFileSync(fakeHarness, FAKE_HARNESS_SCRIPT)
   chmodSync(fakeHarness, 0o755)
-  const containerScript = `set -eu
+  const containerScript = `set -eux
+exec 1>&2
 export DEBIAN_FRONTEND=noninteractive
 export HOME=/tmp/empty-home
 export BOTTEGA_INSTALL_DIR=/tmp/bin
@@ -84,7 +85,7 @@ ${installedBinary} --version
 /tmp/bin/hub task list
 printf '%s\\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' | /tmp/bin/orch mcp | grep '"id":1'
 
-doctor_output=$(/tmp/bin/orch doctor 2>&1)
+doctor_output=$(/tmp/bin/orch doctor 2>&1 || true)
 printf '%s\\n' "$doctor_output"
 printf '%s\\n' "$doctor_output" | grep -F 'ripgrep (rg) not found'
 printf '%s\\n' "$doctor_output" | grep -F 'bubblewrap (bwrap) not installed'
@@ -124,7 +125,7 @@ printf '%s\\n' '{}' > /home/smoke/.codex/auth.json
 sqlite3 /tmp/state/orchestrator/orch.db "UPDATE agent SET caps=json_set(caps, '$.replyFile', json('true')), probed_at=datetime('now'), probe_result=json_object('ok', json('true'), 'source', 'release smoke fixture') WHERE name='codex';"
 chown -R smoke:smoke /tmp/state /tmp/probe-repository /tmp/mcp-state /home/smoke/.codex
 su -s /bin/sh smoke -c '
-  set -eu
+  set -eux
   export HOME=/home/smoke
   export BOTTEGA_STATE_HOME=/tmp/state
   export CLAUDE_CODE_SESSION_ID=DEV-1123-release-smoke
@@ -147,7 +148,7 @@ case "$writing_hooks" in
   "$writing_worktree"/*) echo "shared ref guard was installed inside writing worktree $writing_worktree" >&2; exit 1 ;;
 esac
 writing_branch=$(cat /tmp/mcp-state/writing-branch)
-test "$(git -C /tmp/probe-repository log -1 --format=%s "$writing_branch")" = 'DEV-1091 guarded binary smoke'
+test "$(su -s /bin/sh smoke -c "git -C /tmp/probe-repository log -1 --format=%s $writing_branch")" = 'DEV-1091 guarded binary smoke'
 
 rm /tmp/bin/hub
 printf '#!/bin/sh\\necho preserved-hub\\n' > /tmp/bin/hub
