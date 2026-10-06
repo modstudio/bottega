@@ -17,7 +17,7 @@ import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { postNotice } from './board-service.ts'
 
-const createdAt = '2026-10-05T12:00:00.000Z'
+const createdAt = new Date(Date.now() - 1_000).toISOString()
 const hosted = (audience: string): HostedBoardMessage => ({
   id: newRecordId(),
   kind: 'notice',
