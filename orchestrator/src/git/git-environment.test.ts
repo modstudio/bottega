@@ -45,9 +45,20 @@ describe('git environment', () => {
 
       expect(resolveBase(tree, 'HEAD')).toBe(treeHead)
       expect(resolveBase(tree, 'main')).toBe(mainHead)
-      expect(resolveDispatchBase(tree, 'HEAD', resolveBase, isWorktreeRelativeRef)).toBe(treeHead)
-      expect(resolveDispatchBase(tree, 'main', resolveBase, isWorktreeRelativeRef)).toBe('main')
-      expect(resolveDispatchBase(main, 'HEAD', resolveBase, isWorktreeRelativeRef)).toBe(mainHead)
+      const resolveForDispatch = (cwd: string, ref: string) => {
+        expect([tree, main]).toContain(cwd)
+        expect(['HEAD', 'main']).toContain(ref)
+        return cwd === tree && ref === 'HEAD' ? treeHead : mainHead
+      }
+      expect(resolveDispatchBase(tree, 'HEAD', resolveForDispatch, isWorktreeRelativeRef)).toBe(
+        treeHead,
+      )
+      expect(resolveDispatchBase(tree, 'main', resolveForDispatch, isWorktreeRelativeRef)).toBe(
+        'main',
+      )
+      expect(resolveDispatchBase(main, 'HEAD', resolveForDispatch, isWorktreeRelativeRef)).toBe(
+        mainHead,
+      )
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
