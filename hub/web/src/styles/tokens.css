@@ -52,8 +52,9 @@
   --progress-light: oklch(0.573 0.23 316.1);
   --progress-dark: oklch(0.674 0.177 317.1);
 
-  /* Type: Inter for the interface, IBM Plex Mono for ids, hashes, costs, code. */
+  /* Type: Inter for the interface, Hedvig Letters Serif for titles, IBM Plex Mono for figures and code. */
   --family-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --family-serif: "Hedvig Letters Serif", Georgia, "Times New Roman", serif;
   --family-mono: "IBM Plex Mono", ui-monospace, monospace;
 
   /* Motion. */

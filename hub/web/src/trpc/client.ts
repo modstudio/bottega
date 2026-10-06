@@ -3,7 +3,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client'
 import type { inferRouterOutputs } from '@trpc/server'
 import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
 import type { AppRouter, HostedRouter } from '../../../src/trpc/router.ts'
-import { isHostedMode } from '../lib/hub-mode.ts'
+import { isDocsPath, isHostedMode, isHostedSignInFramePath } from '../lib/hub-mode.ts'
 import { toast } from '../ui/toast/toast.tsx'
 import { fetchWithHubCredentials } from './transport.ts'
 
@@ -15,7 +15,8 @@ function isUnauthorized(error: unknown) {
 
 function redirectToSignIn() {
   if (!isHostedMode()) return
-  if (window.location.pathname === '/sign-in') return
+  const path = window.location.pathname
+  if (isHostedSignInFramePath(path) || isDocsPath(path)) return
   window.location.assign('/sign-in')
 }
 

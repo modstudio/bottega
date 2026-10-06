@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Pencil, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { HostedDocDetail } from '@/components/hosted-doc-detail'
 import { Markdown } from '@/components/markdown'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
@@ -13,20 +12,25 @@ import { Select } from '@/ui/listbox/select'
 import { Sheet } from '@/ui/sheet/sheet'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
-type DocSearch = { edit?: boolean; id?: string }
+type DocSearch = { edit?: boolean; history?: boolean; id?: string }
 
 export const Route = createFileRoute('/docs/$scope/$subject/$slug')({
   validateSearch: (search: Record<string, unknown>): DocSearch => ({
     edit: search.edit === true || search.edit === '1' || search.edit === 'true' ? true : undefined,
+    history:
+      search.history === true || search.history === '1' || search.history === 'true'
+        ? true
+        : undefined,
     id: typeof search.id === 'string' ? search.id : undefined,
   }),
   component: DocRoute,
 })
 
 function DocRoute() {
-  const { slug } = Route.useParams()
-  const { id } = Route.useSearch()
-  return isHostedMode() ? <HostedDocDetail id={id} slug={slug} /> : <DocPage />
+  const { edit, history } = Route.useSearch()
+  if (isHostedMode()) return null
+  if (!edit && !history) return null
+  return <DocPage />
 }
 
 function subjectFromParam(param: string): string | null {
@@ -133,6 +137,15 @@ function DocPage() {
     })
   }
 
+  function closeSheet() {
+    void navigate({
+      to: '/docs/$scope/$subject/$slug',
+      params: { scope, subject: subjectParam, slug },
+      search: {},
+      replace: true,
+    })
+  }
+
   if (!scoped) {
     return (
       <Sheet open onClose={() => void navigate({ to: '/docs' })} title={slug}>
@@ -147,7 +160,7 @@ function DocPage() {
     <Sheet
       open
       size="document"
-      onClose={() => void navigate({ to: '/docs' })}
+      onClose={closeSheet}
       title={
         editing ? (
           <Input value={title} onChange={(e) => setTitle(e.target.value)} size="title" />

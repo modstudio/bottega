@@ -74,6 +74,7 @@
   --shadow-overlay: var(--elevation-overlay);
 
   --font-sans: var(--family-sans);
+  --font-serif: var(--family-serif);
   --font-mono: var(--family-mono);
 
   --ease-standard: var(--motion-ease-standard);

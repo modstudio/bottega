@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isHostedPath, navForMode } from './hub-mode.ts'
+import { isDocsPath, isHostedPath, isHostedSignInFramePath, navForMode } from './hub-mode.ts'
 
 const destinations = (mode: 'hosted' | 'local') =>
   navForMode(mode).flatMap((section) =>
@@ -60,6 +60,18 @@ test('hosted mode exposes its hosted routes', () => {
   expect(isHostedPath('/settings')).toBe(true)
   expect(isHostedPath('/design')).toBe(false)
   expect(isHostedPath('/projects/alpha')).toBe(false)
+})
+
+test('hosted sign-in frame and docs paths stay reachable without the rail', () => {
+  expect(isHostedSignInFramePath('/sign-in')).toBe(true)
+  expect(isHostedSignInFramePath('/forgot-password')).toBe(true)
+  expect(isHostedSignInFramePath('/reset-password')).toBe(true)
+  expect(isHostedSignInFramePath('/accept-invitation/abc')).toBe(true)
+  expect(isHostedSignInFramePath('/unsubscribe/space/token')).toBe(true)
+  expect(isHostedSignInFramePath('/docs')).toBe(false)
+  expect(isDocsPath('/docs')).toBe(true)
+  expect(isDocsPath('/docs/project/atlas/first-run')).toBe(true)
+  expect(isDocsPath('/runs')).toBe(false)
 })
 
 test('hosted member-management routes remain reachable and members appear in settings', () => {

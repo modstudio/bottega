@@ -1,0 +1,366 @@
+import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { Button } from '@/ui/button/button'
+import { Kbd } from '@/ui/kbd/kbd'
+import { Select } from '@/ui/listbox/select'
+import { Popover } from '@/ui/popover/popover'
+import { Tabs } from '@/ui/tabs/tabs'
+import { classes } from '@/ui/text/classes'
+import { FilterPanel } from './filter-panel.tsx'
+import { EMPTY_FILTERS, type FilterSelection, type OfferedFilter } from './filters.ts'
+import { docsViewModel } from './model.ts'
+import { DocsFacts, DocsReading } from './reading.tsx'
+import { SearchDialog } from './search.tsx'
+import { treePath } from './tree.ts'
+import { GroupedTree, TreeList } from './tree-view.tsx'
+import type {
+  DocsAudience,
+  DocsDoc,
+  DocsSearchMatch,
+  DocsTreeGroup,
+  DocsTreeItem,
+  TreeNode,
+} from './types.ts'
+
+const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
+
+export type DocsViewProps = {
+  items: readonly DocsTreeItem[]
+  selectedId: string | null
+  audience: DocsAudience
+  onAudience: (audience: DocsAudience) => void
+  project: string | 'all'
+  onProject: (project: string | 'all') => void
+  signedIn: boolean
+  showProjectChooser: boolean
+  doc: DocsDoc | null
+  onSelect: (item: DocsTreeItem) => void
+  onLeaveTree: () => void
+  searchQuery: string
+  onSearchQuery: (query: string) => void
+  searchResults: readonly DocsSearchMatch[]
+  framed: boolean
+  localActions?: ReactNode
+  createAction?: ReactNode
+  loading?: boolean
+  error?: string | null
+}
+
+function DocsChrome({
+  audience,
+  onAudience,
+  signedIn,
+  userCount,
+  technicalCount,
+  showProjectChooser,
+  project,
+  onProject,
+  subjects,
+  offered,
+  chosen,
+  onFilters,
+  inView,
+  active,
+  createAction,
+}: {
+  audience: DocsAudience
+  onAudience: (audience: DocsAudience) => void
+  signedIn: boolean
+  userCount: number
+  technicalCount: number
+  showProjectChooser: boolean
+  project: string | 'all'
+  onProject: (project: string | 'all') => void
+  subjects: readonly string[]
+  offered: OfferedFilter[]
+  chosen: FilterSelection
+  onFilters: (next: FilterSelection) => void
+  inView: number
+  active: number
+  createAction?: ReactNode
+}) {
+  const tabs = [
+    { value: 'user', label: 'User guide', count: userCount },
+    ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
+  ]
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3 border-border-default border-b px-5">
+      <Tabs
+        label="Audience"
+        value={audience}
+        onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
+        items={tabs}
+      />
+      <div className="flex flex-wrap items-center gap-3 py-2">
+        {showProjectChooser ? (
+          <div className="flex items-center gap-2">
+            <span className={eyebrow}>Project</span>
+            <Select
+              label="Project"
+              size="sm"
+              value={project}
+              onChange={(value) => onProject(value === 'all' ? 'all' : value)}
+              options={[
+                ...subjects.map((name) => ({ value: name, label: name })),
+                { value: 'all', label: 'All projects' },
+              ]}
+            />
+          </div>
+        ) : null}
+        {offered.length ? (
+          <Popover
+            label="Filters"
+            align="end"
+            trigger={
+              <Button size="sm">
+                Filter
+                {active ? (
+                  <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
+                    {active}
+                  </span>
+                ) : null}
+              </Button>
+            }
+          >
+            <FilterPanel offered={offered} chosen={chosen} onChange={onFilters} total={inView} />
+          </Popover>
+        ) : null}
+        {createAction}
+      </div>
+    </div>
+  )
+}
+
+function DocsRail({
+  tree,
+  groups,
+  selectedId,
+  collapsed,
+  onToggle,
+  onSelect,
+  onSearch,
+  loading,
+  audience,
+}: {
+  tree: readonly TreeNode[]
+  groups: readonly DocsTreeGroup[] | null
+  selectedId: string | null
+  collapsed: ReadonlySet<string>
+  onToggle: (id: string) => void
+  onSelect: (item: DocsTreeItem) => void
+  onSearch: () => void
+  loading?: boolean
+  audience: DocsAudience
+}) {
+  const hasTree = groups ? groups.length > 0 : tree.length > 0
+  return (
+    <nav
+      aria-label="Documents"
+      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--topbar-h)-3.5rem)] lg:border-r lg:border-b-0"
+    >
+      <button
+        type="button"
+        onClick={onSearch}
+        className="mb-4 flex w-full shrink-0 items-center justify-between text-left text-md text-text-muted"
+      >
+        <span>Search docs</span>
+        <Kbd>/</Kbd>
+      </button>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {loading ? <p className="text-md text-text-muted">Loading docs…</p> : null}
+        {hasTree ? (
+          groups ? (
+            <GroupedTree
+              groups={groups}
+              selectedId={selectedId}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          ) : (
+            <TreeList
+              nodes={tree}
+              selectedId={selectedId}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          )
+        ) : loading ? null : (
+          <p className="mt-4 text-md text-text-muted">
+            {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
+          </p>
+        )}
+      </div>
+    </nav>
+  )
+}
+
+function useSearchHotkey(open: () => void) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '/') return
+      const target = event.target
+      if (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      event.preventDefault()
+      open()
+    }
+    window.document.addEventListener('keydown', onKey)
+    return () => window.document.removeEventListener('keydown', onKey)
+  }, [open])
+}
+
+function filtersHiding(item: DocsTreeItem, chosen: FilterSelection): FilterSelection {
+  const next = { ...chosen }
+  if (next.scope && next.scope !== item.scope) next.scope = null
+  if (next.delivery && next.delivery !== item.delivery) next.delivery = null
+  return next
+}
+
+export function DocsView({
+  items,
+  selectedId,
+  audience,
+  onAudience,
+  project,
+  onProject,
+  signedIn,
+  showProjectChooser,
+  doc,
+  onSelect,
+  onLeaveTree,
+  searchQuery,
+  onSearchQuery,
+  searchResults,
+  framed,
+  localActions,
+  createAction,
+  loading,
+  error,
+}: DocsViewProps) {
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [chosen, setChosen] = useState<FilterSelection>(EMPTY_FILTERS)
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const openedId = useRef<string | null>(null)
+  const model = docsViewModel(items, audience, project, chosen, selectedId, doc)
+  useEffect(() => {
+    if (model.stale.scope !== chosen.scope || model.stale.delivery !== chosen.delivery) {
+      setChosen(model.stale)
+    }
+  }, [model.stale, chosen])
+  useEffect(() => {
+    if (!selectedId) {
+      openedId.current = null
+      return
+    }
+    if (openedId.current === selectedId) return
+    openedId.current = selectedId
+    const item = items.find((row) => row.id === selectedId)
+    if (!item) return
+    setChosen((current) => {
+      const next = filtersHiding(item, current)
+      if (next.scope === current.scope && next.delivery === current.delivery) return current
+      return next
+    })
+  }, [selectedId, items])
+  useEffect(() => {
+    if (!selectedId) return
+    const ancestors = treePath(model.tree, selectedId).slice(0, -1)
+    if (!ancestors.length) return
+    setCollapsed((current) => {
+      let changed = false
+      const next = new Set(current)
+      for (const ancestor of ancestors) {
+        if (next.delete(ancestor.id)) changed = true
+      }
+      return changed ? next : current
+    })
+  }, [selectedId, model.tree])
+  useSearchHotkey(() => setSearchOpen(true))
+  const visible = model.selected ? doc : null
+  const leaveIfGone = (
+    nextAudience: DocsAudience,
+    nextProject: string | 'all',
+    nextFilters: FilterSelection,
+  ) => {
+    if (!selectedId) return
+    const next = docsViewModel(items, nextAudience, nextProject, nextFilters, selectedId, doc)
+    if (!next.selected) onLeaveTree()
+  }
+  return (
+    <div
+      className={classes(
+        'flex flex-col bg-surface-sunken',
+        framed ? 'min-h-dvh' : 'min-h-[calc(100dvh-var(--topbar-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
+      )}
+    >
+      <DocsChrome
+        audience={audience}
+        onAudience={(next) => {
+          onAudience(next)
+          leaveIfGone(next, project, chosen)
+        }}
+        signedIn={signedIn}
+        userCount={model.userCount}
+        technicalCount={model.technicalCount}
+        showProjectChooser={showProjectChooser}
+        project={project}
+        onProject={(next) => {
+          onProject(next)
+          leaveIfGone(audience, next, chosen)
+        }}
+        subjects={model.subjects}
+        offered={model.offered}
+        chosen={model.stale}
+        onFilters={(next) => {
+          setChosen(next)
+          leaveIfGone(audience, project, next)
+        }}
+        inView={model.inView}
+        active={model.active}
+        createAction={createAction}
+      />
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
+        <DocsRail
+          tree={model.tree}
+          groups={model.groups}
+          selectedId={selectedId}
+          collapsed={collapsed}
+          onToggle={(id) =>
+            setCollapsed((current) => {
+              const next = new Set(current)
+              if (next.has(id)) next.delete(id)
+              else next.add(id)
+              return next
+            })
+          }
+          onSelect={onSelect}
+          onSearch={() => setSearchOpen(true)}
+          loading={loading}
+          audience={audience}
+        />
+        <DocsReading
+          doc={visible}
+          crumbs={model.crumbs}
+          around={model.around}
+          onSelect={onSelect}
+          localActions={localActions}
+          error={error}
+        />
+        <DocsFacts doc={visible} headings={visible ? model.headings : []} signedIn={signedIn} />
+      </div>
+      <SearchDialog
+        open={searchOpen}
+        onOpenChange={(open) => {
+          setSearchOpen(open)
+          if (!open) onSearchQuery('')
+        }}
+        query={searchQuery}
+        onQueryChange={onSearchQuery}
+        results={searchResults}
+        tree={items}
+        onChoose={onSelect}
+        scopeLabel={`Searching the ${audience === 'user' ? 'User guide' : 'Technical'} docs`}
+      />
+    </div>
+  )
+}

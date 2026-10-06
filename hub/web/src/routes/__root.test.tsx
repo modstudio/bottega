@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostedSignInFrame, RailFooterIdentity } from '@/routes/__root'
+import { HostedPublicFrame, HostedSignInFrame, RailFooterIdentity } from '@/routes/__root'
 import { spaceMenuItems } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
@@ -15,6 +15,17 @@ test('hosted sign-in renders without application navigation or a rail footer', (
   expect(html).toContain('Sign in form')
   expect(html).not.toContain('aria-label="Navigation"')
   expect(html).not.toContain('Hosted hub')
+})
+
+test('hosted public frame is rail-free and full width', () => {
+  const html = renderToStaticMarkup(
+    <HostedPublicFrame>
+      <p>Docs page</p>
+    </HostedPublicFrame>,
+  )
+  expect(html).toContain('Docs page')
+  expect(html).not.toContain('aria-label="Navigation"')
+  expect(html).not.toContain('max-w-md')
 })
 
 test('hosted identity without a session is signed out and cannot sign out', () => {

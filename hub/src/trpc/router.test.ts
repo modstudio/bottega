@@ -499,6 +499,7 @@ describe('doc router', () => {
           scope: 'global',
           subject: null,
           audience: 'technical',
+          delivery: 'inject',
         },
       ],
     })
@@ -518,6 +519,7 @@ describe('doc router', () => {
       scope: 'global',
       subject: null,
       audience: 'technical',
+      delivery: 'inject',
       body: 'Hi',
     })
   })

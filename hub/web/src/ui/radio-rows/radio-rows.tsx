@@ -3,6 +3,19 @@ import { classes } from '../text/classes'
 
 type RadioOption = { value: string; label: string; recommended?: boolean }
 
+/** The disc RadioRows and other radio rows share. */
+export function RadioIndicator({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={classes(
+        'mt-0.5 size-4 shrink-0 rounded-full border-4',
+        selected ? 'border-accent-fill bg-surface-page' : 'border-border-strong bg-surface-page',
+      )}
+    />
+  )
+}
+
 /** A radio group for long choices, with selection following focus per the APG pattern. */
 export function RadioRows({
   value,
@@ -40,15 +53,7 @@ export function RadioRows({
                 checked={selected}
                 onChange={() => onChange(option.value)}
               />
-              <span
-                aria-hidden
-                className={classes(
-                  'mt-0.5 size-4 shrink-0 rounded-full border-4',
-                  selected
-                    ? 'border-accent-fill bg-surface-page'
-                    : 'border-border-strong bg-surface-page',
-                )}
-              />
+              <RadioIndicator selected={selected} />
               <span className="min-w-0 flex-1">
                 {option.label}
                 {option.recommended ? (

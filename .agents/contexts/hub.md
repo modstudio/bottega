@@ -52,8 +52,8 @@ carries a `dark:` color decision of its own. Color supplied by data is not a tok
 element receives its pair and the token file decides which one applies, as `data-project`
 does.
 
-Figures and page titles use the mono family, and everything else the sans family; both
-are named by their token.
+Page titles and section headings use the serif family, figures stay mono, and body
+text stays sans; each is named by its token.
 
 The responsive measure is a card's own container rather than the viewport, so a docked
 panel collapses a toolbar on any screen. Every collection is a `TableCard` with the same

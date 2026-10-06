@@ -2,18 +2,10 @@ export { compactTokens } from '../../../../shared/compact-number'
 
 import { compactTokens } from '../../../../shared/compact-number'
 
-const compactNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
-
 export function vendorFigures(vendors: { agent: string; tokens: number }[]) {
   return vendors.length
     ? vendors.map((vendor) => `${vendor.agent} ${compactTokens(vendor.tokens)}`).join(' · ')
     : '-'
-}
-
-export function compactBytes(value: number) {
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${compactNumber.format(value / 1024)} KB`
-  return `${compactNumber.format(value / (1024 * 1024))} MB`
 }
 
 export function duration(ms: number) {
