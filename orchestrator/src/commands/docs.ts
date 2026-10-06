@@ -43,6 +43,8 @@ export function register(program: Command): void {
     .option('--author <value>')
     .option('--delivery <value>')
     .option('--audience <value>')
+    .option('--match <value>')
+    .option('--body-match <value>')
     .option('--parent <slug>')
     .addOption(new NoParentOption('--no-parent'))
     .option('--position <value>')

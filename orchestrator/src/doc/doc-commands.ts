@@ -17,6 +17,7 @@ import {
   getDoc,
   importDocs,
   lintStoredDoc,
+  listDocMetadata,
   listDocRevisions,
   listDocs,
   listOpenResumes,
@@ -27,6 +28,11 @@ import {
   storedDocsHaveRepositoryReferences,
   validateDocAddressFilter,
 } from './docs.ts'
+
+const DOC_KEYWORD_LIST_LIMIT = 50
+
+const compareStoreText = (left: string, right: string) =>
+  Buffer.compare(Buffer.from(left), Buffer.from(right))
 
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type DocPresentation = {
@@ -152,6 +158,44 @@ async function handledEarlyDocCommand(
   return true
 }
 
+function keywordListDocs(
+  filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
+  match: string | undefined,
+  bodyMatch: string | undefined,
+) {
+  const normalizedMatch = match?.toLocaleLowerCase()
+  const metadata = [
+    ...(match !== undefined
+      ? listDocMetadata({ ...filters, match }).filter((doc) =>
+          [doc.title, doc.slug].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedMatch!),
+          ),
+        )
+      : []),
+    ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
+  ]
+  return [...new Map(metadata.map((doc) => [doc.id, doc])).values()]
+    .sort(
+      (left, right) =>
+        compareStoreText(left.scope, right.scope) ||
+        compareStoreText(left.subject ?? '', right.subject ?? '') ||
+        left.position - right.position ||
+        compareStoreText(left.title, right.title),
+    )
+    .slice(0, DOC_KEYWORD_LIST_LIMIT)
+    .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null))
+    .filter((doc) => doc !== null)
+}
+
+function listedDocs(
+  filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
+  match: string | undefined,
+  bodyMatch: string | undefined,
+) {
+  if (match === undefined && bodyMatch === undefined) return listDocs(filters)
+  return keywordListDocs(filters, match, bodyMatch)
+}
+
 function handledReadDocCommand(
   sub: string,
   argv: string[],
@@ -161,12 +205,15 @@ function handledReadDocCommand(
 ): boolean {
   const { has } = flags
   if (sub === 'list') {
-    const rows = listDocs({
+    const filters = {
       scope: address.scope,
       ...(has('subject') || has('user') ? { subject: address.subject } : {}),
       owner: address.owner,
       audience: flags.flag('audience'),
-    })
+    }
+    const match = flags.flag('match')
+    const bodyMatch = flags.flag('body-match')
+    const rows = listedDocs(filters, match, bodyMatch)
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(
