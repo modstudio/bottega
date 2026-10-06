@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   composeCompletedReplyEndedError,
   deriveLiveOutcome,
+  LAST_VENDOR_EVENT_TYPE_MAX,
   type LiveOutcomeFacts,
   lastStdoutJsonlType,
 } from './live-outcome.ts'
@@ -164,6 +165,39 @@ describe('completed-reply process-ended error composition', () => {
         `signal: SIGKILL\n` +
         `last vendor event: error\n` +
         `vendor stderr: [withheld: secret-shaped content]`,
+    },
+    {
+      name: 'a secret-shaped type is withheld',
+      facts: {
+        exitCode: 1,
+        failoverTerminal: '',
+        signal: null,
+        lastVendorEventType: 'token=not-a-real-secret',
+        stderr: '',
+      },
+      expected: `${endedNotice(1)}\nlast vendor event: [withheld: secret-shaped content]`,
+    },
+    {
+      name: 'a multiline type is omitted',
+      facts: {
+        exitCode: 1,
+        failoverTerminal: '',
+        signal: null,
+        lastVendorEventType: 'error\nitem.completed',
+        stderr: '',
+      },
+      expected: endedNotice(1),
+    },
+    {
+      name: 'an oversized type is cut and marked',
+      facts: {
+        exitCode: 1,
+        failoverTerminal: '',
+        signal: null,
+        lastVendorEventType: `${'x'.repeat(LAST_VENDOR_EVENT_TYPE_MAX)}overflow`,
+        stderr: '',
+      },
+      expected: `${endedNotice(1)}\nlast vendor event: ${'x'.repeat(LAST_VENDOR_EVENT_TYPE_MAX)}…`,
     },
   ])('$name', ({ facts, expected }) => {
     expect(composeCompletedReplyEndedError(facts)).toBe(expected)

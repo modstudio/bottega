@@ -6,6 +6,8 @@ import { errorTail } from './run/run-process.ts'
 import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
 
 const SECRET_SHAPED_STDERR = '[withheld: secret-shaped content]'
+export const LAST_VENDOR_EVENT_TYPE_MAX = 64
+const CONTROL_CHARACTERS = /[\p{Cc}]/u
 
 export type LiveOutcomeFacts = {
   writesJob: boolean
@@ -152,6 +154,14 @@ export function lastStdoutJsonlType(stdout: string): string | null {
   }
 }
 
+function recordedLastVendorEventType(raw: string | null): string | null {
+  const trimmed = raw?.trim() ?? ''
+  if (!trimmed || CONTROL_CHARACTERS.test(trimmed)) return null
+  if (containsSecretShaped(trimmed)) return SECRET_SHAPED_STDERR
+  if (trimmed.length <= LAST_VENDOR_EVENT_TYPE_MAX) return trimmed
+  return `${trimmed.slice(0, LAST_VENDOR_EVENT_TYPE_MAX)}…`
+}
+
 export function composeCompletedReplyEndedError(facts: CompletedReplyEndedFacts): string {
   const notice =
     `the worker completed and wrote its reply, then the process ended ` +
@@ -160,7 +170,7 @@ export function composeCompletedReplyEndedError(facts: CompletedReplyEndedFacts)
   const lines = [errorTail(head)]
   const signal = facts.signal?.trim() ?? ''
   if (signal) lines.push(`signal: ${signal}`)
-  const eventType = facts.lastVendorEventType?.trim() ?? ''
+  const eventType = recordedLastVendorEventType(facts.lastVendorEventType)
   if (eventType) lines.push(`last vendor event: ${eventType}`)
   const stderr = facts.stderr.trim()
   if (stderr) {
