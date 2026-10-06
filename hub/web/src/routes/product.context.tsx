@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { TaskView } from '@/components/work-view'
-import { isHostedMode } from '@/lib/hub-mode'
-import { HomePage } from '@/site/pages'
-
-export const Route = createFileRoute('/')({
+import { ContextPage } from '@/site/pages'
+import { requireHostedSite } from '@/site/route'
+export const Route = createFileRoute('/product/context')({
+  beforeLoad: requireHostedSite,
+  component: ContextPage,
   head: () => ({
     meta: [
       { title: 'Bottega' },
@@ -14,5 +14,4 @@ export const Route = createFileRoute('/')({
       },
     ],
   }),
-  component: () => (isHostedMode() ? <HomePage /> : <TaskView name="flight" />),
 })

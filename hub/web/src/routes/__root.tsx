@@ -14,10 +14,12 @@ import {
   isHostedMode,
   isHostedPath,
   isHostedSignInFramePath,
+  isMarketingPath,
   navForMode,
 } from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
+import { SiteFrame } from '@/site/chrome'
 import { queryClient, trpc } from '@/trpc/client'
 import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
 import { UserMenu } from '@/ui/shell/user-menu'
@@ -51,8 +53,18 @@ export function HostedSignInFrame({ children }: { children: React.ReactNode }) {
 }
 
 /** Rail-free frame for hosted pages that stay reachable signed out, such as docs. */
-export function HostedPublicFrame({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-dvh bg-surface-page text-text-primary">{children}</main>
+export function HostedPublicFrame({
+  children,
+  signedIn = false,
+}: {
+  children: React.ReactNode
+  signedIn?: boolean
+}) {
+  return (
+    <div className="min-h-dvh bg-surface-page text-text-primary">
+      <SiteFrame identity={signedIn ? 'signed-in' : 'signed-out'}>{children}</SiteFrame>
+    </div>
+  )
 }
 
 function identityForMode(hosted: boolean, email: string | null) {
@@ -112,8 +124,14 @@ export const Route = createRootRoute({
         </HostedSignInFrame>
       )
     }
-    if (hosted && isDocsPath(pathname) && !signedIn) {
-      return <HostedPublicFrame>{whoami.isPending ? null : <Outlet />}</HostedPublicFrame>
+    if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
+      if (whoami.isPending) return null
+      if (pathname === '/' && signedIn) return <AppLayout hosted pathname={pathname} />
+      return (
+        <HostedPublicFrame signedIn={signedIn}>
+          <Outlet />
+        </HostedPublicFrame>
+      )
     }
     return <AppLayout hosted={hosted} pathname={pathname} />
   },
