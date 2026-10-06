@@ -14,14 +14,16 @@ import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environm
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
-import { type Project, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
+import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
-import { continuationCheckoutDecision } from './continuation-checkout.ts'
+import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import type { ContinuationTreeDecision } from './continuation-tree-decision.ts'
 import {
-  type ContinuationTreeDecision,
-  continuationTreeDecision,
-} from './continuation-tree-decision.ts'
+  continuationReadOnlyBase,
+  continuationTreeCwd,
+  requireContinuationTree,
+} from './continuation-tree-service.ts'
 import { questionOpenSql } from './question-open.ts'
 import {
   continuationBranchAvailability,
@@ -563,25 +565,20 @@ export async function continueRun(
       )
       .all(id, id) as ChainTurn[],
   )
-  const rootProject = row.repo ? projectByName(row.repo) : null
-  const checkout = continuationCheckoutDecision({
+  const checkout = requireContinuationCheckout({
+    rootId: id,
+    operation: 'continued',
     latestCwd: latest.cwd,
     rootCwd: row.cwd,
-    rootProjectPath: rootProject?.path ?? null,
+    rootRepo: row.repo,
   })
-  if (checkout.action === 'refuse') {
-    throw new Error(
-      `run ${id} cannot be continued: its chain has no available registered repository identity; ` +
-        'dispatch a new run from the registered project checkout',
-    )
-  }
   const inheritedLaunch = resumeLaunchForRoot(id)
   const {
     project,
     recordedTreeMatches,
     plan: treePlan,
     branchSource,
-  } = continuationTree(id, row, latest, rootProject!)
+  } = continuationTree(id, row, latest, checkout.project)
   refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
   const savedCheckpointContext = continuationCheckpointContext({
     database: db(),
@@ -616,32 +613,17 @@ export async function continueRun(
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.id} (turn ${sessionFrom!.turn})`,
     )
   }
-  const writesRepo = Boolean(job(row.job).needs.writesRepo)
-  const recordedTreePresent = writesRepo
-    ? recordedTreeMatches
-    : Boolean(latest.worktree && existsSync(latest.worktree))
   const readerBase = latest.base_commit ?? row.base_commit
-  const treeDecision = continuationTreeDecision({
-    writesRepo,
-    recordedTreePresent,
+  const treeDecision = requireContinuationTree({
+    rootId: id,
+    projectName: row.repo,
+    projectPath: checkout.project.path,
+    writesRepo: Boolean(job(row.job).needs.writesRepo),
+    recordedTreeMatches,
+    recordedWorktree: latest.worktree,
     writerTreeRecoverable: Boolean(treePlan),
     baseCommit: readerBase,
-    baseCommitAvailable: Boolean(
-      readerBase &&
-        gitContext(rootProject!.path, 'rev-parse', '--verify', `${readerBase}^{commit}`),
-    ),
   })
-  if (treeDecision.action === 'refuse') {
-    const detail =
-      treeDecision.reason === 'reader-base-missing'
-        ? 'its read-only base commit was not recorded'
-        : treeDecision.reason === 'reader-base-unavailable'
-          ? `its read-only base commit ${readerBase} is unavailable in project ${row.repo}`
-          : 'its writing tree cannot be recreated from a retained tip'
-    throw new Error(
-      `run ${id} cannot be continued: ${detail}; dispatch a new run from the registered project checkout`,
-    )
-  }
   let prompt: string
   if (checkpointContext) {
     const rootPrompt = db().query('SELECT prompt_path FROM run WHERE id=?').get(id) as {
@@ -688,7 +670,7 @@ export async function continueRun(
     return adopted
   })
   const childId = await detach(row.job, prompt, {
-    cwd: treeDecision.action === 'inherit-present-tree' ? checkout.cwd : checkout.projectPath,
+    cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project.path),
     repo: row.repo ?? undefined,
     ...inheritedLaunch,
     transport: chainTransport(id) ?? undefined,
@@ -701,8 +683,7 @@ export async function continueRun(
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),
       treePlan: recreatedTreePlan(treePlan),
-      readOnlyBase:
-        treeDecision.action === 'provision-reader-tree' ? treeDecision.baseCommit : undefined,
+      readOnlyBase: continuationReadOnlyBase(treeDecision),
     },
   })
   recordContinuationTreeSource(childId, branchSource, treePlan)

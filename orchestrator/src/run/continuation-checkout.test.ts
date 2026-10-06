@@ -24,7 +24,7 @@ describe('continuation checkout decision', () => {
     ],
     [
       'refusal when the root project is unavailable',
-      { latestCwd: '/callers/bottega', rootCwd: '/projects/adanim/root', rootProjectPath: null },
+      { latestCwd: '/callers/other', rootCwd: '/projects/adanim/root', rootProjectPath: null },
       { action: 'refuse', reason: 'missing-repository-identity' },
     ],
   ] as const)('%s', (_name, input, expected) => {

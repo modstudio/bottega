@@ -14,13 +14,12 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
-import { projectByName } from '../project/projects.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
-import { continuationCheckoutDecision } from './continuation-checkout.ts'
+import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -313,18 +312,13 @@ export async function retryRun(
   const latestCheckout = db()
     .query('SELECT cwd FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1')
     .get(row.root_id, row.root_id) as { cwd: string | null }
-  const rootProject = row.repo ? projectByName(row.repo) : null
-  const checkout = continuationCheckoutDecision({
+  const checkout = requireContinuationCheckout({
+    rootId: row.root_id,
+    operation: 'retried',
     latestCwd: latestCheckout.cwd,
     rootCwd: row.root_cwd,
-    rootProjectPath: rootProject?.path ?? null,
+    rootRepo: row.repo,
   })
-  if (checkout.action === 'refuse') {
-    throw new Error(
-      `run ${row.root_id} cannot be retried: its chain has no available registered repository identity; ` +
-        'dispatch a new run from the registered project checkout',
-    )
-  }
   const continuationInstructions = continuationInstructionsForFreshRetry(
     writesRepo,
     id,
@@ -813,18 +807,13 @@ export async function answerRun(
   }
 
   const worktreePath = latest.worktree ?? row.worktree
-  const rootProject = row.repo ? projectByName(row.repo) : null
-  const checkout = continuationCheckoutDecision({
+  const checkout = requireContinuationCheckout({
+    rootId: id,
+    operation: 'answered',
     latestCwd: latest.cwd,
     rootCwd: row.cwd,
-    rootProjectPath: rootProject?.path ?? null,
+    rootRepo: row.repo,
   })
-  if (checkout.action === 'refuse') {
-    throw new Error(
-      `run ${id} cannot be answered: its chain has no available registered repository identity; ` +
-        'dispatch a new run from the registered project checkout',
-    )
-  }
   /**
    * DETACHED, for the reason `orch do` already is.
    *
@@ -857,7 +846,7 @@ export async function answerRun(
               base: latest.base_commit ?? row.base_commit ?? '',
               repoRoot:
                 (await import('../git/git-environment.ts')).repoRootOf(worktreePath) ??
-                checkout.projectPath,
+                checkout.project.path,
               source: latest.worktree_source ?? row.worktree_source ?? undefined,
             }
           : null,
