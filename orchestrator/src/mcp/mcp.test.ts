@@ -241,6 +241,9 @@ describe('orch MCP', () => {
       expect(tools.find((tool) => tool.name === 'abandon_workflow')?.inputSchema.required).toEqual(
         expect.arrayContaining(['cursor', 'reason']),
       )
+      expect(
+        tools.find((tool) => tool.name === 'attach_workflow_text')?.inputSchema.required,
+      ).toEqual(expect.arrayContaining(['cursor', 'text']))
       expect(tools.find((tool) => tool.name === 'compose_workflow')?.description).toContain(
         'without opening a run',
       )

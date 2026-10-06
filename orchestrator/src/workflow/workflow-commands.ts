@@ -28,6 +28,7 @@ import {
   renderWorkflowCursorLine,
   ruleWorkflow,
 } from './workflow-cursor.ts'
+import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { resolveWorkflowCursorMode } from './workflow-cursor-selection.ts'
 import {
   type FloorEvidencePorts,
@@ -37,6 +38,7 @@ import {
 import { type ProbeRecord, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -58,7 +60,12 @@ type Presentation = {
   error(value: string): void
   setExitCode(code: number): void
 }
-type WorkflowCommandOptions = { cwd?: string; json?: boolean }
+type WorkflowCommandOptions = {
+  cwd?: string
+  json?: boolean
+  stdinText?: () => Promise<string>
+  stdinIsTTY?: () => boolean | undefined
+}
 type ProbePrintRecord = Pick<ProbeRecord, 'id' | 'withheld'>
 export type CommandOutcome = { exitCode: number; errorLine?: string }
 const positive = (value: string | undefined, label: string): number | undefined => {
@@ -106,7 +113,7 @@ export async function workflowCommand(
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | next | await | rule | abandon | cursors | probe | exec | hydrate | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import',
     )
 }
 
@@ -117,7 +124,8 @@ async function cursorCommand(
   presentation: Presentation,
   options: WorkflowCommandOptions,
 ): Promise<boolean> {
-  if (sub === 'next') nextCommand(argv, print)
+  if (sub === 'attach') await attachCommand(argv, print, options)
+  else if (sub === 'next') nextCommand(argv, print)
   else if (sub === 'await') awaitCommand(argv, print)
   else if (sub === 'rule') ruleCommand(argv, print)
   else if (sub === 'abandon') abandonCommand(argv, print)
@@ -126,6 +134,57 @@ async function cursorCommand(
   else if (sub === 'exec') await execCommand(argv, print, presentation, options)
   else return false
   return true
+}
+
+async function attachCommand(
+  argv: string[],
+  print: (value: unknown, line?: string) => void,
+  options: WorkflowCommandOptions,
+): Promise<void> {
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  const project = flagValue(argv, 'project')
+  if (cursor && !project && argv[2] && !argv[2].startsWith('--'))
+    throw new Error('workflow text is not accepted as an argument; use --file <path> or stdin')
+  if (project && argv[3] && !argv[3].startsWith('--'))
+    throw new Error('workflow text is not accepted as an argument; use --file <path> or stdin')
+  const file = flagValue(argv, 'file')
+  const stdinIsTTY = options.stdinIsTTY?.() ?? process.stdin.isTTY
+  const body = file
+    ? readFileSync(file, 'utf8')
+    : stdinIsTTY !== true
+      ? await (options.stdinText?.() ?? Bun.stdin.text())
+      : (() => {
+          throw new Error('no text: pass --file <path> or pipe text on stdin')
+        })()
+  if (!body.trim()) throw new Error('workflow text must not be empty; provide text to attach')
+  const context = cliWorkflowCursorContext()
+  if (cursor && !project) {
+    const reference = attachWorkflowTextByHandle(cursor, body, context)
+    print(reference, reference)
+    return
+  }
+  if (!project) throw new Error('--project is required without a cursor-only handle')
+  const slug = argv[2]?.startsWith('--') ? '' : (argv[2] ?? '')
+  if (!slug) throw new Error('workflow slug is required without a cursor-only handle')
+  const args = workflowArgs(argv)
+  const mode = resolveWorkflowCursorMode(
+    slug,
+    project,
+    flagValue(argv, 'mode'),
+    args,
+    context,
+    'orch workflow attach',
+    'pass --mode <slug>',
+    undefined,
+    cursor,
+  )
+  const reference = attachWorkflowText(
+    { project, workflow: slug, mode, key: workflowKeyOf(args) || undefined },
+    cursor,
+    body,
+    context,
+  )
+  print(reference, reference)
 }
 
 async function execCommand(

@@ -15,7 +15,7 @@ export const floorGuidance = {
     'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`',
   'command-exit': 'run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`',
   'recorded-artifact':
-    'record the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id>>`',
+    'record or attach the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -43,6 +43,7 @@ export type ArtifactRef =
   | { kind: 'exec'; id: number }
   | { kind: 'doc'; id: number }
   | { kind: 'run'; id: number }
+  | { kind: 'attached-text'; id: number }
   | { kind: 'id'; id: number }
 
 type ValidatedSatisfy =
@@ -118,7 +119,7 @@ function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id>>'
+    return '--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -137,9 +138,11 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (doc) return { kind: 'doc', id: Number(doc[1]) }
   const run = /^run:(\d+)$/i.exec(trimmed)
   if (run) return { kind: 'run', id: Number(run[1]) }
+  const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
+  if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
-    error: `--artifact ${trimmed} is not a doc id, task:<KEY>, task:<KEY>#comment:<id>, run id, probe:<id>, or exec:<id>`,
+    error: `--artifact ${trimmed} is not a doc id, task:<KEY>, task:<KEY>#comment:<id>, run id, probe:<id>, exec:<id>, or attached-text:<id>`,
   }
 }
 

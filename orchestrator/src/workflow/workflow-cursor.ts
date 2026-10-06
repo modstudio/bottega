@@ -54,6 +54,7 @@ import {
 } from './workflow-floor-evidence.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { deleteWorkflowText, workflowTextFacts, workflowTextRows } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 export type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
@@ -89,6 +90,18 @@ const cursorValue = (row: CursorRow): CursorValue => ({
   stepSlug: row.step_slug,
   state: row.state,
 })
+
+function withWorkflowTextFacts<
+  Step extends {
+    needs: readonly import('../project/project-injection.ts').WorkflowFactSource[]
+    facts: Record<string, unknown>
+  },
+>(step: Step, cursorId: number, d: Database): Step {
+  return {
+    ...step,
+    facts: { ...step.facts, ...workflowTextFacts(step.needs, workflowTextRows(cursorId, d)) },
+  }
+}
 
 function closeOpenWorkflowQuestion(
   cursorId: number,
@@ -429,14 +442,18 @@ function getWorkflowStepWithCursorImpl(
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
   }
-  const served = getWorkflowStep(
-    slug,
-    project,
-    decision.slug,
-    input.effectiveArgs,
+  const served = withWorkflowTextFacts(
+    getWorkflowStep(
+      slug,
+      project,
+      decision.slug,
+      input.effectiveArgs,
+      d,
+      input.selection,
+      cursorAutonomy(row),
+    ),
+    row.id,
     d,
-    input.selection,
-    cursorAutonomy(row),
   )
   const openNotice = opensCursor
     ? formatCursorOpened({
@@ -679,6 +696,11 @@ function nextWorkflowStepImpl(
       d,
     ),
   })
+  if (
+    decision.action === 'finish' ||
+    composition.steps[row.ordinal]!.needs.includes('workflow-text')
+  )
+    deleteWorkflowText(row.id, d)
   if (decision.action === 'finish') {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
@@ -705,18 +727,22 @@ function nextWorkflowStepImpl(
     row.id,
   )
   return renderWorkflowStep({
-    ...getWorkflowStep(
-      slug,
-      project,
-      decision.slug,
-      JSON.parse(row.args),
+    ...withWorkflowTextFacts(
+      getWorkflowStep(
+        slug,
+        project,
+        decision.slug,
+        JSON.parse(row.args),
+        d,
+        {
+          mode,
+          version: row.workflow_version,
+          catalogueVersion: row.catalogue_version,
+        },
+        cursorAutonomy(row),
+      ),
+      row.id,
       d,
-      {
-        mode,
-        version: row.workflow_version,
-        catalogueVersion: row.catalogue_version,
-      },
-      cursorAutonomy(row),
     ),
     cursor: row.id,
   })
@@ -784,6 +810,7 @@ function abandonSelectedWorkflowCursor(
         SET abandoned_at=?, abandoned_reason=?
       WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
   ).run(at, reason.trim(), row.id)
+  deleteWorkflowText(row.id, d)
   d.query(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,

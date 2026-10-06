@@ -162,6 +162,7 @@ export function register(program: Command): void {
     .command('workflow [args...]')
     .option('--version <value>')
     .option('--catalogue-version <value>')
+    .option('--cursor <value>')
     .option('--file <value>')
     .option('--reason <value>')
     .option('--author <value>')
