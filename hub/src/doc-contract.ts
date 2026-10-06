@@ -15,7 +15,7 @@ export const DocTreeItemSchema = z.object({
 
 export const DocSchema = DocTreeItemSchema.extend({ body: z.string() })
 
-export const DocSearchMatchSchema = z.object({
+const DocSearchMatchSchema = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),
@@ -27,6 +27,4 @@ export const DocSearchMatchSchema = z.object({
 export const DocTreeSchema = z.object({ items: z.array(DocTreeItemSchema) })
 export const DocSearchSchema = z.object({ items: z.array(DocSearchMatchSchema) })
 
-export type DocTreeItem = z.infer<typeof DocTreeItemSchema>
-export type Doc = z.infer<typeof DocSchema>
 export type DocSearchMatch = z.infer<typeof DocSearchMatchSchema>

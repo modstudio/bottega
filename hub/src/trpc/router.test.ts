@@ -473,39 +473,14 @@ describe('doc router', () => {
     docList.mockResolvedValueOnce([row])
     const rows = await caller.doc.list({ scope: 'global' })
     expect(docList).toHaveBeenCalledWith({ scope: 'global' })
-    expect(rows).toEqual({
-      items: [
-        {
-          id: '1',
-          slug: 'hello',
-          title: 'Hello',
-          parentId: null,
-          position: 0,
-          updatedAt: '2026-01-01T00:00:00Z',
-          scope: 'global',
-          subject: null,
-          audience: 'technical',
-        },
-      ],
-    })
+    expect(rows).toEqual([row])
   })
 
   test('get passes scope, subject and slug to docGet', async () => {
     docGet.mockResolvedValueOnce(row)
     const got = await caller.doc.get({ scope: 'global', subject: null, slug: 'hello' })
     expect(docGet).toHaveBeenCalledWith('global', null, 'hello')
-    expect(got).toEqual({
-      id: '1',
-      slug: 'hello',
-      title: 'Hello',
-      body: 'Hi',
-      parentId: null,
-      position: 0,
-      updatedAt: '2026-01-01T00:00:00Z',
-      scope: 'global',
-      subject: null,
-      audience: 'technical',
-    })
+    expect(got).toEqual(row)
   })
 
   test('set passes the input to docSet', async () => {

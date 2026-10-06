@@ -29,7 +29,7 @@ import {
   validateDocAddressFilter,
 } from './docs.ts'
 
-export const DOC_KEYWORD_LIST_LIMIT = 50
+const DOC_KEYWORD_LIST_LIMIT = 50
 
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type DocPresentation = {
@@ -155,6 +155,30 @@ async function handledEarlyDocCommand(
   return true
 }
 
+function keywordListDocs(
+  filters: Parameters<typeof listDocMetadata>[0],
+  match: string | undefined,
+  bodyMatch: string | undefined,
+) {
+  const metadata = [
+    ...(match !== undefined ? listDocMetadata({ ...filters, match }) : []),
+    ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
+  ]
+  return [...new Map(metadata.map((doc) => [doc.id, doc])).values()]
+    .slice(0, DOC_KEYWORD_LIST_LIMIT)
+    .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null))
+    .filter((doc) => doc !== null)
+}
+
+function listedDocs(
+  filters: Parameters<typeof listDocMetadata>[0],
+  match: string | undefined,
+  bodyMatch: string | undefined,
+) {
+  if (match === undefined && bodyMatch === undefined) return listDocs(filters)
+  return keywordListDocs(filters, match, bodyMatch)
+}
+
 function handledReadDocCommand(
   sub: string,
   argv: string[],
@@ -172,20 +196,7 @@ function handledReadDocCommand(
     }
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
-    const rows =
-      match !== undefined || bodyMatch !== undefined
-        ? [
-            ...new Map(
-              [
-                ...(match !== undefined ? listDocMetadata({ ...filters, match }) : []),
-                ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
-              ].map((doc) => [doc.id, doc]),
-            ).values(),
-          ]
-            .slice(0, DOC_KEYWORD_LIST_LIMIT)
-            .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, address.owner))
-            .filter((doc) => doc !== null)
-        : listDocs(filters)
+    const rows = listedDocs(filters, match, bodyMatch)
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(

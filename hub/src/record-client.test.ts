@@ -158,12 +158,12 @@ describe('record client', () => {
     const result = await clientWith(fetch).docSearch({
       query: 'welcome',
       scope: 'project',
-      subject: 'bottega',
+      subject: 'workshop',
       audience: 'technical',
       acrossReadableSpaces: true,
     })
     expect(requested).toBe(
-      'https://api.example.test/v1/docs/search?q=welcome&scope=project&subject=bottega&audience=technical&acrossReadableSpaces=true',
+      'https://api.example.test/v1/docs/search?q=welcome&scope=project&subject=workshop&audience=technical&acrossReadableSpaces=true',
     )
     expect(result.items[0]).toMatchObject({ spaceName: 'Workshop', matchPosition: null })
   })
