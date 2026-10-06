@@ -88,6 +88,7 @@ const interval: IntervalEvidence = {
   session_id: 'fixture',
   user_id: null,
 }
+const FIXED_CLOCK = Date.parse('2026-09-17T20:00:00.000Z')
 
 const admin = new SQL(adminUrl)
 try {
@@ -295,12 +296,17 @@ try {
     await upsertIntervals(actorUrl, identity, [
       { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture', user_id: USER },
     ])
-    const hostedDone = await hostedFlightDone(actorUrl, identity, {
-      name: 'done',
-      hours: 720,
-      filters: { agent: '', project: '', source: '' },
-      projects: [{ name: PLATFORM_SLUG, keyPrefixes: ['DEV'] }],
-    })
+    const hostedDone = await hostedFlightDone(
+      actorUrl,
+      identity,
+      {
+        name: 'done',
+        hours: 720,
+        filters: { agent: '', project: '', source: '' },
+        projects: [{ name: PLATFORM_SLUG, keyPrefixes: ['DEV'] }],
+      },
+      FIXED_CLOCK,
+    )
     if (!hostedDone.data.rows.some((row) => row.key === created.key && row.runs.length === 1))
       throw new Error('hosted done adapter did not return the seeded task and interval')
     const detail = await hostedTaskDetail(actorUrl, identity, created.key)
@@ -1024,10 +1030,10 @@ try {
     const pageNotes = await hostedNotes(actorUrl, identity, { stale: false })
     if (!pageNotes.notes.some((row) => row.id === allocatedNote.number))
       throw new Error('hosted notes page adapter did not return the seeded note')
-    const pageRatio = await hostedRatio(actorUrl, identity, 14)
+    const pageRatio = await hostedRatio(actorUrl, identity, 14, FIXED_CLOCK)
     if (!pageRatio.days.some((row) => row.day === '2026-09-17'))
       throw new Error('hosted ratio adapter did not return the seeded day')
-    const pageSpend = await hostedSpend(actorUrl, identity, 14)
+    const pageSpend = await hostedSpend(actorUrl, identity, 14, FIXED_CLOCK)
     if (!pageSpend.numerators.some((row) => row.name === 'codex'))
       throw new Error('hosted spend adapter did not return the seeded interval')
     const pageSettings = await hostedSettings(actorUrl, identity, [PLATFORM_SLUG])
@@ -1040,7 +1046,7 @@ try {
     )
       throw new Error('hosted settings adapter did not return members, sends and subscriptions')
     const emptyNotes = await hostedNotes(actorUrl, otherIdentity, { stale: false })
-    const emptyRatio = await hostedRatio(actorUrl, otherIdentity, 14)
+    const emptyRatio = await hostedRatio(actorUrl, otherIdentity, 14, FIXED_CLOCK)
     const emptySettings = await hostedSettings(actorUrl, otherIdentity, [])
     if (
       emptyNotes.notes.length ||
