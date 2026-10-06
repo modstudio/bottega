@@ -136,7 +136,7 @@ try {
   const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
 
   const publicRoleMigration = await run(
-    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-public-role-migration.test.ts'],
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-public-role.test.ts'],
     {
       ORCH_TEST_PUBLIC_ROLE_MIGRATION_URL: publicRoleMigrationUrl,
       ORCH_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL: publicRoleMigrationSuperuserUrl,
