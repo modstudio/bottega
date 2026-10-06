@@ -78,6 +78,9 @@ function renderRunnableComposition(result: WorkflowComposition): string {
 
 function modeChoiceLines(result: WorkflowComposition): string[] {
   if (!result.needs.mode) return []
+  const entries = Object.entries(result.arguments)
+  const mcpArgs = entries.length ? ` and \`args ${JSON.stringify(result.arguments)}\`` : ''
+  const cliArgs = entries.map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`).join('')
   return [
     'No mode is chosen yet.',
     'If the work has not been supplied, get it from the operator as a task key or a description before choosing a mode.',
@@ -88,7 +91,7 @@ function modeChoiceLines(result: WorkflowComposition): string[] {
     ),
     ...result.needs.mode.map((mode) => `${mode.slug}: ${mode.entry}`),
     'Choose a mode by answering its question, then compose again with that mode.',
-    `Next call: MCP \`compose_workflow\` or \`get_workflow_step\` with \`mode\`; CLI \`orch workflow compose ${result.workflow.slug} --project ${result.project} --mode <mode>\`.`,
+    `Next call: MCP \`compose_workflow\` or \`get_workflow_step\` with \`mode\`${mcpArgs}; CLI \`orch workflow compose ${result.workflow.slug} --project ${result.project} --mode <mode>${cliArgs}\`.`,
   ]
 }
 
