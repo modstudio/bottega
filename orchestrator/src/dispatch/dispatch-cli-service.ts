@@ -43,6 +43,7 @@ import {
 import {
   callerDrift,
   checkoutHasUncommittedWork,
+  isWorktreeRelativeRef,
   resolveBase,
 } from '../worktree/worktree-caller.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
@@ -184,10 +185,10 @@ export function taskBranchLandingBypassWarning(
 function warnTaskBranchBypass(
   cwd: string,
   key: string | null,
-  base: string,
+  base: string | undefined,
   error: (...values: unknown[]) => void,
 ): void {
-  if (!key) return
+  if (!key || !base) return
   // Best effort: --base is how a caller escapes an ambiguous or unresolvable
   // task branch, so failing to name the bypassed branch must not refuse it.
   let candidate: ReturnType<typeof resolveTaskBranch>
@@ -327,8 +328,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       readPrompt: prompt,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
-      warnTaskBranchBypass: (cwd, key) =>
-        warnTaskBranchBypass(cwd, key, flag('base')!, presentation.error),
+      warnTaskBranchBypass: (cwd, key, base) =>
+        warnTaskBranchBypass(cwd, key, base, presentation.error),
       resolveTaskBranchForDispatch: (cwd, key, reportReuse) =>
         resolveTaskBranchForDispatch(cwd, key, reportReuse, presentation.error),
       contractConflicts,
@@ -345,6 +346,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       },
       checkoutHasUncommittedWork,
       resolveBase,
+      isWorktreeRelativeRef,
       implicitReviewWarning,
       resolveCallerCheckout: (cwd) => resolveCallerCheckout(presentation.cwd(), cwd),
       resolveDispatchOptions: resolveOptions,

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import { resolveDispatchBase } from '../dispatch/dispatch-commands.ts'
 import { isWorktreeRelativeRef, resolveBase } from './git-environment.ts'
 
 describe('git environment', () => {
@@ -44,6 +45,9 @@ describe('git environment', () => {
 
       expect(resolveBase(tree, 'HEAD')).toBe(treeHead)
       expect(resolveBase(tree, 'main')).toBe(mainHead)
+      expect(resolveDispatchBase(tree, 'HEAD', resolveBase, isWorktreeRelativeRef)).toBe(treeHead)
+      expect(resolveDispatchBase(tree, 'main', resolveBase, isWorktreeRelativeRef)).toBe('main')
+      expect(resolveDispatchBase(main, 'HEAD', resolveBase, isWorktreeRelativeRef)).toBe(mainHead)
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
