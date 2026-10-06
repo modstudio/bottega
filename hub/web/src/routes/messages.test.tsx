@@ -62,7 +62,7 @@ test('messages render notice reach and question replies from the preloaded list'
     </QueryClientProvider>,
   )
   expect(html).toContain('Release notice')
-  expect(html).toContain('2 of 3 acknowledged · 1 not acknowledged')
+  expect(html).toContain('2 of 3 acknowledged')
   expect(html).toContain('Which release?')
   expect(html).toContain('2 replies · no answer accepted')
 })

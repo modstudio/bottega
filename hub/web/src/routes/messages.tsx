@@ -83,8 +83,7 @@ function reachText(row: MessageRow) {
   if (row.reached === null) return 'Reach unknown'
   if (row.reached === 0) return 'Reached no session'
   if (!row.ackRequired) return `${row.reached} reached`
-  const unacknowledged = row.unacknowledged?.length ?? row.reached - (row.acknowledged ?? 0)
-  return `${row.acknowledged ?? 0} of ${row.reached} acknowledged · ${unacknowledged} not acknowledged`
+  return `${row.acknowledged ?? 0} of ${row.reached} acknowledged`
 }
 
 function responseText(row: MessageRow) {
@@ -95,6 +94,7 @@ function responseText(row: MessageRow) {
 function MessagesList({
   rows,
   warning,
+  emptyTitle = 'No messages match these filters.',
   selectedId,
   panel,
   onOpen,
@@ -102,6 +102,7 @@ function MessagesList({
 }: {
   rows: MessageRow[]
   warning: string | null
+  emptyTitle?: string
   selectedId?: string
   panel?: React.ReactNode
   onOpen: (row: MessageRow) => void
@@ -119,8 +120,13 @@ function MessagesList({
         </span>
       ),
     },
-    { id: 'kind', label: 'Kind', render: (row) => row.kind },
-    { id: 'audience', label: 'Audience', render: (row) => row.audience ?? '-' },
+    { id: 'kind', label: 'Kind', priority: 'low', render: (row) => row.kind },
+    {
+      id: 'audience',
+      label: 'Audience',
+      priority: 'low',
+      render: (row) => row.audience ?? '-',
+    },
     {
       id: 'state',
       label: 'State',
@@ -158,7 +164,7 @@ function MessagesList({
         rows={rows}
         getKey={(row) => row.id}
         onOpen={onOpen}
-        empty={{ title: 'No messages match these filters.' }}
+        empty={{ title: emptyTitle }}
       />
     </>
   )
@@ -205,6 +211,13 @@ export function MessagesContent({
       <MessagesList
         rows={rows}
         warning={query.data?.warning ?? null}
+        emptyTitle={
+          query.isPending
+            ? 'Loading messages...'
+            : query.error
+              ? 'Messages could not be loaded.'
+              : undefined
+        }
         selectedId={selectedId}
         panel={panel}
         onOpen={onOpen}
