@@ -3,13 +3,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import {
-  borrowedCheckoutOf,
-  git,
-  gitOk,
-  gitRaw,
-  targetGitEnvironment,
-} from '../git/git-environment.ts'
+import { borrowedCheckoutOf, git, gitOk, gitRaw } from '../git/git-environment.ts'
 import {
   absentTreeTeardownPlan,
   projectAt,
@@ -649,28 +643,4 @@ export function unmergedBranch(
   args.push('--not', `--exclude=${branch}`, '--branches', '--remotes', '--tags')
   const count = Number(git(args, repoRoot))
   return count > 0 ? { count, tip } : null
-}
-
-/** Restore a protected branch, retaining git's refusal for an actionable cleanup report. */
-export function restoreBranch(
-  repoRoot: string,
-  branch: string,
-  tip: string,
-): { ok: true } | { ok: false; error: string } {
-  const ref = `refs/heads/${branch}`
-  const existing = gitOk(['rev-parse', '--verify', ref], repoRoot)
-  if (existing === tip) return { ok: true }
-  if (existing !== null) {
-    return { ok: false, error: `branch already exists at ${existing}` }
-  }
-  const zero = '0000000000000000000000000000000000000000'
-  const p = Bun.spawnSync(['git', 'update-ref', ref, tip, zero], {
-    cwd: repoRoot,
-    env: targetGitEnvironment(repoRoot),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return p.exitCode === 0
-    ? { ok: true }
-    : { ok: false, error: p.stderr.toString().trim() || `exit ${p.exitCode}` }
 }

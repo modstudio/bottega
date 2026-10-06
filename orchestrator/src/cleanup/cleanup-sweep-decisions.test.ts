@@ -31,6 +31,8 @@ describe('absent claim reconciliation', () => {
     liveLeaseOrPid: false,
     landingInFlight: false,
     branchKept: false,
+    recordedTip: null,
+    recordedTipProbe: 'absent' as const,
   }
 
   test('settles an absent resource after every guard passes', () => {
@@ -58,11 +60,67 @@ describe('absent claim reconciliation', () => {
     })
   })
 
-  test('keeps the conversation branch as a restore case', () => {
-    expect(decideAbsentClaim({ ...releasable, branchKept: true })).toEqual({
-      action: 'keep',
-      reason: 'missing kept branch requires restore',
+  test('restores an absent kept branch whose recorded tip remains', () => {
+    expect(
+      decideAbsentClaim({
+        ...releasable,
+        branchKept: true,
+        recordedTip: 'a'.repeat(40),
+        recordedTipProbe: 'present',
+      }),
+    ).toEqual({ action: 'restore-retained' })
+  })
+
+  test('settles a present kept branch as retained', () => {
+    expect(decideAbsentClaim({ ...releasable, probe: 'present', branchKept: true })).toEqual({
+      action: 'settle-retained',
     })
+  })
+
+  test('releases a kept branch whose recorded tip is gone or was not recorded', () => {
+    expect(
+      decideAbsentClaim({
+        ...releasable,
+        branchKept: true,
+        recordedTip: 'b'.repeat(40),
+      }),
+    ).toEqual({ action: 'release-lost-tip' })
+    expect(decideAbsentClaim({ ...releasable, branchKept: true })).toEqual({
+      action: 'release-lost-tip',
+    })
+  })
+
+  test('every lifecycle guard wins over kept-branch settlement', () => {
+    const kept = { ...releasable, probe: 'present' as const, branchKept: true }
+    expect(decideAbsentClaim({ ...kept, owningRepository: 'unknown-present' })).toEqual({
+      action: 'keep',
+      reason: 'owning repository unknown',
+    })
+    expect(decideAbsentClaim({ ...kept, probe: 'failed' })).toEqual({
+      action: 'keep',
+      reason: 'absence probe failed',
+    })
+    expect(decideAbsentClaim({ ...kept, allTurnsTerminal: false })).toEqual({
+      action: 'keep',
+      reason: 'conversation has a live turn',
+    })
+    expect(decideAbsentClaim({ ...kept, liveLeaseOrPid: true })).toEqual({
+      action: 'keep',
+      reason: 'conversation has a live lease or pid',
+    })
+    expect(decideAbsentClaim({ ...kept, landingInFlight: true })).toEqual({
+      action: 'keep',
+      reason: 'landing is in flight',
+    })
+  })
+
+  test('keeps a present resource that is not a kept branch', () => {
+    expect(decideAbsentClaim({ ...releasable, probe: 'present', allTurnsTerminal: false })).toEqual(
+      {
+        action: 'keep',
+        reason: 'resource is present',
+      },
+    )
   })
 
   test('keeps a claim with no project while its repository remains', () => {
