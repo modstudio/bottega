@@ -106,6 +106,7 @@ const ports: FloorEvidencePorts = {
   }),
   runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
+  resolveTreeCommit: () => 'abc',
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
 }
 
@@ -196,7 +197,13 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
     boundToCursor: true,
     boundToStep: true,
   })
-  expect(gathered.gate).toEqual({ id: 1, finished: true, exitCode: 0 })
+  expect(gathered.gate).toEqual({
+    id: 1,
+    finished: true,
+    exitCode: 0,
+    project: 'fixture',
+    commit: 'abc',
+  })
 })
 
 test('resolves probe artifacts and task comments through injected ports', () => {
@@ -306,7 +313,13 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code)
      VALUES (?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(matching)
-  expect(gather(d, { gate: 2 }).gate).toEqual({ id: 2, finished: true, exitCode: 0 })
+  expect(gather(d, { gate: 2 }).gate).toEqual({
+    id: 2,
+    finished: true,
+    exitCode: 0,
+    project: 'fixture',
+    commit: null,
+  })
 })
 
 test('a foreign architect gate is refused and a matching architect gate is allowed', () => {
@@ -333,7 +346,13 @@ test('a foreign architect gate is refused and a matching architect gate is allow
     `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES (NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
-  expect(gather(d, { gate: 2 }).gate).toEqual({ id: 2, finished: true, exitCode: 0 })
+  expect(gather(d, { gate: 2 }).gate).toEqual({
+    id: 2,
+    finished: true,
+    exitCode: 0,
+    project: 'fixture',
+    commit: 'abc',
+  })
 })
 
 test('an architect gate whose commit is not an ancestor is refused', () => {

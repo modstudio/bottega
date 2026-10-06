@@ -39,7 +39,10 @@ const answeredRuling: ValidatedEvidence = {
 const gradedReview: ValidatedEvidence = {
   review: { id: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
-const passingGate: ValidatedEvidence = { gate: { id: 2, finished: true, exitCode: 0 } }
+const passingGate: ValidatedEvidence = {
+  gate: { id: 2, finished: true, exitCode: 0, project: 'fixture', commit: 'abc' },
+  tree: { project: 'fixture', commit: 'abc' },
+}
 const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
@@ -134,6 +137,25 @@ test('a finished gate with the expected exit satisfies command-exit', () => {
     action: 'allow',
     refs: [{ flag: '--gate', value: '2' }],
   })
+})
+
+test.each([
+  ['matching commit and zero exit', passingGate, true],
+  ['another commit', { ...passingGate, gate: { ...passingGate.gate!, commit: 'def' } }, false],
+  ['nonzero exit', { ...passingGate, gate: { ...passingGate.gate!, exitCode: 1 } }, false],
+  [
+    "another project's record",
+    { ...passingGate, gate: { ...passingGate.gate!, project: 'other' } },
+    false,
+  ],
+  ['an exec artifact', { ...passingExec, tree: passingGate.tree }, false],
+] as const)('gate-only command evidence: %s', (_case, evidence, allowed) => {
+  const decision = decide({ floors: [{ ...commandExit, commandEvidence: 'gate' }], evidence })
+  expect(decision.action).toBe(allowed ? 'allow' : 'refuse')
+  if (!allowed && decision.action === 'refuse') {
+    expect(decision.message).toContain('commit abc')
+    expect(decision.message).toContain('orch gate run')
+  }
 })
 
 test('a terminal run with the expected exit satisfies command-exit', () => {
@@ -511,6 +533,9 @@ test('catalogueFloors marks deferrable kinds and pull-request tracker floors', (
   })
   expect(catalogueFloors(['ruling'], [], 'done', false, true)[0]).toMatchObject({
     operatorRuling: true,
+  })
+  expect(catalogueFloors(['command-exit'], [], 'done', false, false, 'gate')[0]).toMatchObject({
+    commandEvidence: 'gate',
   })
 })
 

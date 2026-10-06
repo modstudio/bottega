@@ -643,6 +643,7 @@ export function composeWorkflow(
             : undefined,
           requirePullRequest: Boolean(step.requirePullRequest),
           operatorRuling: Boolean(step.operatorRuling),
+          commandEvidence: step.commandEvidence,
           needs: step.needs,
         }
       }) ?? [],
@@ -752,6 +753,7 @@ export function getWorkflowStep(
     ...step,
     floor: resolveStepFloors(step, resolve),
     expectedStatus: step.expectedStatus ? resolve(step.expectedStatus) : undefined,
+    commandEvidence: step.commandEvidence,
     resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
     workflow: slug,
     version: row.n,

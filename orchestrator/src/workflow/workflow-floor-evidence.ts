@@ -86,6 +86,7 @@ export type FloorEvidencePorts = {
     expectedBranch: string | null,
   ) => CheckoutResolution
   viewPullRequest?: (project: string, number: number) => PullRequestMergeView
+  resolveTreeCommit?: (worktree: string) => string | null
 }
 
 function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
@@ -375,7 +376,7 @@ function requireCheckout(
   identity: CursorIdentity,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   requireOnBranch: boolean,
-): void {
+): CheckoutResolution {
   const checkout = resolveCheckout?.(cwd, headCommit, identity.branch) ?? {
     project: null,
     branch: null,
@@ -405,6 +406,7 @@ function requireCheckout(
     )
   if (identity.branch && location === 'outside-change')
     throw new Error(`${flag} head_commit is not the tip or an ancestor of ${identity.branch}`)
+  return checkout
 }
 
 function gatherGate(
@@ -426,18 +428,29 @@ function gatherGate(
     >('SELECT finished_at,exit_code,run_id,cwd,head_commit FROM gate_execution WHERE id=?')
     .get(id)
   if (!row) throw new Error(`--gate ${id} does not exist`)
+  let project: string | null
   if (row.run_id !== null) {
     const run = loadRunBinding(row.run_id, d)
     if (!run) throw new Error(`--gate ${id} run ${row.run_id} does not exist`)
     requireRunBinding(`--gate ${id}`, run, identity)
+    project = run.project
   } else {
     if (!row.cwd) throw new Error(`--gate ${id} architect row has no cwd`)
-    requireCheckout(`--gate ${id}`, row.cwd, row.head_commit, identity, resolveCheckout, true)
+    project = requireCheckout(
+      `--gate ${id}`,
+      row.cwd,
+      row.head_commit,
+      identity,
+      resolveCheckout,
+      true,
+    ).project
   }
   return {
     id,
     finished: row.finished_at !== null && row.exit_code !== null,
     exitCode: row.exit_code,
+    project,
+    commit: row.head_commit,
   }
 }
 
@@ -730,6 +743,14 @@ export function gatherValidatedEvidence(input: {
     ports.resolveCheckout ??
     ((cwd, head, branch) => productionResolveCheckout(cwd, head, branch, input.identity, d))
   const gathered: ValidatedEvidence = {}
+  gathered.tree = {
+    project: input.identity.project,
+    commit: input.identity.worktree
+      ? (ports.resolveTreeCommit ?? ((worktree) => gitText(worktree, ['rev-parse', 'HEAD'])))(
+          input.identity.worktree,
+        )
+      : null,
+  }
   const ruling = positive(input.evidence.ruling, '--ruling')
   const review = positive(input.evidence.review, '--review')
   const gate = positive(input.evidence.gate, '--gate')

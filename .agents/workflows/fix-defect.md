@@ -42,7 +42,7 @@ modes:
       - run-gate
       - open-pr
       - merge-pr
-      - design-records
+      - sync-docs
       - promote-release
       - close-task
   - slug: cohort
@@ -64,7 +64,7 @@ modes:
       - run-gate
       - open-pr
       - merge-pr
-      - design-records
+      - sync-docs
       - promote-release
       - observe-release
       - close-task

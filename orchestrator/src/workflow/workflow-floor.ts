@@ -34,6 +34,7 @@ export type Floor = {
   expectedStatus: string
   requirePullRequest: boolean
   operatorRuling: boolean
+  commandEvidence?: 'gate'
 }
 
 export type ArtifactRef =
@@ -66,7 +67,13 @@ export type ValidatedEvidence = {
     boundToStep: boolean
   }
   review?: { id: number; allFindingsDisposed: boolean; allLensesGraded: boolean }
-  gate?: { id: number; finished: boolean; exitCode: number | null }
+  gate?: {
+    id: number
+    finished: boolean
+    exitCode: number | null
+    project: string | null
+    commit: string | null
+  }
   run?: { id: number; terminal: boolean; exitCode: number | null }
   probe?: { id: number; exitCode: number }
   exec?: {
@@ -85,6 +92,7 @@ export type ValidatedEvidence = {
   }
   deferReason?: string
   satisfy?: ValidatedSatisfy
+  tree?: { project: string; commit: string | null }
 }
 
 export type OpenObligation = {
@@ -152,6 +160,7 @@ export function catalogueFloors(
   expectedStatus = DEFAULT_EXPECTED_STATUS,
   requirePullRequest = false,
   operatorRuling = false,
+  commandEvidence?: 'gate',
 ): Floor[] {
   return kinds.map((kind) => {
     if (!isFloorKind(kind)) throw new Error(`unknown floor kind "${kind}"`)
@@ -162,6 +171,7 @@ export function catalogueFloors(
       expectedStatus,
       requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
       operatorRuling: kind === 'ruling' && operatorRuling,
+      ...(kind === 'command-exit' && commandEvidence ? { commandEvidence } : {}),
     }
   })
 }
@@ -184,7 +194,13 @@ function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
 function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const gate = evidence.gate
   const run = evidence.run
-  const gateOk = Boolean(gate?.finished && gate.exitCode === floor.expectedExitCode)
+  const gateOk = Boolean(
+    gate?.finished &&
+      gate.exitCode === floor.expectedExitCode &&
+      (!floor.commandEvidence ||
+        (gate.project === evidence.tree?.project && gate.commit === evidence.tree?.commit)),
+  )
+  if (floor.commandEvidence === 'gate') return gateOk
   const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)
   const probeOk = evidence.probe?.exitCode === floor.expectedExitCode
   const execOk = Boolean(
@@ -227,6 +243,10 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
 function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   if (floor.kind === 'ruling' && floor.operatorRuling)
     return 'floor ruling is unmet: no operator answer on this step; record the question with `orch workflow await`; the operator answers it'
+  if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate') {
+    const commit = evidence.tree?.commit ?? '<current tree commit>'
+    return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`orch gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
+  }
   return (
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
     (floor.kind === 'command-exit'

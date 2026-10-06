@@ -16,6 +16,7 @@ import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`
+export type CommandEvidence = 'gate'
 export type CatalogueStep = {
   slug: string
   title: string
@@ -25,6 +26,7 @@ export type CatalogueStep = {
   expectedStatus?: string
   requirePullRequest?: boolean
   operatorRuling?: boolean
+  commandEvidence?: CommandEvidence
   job: string | null
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage
@@ -213,6 +215,16 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     errors.push(`step "${slug}" operatorRuling must be a boolean`)
   if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
+  if (item.commandEvidence !== undefined && item.commandEvidence !== 'gate')
+    errors.push(`step "${slug}" commandEvidence must be "gate"`)
+  if (
+    item.commandEvidence === 'gate' &&
+    !floor.includes('command-exit') &&
+    !floor.some(isFloorPlaceholder)
+  )
+    errors.push(`step "${slug}" commandEvidence requires a command-exit floor`)
+  if (item.commandEvidence === 'gate' && item.deferrable?.includes('command-exit'))
+    errors.push(`step "${slug}" cannot defer command-exit when commandEvidence is "gate"`)
   if (
     item.expectedStatus !== undefined &&
     (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())

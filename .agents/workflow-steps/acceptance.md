@@ -3,6 +3,8 @@ title: "Check the task's acceptance criteria"
 stage: review
 floor:
   - recorded-artifact
+  - ruling
+operatorRuling: true
 job: null
 autonomy: auto
 needs:
@@ -10,6 +12,6 @@ needs:
 ---
 Review asks whether the code is good; this step asks whether the right thing was built. Work can be clean, typed and reviewed and still not be what the task asked for, so both must pass.
 
-Read `{{key}}` with `{{tracker.actions.get}}` and take each acceptance criterion in turn. For each, record the criterion, the evidence on the branch that meets it (a test, a command and its result, or the changed behavior), and a verdict of met, partial, or not met. A criterion with no evidence is not met.
+Read `{{key}}` with `{{tracker.actions.get}}` and take each acceptance criterion in turn. Each verdict is met, not met, or accepted unverified. A criterion with no evidence is not met unless the operator accepts it unverified. An agent cannot grant accepted unverified at any autonomy level. Before writing an accepted-unverified verdict, record an operator ruling against this step that names every criterion it accepts unverified.
 
-This step is done only when the recorded table covers every criterion and every verdict is met. A partial or unmet criterion stops the flow and goes back to the implementer or to the operator for a ruling.
+Write a table of every criterion, its verdict, and its evidence to `{{key}}` in the project's tracker with `{{tracker.actions.comment}}` or a task document. Include the accepted-unverified list. Close this step with that task evidence. This step is done only when every criterion is met or accepted unverified. A not-met criterion stops the flow and goes back to the implementer.
