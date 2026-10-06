@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
+  HeadContent,
   Link,
   type LinkProps,
   Outlet,
@@ -98,36 +99,47 @@ export const Route = createRootRoute({
     if (!isHostedMode()) return
     if (!isHostedPath(location.pathname)) throw redirect({ to: '/runs' })
   },
-  component: function Shell() {
-    const hosted = isHostedMode()
-    const pathname = useRouterState({ select: (state) => state.location.pathname })
-    const whoami = useQuery({
-      ...trpc.record.whoami.queryOptions(),
-      enabled: hosted && !isHostedSignInFramePath(pathname),
-      retry: false,
-    })
-    const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
-    if (hosted && isHostedSignInFramePath(pathname)) {
-      return (
-        <HostedSignInFrame>
-          <Outlet />
-        </HostedSignInFrame>
-      )
-    }
-    if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
-      if (whoami.isPending) return null
-      if (pathname === '/' && signedIn) return <AppLayout hosted pathname={pathname} />
-      return (
-        <HostedPublicFrame>
-          <SiteFrame identity={signedIn ? 'signed-in' : 'signed-out'}>
-            <Outlet />
-          </SiteFrame>
-        </HostedPublicFrame>
-      )
-    }
-    return <AppLayout hosted={hosted} pathname={pathname} />
-  },
+  component: RootShell,
 })
+
+function RootShell() {
+  return (
+    <>
+      <HeadContent />
+      <ShellContent />
+    </>
+  )
+}
+
+function ShellContent() {
+  const hosted = isHostedMode()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const whoami = useQuery({
+    ...trpc.record.whoami.queryOptions(),
+    enabled: hosted && !isHostedSignInFramePath(pathname),
+    retry: false,
+  })
+  const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
+  if (hosted && isHostedSignInFramePath(pathname)) {
+    return (
+      <HostedSignInFrame>
+        <Outlet />
+      </HostedSignInFrame>
+    )
+  }
+  if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
+    if (whoami.isPending) return null
+    if (pathname === '/' && signedIn) return <AppLayout hosted pathname={pathname} />
+    return (
+      <HostedPublicFrame>
+        <SiteFrame identity={signedIn ? 'signed-in' : 'signed-out'}>
+          <Outlet />
+        </SiteFrame>
+      </HostedPublicFrame>
+    )
+  }
+  return <AppLayout hosted={hosted} pathname={pathname} />
+}
 
 function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {
   const { counts } = useWindowState()

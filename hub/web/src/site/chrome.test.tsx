@@ -31,3 +31,11 @@ test('site header offers the app to signed-in visitors', async () => {
   expect(html).toContain('Open app')
   expect(html).not.toContain('Sign in')
 })
+
+test('mobile navigation trigger exposes its dialog relationship and state', async () => {
+  const html = await renderHeader('signed-out')
+  expect(html).toContain('aria-expanded="false"')
+  expect(html).toContain('aria-controls="site-mobile-menu"')
+  expect(html).toContain('id="site-mobile-menu"')
+  expect(html).toContain('aria-label="Product navigation"')
+})

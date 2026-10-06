@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AppMark } from '@/components/app-mark'
+import { Button, IconButton } from '@/ui/button/button'
+import { Dialog } from '@/ui/dialog/dialog'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import './site.css'
 
@@ -39,6 +41,12 @@ const productGroups: readonly {
 
 export function SiteHeader({ identity }: { identity: SiteIdentity }) {
   const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const mobileMenuId = 'site-mobile-menu'
+  const setMenuOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) requestAnimationFrame(() => trigger.current?.focus())
+  }
   return (
     <>
       <div className="site-strip">
@@ -86,46 +94,60 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
             <Link to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
               {identity === 'signed-in' ? 'Open app' : 'Sign in'}
             </Link>
-            <Link className="site-button site-button-small" to="/docs">
+            <Button
+              className="site-install"
+              variant="primary"
+              size="sm"
+              render={<Link to="/docs" />}
+            >
               Install
-            </Link>
-            <button
+            </Button>
+            <IconButton
+              ref={trigger}
               className="site-burger"
-              type="button"
-              aria-label="Open menu"
-              onClick={() => setOpen(true)}
+              label="Open menu"
+              aria-expanded={open}
+              aria-controls={mobileMenuId}
+              onClick={() => setMenuOpen(true)}
             >
               <Menu />
-            </button>
+            </IconButton>
           </div>
         </div>
       </header>
-      {open ? (
-        <div className="site-mobile-menu">
+      <Dialog
+        open={open}
+        onOpenChange={setMenuOpen}
+        title="Product navigation"
+        size="full"
+        variant="chromeless"
+        className="inset-y-0"
+      >
+        <div id={mobileMenuId} className="site-mobile-menu">
           <div className="site-mobile-bar">
             <span className="site-brand">
               <AppMark className="size-5" />
               {PLATFORM_NAME.toLowerCase()}
             </span>
-            <button type="button" aria-label="Close menu" onClick={() => setOpen(false)}>
+            <IconButton autoFocus label="Close menu" onClick={() => setMenuOpen(false)}>
               <X />
-            </button>
+            </IconButton>
           </div>
           {productGroups
             .flatMap((group) => group.links)
             .map(([to, label]) => (
-              <Link key={to} to={to} onClick={() => setOpen(false)}>
+              <Link key={to} to={to} onClick={() => setMenuOpen(false)}>
                 {label}
               </Link>
             ))}
-          <Link to="/product/workflows" onClick={() => setOpen(false)}>
+          <Link to="/product/workflows" onClick={() => setMenuOpen(false)}>
             Workflows
           </Link>
-          <Link to="/docs" onClick={() => setOpen(false)}>
+          <Link to="/docs" onClick={() => setMenuOpen(false)}>
             Docs & install
           </Link>
         </div>
-      ) : null}
+      </Dialog>
     </>
   )
 }

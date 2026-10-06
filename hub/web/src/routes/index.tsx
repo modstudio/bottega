@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { TaskView } from '@/components/work-view'
 import { isHostedMode } from '@/lib/hub-mode'
-import { HomePage } from '@/site/pages'
+import { HomePage } from '@/site/home'
 import { siteHead } from '@/site/route'
 import { trpc } from '@/trpc/client'
 
