@@ -289,7 +289,7 @@ export function cachedHostedBoardMessages(database: Database = db()): HostedBoar
   return cachedRows(database).map((row) => row.message)
 }
 
-const hostedMessageIsLive = (message: HostedBoardMessage, clock: number): boolean =>
+export const hostedMessageIsLive = (message: HostedBoardMessage, clock: number): boolean =>
   messageIsLive(
     {
       expiresAt: message.expiresAt ? Date.parse(message.expiresAt) : 0,

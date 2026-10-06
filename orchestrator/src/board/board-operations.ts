@@ -259,10 +259,13 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
   }
 }
 
-function hostedStatus(value: HostedBoardStatus): BoardStatusResult {
+export function hostedBoardStatusResult(
+  message: HostedBoardMessage,
+  receipts: HostedBoardReceipt[] = [],
+): BoardStatusResult {
   return {
-    message: hostedMessage(value.message),
-    receipts: value.receipts.map((receipt: HostedBoardReceipt) => ({ ...receipt })),
+    message: hostedMessage(message),
+    receipts: receipts.map((receipt) => ({ ...receipt })),
     reached: null,
     acknowledged: null,
     unacknowledged: null,
@@ -499,7 +502,11 @@ export async function boardStatus(id: string, inputContext?: Context) {
   const mode = boardModeForId(id, undefined, c.env)
   const parsed = idForMode(id, mode)
   return mode === 'hosted'
-    ? hostedStatus(await hostedClient(c).getBoardStatus(parsed as string))
+    ? await hostedClient(c)
+        .getBoardStatus(parsed as string)
+        .then((status: HostedBoardStatus) =>
+          hostedBoardStatusResult(status.message, status.receipts),
+        )
     : localStatus(noticeStatus(parsed as number, c.env, c.clock), c.clock)
 }
 

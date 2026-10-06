@@ -7,12 +7,12 @@ import { BOARD_READ_REFRESH_BUDGET_MS } from './board-delivery.ts'
 import {
   cachedHostedBoardMessages,
   hostedBoardVerificationWarning,
+  hostedMessageIsLive,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
-import { type BoardStatusResult, boardStatus } from './board-operations.ts'
-import { messageIsLive } from './board-policy.ts'
+import { type BoardStatusResult, boardStatus, hostedBoardStatusResult } from './board-operations.ts'
 import { type BoardOrigin, messageRows, rowIsLive } from './board-store.ts'
-import { boardThreadState } from './board-thread-policy.ts'
+import { type BoardThreadState, boardThreadState } from './board-thread-policy.ts'
 
 type BoardKind = 'notice' | 'question'
 
@@ -34,7 +34,7 @@ type BoardOverviewBase = {
   withdrawnAt: string | null
   ackRequired: boolean
   ackDeadline: string | null
-  state: string | null
+  state: BoardThreadState
   reached: number | null
   acknowledged: number | null
   unacknowledged: string[] | null
@@ -76,27 +76,30 @@ function statusEntry(
 ): BoardOverviewEntry | null {
   const message = status.message
   if (message.kind !== 'notice' && message.kind !== 'question') return null
-  if (
-    message.title === null ||
-    message.origin === null ||
-    message.senderTags === null ||
-    message.createdAt === null ||
-    message.ackRequired === null
-  )
-    return null
-  const base: BoardOverviewBase = {
-    id: message.id,
-    kind: message.kind,
+  const required = {
     title: message.title,
-    audience: message.audience,
     origin: message.origin,
     senderTags: message.senderTags,
     createdAt: message.createdAt,
+    ackRequired: message.ackRequired,
+    state: message.state,
+  }
+  for (const [field, value] of Object.entries(required)) {
+    if (value === null) throw new Error(`board message ${message.id} is missing ${field}`)
+  }
+  const base: BoardOverviewBase = {
+    id: message.id,
+    kind: message.kind,
+    title: message.title as string,
+    audience: message.audience,
+    origin: message.origin as BoardOrigin,
+    senderTags: message.senderTags as BoardOverviewBase['senderTags'],
+    createdAt: message.createdAt as string,
     expiresAt: message.expiresAt,
     withdrawnAt: message.withdrawnAt,
-    ackRequired: message.ackRequired,
+    ackRequired: message.ackRequired as boolean,
     ackDeadline: message.ackDeadline,
-    state: message.state,
+    state: message.state as BoardThreadState,
     reached: status.reached,
     acknowledged: status.acknowledged,
     unacknowledged: status.unacknowledged,
@@ -110,16 +113,6 @@ function statusEntry(
         acceptedReplyId: message.acceptedReplyId,
       }
     : { ...base, kind: 'notice' }
-}
-
-function hostedStatus(message: HostedBoardMessage): BoardStatusResult {
-  return {
-    message: { ...message, text: null },
-    receipts: [],
-    reached: null,
-    acknowledged: null,
-    unacknowledged: null,
-  }
 }
 
 async function localEntries(clock: number): Promise<GatheredBoardOverviewRow[]> {
@@ -163,14 +156,12 @@ function hostedEntries(messages: HostedBoardMessage[], clock: number): GatheredB
         }),
       }
       return {
-        message: statusEntry(hostedStatus(current), replies.get(message.id) ?? 0, 'hosted'),
-        ended: !messageIsLive(
-          {
-            expiresAt: message.expiresAt ? Date.parse(message.expiresAt) : 0,
-            withdrawnAt: message.withdrawnAt ? Date.parse(message.withdrawnAt) : null,
-          },
-          clock,
+        message: statusEntry(
+          hostedBoardStatusResult(current),
+          replies.get(message.id) ?? 0,
+          'hosted',
         ),
+        ended: !hostedMessageIsLive(message, clock),
       }
     })
     .filter((row) => row.message !== null) as GatheredBoardOverviewRow[]

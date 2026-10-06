@@ -12,6 +12,7 @@ import {
   listBoardOverview,
 } from './board-overview.ts'
 import { postNotice, readNotices } from './board-service.ts'
+import type { BoardThreadState } from './board-thread-policy.ts'
 
 const clock = Date.parse('2026-10-05T12:00:00.000Z')
 const origin = {
@@ -26,7 +27,7 @@ function entry(
   id: string,
   kind: 'notice' | 'question',
   createdAt: string,
-  state: string,
+  state: BoardThreadState,
   acceptedReplyId: string | null = null,
 ): BoardOverviewEntry {
   const base = {
