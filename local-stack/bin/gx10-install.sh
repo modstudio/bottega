@@ -26,6 +26,8 @@ GPU_UTIL="${GPU_UTIL:-0.50}"
 # mismatch rather than letting the two drift.
 # Why 131072 on this host: orch doc show local-model-host-hardware --scope machine
 MAX_LEN="${MAX_LEN:-131072}"
+# Default output budget when a request names none, not a hard cap: orch doc show local-model-host-hardware --scope machine
+MAX_OUTPUT="${MAX_OUTPUT:-32768}"
 
 ok=1
 say()  { printf '%-22s %s\n' "$1" "$2"; }
@@ -117,6 +119,7 @@ docker run -d --name orch-llm --restart unless-stopped \
     --host 0.0.0.0 --port 8000 \
     --gpu-memory-utilization "$GPU_UTIL" \
     --max-model-len "$MAX_LEN" \
+    --override-generation-config "{\"max_new_tokens\": ${MAX_OUTPUT}}" \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
