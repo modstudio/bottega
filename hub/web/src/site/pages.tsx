@@ -1,13 +1,13 @@
 import { Link } from '@tanstack/react-router'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
-const installCommand =
-  'curl -fsSL https://raw.githubusercontent.com/modstudio/bottega/main/install.sh | sh'
+const installCommand = `curl -fsSL https://raw.githubusercontent.com/modstudio/${PLATFORM_SLUG}/main/install.sh | sh`
 
 function Actions({ secondary }: { secondary?: [string, string] }) {
   return (
     <div className="site-actions">
       <Link className="site-button" to="/docs">
-        Install Bottega
+        Install {PLATFORM_NAME}
       </Link>
       {secondary ? (
         <Link className="site-button site-button-secondary" to={secondary[0]}>
@@ -96,7 +96,9 @@ function PageHero({
 }) {
   return (
     <div className="site-wrap site-page-hero">
-      <div className="site-eyebrow">Bottega / {crumb}</div>
+      <div className="site-eyebrow">
+        {PLATFORM_NAME} / {crumb}
+      </div>
       <h1>
         {title}
         <br />
@@ -173,7 +175,7 @@ export function HomePage() {
             {
               eyebrow: 'Orchestration',
               title: 'How the work gets done',
-              text: 'A worker builds from your spec in a disposable worktree, stops at every judgement call and never pushes. You rule, read the diff and score it — and the score decides who gets the next job of that shape.',
+              text: 'A worker builds from your spec in a disposable worktree, stops at every judgment call and never pushes. You rule, read the diff and score it — and the score decides who gets the next job of that shape.',
               bullets: [
                 'Worker contracts and escalation',
                 'Cloud agents or models on your own GPU',
@@ -231,7 +233,7 @@ export function HomePage() {
       <Section
         eyebrow="Fits your stack"
         title="Works with the agents and models you already run"
-        intro="Swap the harness and the record stays. Bottega keeps the task, the contract, the evidence and the score independent of whoever does the work."
+        intro={`Swap the harness and the record stays. ${PLATFORM_NAME} keeps the task, the contract, the evidence and the score independent of whoever does the work.`}
       >
         <div className="site-runners">
           <span>Claude Code</span>
@@ -254,7 +256,7 @@ export function HomePage() {
             Keep your harness.
           </>
         }
-        copy="Bottega runs beside the agent you already use. Bring your own models."
+        copy={`${PLATFORM_NAME} runs beside the agent you already use. Bring your own models.`}
       />
       <p className="site-code site-micro site-wrap" style={{ textAlign: 'center' }}>
         {installCommand}
@@ -267,7 +269,7 @@ function RunShowcase() {
   return (
     <div className="site-showcase">
       <div className="site-window">
-        <div className="site-window-bar">bottega — orch board</div>
+        <div className="site-window-bar">{PLATFORM_SLUG} — orch board</div>
         <div className="site-window-body">
           <h2>Runs</h2>
           <table className="site-table">
@@ -323,12 +325,12 @@ const mechanism = [
   {
     eyebrow: 'Stop',
     title: 'A question suspends the run',
-    text: 'A worker that reaches a judgement call it was not given stops there. The run is preserved, not restarted, so asking costs almost nothing.',
+    text: 'A worker that reaches a judgment call it was not given stops there. The run is preserved, not restarted, so asking costs almost nothing.',
   },
   {
     eyebrow: 'Score',
     title: 'Asking is faithful',
-    text: 'A worker that stopped is never marked down for stopping. Penalise the question and workers learn to guess instead — which is the failure the contract exists to prevent.',
+    text: 'A worker that stopped is never marked down for stopping. Penalize the question and workers learn to guess instead — which is the failure the contract exists to prevent.',
   },
   {
     eyebrow: 'Judge',
@@ -358,7 +360,7 @@ export function OrchestrationPage() {
       <PageHero
         crumb="Orchestration"
         title="Delegate the execution."
-        muted="Never the judgement."
+        muted="Never the judgment."
         copy="A change is decisions plus typing. The architect owns what the change means, which ambiguity resolves which way, and what must stay true. A worker owns the typing — and is contractually forbidden from deciding anything it was not given."
         actions={[
           ['/docs', 'Run your first job'],
@@ -429,7 +431,7 @@ export function WorkersPage() {
       <Section
         eyebrow="The economics"
         title="Stop paying frontier prices for work a worker can finish"
-        intro="Design and judgement are worth a frontier model. Reading files, writing the obvious implementation, searching the repository and summarising a diff are not — and they are most of the volume."
+        intro="Design and judgment are worth a frontier model. Reading files, writing the obvious implementation, searching the repository and summarizing a diff are not — and they are most of the volume."
       >
         <Cards
           items={[
@@ -447,7 +449,7 @@ export function WorkersPage() {
             },
             {
               title: 'What you still do',
-              text: 'Design the change · rule on the forks · read the diff · score it. The four acts that are actually judgement.',
+              text: 'Design the change · rule on the forks · read the diff · score it. The four acts that are actually judgment.',
             },
             { eyebrow: 'Frontier tokens', title: 'Spec & diff', text: 'The rest runs below.' },
           ]}
@@ -456,7 +458,7 @@ export function WorkersPage() {
       <Section
         eyebrow="Retrieval"
         title="Find the three files. Skip the other four hundred."
-        intro="An agent that greps its way through a repository burns paid context before it writes a line. Ask where a behaviour lives and get a short, ranked set of code, docs, project rules and relevant past runs — handed to the worker before it starts exploring."
+        intro="An agent that greps its way through a repository burns paid context before it writes a line. Ask where a behavior lives and get a short, ranked set of code, docs, project rules and relevant past runs — handed to the worker before it starts exploring."
       >
         <Cards
           two
@@ -487,7 +489,7 @@ export function BoardPage() {
         crumb="Board"
         title="Every project on one board."
         muted="Whatever runs them."
-        copy="Each project keeps the tracker it already has — its own database, its own MCP server, its own conventions. Bottega speaks to each one over MCP and aggregates the result: one board, one cost view, one place where a run is already attributed to the task that caused it."
+        copy={`Each project keeps the tracker it already has — its own database, its own MCP server, its own conventions. ${PLATFORM_NAME} speaks to each one over MCP and aggregates the result: one board, one cost view, one place where a run is already attributed to the task that caused it.`}
         actions={[['/docs', 'Connect a project']]}
       />
       <Section title="In flight" intro="Three projects · four trackers · nine open">
@@ -496,7 +498,7 @@ export function BoardPage() {
       <Section
         eyebrow="Aggregation"
         title="One board without migrating anything"
-        intro="A project that already has a tracker does not need a second one. Bottega reads and writes each project's own system over MCP, and keeps the register of which project owns what."
+        intro={`A project that already has a tracker does not need a second one. ${PLATFORM_NAME} reads and writes each project's own system over MCP, and keeps the register of which project owns what.`}
       >
         <Cards
           items={[
@@ -508,7 +510,7 @@ export function BoardPage() {
             {
               eyebrow: 'Provider-agnostic',
               title: 'Whatever is behind it',
-              text: "A project's own database, an app's task tables, a hosted issue tracker, or Bottega's native store. The board does not care which.",
+              text: `A project's own database, an app's task tables, a hosted issue tracker, or ${PLATFORM_NAME}'s native store. The board does not care which.`,
             },
             {
               eyebrow: 'Two directions',
@@ -893,7 +895,7 @@ export function ContextPage() {
         crumb="Context management"
         title="A handoff you read,"
         muted="not a compaction you hope about."
-        copy="Long work outlives a session. When the window fills, the usual answer is automatic compaction — something summarises your context, you are not shown what it dropped, and you find out later by discovering what the next turn forgot. Bottega makes the handoff an artifact instead: written deliberately, reviewed by you, and chosen when it is picked up."
+        copy={`Long work outlives a session. When the window fills, the usual answer is automatic compaction — something summarizes your context, you are not shown what it dropped, and you find out later by discovering what the next turn forgot. ${PLATFORM_NAME} makes the handoff an artifact instead: written deliberately, reviewed by you, and chosen when it is picked up.`}
         actions={[
           ['/docs', 'Read the context guide'],
           ['/product/doc-store', 'See the doc store'],

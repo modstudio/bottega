@@ -2,17 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { TaskView } from '@/components/work-view'
 import { isHostedMode } from '@/lib/hub-mode'
 import { HomePage } from '@/site/pages'
+import { siteHead } from '@/site/route'
 
 export const Route = createFileRoute('/')({
-  head: () => ({
-    meta: [
-      { title: 'Bottega' },
-      {
-        name: 'description',
-        content:
-          'You keep every decision. Workers do the rest. Bottega runs the whole task lifecycle for coding agents: declared workflows, multi-lens review on a budget, a board across every project.',
-      },
-    ],
-  }),
+  head: siteHead,
   component: () => (isHostedMode() ? <HomePage /> : <TaskView name="flight" />),
 })

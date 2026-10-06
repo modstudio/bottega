@@ -53,18 +53,8 @@ export function HostedSignInFrame({ children }: { children: React.ReactNode }) {
 }
 
 /** Rail-free frame for hosted pages that stay reachable signed out, such as docs. */
-export function HostedPublicFrame({
-  children,
-  signedIn = false,
-}: {
-  children: React.ReactNode
-  signedIn?: boolean
-}) {
-  return (
-    <div className="min-h-dvh bg-surface-page text-text-primary">
-      <SiteFrame identity={signedIn ? 'signed-in' : 'signed-out'}>{children}</SiteFrame>
-    </div>
-  )
+export function HostedPublicFrame({ children }: { children: React.ReactNode }) {
+  return <div className="min-h-dvh bg-surface-page text-text-primary">{children}</div>
 }
 
 function identityForMode(hosted: boolean, email: string | null) {
@@ -128,8 +118,10 @@ export const Route = createRootRoute({
       if (whoami.isPending) return null
       if (pathname === '/' && signedIn) return <AppLayout hosted pathname={pathname} />
       return (
-        <HostedPublicFrame signedIn={signedIn}>
-          <Outlet />
+        <HostedPublicFrame>
+          <SiteFrame identity={signedIn ? 'signed-in' : 'signed-out'}>
+            <Outlet />
+          </SiteFrame>
         </HostedPublicFrame>
       )
     }

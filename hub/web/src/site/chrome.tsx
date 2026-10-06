@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import { useState } from 'react'
 import { AppMark } from '@/components/app-mark'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import './site.css'
 
 export type SiteIdentity = 'signed-in' | 'signed-out'
@@ -68,7 +68,10 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
           </nav>
           <div className="site-nav-tail">
             <Link to="/docs">Docs</Link>
-            <a href="https://github.com/modstudio/bottega" aria-label="Bottega on GitHub">
+            <a
+              href={`https://github.com/modstudio/${PLATFORM_SLUG}`}
+              aria-label={`${PLATFORM_NAME} on GitHub`}
+            >
               <svg
                 width="17"
                 height="17"
@@ -127,7 +130,7 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
   )
 }
 
-export function SiteFooter() {
+function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="site-wrap site-footer-grid">
@@ -145,20 +148,20 @@ export function SiteFooter() {
           <h2>Product</h2>
           <Link to="/product/workflows">Workflows</Link>
           <Link to="/docs">Docs</Link>
-          <a href="https://github.com/modstudio/bottega">GitHub</a>
+          <a href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>GitHub</a>
         </div>
         <div className="site-footer-sign">
           Delegate the execution.
           <br />
-          Never the judgement.
+          Never the judgment.
         </div>
       </div>
       <div className="site-wrap site-footer-bar">
         <span>Workshop status: Operational</span>
-        <span>© 2026 Bottega. Built by the workshop it runs.</span>
+        <span>© 2026 {PLATFORM_NAME}. Built by the workshop it runs.</span>
       </div>
       <p className="site-watermark" aria-hidden="true">
-        bottega
+        {PLATFORM_SLUG}
       </p>
     </footer>
   )
