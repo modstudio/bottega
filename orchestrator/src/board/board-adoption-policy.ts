@@ -1,23 +1,8 @@
 // concern: board-adoption-policy
 /** Pure candidate selection, ordering, and completion decisions for hosted adoption. */
-import type { MessageRow } from './board-store.ts'
-
 export type LocalKind = 'notice' | 'question' | 'reply' | 'claim'
 export type LedgerState = 'pending' | 'uploaded' | 'refused'
-export type AdoptionClaimRow = {
-  id: number
-  project: string
-  subject_kind: 'task' | 'path' | 'resource'
-  subject_value: string
-  holder_session: string | null
-  note: string | null
-  run_id: number | null
-  lapses_at: string
-  closed_at: string | null
-}
-export type AdoptionCandidate =
-  | { kind: Exclude<LocalKind, 'claim'>; id: number; createdAt: string; row: MessageRow }
-  | { kind: 'claim'; id: number; createdAt: string; row: AdoptionClaimRow }
+export type AdoptionCandidate = { kind: LocalKind; id: number; createdAt: string }
 export type AdoptionCandidateFact = {
   candidate: AdoptionCandidate
   live: boolean
@@ -46,5 +31,33 @@ export function selectBoardAdoptionCandidates(facts: AdoptionCandidateFact[]): A
 }
 
 export function mayMarkBoardHostedAdopted(states: LedgerState[]): boolean {
-  return states.every((state) => state === 'uploaded' || state === 'refused')
+  return states.every(isTerminalLedgerState)
+}
+
+export function isTerminalLedgerState(state: LedgerState | undefined): boolean {
+  return state === 'uploaded' || state === 'refused'
+}
+
+export type UploadErrorKind = 'refused' | 'unreachable' | 'unexpected'
+export type UploadErrorDisposition = 'rate' | 'machine' | 'lasting' | 'unexpected'
+
+export function uploadErrorDisposition(
+  kind: UploadErrorKind,
+  message: string,
+): UploadErrorDisposition {
+  if (kind !== 'refused') return 'unexpected'
+  if (message.includes('board post rate limit reached; retry after the ten-minute author window'))
+    return 'rate'
+  if (message.includes('board authorMachineId is missing, invisible, or not owned by this user'))
+    return 'machine'
+  if (
+    [
+      'unknown or invisible board project',
+      'row-level security',
+      'not started by this user',
+      'claim conflicts with:',
+    ].some((text) => message.includes(text))
+  )
+    return 'lasting'
+  return 'unexpected'
 }

@@ -24,7 +24,7 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-store.ts',
   ]),
-  module('orchestrator/src/board/board-adoption-policy.ts', ['./board-store.ts']),
+  module('orchestrator/src/board/board-adoption-policy.ts', []),
   module('orchestrator/src/board/board-mode.ts', [
     'bun:sqlite',
     '../../../shared/board-mode.ts',

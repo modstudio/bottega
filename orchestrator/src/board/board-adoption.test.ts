@@ -6,11 +6,14 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { type RecordApiClient, RecordApiRequestError } from '../record/record-api-client.ts'
+import { CLAIM_CONFLICT } from '../record/record-board-claims.ts'
 import type { HostedBoardMessage, HostedBoardReceipt } from '../record/record-board-contract.ts'
+import { RATE_LIMITED } from '../record/record-board-messages.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import {
   mayMarkBoardHostedAdopted,
   selectBoardAdoptionCandidates,
+  uploadErrorDisposition,
 } from './board-adoption-policy.ts'
 import { claimBoardNotices } from './board-delivery.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
@@ -190,7 +193,7 @@ test('confirmed adoption uploads roots before replies, then receipts and claims,
   const { client } = capturingClient(calls)
   installRecordApiClient(client)
 
-  const result = await adoptHostedBoard({ confirm: 4, clock: NOW, client })
+  const result = await adoptHostedBoard({ confirm: 4, clock: () => NOW, client })
 
   expect(result.status).toBe('adopted')
   expect(calls.filter((call) => call !== 'changes')).toEqual([
@@ -238,7 +241,7 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
   }
   const stopped = await adoptHostedBoard({
     confirm: 3,
-    clock: NOW,
+    clock: () => NOW,
     client: firstClient,
   })
   expect(stopped).toMatchObject({ status: 'stopped', uploaded: 1, refused: 1, remaining: 1 })
@@ -254,7 +257,7 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
   const secondCalls: string[] = []
   await adoptHostedBoard({
     confirm: 3,
-    clock: NOW + 1,
+    clock: () => NOW + 1,
     client: capturingClient(secondCalls).client,
   })
   expect(secondCalls.filter((call) => call.startsWith('post:'))).toEqual(['post:three'])
@@ -283,7 +286,7 @@ test.each(['notice', 'claim'] as const)(
       ...base,
       ...(kind === 'notice' ? { postBoardMessage: refuse } : { takeBoardClaim: refuse }),
     }
-    const action = adoptHostedBoard({ confirm: 1, clock: NOW, client })
+    const action = adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
     await expect(action).rejects.toThrow(
       `hosted service refused local ${kind} ${local.id}: hosted policy rejected this row`,
     )
@@ -313,12 +316,12 @@ test('withdrawing a row after an unexpected refusal drops its pending ledger row
     },
   }
 
-  await expect(adoptHostedBoard({ confirm: 1, clock: NOW, client })).rejects.toThrow(
+  await expect(adoptHostedBoard({ confirm: 1, clock: () => NOW, client })).rejects.toThrow(
     `withdraw local notice ${local.id}`,
   )
   withdrawNotice(local.id, {}, NOW + 1)
 
-  const result = await adoptHostedBoard({ confirm: 0, clock: NOW + 2, client })
+  const result = await adoptHostedBoard({ confirm: 0, clock: () => NOW + 2, client })
 
   expect(result).toMatchObject({ status: 'adopted', uploaded: 0, refused: 0, remaining: 0 })
   expect(postAttempts).toBe(1)
@@ -338,7 +341,7 @@ test('a run-tied claim without a hosted run id stays live as a lasting refusal a
   const localClaim = claim(run.id)
   const result = await adoptHostedBoard({
     confirm: 1,
-    clock: NOW,
+    clock: () => NOW,
     client: capturingClient([]).client,
   })
   expect(result).toMatchObject({ status: 'adopted', refused: 1 })
@@ -365,7 +368,7 @@ test('a lasting hosted root refusal leaves its thread local and live and still s
       )
     },
   }
-  const result = await adoptHostedBoard({ confirm: 2, clock: NOW + 2, client })
+  const result = await adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })
   expect(result).toMatchObject({ status: 'adopted', refused: 2 })
   expect(
     db()
@@ -389,8 +392,8 @@ test('an absent or wrong confirmation writes no ledger, local row, claim, or ado
     claim: db().query('SELECT * FROM board_claim WHERE id=?').get(localClaim.id),
   })
   const client = capturingClient([]).client
-  expect((await adoptHostedBoard({ clock: NOW, client })).status).toBe('plan')
-  await expect(adoptHostedBoard({ confirm: 1, clock: NOW, client })).rejects.toThrow(
+  expect((await adoptHostedBoard({ clock: () => NOW, client })).status).toBe('plan')
+  await expect(adoptHostedBoard({ confirm: 1, clock: () => NOW, client })).rejects.toThrow(
     'current candidate total 2',
   )
   expect(db().query('SELECT count(*) count FROM board_hosted_adoption_ledger').get()).toEqual({
@@ -408,4 +411,184 @@ test('candidate and final-mark decisions are pure', () => {
   expect(selectBoardAdoptionCandidates([])).toEqual([])
   expect(mayMarkBoardHostedAdopted(['uploaded', 'refused'])).toBeTrue()
   expect(mayMarkBoardHostedAdopted(['uploaded', 'pending'])).toBeFalse()
+})
+
+test('uses the hosted message ids returned for duplicate roots, replies, receipts, and the ledger', async () => {
+  presence()
+  const root = askQuestion(
+    { audience: 'session:reader', title: 'duplicate', body: 'question' },
+    {},
+    NOW,
+  )
+  const reply = replyToThread(root.id, 'answer', {}, NOW + 1)
+  db()
+    .query(
+      `INSERT OR REPLACE INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,'reader',1,?,NULL),(?,'reader',1,?,NULL)`,
+    )
+    .run(root.id, new Date(NOW).toISOString(), reply.id, new Date(NOW).toISOString())
+  const base = capturingClient([]).client
+  const receiptIds: string[] = []
+  let replyRoot = ''
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage(input) {
+      return { ...hostedMessage(input), id: 'stored-root' }
+    },
+    async replyBoardMessage(rootId, input) {
+      replyRoot = rootId
+      return {
+        ...hostedMessage({
+          id: input.id,
+          kind: 'notice',
+          audience: 'session:reader',
+          title: 'reply',
+          body: input.body,
+          expiresAt: new Date(NOW + 10_000).toISOString(),
+        }),
+        id: 'stored-reply',
+        kind: 'reply',
+        threadRootId: rootId,
+      }
+    },
+    async putBoardReceipt(input) {
+      receiptIds.push(input.messageId)
+      return base.putBoardReceipt(input)
+    },
+  }
+
+  await adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })
+
+  expect(replyRoot).toBe('stored-root')
+  expect(receiptIds).toEqual(['stored-root', 'stored-reply'])
+  expect(
+    db()
+      .query('SELECT local_id,hosted_id FROM board_hosted_adoption_ledger ORDER BY local_id')
+      .all(),
+  ).toEqual([
+    { local_id: root.id, hosted_id: 'stored-root' },
+    { local_id: reply.id, hosted_id: 'stored-reply' },
+  ])
+})
+
+test('counts refused receipts without blocking adoption', async () => {
+  presence()
+  const notice = postNotice(
+    { audience: 'session:reader', title: 'receipt', body: 'receipt' },
+    {},
+    NOW,
+  )
+  db()
+    .query(
+      `INSERT OR REPLACE INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,'reader',1,?,NULL)`,
+    )
+    .run(notice.id, new Date(NOW).toISOString())
+  const base = capturingClient([]).client
+  const refusedClient: RecordApiClient = {
+    ...base,
+    async putBoardReceipt() {
+      throw new RecordApiRequestError('receipt is no longer visible', 'refused')
+    },
+  }
+  const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW, client: refusedClient })
+  expect(result).toMatchObject({ status: 'adopted', skippedReceipts: 1 })
+})
+
+test('a receipt network failure stops adoption with its mark unset', async () => {
+  presence()
+  const notice = postNotice(
+    { audience: 'session:reader', title: 'receipt network', body: 'receipt' },
+    {},
+    NOW,
+  )
+  db()
+    .query(
+      `INSERT OR REPLACE INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,'reader',1,?,NULL)`,
+    )
+    .run(notice.id, new Date(NOW).toISOString())
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async putBoardReceipt() {
+      throw new RecordApiRequestError('receipt network offline', 'unreachable')
+    },
+  }
+
+  await expect(adoptHostedBoard({ confirm: 1, clock: () => NOW, client })).rejects.toThrow(
+    'receipt network offline',
+  )
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toBeNull()
+})
+
+test('records a hosted claim conflict as a lasting refusal and still adopts', async () => {
+  const local = claim()
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async takeBoardClaim() {
+      throw new RecordApiRequestError(`${CLAIM_CONFLICT} user other until tomorrow`, 'refused')
+    },
+  }
+
+  const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
+
+  expect(result).toMatchObject({ status: 'adopted', refused: 1 })
+  expect(db().query('SELECT closed_at FROM board_claim WHERE id=?').get(local.id)).toEqual({
+    closed_at: null,
+  })
+})
+
+test('drops a claim that expires before its request and clears its pending ledger', async () => {
+  const local = claim()
+  let now = NOW
+  let claimWrites = 0
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async takeBoardClaim(input) {
+      claimWrites++
+      return base.takeBoardClaim(input)
+    },
+  }
+  const clock = () => {
+    const value = now
+    now = NOW + 3_600_001
+    return value
+  }
+
+  const result = await adoptHostedBoard({ confirm: 1, clock, client })
+
+  expect(result).toMatchObject({ status: 'adopted', uploaded: 0, remaining: 0 })
+  expect(claimWrites).toBe(0)
+  expect(
+    db()
+      .query('SELECT * FROM board_hosted_adoption_ledger WHERE local_kind=? AND local_id=?')
+      .get('claim', local.id),
+  ).toBeNull()
+})
+
+test('upload error disposition covers every hosted adoption classification', () => {
+  expect(uploadErrorDisposition('refused', RATE_LIMITED)).toBe('rate')
+  expect(
+    uploadErrorDisposition(
+      'refused',
+      'board authorMachineId is missing, invisible, or not owned by this user',
+    ),
+  ).toBe('machine')
+  for (const message of [
+    'unknown or invisible board project example',
+    'row-level security rejected the row',
+    'run was not started by this user',
+    `${CLAIM_CONFLICT} user other until tomorrow`,
+  ])
+    expect(uploadErrorDisposition('refused', message)).toBe('lasting')
+  expect(uploadErrorDisposition('refused', 'some other policy')).toBe('unexpected')
+  expect(uploadErrorDisposition('unreachable', `${CLAIM_CONFLICT} user other`)).toBe('unexpected')
 })

@@ -53,7 +53,8 @@ type HostedBoardForcedScope = {
   claimId?: string | null
 }
 
-const RATE_LIMITED = 'board post rate limit reached; retry after the ten-minute author window'
+export const RATE_LIMITED =
+  'board post rate limit reached; retry after the ten-minute author window'
 
 const iso = (value: unknown) => {
   if (value == null) return null
