@@ -29,6 +29,10 @@ export type ArchitectGateRunner = (input: {
 
 export type ArchitectGateRecord = { id: number; exitCode: number }
 
+export function architectGateProcessExitCode(recordedExitCode: number): number {
+  return recordedExitCode >= 0 ? recordedExitCode : 1
+}
+
 const defaultRunner: ArchitectGateRunner = ({ command, cwd, write }) =>
   new Promise((resolve, reject) => {
     const started = Date.now()

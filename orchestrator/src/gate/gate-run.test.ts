@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
-import { runArchitectGate } from './gate-run.ts'
+import { architectGateProcessExitCode, runArchitectGate } from './gate-run.ts'
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -34,6 +34,12 @@ const database = () => {
   )
   return d
 }
+
+test('maps recorded gate exit codes to process exit codes', () => {
+  expect(architectGateProcessExitCode(0)).toBe(0)
+  expect(architectGateProcessExitCode(7)).toBe(7)
+  expect(architectGateProcessExitCode(-1)).toBe(1)
+})
 
 test('inserts a finished architect row with a null run_id and no tooling paths', async () => {
   const d = database()

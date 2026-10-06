@@ -17,7 +17,7 @@ import { db } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
-import { runArchitectGate } from '../gate/gate-run.ts'
+import { architectGateProcessExitCode, runArchitectGate } from '../gate/gate-run.ts'
 import { spawnsCommand } from '../health/spawn-commands.ts'
 import {
   treeCreateCommand,
@@ -387,6 +387,7 @@ export function register(program: Command): void {
     .action(async () => {
       const result = await runArchitectGate({ write: (chunk) => write(chunk) })
       log(String(result.id))
+      presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
     })
   program
     .command('probe <agent>')
