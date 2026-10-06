@@ -757,15 +757,12 @@ export async function restoreRecordDoc(
     const scope = String(revision.scope)
     const subject = revision.subject == null ? null : String(revision.subject)
     const revisionProjectId = revision.project_id == null ? null : String(revision.project_id)
-    let restoredProjectId = revisionProjectId
-    const restoredProjectName = docWriteProjectName(scope, subject)
-    if (restoredProjectName) {
-      try {
-        restoredProjectId =
-          (await projectId(tx, input.spaceId, restoredProjectName)) ?? revisionProjectId
-      } catch (error) {
-        if (!(error instanceof RecordDocError) || error.status !== 422) throw error
-      }
+    // An unresolved project leaves the live document's project as it is.
+    let resolvedProjectId: string | null = null
+    try {
+      resolvedProjectId = await projectId(tx, input.spaceId, docWriteProjectName(scope, subject))
+    } catch (error) {
+      if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
     const slug = String(revision.slug)
     const body = String(revision.body)
@@ -795,7 +792,8 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          project_id=${restoredProjectId}::uuid, deleted_at=NULL, updated_at=${now}::timestamptz
+          project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
+          deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
     const revisionId = await insertRevision(tx, {
@@ -805,7 +803,7 @@ export async function restoreRecordDoc(
       subject,
       owner: revision.owner_user_id == null ? null : String(revision.owner_user_id),
       slug,
-      projectId: restoredProjectId,
+      projectId: resolvedProjectId ?? revisionProjectId,
       op: 'restore',
       title: String(revision.title),
       body,
