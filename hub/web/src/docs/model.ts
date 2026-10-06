@@ -9,7 +9,7 @@ import {
   projectSubjects,
 } from './filters.ts'
 import { secondLevelHeadings } from './headings.ts'
-import { buildDocTree, neighbors, treePath } from './tree.ts'
+import { breadcrumb, buildDocTree, groupRootsBySubject, neighbors, treePath } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
 
 export function docsViewModel(
@@ -25,7 +25,9 @@ export function docsViewModel(
   const stale = clearStaleFilters(forAudience, chosen)
   const visible = applyFilters(forAudience, stale)
   const tree = buildDocTree(visible)
+  const groups = project === 'all' ? groupRootsBySubject(tree) : null
   const selected = visible.find((item) => item.id === selectedId) ?? null
+  const path = selected ? treePath(tree, selected.id) : []
   return {
     userCount: inAudience(forProject, 'user').length,
     technicalCount: inAudience(forProject, 'technical').length,
@@ -33,9 +35,12 @@ export function docsViewModel(
     stale,
     offered: offeredFilters(forAudience),
     tree,
+    groups,
     selected,
-    crumbs: selected ? treePath(tree, selected.id) : [],
-    around: selected ? neighbors(tree, selected.id) : { previous: null, next: null },
+    crumbs: selected ? breadcrumb(selected, path.slice(0, -1)) : [],
+    around: selected
+      ? neighbors(groups ? groups.flatMap((group) => group.children) : tree, selected.id)
+      : { previous: null, next: null },
     headings: doc ? secondLevelHeadings(doc.body) : [],
     subjects: projectSubjects(items),
     active: activeFilterCount(stale),

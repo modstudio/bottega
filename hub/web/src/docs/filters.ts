@@ -20,6 +20,15 @@ export function inProject(items: readonly DocsTreeItem[], project: string | 'all
   return items.filter((item) => item.subject === project)
 }
 
+/** Project chooser value for a selected document, or the empty-page default. */
+export function chooserProject(
+  selected: DocsTreeItem | null,
+  subjects: readonly string[],
+): string | 'all' {
+  if (selected) return selected.subject ?? 'all'
+  return subjects[0] ?? 'all'
+}
+
 export function inAudience(items: readonly DocsTreeItem[], audience: DocsAudience): DocsTreeItem[] {
   return items.filter((item) => item.audience === audience)
 }

@@ -1,4 +1,4 @@
-import type { DocsTreeItem, TreeNode } from './types.ts'
+import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 function byPositionThenTitle(a: DocsTreeItem, b: DocsTreeItem) {
   if (a.position !== b.position) return a.position - b.position
@@ -85,4 +85,35 @@ export function neighbors(
     previous: order[index - 1] ?? null,
     next: order[index + 1] ?? null,
   }
+}
+
+/**
+ * Under All projects, roots sit in subject groups, alphabetically, with
+ * documents that have no subject last under Shared.
+ */
+export function groupRootsBySubject(roots: readonly TreeNode[]): DocsTreeGroup[] {
+  const named = new Map<string, TreeNode[]>()
+  const shared: TreeNode[] = []
+  for (const root of roots) {
+    if (root.subject) {
+      const siblings = named.get(root.subject) ?? []
+      siblings.push(root)
+      named.set(root.subject, siblings)
+    } else {
+      shared.push(root)
+    }
+  }
+  const groups: DocsTreeGroup[] = [...named.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((heading) => ({ heading, children: named.get(heading)! }))
+  if (shared.length) groups.push({ heading: 'Shared', children: shared })
+  return groups
+}
+
+/** Docs, then the subject when there is one, then ancestor titles — not the document itself. */
+export function breadcrumb(selected: DocsTreeItem, ancestors: readonly DocsTreeItem[]): string[] {
+  const parts = ['Docs']
+  if (selected.subject) parts.push(selected.subject)
+  for (const ancestor of ancestors) parts.push(ancestor.title)
+  return parts
 }

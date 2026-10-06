@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test'
 import { applyFilters, EMPTY_FILTERS } from './filters.ts'
-import { buildDocTree, flattenTree, neighbors, parentEdgeCycles, treePath } from './tree.ts'
+import {
+  breadcrumb,
+  buildDocTree,
+  flattenTree,
+  groupRootsBySubject,
+  neighbors,
+  parentEdgeCycles,
+  treePath,
+} from './tree.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
@@ -64,16 +72,34 @@ test('a node pointing into a two-cycle stays a child of its parent', () => {
   expect(a?.children.map((node) => node.id)).toEqual(['root'])
 })
 
-test('breadcrumb follows the visible tree path', () => {
-  const tree = buildDocTree([
-    item({ id: 'g', title: 'Getting started' }),
-    item({ id: 'r', title: 'Your first run', parentId: 'g' }),
-  ])
-  expect(treePath(tree, 'r').map((node) => node.title)).toEqual([
-    'Getting started',
-    'Your first run',
-  ])
+test('the tree path includes the document; the breadcrumb does not', () => {
+  const child = item({ id: 'r', title: 'Your first run', parentId: 'g' })
+  const tree = buildDocTree([item({ id: 'g', title: 'Getting started' }), child])
+  const path = treePath(tree, 'r')
+  expect(path.map((node) => node.title)).toEqual(['Getting started', 'Your first run'])
+  expect(breadcrumb(child, path.slice(0, -1))).toEqual(['Docs', 'atlas', 'Getting started'])
   expect(treePath(tree, 'missing')).toEqual([])
+})
+
+test('a document with no subject omits the subject from the breadcrumb', () => {
+  const root = item({ id: 's', title: 'Shared note', subject: null })
+  expect(breadcrumb(root, [])).toEqual(['Docs'])
+})
+
+test('All projects groups roots by subject, Shared last, and does not regroup a single project', () => {
+  const tree = buildDocTree([
+    item({ id: 'z', title: 'Zed', subject: 'starship', position: 0 }),
+    item({ id: 'a', title: 'Alpha', subject: 'atlas', position: 1 }),
+    item({ id: 's', title: 'Shared note', subject: null, position: 2 }),
+    item({ id: 'c', title: 'Child', parentId: 'a', subject: 'atlas' }),
+  ])
+  expect(groupRootsBySubject(tree).map((group) => group.heading)).toEqual([
+    'atlas',
+    'starship',
+    'Shared',
+  ])
+  expect(groupRootsBySubject(tree)[0]!.children.map((node) => node.id)).toEqual(['a'])
+  expect(groupRootsBySubject(tree)[0]!.children[0]!.children.map((node) => node.id)).toEqual(['c'])
 })
 
 test('previous and next follow preorder of the visible tree', () => {

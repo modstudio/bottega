@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
@@ -7,6 +7,7 @@ import { Select } from '@/ui/listbox/select'
 import { Popover } from '@/ui/popover/popover'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
+import { readingBody } from './body.ts'
 import {
   EMPTY_FILTERS,
   type FilterKey,
@@ -16,7 +17,15 @@ import {
 import type { DocHeading } from './headings.ts'
 import { docsViewModel } from './model.ts'
 import { SearchDialog } from './search.tsx'
-import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsTreeItem, TreeNode } from './types.ts'
+import { treePath } from './tree.ts'
+import type {
+  DocsAudience,
+  DocsDoc,
+  DocsSearchMatch,
+  DocsTreeGroup,
+  DocsTreeItem,
+  TreeNode,
+} from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
@@ -36,6 +45,7 @@ export type DocsViewProps = {
   searchResults: readonly DocsSearchMatch[]
   framed: boolean
   localActions?: ReactNode
+  createAction?: ReactNode
   loading?: boolean
   error?: string | null
 }
@@ -135,6 +145,75 @@ function FilterPanel({
   )
 }
 
+function TreeRow({
+  node,
+  selectedId,
+  collapsed,
+  onToggle,
+  onSelect,
+}: {
+  node: TreeNode
+  selectedId: string | null
+  collapsed: ReadonlySet<string>
+  onToggle: (id: string) => void
+  onSelect: (item: DocsTreeItem) => void
+}) {
+  const current = node.id === selectedId
+  const open = !collapsed.has(node.id)
+  const { children, ...item } = node
+  const rowRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!current) return
+    rowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [current])
+  return (
+    <li className="m-0">
+      <div className="flex items-center">
+        {children.length ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? `Collapse ${node.title}` : `Expand ${node.title}`}
+            onClick={() => onToggle(node.id)}
+            className="grid size-6 shrink-0 place-items-center text-text-muted"
+          >
+            {open ? (
+              <ChevronDown className="size-3" aria-hidden />
+            ) : (
+              <ChevronRight className="size-3" aria-hidden />
+            )}
+          </button>
+        ) : (
+          <span className="size-6 shrink-0" />
+        )}
+        <button
+          ref={rowRef}
+          type="button"
+          aria-current={current ? 'page' : undefined}
+          onClick={() => onSelect(item)}
+          className={classes(
+            'min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-text-secondary hover:bg-control-hover',
+            current && 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover',
+          )}
+        >
+          {node.title}
+        </button>
+      </div>
+      {children.length && open ? (
+        <div className="ml-3 border-border-default border-l pl-1">
+          <TreeList
+            nodes={children}
+            selectedId={selectedId}
+            collapsed={collapsed}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
 function TreeList({
   nodes,
   selectedId,
@@ -150,57 +229,48 @@ function TreeList({
 }) {
   return (
     <ul className="m-0 list-none p-0 text-md">
-      {nodes.map((node) => {
-        const current = node.id === selectedId
-        const open = !collapsed.has(node.id)
-        const { children, ...item } = node
-        return (
-          <li key={node.id} className="m-0">
-            <div className="flex items-center">
-              {children.length ? (
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  aria-label={open ? `Collapse ${node.title}` : `Expand ${node.title}`}
-                  onClick={() => onToggle(node.id)}
-                  className="grid size-6 shrink-0 place-items-center text-text-muted"
-                >
-                  {open ? (
-                    <ChevronDown className="size-3" aria-hidden />
-                  ) : (
-                    <ChevronRight className="size-3" aria-hidden />
-                  )}
-                </button>
-              ) : (
-                <span className="size-6 shrink-0" />
-              )}
-              <button
-                type="button"
-                aria-current={current ? 'page' : undefined}
-                onClick={() => onSelect(item)}
-                className={classes(
-                  'min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-text-secondary hover:bg-control-hover',
-                  current && 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover',
-                )}
-              >
-                {node.title}
-              </button>
-            </div>
-            {children.length && open ? (
-              <div className="ml-3 border-border-default border-l pl-1">
-                <TreeList
-                  nodes={children}
-                  selectedId={selectedId}
-                  collapsed={collapsed}
-                  onToggle={onToggle}
-                  onSelect={onSelect}
-                />
-              </div>
-            ) : null}
-          </li>
-        )
-      })}
+      {nodes.map((node) => (
+        <TreeRow
+          key={node.id}
+          node={node}
+          selectedId={selectedId}
+          collapsed={collapsed}
+          onToggle={onToggle}
+          onSelect={onSelect}
+        />
+      ))}
     </ul>
+  )
+}
+
+function GroupedTree({
+  groups,
+  selectedId,
+  collapsed,
+  onToggle,
+  onSelect,
+}: {
+  groups: readonly DocsTreeGroup[]
+  selectedId: string | null
+  collapsed: ReadonlySet<string>
+  onToggle: (id: string) => void
+  onSelect: (item: DocsTreeItem) => void
+}) {
+  return (
+    <div>
+      {groups.map((group) => (
+        <div key={group.heading} className="mt-2.5 first:mt-0">
+          <div className={classes(eyebrow, 'px-2')}>{group.heading}</div>
+          <TreeList
+            nodes={group.children}
+            selectedId={selectedId}
+            collapsed={collapsed}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -233,6 +303,7 @@ function DocsChrome({
   onFilters,
   inView,
   active,
+  createAction,
 }: {
   audience: DocsAudience
   onAudience: (audience: DocsAudience) => void
@@ -248,6 +319,7 @@ function DocsChrome({
   onFilters: (next: FilterSelection) => void
   inView: number
   active: number
+  createAction?: ReactNode
 }) {
   const tabs = [
     { value: 'user', label: 'User guide', count: userCount },
@@ -295,6 +367,7 @@ function DocsChrome({
             <FilterPanel offered={offered} chosen={chosen} onChange={onFilters} total={inView} />
           </Popover>
         ) : null}
+        {createAction}
       </div>
     </div>
   )
@@ -302,6 +375,7 @@ function DocsChrome({
 
 function DocsRail({
   tree,
+  groups,
   selectedId,
   collapsed,
   onToggle,
@@ -311,6 +385,7 @@ function DocsRail({
   audience,
 }: {
   tree: readonly TreeNode[]
+  groups: readonly DocsTreeGroup[] | null
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
@@ -319,10 +394,11 @@ function DocsRail({
   loading?: boolean
   audience: DocsAudience
 }) {
+  const hasTree = groups ? groups.length > 0 : tree.length > 0
   return (
     <nav
       aria-label="Documents"
-      className="border-border-default border-b p-5 lg:border-r lg:border-b-0"
+      className="max-h-[min(24rem,70dvh)] overflow-y-auto border-border-default border-b p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--topbar-h)-3.5rem)] lg:border-r lg:border-b-0"
     >
       <button
         type="button"
@@ -333,14 +409,24 @@ function DocsRail({
         <Kbd>/</Kbd>
       </button>
       {loading ? <p className="text-md text-text-muted">Loading docs…</p> : null}
-      {tree.length ? (
-        <TreeList
-          nodes={tree}
-          selectedId={selectedId}
-          collapsed={collapsed}
-          onToggle={onToggle}
-          onSelect={onSelect}
-        />
+      {hasTree ? (
+        groups ? (
+          <GroupedTree
+            groups={groups}
+            selectedId={selectedId}
+            collapsed={collapsed}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        ) : (
+          <TreeList
+            nodes={tree}
+            selectedId={selectedId}
+            collapsed={collapsed}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        )
       ) : loading ? null : (
         <p className="mt-4 text-md text-text-muted">
           {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
@@ -359,7 +445,7 @@ function DocsReading({
   error,
 }: {
   doc: DocsDoc | null
-  crumbs: readonly DocsTreeItem[]
+  crumbs: readonly string[]
   around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
   onSelect: (item: DocsTreeItem) => void
   localActions?: ReactNode
@@ -376,11 +462,10 @@ function DocsReading({
         <>
           {crumbs.length ? (
             <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
-              <span>Docs</span>
-              {crumbs.map((crumb) => (
-                <span key={crumb.id} className="contents">
-                  <span>/</span>
-                  <span>{crumb.title}</span>
+              {crumbs.map((crumb, index) => (
+                <span key={`${index}:${crumb}`} className="contents">
+                  {index > 0 ? <span>/</span> : null}
+                  <span>{crumb}</span>
                 </span>
               ))}
             </div>
@@ -392,7 +477,7 @@ function DocsReading({
             {localActions}
           </div>
           <div className="mt-6">
-            <Markdown content={doc.body} />
+            <Markdown content={readingBody(doc.body)} />
           </div>
           <div className="mt-14 flex max-w-[68ch] justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
             {around.previous ? (
@@ -495,6 +580,7 @@ export function DocsView({
   searchResults,
   framed,
   localActions,
+  createAction,
   loading,
   error,
 }: DocsViewProps) {
@@ -507,6 +593,19 @@ export function DocsView({
       setChosen(model.stale)
     }
   }, [model.stale, chosen])
+  useEffect(() => {
+    if (!selectedId) return
+    const ancestors = treePath(model.tree, selectedId).slice(0, -1)
+    if (!ancestors.length) return
+    setCollapsed((current) => {
+      let changed = false
+      const next = new Set(current)
+      for (const ancestor of ancestors) {
+        if (next.delete(ancestor.id)) changed = true
+      }
+      return changed ? next : current
+    })
+  }, [selectedId, model.tree])
   useSearchHotkey(() => setSearchOpen(true))
   return (
     <div
@@ -530,10 +629,12 @@ export function DocsView({
         onFilters={setChosen}
         inView={model.inView}
         active={model.active}
+        createAction={createAction}
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
         <DocsRail
           tree={model.tree}
+          groups={model.groups}
           selectedId={selectedId}
           collapsed={collapsed}
           onToggle={(id) =>

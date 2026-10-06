@@ -7,6 +7,7 @@ import {
   inAudience,
   inProject,
   offeredFilters,
+  chooserProject,
   projectSubjects,
 } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'
@@ -76,4 +77,14 @@ test('project chooser lists subjects that have documents', () => {
   expect(projectSubjects(docs)).toEqual(['atlas', 'starship'])
   expect(inProject(docs, 'atlas').map((row) => row.id)).toEqual(['1', '2'])
   expect(inProject(docs, 'all')).toHaveLength(docs.length)
+})
+
+test('opening a document chooses its subject, or All projects when it has none', () => {
+  expect(chooserProject(docs[0]!, ['atlas', 'starship'])).toBe('atlas')
+  expect(chooserProject(docs[3]!, ['atlas', 'starship'])).toBe('all')
+})
+
+test('with no document the chooser starts on the first subject, else All projects', () => {
+  expect(chooserProject(null, ['atlas', 'starship'])).toBe('atlas')
+  expect(chooserProject(null, [])).toBe('all')
 })

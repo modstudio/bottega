@@ -114,3 +114,40 @@ test('the filter button is absent when documents cannot use a filter', () => {
   })
   expect(html).not.toContain('>Filter<')
 })
+
+test('All projects groups roots by subject, and a single project does not', () => {
+  const grouped = render({ project: 'all', selectedId: '1' })
+  expect(grouped).toContain('Shared')
+  const one = render({ project: 'atlas', selectedId: '1' })
+  expect(one).not.toContain('Shared')
+})
+
+test('the breadcrumb is Docs, the subject and ancestors, not the document title', () => {
+  const html = render({ project: 'atlas', selectedId: '2' })
+  expect(html).toContain('Docs')
+  expect(html).toContain('atlas')
+  expect(html).toContain('Getting started')
+  expect(html).not.toMatch(/Docs<\/span>.*Your first run<\/span>/)
+})
+
+test('a leading title heading in the body is not rendered again', () => {
+  const html = render({
+    project: 'atlas',
+    selectedId: '2',
+    doc: {
+      ...items[1]!,
+      body: '# Your first run\n\nEvery piece of work carries a key.\n',
+    },
+  })
+  expect(html).toContain('Every piece of work carries a key.')
+  expect(html).not.toContain('<h1>Your first run</h1>')
+})
+
+test('New doc sits in the top bar when the local create control is passed', () => {
+  const html = render({
+    project: 'atlas',
+    createAction: <button type="button">New doc</button>,
+  })
+  expect(html).toContain('New doc')
+  expect(render({ project: 'atlas' })).not.toContain('New doc')
+})

@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMatch, useNavigate } from '@tanstack/react-router'
-import { History, Pencil } from 'lucide-react'
+import { History, Pencil, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { isHostedMode } from '@/lib/hub-mode'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
+import { CreateDocDialog } from './create-dialog.tsx'
+import { chooserProject, projectSubjects } from './filters.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 import { docsSource } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
@@ -25,8 +27,11 @@ export function DocsPage() {
   const search = detail?.search
   const [audience, setAudience] = useState<DocsAudience>('user')
   const [project, setProject] = useState<string | 'all'>('all')
+  const [emptyChooserSet, setEmptyChooserSet] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const catalog = useDocsTree(source)
+  const subjects = useMemo(() => projectSubjects(catalog.items), [catalog.items])
   const selected = useMemo(() => {
     if (!params) return null
     const subject = params.subject === '_' ? null : params.subject
@@ -40,9 +45,21 @@ export function DocsPage() {
     )
   }, [catalog.items, params, search?.id])
   const selectedAudience = selected?.audience
+  const selectedId = selected?.id
+  const selectedSubject = selected?.subject
   useEffect(() => {
     if (selectedAudience) setAudience(selectedAudience)
   }, [selectedAudience])
+  useEffect(() => {
+    if (!selectedId) return
+    setProject(selectedSubject ?? 'all')
+    setEmptyChooserSet(true)
+  }, [selectedId, selectedSubject])
+  useEffect(() => {
+    if (selectedId || emptyChooserSet || catalog.isPending) return
+    setProject(chooserProject(null, subjects))
+    setEmptyChooserSet(true)
+  }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected)
   const results = useDocsSearch(source, searchQuery, audience, project)
 
@@ -59,6 +76,7 @@ export function DocsPage() {
   }
 
   return (
+    <>
     <DocsView
       items={catalog.items}
       selectedId={selected?.id ?? null}
@@ -76,6 +94,14 @@ export function DocsPage() {
       framed={hosted && !signedIn}
       loading={catalog.isPending}
       error={catalog.error?.message ?? reading.error?.message ?? results.error?.message ?? null}
+      createAction={
+        source === 'local' ? (
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            <Plus size={14} />
+            New doc
+          </Button>
+        ) : null
+      }
       localActions={
         source === 'local' && selected ? (
           <div className="flex shrink-0 gap-2">
@@ -119,5 +145,9 @@ export function DocsPage() {
         ) : null
       }
     />
+      {source === 'local' && creating ? (
+        <CreateDocDialog open onOpenChange={setCreating} />
+      ) : null}
+    </>
   )
 }

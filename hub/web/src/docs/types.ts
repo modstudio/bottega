@@ -30,6 +30,8 @@ export type DocsSource = 'local' | 'hosted' | 'public'
 
 export type TreeNode = DocsTreeItem & { children: TreeNode[] }
 
+export type DocsTreeGroup = { heading: string; children: TreeNode[] }
+
 export function docsSource(hosted: boolean, signedIn: boolean): DocsSource {
   if (!hosted) return 'local'
   return signedIn ? 'hosted' : 'public'
