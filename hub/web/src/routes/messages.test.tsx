@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { HostedMessagesPage, MessagesContent } from '@/routes/messages'
+import { MessageReceipts } from '@/routes/messages.$id'
 import { queryClient, trpc } from '@/trpc/client'
 
 const origin = {
@@ -121,4 +122,12 @@ test('messages distinguish hosted reach from a local no-reach notice', () => {
 test('hosted messages route explains that the page is unavailable', () => {
   const html = renderToStaticMarkup(<HostedMessagesPage />)
   expect(html).toContain('The messages page is not available in the hosted hub yet.')
+})
+
+test('message receipts show sessions not acknowledged from board status', () => {
+  const html = renderToStaticMarkup(
+    <MessageReceipts receipts={[]} unacknowledged={['architect-session']} />,
+  )
+  expect(html).toContain('Not acknowledged:')
+  expect(html).toContain('architect-session')
 })

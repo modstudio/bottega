@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import type { inferRouterOutputs } from '@trpc/server'
+import { useRef, useState } from 'react'
+import { sendTimestamp } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { HostedMessagesPage, originText } from '@/routes/messages'
 import { queryClient, trpc } from '@/trpc/client'
@@ -10,36 +12,18 @@ import { Companion } from '@/ui/companion/companion'
 import { Dialog } from '@/ui/dialog/dialog'
 import { Textarea } from '@/ui/field/textarea'
 import { DisplayRow, FieldSection } from '@/ui/form-layout/form-layout'
+import type { AppRouter } from '../../../src/trpc/router.ts'
 
-type Origin = Parameters<typeof originText>[0]
-type Message = {
-  id: string
-  kind: string | null
-  title: string | null
-  body: string | null
-  audience: string | null
-  origin: Origin | null
-  senderTags: { kind: 'task' | 'path' | 'topic'; value: string }[] | null
-  createdAt: string | null
-  expiresAt: string | null
-  state: string | null
-  acceptedReplyId: string | null
-  ackRequired: boolean | null
-}
-type Reply = { id: string; body: string; origin: Origin; createdAt: string }
-type Receipt = {
-  readerSession: string
-  deliveredAt: string | null
-  acknowledgedAt: string | null
-}
+type BoardOutputs = inferRouterOutputs<AppRouter>['board']
+type ThreadRoot = BoardOutputs['thread']['root']
+type ThreadReply = BoardOutputs['thread']['replies'][number]
+type StatusReceipt = BoardOutputs['status']['receipts'][number]
 
-function MessageReceipts({
-  root,
+export function MessageReceipts({
   receipts,
   unacknowledged,
 }: {
-  root: Message
-  receipts: Receipt[]
+  receipts: StatusReceipt[]
   unacknowledged: string[]
 }) {
   return (
@@ -48,15 +32,16 @@ function MessageReceipts({
         <ul className="grid gap-2">
           {receipts.map((receipt) => (
             <li key={receipt.readerSession}>
-              <strong>{receipt.readerSession}</strong> · delivered {timestamp(receipt.deliveredAt)}{' '}
-              · acknowledged {timestamp(receipt.acknowledgedAt)}
+              <strong>{receipt.readerSession}</strong> · delivered{' '}
+              {receipt.deliveredAt ? sendTimestamp(receipt.deliveredAt) : '-'} · acknowledged{' '}
+              {receipt.acknowledgedAt ? sendTimestamp(receipt.acknowledgedAt) : '-'}
             </li>
           ))}
         </ul>
       ) : (
         <p className="text-text-muted">This message reached no session.</p>
       )}
-      {root.kind === 'notice' && root.ackRequired && unacknowledged.length ? (
+      {unacknowledged.length ? (
         <p>
           <strong>Not acknowledged:</strong> {unacknowledged.join(', ')}
         </p>
@@ -75,8 +60,8 @@ function MessageReplies({
   onReply,
   onAccept,
 }: {
-  root: Message
-  replies: Reply[]
+  root: ThreadRoot
+  replies: ThreadReply[]
   replyBody: string
   replyPending: boolean
   acceptPending: boolean
@@ -91,7 +76,7 @@ function MessageReplies({
           {replies.map((item) => (
             <li key={item.id} className="border-border-subtle border-b pb-4 last:border-b-0">
               <p className="text-sm text-text-muted">
-                {originText(item.origin)} · {timestamp(item.createdAt)}
+                {originText(item.origin)} · {sendTimestamp(item.createdAt)}
               </p>
               <blockquote className="mt-2 border-border-strong border-l-2 pl-3">
                 <pre className="whitespace-pre-wrap font-sans">{item.body}</pre>
@@ -138,10 +123,6 @@ function MessageReplies({
 
 export const Route = createFileRoute('/messages/$id')({ component: MessageDetailRoute })
 
-function timestamp(value: string | null) {
-  return value ? new Date(value).toLocaleString() : '-'
-}
-
 function MessageDetailRoute() {
   if (isHostedMode()) return <HostedMessagesPage />
   return <LocalMessageDetail />
@@ -154,6 +135,11 @@ function LocalMessageDetail() {
   const status = useQuery(trpc.board.status.queryOptions({ id }))
   const [replyBody, setReplyBody] = useState('')
   const [withdrawing, setWithdrawing] = useState(false)
+  const [actionError, setActionError] = useState<{
+    action: 'reply' | 'accept' | 'withdraw'
+    message: string
+  } | null>(null)
+  const actionSequence = useRef(0)
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: trpc.board.list.queryKey() }),
@@ -161,7 +147,14 @@ function LocalMessageDetail() {
       queryClient.invalidateQueries({ queryKey: trpc.board.status.queryKey({ id }) }),
     ])
   }
-  const reply = useMutation(trpc.board.reply.mutationOptions({ onSuccess: invalidate }))
+  const reply = useMutation(
+    trpc.board.reply.mutationOptions({
+      onSuccess: async () => {
+        setReplyBody('')
+        await invalidate()
+      },
+    }),
+  )
   const accept = useMutation(trpc.board.accept.mutationOptions({ onSuccess: invalidate }))
   const withdraw = useMutation(
     trpc.board.withdraw.mutationOptions({
@@ -189,11 +182,20 @@ function LocalMessageDetail() {
       </Companion>
     )
   }
-  const root = thread.data?.root as Message | undefined
+  const root = thread.data?.root
   if (!root) return null
-  const replies = (thread.data?.replies ?? []) as Reply[]
-  const receipts = (status.data?.receipts ?? []) as Receipt[]
-  const actionError = reply.error ?? accept.error ?? withdraw.error
+  const replies = thread.data?.replies ?? []
+  const receipts = status.data?.receipts ?? []
+  const runAction = (
+    action: 'reply' | 'accept' | 'withdraw',
+    mutate: (onError: (error: { message: string }) => void) => void,
+  ) => {
+    const sequence = ++actionSequence.current
+    setActionError(null)
+    mutate((error) => {
+      if (sequence === actionSequence.current) setActionError({ action, message: error.message })
+    })
+  }
   const tags = root.senderTags?.map((tag) => `${tag.kind}:${tag.value}`).join(', ') || '-'
   return (
     <Companion
@@ -220,19 +222,18 @@ function LocalMessageDetail() {
       <DisplayRow label="From" value={root.origin ? originText(root.origin) : '-'} />
       <DisplayRow label="Audience" value={root.audience} />
       <DisplayRow label="Sender tags" value={tags} />
-      <DisplayRow label="Created" value={timestamp(root.createdAt)} />
-      <DisplayRow label="Expires" value={root.expiresAt ? timestamp(root.expiresAt) : 'Never'} />
+      <DisplayRow label="Created" value={root.createdAt ? sendTimestamp(root.createdAt) : '-'} />
+      <DisplayRow
+        label="Expires"
+        value={root.expiresAt ? sendTimestamp(root.expiresAt) : 'Never'}
+      />
       <DisplayRow label="State" value={root.state} />
       <FieldSection title="Message">
         <blockquote className="border-border-strong border-l-2 pl-3">
           <pre className="whitespace-pre-wrap font-sans">{root.body ?? ''}</pre>
         </blockquote>
       </FieldSection>
-      <MessageReceipts
-        root={root}
-        receipts={receipts}
-        unacknowledged={status.data?.unacknowledged ?? []}
-      />
+      <MessageReceipts receipts={receipts} unacknowledged={status.data?.unacknowledged ?? []} />
       <MessageReplies
         root={root}
         replies={replies}
@@ -240,10 +241,14 @@ function LocalMessageDetail() {
         replyPending={reply.isPending}
         acceptPending={accept.isPending}
         onReplyBody={setReplyBody}
-        onReply={() => reply.mutate({ id, body: replyBody })}
-        onAccept={(replyId) => accept.mutate({ questionId: id, replyId })}
+        onReply={() =>
+          runAction('reply', (onError) => reply.mutate({ id, body: replyBody }, { onError }))
+        }
+        onAccept={(replyId) =>
+          runAction('accept', (onError) => accept.mutate({ questionId: id, replyId }, { onError }))
+        }
       />
-      {actionError ? (
+      {actionError && actionError.action !== 'withdraw' ? (
         <p data-tone="error" className="mt-3 text-status-text">
           {actionError.message}
         </p>
@@ -259,13 +264,21 @@ function LocalMessageDetail() {
             <Button
               variant="danger"
               disabled={withdraw.isPending}
-              onClick={() => withdraw.mutate({ id })}
+              onClick={() =>
+                runAction('withdraw', (onError) => withdraw.mutate({ id }, { onError }))
+              }
             >
               {withdraw.isPending ? 'Withdrawing...' : 'Withdraw'}
             </Button>
           </>
         }
-      />
+      >
+        {actionError?.action === 'withdraw' ? (
+          <p data-tone="error" className="text-status-text">
+            {actionError.message}
+          </p>
+        ) : null}
+      </Dialog>
     </Companion>
   )
 }

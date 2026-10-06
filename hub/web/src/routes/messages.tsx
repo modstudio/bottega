@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
+import type { inferRouterOutputs } from '@trpc/server'
 import { ChevronRight, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
@@ -16,32 +17,11 @@ import { Textarea } from '@/ui/field/textarea'
 import { SettingBlock } from '@/ui/form-layout/form-layout'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
+import type { AppRouter } from '../../../src/trpc/router.ts'
 
-type BoardOrigin = {
-  kind: string
-  session: string | null
-  harness: string | null
-  project: string | null
-  runId: string | null
-}
-
-export type MessageRow = {
-  id: string
-  kind: 'notice' | 'question'
-  title: string | null
-  audience: string | null
-  origin: BoardOrigin
-  createdAt: string
-  expiresAt: string | null
-  state: 'open' | 'accepted' | 'withdrawn' | 'expired'
-  ackRequired: boolean
-  reached: number | null
-  acknowledged: number | null
-  unacknowledged: string[] | null
-  store: 'local' | 'hosted'
-  replyCount?: number
-  acceptedReplyId?: string | null
-}
+type BoardOutputs = inferRouterOutputs<AppRouter>['board']
+export type BoardListRow = BoardOutputs['list']['messages'][number]
+type BoardListOrigin = BoardListRow['origin']
 
 type Filter = 'all' | 'notice' | 'question' | 'open'
 
@@ -69,7 +49,7 @@ function listInput(filter: Filter, includeEnded: boolean) {
   }
 }
 
-export function originText(origin: BoardOrigin) {
+export function originText(origin: BoardListOrigin) {
   if (origin.kind === 'operator') return 'Operator'
   if (origin.runId) return `Run ${origin.runId}`
   if (origin.session) {
@@ -79,16 +59,16 @@ export function originText(origin: BoardOrigin) {
   return origin.kind
 }
 
-function reachText(row: MessageRow) {
+function reachText(row: BoardListRow) {
   if (row.reached === null) return 'Reach unknown'
   if (row.reached === 0) return 'Reached no session'
   if (!row.ackRequired) return `${row.reached} reached`
   return `${row.acknowledged ?? 0} of ${row.reached} acknowledged`
 }
 
-function responseText(row: MessageRow) {
+function responseText(row: BoardListRow) {
   if (row.kind === 'notice') return reachText(row)
-  return `${row.replyCount ?? 0} ${row.replyCount === 1 ? 'reply' : 'replies'} · ${row.acceptedReplyId ? 'answer accepted' : 'no answer accepted'}`
+  return `${row.replyCount} ${row.replyCount === 1 ? 'reply' : 'replies'} · ${row.acceptedReplyId ? 'answer accepted' : 'no answer accepted'}`
 }
 
 function MessagesList({
@@ -100,15 +80,15 @@ function MessagesList({
   onOpen,
   controls,
 }: {
-  rows: MessageRow[]
+  rows: BoardListRow[]
   warning: string | null
   emptyTitle?: string
   selectedId?: string
   panel?: React.ReactNode
-  onOpen: (row: MessageRow) => void
+  onOpen: (row: BoardListRow) => void
   controls?: React.ReactNode
 }) {
-  const columns: CollectionColumn<MessageRow>[] = [
+  const columns: CollectionColumn<BoardListRow>[] = [
     {
       id: 'title',
       label: 'Message',
@@ -192,13 +172,13 @@ export function MessagesContent({
 }: {
   panel?: React.ReactNode
   selectedId?: string
-  onOpen: (row: MessageRow) => void
+  onOpen: (row: BoardListRow) => void
 }) {
   const [filter, setFilter] = useState<Filter>('all')
   const [includeEnded, setIncludeEnded] = useState(false)
   const [posting, setPosting] = useState(false)
   const query = useQuery(trpc.board.list.queryOptions(listInput(filter, includeEnded)))
-  const rows = (query.data?.messages ?? []) as MessageRow[]
+  const rows = query.data?.messages ?? []
 
   return (
     <section>
@@ -290,6 +270,16 @@ function NewMessageDialog({
               ? 'Message posted. Reach is unknown.'
               : `Message posted and reached ${posted.reached} ${posted.reached === 1 ? 'session' : 'sessions'}.`),
         )
+        setAudience('')
+        setTitle('')
+        setBody('')
+        setAckRequired(false)
+        setDeadline('')
+        setExpires('')
+        setTask('')
+        setPaths('')
+        setTopics('')
+        post.reset()
         await queryClient.invalidateQueries({ queryKey: trpc.board.list.queryKey() })
       },
     }),
