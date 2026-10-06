@@ -270,6 +270,8 @@ export async function dispatchCommand(
     reviewRef,
     has('carry'),
     explicitRepo,
+    false,
+    Boolean(requestedCwd),
   )
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
   const taskKeyWarning = await taskKeyWarningForDispatch(

@@ -71,9 +71,18 @@ export function implicitReviewRefusal(input: {
   trunk: string
   base: string
   head: string
+  measuredCwd: string
+  callerChoseCwd: boolean
 }): string | null {
   if (input.changedPathCount === null || input.changedPathCount > 0) return null
   const carryRemedy = input.carry ? '--carry with uncommitted work' : '--carry for uncommitted work'
+  if (input.callerChoseCwd) {
+    return (
+      `refused: implicit review target ${input.base.slice(0, 8)}..${input.head.slice(0, 8)} ` +
+      `against ${input.trunk} in ${input.measuredCwd} has no changed paths. Pass ` +
+      `--review <branch under review>, or ${carryRemedy}. Prompt text does not select the artifact.`
+    )
+  }
   return (
     `refused: implicit review target ${input.base.slice(0, 8)}..${input.head.slice(0, 8)} ` +
     `against ${input.trunk} has no changed paths. Pass --review <branch under review>, or ` +
@@ -91,6 +100,7 @@ export function measureImplicitReviewTarget(
   trunk: string
   base: string
   head: string
+  measuredCwd: string
 } | null {
   const trunk = projectAt(cwd)?.settings.trunk?.trim()
   if (!trunk) return null
@@ -107,6 +117,7 @@ export function measureImplicitReviewTarget(
       trunk,
       base,
       head,
+      measuredCwd: root,
     }
   } catch {
     return null
