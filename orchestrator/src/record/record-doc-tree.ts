@@ -4,6 +4,26 @@ import type { SQL } from 'bun'
 import type { DocAudience } from '../../../shared/docs.ts'
 import { documentTreeWriteRefusal } from '../doc/doc-tree-rules.ts'
 
+/** The live row at an address, else its most recently deleted one, locked for the write. */
+export async function existingDocAtAddress(
+  tx: SQL,
+  spaceId: string,
+  doc: { scope: string; subject: string | null; owner?: string | null; slug: string },
+): Promise<Record<string, unknown> | undefined> {
+  const rows = await tx`
+    SELECT * FROM doc
+    WHERE space_id=${spaceId}::uuid
+      AND scope=${doc.scope}
+      AND COALESCE(subject, '')=${doc.subject ?? ''}
+      AND COALESCE(owner_user_id::text, '')=${doc.owner ?? ''}
+      AND slug=${doc.slug}
+    ORDER BY (deleted_at IS NULL) DESC, updated_at DESC, id DESC
+    LIMIT 1
+    FOR UPDATE
+  `
+  return rows[0] as Record<string, unknown> | undefined
+}
+
 export async function recordTreeWriteRefusal(
   tx: SQL,
   input: {

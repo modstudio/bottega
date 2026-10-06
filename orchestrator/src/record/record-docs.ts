@@ -30,7 +30,11 @@ import {
   recordDocRevisionRow,
   recordDocRow,
 } from './record-doc-mapping.ts'
-import { recordCanonTreeWriteRefusal, recordTreeWriteRefusal } from './record-doc-tree.ts'
+import {
+  existingDocAtAddress,
+  recordCanonTreeWriteRefusal,
+  recordTreeWriteRefusal,
+} from './record-doc-tree.ts'
 
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 
@@ -887,25 +891,6 @@ export async function countRecordDocs(input: Tenant): Promise<{ docs: number; re
       await tx`SELECT count(*)::integer AS n FROM doc_revision WHERE space_id=${input.spaceId}::uuid`
     return { docs: Number(docs[0]?.n ?? 0), revisions: Number(revisions[0]?.n ?? 0) }
   })
-}
-
-async function existingDocAtAddress(
-  tx: SQL,
-  spaceId: string,
-  doc: NormalizedRecordDocImport['doc'],
-): Promise<Record<string, unknown> | undefined> {
-  const rows = await tx`
-    SELECT * FROM doc
-    WHERE space_id=${spaceId}::uuid
-      AND scope=${doc.scope}
-      AND COALESCE(subject, '')=${doc.subject ?? ''}
-      AND COALESCE(owner_user_id::text, '')=${doc.owner ?? ''}
-      AND slug=${doc.slug}
-    ORDER BY (deleted_at IS NULL) DESC, updated_at DESC, id DESC
-    LIMIT 1
-    FOR UPDATE
-  `
-  return rows[0] as Record<string, unknown> | undefined
 }
 
 async function writeImportedDoc(
