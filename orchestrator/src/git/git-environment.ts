@@ -337,10 +337,18 @@ export function repoRootOf(cwd: string): string | null {
   return mainCheckoutOf(cwd, targetGitEnvironment(cwd))
 }
 
+/** Whether git interprets this revision expression relative to a worktree's own HEAD. */
+export function isWorktreeRelativeRef(ref: string): boolean {
+  return /^(?:HEAD(?:$|[~^]|@\{)|@(?:$|[~^]|\{))/.test(ref)
+}
+
 export function resolveBase(cwd: string, ref: string): string {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
-  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], repoRoot)
+  const resolutionRoot = isWorktreeRelativeRef(ref)
+    ? git(['rev-parse', '--show-toplevel'], cwd)
+    : repoRoot
+  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], resolutionRoot)
 }
 
 /** The main checkout whose objects this independent clone borrows, if any. */

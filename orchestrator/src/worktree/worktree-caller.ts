@@ -5,7 +5,7 @@ import { git, gitBytes, gitInput, gitOk } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import type { Worktree } from './worktree-types.ts'
 
-export { resolveBase } from '../git/git-environment.ts'
+export { isWorktreeRelativeRef, resolveBase } from '../git/git-environment.ts'
 
 /** Keep fresh lookup at the caller; move failover lookup to a durable registered checkout. */
 export function readOnlyBaseResolutionDirectory(
