@@ -116,12 +116,6 @@
     "key": "orchestrator/src/canon/canon-commands.ts\u0000canonCommand"
   },
   {
-    "file": "orchestrator/src/canon/canon.ts",
-    "function": "forEach callback#2",
-    "line": 309,
-    "score": 23
-  },
-  {
     "file": "orchestrator/src/canon/evals.ts",
     "function": "withHermeticGitEnv callback",
     "line": 383,

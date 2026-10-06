@@ -934,6 +934,8 @@ export async function restoreDoc(
     },
     getDoc(scope, subject, slug, owner),
   )
+  const projectName = docWriteProjectName(scope, subject)
+  const projectId = projectName ? (projectByName(subject!)?.id ?? null) : null
   const liveRecordId = getDoc(scope, subject, slug, owner)?.record_id
   const restoredParentSlug = localRestoredParentSlug({
     scope,
@@ -967,7 +969,7 @@ export async function restoreDoc(
         owner,
         slug,
         liveRecordId,
-        projectId: scope === 'project' ? (projectByName(subject!)?.id ?? null) : null,
+        projectId,
         title: revision.title,
         body: revision.body,
         delivery: revision.delivery,
@@ -1011,6 +1013,7 @@ export async function restoreDoc(
             parent_slug: tree.parentSlug,
           }),
           position: revision.position,
+          projectName,
           reason: identity.reason,
           author: identity.author,
           op: 'restore',
@@ -1029,7 +1032,7 @@ export async function restoreDoc(
         subject,
         owner,
         slug,
-        projectId: scope === 'project' ? (projectByName(subject!)?.id ?? null) : null,
+        projectId,
         title: revision.title,
         body: revision.body,
         delivery: revision.delivery,

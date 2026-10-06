@@ -770,6 +770,14 @@ export async function restoreRecordDoc(
         'restore',
       ),
     )
+    const revisionProjectId = revision.project_id == null ? null : String(revision.project_id)
+    // An unresolved project leaves the live document's project as it is.
+    let resolvedProjectId: string | null = null
+    try {
+      resolvedProjectId = await projectId(tx, input.spaceId, docWriteProjectName(scope, subject))
+    } catch (error) {
+      if (!(error instanceof RecordDocError) || error.status !== 422) throw error
+    }
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
     const audience = String(revision.audience) as DocAudience
@@ -807,6 +815,7 @@ export async function restoreRecordDoc(
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
           audience=${audience}, parent_id=${parentId}::uuid, position=${position},
+          project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
@@ -817,7 +826,7 @@ export async function restoreRecordDoc(
       subject,
       owner,
       slug,
-      projectId: live.project_id == null ? null : String(live.project_id),
+      projectId: resolvedProjectId ?? revisionProjectId,
       op: 'restore',
       title: String(revision.title),
       body,

@@ -2,12 +2,33 @@ import { describe, expect, test } from 'bun:test'
 import {
   canonRemovalRefusal,
   decideDocRevisionWrite,
+  docWriteProjectName,
   globalCanonWriteTargets,
   refuseCanonWrite,
   refuseOwnedDocAddress,
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('document writes derive their project from the shared scope subject kind', () => {
+  const cases: [string, string | null, string | null][] = [
+    ['project', 'alpha', 'alpha'],
+    ['project', null, null],
+    ['resume', 'alpha', 'alpha'],
+    ['canon', 'alpha', 'alpha'],
+    ['canon', null, null],
+    ['settings', 'alpha', 'alpha'],
+    ['settings', null, null],
+    ['machine', null, null],
+    ['global', null, null],
+    ['agent', 'codex', null],
+    ['job', 'understand', null],
+    ['stack', 'typescript', null],
+  ]
+  for (const [scope, subject, expected] of cases) {
+    expect(docWriteProjectName(scope, subject), scope).toBe(expected)
+  }
+})
 
 test('owned settings share the owner-private address rule with canon', () => {
   const owner = '01990000-0000-7000-8000-000000000091'

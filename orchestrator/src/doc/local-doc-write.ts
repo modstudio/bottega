@@ -63,9 +63,10 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
+          input.projectId,
           input.title,
           input.body,
           input.delivery,
@@ -199,9 +200,10 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
+          input.projectId,
           input.title,
           input.body,
           input.delivery,

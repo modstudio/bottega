@@ -40,6 +40,10 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   settings: 'project',
 } as const satisfies Record<DocScope, DocSubjectKind | null>
 
+export function docScopeHasProjectSubject(scope: string): boolean {
+  return DOC_SCOPE_SUBJECT_KIND[scope as DocScope] === 'project'
+}
+
 export function resolveDocSubject(
   scope: DocScope,
   explicit: string | undefined,

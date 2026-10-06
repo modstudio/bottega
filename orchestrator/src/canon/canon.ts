@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { $ } from 'bun'
 import { CONCERNS } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
+import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../database/db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from '../doc/docs.ts'
@@ -448,8 +450,76 @@ function trackedPath(files: Set<string>, path: string): boolean {
   return false
 }
 
-export function checkDoc(body: string, options: { repoRoot: string }): Finding[] {
-  const files = tracked(options.repoRoot)
+export const BRACE_EXPANSION_LIMIT = 32
+
+function braceExpansionGroups(piece: string): { alternatives: number; range: boolean }[] {
+  const groups: { alternatives: number; range: boolean }[] = []
+  const stack: { alternatives: number; range: boolean }[] = []
+  for (let index = 0; index < piece.length; index += 1) {
+    const char = piece[index]
+    if (char === '\\') {
+      index += 1
+      continue
+    }
+    if (char === '{') {
+      stack.push({ alternatives: 1, range: false })
+      continue
+    }
+    const group = stack.at(-1)
+    if (!group) continue
+    if (char === ',') group.alternatives += 1
+    if (char === '.' && piece[index + 1] === '.') group.range = true
+    if (char === '}') groups.push(stack.pop()!)
+  }
+  return groups
+}
+
+export function braceExpansionUpperBound(piece: string): number {
+  let bound = 1
+  for (const group of braceExpansionGroups(piece)) {
+    if (group.range) return Number.POSITIVE_INFINITY
+    bound *= group.alternatives
+  }
+  return bound
+}
+
+function expandedBracePieces(piece: string): string[] {
+  if (braceExpansionUpperBound(piece) > BRACE_EXPANSION_LIMIT) return [piece]
+  try {
+    return $.braces(piece)
+  } catch {
+    return [piece]
+  }
+}
+
+function pathFindings(
+  piece: string,
+  line: number,
+  repoRoot: string,
+  files: Set<string>,
+): Finding[] {
+  if (!PREFIXES.some((prefix) => piece.startsWith(prefix)) || /[<>]/.test(piece)) return []
+  const findings: Finding[] = []
+  for (const expanded of expandedBracePieces(piece)) {
+    const referencePath = canonReferencePath(expanded)
+    if (BUILT.test(referencePath) || EXEMPT_PATHS.has(referencePath)) continue
+    const path = (referencePath.split('*')[0] ?? referencePath).replace(/\/$/, '')
+    if (!path || trackedPath(files, path)) continue
+    findings.push({
+      kind: 'path',
+      token: piece,
+      line,
+      message: `line ${line}: \`${expanded}\` is not tracked in ${repoRoot}`,
+    })
+  }
+  return findings
+}
+
+export function checkDoc(
+  body: string,
+  options: { repoRoot: string; trackedFiles?: Set<string> },
+): Finding[] {
+  const files = options.trackedFiles ?? tracked(options.repoRoot)
   if (!files)
     return [
       {
@@ -466,17 +536,7 @@ export function checkDoc(body: string, options: { repoRoot: string }): Finding[]
     for (const match of raw.matchAll(/`([^`]+)`/g)) {
       const token = match[1]!
       for (const piece of token.split(/\s+/)) {
-        if (!PREFIXES.some((prefix) => piece.startsWith(prefix)) || /[<>]/.test(piece)) continue
-        const referencePath = canonReferencePath(piece)
-        if (BUILT.test(referencePath) || EXEMPT_PATHS.has(referencePath)) continue
-        const path = (referencePath.split('*')[0] ?? referencePath).replace(/\/$/, '')
-        if (!path || trackedPath(files, path)) continue
-        findings.push({
-          kind: 'path',
-          token: piece,
-          line,
-          message: `line ${line}: \`${piece}\` is not tracked in ${options.repoRoot}`,
-        })
+        findings.push(...pathFindings(piece, line, options.repoRoot, files))
       }
       const command = token.match(/^orch\s+([a-z][\w-]*)$/)
       if (command && !isCliCommand(command[1]!))
@@ -514,10 +574,11 @@ export function repoRootForDoc(
   doc: Pick<Doc, 'scope' | 'subject'>,
   selectedCanonRoot?: string,
 ): string | null {
-  if (doc.scope === 'project')
-    return doc.subject ? (projectByName(doc.subject)?.path ?? null) : null
-  if (doc.scope === 'canon' && doc.subject)
-    return selectedCanonRoot ?? projectByName(doc.subject)?.path ?? null
+  if (docScopeHasProjectSubject(doc.scope) && doc.subject) {
+    if (doc.scope === 'canon' && selectedCanonRoot) return selectedCanonRoot
+    return projectByName(doc.subject)?.path ?? null
+  }
+  if (doc.scope === 'project') return null
   return ROOT
 }
 
