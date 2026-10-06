@@ -3,7 +3,9 @@
 import { sql } from 'drizzle-orm'
 import {
   check,
+  customType,
   foreignKey,
+  index,
   integer,
   pgPolicy,
   pgTable,
@@ -13,11 +15,19 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import { DOC_AUDIENCES } from '../docs.ts'
-import { project, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import {
+  project,
+  RECORD_PUBLIC_ROLE,
+  space,
+  spaceIdentity,
+  tenantPolicies,
+  user,
+} from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
 const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
 const ownerPolicies = (table: string, owner: ReturnType<typeof uuid>) => [
   pgPolicy(`${table}_owner_select`, {
@@ -80,6 +90,11 @@ export const doc = pgTable.withRLS(
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     latestRevisionId: uuid('latest_revision_id'),
+    searchVector: tsvector('search_vector')
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('english', coalesce(${sql.identifier('title')}, '')), 'A') || setweight(to_tsvector('english', coalesce(${sql.identifier('body')}, '')), 'B')`,
+      ),
   },
   (table) => [
     check(
@@ -108,10 +123,28 @@ export const doc = pgTable.withRLS(
       )
       .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex('doc_updated_at').on(table.spaceId, table.updatedAt, table.id),
+    index('doc_search_vector_idx').using('gin', table.searchVector),
+    pgPolicy('doc_public_select', {
+      for: 'select',
+      to: RECORD_PUBLIC_ROLE,
+      using: sql`${table.audience} = 'user'
+        AND ${table.ownerUserId} IS NULL
+        AND ${table.deletedAt} IS NULL
+        AND EXISTS (
+          SELECT 1 FROM public_doc_space public_space
+          WHERE public_space.space_id = ${table.spaceId}
+        )`,
+    }),
     ...tenantPolicies('doc', table.spaceId),
     ...ownerPolicies('doc', table.ownerUserId),
   ],
 )
+
+export const publicDocSpace = pgTable('public_doc_space', {
+  spaceId: uuid('space_id')
+    .primaryKey()
+    .references(() => space.id),
+})
 
 export const docRevision = pgTable.withRLS(
   'doc_revision',

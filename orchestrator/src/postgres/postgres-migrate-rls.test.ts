@@ -23,8 +23,9 @@ import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postg
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
+import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
-import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
+import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
@@ -284,6 +285,13 @@ realPostgres('RLS proof against real Postgres', () => {
     readerRole: RECORD_READER_ROLE,
   })
   registerBoardApiProofs({ actorUrl: actorUrl!, spaceA: SPACE_A, userA: USER_A, succeeds })
+  registerPublicDocProofs({
+    publicSpaceId: SPACE_A,
+    privateSpaceId: SPACE_B,
+    ownerUserId: USER_A,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+    psql,
+  })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
@@ -1024,25 +1032,17 @@ realPostgres('RLS proof against real Postgres', () => {
     }
   })
 
-  test('sync round trip writes and updates a tenant-confined score', async () => {
-    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync({
-      actorUrl: actorUrl!,
-      ownerUrl: ownerUrl!,
-      actorRole: RECORD_ACTOR_ROLE,
-      ownerRole: RECORD_OWNER_ROLE,
-      machineId: MACHINE_A,
-      userId: OPERATOR_USER_ID,
-      spaceId: PLATFORM_SPACE_ID,
-      otherSpaceId: SPACE_A,
-      projectName: PLATFORM_SLUG,
-      asSpace,
-    })
-    expect(actorRead.code, actorRead.stderr).toBe(0)
-    expect(actorRead.stdout).toBe('full|right|first')
-    expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
-    expect(otherSpaceRead.stdout).toBe('')
-    expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
-    expect(rescoredRead.stdout).toBe('partial|mixed|updated')
+  registerScoreRecordSyncProof({
+    actorUrl: actorUrl!,
+    ownerUrl: ownerUrl!,
+    actorRole: RECORD_ACTOR_ROLE,
+    ownerRole: RECORD_OWNER_ROLE,
+    machineId: MACHINE_A,
+    userId: OPERATOR_USER_ID,
+    spaceId: PLATFORM_SPACE_ID,
+    otherSpaceId: SPACE_A,
+    projectName: PLATFORM_SLUG,
+    asSpace,
   })
 
   test('same prefix is allowed in separate projects', () => {

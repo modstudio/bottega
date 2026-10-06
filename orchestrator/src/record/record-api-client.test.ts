@@ -26,6 +26,48 @@ describe('record API client test safety', () => {
     }
   })
 
+  test('public document methods send neither authorization nor cookies', async () => {
+    installRecordSessionRunner(null)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const calls: Array<{ url: string; headers: Headers; credentials?: RequestCredentials }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+        credentials: init?.credentials,
+      })
+      return Response.json({ items: [] })
+    }) as typeof fetch
+    try {
+      const client = recordApiClient()
+      const id = newRecordId()
+      await client.listPublicDocs()
+      await client.getPublicDoc(id)
+      await client.searchPublicDocs('public guide')
+      expect(calls.map((call) => call.url)).toEqual([
+        'https://api.example.test/public/v1/docs',
+        `https://api.example.test/public/v1/docs/${id}`,
+        'https://api.example.test/public/v1/docs/search?q=public+guide',
+      ])
+      for (const call of calls) {
+        expect(call.credentials).toBe('omit')
+        expect(call.headers.has('authorization')).toBe(false)
+        expect(call.headers.has('cookie')).toBe(false)
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
   test('board methods use the ruled paths and map a non-success body', async () => {
     const session = memoryRecordSession()
     session.setToken('board-token')

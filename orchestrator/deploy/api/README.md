@@ -25,16 +25,28 @@ and confirms that applied migrations equal those shipped in the image before inv
 image's release command uses its low-privilege `ORCH_RECORD_URL` and refuses a release with
 pending migrations, so a bare `fly deploy` cannot run ahead of the record schema.
 
-Before migrating, create the dedicated Better Auth login as the PostgreSQL administrator:
+Before migrating, create the dedicated Better Auth login and public-read role as the PostgreSQL
+administrator. Granting the public role without inheritance lets the application actor switch to
+it explicitly without applying its public policy to ordinary tenant queries:
 
 ```sql
 CREATE ROLE record_auth LOGIN PASSWORD '<password>' NOSUPERUSER NOBYPASSRLS;
+CREATE ROLE record_public NOLOGIN NOSUPERUSER NOBYPASSRLS;
+GRANT record_public TO record_actor WITH INHERIT FALSE, SET TRUE;
 ```
 
 The migration grants this role only the auth tables it needs and explicit access through RLS for
 spaces, memberships, and invitations. Put its connection URL in the
 `RECORD_AUTH_DATABASE_URL` Fly secret shown above. Application data continues to use
 `record_actor` through `ORCH_RECORD_URL`.
+
+After migrating, designate the one public document space as the PostgreSQL migration owner. The
+migrations ship no designation row:
+
+```sql
+INSERT INTO public_doc_space (space_id)
+SELECT id FROM space WHERE slug = '<public-space-slug>';
+```
 
 For browser clients, set `RECORD_API_ALLOWED_ORIGINS` to a comma-separated list of exact
 origins. This enables credentialed CORS for those origins and also configures Better Auth's

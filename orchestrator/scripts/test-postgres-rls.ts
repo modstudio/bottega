@@ -9,6 +9,7 @@ import {
   RECORD_ACTOR_ROLE,
   RECORD_AUTH_ROLE,
   RECORD_OWNER_ROLE,
+  RECORD_PUBLIC_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
@@ -108,17 +109,21 @@ try {
     CREATE ROLE ${RECORD_OWNER_ROLE} LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_ACTOR_ROLE} LOGIN PASSWORD 'actor-password' NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_AUTH_ROLE} LOGIN PASSWORD 'auth-password' NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE ${RECORD_PUBLIC_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_READER_ROLE} LOGIN PASSWORD 'reader-password' NOSUPERUSER NOBYPASSRLS;
+    GRANT ${RECORD_PUBLIC_ROLE} TO ${RECORD_ACTOR_ROLE} WITH INHERIT FALSE, SET TRUE;
     CREATE ROLE public_probe LOGIN PASSWORD 'public-password' NOSUPERUSER NOBYPASSRLS;
     GRANT CREATE ON DATABASE postgres TO ${RECORD_OWNER_ROLE};
     ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};
     CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -127,6 +132,17 @@ try {
   const hostedTaskIdMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_task_id_migration`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
+  const publicRoleMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/public_role_migration`
+  const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
+
+  const publicRoleMigration = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-public-role.test.ts'],
+    {
+      ORCH_TEST_PUBLIC_ROLE_MIGRATION_URL: publicRoleMigrationUrl,
+      ORCH_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL: publicRoleMigrationSuperuserUrl,
+    },
+  )
+  if (publicRoleMigration !== 0) process.exit(publicRoleMigration)
 
   const recipientMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-recipients.test.ts'],
@@ -206,16 +222,19 @@ try {
         DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
         DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
         DROP OWNED BY ${RECORD_AUTH_ROLE};
+        DROP OWNED BY ${RECORD_PUBLIC_ROLE};
         DROP OWNED BY ${RECORD_READER_ROLE};
         DROP OWNED BY public_probe;
         DROP ROLE IF EXISTS public_probe;
         DROP ROLE IF EXISTS ${RECORD_READER_ROLE};
         DROP ROLE IF EXISTS ${RECORD_ACTOR_ROLE};
         DROP ROLE IF EXISTS ${RECORD_AUTH_ROLE};
+        DROP ROLE IF EXISTS ${RECORD_PUBLIC_ROLE};
         DROP ROLE IF EXISTS ${RECORD_OWNER_ROLE};
       `)
     } catch (error) {
