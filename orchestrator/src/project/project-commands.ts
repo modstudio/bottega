@@ -4,7 +4,6 @@
  * not know runs, routing, transports, reviews, the CLI, or worktrees by value.
  */
 import { existsSync } from 'node:fs'
-import { isDeepStrictEqual } from 'node:util'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
@@ -263,11 +262,22 @@ function validatedFillCandidate(current: Project, input: FillAbsentProjectInput)
   return candidate
 }
 
+function canonicalSettingValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalSettingValue)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, canonicalSettingValue(child)]),
+  )
+}
+
 function sameProjectConfiguration(left: Project, right: Project): boolean {
   return (
     left.path === right.path &&
     left.stack === right.stack &&
-    isDeepStrictEqual(left.settings, right.settings)
+    JSON.stringify(canonicalSettingValue(left.settings)) ===
+      JSON.stringify(canonicalSettingValue(right.settings))
   )
 }
 
