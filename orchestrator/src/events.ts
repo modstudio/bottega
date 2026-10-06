@@ -222,7 +222,7 @@ function locationsFromUnknown(value: unknown): Array<{ path: string }> | undefin
     return locations.length ? locations : undefined
   }
   if (!isRecord(value)) return undefined
-  const paths = [value.path, value.file_path, value.file, value.target].filter(
+  const paths = [value.path, value.file_path, value.file, value.target, value.target_file].filter(
     (item): item is string => typeof item === 'string' && Boolean(item),
   )
   return paths.length ? paths.map((path) => ({ path })) : undefined
@@ -253,6 +253,10 @@ function assistantText(content: unknown): string {
     .join('')
 }
 
+function toolKindFromName(name: string): string {
+  return name === 'read_file' ? 'read' : name
+}
+
 function toolUseEvents(content: unknown): StreamEvent[] {
   if (!Array.isArray(content)) return []
   const events: StreamEvent[] = []
@@ -265,7 +269,7 @@ function toolUseEvents(content: unknown): StreamEvent[] {
       events.push(
         toolEvent({
           title,
-          toolKind: title,
+          toolKind: toolKindFromName(title),
           target: locations?.[0]?.path,
           locations,
         }),

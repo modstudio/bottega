@@ -269,8 +269,14 @@ exit 0
   await smoke(binary, ['--help'], stateHome)
   await smoke(binary, ['orch', '--help'], stateHome)
   await smoke(binary, ['hub', '--help'], stateHome, `hub — every project's tasks in flight`)
+  await smoke(
+    binary,
+    [...BOTTEGA_ENTRY_PROTOCOL['schema-check'].compiledArguments],
+    stateHome,
+    'strict schema ok',
+  )
   if (existsSync(stateHome))
-    throw new Error('help and version commands created the state directory')
+    throw new Error('help, version, and schema-check commands created the state directory')
   await smoke(orch, ['jobs'], stateHome, 'implement')
   await smoke(binary, ['orch', 'jobs'], stateHome)
   const agentList = await smoke(binary, ['orch', 'agent', 'list'], stateHome)

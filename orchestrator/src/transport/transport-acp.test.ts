@@ -695,6 +695,20 @@ describe('strict schema matching used on the ACP path', () => {
     expect(valueMatchesStrictSchema(schema, { verdict: 'true', extra: 1 })).toBe(false)
     expect(valueMatchesStrictSchema(schema, '{')).toBe(false)
   })
+
+  test('a validator load failure is an error naming the cause, not a mismatch', () => {
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['verdict'],
+      properties: { verdict: { type: 'string' } },
+    }
+    expect(() =>
+      valueMatchesStrictSchema(schema, { verdict: 'true' }, () => {
+        throw new Error('Cannot find module ajv/dist/2020.js from /$bunfs/root')
+      }),
+    ).toThrow('Cannot find module ajv/dist/2020.js from /$bunfs/root')
+  })
 })
 
 describe('tool_call_update folds into its tool_call', () => {
@@ -748,7 +762,7 @@ describe('tool_call_update folds into its tool_call', () => {
     expect(registrationProbeReadsRepo(result.events, result.output)).toBe(true)
   })
 
-  test('an update naming no known call stays its own event, and an unrelated tool plus a hallucinated sentinel still fails the gate', async () => {
+  test('an update naming no known call stays its own event, and an unrelated tool plus a hallucinated output without the sentinel still fails the gate', async () => {
     const { registrationProbeReadsRepo } = await import('../agent/agent-probe.ts')
     const result = normalizeAcpTurn({
       sessionId: 's',
@@ -769,7 +783,7 @@ describe('tool_call_update folds into its tool_call', () => {
         {
           update: {
             sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK' },
+            content: { type: 'text', text: 'I listed the directory' },
           },
         },
       ],

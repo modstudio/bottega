@@ -14,6 +14,8 @@ test('top-level help succeeds without dispatching a store-owning concern', async
     runExec: unreachable,
     askProxy: unreachable,
     retrievalSearch: unreachable,
+    checkAttribution: unreachable,
+    schemaCheck: unreachable,
   }
   expect(
     await dispatchBinary(['--help'], PLATFORM_SLUG, entries, () => 'unreachable version'),
@@ -42,11 +44,20 @@ test('hidden subcommands route their unchanged arguments without appearing in us
     retrievalSearch: async (argv: string[]) => {
       calls.push({ entry: 'retrieval-search', argv })
     },
+    checkAttribution: async (argv: string[]) => {
+      calls.push({ entry: 'check-attribution', argv })
+      return 14
+    },
+    schemaCheck: async (argv: string[]) => {
+      calls.push({ entry: 'schema-check', argv })
+      return 15
+    },
   }
   const invokedAs = join('/tmp', PLATFORM_SLUG)
   const runExec = BOTTEGA_ENTRY_PROTOCOL['run-exec'].compiledArguments[0]
   const askProxy = BOTTEGA_ENTRY_PROTOCOL['ask-proxy'].compiledArguments[0]
   const retrievalSearch = BOTTEGA_ENTRY_PROTOCOL['retrieval-search'].compiledArguments[0]
+  const schemaCheck = BOTTEGA_ENTRY_PROTOCOL['schema-check'].compiledArguments[0]
 
   expect(
     await dispatchBinary([runExec, '1', 'prompt', 'job'], invokedAs, dispatch, () => 'test'),
@@ -55,10 +66,12 @@ test('hidden subcommands route their unchanged arguments without appearing in us
   expect(
     await dispatchBinary([retrievalSearch, 'query', '--json'], invokedAs, dispatch, () => 'test'),
   ).toBe(0)
+  expect(await dispatchBinary([schemaCheck], invokedAs, dispatch, () => 'test')).toBe(15)
   expect(calls).toEqual([
     { entry: 'run-exec', argv: ['1', 'prompt', 'job'] },
     { entry: 'ask-proxy', argv: ['ignored'] },
     { entry: 'retrieval-search', argv: ['query', '--json'] },
+    { entry: 'schema-check', argv: [] },
   ])
 })
 
@@ -79,6 +92,8 @@ test('setup routes to orch setup with its arguments', async () => {
       runExec: unreachable,
       askProxy: unreachable,
       retrievalSearch: unreachable,
+      checkAttribution: unreachable,
+      schemaCheck: unreachable,
     },
     () => 'test',
   )

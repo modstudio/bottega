@@ -6,6 +6,7 @@ import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts
 import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
+import type { AjvValidator } from './ajv-validator.ts'
 
 const requireTransport = createRequire(import.meta.url)
 
@@ -422,7 +423,12 @@ function missingAcpExecutableGap(
 export function acpRuntimeGaps(opts?: AcpRuntimeGapOptions): string | null {
   const sdkResolve =
     opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
-  const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
+  const ajvResolve =
+    opts?.ajvResolve ??
+    (() => {
+      loadAjvValidator()
+      return 'ajv'
+    })
   const agentName = opts?.agentName ?? 'codex'
   const registered = opts?.agent
   const which = opts?.which ?? ((name: string) => Bun.which(name))
@@ -613,30 +619,33 @@ export function confineFsPath(path: string, root: string, method = 'readTextFile
   return candidate
 }
 
-type AjvValidator = { compile(schema: object): (value: unknown) => boolean }
-type Ajv2020Ctor = new (opts?: { strict?: boolean }) => AjvValidator
 let schemaValidator: AjvValidator | null = null
 
 function loadAjvValidator(): AjvValidator {
   if (schemaValidator) return schemaValidator
-  // ajv is loaded here, not at module load: doctor and every reporting command
-  // reach this module through run.ts, and the hermetic linked-tree fixtures
-  // carry no orchestrator/node_modules, so a static import broke `orch doctor`.
-  const loaded: unknown = requireTransport('ajv/dist/2020.js')
-  const candidate: unknown =
-    typeof loaded === 'function' ? loaded : (loaded as { default?: unknown } | null)?.default
-  if (typeof candidate !== 'function')
-    throw new Error('ajv/dist/2020.js did not export a constructor')
-  const validator = new (candidate as Ajv2020Ctor)({ strict: false })
-  schemaValidator = validator
-  return validator
+  // Loaded here, not at module load: doctor and every reporting command reach
+  // this module through run.ts, and the hermetic linked-tree fixtures carry no
+  // orchestrator/node_modules, so a static import broke `orch doctor`.
+  try {
+    const loaded = require('./ajv-validator.ts') as typeof import('./ajv-validator.ts')
+    schemaValidator = loaded.createStrictSchemaValidator()
+    return schemaValidator
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error)
+    throw new Error(`failed to load or construct the strict schema validator: ${cause}`)
+  }
 }
 
 /** Validate a reply against the same Codex-normalized schema the CLI path hands the vendor. */
-export function valueMatchesStrictSchema(schema: unknown, value: unknown): boolean {
+export function valueMatchesStrictSchema(
+  schema: unknown,
+  value: unknown,
+  loadValidator: () => AjvValidator = loadAjvValidator,
+): boolean {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+  const validator = loadValidator()
   try {
-    return loadAjvValidator().compile(schema)(value)
+    return validator.compile(schema)(value)
   } catch {
     return false
   }

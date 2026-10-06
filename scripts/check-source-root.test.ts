@@ -69,3 +69,51 @@ export const hook = join(checkout, 'hooks', 'reference-transaction')
 `
   expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([3])
 })
+
+test('a module-relative createRequire package load is rejected', () => {
+  const source = `
+import { createRequire } from 'node:module'
+const load = createRequire(import.meta.url)
+export const schema = load('ajv/dist/2020.js')
+`
+  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([4])
+})
+
+test('a module-relative createRequire.resolve package load is rejected', () => {
+  const source = `
+import { createRequire } from 'node:module'
+const load = createRequire(import.meta.url)
+export const path = load.resolve('ajv/dist/2020.js')
+`
+  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([4])
+})
+
+test('an inline createRequire package load is rejected', () => {
+  const source = `
+import { createRequire } from 'node:module'
+export const schema = createRequire(import.meta.url)('ajv/dist/2020.js')
+`
+  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([3])
+})
+
+test('a relative createRequire load is not a package load', () => {
+  const source = `
+import { createRequire } from 'node:module'
+const load = createRequire(import.meta.url)
+export const local = load('./ajv-validator.ts')
+`
+  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([])
+})
+
+test('a named allowance covers a module-relative package require', () => {
+  const source = `
+import { createRequire } from 'node:module'
+const load = createRequire(import.meta.url)
+export const sdk = load.resolve('@agentclientprotocol/sdk')
+`
+  expect(
+    sourceRootViolationLines(source, 'orchestrator/src/example.ts', [
+      { path: 'orchestrator/src/example.ts', line: 4, reason: 'ACP SDK presence probe' },
+    ]),
+  ).toEqual([])
+})
