@@ -483,12 +483,12 @@ export function insertRootMessage(
   return postNoticeResult(id, false, postingRecipients.length)
 }
 
-export function messageRows(): MessageRow[] {
-  return db().query('SELECT * FROM board_message ORDER BY id').all() as MessageRow[]
+export function messageRows(database = db()): MessageRow[] {
+  return database.query('SELECT * FROM board_message ORDER BY id').all() as MessageRow[]
 }
 
-export function messageTags(messageId: number): BoardTag[] {
-  return db()
+export function messageTags(messageId: number, database = db()): BoardTag[] {
+  return database
     .query('SELECT kind,value,origin FROM board_message_tag WHERE message_id=? ORDER BY rowid')
     .all(messageId) as BoardTag[]
 }
@@ -500,10 +500,10 @@ export function addressed(message: MessageRow, reader: string, clock: number): b
   )
 }
 
-export function rowIsLive(message: MessageRow, clock: number): boolean {
+export function rowIsLive(message: MessageRow, clock: number, database = db()): boolean {
   if (message.kind === 'reply') {
-    const root = messageRows().find((candidate) => candidate.id === message.thread_root_id)
-    return root ? rowIsLive(root, clock) : false
+    const root = messageRows(database).find((candidate) => candidate.id === message.thread_root_id)
+    return root ? rowIsLive(root, clock, database) : false
   }
   if (message.expires_at === null) return false
   return messageIsLive(

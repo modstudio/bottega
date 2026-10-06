@@ -33,6 +33,8 @@ import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
+export const CLAIM_CONFLICT = 'claim conflicts with:'
+
 type ClaimRow = Record<string, unknown>
 
 function hostedLive(row: ClaimRow, clock: number): boolean {
@@ -381,7 +383,7 @@ async function takeClaimInTx(
   if (decision === 'refuse') {
     await tellConflicts(tx, foreignLive, input, projectId, session, clock, 'conflict-attempt')
     return {
-      refused: `claim conflicts with: ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
+      refused: `${CLAIM_CONFLICT} ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
     }
   }
   return insertTakenClaim(
@@ -478,7 +480,7 @@ export async function releaseHostedBoardTaskClaims(
     )
     if (foreignLive.length) {
       throw new RecordBoardError(
-        `claim conflicts with: ${foreignLive.map((row) => `user ${String(row.holder_user_id)} until ${iso(row.lapses_at)}`).join('; ')}`,
+        `${CLAIM_CONFLICT} ${foreignLive.map((row) => `user ${String(row.holder_user_id)} until ${iso(row.lapses_at)}`).join('; ')}`,
         409,
       )
     }
