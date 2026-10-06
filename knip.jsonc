@@ -14,7 +14,9 @@
     "shared/record/schema-hub.ts": ["exports", "types"],
     "shared/record/schema-snapshots.ts": ["exports", "types"],
     // Cross-concern session API includes clear before its sign-out caller lands.
-    "shared/record-session.ts": ["exports"]
+    "shared/record-session.ts": ["exports"],
+    // Lazy-required from transport.ts; knip does not follow that require as export use.
+    "orchestrator/src/transport/ajv-validator.ts": ["exports"]
   },
   "workspaces": {
     ".": {
@@ -58,6 +60,7 @@
         "src/record/record-api-server.ts!",
         // Spawned by path from src/run/run-dispatch.ts as the detached worker entry.
         "src/run/exec.ts!",
+        "src/check/check-strict-schema.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",
@@ -70,9 +73,7 @@
       "project": ["src/**/*.ts!", "scripts/**/*.ts!", "test/**/*.ts"],
       "ignoreDependencies": [
         // Invoked through node_modules/.bin/codex-acp in src/transport/transport.ts.
-        "@agentclientprotocol/codex-acp",
-        // Loaded dynamically through requireTransport('ajv/dist/2020.js') in src/transport/transport.ts.
-        "ajv"
+        "@agentclientprotocol/codex-acp"
       ]
     },
     "hub": {

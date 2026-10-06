@@ -65,34 +65,30 @@ function namesProbeFile(value: string): boolean {
   )
 }
 
-/** True only for a completed read of the probe file whose result or final reply carries the sentinel. */
+/** True when a named read of the probe file is evidenced, or the exact sentinel is the successful output and no read-kind event exists. */
 export function registrationProbeReadsRepo(
   events: import('../transport/transport.ts').NormalizedEvent[],
   output: string,
 ): boolean {
   const reads = events.filter(
-    (event) =>
-      event.kind === 'tool' &&
-      event.status === 'completed' &&
-      event.toolKind === 'read' &&
-      (namesProbeFile(event.target ?? '') || namesProbeFile(event.title)),
+    (event): event is Extract<(typeof events)[number], { kind: 'tool' }> =>
+      event.kind === 'tool' && event.toolKind === 'read',
   )
-  // A CLI transport that surfaces no tool events at all (codex and grok on
-  // the cli seam) cannot show the read; the exact sentinel is then the only
-  // evidence, and it is sufficient: the sentinel exists nowhere but in the
-  // probe file. Where tool events ARE reported, the read must be one of them.
-  if (!events.some((event) => event.kind === 'tool')) {
-    return output.includes(REGISTRATION_PROBE_SENTINEL)
+  if (reads.length) {
+    const namesFile = (event: (typeof reads)[number]) =>
+      namesProbeFile(event.target ?? '') || namesProbeFile(event.title)
+    if (!reads.some(namesFile)) return false
+    const completed = reads.filter((event) => event.status === 'completed' && namesFile(event))
+    if (completed.length) {
+      return (
+        completed.some(
+          (event) =>
+            typeof event.result === 'string' && event.result.includes(REGISTRATION_PROBE_SENTINEL),
+        ) || output.includes(REGISTRATION_PROBE_SENTINEL)
+      )
+    }
   }
-  if (!reads.length) return false
-  return (
-    reads.some(
-      (event) =>
-        event.kind === 'tool' &&
-        typeof event.result === 'string' &&
-        event.result.includes(REGISTRATION_PROBE_SENTINEL),
-    ) || output.includes(REGISTRATION_PROBE_SENTINEL)
-  )
+  return output.includes(REGISTRATION_PROBE_SENTINEL)
 }
 
 export function recordAgentProbe(name: string, result: RegistrationProbeResult): void {

@@ -554,6 +554,7 @@ export const modules: ArchitectureModule[] = [
     './store-hooks.ts',
     './standard-transports.ts',
   ]),
+  module('orchestrator/src/transport/ajv-validator.ts', []),
   module('orchestrator/src/transport/acp-trace.ts', [
     'node:child_process',
     'node:fs',

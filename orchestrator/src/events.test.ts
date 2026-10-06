@@ -1,8 +1,60 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { addRun } from '../test/fixtures/store.ts'
+import { registrationProbeReadsRepo } from './agent/agent-probe.ts'
 import { db } from './database/db.ts'
 import { createEventLog, eventsFromVendorLine, idleLabel, runEventsPath } from './events.ts'
+import type { NormalizedEvent } from './transport/transport.ts'
+
+const CODEX_PROBE_COMMAND_STARTED = JSON.stringify({
+  type: 'item.started',
+  item: {
+    type: 'command_execution',
+    command: "sed -n '1,200p' probe.txt",
+    status: 'in_progress',
+  },
+})
+
+const CODEX_PROBE_COMMAND_COMPLETED = JSON.stringify({
+  type: 'item.completed',
+  item: {
+    type: 'command_execution',
+    command: "sed -n '1,200p' probe.txt",
+    aggregated_output: 'REGISTRATION_PROBE_FILE_OK\n',
+    exit_code: 0,
+    status: 'completed',
+  },
+})
+
+const GROK_PROBE_READ_REQUEST = JSON.stringify({
+  type: 'assistant',
+  message: {
+    content: [
+      {
+        type: 'tool_use',
+        name: 'read_file',
+        input: { target_file: 'probe.txt' },
+      },
+    ],
+  },
+})
+
+const GROK_PROBE_READ_RESULT = JSON.stringify({
+  type: 'user',
+  message: {
+    content: [
+      {
+        type: 'tool_result',
+        content: 'REGISTRATION_PROBE_FILE_OK\n',
+        is_error: false,
+      },
+    ],
+  },
+})
+
+function probeEvents(...lines: string[]): NormalizedEvent[] {
+  return lines.flatMap((line) => eventsFromVendorLine(line)) as NormalizedEvent[]
+}
 
 describe('vendor event log', () => {
   test('coalesces assistant chunks and records tool results without bodies', () => {
@@ -115,6 +167,64 @@ describe('vendor event log', () => {
         }),
       )[0],
     ).toMatchObject({ kind: 'tool', title: 'Read', target: 'a.ts' })
+  })
+
+  test('codex 0.160.0 command_execution of the probe file is a repo read', () => {
+    const events = probeEvents(CODEX_PROBE_COMMAND_STARTED, CODEX_PROBE_COMMAND_COMPLETED)
+    expect(events).toEqual([
+      {
+        kind: 'tool',
+        title: "sed -n '1,200p' probe.txt",
+        toolKind: 'execute',
+        status: 'in_progress',
+        locations: undefined,
+      },
+      {
+        kind: 'tool',
+        title: "sed -n '1,200p' probe.txt",
+        toolKind: 'execute',
+        status: 'completed',
+        result: 'REGISTRATION_PROBE_FILE_OK\n',
+        locations: undefined,
+      },
+    ])
+    expect(registrationProbeReadsRepo(events, 'REGISTRATION_PROBE_FILE_OK')).toBe(true)
+  })
+
+  test('grok 1.0.13 read_file of the probe file is a repo read', () => {
+    const events = probeEvents(GROK_PROBE_READ_REQUEST, GROK_PROBE_READ_RESULT)
+    expect(events[0]).toMatchObject({
+      kind: 'tool',
+      title: 'read_file',
+      toolKind: 'read',
+      target: 'probe.txt',
+      locations: [{ path: 'probe.txt' }],
+    })
+    expect(events[1]).toMatchObject({
+      kind: 'tool',
+      status: 'completed',
+      result: 'REGISTRATION_PROBE_FILE_OK\n',
+    })
+    expect(registrationProbeReadsRepo(events, 'REGISTRATION_PROBE_FILE_OK')).toBe(true)
+  })
+
+  test('an unrelated command and a hallucinated output without the sentinel is not a repo read', () => {
+    const events = probeEvents(
+      JSON.stringify({
+        type: 'item.started',
+        item: { type: 'command_execution', command: 'ls' },
+      }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: {
+          type: 'command_execution',
+          command: 'ls',
+          aggregated_output: 'probe.txt\n',
+          exit_code: 0,
+        },
+      }),
+    )
+    expect(registrationProbeReadsRepo(events, 'I read the file')).toBe(false)
   })
 
   test('idleLabel is silent until the threshold and then prints idle Nm', () => {

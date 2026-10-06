@@ -9,6 +9,7 @@ export type BinaryEntries = {
   askProxy(argv: string[]): Promise<number>
   retrievalSearch(argv: string[]): Promise<void>
   checkAttribution(argv: string[]): Promise<number>
+  schemaCheck(argv: string[]): Promise<number>
 }
 
 /** Route public and hidden executable commands without publishing hidden commands in usage. */
@@ -49,6 +50,9 @@ export async function dispatchBinary(
   }
   if (command === BOTTEGA_ENTRY_PROTOCOL['check-attribution'].compiledArguments[0]) {
     return entries.checkAttribution(rest)
+  }
+  if (command === BOTTEGA_ENTRY_PROTOCOL['schema-check'].compiledArguments[0]) {
+    return entries.schemaCheck(rest)
   }
   console.error(usage)
   return 2

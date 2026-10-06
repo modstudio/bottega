@@ -48,8 +48,14 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 368,
+    line: 369,
     reason: 'the checkout codex-acp candidate is guarded by the embedded-manifest branch',
+  },
+  {
+    path: 'orchestrator/src/transport/transport.ts',
+    line: 425,
+    reason:
+      'ACP SDK presence is resolved for doctor; the SDK is imported by the ACP transport, not loaded as the compiled schema validator',
   },
   {
     path: 'hub/src/cli-program.ts',
@@ -80,6 +86,15 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
 
 function isSourceRootModule(value: string): boolean {
   return /^(?:\.\.?\/)+.*database\/(?:db|database-location)\.ts$/.test(value)
+}
+
+function isPackageSpecifier(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !value.startsWith('.') &&
+    !value.startsWith('/') &&
+    !value.startsWith('node:')
+  )
 }
 
 function isImportMetaUrl(node: ts.Expression): boolean {
@@ -217,6 +232,98 @@ function bindingFor(
   return undefined
 }
 
+function gatherCreateRequireNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>()
+  for (const statement of source.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      (statement.moduleSpecifier.text !== 'node:module' &&
+        statement.moduleSpecifier.text !== 'module')
+    ) {
+      continue
+    }
+    const bindings = statement.importClause?.namedBindings
+    if (!bindings || !ts.isNamedImports(bindings)) continue
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === 'createRequire') {
+        names.add(element.name.text)
+      }
+    }
+  }
+  return names
+}
+
+function isCreateRequireImportMetaUrl(
+  node: ts.Expression,
+  createRequireNames: Set<string>,
+): boolean {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    createRequireNames.has(node.expression.text) &&
+    node.arguments.length === 1 &&
+    isImportMetaUrl(node.arguments[0]!)
+  )
+}
+
+function gatherModuleRelativeRequireNames(
+  node: ts.Node,
+  createRequireNames: Set<string>,
+  requireNames: Set<string>,
+): void {
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    node.initializer &&
+    isCreateRequireImportMetaUrl(node.initializer, createRequireNames)
+  ) {
+    requireNames.add(node.name.text)
+  }
+  ts.forEachChild(node, (child) =>
+    gatherModuleRelativeRequireNames(child, createRequireNames, requireNames),
+  )
+}
+
+function identifierIsRequire(identifier: ts.Identifier, requireNames: Set<string>): boolean {
+  return requireNames.has(identifier.text)
+}
+
+function packageRequireArgument(node: ts.CallExpression): ts.Expression | undefined {
+  if (node.arguments.length !== 1 || !ts.isStringLiteral(node.arguments[0]!)) return undefined
+  return isPackageSpecifier(node.arguments[0].text) ? node.arguments[0] : undefined
+}
+
+function moduleRelativePackageRequireNode(
+  node: ts.Node,
+  createRequireNames: Set<string>,
+  requireNames: Set<string>,
+): ts.Node | undefined {
+  if (!ts.isCallExpression(node)) return undefined
+  const argument = packageRequireArgument(node)
+  if (!argument) return undefined
+  if (isCreateRequireImportMetaUrl(node.expression, createRequireNames)) return argument
+  if (
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'resolve' &&
+    isCreateRequireImportMetaUrl(node.expression.expression, createRequireNames)
+  ) {
+    return argument
+  }
+  if (ts.isIdentifier(node.expression) && identifierIsRequire(node.expression, requireNames)) {
+    return argument
+  }
+  if (
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'resolve' &&
+    ts.isIdentifier(node.expression.expression) &&
+    identifierIsRequire(node.expression.expression, requireNames)
+  ) {
+    return argument
+  }
+  return undefined
+}
+
 /** Return one-based lines that use a checkout source root as a runtime input. */
 export function sourceRootViolationLines(
   sourceText: string,
@@ -236,6 +343,9 @@ export function sourceRootViolationLines(
     namespaces: new Set(),
   }
   gatherBindings(source, source, facts)
+  const createRequireNames = gatherCreateRequireNames(source)
+  const requireNames = new Set<string>()
+  gatherModuleRelativeRequireNames(source, createRequireNames, requireNames)
   const violations = new Set<number>()
   const allowed = new Set(
     allowances.filter((allowance) => allowance.path === path).map((allowance) => allowance.line),
@@ -260,6 +370,11 @@ export function sourceRootViolationLines(
       node.name.text === 'ROOT'
     ) {
       report(node)
+      return
+    }
+    const packageRequire = moduleRelativePackageRequireNode(node, createRequireNames, requireNames)
+    if (packageRequire) {
+      report(packageRequire)
       return
     }
     if (

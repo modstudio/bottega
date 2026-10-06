@@ -39,3 +39,6 @@ hub/web/bun.lock
 hub-*.png
 /*.png
 /tmp-shots/
+
+# Bun compile cache objects written into the cwd.
+*.bun-build
