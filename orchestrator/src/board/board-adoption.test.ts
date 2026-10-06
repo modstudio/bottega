@@ -168,6 +168,29 @@ function capturingClient(calls: string[], failTitle?: string) {
   return { client, messages }
 }
 
+test('a refused board probe names the missing routes and writes no adoption state', async () => {
+  const base = createMemoryRecordApiClient()
+  const refusal = new RecordApiRequestError('record API 404', 'refused')
+  const client: RecordApiClient = {
+    ...base,
+    async listBoardChanges() {
+      throw refusal
+    },
+  }
+
+  const action = adoptHostedBoard({ client })
+
+  await expect(action).rejects.toThrow(
+    'the deployed record API did not serve the board routes: record API 404; deploy the record API from a commit that includes the board routes, then rerun orch board adopt',
+  )
+  expect(db().query('SELECT count(*) count FROM board_hosted_adoption_ledger').get()).toEqual({
+    count: 0,
+  })
+  expect(
+    db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toBeNull()
+})
+
 test('confirmed adoption uploads roots before replies, then receipts and claims, retires local rows, and suppresses both copies', async () => {
   presence()
   const notice = postNotice(
