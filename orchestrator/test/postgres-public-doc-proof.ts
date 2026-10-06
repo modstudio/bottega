@@ -69,7 +69,8 @@ export function registerPublicDocProofs(input: {
       WHERE grantee='${RECORD_PUBLIC_ROLE}' AND table_schema='public'
       ORDER BY table_name;
     `)
-    expect(facts.split('\n')).toEqual(['f', 'public_doc_space|SELECT', 'doc'])
+    // A table-level grant also appears per column, so the designation table is listed twice.
+    expect(facts.split('\n')).toEqual(['f', 'public_doc_space|SELECT', 'doc', 'public_doc_space'])
   })
 
   test('record public cannot write docs or the designation table', () => {
