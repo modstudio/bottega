@@ -398,6 +398,16 @@ export type CollectResultPresentation = {
   exit(code: number): never
 }
 
+/** A successful run may carry a non-failing outcome note in its error column. */
+export function okOutcomeNote(row: { status: string; error: string | null }): string {
+  return row.status === 'ok' && row.error ? `\n  ${row.error}` : ''
+}
+
+function logOkOutcomeNote(row: { status: string; error: string | null }): void {
+  const note = okOutcomeNote(row)
+  if (note) console.log(note.slice(1))
+}
+
 const consoleCollectResultPresentation: CollectResultPresentation = {
   log: (...values) => console.log(...values),
   error: (...values) => console.error(...values),
@@ -548,6 +558,7 @@ export function collectResult(
         (row.vendor_tokens !== null
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
+        okOutcomeNote(row) +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
         branchNote(database, row.id) +
         releasedWritingTreeNote(
@@ -644,6 +655,7 @@ export async function collectWait(
       for (const { requestedId, row, outcome, chain } of outcomes) {
         if (observedTerminal.has(row.id)) continue
         console.log(`${requestedId}\t${outcome.line}`)
+        logOkOutcomeNote(row)
         const note = failoverSummary(chain.attempts)
         if (note) console.log(`  ${note}`)
         if (!outcome.ok) console.log(`  ${failureReason(row)}`)

@@ -63,6 +63,7 @@ export type WorkerFinalization<FailureKind extends string = string> = {
 type FinalizationInputs<FailureKind extends string> = {
   reply: FinalizationReply | null
   measuredFiles: string[] | null
+  turnChanged: boolean | null
   status: OutcomeStatus
   failureKind: FailureKind | 'contract' | 'other' | null
   error: string | null
@@ -142,6 +143,17 @@ function annotateDroppedQuestions<FailureKind extends string>(
   return { ...decision, error: appendOutcomeNote(decision.error, note) }
 }
 
+function annotateUnchangedTurn<FailureKind extends string>(
+  inputs: FinalizationInputs<FailureKind>,
+  decision: FinalizationDecision<FailureKind>,
+): FinalizationDecision<FailureKind> {
+  if (inputs.reply?.status !== 'done' || inputs.turnChanged !== false || decision.status !== 'ok')
+    return decision
+  const note =
+    'this turn changed nothing: the tree and tip are as it started; files_changed in the reply describes earlier work'
+  return { ...decision, error: appendOutcomeNote(decision.error, note) }
+}
+
 /** Classify the parsed worker reply against the measured repository change. */
 export function finalizeWorkerReply<FailureKind extends string>(
   inputs: FinalizationInputs<FailureKind>,
@@ -162,6 +174,7 @@ export function finalizeWorkerReply<FailureKind extends string>(
   }
   decision = reclassifyDoneAsking(reply, acceptedQuestions, decision)
   decision = annotateDroppedQuestions(reply, acceptedQuestions, droppedQuestions, decision)
+  decision = annotateUnchangedTurn(inputs, decision)
   return { ...decision, acceptedQuestions, droppedQuestions }
 }
 

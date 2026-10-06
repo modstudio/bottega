@@ -199,6 +199,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './question-close.ts',
     './question-outbox.ts',
     './run-terminal-blockers.ts',
+    './run-terminal-change.ts',
     './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
     '../sandbox/sandbox.ts',
@@ -206,6 +207,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/run/run-terminal-blockers.ts', ['../failure/failure.ts']),
+  module('orchestrator/src/run/run-terminal-change.ts', [
+    'bun:sqlite',
+    '../git/git-environment.ts',
+  ]),
   module('orchestrator/src/run/run-terminal-precedence.ts', [
     '../failure/failure.ts',
     '../outcome.ts',
