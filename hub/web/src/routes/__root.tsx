@@ -9,7 +9,13 @@ import {
 } from '@tanstack/react-router'
 import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
-import { isHostedMode, isHostedPath, navForMode } from '@/lib/hub-mode'
+import {
+  isDocsPath,
+  isHostedMode,
+  isHostedPath,
+  isHostedSignInFramePath,
+  navForMode,
+} from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
 import { queryClient, trpc } from '@/trpc/client'
@@ -42,6 +48,11 @@ export function HostedSignInFrame({ children }: { children: React.ReactNode }) {
       </div>
     </main>
   )
+}
+
+/** Rail-free frame for hosted pages that stay reachable signed out, such as docs. */
+export function HostedPublicFrame({ children }: { children: React.ReactNode }) {
+  return <main className="min-h-dvh bg-surface-page text-text-primary">{children}</main>
 }
 
 function identityForMode(hosted: boolean, email: string | null) {
@@ -88,19 +99,21 @@ export const Route = createRootRoute({
   component: function Shell() {
     const hosted = isHostedMode()
     const pathname = useRouterState({ select: (state) => state.location.pathname })
-    if (
-      hosted &&
-      (pathname === '/sign-in' ||
-        pathname === '/forgot-password' ||
-        pathname === '/reset-password' ||
-        pathname.startsWith('/accept-invitation/') ||
-        pathname.startsWith('/unsubscribe/'))
-    ) {
+    const whoami = useQuery({
+      ...trpc.record.whoami.queryOptions(),
+      enabled: hosted && !isHostedSignInFramePath(pathname),
+      retry: false,
+    })
+    const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
+    if (hosted && isHostedSignInFramePath(pathname)) {
       return (
         <HostedSignInFrame>
           <Outlet />
         </HostedSignInFrame>
       )
+    }
+    if (hosted && isDocsPath(pathname) && !signedIn) {
+      return <HostedPublicFrame>{whoami.isPending ? null : <Outlet />}</HostedPublicFrame>
     }
     return <AppLayout hosted={hosted} pathname={pathname} />
   },

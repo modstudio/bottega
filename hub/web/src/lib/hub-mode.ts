@@ -142,8 +142,29 @@ export function navForMode(mode: 'hosted' | 'local'): NavSection[] {
   return mode === 'hosted' ? HOSTED_NAV : LOCAL_NAV
 }
 
+function normalizedPath(pathname: string) {
+  return pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+}
+
+/** Auth pages that always use the rail-free hosted frame. */
+export function isHostedSignInFramePath(pathname: string) {
+  const path = normalizedPath(pathname)
+  return (
+    path === '/sign-in' ||
+    path === '/forgot-password' ||
+    path === '/reset-password' ||
+    path.startsWith('/accept-invitation/') ||
+    path.startsWith('/unsubscribe/')
+  )
+}
+
+export function isDocsPath(pathname: string) {
+  const path = normalizedPath(pathname)
+  return path === '/docs' || path.startsWith('/docs/')
+}
+
 export function isHostedPath(pathname: string) {
-  const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+  const path = normalizedPath(pathname)
   if (
     path === '/sign-in' ||
     path === '/forgot-password' ||

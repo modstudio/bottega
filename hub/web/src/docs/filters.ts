@@ -1,4 +1,4 @@
-import type { DocsAudience, DocsDelivery, DocsTreeItem } from './types.ts'
+import type { DocsAudience, DocsTreeItem } from './types.ts'
 
 export type FilterKey = 'scope' | 'delivery'
 export type FilterSelection = Record<FilterKey, string | null>
@@ -76,8 +76,4 @@ export function applyFilters(
 
 export function activeFilterCount(chosen: FilterSelection): number {
   return (chosen.scope ? 1 : 0) + (chosen.delivery ? 1 : 0)
-}
-
-export function isDelivery(value: string): value is DocsDelivery {
-  return value === 'inject' || value === 'demand'
 }
