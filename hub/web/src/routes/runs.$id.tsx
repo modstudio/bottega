@@ -278,10 +278,7 @@ function RunDetailPage({ id }: { id: string }) {
         </p>
       ) : null}
       {run.error ? (
-        <DetailBlock
-          label={run.status === 'ok' ? 'Outcome note' : 'Error'}
-          value={run.error}
-        />
+        <DetailBlock label={run.status === 'ok' ? 'Outcome note' : 'Error'} value={run.error} />
       ) : null}
       <RunTranscript run={run} hosted={hosted} />
       <ReviewLensList lenses={run.reviews} />
