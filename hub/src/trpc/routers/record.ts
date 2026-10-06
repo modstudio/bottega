@@ -262,6 +262,17 @@ export const recordRouter = t.router({
   doc: t.procedure
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).doc(input.id)),
+  docSearch: t.procedure
+    .input(
+      z.object({
+        query: z.string(),
+        scope: filter,
+        subject: filter,
+        audience: z.enum(DOC_AUDIENCES).optional(),
+        acrossReadableSpaces: z.boolean().optional(),
+      }),
+    )
+    .query(({ ctx, input }) => recordClient(ctx).docSearch(input)),
   docRevisions: t.procedure
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).docRevisions(input.id)),

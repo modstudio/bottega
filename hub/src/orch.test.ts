@@ -564,6 +564,18 @@ test('dashboard scoring capability is private and bound to this hub process', ()
 })
 
 describe('docArgv', () => {
+  test('list forwards keyword filters using the MCP option names', () => {
+    expect(docArgv('list', { match: 'title', bodyMatch: 'body' })).toEqual([
+      'doc',
+      'list',
+      '--match',
+      'title',
+      '--body-match',
+      'body',
+      '--json',
+    ])
+  })
+
   test('list with no filters', () => {
     expect(docArgv('list')).toEqual(['doc', 'list', '--json'])
   })

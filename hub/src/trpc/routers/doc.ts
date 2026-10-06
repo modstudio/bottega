@@ -1,7 +1,8 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import { DOC_AUDIENCES, DOC_SCOPES } from '../../../../shared/docs.ts'
-import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
+import { localDocDetail, localDocSearch, localDocsTree } from '../../doc-search.ts'
+import { docHistory, docRemove, docSet, docSubjects } from '../../orch.ts'
 import type { Context } from '../context.ts'
 import { fromOrch } from '../orch-error.ts'
 
@@ -21,10 +22,20 @@ export const docRouter = t.router({
         })
         .optional(),
     )
-    .query(({ input }) => fromOrch(() => docList(input ?? {}))),
+    .query(({ input }) => fromOrch(() => localDocsTree(input ?? {}))),
   get: t.procedure
     .input(z.object({ scope, subject, slug: z.string() }))
-    .query(({ input }) => fromOrch(() => docGet(input.scope, input.subject, input.slug))),
+    .query(({ input }) => fromOrch(() => localDocDetail(input))),
+  search: t.procedure
+    .input(
+      z.object({
+        query: z.string(),
+        scope: scope.optional(),
+        subject: z.string().nullable().optional(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
+      }),
+    )
+    .query(({ input }) => fromOrch(() => localDocSearch(input))),
   set: t.procedure
     .input(
       z.object({

@@ -103,6 +103,41 @@ async function command(args: string[], stdin = '') {
 }
 
 describe('scoped operator docs', () => {
+  test('orch doc list keyword filters return the union as full documents', async () => {
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'keyword-title',
+      title: 'Needle title',
+      body: 'Title match body.',
+    })
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'keyword-body',
+      title: 'Body result',
+      body: 'A needle in the body.',
+    })
+    const listed = await command([
+      'doc',
+      'list',
+      '--scope',
+      'global',
+      '--match',
+      'needle',
+      '--body-match',
+      'needle',
+      '--json',
+    ])
+    expect(listed.code).toBe(0)
+    expect(JSON.parse(listed.out)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: 'keyword-title', body: 'Title match body.' }),
+        expect.objectContaining({ slug: 'keyword-body', body: 'A needle in the body.' }),
+      ]),
+    )
+  })
+
   test('orch doc get and list --json expose the latest hosted revision', async () => {
     const stored = await setDoc({
       scope: 'global',

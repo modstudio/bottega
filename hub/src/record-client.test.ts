@@ -73,6 +73,101 @@ function clientWith(fetch: RecordFetch, headers: { cookie?: string; authorizatio
 }
 
 describe('record client', () => {
+  test('public doc reads omit credentials and parse every public route', async () => {
+    const id = '01990000-0000-7000-8000-000000000031'
+    const requests: Array<{ url: string; cookie: string | null; authorization: string | null }> = []
+    const item = {
+      id,
+      slug: 'welcome',
+      title: 'Welcome',
+      parentId: null,
+      position: 1,
+      updatedAt: '2026-10-06T12:00:00.000Z',
+      scope: 'global',
+      subject: null,
+    }
+    const fetch: RecordFetch = async (url, init) => {
+      const headers = new Headers(init?.headers)
+      requests.push({
+        url,
+        cookie: headers.get('Cookie'),
+        authorization: headers.get('Authorization'),
+      })
+      if (url.includes('/search'))
+        return jsonResponse({
+          items: [{ id, slug: 'welcome', title: 'Welcome', snippet: 'Welcome body' }],
+        })
+      if (url.endsWith(`/${id}`)) return jsonResponse({ ...item, body: 'Welcome body' })
+      return jsonResponse({ items: [item] })
+    }
+    const client = clientWith(fetch, { cookie: 'sid=private', authorization: 'Bearer private' })
+    expect(await client.publicDocs()).toEqual({ items: [{ ...item, audience: 'user' }] })
+    expect(await client.publicDoc(id)).toEqual({ ...item, body: 'Welcome body', audience: 'user' })
+    expect(await client.publicDocSearch('welcome')).toEqual({
+      items: [
+        {
+          id,
+          slug: 'welcome',
+          title: 'Welcome',
+          snippet: 'Welcome body',
+          matchPosition: null,
+        },
+      ],
+    })
+    expect(requests).toEqual([
+      { url: 'https://api.example.test/public/v1/docs', cookie: null, authorization: null },
+      {
+        url: `https://api.example.test/public/v1/docs/${id}`,
+        cookie: null,
+        authorization: null,
+      },
+      {
+        url: 'https://api.example.test/public/v1/docs/search?q=welcome',
+        cookie: null,
+        authorization: null,
+      },
+    ])
+  })
+
+  test('public doc not found maps to tRPC NOT_FOUND', async () => {
+    const client = clientWith(async () => jsonResponse({ error: 'doc not found' }, 404), {
+      cookie: 'sid=private',
+    })
+    await expect(client.publicDoc('01990000-0000-7000-8000-000000000031')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'doc not found',
+    })
+  })
+
+  test('signed doc search sends all filters and parses matches', async () => {
+    let requested = ''
+    const fetch: RecordFetch = async (url) => {
+      requested = url
+      return jsonResponse({
+        items: [
+          {
+            id: '01990000-0000-7000-8000-000000000031',
+            slug: 'welcome',
+            title: 'Welcome',
+            snippet: 'Welcome body',
+            spaceName: 'Workshop',
+          },
+        ],
+      })
+    }
+    const result = await clientWith(fetch).docSearch({
+      query: 'welcome',
+      scope: 'project',
+      subject: 'bottega',
+      audience: 'technical',
+      acrossReadableSpaces: true,
+    })
+    expect(requested).toBe(
+      'https://api.example.test/v1/docs/search?q=welcome&scope=project&subject=bottega&audience=technical&acrossReadableSpaces=true',
+    )
+    expect(result.items[0]).toMatchObject({ spaceName: 'Workshop', matchPosition: null })
+  })
+
   test('forwards Cookie and Authorization unchanged', async () => {
     const captured = { url: '', cookie: '', authorization: '' }
     const fetch: RecordFetch = async (input, init) => {

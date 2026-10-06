@@ -12,6 +12,7 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
+import { DocSchema, DocSearchSchema, DocTreeItemSchema, DocTreeSchema } from './doc-contract.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -207,20 +208,14 @@ const snapshotsSchema = z.object({ items: z.array(z.unknown()) }).transform(({ i
   return { items: accepted, ignored }
 })
 
-const docSchema = z.object({
+const docSchema = DocSchema.extend({
   id: z.string().uuid(),
   spaceId: z.string().uuid(),
   spaceName: z.string(),
   scope: z.string(),
   subject: z.string().nullable(),
   owner: z.string().uuid().nullable(),
-  slug: z.string(),
-  title: z.string(),
-  body: z.string(),
   delivery: z.enum(['inject', 'demand']),
-  audience: z.enum(DOC_AUDIENCES).default('technical'),
-  parentId: z.string().uuid().nullable().default(null),
-  position: z.number().int().default(0),
   projectName: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
@@ -228,6 +223,18 @@ const docSchema = z.object({
 })
 
 const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
+
+const publicDocTreeItemSchema = DocTreeItemSchema.omit({ audience: true }).transform((doc) => ({
+  ...doc,
+  // The record public role's policy admits only user-audience documents.
+  audience: 'user' as const,
+}))
+const publicDocSchema = publicDocTreeItemSchema
+  .and(z.object({ body: z.string() }))
+  .transform((doc) => DocSchema.parse(doc))
+const publicDocsSchema = z
+  .object({ items: z.array(publicDocTreeItemSchema) })
+  .transform((value) => DocTreeSchema.parse(value))
 
 const docRevisionSchema = z.object({
   id: z.string().uuid(),
@@ -382,8 +389,21 @@ async function request<T>(
   return parsed.data
 }
 
+function publicRequest<T>(
+  options: RecordClientOptions,
+  path: string,
+  schema: z.ZodType<T>,
+): Promise<T> {
+  return request({ ...options, headers: {} }, path, schema)
+}
+
 export function createRecordClient(options: RecordClientOptions) {
   return {
+    publicDocs: () => publicRequest(options, '/public/v1/docs', publicDocsSchema),
+    publicDoc: (id: string) =>
+      publicRequest(options, `/public/v1/docs/${encodeURIComponent(id)}`, publicDocSchema),
+    publicDocSearch: (search: string) =>
+      publicRequest(options, query('/public/v1/docs/search', { q: search }), DocSearchSchema),
     whoami: () => request(options, '/v1/whoami', whoamiSchema),
     setActiveSpace: (spaceId: string) =>
       request(options, '/v1/active-space', z.object({ activeSpaceId: z.string() }), {
@@ -497,6 +517,24 @@ export function createRecordClient(options: RecordClientOptions) {
         docsSchema,
       ),
     doc: (id: string) => request(options, `/v1/docs/${encodeURIComponent(id)}`, docSchema),
+    docSearch: (input: {
+      query: string
+      scope?: string
+      subject?: string
+      audience?: 'user' | 'technical'
+      acrossReadableSpaces?: boolean
+    }) =>
+      request(
+        options,
+        query('/v1/docs/search', {
+          q: input.query,
+          scope: input.scope,
+          subject: input.subject,
+          audience: input.audience,
+          acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
+        }),
+        DocSearchSchema,
+      ),
     docRevisions: (id: string) =>
       request(options, `/v1/docs/${encodeURIComponent(id)}/revisions`, docRevisionsSchema),
     putDoc: (input: {

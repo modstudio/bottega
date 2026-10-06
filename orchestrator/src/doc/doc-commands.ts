@@ -17,6 +17,7 @@ import {
   getDoc,
   importDocs,
   lintStoredDoc,
+  listDocMetadata,
   listDocRevisions,
   listDocs,
   listOpenResumes,
@@ -27,6 +28,8 @@ import {
   storedDocsHaveRepositoryReferences,
   validateDocAddressFilter,
 } from './docs.ts'
+
+export const DOC_KEYWORD_LIST_LIMIT = 50
 
 type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type DocPresentation = {
@@ -161,12 +164,28 @@ function handledReadDocCommand(
 ): boolean {
   const { has } = flags
   if (sub === 'list') {
-    const rows = listDocs({
+    const filters = {
       scope: address.scope,
       ...(has('subject') || has('user') ? { subject: address.subject } : {}),
       owner: address.owner,
       audience: flags.flag('audience'),
-    })
+    }
+    const match = flags.flag('match')
+    const bodyMatch = flags.flag('body-match')
+    const rows =
+      match !== undefined || bodyMatch !== undefined
+        ? [
+            ...new Map(
+              [
+                ...(match !== undefined ? listDocMetadata({ ...filters, match }) : []),
+                ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
+              ].map((doc) => [doc.id, doc]),
+            ).values(),
+          ]
+            .slice(0, DOC_KEYWORD_LIST_LIMIT)
+            .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, address.owner))
+            .filter((doc) => doc !== null)
+        : listDocs(filters)
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(

@@ -865,6 +865,8 @@ export type DocListFilters = {
   scope?: string
   subject?: string | null
   audience?: 'user' | 'technical'
+  match?: string
+  bodyMatch?: string
 }
 
 export type DocSetInput = {
@@ -899,6 +901,8 @@ export type DocArgvInput = {
   reason?: string
   delivery?: 'inject' | 'demand'
   audience?: 'user' | 'technical'
+  match?: string
+  bodyMatch?: string
   parentSlug?: string | null
   position?: number
   expectedRevision?: string
@@ -940,6 +944,8 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         'list',
         ...docAddressFlags(input),
         ...(input.audience ? ['--audience', input.audience] : []),
+        ...(input.match !== undefined ? ['--match', input.match] : []),
+        ...(input.bodyMatch !== undefined ? ['--body-match', input.bodyMatch] : []),
         '--json',
       ]
     case 'get':
