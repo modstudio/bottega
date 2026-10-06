@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import { applyFilters, EMPTY_FILTERS } from './filters.ts'
 import {
   breadcrumb,
@@ -12,16 +13,24 @@ import {
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
+  const scope = partial.scope ?? 'project'
+  const subject = partial.subject === undefined ? 'atlas' : partial.subject
   return {
     slug: partial.slug ?? partial.id,
     parentId: partial.parentId ?? null,
     position: partial.position ?? 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    scope: partial.scope ?? 'project',
-    subject: partial.subject ?? 'atlas',
     audience: partial.audience ?? 'user',
     delivery: partial.delivery,
     ...partial,
+    scope,
+    subject,
+    projectName:
+      'projectName' in partial
+        ? partial.projectName
+        : subject && docScopeHasProjectSubject(scope)
+          ? subject
+          : undefined,
   }
 }
 
@@ -79,15 +88,23 @@ test('the tree path includes the document; the breadcrumb does not', () => {
   expect(path.map((node) => node.title)).toEqual(['Getting started', 'Your first run'])
   expect(breadcrumb(child, path.slice(0, -1))).toEqual([
     { key: 'docs', label: 'Docs' },
-    { key: 'subject:atlas', label: 'atlas' },
+    { key: 'project:atlas', label: 'atlas' },
     { key: 'g', label: 'Getting started' },
   ])
   expect(treePath(tree, 'missing')).toEqual([])
 })
 
-test('a document with no subject omits the subject from the breadcrumb', () => {
+test('a document with no project omits the project from the breadcrumb', () => {
   const root = item({ id: 's', title: 'Shared note', subject: null })
   expect(breadcrumb(root, [])).toEqual([{ key: 'docs', label: 'Docs' }])
+})
+
+test('an agent subject is not a project group', () => {
+  const tree = buildDocTree([
+    item({ id: 'a', title: 'Agent', scope: 'agent', subject: 'writer' }),
+    item({ id: 'p', title: 'Product', subject: 'atlas' }),
+  ])
+  expect(groupRootsBySubject(tree).map((group) => group.heading)).toEqual(['atlas', 'Shared'])
 })
 
 test('All projects groups roots by subject, Shared last, and does not regroup a single project', () => {

@@ -1,12 +1,9 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { DocsPage } from '@/docs/page'
+import { isScope } from '@/docs/scope'
 import { DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 
-export { DOC_SCOPES, type DocScope }
-
-function isScope(value: string): value is DocScope {
-  return (DOC_SCOPES as readonly string[]).includes(value)
-}
+export { DOC_SCOPES, type DocScope, isScope }
 
 export const Route = createFileRoute('/docs')({
   component: DocsLayout,
@@ -20,5 +17,3 @@ function DocsLayout() {
     </>
   )
 }
-
-export { isScope }

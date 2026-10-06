@@ -7,10 +7,7 @@ import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Select } from '@/ui/listbox/select'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
-
-function isScope(value: string): value is DocScope {
-  return (DOC_SCOPES as readonly string[]).includes(value)
-}
+import { isScope } from './scope.ts'
 
 function needsSubject(scope: DocScope) {
   return DOC_SCOPE_SUBJECT_KIND[scope] !== null

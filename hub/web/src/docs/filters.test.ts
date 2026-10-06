@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import {
   activeFilterCount,
   applyFilters,
@@ -9,19 +10,28 @@ import {
   inProject,
   offeredFilters,
   projectSubjects,
+  searchSubject,
 } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
+  const scope = partial.scope ?? 'project'
+  const subject = partial.subject === undefined ? 'atlas' : partial.subject
   return {
     slug: partial.id,
     parentId: null,
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    scope: 'project',
-    subject: 'atlas',
     audience: 'user',
     ...partial,
+    scope,
+    subject,
+    projectName:
+      'projectName' in partial
+        ? partial.projectName
+        : subject && docScopeHasProjectSubject(scope)
+          ? subject
+          : undefined,
   }
 }
 
@@ -73,15 +83,26 @@ test('applying filters keeps matching documents and counts active choices', () =
   expect(activeFilterCount(EMPTY_FILTERS)).toBe(0)
 })
 
-test('project chooser lists subjects that have documents', () => {
+test('project chooser lists project names, not every subject', () => {
   expect(projectSubjects(docs)).toEqual(['atlas', 'starship'])
   expect(inProject(docs, 'atlas').map((row) => row.id)).toEqual(['1', '2'])
   expect(inProject(docs, 'all')).toHaveLength(docs.length)
+  const withAgent = [
+    ...docs,
+    item({ id: '5', title: 'Agent', scope: 'agent', subject: 'writer', audience: 'technical' }),
+  ]
+  expect(projectSubjects(withAgent)).toEqual(['atlas', 'starship'])
 })
 
-test('opening a document chooses its subject, or All projects when it has none', () => {
+test('opening a document chooses its project, or All projects when it has none', () => {
   expect(chooserProject(docs[0]!, ['atlas', 'starship'])).toBe('atlas')
   expect(chooserProject(docs[3]!, ['atlas', 'starship'])).toBe('all')
+})
+
+test('search sends subject only when the chosen project is a subject on the source', () => {
+  expect(searchSubject('atlas', docs)).toBe('atlas')
+  expect(searchSubject('all', docs)).toBeUndefined()
+  expect(searchSubject('missing', docs)).toBeUndefined()
 })
 
 test('with no document the chooser starts on the first subject, else All projects', () => {

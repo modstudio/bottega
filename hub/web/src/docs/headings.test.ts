@@ -12,6 +12,29 @@ test('second-level headings become contents entries with stable ids', () => {
   expect(headingId('On this page')).toBe('on-this-page')
 })
 
+test('fenced code is ignored and duplicate titles keep the same ids as the renderer', () => {
+  const body = [
+    '```',
+    '## inside fence',
+    '```',
+    '~~~js',
+    '## inside tildes',
+    '~~~',
+    '## Real',
+    '## Real',
+  ].join('\n')
+  expect(secondLevelHeadings(body)).toEqual([
+    { id: 'real', title: 'Real' },
+    { id: 'real-2', title: 'Real' },
+  ])
+})
+
+test('indented code is ignored', () => {
+  expect(secondLevelHeadings('    ## indented\n\t## tabbed\n## Real\n')).toEqual([
+    { id: 'real', title: 'Real' },
+  ])
+})
+
 test('record-shaped docs map onto the shared tree item and keep delivery', () => {
   const mapped = mapTreeItem({
     id: '00000000-0000-4000-8000-000000000001',
@@ -38,8 +61,52 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
+    projectName: 'atlas',
   })
   expect(mapDoc({ ...mapped, body: '# Hi' }).body).toBe('# Hi')
+})
+
+test('hosted projectName is used as-is; local and public derive it from project scopes', () => {
+  expect(
+    mapTreeItem({
+      id: '1',
+      slug: 'agent',
+      title: 'Agent',
+      parentId: null,
+      position: 0,
+      updatedAt: '2026-10-06T00:00:00.000Z',
+      scope: 'agent',
+      subject: 'writer',
+      audience: 'technical',
+      projectName: null,
+    }).projectName,
+  ).toBeUndefined()
+  expect(
+    mapTreeItem({
+      id: '2',
+      slug: 'agent',
+      title: 'Agent',
+      parentId: null,
+      position: 0,
+      updatedAt: '2026-10-06T00:00:00.000Z',
+      scope: 'agent',
+      subject: 'writer',
+      audience: 'technical',
+    }).projectName,
+  ).toBeUndefined()
+  expect(
+    mapTreeItem({
+      id: '3',
+      slug: 'first-run',
+      title: 'Your first run',
+      parentId: null,
+      position: 0,
+      updatedAt: '2026-10-06T00:00:00.000Z',
+      scope: 'project',
+      subject: 'atlas',
+      audience: 'user',
+    }).projectName,
+  ).toBe('atlas')
 })
 
 test('search highlight uses matchPosition when it falls inside the snippet', () => {

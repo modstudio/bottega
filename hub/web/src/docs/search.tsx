@@ -1,4 +1,6 @@
-import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { Dialog } from '@/ui/dialog/dialog'
+import { Input } from '@/ui/field/input'
 import { Kbd } from '@/ui/kbd/kbd'
 import { moveIndex } from '@/ui/state/list-navigation'
 import { classes } from '@/ui/text/classes'
@@ -24,19 +26,11 @@ export function SearchDialog({
   onChoose: (item: DocsTreeItem) => void
   scopeLabel: string
 }) {
-  const ref = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const listId = useId()
   const [active, setActive] = useState(0)
   const byId = new Map(tree.map((item) => [item.id, item]))
   const bySlug = new Map(tree.map((item) => [item.slug, item]))
-
-  useLayoutEffect(() => {
-    const node = ref.current
-    if (!node) return
-    if (open && !node.open) node.showModal()
-    if (!open && node.open) node.close()
-  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -82,38 +76,32 @@ export function SearchDialog({
       : `Nothing matches "${needle}".`
 
   return (
-    <dialog
-      ref={ref}
-      aria-label="Search docs"
-      onClose={() => onOpenChange(false)}
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onOpenChange(false)
-      }}
-      className="fixed inset-x-0 top-[12vh] mx-auto w-[min(40rem,calc(100%-2rem))] border border-border-strong bg-surface-overlay text-text-primary shadow-overlay backdrop:bg-scrim"
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Search docs"
+      variant="chromeless"
+      size="lg"
+      className="top-[12vh] max-h-[min(35rem,80vh)]"
     >
       <div className="flex items-center gap-2.5 border-border-default border-b px-3.5 py-3">
-        <input
-          ref={input}
-          type="search"
-          value={query}
-          onChange={(event) => {
-            setActive(0)
-            onQueryChange(event.target.value)
-          }}
-          onKeyDown={onListKey}
-          placeholder="Search titles and text"
-          aria-label="Search titles and text"
-          aria-controls={listId}
-          autoComplete="off"
-          className="min-w-0 flex-1 border-0 bg-transparent text-lg text-text-primary outline-none placeholder:text-text-muted"
-        />
-        <button
-          type="button"
-          className="border border-border-strong px-1.5 font-mono text-text-muted text-xs"
-          onClick={() => onOpenChange(false)}
-        >
-          Esc
-        </button>
+        <div className="min-w-0 flex-1">
+          <Input
+            ref={input}
+            type="search"
+            value={query}
+            onChange={(event) => {
+              setActive(0)
+              onQueryChange(event.target.value)
+            }}
+            onKeyDown={onListKey}
+            placeholder="Search titles and text"
+            aria-label="Search titles and text"
+            aria-controls={listId}
+            autoComplete="off"
+          />
+        </div>
+        <Kbd>Esc</Kbd>
       </div>
       <div className="max-h-[min(25rem,56vh)] overflow-auto px-1.5 py-2">
         {results.length === 0 ? (
@@ -168,6 +156,6 @@ export function SearchDialog({
         </span>
         <span className="ml-auto">{scopeLabel}</span>
       </div>
-    </dialog>
+    </Dialog>
   )
 }

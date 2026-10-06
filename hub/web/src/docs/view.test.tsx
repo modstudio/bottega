@@ -15,6 +15,7 @@ const items: DocsTreeItem[] = [
     subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
+    projectName: 'atlas',
   },
   {
     id: '2',
@@ -27,6 +28,7 @@ const items: DocsTreeItem[] = [
     subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
+    projectName: 'atlas',
   },
   {
     id: '2b',
@@ -51,6 +53,7 @@ const items: DocsTreeItem[] = [
     subject: 'atlas',
     audience: 'technical',
     delivery: 'inject',
+    projectName: 'atlas',
   },
 ]
 
@@ -70,6 +73,7 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         body: '## Open a task\n\nEvery piece of work carries a key.\n',
       }}
       onSelect={() => {}}
+      onLeaveTree={() => {}}
       searchQuery=""
       onSearchQuery={() => {}}
       searchResults={[]}
@@ -152,6 +156,18 @@ test('a leading title heading in the body is not rendered again', () => {
   })
   expect(html).toContain('Every piece of work carries a key.')
   expect(html).not.toContain('<h1>Your first run</h1>')
+})
+
+test('the pane is empty when the selected document is not in the visible tree', () => {
+  const html = render({
+    audience: 'user',
+    selectedId: '3',
+    doc: { ...items[3]!, body: '## Hidden heading\n' },
+  })
+  expect(html).toContain('Select a document.')
+  expect(html).not.toContain('Principles')
+  expect(html).not.toContain('Hidden heading')
+  expect(html).not.toContain('On this page')
 })
 
 test('New doc sits in the top bar when the local create control is passed', () => {

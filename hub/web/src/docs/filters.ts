@@ -10,14 +10,14 @@ export const EMPTY_FILTERS: FilterSelection = { scope: null, delivery: null }
 export function projectSubjects(items: readonly DocsTreeItem[]): string[] {
   const names = new Set<string>()
   for (const item of items) {
-    if (item.subject) names.add(item.subject)
+    if (item.projectName) names.add(item.projectName)
   }
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
 export function inProject(items: readonly DocsTreeItem[], project: string | 'all'): DocsTreeItem[] {
   if (project === 'all') return [...items]
-  return items.filter((item) => item.subject === project)
+  return items.filter((item) => item.projectName === project)
 }
 
 /** Project chooser value for a selected document, or the empty-page default. */
@@ -25,8 +25,17 @@ export function chooserProject(
   selected: DocsTreeItem | null,
   subjects: readonly string[],
 ): string | 'all' {
-  if (selected) return selected.subject ?? 'all'
+  if (selected) return selected.projectName ?? 'all'
   return subjects[0] ?? 'all'
+}
+
+/** Search sends subject only when the chosen project is a subject for that source. */
+export function searchSubject(
+  project: string | 'all',
+  items: readonly DocsTreeItem[],
+): string | undefined {
+  if (project === 'all') return undefined
+  return items.some((item) => item.subject === project) ? project : undefined
 }
 
 export function inAudience(items: readonly DocsTreeItem[], audience: DocsAudience): DocsTreeItem[] {

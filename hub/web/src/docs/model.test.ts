@@ -1,18 +1,27 @@
 import { expect, test } from 'bun:test'
+import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import { EMPTY_FILTERS } from './filters.ts'
 import { docsViewModel } from './model.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
+  const scope = partial.scope ?? 'project'
+  const subject = partial.subject === undefined ? 'atlas' : partial.subject
   return {
     slug: partial.id,
     parentId: null,
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    scope: 'project',
-    subject: 'atlas',
     audience: 'user',
     ...partial,
+    scope,
+    subject,
+    projectName:
+      'projectName' in partial
+        ? partial.projectName
+        : subject && docScopeHasProjectSubject(scope)
+          ? subject
+          : undefined,
   }
 }
 
@@ -33,4 +42,14 @@ test('All projects groups roots; a single project does not', () => {
   expect(all.groups?.map((group) => group.heading)).toEqual(['atlas', 'starship', 'Shared'])
   const one = docsViewModel(items, 'user', 'atlas', EMPTY_FILTERS, 'g', null)
   expect(one.groups).toBeNull()
+})
+
+test('a selected document outside the visible tree is not the displayed document', () => {
+  const hidden = docsViewModel(items, 'technical', 'atlas', EMPTY_FILTERS, 'r', {
+    ...items[1]!,
+    body: '## Open\n',
+  })
+  expect(hidden.selected).toBeNull()
+  expect(hidden.crumbs).toEqual([])
+  expect(hidden.headings).toEqual([{ id: 'open', title: 'Open' }])
 })

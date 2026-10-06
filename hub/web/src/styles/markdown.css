@@ -1,5 +1,6 @@
 /* Document body: serif headings, sans paragraphs, mono figures, matching the docs page scale. */
-.markdown {
+.markdown,
+.doc-measure {
   max-width: 68ch;
 }
 .markdown h1,
@@ -13,7 +14,10 @@
   line-height: 1.25;
   color: var(--text-primary);
 }
+.doc-title,
 .markdown h1 {
+  font-family: var(--family-serif);
+  font-weight: 400;
   font-size: 2.625rem;
   letter-spacing: -0.02em;
   line-height: 1.06;

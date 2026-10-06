@@ -88,17 +88,17 @@ export function neighbors(
 }
 
 /**
- * Under All projects, roots sit in subject groups, alphabetically, with
- * documents that have no subject last under Shared.
+ * Under All projects, roots sit in project groups, alphabetically, with
+ * documents that have no project last under Shared.
  */
 export function groupRootsBySubject(roots: readonly TreeNode[]): DocsTreeGroup[] {
   const named = new Map<string, TreeNode[]>()
   const shared: TreeNode[] = []
   for (const root of roots) {
-    if (root.subject) {
-      const siblings = named.get(root.subject) ?? []
+    if (root.projectName) {
+      const siblings = named.get(root.projectName) ?? []
       siblings.push(root)
-      named.set(root.subject, siblings)
+      named.set(root.projectName, siblings)
     } else {
       shared.push(root)
     }
@@ -112,13 +112,15 @@ export function groupRootsBySubject(roots: readonly TreeNode[]): DocsTreeGroup[]
 
 export type BreadcrumbPart = { key: string; label: string }
 
-/** Docs, then the subject when there is one, then ancestor titles — not the document itself. */
+/** Docs, then the project when there is one, then ancestor titles — not the document itself. */
 export function breadcrumb(
   selected: DocsTreeItem,
   ancestors: readonly DocsTreeItem[],
 ): BreadcrumbPart[] {
   const parts: BreadcrumbPart[] = [{ key: 'docs', label: 'Docs' }]
-  if (selected.subject) parts.push({ key: `subject:${selected.subject}`, label: selected.subject })
+  if (selected.projectName) {
+    parts.push({ key: `project:${selected.projectName}`, label: selected.projectName })
+  }
   for (const ancestor of ancestors) parts.push({ key: ancestor.id, label: ancestor.title })
   return parts
 }

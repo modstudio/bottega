@@ -6,7 +6,7 @@ import { isHostedMode } from '@/lib/hub-mode'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
-import { chooserProject, projectSubjects } from './filters.ts'
+import { chooserProject, projectSubjects, searchSubject } from './filters.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 import { docsSource } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
@@ -46,22 +46,27 @@ export function DocsPage() {
   }, [catalog.items, params, search?.id])
   const selectedAudience = selected?.audience
   const selectedId = selected?.id
-  const selectedSubject = selected?.subject
+  const selectedProject = selected?.projectName
   useEffect(() => {
     if (selectedAudience) setAudience(selectedAudience)
   }, [selectedAudience])
   useEffect(() => {
     if (!selectedId) return
-    setProject(selectedSubject ?? 'all')
+    setProject(selectedProject ?? 'all')
     setEmptyChooserSet(true)
-  }, [selectedId, selectedSubject])
+  }, [selectedId, selectedProject])
   useEffect(() => {
     if (selectedId || emptyChooserSet || catalog.isPending) return
     setProject(chooserProject(null, subjects))
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected)
-  const results = useDocsSearch(source, searchQuery, audience, project)
+  const results = useDocsSearch(
+    source,
+    searchQuery,
+    audience,
+    searchSubject(project, catalog.items),
+  )
 
   function open(item: DocsTreeItem) {
     void navigate({
@@ -88,6 +93,7 @@ export function DocsPage() {
         showProjectChooser={signedIn}
         doc={reading.document}
         onSelect={open}
+        onLeaveTree={() => void navigate({ to: '/docs' })}
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}
         searchResults={results.items}

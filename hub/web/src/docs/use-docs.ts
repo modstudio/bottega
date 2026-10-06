@@ -1,12 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
-import { DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
+import type { DocScope } from '../../../../shared/docs.ts'
 import { mapDoc, mapSearchMatch, mapTreeItem } from './map.ts'
+import { isScope } from './scope.ts'
 import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsSource, DocsTreeItem } from './types.ts'
-
-function isDocScope(value: string): value is DocScope {
-  return (DOC_SCOPES as readonly string[]).includes(value)
-}
 
 async function loadHostedTree(): Promise<DocsTreeItem[]> {
   const items: DocsTreeItem[] = []
@@ -47,7 +44,7 @@ export function useDocsTree(source: DocsSource) {
 }
 
 export function useDocsDocument(source: DocsSource, selected: DocsTreeItem | null) {
-  const localScope = selected && isDocScope(selected.scope) ? selected.scope : null
+  const localScope = selected && isScope(selected.scope) ? selected.scope : null
   const local = useQuery({
     ...trpc.doc.read.queryOptions({
       scope: (localScope ?? 'global') as DocScope,
@@ -79,11 +76,10 @@ export function useDocsSearch(
   source: DocsSource,
   query: string,
   audience: DocsAudience,
-  project: string | 'all',
+  subject: string | undefined,
 ) {
   const trimmed = query.trim()
   const enabled = trimmed.length >= 2
-  const subject = project === 'all' ? undefined : project
   const local = useQuery({
     ...trpc.doc.search.queryOptions({ query: trimmed, audience, subject }),
     enabled: source === 'local' && enabled,
