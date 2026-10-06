@@ -223,7 +223,11 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     !floor.some(isFloorPlaceholder)
   )
     errors.push(`step "${slug}" commandEvidence requires a command-exit floor`)
-  if (item.commandEvidence === 'gate' && item.deferrable?.includes('command-exit'))
+  if (
+    item.commandEvidence === 'gate' &&
+    Array.isArray(item.deferrable) &&
+    item.deferrable.includes('command-exit')
+  )
     errors.push(`step "${slug}" cannot defer command-exit when commandEvidence is "gate"`)
   if (
     item.expectedStatus !== undefined &&

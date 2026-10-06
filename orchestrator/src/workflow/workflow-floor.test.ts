@@ -114,6 +114,18 @@ test('an operator ruling floor requires a bound operator answer', () => {
   })
 })
 
+test('an agent ruling is refused when task evidence also meets an alternative floor', () => {
+  const decision = decide({
+    floors: [artifact, operatorRuling],
+    evidence: { ...presentArtifact, ...answeredRuling },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it',
+  })
+})
+
 test('an unbound or unanswered ruling does not satisfy', () => {
   expect(
     decide({
@@ -251,13 +263,17 @@ test('a non-zero gate fails unless the floor states otherwise', () => {
   expect(
     decide({
       floors: [commandExit],
-      evidence: { gate: { id: 2, finished: true, exitCode: 1 } },
+      evidence: {
+        gate: { id: 2, finished: true, exitCode: 1, project: null, commit: null },
+      },
     }).action,
   ).toBe('refuse')
   expect(
     decide({
       floors: [{ ...commandExit, expectedExitCode: 1 }],
-      evidence: { gate: { id: 2, finished: true, exitCode: 1 } },
+      evidence: {
+        gate: { id: 2, finished: true, exitCode: 1, project: null, commit: null },
+      },
     }).action,
   ).toBe('allow')
 })

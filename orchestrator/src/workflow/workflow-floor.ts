@@ -273,6 +273,16 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   return null
 }
 
+function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
+  if (!evidence.ruling || !floors.some((floor) => floor.operatorRuling)) return null
+  return evidence.ruling.answered &&
+    evidence.ruling.answeredByOperator &&
+    evidence.ruling.boundToCursor &&
+    evidence.ruling.boundToStep
+    ? null
+    : 'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it'
+}
+
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
@@ -385,6 +395,8 @@ function finishOf(
 export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDecision {
   if (input.enforcement === 'note-only')
     return { action: 'allow', enforcement: 'note-only', refs: [] }
+  const rulingRefusal = operatorRulingBindingRefusal(input.floors, input.evidence)
+  if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (
