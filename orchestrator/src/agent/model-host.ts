@@ -39,7 +39,14 @@ export function registeredContextTokens(row: AgentRow): number | null {
  * short-lived enough that one probe each is cheap: 2ms when the endpoint is
  * healthy, and when it is not, it replaces a run that was going to fail anyway.
  */
-let modelHostHealth: { ok: boolean; detail: string; contextTokens?: number } | null = null
+export type LocalHealth = { ok: boolean; detail: string; contextTokens?: number }
+
+let modelHostHealth: LocalHealth | null = null
+let modelHostHealthBaseUrl: string | null = null
+const agentHealth = new Map<
+  string,
+  { baseUrl: string | null; endpoint: string; health: LocalHealth }
+>()
 
 /**
  * MAC address to wake the model host at, or empty to never try.
@@ -162,7 +169,8 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  * not change when a machine is switched off.
  */
 /**
- * Probe the local endpoint once per process, and remember the answer.
+ * Probe the configured model host and every enabled self-operated agent once
+ * per process, and remember their answers separately.
  *
  * This is what makes reachability a ROUTING INPUT rather than a run outcome.
  * `available()` reads the result, so anything that calls this before routing
@@ -170,10 +178,36 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  * before — which is why the reporting views can stay synchronous.
  */
 export async function ensureLocalHealth(opts: { force?: boolean; baseUrl?: string } = {}) {
-  if (!modelHostHealth || opts.force) {
-    modelHostHealth = await localReachable(undefined, opts.baseUrl ?? modelHostUrl())
-  }
+  const globalBaseUrl = opts.baseUrl ?? modelHostUrl()
+  const globalProbe =
+    !modelHostHealth || modelHostHealthBaseUrl !== globalBaseUrl || opts.force
+      ? localReachable(undefined, globalBaseUrl)
+      : Promise.resolve(modelHostHealth)
+  const probes = Object.values(AGENTS)
+    .filter((agent) => agent.enabled !== false && agent.operatedBy === 'self')
+    .map(async (agent) => {
+      const baseUrl = agent.baseUrl ?? null
+      const endpoint = baseUrl ?? globalBaseUrl
+      const cached = agentHealth.get(agent.name)
+      if (cached?.baseUrl === baseUrl && cached.endpoint === endpoint && !opts.force) return
+      const health =
+        endpoint === globalBaseUrl ? await globalProbe : await localReachable(undefined, endpoint)
+      agentHealth.set(agent.name, { baseUrl, endpoint, health })
+    })
+  const [globalHealth] = await Promise.all([globalProbe, ...probes])
+  modelHostHealth = globalHealth
+  modelHostHealthBaseUrl = globalBaseUrl
   return modelHostHealth
+}
+
+/** The last reachability verdict for this row's current endpoint, if probed. */
+export function localAgentHealth(name: string): LocalHealth | null {
+  const agent = AGENTS[name]
+  if (!agent) return null
+  const cached = agentHealth.get(name)
+  const baseUrl = agent.baseUrl ?? null
+  const endpoint = baseUrl ?? modelHostUrl()
+  return cached && cached.baseUrl === baseUrl && cached.endpoint === endpoint ? cached.health : null
 }
 
 /**
@@ -212,14 +246,15 @@ export function unavailableReason(name: string): string | null {
   }
   if (!harnessInstalled(name)) return 'not installed'
   if (a.operatedBy === 'self') {
-    // A local agent is only real once an endpoint is configured...
-    if (!modelHostUrl()) return 'ORCH_MODEL_HOST_URL not set'
+    // A row's endpoint wins when present. Rows without one retain the global
+    // model-host fallback used by the worker environment.
+    if (!(a.baseUrl ?? modelHostUrl())) return 'ORCH_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:
     // the env var stayed correct for the whole eleven hours the box was off.
     // Only a probe that has actually run can say no here, so a caller that
     // never awaited ensureLocalHealth() is left exactly as it was.
-    if (modelHostHealth && !modelHostHealth.ok)
-      return `endpoint unreachable — ${modelHostHealth.detail}`
+    const health = localAgentHealth(name)
+    if (health && !health.ok) return `endpoint unreachable — ${health.detail}`
   }
   return null
 }
@@ -241,7 +276,7 @@ export async function localReachable(
   // service, without reconfiguring the machine — which is the only way to test
   // the "answered 200 with HTML" case that Docker Desktop actually produced.
   baseUrl = modelHostUrl(),
-): Promise<{ ok: boolean; detail: string; contextTokens?: number }> {
+): Promise<LocalHealth> {
   if (!baseUrl) return { ok: false, detail: 'ORCH_MODEL_HOST_URL not set' }
   try {
     const res = await fetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {

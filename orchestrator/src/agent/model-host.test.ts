@@ -1,6 +1,18 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { type AgentRow, addAgent, refreshAgents, removeAgent } from './agent-registry.ts'
-import { registeredContextTokens, registeredLocalAgent, unavailableReason } from './model-host.ts'
+import {
+  ensureLocalHealth,
+  registeredContextTokens,
+  registeredLocalAgent,
+  unavailableReason,
+} from './model-host.ts'
+
+const addedAgents: string[] = []
+
+afterEach(() => {
+  for (const name of addedAgents.splice(0)) removeAgent(name)
+  refreshAgents()
+})
 
 const row = (overrides: Partial<AgentRow> = {}): AgentRow => ({
   name: 'local-acp',
@@ -44,4 +56,136 @@ test('a missing context window refuses with the command that supplies it', () =>
     'no declared context window; run orch agent set missing-window --context-tokens <tokens>',
   )
   removeAgent('missing-window')
+})
+
+test('self-operated agents use the reachability of their own endpoints', async () => {
+  for (const [name, baseUrl] of [
+    ['reachable-local', 'http://127.0.0.1:19001/v1'],
+    ['down-local', 'http://127.0.0.1:19002/v1'],
+  ] as const) {
+    addAgent(name, {
+      harness: 'goose',
+      backend: 'vllm',
+      model: `operator/${name}`,
+      baseUrl,
+      contextTokens: 98_304,
+    })
+    addedAgents.push(name)
+  }
+  refreshAgents()
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    if (url.port === '19001') {
+      return Response.json({ data: [{ id: 'operator/reachable-local', max_model_len: 98_304 }] })
+    }
+    throw new Error(`refused ${url.origin}`)
+  }) as typeof fetch
+  try {
+    await ensureLocalHealth({ force: true })
+    expect(unavailableReason('reachable-local')).toBeNull()
+    expect(unavailableReason('down-local')).toBe(
+      'endpoint unreachable — refused http://127.0.0.1:19002',
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+describe('a self-operated agent without its own base URL', () => {
+  const originalModelHostUrl = process.env.ORCH_MODEL_HOST_URL
+
+  afterEach(() => {
+    if (originalModelHostUrl === undefined) delete process.env.ORCH_MODEL_HOST_URL
+    else process.env.ORCH_MODEL_HOST_URL = originalModelHostUrl
+  })
+
+  describe('with a configured global endpoint', () => {
+    beforeEach(() => {
+      process.env.ORCH_MODEL_HOST_URL = 'http://127.0.0.1:19003/v1'
+    })
+
+    test('uses the answering global endpoint', async () => {
+      addAgent('global-fallback-local', {
+        harness: 'goose',
+        backend: 'vllm',
+        model: 'operator/global-fallback',
+        contextTokens: 98_304,
+      })
+      addedAgents.push('global-fallback-local')
+      refreshAgents()
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        if (url.origin === 'http://127.0.0.1:19003') {
+          return Response.json({
+            data: [{ id: 'operator/global-fallback', max_model_len: 98_304 }],
+          })
+        }
+        throw new Error(`refused ${url.origin}`)
+      }) as typeof fetch
+      try {
+        await ensureLocalHealth({ force: true })
+        expect(unavailableReason('global-fallback-local')).toBeNull()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test('reprobes when the configured global endpoint changes', async () => {
+      addAgent('changing-global-fallback-local', {
+        harness: 'goose',
+        backend: 'vllm',
+        model: 'operator/changing-global-fallback',
+        contextTokens: 98_304,
+      })
+      addedAgents.push('changing-global-fallback-local')
+      refreshAgents()
+      const fetched: string[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        fetched.push(url.origin)
+        if (url.origin === 'http://127.0.0.1:19004') {
+          return Response.json({
+            data: [{ id: 'operator/changing-global-fallback', max_model_len: 98_304 }],
+          })
+        }
+        throw new Error(`refused ${url.origin}`)
+      }) as typeof fetch
+      try {
+        await ensureLocalHealth({ force: true })
+        expect(unavailableReason('changing-global-fallback-local')).toBe(
+          'endpoint unreachable — refused http://127.0.0.1:19003',
+        )
+
+        process.env.ORCH_MODEL_HOST_URL = 'http://127.0.0.1:19004/v1'
+        await ensureLocalHealth()
+
+        expect(unavailableReason('changing-global-fallback-local')).toBeNull()
+        expect(fetched).toContain('http://127.0.0.1:19004')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
+
+  describe('without a configured global endpoint', () => {
+    beforeEach(() => {
+      process.env.ORCH_MODEL_HOST_URL = ''
+    })
+
+    test('names the missing global endpoint', async () => {
+      addAgent('missing-global-local', {
+        harness: 'goose',
+        backend: 'vllm',
+        model: 'operator/missing-global',
+        contextTokens: 98_304,
+      })
+      addedAgents.push('missing-global-local')
+      refreshAgents()
+      await ensureLocalHealth({ force: true })
+      expect(unavailableReason('missing-global-local')).toBe('ORCH_MODEL_HOST_URL not set')
+    })
+  })
 })

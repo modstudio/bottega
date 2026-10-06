@@ -3,12 +3,13 @@
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
-import { AGENTS, agentRows } from '../agent/agent-registry.ts'
+import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
 import {
   ensureLocalHealth,
   fileContractProbeReason,
   lastWakeAttempt,
+  localAgentHealth,
   modelHostModel,
   modelHostUrl,
   predatesFileContract,
@@ -103,6 +104,31 @@ function localContextDiagnosis(
     `  MISMATCH — registry declares ${(declaredContext / 1024).toFixed(0)}K.` +
     ` Run orch agent set ${registration.name} --context-tokens ${servedContext} or re-serve.`
   )
+}
+
+function localProbeDiagnosis(row: AgentRow, now = Date.now()): { line: string; failed: boolean } {
+  const probedAt = row.probed_at ? Date.parse(row.probed_at) : NaN
+  const ageDays = Number.isFinite(probedAt) ? (now - probedAt) / 86_400_000 : null
+  const probe = row.probe_result ? (JSON.parse(row.probe_result) as { ok?: boolean }) : null
+  const stale = ageDays !== null && ageDays > 7
+  const failed = probe?.ok === false
+  const age = ageDays === null ? 'never' : `${ageDays.toFixed(1)}d`
+  return {
+    line: `local probe     ${row.name} ${stale || failed ? `FAIL ${age}${failed ? ' probe failed' : ' exceeds 7 days'}` : age}`,
+    failed: stale || failed,
+  }
+}
+
+function rowReachabilityDiagnosis(row: AgentRow, globalBaseUrl: string): string[] {
+  if ((row.base_url ?? globalBaseUrl) === globalBaseUrl) return []
+  const health = localAgentHealth(row.name)
+  const lines = [
+    `local endpoint  ${row.name} ${row.base_url ?? '(unset)'}`,
+    `local reachable ${row.name} ${health ? `${health.ok ? 'yes' : 'NO'} — ${health.detail}` : 'not probed'}`,
+  ]
+  const context = localContextDiagnosis(health?.contextTokens, row, registeredContextTokens(row))
+  if (context) lines.push(`  ${context}`)
+  return lines
 }
 
 function reportRetrievalCheck(
@@ -287,20 +313,13 @@ export async function doctorCommand(
       log(`  ${fileContractProbeReason(a.name)}`)
     }
   }
+  const configuredUrl = modelHostUrl()
   for (const row of agentRows()) {
     if (row.operated_by !== 'self' || !row.enabled) continue
-    const probedAt = row.probed_at ? Date.parse(row.probed_at) : NaN
-    const ageDays = Number.isFinite(probedAt) ? (Date.now() - probedAt) / 86_400_000 : null
-    const probe = row.probe_result ? (JSON.parse(row.probe_result) as { ok?: boolean }) : null
-    const stale = ageDays !== null && ageDays > 7
-    const failed = probe?.ok === false
-    const age = ageDays === null ? 'never' : `${ageDays.toFixed(1)}d`
-    if (stale || failed) {
-      log(`local probe     ${row.name} FAIL ${age}${failed ? ' probe failed' : ' exceeds 7 days'}`)
-      exitCode(1)
-    } else {
-      log(`local probe     ${row.name} ${age}`)
-    }
+    const probe = localProbeDiagnosis(row)
+    log(probe.line)
+    if (probe.failed) exitCode(1)
+    for (const line of rowReachabilityDiagnosis(row, configuredUrl)) log(line)
   }
   const srtAgents = Object.values(AGENTS)
     .filter((agent) =>
@@ -318,7 +337,6 @@ export async function doctorCommand(
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
   log(`acp            ${doctorAcpStatus(acpGap)}`)
-  const configuredUrl = modelHostUrl()
   const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
   for (const line of local.lines) log(line)
   log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
