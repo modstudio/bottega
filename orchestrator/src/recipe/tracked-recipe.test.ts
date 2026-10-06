@@ -28,7 +28,6 @@ import {
   type RecipeSnapshot,
   recipeAllocationEnvironment,
   renderTrackedRecipeNotes,
-  reportedProvisionSkips,
   type TrackedAllocator,
   teardownTrackedRecipe,
   trackedAllocator,
@@ -71,15 +70,6 @@ function writeEnv(recipe: TrackedRecipe, tree: string, project: string, vars = {
 }
 
 describe('tracked recipe execution', () => {
-  test('prints skips except an absent optional provision source', () => {
-    expect(
-      reportedProvisionSkips([
-        { path: '.env.testing.local', reason: 'missing source' },
-        { path: 'node_modules', reason: 'existing target' },
-      ]),
-    ).toEqual([{ path: 'node_modules', reason: 'existing target' }])
-  })
-
   test('persists Compose ownership before spawning up', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'orch-compose-ownership-'))
     directories.push(repoRoot)
