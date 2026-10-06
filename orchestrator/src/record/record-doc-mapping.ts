@@ -153,7 +153,7 @@ export function newerHostedImportRefusal(
   return `refusing import: hosted doc at ${String(existing.scope)}/${subject}/${String(existing.slug)} has a different body and newer updated_at`
 }
 
-export const recordDocIso = (value: unknown) =>
+const recordDocIso = (value: unknown) =>
   value == null ? null : new Date(String(value)).toISOString()
 
 export function recordDocRow(row: Record<string, unknown>): RecordDoc {

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { recordDocImportSchema } from './record-api-doc-schemas.ts'
+import { normalizeRecordDocImport } from './record-doc-mapping.ts'
 
 test('legacy doc imports default omitted tree fields and allow the service to mint the id', () => {
   const shared = {
@@ -34,5 +35,10 @@ test('legacy doc imports default omitted tree fields and allow the service to mi
     audience: 'technical',
     parentId: null,
     position: 0,
+  })
+  const mintedId = '01990000-0000-7000-8000-000000000099'
+  expect(normalizeRecordDocImport(parsed, mintedId)).toMatchObject({
+    doc: { id: mintedId, audience: 'technical', parentId: null, position: 0 },
+    revisions: [{ audience: 'technical', parentId: null, position: 0 }],
   })
 })
