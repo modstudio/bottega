@@ -376,14 +376,31 @@ realPostgres('project import against copied live SQLite data', () => {
       }
     }
     const outboxRows = source
-      .query<{ id: number; synced_at: string | null; last_error: string | null }, []>(
-        'SELECT id, synced_at, last_error FROM outbox ORDER BY id',
-      )
+      .query<
+        {
+          id: number
+          synced_at: string | null
+          last_error: string | null
+          quarantined_at: string | null
+          retired_at: string | null
+        },
+        []
+      >('SELECT id, synced_at, last_error, quarantined_at, retired_at FROM outbox ORDER BY id')
       .all()
-    const requiredRows = outboxRows.filter((row) => !historyIds.has(row.id))
+    const requiredRows = outboxRows.filter(
+      (row) => !historyIds.has(row.id) && row.quarantined_at === null && row.retired_at === null,
+    )
     expect(requiredRows.every((row) => row.synced_at !== null && row.last_error === null)).toBe(
       true,
     )
+    expect(
+      outboxRows
+        .filter(
+          (row) =>
+            !historyIds.has(row.id) && (row.quarantined_at !== null || row.retired_at !== null),
+        )
+        .every((row) => row.synced_at === null),
+    ).toBe(true)
     const refusedHistory = outboxRows.filter(
       (row) => historyIds.has(row.id) && row.last_error !== null,
     )
