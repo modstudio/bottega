@@ -1,5 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import type { Context } from './context.ts'
+import { boardRouter } from './routers/board.ts'
 import { catalogRouter } from './routers/catalog.ts'
 import { contextRouter } from './routers/context.ts'
 import { docRouter } from './routers/doc.ts'
@@ -14,6 +15,7 @@ import { workRouter } from './routers/work.ts'
 const t = initTRPC.context<Context>().create()
 
 export const appRouter = t.router({
+  board: boardRouter,
   project: projectRouter,
   doc: docRouter,
   run: runRouter,

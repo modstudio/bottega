@@ -17,6 +17,7 @@ import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   answerWaitingArgv,
+  boardList,
   configArgv,
   configDeleteArgv,
   contextArgv,
@@ -233,6 +234,43 @@ test('settings check preserves an exit-one refusal with empty stdout', async () 
   } finally {
     if (prior === undefined) delete process.env.HUB_ORCH
     else process.env.HUB_ORCH = prior
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('board calls remove worker and harness identity markers from the orch child', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'hub-board-operator-env-'))
+  const executable = join(root, 'orch-board-env')
+  writeFileSync(
+    executable,
+    `#!/bin/sh
+if env | grep -Eq '^(ORCH_RUN_ID|ORCH_DEPTH|CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID)='; then
+  printf '%s\n' 'board child inherited a session or run marker' >&2
+  exit 1
+fi
+printf '%s\n' '{"messages":[],"warning":null}'
+`,
+  )
+  chmodSync(executable, 0o755)
+  const prior = {
+    HUB_ORCH: process.env.HUB_ORCH,
+    ORCH_RUN_ID: process.env.ORCH_RUN_ID,
+    ORCH_DEPTH: process.env.ORCH_DEPTH,
+    CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID,
+    CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
+  }
+  try {
+    process.env.HUB_ORCH = executable
+    process.env.ORCH_RUN_ID = '42'
+    process.env.ORCH_DEPTH = '1'
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    process.env.CODEX_THREAD_ID = 'codex-thread'
+    await expect(boardList({})).resolves.toEqual({ messages: [], warning: null })
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
     rmSync(root, { recursive: true, force: true })
   }
 })
