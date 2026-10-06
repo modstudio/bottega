@@ -549,7 +549,18 @@ export async function adoptHostedBoard(
     throw new Error('the local board is already adopted by the hosted board; no action was taken')
   const client = input.client ?? recordApiClient()
   await client.whoami()
-  await client.listBoardChanges({ after: '0', limit: 1 })
+  try {
+    await client.listBoardChanges({ after: '0', limit: 1 })
+  } catch (error) {
+    if (error instanceof RecordApiRequestError && error.kind === 'refused') {
+      const serviceMessage = error.message.split(/\r?\n/, 1)[0]
+      throw new Error(
+        `the deployed record API did not serve the board routes: ${serviceMessage}; deploy the record API from a commit that includes the board routes, then rerun orch board adopt`,
+        { cause: error },
+      )
+    }
+    throw error
+  }
   const clock = input.clock ?? Date.now
   const startedAt = clock()
   const at = new Date(startedAt).toISOString()
