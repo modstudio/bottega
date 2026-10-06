@@ -22,6 +22,8 @@ export async function search(
     databasePath?: string
     clients?: SearchClients
     loadChunks?: (repositoryRoot: string) => Promise<Chunk[]>
+    scope?: string
+    subject?: string
   } = {},
 ): Promise<DocSearchOutput> {
   const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
@@ -68,7 +70,9 @@ export async function search(
             (row) =>
               row.model === currentContract.model &&
               row.dimension === currentContract.dimension &&
-              row.instructionVersion === currentContract.instructionVersion,
+              row.instructionVersion === currentContract.instructionVersion &&
+              (options.scope === undefined || row.scope === options.scope) &&
+              (options.subject === undefined || row.subject === options.subject),
           )
           .map((row) => ({ ...row, id: row.chunkId })),
     },

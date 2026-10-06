@@ -46,8 +46,16 @@ export async function checkRetrieval(runner: Runner = runRetrieval) {
   return runner(['--check'])
 }
 
-export async function searchDocs(query: string, k: number, runner: Runner = runRetrieval) {
-  const result = await runner([query, '--k', String(k), '--json'])
+export async function searchDocs(
+  query: string,
+  k: number,
+  filter: { scope?: string; subject?: string } = {},
+  runner: Runner = runRetrieval,
+) {
+  const argv = [query, '--k', String(k), '--json']
+  if (filter.scope !== undefined) argv.push('--scope', filter.scope)
+  if (filter.subject !== undefined) argv.push('--subject', filter.subject)
+  const result = await runner(argv)
   if (result.exitCode !== 0) {
     throw new Error(
       result.stderr.trim() || result.stdout.trim() || `retrieval search exited ${result.exitCode}`,

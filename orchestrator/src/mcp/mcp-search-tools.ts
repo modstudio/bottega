@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { searchProjectCode } from '../code/code-search.ts'
 import { searchDocs } from '../doc/doc-search.ts'
+import { validateDocAddressFilter } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 
 const text = (value: unknown) => ({
@@ -20,9 +21,15 @@ export function registerSearchTools(server: McpServer): void {
       inputSchema: z.object({
         query: z.string().trim().min(1),
         k: z.number().int().positive().optional(),
+        scope: z.string().trim().min(1).optional(),
+        subject: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ query, k }) => text(await searchDocs(query, k ?? 5)),
+    async ({ query, k, scope, subject }) => {
+      const filter = { scope, subject }
+      validateDocAddressFilter(filter)
+      return text(await searchDocs(query, k ?? 5, filter))
+    },
   )
 
   server.registerTool(

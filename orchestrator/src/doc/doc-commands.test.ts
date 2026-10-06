@@ -52,6 +52,12 @@ test('orch doc search human output reports stale refresh work', () => {
   )
 })
 
+test('orch doc search refuses an invalid scope with the store message', async () => {
+  const result = await command(['doc', 'search', 'meaning', '--scope', 'invented'])
+  expect(result.code).toBe(1)
+  expect(result.err).toContain('unknown doc scope "invented"; valid scopes:')
+})
+
 async function command(args: string[], stdin = '') {
   const values = new Map<string, string>()
   const present = new Set<string>()
