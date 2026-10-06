@@ -113,8 +113,9 @@ function applyDoc(
   const title = String(item.title)
   const body = String(item.body)
   const delivery = String(item.delivery)
-  const audience = String(item.audience)
-  const position = Number(item.position)
+  // A record that predates the tree fields omits them; such a document is technical and a root.
+  const audience = item.audience == null ? 'technical' : String(item.audience)
+  const position = item.position == null ? 0 : Number(item.position)
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
   const parentId: number | null =
     parentRecordId == null
