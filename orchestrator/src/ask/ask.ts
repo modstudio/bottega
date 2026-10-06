@@ -208,50 +208,63 @@ type RequestedGate =
   | { id: number; requestedAt: string; introduction: string | null }
   | { message: string }
 
+function selectGateExecutionOnce(
+  runId: number,
+  pendingResults: ReadonlySet<number>,
+): RequestedGate {
+  return writeTransaction(() => {
+    const run = db().query('SELECT status,gate_requests_closed FROM run WHERE id=?').get(runId) as {
+      status: string
+      gate_requests_closed: number
+    } | null
+    const cancellation = decideGateCancellation({
+      requestsClosed: run?.gate_requests_closed === 1,
+      runLive: run?.status === 'running' || run?.status === 'asking',
+    })
+    if (cancellation) return { message: cancellation }
+    const latest = latestGateExecution(runId)
+    const decision = decideGateRequest({
+      execution: latest ? { id: latest.id, finished: latest.finished_at !== null } : null,
+      resultPending: latest ? pendingResults.has(latest.id) : false,
+    })
+    if (decision.action !== 'start') {
+      return {
+        id: decision.executionId,
+        requestedAt: latest!.requested_at,
+        introduction: formatGateRequestDecision(decision),
+      }
+    }
+    const requestedAt = nowIso()
+    const inserted = db()
+      .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+      .get(runId, requestedAt) as { id: number }
+    return { id: inserted.id, requestedAt, introduction: null }
+  })
+}
+
 function selectGateExecution(runId: number, pendingResults: ReadonlySet<number>): RequestedGate {
   try {
-    return writeTransaction(() => {
-      const run = db()
-        .query('SELECT status,gate_requests_closed FROM run WHERE id=?')
-        .get(runId) as { status: string; gate_requests_closed: number } | null
-      const cancellation = decideGateCancellation({
-        requestsClosed: run?.gate_requests_closed === 1,
-        runLive: run?.status === 'running' || run?.status === 'asking',
-      })
-      if (cancellation) return { message: cancellation }
-      const latest = latestGateExecution(runId)
-      const decision = decideGateRequest({
-        execution: latest ? { id: latest.id, finished: latest.finished_at !== null } : null,
-        resultPending: latest ? pendingResults.has(latest.id) : false,
-      })
-      if (decision.action !== 'start') {
-        return {
-          id: decision.executionId,
-          requestedAt: latest!.requested_at,
-          introduction: formatGateRequestDecision(decision),
-        }
-      }
-      const requestedAt = nowIso()
-      const inserted = db()
-        .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
-        .get(runId, requestedAt) as { id: number }
-      return { id: inserted.id, requestedAt, introduction: null }
-    })
+    return selectGateExecutionOnce(runId, pendingResults)
   } catch (error) {
-    const active = latestGateExecution(runId)
-    if (!String(error).includes('UNIQUE constraint failed') || !active || active.finished_at) {
-      throw error
-    }
-    const decision = decideGateRequest({
-      execution: { id: active.id, finished: false },
-      resultPending: pendingResults.has(active.id),
-    })
-    return {
-      id: active.id,
-      requestedAt: active.requested_at,
-      introduction: formatGateRequestDecision(decision),
-    }
+    if (!String(error).includes('UNIQUE constraint failed')) throw error
+    return selectGateExecutionOnce(runId, pendingResults)
   }
+}
+
+function waitForGatePoll(ms: number, signal: AbortSignal, wait: (ms: number) => Promise<void>) {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    const aborted = () => finish(resolve)
+    const finish = (settle: () => void) => {
+      signal.removeEventListener('abort', aborted)
+      settle()
+    }
+    signal.addEventListener('abort', aborted, { once: true })
+    wait(ms).then(
+      () => finish(resolve),
+      (error) => finish(() => reject(error)),
+    )
+  })
 }
 
 async function waitForGateExecution(
@@ -259,11 +272,14 @@ async function waitForGateExecution(
   requested: Exclude<RequestedGate, { message: string }>,
   pendingResults: Set<number>,
   dependencies: GateWaitDependencies,
+  signal: AbortSignal,
 ): Promise<string> {
   const id = requested.id
   pendingResults.add(id)
   const waitStartedAt = dependencies.now()
+  // A caller that disappears without sending cancellation can still consume a later result.
   for (;;) {
+    if (signal.aborted) return 'The gate wait stopped because the run_gate call was cancelled.'
     const row = db()
       .query(
         `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
@@ -296,13 +312,13 @@ async function waitForGateExecution(
       executionElapsedMs: Math.max(0, now - Date.parse(requested.requestedAt)),
       waitMs: dependencies.waitMs,
     })
-    if (row.exit_code !== null && row.timed_out !== null && row.elapsed_ms !== null) {
+    if (finished) {
       pendingResults.delete(id)
       const result = formatGateResult(
         shapeGateResult({
-          exitCode: row.exit_code,
+          exitCode: row.exit_code!,
           timedOut: row.timed_out === 1,
-          elapsedMs: row.elapsed_ms,
+          elapsedMs: row.elapsed_ms!,
           output: row.output_tail ?? '',
           outputPath: `${runScratchDir(runId)}/gate-${id}.log`,
           artifactPath: row.output_artifact ?? '(no artifact recorded)',
@@ -311,19 +327,24 @@ async function waitForGateExecution(
       return requested.introduction ? `${requested.introduction}\n${result}` : result
     }
     if (!waitDecision.wait) return waitDecision.message!
-    await dependencies.wait(Math.min(POLL_MS, dependencies.waitMs - (now - waitStartedAt)))
+    await waitForGatePoll(
+      Math.min(POLL_MS, dependencies.waitMs - (now - waitStartedAt)),
+      signal,
+      dependencies.wait,
+    )
   }
 }
 
 async function requestGate(
   runId: number,
   pendingResults: Set<number>,
+  signal: AbortSignal,
   dependencies: GateWaitDependencies = defaultGateWaitDependencies,
 ): Promise<string> {
   writableDb()
   const requested = selectGateExecution(runId, pendingResults)
   if ('message' in requested) return requested.message
-  return waitForGateExecution(runId, requested, pendingResults, dependencies)
+  return waitForGateExecution(runId, requested, pendingResults, dependencies, signal)
 }
 
 /**
@@ -544,12 +565,15 @@ export function createAskMcpServer(
         description:
           "Run this project's registered gate in the run worktree through the supervising orchestrator. " +
           'The command, directory, and environment are fixed by orch and take no worker input.',
+        inputSchema: z.object({}),
       },
-      async () => {
+      async (_arguments, context) => {
         try {
           const eligibility = gateEligibility(runId, token)
           if (!eligibility.eligible) return text(eligibility.message)
-          return text(await requestGate(runId, pendingGateResults, dependencies.gate))
+          return text(
+            await requestGate(runId, pendingGateResults, context.mcpReq.signal, dependencies.gate),
+          )
         } catch (error) {
           return text(`The registered gate could not be run (${String(error)}).`, true)
         }
