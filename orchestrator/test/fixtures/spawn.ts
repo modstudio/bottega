@@ -32,9 +32,12 @@ export function spawnFixtureSync(
   command: Parameters<typeof Bun.spawnSync>[0],
   options: Parameters<typeof Bun.spawnSync>[1] = {},
 ): FixtureSpawnResult {
+  const env = { ...process.env, ...options.env }
+  delete env.FORCE_COLOR
+  delete env.NO_COLOR
   return Bun.spawnSync(command, {
     ...options,
-    env: { ...process.env, ...options.env },
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   }) as FixtureSpawnResult

@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   chmodSync,
   existsSync,
@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -20,6 +21,17 @@ const britishSample = readFileSync(
   join(import.meta.dir, 'fixtures/spelling-samples/british-samples.txt'),
   'utf8',
 ).trim()
+const fixtureRoots: string[] = []
+
+afterEach(() => {
+  for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function fixtureDirectory(prefix: string): string {
+  const root = mkdtempSync(join(dir, prefix))
+  fixtureRoots.push(root)
+  return root
+}
 
 function run(database: string, ...argv: string[]) {
   return spawnFixtureSync(['bun', '--no-env-file', cli, 'check', '--enabled', ...argv], {
@@ -31,7 +43,7 @@ function run(database: string, ...argv: string[]) {
 }
 
 function registerProject(name: string, path: string, settings: ProjectSettings): string {
-  const databasePath = join(mkdtempSync(join(dir, 'enabled-check-db-')), 'orch.db')
+  const databasePath = join(fixtureDirectory('enabled-check-db-'), 'orch.db')
   const database = new Database(databasePath, { create: true })
   applyMigrations(database)
   database
@@ -51,7 +63,7 @@ function git(root: string, ...argv: string[]) {
 }
 
 function repository(name: string, committed = false): string {
-  const root = mkdtempSync(join(dir, `${name}-`))
+  const root = fixtureDirectory(`${name}-`)
   git(root, 'init', '-b', 'main')
   writeFileSync(join(root, 'README.md'), 'ordinary text\n')
   if (!committed) return root
@@ -71,7 +83,7 @@ function repository(name: string, committed = false): string {
 }
 
 function installTypos(): string {
-  const bin = mkdtempSync(join(dir, 'enabled-check-bin-'))
+  const bin = fixtureDirectory('enabled-check-bin-')
   const typos = join(bin, 'typos')
   writeFileSync(
     typos,
@@ -82,7 +94,7 @@ function installTypos(): string {
 }
 
 function installGh(): string {
-  const bin = mkdtempSync(join(dir, 'enabled-check-gh-'))
+  const bin = fixtureDirectory('enabled-check-gh-')
   const gh = join(bin, 'gh')
   writeFileSync(
     gh,
@@ -143,7 +155,7 @@ describe('orch check --enabled', () => {
     const root = repository('checks-american-english')
     writeFileSync(join(root, 'typos.toml'), '[default]\nlocale = "en-gb"\n')
     writeFileSync(join(root, 'README.md'), `${britishSample}\n`)
-    const bin = mkdtempSync(join(dir, 'american-english-bin-'))
+    const bin = fixtureDirectory('american-english-bin-')
     const typos = join(bin, 'typos')
     writeFileSync(
       typos,
