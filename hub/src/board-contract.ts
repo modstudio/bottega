@@ -1,6 +1,39 @@
 import { z } from 'zod'
 
-export const BoardIdSchema = z.string()
+export const BoardIdSchema = z
+  .string()
+  .refine(
+    (id) =>
+      (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))) ||
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
+    'board id must be a positive integer string or UUID',
+  )
+export const BoardIdInputSchema = z.object({ id: BoardIdSchema })
+export const BoardListInputSchema = z.object({
+  kind: z.enum(['notice', 'question']).optional(),
+  open: z.boolean().optional(),
+  includeEnded: z.boolean().optional(),
+})
+export const BoardPostInputSchema = z.object({
+  audience: z.string(),
+  project: z.string().optional(),
+  title: z.string().trim().min(1),
+  body: z.string().trim().min(1),
+  task: z.string().optional(),
+  paths: z.array(z.string()).optional(),
+  topics: z.array(z.string()).optional(),
+  ackRequired: z.boolean().optional(),
+  deadline: z.string().optional(),
+  expires: z.string().optional(),
+})
+export const BoardReplyInputSchema = z.object({
+  id: BoardIdSchema,
+  body: z.string().trim().min(1),
+})
+export const BoardAcceptInputSchema = z.object({
+  questionId: BoardIdSchema,
+  replyId: BoardIdSchema,
+})
 const BoardOriginSchema = z.object({
   kind: z.string(),
   session: z.string().nullable(),
@@ -77,6 +110,7 @@ export const BoardPostResultSchema = z.object({
   reached: z.number().int().nonnegative().nullable(),
   warning: z.string().nullable(),
 })
+export const BoardReplyResultSchema = BoardPostResultSchema.extend({ rootId: BoardIdSchema })
 export const BoardThreadResultSchema = z.object({
   root: BoardMessageSchema,
   replies: z.array(
@@ -111,20 +145,7 @@ export const BoardAcceptResultSchema = z.object({
   notePendingError: z.string().nullable(),
   retry: z.string().nullable(),
 })
+export const BoardWithdrawResultSchema = z.object({ withdrawn: BoardIdSchema })
 
-export type BoardListInput = {
-  kind?: 'notice' | 'question'
-  open?: boolean
-  includeEnded?: boolean
-}
-export type BoardPostInput = {
-  audience: string
-  title: string
-  body: string
-  task?: string
-  paths?: string[]
-  topics?: string[]
-  ackRequired?: boolean
-  deadline?: string
-  expires?: string
-}
+export type BoardListInput = z.infer<typeof BoardListInputSchema>
+export type BoardPostInput = z.infer<typeof BoardPostInputSchema>

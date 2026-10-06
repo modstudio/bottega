@@ -8,6 +8,55 @@ const whoamiBody = {
   memberships: [],
 }
 
+const boardRootId = '01990000-0000-7000-8000-000000000011'
+const boardReplyId = '01990000-0000-7000-8000-000000000012'
+const boardMessage = {
+  id: boardRootId,
+  kind: 'notice',
+  threadRootId: null,
+  title: 'Hosted notice',
+  body: 'Body',
+  audience: 'architects',
+  origin: { kind: 'operator', session: null, harness: null, project: null, runId: null },
+  senderTags: [],
+  createdAt: '2026-10-06T12:00:00.000Z',
+  expiresAt: '2026-10-07T12:00:00.000Z',
+  withdrawnAt: null,
+  state: 'open',
+  acceptedReplyId: null,
+  acceptedBy: null,
+  acceptedAt: null,
+  noteId: null,
+  notePendingError: null,
+  revision: '1',
+  scopeProjectIds: [],
+  recipientUserIds: [],
+  claimId: null,
+  authorUserId: 'user-a',
+  authorSession: null,
+  ackRequired: false,
+  ackDeadline: null,
+}
+
+const boardOverview = {
+  id: boardRootId,
+  kind: 'notice',
+  title: 'Hosted notice',
+  audience: 'architects',
+  origin: boardMessage.origin,
+  senderTags: [],
+  createdAt: boardMessage.createdAt,
+  expiresAt: boardMessage.expiresAt,
+  withdrawnAt: null,
+  ackRequired: false,
+  ackDeadline: null,
+  state: 'open',
+  reached: null,
+  acknowledged: null,
+  unacknowledged: null,
+  store: 'hosted',
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -37,6 +86,102 @@ describe('record client', () => {
     expect(captured.url).toBe('https://api.example.test/v1/whoami')
     expect(captured.cookie).toBe('sid=abc')
     expect(captured.authorization).toBe('Bearer tok')
+  })
+
+  test('calls every board route with its query or body and forwarded authentication', async () => {
+    const requests: Array<{
+      url: string
+      method: string
+      body: unknown
+      cookie: string | null
+      authorization: string | null
+    }> = []
+    const fetch: RecordFetch = async (url, init) => {
+      const headers = new Headers(init?.headers)
+      requests.push({
+        url,
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+        cookie: headers.get('Cookie'),
+        authorization: headers.get('Authorization'),
+      })
+      if (url.includes('/status')) return jsonResponse({ message: boardMessage, receipts: [] })
+      if (url.includes('/threads/')) return jsonResponse({ root: boardMessage, replies: [] })
+      if (url.endsWith('/accept')) return jsonResponse({ root: boardMessage, replies: [] })
+      if (url.includes('/replies'))
+        return jsonResponse({ ...boardMessage, id: boardReplyId, threadRootId: boardRootId })
+      if (url.endsWith('/withdraw'))
+        return jsonResponse({ ...boardMessage, withdrawnAt: '2026-10-06T13:00:00.000Z' })
+      if (init?.method === 'PUT') return jsonResponse(boardMessage)
+      return jsonResponse({ messages: [boardOverview], truncated: false })
+    }
+    const client = clientWith(fetch, { cookie: 'sid=abc', authorization: 'Bearer tok' })
+    await client.boardList({ kind: 'notice', open: true, includeEnded: true })
+    await client.boardThread(boardRootId)
+    await client.boardStatus(boardRootId)
+    await client.boardPost({
+      id: boardRootId,
+      kind: 'notice',
+      audience: 'architects',
+      title: 'Hosted notice',
+      body: 'Body',
+      expiresAt: '2026-10-07T12:00:00.000Z',
+      project: 'workshop',
+    })
+    await client.boardReply(boardRootId, { id: boardReplyId, body: 'Reply' })
+    await client.boardAccept(boardRootId, boardReplyId)
+    await client.boardWithdraw(boardRootId)
+
+    expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
+      {
+        url: 'https://api.example.test/v1/board/messages?kind=notice&open=true&includeEnded=true',
+        method: 'GET',
+        body: null,
+      },
+      {
+        url: `https://api.example.test/v1/board/threads/${boardRootId}`,
+        method: 'GET',
+        body: null,
+      },
+      {
+        url: `https://api.example.test/v1/board/messages/${boardRootId}/status`,
+        method: 'GET',
+        body: null,
+      },
+      {
+        url: 'https://api.example.test/v1/board/messages',
+        method: 'PUT',
+        body: {
+          id: boardRootId,
+          kind: 'notice',
+          audience: 'architects',
+          title: 'Hosted notice',
+          body: 'Body',
+          expiresAt: '2026-10-07T12:00:00.000Z',
+          project: 'workshop',
+        },
+      },
+      {
+        url: `https://api.example.test/v1/board/messages/${boardRootId}/replies`,
+        method: 'POST',
+        body: { id: boardReplyId, body: 'Reply' },
+      },
+      {
+        url: `https://api.example.test/v1/board/messages/${boardRootId}/accept`,
+        method: 'POST',
+        body: { replyId: boardReplyId },
+      },
+      {
+        url: `https://api.example.test/v1/board/messages/${boardRootId}/withdraw`,
+        method: 'POST',
+        body: {},
+      },
+    ])
+    expect(
+      requests.every(
+        ({ cookie, authorization }) => cookie === 'sid=abc' && authorization === 'Bearer tok',
+      ),
+    ).toBe(true)
   })
 
   test('sets the active space through the authenticated record API', async () => {
@@ -203,6 +348,33 @@ describe('record client', () => {
     ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: 'run not found',
+    })
+  })
+
+  test('maps permission and rate refusals without hiding their messages', async () => {
+    const forbidden: RecordFetch = async () => jsonResponse({ error: 'not the author' }, 403)
+    const limited: RecordFetch = async () => jsonResponse({ error: 'post rate cap reached' }, 429)
+    await expect(clientWith(forbidden).boardWithdraw(boardRootId)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'not the author',
+    })
+    await expect(
+      clientWith(limited).boardPost({
+        id: boardRootId,
+        kind: 'notice',
+        audience: 'architects',
+        title: 'Title',
+        body: 'Body',
+        expiresAt: '2026-10-07T12:00:00.000Z',
+      }),
+    ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS', message: 'post rate cap reached' })
+  })
+
+  test('explains a bare board-route 404 as an undeployed board', async () => {
+    const fetch: RecordFetch = async () => new Response(null, { status: 404 })
+    await expect(clientWith(fetch).boardList({})).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'the hosted record does not serve the message board yet',
     })
   })
 

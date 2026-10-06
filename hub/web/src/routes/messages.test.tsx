@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostedMessagesPage, MessagesContent } from '@/routes/messages'
-import { MessageReceipts } from '@/routes/messages.$id'
+import { MessagesContent } from '@/routes/messages'
+import { AcceptedNoteWarning, MessageReceipts } from '@/routes/messages.$id'
 import { queryClient, trpc } from '@/trpc/client'
 
 const origin = {
@@ -119,15 +119,75 @@ test('messages distinguish hosted reach from a local no-reach notice', () => {
   expect(html).toContain('Reached no session')
 })
 
-test('hosted messages route explains that the page is unavailable', () => {
-  const html = renderToStaticMarkup(<HostedMessagesPage />)
-  expect(html).toContain('The messages page is not available in the hosted hub yet.')
+test('message receipts distinguish hidden author receipts from local no-reach', () => {
+  const hidden = renderToStaticMarkup(
+    <MessageReceipts receipts={[]} reached={null} unacknowledged={[]} />,
+  )
+  expect(hidden).toContain('Receipts are visible to the message&#x27;s author only.')
+
+  const none = renderToStaticMarkup(
+    <MessageReceipts receipts={[]} reached={0} unacknowledged={['architect-session']} />,
+  )
+  expect(none).toContain('This message reached no session.')
+  expect(none).toContain('Not acknowledged:')
+  expect(none).toContain('architect-session')
 })
 
-test('message receipts show sessions not acknowledged from board status', () => {
+test('message receipts with unknown reach list the visible receipts without a reach claim', () => {
   const html = renderToStaticMarkup(
-    <MessageReceipts receipts={[]} unacknowledged={['architect-session']} />,
+    <MessageReceipts
+      reached={null}
+      unacknowledged={[]}
+      receipts={[
+        {
+          messageId: '01990000-0000-7000-8000-000000000001',
+          readerUserId: 'user-a',
+          readerSession: 'architect-session',
+          audienceAtPosting: true,
+          deliveredAt: '2026-10-05T12:00:00.000Z',
+          acknowledgedAt: null,
+        },
+      ]}
+    />,
   )
-  expect(html).toContain('Not acknowledged:')
   expect(html).toContain('architect-session')
+  expect(html).not.toContain('reached')
+  expect(html).not.toContain('Receipts are visible to the message&#x27;s author only.')
+})
+
+test('accepted answer reports a pending note from the loaded thread root', () => {
+  const html = renderToStaticMarkup(
+    <AcceptedNoteWarning
+      root={{
+        id: '01990000-0000-7000-8000-000000000001',
+        kind: 'question',
+        threadRootId: null,
+        title: 'Question',
+        body: 'Body',
+        audience: 'architects',
+        origin,
+        senderTags: [],
+        createdAt: '2026-10-05T12:00:00.000Z',
+        expiresAt: null,
+        withdrawnAt: null,
+        state: 'accepted',
+        acceptedReplyId: '01990000-0000-7000-8000-000000000002',
+        acceptedBy: null,
+        acceptedAt: '2026-10-05T13:00:00.000Z',
+        noteId: null,
+        notePendingError: 'note filing has not completed',
+        revision: '2',
+        scopeProjectIds: [],
+        recipientUserIds: [],
+        claimId: null,
+        authorUserId: 'user-a',
+        authorSession: null,
+        ackRequired: false,
+        ackDeadline: null,
+        text: null,
+      }}
+    />,
+  )
+  expect(html).toContain('The answer is accepted and its note has not been filed yet:')
+  expect(html).toContain('note filing has not completed')
 })

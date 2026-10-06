@@ -59,6 +59,7 @@ export const boardModules: BoardModule[] = [
     './board-thread-policy.ts',
   ]),
   module('orchestrator/src/board/board-operations.ts', [
+    '../../../shared/board-duration.ts',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -101,6 +102,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-answer-note.ts', ['../mcp/hub-notes.ts']),
   module('orchestrator/src/board/board-store.ts', [
     'node:os',
+    '../../../shared/board-duration.ts',
     '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -140,6 +142,7 @@ export const boardModules: BoardModule[] = [
     './board-thread-policy.ts',
   ]),
   module('orchestrator/src/board/board-suggestions.ts', [
+    '../../../shared/board-duration.ts',
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     './board-policy.ts',
@@ -148,6 +151,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-commands.ts', [
     'commander',
+    '../../../shared/board-duration.ts',
     './board-adoption.ts',
     './board-claim-commands.ts',
     './board-operations.ts',

@@ -110,6 +110,7 @@ const HOSTED_NAV: NavSection[] = [
         icon: Bot,
         items: [
           { to: '/notes', label: 'Notes', icon: NotebookPen },
+          { to: '/messages', label: 'Messages', icon: MessageSquareText },
           { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
           { to: '/agents', label: 'Agents', icon: Bot },
           { to: '/routing', label: 'Routing', icon: RouteIcon },

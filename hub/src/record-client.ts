@@ -6,6 +6,11 @@ import {
   OrchBlockersSchema,
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
+import {
+  BoardListResultSchema,
+  BoardStatusResultSchema,
+  BoardThreadResultSchema,
+} from './board-contract.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -266,16 +271,71 @@ const settingsPermissionResultSchema = z.object({
   }),
 })
 
+const boardRootSchema = BoardThreadResultSchema.shape.root
+const hostedBoardMessageSchema = boardRootSchema.omit({ text: true }).extend({
+  kind: z.string(),
+  body: z.string(),
+  origin: boardRootSchema.shape.origin.unwrap(),
+  senderTags: boardRootSchema.shape.senderTags.unwrap(),
+  createdAt: z.string(),
+  revision: z.string(),
+  scopeProjectIds: z.array(z.string()),
+  recipientUserIds: z.array(z.string()),
+  authorUserId: z.string(),
+  ackRequired: z.boolean(),
+})
+const hostedBoardThreadSchema = z.object({
+  root: hostedBoardMessageSchema,
+  replies: BoardThreadResultSchema.shape.replies,
+})
+const hostedBoardStatusSchema = z.object({
+  message: hostedBoardMessageSchema,
+  receipts: z.array(
+    BoardStatusResultSchema.shape.receipts.element.extend({ readerUserId: z.string() }),
+  ),
+})
+const hostedBoardListSchema = z.object({
+  messages: BoardListResultSchema.shape.messages.refine(
+    (messages) => messages.every((message) => message.store === 'hosted'),
+    'hosted board messages must use the hosted store',
+  ),
+  truncated: z.boolean(),
+})
+const hostedBoardPostInputSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.literal('notice'),
+  audience: z.string(),
+  title: z.string(),
+  body: z.string(),
+  expiresAt: z.string().datetime({ offset: true }),
+  ackRequired: z.boolean().optional(),
+  ackDeadline: z.string().datetime({ offset: true }).nullable().optional(),
+  task: z.string().optional(),
+  paths: z.array(z.string()).optional(),
+  topics: z.array(z.string()).optional(),
+  project: z.string().optional(),
+})
+const hostedBoardReplyInputSchema = z.object({ id: z.string().uuid(), body: z.string() })
+
 export type RecordDoc = z.infer<typeof docSchema>
 export type RecordConfigEntry = z.infer<typeof configEntrySchema>
 
-function mappedError(status: number, body: unknown): TRPCError {
+function mappedError(status: number, body: unknown, path: string): TRPCError {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   const error = typeof record.error === 'string' ? record.error : `record API ${status}`
   const remedy = typeof record.remedy === 'string' ? record.remedy : undefined
   if (status === 401) return new TRPCError({ code: 'UNAUTHORIZED', message: remedy ?? error })
+  if (status === 403) return new TRPCError({ code: 'FORBIDDEN', message: error })
+  if (status === 429) return new TRPCError({ code: 'TOO_MANY_REQUESTS', message: error })
   if (status === 409) return new TRPCError({ code: 'CONFLICT', message: error })
-  if (status === 404) return new TRPCError({ code: 'NOT_FOUND', message: error })
+  if (status === 404)
+    return new TRPCError({
+      code: 'NOT_FOUND',
+      message:
+        body === null && path.startsWith('/v1/board/')
+          ? 'the hosted record does not serve the message board yet'
+          : error,
+    })
   if (status === 400) return new TRPCError({ code: 'BAD_REQUEST', message: error })
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error })
 }
@@ -303,7 +363,7 @@ async function request<T>(
   const fetchImpl = options.fetch ?? globalThis.fetch
   const response = await fetchImpl(url, { ...init, headers })
   const body = await response.json().catch(() => null)
-  if (!response.ok) throw mappedError(response.status, body)
+  if (!response.ok) throw mappedError(response.status, body, path)
   const parsed = schema.safeParse(body)
   if (!parsed.success) {
     throw new TRPCError({
@@ -358,6 +418,63 @@ export function createRecordClient(options: RecordClientOptions) {
     review: (id: string) => request(options, `/v1/reviews/${id}`, reviewDetailSchema),
     projects: () => request(options, '/v1/projects', z.array(projectSchema)),
     snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
+    boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) =>
+      request(
+        options,
+        query('/v1/board/messages', {
+          kind: input.kind,
+          open: input.open ? 'true' : undefined,
+          includeEnded: input.includeEnded ? 'true' : undefined,
+        }),
+        hostedBoardListSchema,
+      ),
+    boardThread: (id: string) =>
+      request(options, `/v1/board/threads/${encodeURIComponent(id)}`, hostedBoardThreadSchema),
+    boardStatus: (id: string) =>
+      request(
+        options,
+        `/v1/board/messages/${encodeURIComponent(id)}/status`,
+        hostedBoardStatusSchema,
+      ),
+    boardPost: (input: z.input<typeof hostedBoardPostInputSchema>) =>
+      request(options, '/v1/board/messages', hostedBoardMessageSchema, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(hostedBoardPostInputSchema.parse(input)),
+      }),
+    boardReply: (rootId: string, input: z.input<typeof hostedBoardReplyInputSchema>) =>
+      request(
+        options,
+        `/v1/board/messages/${encodeURIComponent(rootId)}/replies`,
+        hostedBoardMessageSchema,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(hostedBoardReplyInputSchema.parse(input)),
+        },
+      ),
+    boardAccept: (questionId: string, replyId: string) =>
+      request(
+        options,
+        `/v1/board/messages/${encodeURIComponent(questionId)}/accept`,
+        hostedBoardThreadSchema,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ replyId }),
+        },
+      ),
+    boardWithdraw: (id: string) =>
+      request(
+        options,
+        `/v1/board/messages/${encodeURIComponent(id)}/withdraw`,
+        hostedBoardMessageSchema,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      ),
     docs: (input: RecordDocListInput = {}) =>
       request(
         options,

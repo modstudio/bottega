@@ -1,9 +1,9 @@
 // concern: board-suggestions
+import { BOARD_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
   BOARD_BODY_MAX_CHARS,
-  BOARD_DEFAULT_EXPIRY_MS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   BOARD_TITLE_MAX_CHARS,
