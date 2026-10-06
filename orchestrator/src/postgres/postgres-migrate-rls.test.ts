@@ -23,6 +23,7 @@ import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postg
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
+import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, proveScoreRecordSync } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
@@ -284,6 +285,13 @@ realPostgres('RLS proof against real Postgres', () => {
     readerRole: RECORD_READER_ROLE,
   })
   registerBoardApiProofs({ actorUrl: actorUrl!, spaceA: SPACE_A, userA: USER_A, succeeds })
+  registerPublicDocProofs({
+    publicSpaceId: SPACE_A,
+    privateSpaceId: SPACE_B,
+    ownerUserId: USER_A,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+    psql,
+  })
 
   test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
     expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)

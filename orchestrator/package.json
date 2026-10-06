@@ -37,6 +37,7 @@
     "execa": "10.0.1",
     "github-slugger": "^2.0.0",
     "hono": "4.13.8",
+    "hono-rate-limiter": "^0.5.4",
     "package-manager-detector": "^1.8.0",
     "zod": "^4"
   }

@@ -25,6 +25,11 @@ import type {
   HostedBoardTakeClaimInput,
   HostedBoardThread,
 } from './record-board-contract.ts'
+import type {
+  PublicRecordDoc,
+  PublicRecordDocTreeItem,
+  RecordDocSearchMatch,
+} from './record-public-docs.ts'
 import { storedRecordToken } from './record-session.ts'
 import type {
   RecordSettingsPermissionInput,
@@ -129,6 +134,16 @@ export type RecordApiClient = {
       takenAt: string
     }>
   }>
+  listPublicDocs(): Promise<{ items: PublicRecordDocTreeItem[] }>
+  getPublicDoc(id: string): Promise<PublicRecordDoc>
+  searchPublicDocs(query: string): Promise<{ items: RecordDocSearchMatch[] }>
+  searchDocs(query: {
+    q: string
+    scope?: string
+    subject?: string | null
+    audience?: DocAudience
+    acrossReadableSpaces?: boolean
+  }): Promise<{ items: RecordDocSearchMatch[] }>
   listDocs(query: {
     scope?: string
     subject?: string | null
@@ -285,6 +300,37 @@ async function request<T>(
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
+async function publicRequest<T>(path: string): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(`${recordApiBaseUrl()}${path}`, {
+      method: 'GET',
+      credentials: 'omit',
+      headers: new Headers(),
+    })
+  } catch (error) {
+    throw recordApiUnreachable(error)
+  }
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw recordApiError(body, response.status)
+  return body as T
+}
+
+function docSearchParams(query: {
+  q: string
+  scope?: string
+  subject?: string | null
+  audience?: DocAudience
+  acrossReadableSpaces?: boolean
+}): string {
+  const search = new URLSearchParams({ q: query.q })
+  if (query.scope) search.set('scope', query.scope)
+  if (query.subject !== undefined) search.set('subject', query.subject ?? '')
+  if (query.audience) search.set('audience', query.audience)
+  if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
+  return search.toString()
+}
+
 function ids(body: unknown): { id: string; revisionId: string } {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
@@ -319,6 +365,11 @@ export function recordApiClient(): RecordApiClient {
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),
+    listPublicDocs: () => publicRequest('/public/v1/docs'),
+    getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`),
+    searchPublicDocs: (query) =>
+      publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`),
+    searchDocs: (query) => request(`/v1/docs/search?${docSearchParams(query)}`),
     listDocs: (query) => {
       const search = new URLSearchParams()
       if (query.scope) search.set('scope', query.scope)

@@ -50,6 +50,10 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     upsertProject: async () => ({ name: 'one' }),
     retireProject: async () => ({ name: 'one' }),
     listDocs: async () => [],
+    listPublicDocs: async () => [],
+    readPublicDoc: async () => null,
+    searchPublicDocs: async () => [],
+    searchDocs: async () => [],
     readDoc: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
@@ -103,6 +107,20 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
+  test('registers public docs outside session middleware and signed search inside it', async () => {
+    const app = appWith(null)
+    const publicResponse = await app.request('/public/v1/docs', {
+      headers: { 'Fly-Client-IP': '192.0.2.10' },
+    })
+    expect(publicResponse.status).toBe(200)
+    expect(await publicResponse.json()).toEqual({ items: [] })
+    expect(publicResponse.headers.get('cache-control')).toBe('public, max-age=60')
+
+    const signedResponse = await app.request('/v1/docs/search?q=guide')
+    expect(signedResponse.status).toBe(401)
+    expect(await signedResponse.json()).toMatchObject({ error: 'record authentication required' })
+  })
+
   test('applies permission adds and removes, refuses stale revisions, and binds user targets', async () => {
     let revision = '01990000-0000-7000-8000-000000000010'
     let settings: OwnedSettings = { permissions: {}, hooks: {}, envKeys: [] }

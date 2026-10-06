@@ -77,6 +77,10 @@ function unusedBoard(): Promise<never> {
 
 export function unusedBoardClientMethods(): Pick<
   RecordApiClient,
+  | 'listPublicDocs'
+  | 'getPublicDoc'
+  | 'searchPublicDocs'
+  | 'searchDocs'
   | 'listBoardMessages'
   | 'postBoardMessage'
   | 'replyBoardMessage'
@@ -96,6 +100,10 @@ export function unusedBoardClientMethods(): Pick<
   | 'releaseBoardTaskClaims'
 > {
   return {
+    listPublicDocs: unusedBoard,
+    getPublicDoc: unusedBoard,
+    searchPublicDocs: unusedBoard,
+    searchDocs: unusedBoard,
     listBoardMessages: unusedBoard,
     postBoardMessage: unusedBoard,
     replyBoardMessage: unusedBoard,
@@ -167,6 +175,18 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       return { takenAt: new Date().toISOString() }
     },
     async listSnapshots() {
+      return { items: [] }
+    },
+    async listPublicDocs() {
+      return { items: [] }
+    },
+    async getPublicDoc() {
+      throw new Error('public doc not found')
+    },
+    async searchPublicDocs() {
+      return { items: [] }
+    },
+    async searchDocs() {
       return { items: [] }
     },
     async listDocs(query) {

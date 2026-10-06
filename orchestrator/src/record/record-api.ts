@@ -11,6 +11,7 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
 import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
+import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -38,6 +39,12 @@ import {
   RecordProjectError,
   type RecordProjectUpsertInput,
 } from './record-projects.ts'
+import type {
+  PublicRecordDoc,
+  PublicRecordDocTreeItem,
+  RecordDocSearchInput,
+  RecordDocSearchMatch,
+} from './record-public-docs.ts'
 import type {
   RecordCursor,
   RecordRun,
@@ -88,6 +95,10 @@ type Deps = {
   upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ name: string }>
   retireProject(input: Tenant & { name: string }): Promise<{ name: string }>
   listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
+  listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
+  readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
+  searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
+  searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
   readDoc(input: Tenant & { id: string }): Promise<RecordDoc | null>
   listDocRevisions(input: Tenant & { id: string }): Promise<RecordDocRevision[] | null>
   upsertDoc(
@@ -267,6 +278,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     }
     app.use('/v1/*', cors(options))
+    app.use('/public/v1/*', cors(options))
     app.use('/api/auth/*', cors(options))
   }
   app.get('/health', async (context) => {
@@ -284,6 +296,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
     return response
   })
+  registerPublicDocRoutes(app, deps)
   app.use('/v1/*', async (context, next) => {
     const identity = await deps.readSession(context.req.raw.headers)
     if (!identity)
@@ -328,6 +341,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
           : [identity.activeSpaceId],
     }
   }
+  registerSignedDocSearchRoute(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)

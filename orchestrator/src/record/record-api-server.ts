@@ -62,6 +62,12 @@ import {
   upsertRecordDoc,
 } from './record-docs.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
+import {
+  getPublicRecordDoc,
+  listPublicRecordDocs,
+  searchPublicRecordDocs,
+  searchRecordDocs,
+} from './record-public-docs.ts'
 import { recordReleaseCheck } from './record-release-check.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
@@ -135,6 +141,10 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
     listDocs: listRecordDocs,
+    listPublicDocs: listPublicRecordDocs,
+    readPublicDoc: getPublicRecordDoc,
+    searchPublicDocs: searchPublicRecordDocs,
+    searchDocs: searchRecordDocs,
     readDoc: getRecordDoc,
     listDocRevisions: listRecordDocRevisions,
     upsertDoc: upsertRecordDoc,
