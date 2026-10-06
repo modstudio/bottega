@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import type { RegisteredProject } from '../projects.ts'
 import { createProjectRouter } from './routers/project.ts'
@@ -137,6 +138,13 @@ const settingsPermission = mock(async (_input: unknown) => ({
   changed: true,
 }))
 const dashboardMutationAvailable = mock(() => true)
+const boardList = mock(async (_input: unknown) => ({ messages: [], warning: null }))
+const boardThread = mock(async (_id: string) => ({ root: {}, replies: [] }))
+const boardStatus = mock(async (_id: string) => ({ message: {}, receipts: [] }))
+const boardPost = mock(async (_input: unknown) => ({ id: '1' }))
+const boardReply = mock(async (_input: unknown) => ({ id: '2' }))
+const boardAccept = mock(async (_input: unknown) => ({ accepted: '2' }))
+const boardWithdraw = mock(async (_id: string) => ({ withdrawn: '1' }))
 
 mock.module('../orch.ts', () => ({
   docList,
@@ -164,6 +172,13 @@ mock.module('../orch.ts', () => ({
   settingsCheck,
   settingsPermission,
   dashboardMutationAvailable,
+  boardList,
+  boardThread,
+  boardStatus,
+  boardPost,
+  boardReply,
+  boardAccept,
+  boardWithdraw,
 }))
 
 const { appRouter } = await import('./router.ts')
@@ -212,6 +227,64 @@ describe('project.list', () => {
         error: null,
       },
     })
+  })
+})
+
+describe('board router', () => {
+  test('each procedure passes its validated input to the board adapter', async () => {
+    const uuid = '01990000-0000-7000-8000-000000000968'
+    const post = {
+      audience: `project:${PLATFORM_SLUG}`,
+      title: 'Release notice',
+      body: 'Gate before landing.',
+      task: 'DEV-968',
+      paths: ['hub/**'],
+      topics: ['release'],
+      ackRequired: true,
+      deadline: '30m',
+      expires: '1d',
+    }
+
+    await caller.board.list({ kind: 'question', open: true, includeEnded: true })
+    await caller.board.thread({ id: '1' })
+    await caller.board.status({ id: uuid })
+    await caller.board.post(post)
+    await caller.board.reply({ id: '1', body: 'Acknowledged.' })
+    await caller.board.accept({ questionId: uuid, replyId: '2' })
+    await caller.board.withdraw({ id: uuid })
+
+    expect(boardList).toHaveBeenLastCalledWith({
+      kind: 'question',
+      open: true,
+      includeEnded: true,
+    })
+    expect(boardThread).toHaveBeenLastCalledWith('1')
+    expect(boardStatus).toHaveBeenLastCalledWith(uuid)
+    expect(boardPost).toHaveBeenLastCalledWith(post)
+    expect(boardReply).toHaveBeenLastCalledWith({ id: '1', body: 'Acknowledged.' })
+    expect(boardAccept).toHaveBeenLastCalledWith({ questionId: uuid, replyId: '2' })
+    expect(boardWithdraw).toHaveBeenLastCalledWith(uuid)
+  })
+
+  test('rejects malformed ids and empty title or body at the edge', async () => {
+    await expect(caller.board.thread({ id: '0' })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    })
+    await expect(
+      caller.board.post({ audience: 'operator', title: ' ', body: 'body' }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(caller.board.reply({ id: '1', body: '' })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    })
+  })
+
+  test('preserves an adapter refusal and remedy', async () => {
+    const refusal = 'workers cannot use the architect notice board; rerun from an operator terminal'
+    boardPost.mockRejectedValueOnce(new Error(refusal))
+
+    await expect(
+      caller.board.post({ audience: 'operator', title: 'Notice', body: 'Body' }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: refusal })
   })
 })
 

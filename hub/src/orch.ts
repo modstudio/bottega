@@ -71,7 +71,19 @@ import {
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
+import {
+  BoardAcceptResultSchema,
+  BoardIdSchema,
+  type BoardListInput,
+  BoardListResultSchema,
+  type BoardPostInput,
+  BoardPostResultSchema,
+  BoardStatusResultSchema,
+  BoardThreadResultSchema,
+} from './board-contract.ts'
 import { refreshProjects } from './projects.ts'
+
+export type { BoardListInput, BoardPostInput } from './board-contract.ts'
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000
@@ -152,13 +164,16 @@ async function orchProcess(
   opts: {
     stdin?: string
     env?: Record<string, string>
+    unsetEnv?: string[]
     acceptedExitCodes?: number[]
     acceptedOutput?: (output: string) => boolean
   } = {},
 ): Promise<string> {
   const command = bottegaEntryArgv('orch', resolveOrchExecutable)
+  const env = { ...process.env, ...opts.env }
+  for (const key of opts.unsetEnv ?? []) delete env[key]
   const proc = Bun.spawn([...command, ...args], {
-    env: { ...process.env, ...opts.env },
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: opts.stdin !== undefined ? Buffer.from(opts.stdin) : 'ignore',
@@ -199,6 +214,7 @@ async function json<T>(
   opts: {
     stdin?: string
     env?: Record<string, string>
+    unsetEnv?: string[]
     acceptedExitCodes?: number[]
     acceptedOutput?: (output: string) => boolean
   } = {},
@@ -215,7 +231,7 @@ async function json<T>(
 
 async function jsonDocument<T>(
   args: string[],
-  opts: { stdin?: string; env?: Record<string, string> } = {},
+  opts: { stdin?: string; env?: Record<string, string>; unsetEnv?: string[] } = {},
 ): Promise<T> {
   const out = await orchProcess(args, 20_000, opts)
   try {
@@ -947,3 +963,62 @@ export const docHistory = (scope: string, subject: string | null, slug: string) 
   jsonDocument<DocRevisionMetadata[]>(docArgv('history', { scope, subject, slug }))
 
 export const docSubjects = () => jsonDocument<DocSubjects>(docArgv('subjects'))
+
+const boardOperatorMarkers = () => [
+  'ORCH_RUN_ID',
+  'ORCH_DEPTH',
+  ...Object.keys(process.env).filter((key) => /(?:SESSION_ID|THREAD_ID)$/.test(key)),
+]
+const boardOptions = () => ({ unsetEnv: boardOperatorMarkers() })
+
+export function boardListArgv(input: BoardListInput): string[] {
+  return [
+    'board',
+    'list',
+    ...(input.kind ? ['--kind', input.kind] : []),
+    ...(input.open ? ['--open'] : []),
+    ...(input.includeEnded ? ['--include-ended'] : []),
+  ]
+}
+
+export function boardPostArgv(input: BoardPostInput): string[] {
+  return [
+    'board',
+    'post',
+    '--audience',
+    input.audience,
+    '--title',
+    input.title,
+    '--body',
+    input.body,
+    ...(input.task !== undefined ? ['--task', input.task] : []),
+    ...(input.paths ?? []).flatMap((path) => ['--path', path]),
+    ...(input.topics ?? []).flatMap((topic) => ['--topic', topic]),
+    ...(input.ackRequired ? ['--ack-required'] : []),
+    ...(input.deadline !== undefined ? ['--deadline', input.deadline] : []),
+    ...(input.expires !== undefined ? ['--expires', input.expires] : []),
+  ]
+}
+
+export const boardList = (input: BoardListInput) =>
+  json(boardListArgv(input), BoardListResultSchema, boardOptions())
+export const boardThread = (id: string) =>
+  json(['board', 'thread', id], BoardThreadResultSchema, boardOptions())
+export const boardStatus = (id: string) =>
+  json(['board', 'status', id], BoardStatusResultSchema, boardOptions())
+export const boardPost = (input: BoardPostInput) =>
+  json(boardPostArgv(input), BoardPostResultSchema, boardOptions())
+export const boardReply = (input: { id: string; body: string }) =>
+  json(
+    ['board', 'reply', input.id, '--body', input.body],
+    BoardPostResultSchema.extend({ rootId: BoardIdSchema }),
+    boardOptions(),
+  )
+export const boardAccept = (input: { questionId: string; replyId: string }) =>
+  json(
+    ['board', 'accept', input.questionId, input.replyId],
+    BoardAcceptResultSchema,
+    boardOptions(),
+  )
+export const boardWithdraw = (id: string) =>
+  json(['board', 'withdraw', id], z.object({ withdrawn: BoardIdSchema }), boardOptions())
