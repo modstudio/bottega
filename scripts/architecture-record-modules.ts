@@ -101,6 +101,20 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
+  module('orchestrator/src/record/record-api-access.ts', ['hono']),
+  module('orchestrator/src/record/record-api-public-docs.ts', [
+    'hono',
+    'hono/bun',
+    'hono-rate-limiter',
+    'zod',
+    '../../../shared/docs.ts',
+    './record-public-docs.ts',
+  ]),
+  module('orchestrator/src/record/record-public-docs.ts', [
+    'bun',
+    '../../../shared/docs.ts',
+    '../../../shared/record/tenant.ts',
+  ]),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',
     'zod',

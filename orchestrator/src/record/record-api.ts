@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { DOC_AUDIENCES } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { registerRecordAccessRoutes } from './record-api-access.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
 import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
@@ -63,13 +64,12 @@ import { RecordVerdictError } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
-type AuthHandler = { handler(request: Request): Response | Promise<Response> }
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = {
   recordUrl: string
   allowedOrigins?: string[]
-  auth: AuthHandler
+  auth: { handler(request: Request): Response | Promise<Response> }
   readSession(headers: Headers): Promise<RecordIdentity | null>
   readHealth(): Promise<{ ok: boolean; migrations: number }>
   setActiveSpace(headers: Headers, spaceId: string): Promise<void>
@@ -281,21 +281,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     app.use('/public/v1/*', cors(options))
     app.use('/api/auth/*', cors(options))
   }
-  app.get('/health', async (context) => {
-    const health = await deps.readHealth()
-    return context.json(health, health.ok ? 200 : 503)
-  })
-  app.all('/api/auth/*', async (context) => {
-    const response = await deps.auth.handler(context.req.raw)
-    // A reset request never reveals whether mail was sent or the client-IP limit was reached.
-    if (context.req.path === '/api/auth/request-password-reset' && response.status === 429) {
-      return context.json({
-        status: true,
-        message: 'If this email exists in our system, check your email for the reset link',
-      })
-    }
-    return response
-  })
+  registerRecordAccessRoutes(app, deps)
   registerPublicDocRoutes(app, deps)
   app.use('/v1/*', async (context, next) => {
     const identity = await deps.readSession(context.req.raw.headers)

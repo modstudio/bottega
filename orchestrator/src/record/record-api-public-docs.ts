@@ -12,9 +12,9 @@ import type {
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
 
-export const PUBLIC_DOC_RATE_LIMIT = 60
-export const PUBLIC_DOC_RATE_WINDOW_MS = 60_000
-export const PUBLIC_DOC_CACHE_CONTROL = 'public, max-age=60'
+const PUBLIC_DOC_RATE_LIMIT = 60
+const PUBLIC_DOC_RATE_WINDOW_MS = 60_000
+const PUBLIC_DOC_CACHE_CONTROL = 'public, max-age=60'
 
 type Tenant = {
   url: string
@@ -23,14 +23,14 @@ type Tenant = {
   spaceIds: string[]
 }
 
-type PublicDocRouteDeps = {
+export type PublicDocRouteDeps = {
   recordUrl: string
   listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
   readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
   searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
 }
 
-type SignedDocSearchRouteDeps = {
+export type SignedDocSearchRouteDeps = {
   searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
 }
 

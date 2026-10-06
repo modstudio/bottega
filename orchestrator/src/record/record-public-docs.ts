@@ -4,7 +4,7 @@ import { SQL } from 'bun'
 import type { DocAudience } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
-export const DOC_SEARCH_RESULT_LIMIT = 20
+const DOC_SEARCH_RESULT_LIMIT = 20
 
 type Tenant = { url: string } & TenantPrincipal
 

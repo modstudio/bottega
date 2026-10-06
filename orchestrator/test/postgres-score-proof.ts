@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { expect } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
@@ -270,4 +270,18 @@ export async function proveScoreRecordSync(input: {
   )
   local.close()
   return { actorRead, otherSpaceRead, rescoredRead }
+}
+
+export function registerScoreRecordSyncProof(
+  input: Parameters<typeof proveScoreRecordSync>[0],
+): void {
+  test('sync round trip writes and updates a tenant-confined score', async () => {
+    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input)
+    expect(actorRead.code, actorRead.stderr).toBe(0)
+    expect(actorRead.stdout).toBe('full|right|first')
+    expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
+    expect(otherSpaceRead.stdout).toBe('')
+    expect(rescoredRead.code, rescoredRead.stderr).toBe(0)
+    expect(rescoredRead.stdout).toBe('partial|mixed|updated')
+  })
 }
