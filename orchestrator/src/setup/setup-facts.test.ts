@@ -30,7 +30,12 @@ function facts(overrides: Partial<Parameters<typeof classifySetupFacts>[0]> = {}
     gh: { path: '/bin/gh', version: command('gh version 2.80.0'), auth: command('', 0) },
     harnesses,
     localModelHost: { ok: false, detail: 'unset' },
-    sandboxRuntime: { available: false, location: '/runtime' },
+    sandboxRuntime: {
+      available: false,
+      location: '/runtime',
+      missingSystemDependencies: [],
+      remedy: 'reinstall the sandbox runtime at /runtime, then retry',
+    },
     ...overrides,
   })
 }

@@ -32,6 +32,7 @@ import {
   RESOURCE_CLAIM_MIGRATION,
 } from '../resources/resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
+import type { RuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -139,6 +140,12 @@ function reportRetrievalCheck(
   for (const line of result.stdout.trim().split('\n').filter(Boolean)) presentation.log(`  ${line}`)
   if (result.stderr.trim()) presentation.log(`  ${result.stderr.trim()}`)
   if (result.exitCode !== 0) presentation.exitCode(1)
+}
+
+function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
+  return runtime.available
+    ? `sandbox        runtime available at ${runtime.location}`
+    : `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.remedy}`
 }
 
 export async function doctorCommand(
@@ -330,10 +337,7 @@ export async function doctorCommand(
       }),
     )
     .map((agent) => agent.name)
-  const sandboxRuntime = sandboxRuntimeAvailability()
-  log(
-    `sandbox        runtime ${sandboxRuntime.available ? 'available' : 'NOT AVAILABLE'} at ${sandboxRuntime.location}`,
-  )
+  log(sandboxRuntimeDoctorLine(sandboxRuntimeAvailability()))
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   const acpGap = acpRuntimeGaps()
   log(`acp            ${doctorAcpStatus(acpGap)}`)

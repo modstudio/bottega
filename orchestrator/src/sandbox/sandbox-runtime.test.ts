@@ -21,6 +21,7 @@ import {
   sandboxRuntimePayloadPaths,
 } from '../../../shared/sandbox-runtime-assets.ts'
 import {
+  classifySandboxRuntimeAvailability,
   extractSandboxRuntime,
   SRT_LIBRARY,
   sandboxRuntimeAvailability,
@@ -65,8 +66,37 @@ function quarantines(final: string): string[] {
 
 describe('sandbox runtime payloads', () => {
   test('source availability is exactly the installed library check', () => {
-    expect(sandboxRuntimeAvailability().available).toBe(existsSync(SRT_LIBRARY))
-    expect(sandboxRuntimeAvailability().location).toBe(SRT_LIBRARY)
+    expect(
+      sandboxRuntimeAvailability(process.env, process.platform, process.arch, []).available,
+    ).toBe(existsSync(SRT_LIBRARY))
+    expect(
+      sandboxRuntimeAvailability(process.env, process.platform, process.arch, []).location,
+    ).toBe(SRT_LIBRARY)
+  })
+
+  test('missing system dependencies make the shared ruling unavailable with one remedy', () => {
+    expect(
+      classifySandboxRuntimeAvailability({
+        location: '/runtime',
+        runtimePresent: true,
+        sourceCheckout: false,
+        missingSystemDependencies: [
+          'ripgrep (rg) not found',
+          'bubblewrap (bwrap) not installed',
+          'socat not installed',
+        ],
+      }),
+    ).toEqual({
+      available: false,
+      location: '/runtime',
+      missingSystemDependencies: [
+        'ripgrep (rg) not found',
+        'bubblewrap (bwrap) not installed',
+        'socat not installed',
+      ],
+      remedy:
+        'install the missing sandbox system dependencies with the system package manager (ripgrep (rg) not found, bubblewrap (bwrap) not installed, socat not installed), then retry',
+    })
   })
 
   test('embedded availability requires every host payload without extracting it', () => {
@@ -74,9 +104,13 @@ describe('sandbox runtime payloads', () => {
     const paths = sandboxRuntimePayloadPaths('linux', 'arm64')
     try {
       registerEmbeddedAssets({ assets: {}, files: {}, manifest })
-      expect(sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64')).toEqual({
+      expect(
+        sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []),
+      ).toEqual({
         available: false,
         location: join(state, 'runtime', manifest.version, 'sandbox-runtime'),
+        missingSystemDependencies: [],
+        remedy: `reinstall the sandbox runtime at ${join(state, 'runtime', manifest.version, 'sandbox-runtime')}, then retry`,
       })
       registerEmbeddedAssets({
         assets: {},
@@ -84,7 +118,7 @@ describe('sandbox runtime payloads', () => {
         manifest,
       })
       expect(
-        sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64').available,
+        sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []).available,
       ).toBe(true)
       expect(existsSync(join(state, 'runtime'))).toBe(false)
     } finally {

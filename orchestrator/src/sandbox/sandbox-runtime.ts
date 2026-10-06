@@ -30,7 +30,6 @@ export const SRT_LIBRARY = join(
 )
 
 let sandboxInitialized = false
-type RuntimeAvailability = { available: boolean; location: string }
 type ExtractedRuntime = {
   root: string
   javaAgentJarPath: string
@@ -60,29 +59,71 @@ function payloads(assets: SandboxRuntimeAssets): SandboxRuntimePayload[] {
   return Object.values(assets)
 }
 
-/** One availability ruling used by every caller and by doctor presentation. */
+export type RuntimeAvailability = {
+  available: boolean
+  location: string
+  missingSystemDependencies: string[]
+  remedy: string
+}
+
+export type RuntimeAvailabilityFacts = {
+  location: string
+  runtimePresent: boolean
+  sourceCheckout: boolean
+  missingSystemDependencies: string[]
+}
+
+/** Pure availability ruling shared by every sandbox-runtime consumer. */
+export function classifySandboxRuntimeAvailability(
+  facts: RuntimeAvailabilityFacts,
+): RuntimeAvailability {
+  const missingSystemDependencies = [...facts.missingSystemDependencies]
+  const remedy = missingSystemDependencies.length
+    ? `install the missing sandbox system dependencies with the system package manager (${missingSystemDependencies.join(', ')}), then retry`
+    : facts.sourceCheckout
+      ? `install the sandbox runtime at ${facts.location} with bun install, then retry`
+      : `reinstall the sandbox runtime at ${facts.location}, then retry`
+  return {
+    available: facts.runtimePresent && missingSystemDependencies.length === 0,
+    location: facts.location,
+    missingSystemDependencies,
+    remedy,
+  }
+}
+
+/** Gather host facts for the one availability ruling used by every caller. */
 export function sandboxRuntimeAvailability(
   environment: StateEnvironment = process.env,
   platform: NodeJS.Platform = process.platform,
   arch: NodeJS.Architecture = process.arch,
+  missingSystemDependencies: string[] = SandboxManager.checkDependencies().errors,
 ): RuntimeAvailability {
   const manifest = embeddedDistributionManifest()
-  if (!manifest) return { available: existsSync(SRT_LIBRARY), location: SRT_LIBRARY }
+  if (!manifest) {
+    return classifySandboxRuntimeAvailability({
+      location: SRT_LIBRARY,
+      runtimePresent: existsSync(SRT_LIBRARY),
+      sourceCheckout: true,
+      missingSystemDependencies,
+    })
+  }
   const assets = sandboxRuntimeAssets(platform, arch)
   const required = payloads(assets)
-  return {
-    available:
+  return classifySandboxRuntimeAvailability({
+    runtimePresent:
       (required.length > 1 || platform === 'darwin') &&
       required.every(
         ({ packagePath }) =>
           resolveInstallFile(packagePath, diskPayloadPath(packagePath)) !== undefined,
       ),
     location: extractedRoot(environment, manifest.version),
-  }
+    sourceCheckout: false,
+    missingSystemDependencies,
+  })
 }
 
-export function srtInstalled(): boolean {
-  return sandboxRuntimeAvailability().available
+export function srtInstalled(runtime = sandboxRuntimeAvailability()): boolean {
+  return runtime.available
 }
 
 async function expectedPayloads(
