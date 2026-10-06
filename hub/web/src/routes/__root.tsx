@@ -128,7 +128,9 @@ function ShellContent() {
     )
   }
   if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
-    if (whoami.isPending) return null
+    // Wait for the first answer only. A later refetch of a failed, dataless request reports
+    // pending again; unmounting the page for it would remount the observer that refetches.
+    if (!whoami.isFetched) return null
     if (pathname === '/' && signedIn) return <AppLayout hosted pathname={pathname} />
     return (
       <HostedPublicFrame>
