@@ -242,3 +242,30 @@ test('hosted board keeps an invalid duration as a bad request', async () => {
     caller.post({ audience: 'architects', title: 'Notice', body: 'Body', expires: 'soon' }),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('soon') })
 })
+
+test.each(['4000000d', '99999980d'])(
+  'hosted board rejects a duration outside the record timestamp range: %s',
+  async (expires) => {
+    const client = {
+      boardList: async () => ({ messages: [], truncated: false }),
+      boardThread: async () => ({ root, replies: [] }),
+      boardStatus: async () => ({ message: root, receipts: [] }),
+      boardPost: async () => root,
+      boardReply: async () => ({ ...root, id: replyId, threadRootId: rootId }),
+      boardAccept: async () => ({ root, replies: [] }),
+      boardWithdraw: async () => root,
+    }
+    const caller = createHostedBoardRouter({
+      clientFor: () => client,
+      clock: () => now,
+      newId: () => mintedPostId,
+    }).createCaller({})
+
+    await expect(
+      caller.post({ audience: 'architects', title: 'Notice', body: 'Body', expires }),
+    ).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: `invalid duration ${expires}; use a positive value such as 30m or 1d`,
+    })
+  },
+)

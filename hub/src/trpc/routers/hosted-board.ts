@@ -42,6 +42,17 @@ type HostedBoardDeps = {
   newId: () => string
 }
 
+function absoluteBoardTime(clock: number, duration: string | undefined, defaultMs: number): string {
+  const milliseconds = duration ? parseBoardDuration(duration) : defaultMs
+  const date = new Date(clock + milliseconds)
+  const year = date.getUTCFullYear()
+  if (!Number.isFinite(date.getTime()) || year < 0 || year > 9999) {
+    const value = duration ?? `${defaultMs}ms`
+    throw new Error(`invalid duration ${value}; use a positive value such as 30m or 1d`)
+  }
+  return date.toISOString()
+}
+
 async function call<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation()
@@ -106,18 +117,11 @@ export function createHostedBoardRouter(
           audience: input.audience,
           title: input.title,
           body: input.body,
-          expiresAt: new Date(
-            now + (input.expires ? parseBoardDuration(input.expires) : BOARD_DEFAULT_EXPIRY_MS),
-          ).toISOString(),
+          expiresAt: absoluteBoardTime(now, input.expires, BOARD_DEFAULT_EXPIRY_MS),
           ...(input.ackRequired
             ? {
                 ackRequired: true,
-                ackDeadline: new Date(
-                  now +
-                    (input.deadline
-                      ? parseBoardDuration(input.deadline)
-                      : BOARD_DEFAULT_ACK_DEADLINE_MS),
-                ).toISOString(),
+                ackDeadline: absoluteBoardTime(now, input.deadline, BOARD_DEFAULT_ACK_DEADLINE_MS),
               }
             : {}),
           ...(input.task ? { task: input.task } : {}),
