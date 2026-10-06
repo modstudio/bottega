@@ -103,6 +103,30 @@ export function observeGitRef(cwd: string, ref: string): GitRefObservation {
   }
 }
 
+/** Create one missing protected branch without ever moving an existing ref. */
+export function restoreBranch(
+  repoRoot: string,
+  branch: string,
+  tip: string,
+): { ok: true } | { ok: false; error: string } {
+  const ref = `refs/heads/${branch}`
+  const existing = gitOk(['rev-parse', '--verify', ref], repoRoot)
+  if (existing === tip) return { ok: true }
+  if (existing !== null) {
+    return { ok: false, error: `branch already exists at ${existing}` }
+  }
+  const zero = '0000000000000000000000000000000000000000'
+  const result = Bun.spawnSync(['git', 'update-ref', ref, tip, zero], {
+    cwd: repoRoot,
+    env: targetGitEnvironment(repoRoot),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return result.exitCode === 0
+    ? { ok: true }
+    : { ok: false, error: result.stderr.toString().trim() || `exit ${result.exitCode}` }
+}
+
 /** A git invocation that throws with git's own words rather than a bare code. */
 function git(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)

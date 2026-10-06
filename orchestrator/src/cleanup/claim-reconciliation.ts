@@ -5,7 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { lstatSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
+import {
+  type GitRefObservation,
+  observeGitRef,
+  restoreBranch as restoreProtectedBranch,
+} from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
@@ -24,6 +28,7 @@ type ReconciledKind = (typeof RECONCILED_KINDS)[number]
 type ClaimedRow = {
   id: number
   root_run_id: number
+  run_id: number
   project_id: number | null
   kind: ReconciledKind
   allocation_key: string
@@ -39,6 +44,8 @@ type ClaimedRow = {
 export type ClaimReconciliationObservers = {
   path: (path: string) => { outcome: 'present' | 'absent' | 'failed'; detail?: string }
   ref: (repository: string, ref: string) => GitRefObservation
+  commit: (repository: string, tip: string) => GitRefObservation
+  restoreBranch: typeof restoreProtectedBranch
   trust: GrokTrustObservation
   leaseState: typeof runLeaseState
   pidAlive: typeof pidAlive
@@ -48,6 +55,8 @@ type ClaimSynchronizer = (
   row: Pick<ClaimedRow, 'id' | 'project_path' | 'worktree_path'>,
   reconcile: () => void,
 ) => void
+
+type ReconciliationResult = { action: string; detail?: string }
 
 function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; detail?: string } {
   try {
@@ -64,6 +73,8 @@ function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; 
 const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObservers => ({
   path: observePath,
   ref: observeGitRef,
+  commit: (repository, tip) => observeGitRef(repository, `${tip}^{commit}`),
+  restoreBranch: restoreProtectedBranch,
   trust,
   leaseState: runLeaseState,
   pidAlive,
@@ -72,7 +83,7 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
 function claimedRows(database: Database, projectName: string | undefined): ClaimedRow[] {
   return database
     .query(
-      `SELECT claim.id,claim.root_run_id,claim.project_id,claim.kind,claim.allocation_key,
+      `SELECT claim.id,claim.root_run_id,claim.run_id,claim.project_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
@@ -177,7 +188,7 @@ function conversationFacts(
 ) {
   const turns = database
     .query(
-      `SELECT id,status,pid,agent_pid,branch_kept FROM run
+      `SELECT id,status,pid,agent_pid,branch_kept,branch_kept_tip FROM run
        WHERE id=? OR parent_run_id=? ORDER BY id`,
     )
     .all(row.root_run_id, row.root_run_id) as {
@@ -186,8 +197,15 @@ function conversationFacts(
     pid: number | null
     agent_pid: number | null
     branch_kept: string | null
+    branch_kept_tip: string | null
   }[]
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
+  const claimTurn = turns.find((turn) => turn.id === row.run_id)
+  const branchKept = Boolean(
+    row.kind === 'branch' &&
+      claimTurn?.branch_kept &&
+      `refs/heads/${claimTurn.branch_kept}` === row.allocation_key,
+  )
   return {
     allTurnsTerminal: turns.every((turn) => terminal.has(turn.status)),
     liveLeaseOrPid: turns.some(
@@ -196,11 +214,8 @@ function conversationFacts(
         Boolean(turn.pid && observers.pidAlive(turn.pid)) ||
         Boolean(turn.agent_pid && observers.pidAlive(turn.agent_pid)),
     ),
-    branchKept:
-      row.kind === 'branch' &&
-      turns.some((turn) =>
-        turn.branch_kept ? `refs/heads/${turn.branch_kept}` === row.allocation_key : false,
-      ),
+    branchKept,
+    recordedTip: branchKept ? (claimTurn?.branch_kept_tip ?? null) : null,
   }
 }
 
@@ -228,12 +243,23 @@ function rulingFor(database: Database, row: ClaimedRow, observers: ClaimReconcil
   const repository = owningRepository(row, observers)
   const observation = resourceObservation(row, repository.path, repository.state, observers)
   const conversation = conversationFacts(database, row, observers)
+  const recordedTipObservation =
+    conversation.branchKept &&
+    observation.probe === 'absent' &&
+    conversation.recordedTip &&
+    repository.path &&
+    repository.state !== 'unknown-absent'
+      ? observers.commit(repository.path, conversation.recordedTip)
+      : { outcome: 'absent' as const }
   return {
+    repository,
     observation,
+    conversation,
     ruling: decideAbsentClaim({
       probe: observation.probe,
       owningRepository: repository.state,
       ...conversation,
+      recordedTipProbe: recordedTipObservation.outcome,
       landingInFlight: claimLandingInFlight(database, row),
     }),
   }
@@ -245,39 +271,102 @@ export function reconcileAbsentClaims(input: {
   presentation: CleanupPresentation
   trust: GrokTrustObservation
   database?: Database
-  observers?: ClaimReconciliationObservers
+  observers?: Partial<ClaimReconciliationObservers>
   synchronize?: ClaimSynchronizer
 }): void {
   const database = input.database ?? db()
-  const observers = input.observers ?? defaultObservers(input.trust)
+  const observers: ClaimReconciliationObservers = {
+    ...defaultObservers(input.trust),
+    ...input.observers,
+  }
   const synchronize = input.synchronize ?? synchronizeClaim
   for (const row of claimedRows(database, input.project)) {
-    const { ruling } = rulingFor(database, row, observers)
+    const initial = rulingFor(database, row, observers)
+    const { ruling } = initial
     const label = `claim ${row.id} ${row.kind} ${row.allocation_key}`
+    const branch = row.allocation_key.replace(/^refs\/heads\//, '')
     if (ruling.action === 'keep') {
       if (input.dryRun) input.presentation.log(`kept: ${label}: ${ruling.reason}`)
       continue
     }
     if (input.dryRun) {
-      input.presentation.log(`would settle absent ${label}`)
+      if (ruling.action === 'restore-retained') {
+        input.presentation.log(`would restore ${branch} at ${initial.conversation.recordedTip}`)
+      } else if (ruling.action === 'settle-retained') {
+        input.presentation.log(`would settle retained ${label}`)
+      } else if (ruling.action === 'release-lost-tip') {
+        input.presentation.log(
+          initial.conversation.recordedTip
+            ? `would release, tip ${initial.conversation.recordedTip} is gone: ${label}`
+            : `would release, no tip was recorded: ${label}`,
+        )
+      } else {
+        input.presentation.log(`would settle absent ${label}`)
+      }
       continue
     }
-    let settled = false
+    const completed: { value: ReconciliationResult | null } = { value: null }
     synchronize(row, () => {
+      const lockedRow = claimedRow(database, row.id)
+      if (!lockedRow) return
+      const locked = rulingFor(database, lockedRow, observers)
+      if (locked.ruling.action === 'keep') {
+        completed.value = { action: 'keep', detail: locked.ruling.reason }
+        return
+      }
+      if (locked.ruling.action === 'restore-retained') {
+        const repository = locked.repository.path
+        const tip = locked.conversation.recordedTip
+        if (!repository || !tip) return
+        const restored = observers.restoreBranch(repository, branch, tip)
+        if (!restored.ok) {
+          completed.value = { action: 'restore-failed', detail: restored.error }
+          return
+        }
+      }
+      const retained =
+        locked.ruling.action === 'settle-retained' || locked.ruling.action === 'restore-retained'
+      const lost = locked.ruling.action === 'release-lost-tip'
+      const tip = locked.conversation.recordedTip
+      const settledDetail = retained
+        ? tip
+          ? `branch retained at ${tip}`
+          : `branch ${branch} retained; no tip was recorded`
+        : lost
+          ? tip
+            ? `branch ${branch} lost; tip ${tip} is gone`
+            : `branch ${branch} lost; no tip was recorded`
+          : locked.observation.detail
+      let settled = false
       writeTransaction(() => {
-        const lockedRow = claimedRow(database, row.id)
-        if (!lockedRow) return
-        const locked = rulingFor(database, lockedRow, observers)
-        if (locked.ruling.action === 'keep') return
         const result = database
           .query(
-            `UPDATE resource_claim SET state='absent',settled_at=?,settled_detail=?
+            `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?
              WHERE id=? AND state='claimed'`,
           )
-          .run(nowIso(), locked.observation.detail, lockedRow.id)
+          .run(retained ? 'retained' : 'absent', nowIso(), settledDetail, lockedRow.id)
         settled = result.changes === 1
       }, database)
+      if (settled) completed.value = { action: locked.ruling.action, detail: tip ?? undefined }
     })
-    if (settled) input.presentation.log(`settled absent ${label}`)
+    const result = completed.value
+    if (!result) continue
+    if (result.action === 'keep') {
+      input.presentation.log(`kept: ${label}: ${result.detail ?? 'lifecycle guard changed'}`)
+    } else if (result.action === 'restore-failed') {
+      input.presentation.log(`kept: ${label}: restore failed: ${result.detail}`)
+    } else if (result.action === 'restore-retained') {
+      input.presentation.log(`restored ${branch} at ${result.detail}`)
+    } else if (result.action === 'settle-retained') {
+      input.presentation.log(`settled retained ${label}`)
+    } else if (result.action === 'release-lost-tip') {
+      input.presentation.log(
+        result.detail
+          ? `released, tip ${result.detail} is gone: ${label}`
+          : `released, no tip was recorded: ${label}`,
+      )
+    } else {
+      input.presentation.log(`settled absent ${label}`)
+    }
   }
 }

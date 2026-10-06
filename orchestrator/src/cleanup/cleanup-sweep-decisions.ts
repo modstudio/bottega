@@ -9,21 +9,35 @@ export type AbsentClaimFacts = {
   liveLeaseOrPid: boolean
   landingInFlight: boolean
   branchKept: boolean
+  recordedTip: string | null
+  recordedTipProbe: 'present' | 'absent' | 'failed'
 }
 
-export type AbsentClaimRuling = { action: 'settle-absent' } | { action: 'keep'; reason: string }
+export type AbsentClaimRuling =
+  | { action: 'settle-absent' | 'settle-retained' | 'restore-retained' | 'release-lost-tip' }
+  | { action: 'keep'; reason: string }
 
 /** Decide whether one claimed resource is known to have disappeared after its conversation ended. */
 export function decideAbsentClaim(facts: AbsentClaimFacts): AbsentClaimRuling {
   if (facts.owningRepository === 'unknown-present')
     return { action: 'keep', reason: 'owning repository unknown' }
   if (facts.probe === 'failed') return { action: 'keep', reason: 'absence probe failed' }
-  if (facts.probe === 'present') return { action: 'keep', reason: 'resource is present' }
+  if (facts.probe === 'present' && !facts.branchKept)
+    return { action: 'keep', reason: 'resource is present' }
   if (!facts.allTurnsTerminal) return { action: 'keep', reason: 'conversation has a live turn' }
   if (facts.liveLeaseOrPid)
     return { action: 'keep', reason: 'conversation has a live lease or pid' }
   if (facts.landingInFlight) return { action: 'keep', reason: 'landing is in flight' }
-  if (facts.branchKept) return { action: 'keep', reason: 'missing kept branch requires restore' }
+  if (facts.branchKept) {
+    if (facts.probe === 'present') return { action: 'settle-retained' }
+    if (facts.recordedTip && facts.recordedTipProbe === 'present') {
+      return { action: 'restore-retained' }
+    }
+    if (facts.recordedTip && facts.recordedTipProbe === 'failed') {
+      return { action: 'keep', reason: 'recorded tip probe failed' }
+    }
+    return { action: 'release-lost-tip' }
+  }
   return { action: 'settle-absent' }
 }
 

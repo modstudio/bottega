@@ -1077,7 +1077,7 @@ export function unsettledClaimConditions(
         since: claim.terminalAt,
         ageMs,
         detail: `${claim.kind} claim for terminal conversation ${claim.rootId} remains claimed; allocation key ${allocations}`,
-        action: 'run orch sweep',
+        action: 'run orch sweep --dry-run',
       },
     ]
   })

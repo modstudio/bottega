@@ -6,7 +6,7 @@ import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-st
 import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
 import {
   withCleanupLock,
   withWorktreeCreateLock,
@@ -24,7 +24,7 @@ import {
   orphanSafety,
   worktreeDirty,
 } from '../worktree/worktree-attribution.ts'
-import { branchTip, removeFor, restoreBranch } from '../worktree/worktree-remove.ts'
+import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
 import { reclaimDirtyTreeRefusal } from './reclaim-worktree-dirty.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }

@@ -173,6 +173,59 @@ test('a released tree clears a child turn that spells the same path differently'
   }
 })
 
+test("a resumed turn's retained branch claim is settled with the branch it marks kept", () => {
+  const fixture = closeOutFixture('owned')
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: fixture.id,
+    turn: 2,
+  })
+  const turnBranch = `DEV-1128-orch-${child}`
+  const projectId = (
+    db().query('SELECT id FROM project WHERE name=?').get(`close-out-${fixture.id}`) as {
+      id: number
+    }
+  ).id
+  db()
+    .query(
+      `UPDATE run SET repo=?,project_id=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?
+       WHERE id=?`,
+    )
+    .run(
+      `close-out-${fixture.id}`,
+      projectId,
+      fixture.tree,
+      fixture.tree,
+      turnBranch,
+      turnBranch,
+      '1234567890abcdef1234567890abcdef12345678',
+      child,
+    )
+  const claimId = Number(
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
+      )
+      .run(fixture.id, child, projectId, `refs/heads/${turnBranch}`).lastInsertRowid,
+  )
+
+  try {
+    expect(closeOutRun(child, { intent: 'terminal' }).outcome).toBe('released')
+    expect(
+      db().query('SELECT state,settled_detail FROM resource_claim WHERE id=?').get(claimId),
+    ).toEqual({
+      state: 'retained',
+      settled_detail: 'branch retained at 1234567890abcdef1234567890abcdef12345678',
+    })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
 test('a close-out that fails after removing the tree still clears its pointer', () => {
   const fixture = closeOutFixture('owned', true)
   try {

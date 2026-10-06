@@ -5,6 +5,198 @@ import { upsertProject } from '../project/projects.ts'
 import { reconcileAbsentClaims } from './claim-reconciliation.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 
+function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const project = `kept-branch-claim-${runId}`
+  const repository = `/repo/${project}`
+  const branch = `DEV-1128-orch-${runId}`
+  const ref = `refs/heads/${branch}`
+  upsertProject({ name: project, path: repository })
+  const projectId = (
+    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+  ).id
+  db()
+    .query('UPDATE run SET repo=?,project_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE id=?')
+    .run(project, projectId, repository, branch, tip, runId)
+  const claimId = Number(
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?,?,?,'branch',?,'claimed',?)`,
+      )
+      .run(runId, runId, projectId, ref, nowIso()).lastInsertRowid,
+  )
+  return { runId, project, repository, branch, ref, claimId, tip }
+}
+
+function linePresentation(lines: string[]): CleanupPresentation {
+  return {
+    log: (...values) => lines.push(values.join(' ')),
+    error: () => {},
+    setExitCode: () => {},
+    keptBranchLine: String,
+  }
+}
+
+function claimState(claimId: number) {
+  return db().query('SELECT state,settled_detail FROM resource_claim WHERE id=?').get(claimId) as {
+    state: string
+    settled_detail: string | null
+  }
+}
+
+test('an absent kept branch with a live tip is restored once and settled retained', () => {
+  const fixture = keptBranchClaim()
+  const restored: string[] = []
+  const lines: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project: fixture.project,
+    presentation: linePresentation(lines),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      ref: () => ({ outcome: 'absent' }),
+      commit: () => ({ outcome: 'present' }),
+      restoreBranch: (_repository, branch, tip) => {
+        restored.push(`${branch}@${tip}`)
+        return { ok: true }
+      },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(restored).toEqual([`${fixture.branch}@${fixture.tip}`])
+  expect(claimState(fixture.claimId)).toEqual({
+    state: 'retained',
+    settled_detail: `branch retained at ${fixture.tip}`,
+  })
+  expect(lines).toEqual([`restored ${fixture.branch} at ${fixture.tip}`])
+})
+
+test('a present kept branch settles retained without restoration', () => {
+  const fixture = keptBranchClaim()
+  let restores = 0
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project: fixture.project,
+    presentation: linePresentation([]),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      ref: () => ({ outcome: 'present' }),
+      restoreBranch: () => {
+        restores++
+        return { ok: true }
+      },
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(restores).toBe(0)
+  expect(claimState(fixture.claimId).state).toBe('retained')
+})
+
+test('a kept branch whose tip is gone releases with visible loss detail', () => {
+  const fixture = keptBranchClaim()
+  const lines: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project: fixture.project,
+    presentation: linePresentation(lines),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      ref: () => ({ outcome: 'absent' }),
+      commit: () => ({ outcome: 'absent' }),
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(claimState(fixture.claimId)).toEqual({
+    state: 'absent',
+    settled_detail: `branch ${fixture.branch} lost; tip ${fixture.tip} is gone`,
+  })
+  expect(lines).toEqual([
+    `released, tip ${fixture.tip} is gone: claim ${fixture.claimId} branch ${fixture.ref}`,
+  ])
+})
+
+test('a failed kept-branch restore leaves the claim claimed and prints the git failure', () => {
+  const fixture = keptBranchClaim()
+  const lines: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    project: fixture.project,
+    presentation: linePresentation(lines),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      ref: () => ({ outcome: 'absent' }),
+      commit: () => ({ outcome: 'present' }),
+      restoreBranch: () => ({ ok: false, error: 'fatal: cannot lock ref' }),
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(claimState(fixture.claimId)).toEqual({ state: 'claimed', settled_detail: null })
+  expect(lines).toEqual([
+    `kept: claim ${fixture.claimId} branch ${fixture.ref}: restore failed: fatal: cannot lock ref`,
+  ])
+})
+
+test('kept-branch dry runs change nothing and print each prospective action', () => {
+  const restore = keptBranchClaim('a'.repeat(40))
+  const present = keptBranchClaim('b'.repeat(40))
+  const lost = keptBranchClaim('c'.repeat(40))
+  const noTip = keptBranchClaim(null)
+  const lines: string[] = []
+
+  for (const [fixture, refOutcome, commitOutcome] of [
+    [restore, 'absent', 'present'],
+    [present, 'present', 'absent'],
+    [lost, 'absent', 'absent'],
+    [noTip, 'absent', 'absent'],
+  ] as const) {
+    reconcileAbsentClaims({
+      dryRun: true,
+      project: fixture.project,
+      presentation: linePresentation(lines),
+      trust: { succeeded: true, headings: [] },
+      database: db(),
+      observers: {
+        ref: () => ({ outcome: refOutcome }),
+        commit: () => ({ outcome: commitOutcome }),
+        leaseState: () => 'missing',
+        pidAlive: () => false,
+      },
+    })
+  }
+
+  expect(
+    [restore, present, lost, noTip].map((fixture) => claimState(fixture.claimId).state),
+  ).toEqual(['claimed', 'claimed', 'claimed', 'claimed'])
+  expect(lines).toEqual([
+    `would restore ${restore.branch} at ${restore.tip}`,
+    `would settle retained claim ${present.claimId} branch ${present.ref}`,
+    `would release, tip ${lost.tip} is gone: claim ${lost.claimId} branch ${lost.ref}`,
+    `would release, no tip was recorded: claim ${noTip.claimId} branch ${noTip.ref}`,
+  ])
+})
+
 test('sweep dry-run lists absent and kept claims without changing either row', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-reconciliation-${runId}`
