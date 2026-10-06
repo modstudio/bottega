@@ -1,7 +1,10 @@
 // concern: canon-import
 /** Mirrors one hosted canon import transaction into one local transaction. */
+
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { type RecordCanonImportResult, recordApiClient } from '../record/record-api-client.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
@@ -53,15 +56,34 @@ export async function importCanon(input: {
   const expectedRevisions = Object.fromEntries(
     current.flatMap((row) => (row.revision ? [[row.slug, row.revision]] : [])),
   )
-  const hosted = await recordApiClient().importCanon({
-    address:
-      input.address.kind === 'user'
-        ? { kind: 'user' }
-        : { kind: 'project', subject: input.address.subject },
-    rows: input.rows,
-    expectedRevisions,
-    reason: identity.reason,
-    author: identity.author,
+  const hosted = await applyRecordWriteAuthority<RecordCanonImportResult>({
+    local: () => ({
+      rows: input.rows.map((row) => ({
+        slug: row.slug,
+        id: current.find((existing) => existing.slug === row.slug)?.record_id ?? newRecordId(),
+        revisionId: newRecordId(),
+      })),
+      deletions: current
+        .filter((row) => !input.rows.some((next) => next.slug === row.slug))
+        .map((row) => ({
+          slug: row.slug,
+          id: row.record_id ?? newRecordId(),
+          revisionId: newRecordId(),
+        })),
+      findings: [],
+      bootstrap: current.length === 0,
+    }),
+    hosted: () =>
+      recordApiClient().importCanon({
+        address:
+          input.address.kind === 'user'
+            ? { kind: 'user' }
+            : { kind: 'project', subject: input.address.subject },
+        rows: input.rows,
+        expectedRevisions,
+        reason: identity.reason,
+        author: identity.author,
+      }),
   })
   return writeTransaction(() => {
     const live = listDocsStore({ scope: 'canon', subject, owner })

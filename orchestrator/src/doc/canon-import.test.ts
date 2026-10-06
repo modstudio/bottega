@@ -10,6 +10,7 @@ import { listDocs } from './docs.ts'
 const owner = '01990000-0000-7000-8000-000000000091'
 
 test('a hosted batch failure leaves every local user canon row unchanged', async () => {
+  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
   const first = await setDoc({
     scope: 'canon',
     subject: null,
@@ -46,6 +47,7 @@ test('a hosted batch failure leaves every local user canon row unchanged', async
   expect(listDocs({ scope: 'canon', subject: null, owner })).toEqual(
     [first, second].sort((left, right) => left.slug.localeCompare(right.slug)),
   )
+  delete process.env.ORCH_RECORD_API_URL
 })
 
 describe.each([

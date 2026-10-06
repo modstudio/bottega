@@ -8,6 +8,8 @@ import { resolveRunsDirectory, resolveStatePaths } from '../../../shared/state-d
 import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
+  decideUserCanonHomePlanApplication,
+  EMPTY_USER_CANON_STORE_REFUSAL,
   planUserCanonHome,
   type UserCanonHomePlan,
   userCanonHomePlanDrift,
@@ -17,6 +19,7 @@ import { db } from '../database/db.ts'
 import { getDoc, listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { pullRecordCache } from '../record/record-cache.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { parseStoredOwnedSettings, SETTINGS_SCOPE, SETTINGS_SLUG } from './settings.ts'
 import {
@@ -175,6 +178,18 @@ function applyUserCanon(
     )
   }
   const plans = planned.map((item) => item.plan!)
+  const decision = decideUserCanonHomePlanApplication(rows.length, plans)
+  if (decision.action === 'refuse-empty-store') {
+    const refused = new Set(decision.refused)
+    return planned.map((item) => ({
+      target: item.target,
+      outcome: 'refused',
+      detail: refused.has(item.plan!)
+        ? `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`
+        : 'not written: canon batch refused',
+      changed: false,
+    }))
+  }
   const drift = new Map(planned.map((item) => [item.target, userCanonHomePlanDrift(item.plan!)]))
   if (check) {
     return planned.map((item) => ({
@@ -185,7 +200,7 @@ function applyUserCanon(
     }))
   }
   try {
-    const applied = deps.applyCanon(plans, deps.environment)
+    const applied = deps.applyCanon(decision.plans, deps.environment)
     let backupOffset = 0
     return planned.map((item) => {
       const changed = drift.get(item.target)! > 0
@@ -227,7 +242,7 @@ export async function applyMachineSettings(
     return [{ target: 'settings apply', outcome: 'skipped', changed: false }]
   }
   try {
-    await deps.pull()
+    await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
     const owner = await deps.owner()
     return [
       applyUserSettings(owner, input.check, deps),

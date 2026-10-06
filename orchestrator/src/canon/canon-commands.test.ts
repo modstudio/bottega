@@ -107,13 +107,7 @@ test('canon import can drop a citer and its target after deciding the complete n
 
     expect(getDoc('canon', 'canon-import-removal', target)).toBeNull()
     expect(getDoc('canon', 'canon-import-removal', '.agents/reference/old-citer.md')).toBeNull()
-    expect(imports).toHaveLength(1)
-    expect(imports[0]).toEqual(
-      expect.objectContaining({
-        address: { kind: 'project', subject: 'canon-import-removal' },
-        rows: [expect.objectContaining({ slug: 'AGENTS.md' })],
-      }),
-    )
+    expect(imports).toHaveLength(0)
     expect(getDoc('canon', 'canon-import-removal', 'AGENTS.override.md')).toBeNull()
     expect(output).toContain('delete .agents/reference/old-target.md')
     expect(output).toContain('delete .agents/reference/old-citer.md')

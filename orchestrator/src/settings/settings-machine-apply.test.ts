@@ -7,6 +7,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { USER_CANON_MANAGED_MARKER } from '../canon/user-canon-home.ts'
 import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
@@ -92,7 +93,7 @@ describe('settings apply', () => {
     writeCurrentSettings()
     const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
     const results = await applyMachineSettings({ check: true }, deps())
-    expect(pulls).toBe(1)
+    expect(pulls).toBe(0)
     expect(results[0]).toMatchObject({ outcome: 'current', changed: false })
     expect(results.slice(1)).toEqual(
       expect.arrayContaining([
@@ -173,6 +174,49 @@ describe('settings apply', () => {
       ]),
     )
     expect(existsSync(join(root, '.codex', 'AGENTS.md'))).toBe(false)
+  })
+
+  test('an empty user canon store refuses managed-file deletes in apply and check modes', async () => {
+    writeCurrentSettings()
+    db().query("DELETE FROM doc WHERE scope='canon' AND owner=?").run(OWNER)
+    const claudePath = join(root, '.claude', 'CLAUDE.md')
+    const codexPath = join(root, '.codex', 'AGENTS.md')
+    writeFileSync(claudePath, `${USER_CANON_MANAGED_MARKER}other store`)
+    writeFileSync(codexPath, `${USER_CANON_MANAGED_MARKER}other store`)
+    let applies = 0
+
+    for (const check of [false, true]) {
+      const results = await applyMachineSettings(
+        { check },
+        {
+          ...deps(),
+          applyCanon: () => {
+            applies++
+            return { backups: [], cleanupFailures: [] }
+          },
+        },
+      )
+      expect(results.slice(1)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            target: expect.stringContaining('canon claude'),
+            outcome: 'refused',
+            detail: expect.stringMatching(
+              /this store holds no user canon.*orch canon import --user.*remove the files yourself/,
+            ),
+            changed: false,
+          }),
+          expect.objectContaining({
+            target: expect.stringContaining('canon codex'),
+            outcome: 'refused',
+            changed: false,
+          }),
+        ]),
+      )
+      expect(readFileSync(claudePath, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}other store`)
+      expect(readFileSync(codexPath, 'utf8')).toBe(`${USER_CANON_MANAGED_MARKER}other store`)
+    }
+    expect(applies).toBe(0)
   })
 
   test('a settings changed-after-planning refusal does not stop canon', async () => {

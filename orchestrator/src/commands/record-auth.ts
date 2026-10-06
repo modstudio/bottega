@@ -21,6 +21,7 @@ import {
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
+import { requireHostedRecord } from '../record/record-write-authority.ts'
 import { log } from './support.ts'
 
 async function promptPassword(): Promise<string> {
@@ -32,6 +33,11 @@ async function promptPassword(): Promise<string> {
   }
 }
 
+function hostedCommand<T>(command: string, action: () => T): T {
+  requireHostedRecord(command)
+  return action()
+}
+
 export function register(program: Command): void {
   const record = program.command('record')
   const presentation = { log }
@@ -40,14 +46,24 @@ export function register(program: Command): void {
     .requiredOption('--email <email>')
     .requiredOption('--name <name>')
     .action((options) =>
-      signUpCommand(String(options.email), String(options.name), promptPassword, { log }),
+      hostedCommand('orch record sign-up', () =>
+        signUpCommand(String(options.email), String(options.name), promptPassword, { log }),
+      ),
     )
   record
     .command('sign-in')
     .requiredOption('--email <email>')
-    .action((options) => signInCommand(String(options.email), promptPassword, { log }))
-  record.command('whoami').action(() => whoamiCommand({ log }))
-  record.command('migrate').action(() => recordMigrateCommand(presentation))
+    .action((options) =>
+      hostedCommand('orch record sign-in', () =>
+        signInCommand(String(options.email), promptPassword, { log }),
+      ),
+    )
+  record
+    .command('whoami')
+    .action(() => hostedCommand('orch record whoami', () => whoamiCommand({ log })))
+  record
+    .command('migrate')
+    .action(() => hostedCommand('orch record migrate', () => recordMigrateCommand(presentation)))
   record
     .command('audit-secrets')
     .option('--json')
@@ -88,30 +104,52 @@ export function register(program: Command): void {
       log(`outbox row ${String(rowId)} retired`)
     })
   const space = record.command('space')
-  space.command('list').action(() => recordSpaceListCommand(presentation))
+  space
+    .command('list')
+    .action(() =>
+      hostedCommand('orch record space list', () => recordSpaceListCommand(presentation)),
+    )
   space
     .command('create')
     .requiredOption('--name <name>')
     .requiredOption('--slug <slug>')
     .action((options) =>
-      recordSpaceCreateCommand(String(options.name), String(options.slug), presentation),
+      hostedCommand('orch record space create', () =>
+        recordSpaceCreateCommand(String(options.name), String(options.slug), presentation),
+      ),
     )
   space
     .command('switch')
     .argument('<slug-or-id>')
-    .action((value) => recordSpaceSwitchCommand(String(value), presentation))
+    .action((value) =>
+      hostedCommand('orch record space switch', () =>
+        recordSpaceSwitchCommand(String(value), presentation),
+      ),
+    )
   space
     .command('invite')
     .requiredOption('--email <email>')
     .option('--role <role>', 'member, admin, or owner', 'member')
     .action((options) =>
-      recordSpaceInviteCommand(String(options.email), String(options.role), presentation),
+      hostedCommand('orch record space invite', () =>
+        recordSpaceInviteCommand(String(options.email), String(options.role), presentation),
+      ),
     )
-  space.command('invitations').action(() => recordSpaceInvitationsCommand(presentation))
+  space
+    .command('invitations')
+    .action(() =>
+      hostedCommand('orch record space invitations', () =>
+        recordSpaceInvitationsCommand(presentation),
+      ),
+    )
   space
     .command('accept')
     .argument('<invitation-id>')
-    .action((value) => recordSpaceAcceptCommand(String(value), presentation))
+    .action((value) =>
+      hostedCommand('orch record space accept', () =>
+        recordSpaceAcceptCommand(String(value), presentation),
+      ),
+    )
   space
     .command('move-project')
     .argument('<project>')
@@ -119,27 +157,35 @@ export function register(program: Command): void {
     .option('--dry-run')
     .option('--confirm <count>')
     .action((project, options) =>
-      recordSpaceMoveProjectCommand(
-        String(project),
-        String(options.to),
-        {
-          dryRun: Boolean(options.dryRun),
-          ...(options.confirm === undefined ? {} : { confirm: Number(options.confirm) }),
-        },
-        presentation,
+      hostedCommand('orch record space move-project', () =>
+        recordSpaceMoveProjectCommand(
+          String(project),
+          String(options.to),
+          {
+            dryRun: Boolean(options.dryRun),
+            ...(options.confirm === undefined ? {} : { confirm: Number(options.confirm) }),
+          },
+          presentation,
+        ),
       ),
     )
   record
     .command('push-docs')
     .option('--dry-run')
-    .action((options) => pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }))
+    .action((options) =>
+      hostedCommand('orch record push-docs', () =>
+        pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
+      ),
+    )
   record.command('publish').action(() =>
-    publishSnapshotsCommand({
-      log,
-      setExitCode: (code) => {
-        process.exitCode = code
-      },
-    }),
+    hostedCommand('orch record publish', () =>
+      publishSnapshotsCommand({
+        log,
+        setExitCode: (code) => {
+          process.exitCode = code
+        },
+      }),
+    ),
   )
   record.command('doctor').action(() =>
     recordDoctorCommand(

@@ -30,6 +30,49 @@ export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 
   return checks.some((check) => check.status === 'fail') ? 1 : 0
 }
 
+export function decideRecordDoctorAvailability(input: {
+  installBound: boolean
+  recordUrlSet: boolean
+}): { endpoint: RecordDoctorCheck; hostedChecksDetail: string } {
+  if (input.recordUrlSet) {
+    return {
+      endpoint: { name: 'ORCH_RECORD_URL set', status: 'pass' },
+      hostedChecksDetail: '',
+    }
+  }
+  if (input.installBound) {
+    return {
+      endpoint: {
+        name: 'ORCH_RECORD_URL set',
+        status: 'fail',
+        detail: 'ORCH_RECORD_URL not set',
+      },
+      hostedChecksDetail: 'ORCH_RECORD_URL not set',
+    }
+  }
+  return {
+    endpoint: {
+      name: 'hosted record configured',
+      status: 'skipped',
+      detail: 'no hosted record is configured for this install',
+    },
+    hostedChecksDetail: 'not applicable: no hosted record is configured for this install',
+  }
+}
+
+function recordOwnerDoctorAvailability(
+  migrateUrl: string | undefined,
+  hostedChecksDetail: string,
+): { url: string | null; detail: string } {
+  if (hostedChecksDetail.startsWith('not applicable:')) {
+    return { url: null, detail: hostedChecksDetail }
+  }
+  return {
+    url: migrateUrl ?? null,
+    detail: migrateUrl ? '' : 'ORCH_RECORD_MIGRATE_URL not set',
+  }
+}
+
 export function outboxQuarantineCheck(database: Database): RecordDoctorCheck {
   const rows = quarantinedOutboxRows(database)
   return rows.length
@@ -169,10 +212,11 @@ export async function diagnoseRecord(
   const migrateUrl = input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL
   const urls = [recordUrl, migrateUrl].filter((url): url is string => Boolean(url))
   const checks: RecordDoctorCheck[] = []
+  const binding = readRecordInstallBinding(db())
   checks.push({
     name: 'install binding',
     status: 'pass',
-    detail: describeRecordInstallBinding(readRecordInstallBinding(db())),
+    detail: describeRecordInstallBinding(binding),
   })
   checks.push(outboxQuarantineCheck(db()))
   checks.push(outboxRetiredParentCheck(db()))
@@ -189,9 +233,11 @@ export async function diagnoseRecord(
 
   checks.push(attributionResolutionCheck(recordAttributionFailure()))
 
-  if (recordUrl) checks.push({ name: 'ORCH_RECORD_URL set', status: 'pass' })
-  else
-    checks.push({ name: 'ORCH_RECORD_URL set', status: 'fail', detail: 'ORCH_RECORD_URL not set' })
+  const availability = decideRecordDoctorAvailability({
+    installBound: binding.bound,
+    recordUrlSet: Boolean(recordUrl),
+  })
+  checks.push(availability.endpoint)
 
   if (!recordUrl) {
     for (const name of [
@@ -204,7 +250,7 @@ export async function diagnoseRecord(
       'session intervals with no session identity',
       'local versus hosted questions',
     ])
-      skip(name, 'ORCH_RECORD_URL not set')
+      skip(name, availability.hostedChecksDetail)
   } else {
     const actor = new SQL(recordUrl)
     await run('record connection works', async () => {
@@ -309,11 +355,16 @@ export async function diagnoseRecord(
     'applied migrations equal shipped migrations',
     'record_actor representative grants',
   ]
-  if (!migrateUrl) {
-    for (const name of ownerChecks) skip(name, 'ORCH_RECORD_MIGRATE_URL not set')
+  const ownerAvailability = recordOwnerDoctorAvailability(
+    migrateUrl,
+    availability.hostedChecksDetail,
+  )
+  const ownerUrl = ownerAvailability.url
+  if (!ownerUrl) {
+    for (const name of ownerChecks) skip(name, ownerAvailability.detail)
     return checks
   }
-  const owner = new SQL(migrateUrl)
+  const owner = new SQL(ownerUrl)
   try {
     await run(ownerChecks[0]!, async () => {
       const rows = await owner`
@@ -331,7 +382,7 @@ export async function diagnoseRecord(
       }
     })
     await run(ownerChecks[2]!, async () => {
-      const applied = await appliedRecordMigrationCount(migrateUrl)
+      const applied = await appliedRecordMigrationCount(ownerUrl)
       const shipped = recordMigrationCount()
       if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
     })

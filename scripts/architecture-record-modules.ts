@@ -13,6 +13,11 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 
 export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
+  module('orchestrator/src/record/record-write-decision.ts', []),
+  module('orchestrator/src/record/record-write-authority.ts', [
+    './install-binding.ts',
+    './record-write-decision.ts',
+  ]),
   module('orchestrator/src/run/question-delivery.ts', [
     '../database/db.ts',
     './question-vocabulary.ts',

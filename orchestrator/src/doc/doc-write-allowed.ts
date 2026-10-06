@@ -11,7 +11,8 @@ import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from
 export { refuseSettingsBody }
 
 export const RECORD_WRITE_REMEDY = 'cleared by: orch record doctor'
-export const MISSING_HOSTED_REVISION_REMEDY = 'cleared by: orch record migrate'
+export const MISSING_HOSTED_REVISION_REMEDY =
+  'cleared by: repair the document revision state, then retry the write'
 
 export type DocDelivery = 'inject' | 'demand'
 export type DocRevisionOp =
@@ -122,7 +123,7 @@ export function decideDocRevisionWrite(input: {
     return {
       allow: false,
       reason:
-        "refusing canon write: this hosted row's latest revision is missing, so its revision cannot be checked\n" +
+        "refusing canon write: this row's latest revision is missing, so its revision cannot be checked\n" +
         MISSING_HOSTED_REVISION_REMEDY,
     }
   }

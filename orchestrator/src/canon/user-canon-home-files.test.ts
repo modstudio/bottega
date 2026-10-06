@@ -18,6 +18,7 @@ import { USER_CANON_MANAGED_MARKER } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
+  decideUserCanonHomePlanApplication,
   planUserCanonHome,
   userCanonHomesFromEnvironment as resolveUserCanonHomesFromEnvironment,
   type UserCanonHomeTarget,
@@ -47,6 +48,55 @@ function temporaryClaudeHome(): UserCanonHomeTarget {
 }
 
 describe('Claude home canon files', () => {
+  test('an empty store refuses managed-file deletes and returns no applicable plans', () => {
+    const claudeHome = temporaryClaudeHome()
+    writeFileSync(join(claudeHome.path, 'CLAUDE.md'), `${USER_CANON_MANAGED_MARKER}other store`)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [],
+      files: collectUserCanonHome(claudeHome),
+    })
+
+    expect(decideUserCanonHomePlanApplication(0, [plan])).toEqual({
+      action: 'refuse-empty-store',
+      plans: [],
+      refused: [plan],
+    })
+  })
+
+  test('an empty store leaves unmarked files current', () => {
+    const claudeHome = temporaryClaudeHome()
+    writeFileSync(join(claudeHome.path, 'CLAUDE.md'), 'personal')
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [],
+      files: collectUserCanonHome(claudeHome),
+    })
+
+    expect(decideUserCanonHomePlanApplication(0, [plan])).toEqual({
+      action: 'apply',
+      plans: [plan],
+    })
+    expect(userCanonHomePlanDrift(plan)).toBe(0)
+  })
+
+  test('a non-empty store still deletes a managed file whose row is gone', () => {
+    const claudeHome = temporaryClaudeHome()
+    mkdirSync(join(claudeHome.path, 'rules'))
+    writeFileSync(join(claudeHome.path, 'rules/old.md'), `${USER_CANON_MANAGED_MARKER}old`)
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'current' }],
+      files: collectUserCanonHome(claudeHome),
+    })
+
+    expect(decideUserCanonHomePlanApplication(1, [plan])).toEqual({
+      action: 'apply',
+      plans: [plan],
+    })
+    expect(plan.deletes.map((row) => row.slug)).toEqual(['.agents/rules/old.md'])
+  })
+
   test('collects exact bytes from the entry and flat markdown rules', () => {
     const claudeHome = temporaryClaudeHome()
     mkdirSync(join(claudeHome.path, 'rules'), { recursive: true })
