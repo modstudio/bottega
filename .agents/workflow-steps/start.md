@@ -9,6 +9,8 @@ autonomy: auto
 needs:
   - tracker
 ---
-Use this project's tracker to move the task into its `{{tracker.states.active}}` state with `{{tracker.actions.status}}` and assign it according to the project's normal policy. Read the current state immediately before changing it with `{{tracker.actions.get}}` rather than trusting an earlier copy, then read it back with `{{tracker.actions.get}}` after changing it.
+Read the current state and assignee with `{{tracker.actions.get}}` immediately before changing the task rather than trusting an earlier copy. Keep the assignee that read returns. When the task is unassigned, follow the assignment rule in the project's own canon under its task-lifecycle rules. When the project's canon states no assignment rule, leave the task unassigned and say so in the step's closing note. Use this project's tracker to move the task into its `{{tracker.states.active}}` state with `{{tracker.actions.status}}`, then read it back with `{{tracker.actions.get}}` after changing it.
+
+When the task's scope no longer fits the current mode after the task is written, abandon the cursor with `orch workflow abandon`, then compose `plan-task` again in the fitting mode with the existing task key.
 
 This step is done only when the tracker read-back proves the task reached the active state. Report the resulting key for the implementation handoff. The implementation dispatch provisions the worktree.
