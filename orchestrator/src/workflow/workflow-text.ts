@@ -90,7 +90,7 @@ export function withWorkflowTextFacts<
   }
 }
 
-export function workflowTextRows(cursorId: number, d: Database): WorkflowTextRow[] {
+function workflowTextRows(cursorId: number, d: Database): WorkflowTextRow[] {
   return d
     .query<
       { id: number; cursor_id: number; step_ordinal: number; step_slug: string; body: string },
