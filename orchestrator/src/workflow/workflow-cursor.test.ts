@@ -53,6 +53,7 @@ const testPorts = {
     headIsTipOrAncestor: true,
   }),
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
+  resolveTreeCommit: () => 'abc',
 }
 
 function installEvidence(
@@ -942,6 +943,49 @@ describe('workflow cursor adapter', () => {
     expect(() =>
       nextWorkflowStep('ship', 'fixture', 'default', args, 'rebased', context, d),
     ).toThrow(/floor command-exit is unmet; pass --gate/)
+  })
+
+  test('next gathers each external floor fact once outside the write transaction', () => {
+    const d = database()
+    composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
+    const evidence = installEvidence(d, 'fixture', 'ship', 'default', args, context)
+    const calls: Array<{ port: string; inTransaction: boolean }> = []
+    const output = nextWorkflowStep(
+      'ship',
+      'fixture',
+      'default',
+      args,
+      'rebased',
+      context,
+      d,
+      evidence,
+      {
+        ...testPorts,
+        readTask: (key) => {
+          calls.push({ port: `readTask:${key}`, inTransaction: d.inTransaction })
+          return { key, status: 'done', statusCategory: 'done', commentIds: [1] }
+        },
+        viewPullRequest: () => {
+          calls.push({ port: 'viewPullRequest', inTransaction: d.inTransaction })
+          return { state: 'MERGED', mergedAt: '2026-09-01' }
+        },
+        resolveCheckout: () => {
+          calls.push({ port: 'resolveCheckout', inTransaction: d.inTransaction })
+          return { project: 'fixture', branch: args.branch, headIsTipOrAncestor: true }
+        },
+        resolveTreeCommit: () => {
+          calls.push({ port: 'resolveTreeCommit', inTransaction: d.inTransaction })
+          return 'abc'
+        },
+      },
+    )
+    expect(output).toContain('serves step 3 score')
+    expect(calls.length).toBeGreaterThan(1)
+    expect(calls.every(({ inTransaction }) => !inTransaction)).toBe(true)
+    expect(calls.filter(({ port }) => port.startsWith('readTask:'))).toHaveLength(1)
+    expect(calls.filter(({ port }) => port === 'viewPullRequest')).toHaveLength(1)
+    expect(calls.filter(({ port }) => port === 'resolveTreeCommit')).toHaveLength(1)
+    expect(d.query('SELECT ordinal FROM workflow_cursor').get()).toEqual({ ordinal: 1 })
   })
 
   test('a pre-change cursor keeps note-only closure', () => {

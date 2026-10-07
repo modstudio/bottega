@@ -809,8 +809,10 @@ export function registerBranchCheck(
   return { head, landing, canonIntegration, problems }
 }
 
-export function assertRegisterBranches(project: Pick<Project, 'name' | 'path' | 'settings'>): void {
-  const check = registerBranchCheck(project)
+export function assertRegisterBranches(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+  check: RegisterBranchCheck = registerBranchCheck(project),
+): void {
   if (!check.problems.length) return
   throw new Error(
     `${project.name}: ${check.problems.join('; ')}\n` +

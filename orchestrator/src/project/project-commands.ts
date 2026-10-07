@@ -18,6 +18,7 @@ import {
   projectByName,
   projects,
   pushProjects,
+  registerBranchCheck,
   removeWrittenProject,
   retiredProjectByName,
   retireWrittenProject,
@@ -213,6 +214,10 @@ export type FillAbsentProjectInput = {
   fill: { stack?: string; settings: ProjectSettings }
 }
 
+const MAX_FILL_ABSENT_PROJECT_RESTARTS = 3
+
+class FillAbsentProjectChanged extends Error {}
+
 function fillAbsentSettings(current: Project, input: FillAbsentProjectInput): ProjectSettings {
   const settings = { ...current.settings }
   for (const key of Object.keys(input.fill.settings) as (keyof ProjectSettings)[]) {
@@ -240,33 +245,87 @@ function fillAbsentSettings(current: Project, input: FillAbsentProjectInput): Pr
   return settings
 }
 
+function validatedFillCandidate(current: Project, input: FillAbsentProjectInput): Project {
+  if (input.fill.stack !== undefined && current.stack !== null) {
+    throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
+  }
+  const settings = fillAbsentSettings(current, input)
+  const malformed = validateProjectSettings(settings, current.path, {
+    validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
+    currentProjectName: current.name,
+    register: projects(),
+  })
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  const candidate = { ...current, stack: input.fill.stack ?? current.stack, settings }
+  const incomplete = incompleteWorktreeProblems(candidate)
+  if (incomplete.length) throw new Error(incomplete.join('\n'))
+  return candidate
+}
+
+function canonicalSettingValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalSettingValue)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, canonicalSettingValue(child)]),
+  )
+}
+
+function sameProjectConfiguration(left: Project, right: Project): boolean {
+  return (
+    left.path === right.path &&
+    left.stack === right.stack &&
+    JSON.stringify(canonicalSettingValue(left.settings)) ===
+      JSON.stringify(canonicalSettingValue(right.settings))
+  )
+}
+
+type FillCandidate = { project: Project; error: null } | { project: null; error: unknown }
+
+function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCandidate {
+  try {
+    return { project: validatedFillCandidate(current, input), error: null }
+  } catch (error) {
+    return { project: null, error }
+  }
+}
+
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
 export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
   let candidate: Project | null = null
-  writeTransaction(() => {
-    const current = projectByName(input.name)
-    if (!current) throw new Error(`no project "${input.name}"`)
-    if (input.fill.stack !== undefined && current.stack !== null) {
-      throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
+  for (let restart = 0; restart <= MAX_FILL_ABSENT_PROJECT_RESTARTS; restart += 1) {
+    const snapshot = projectByName(input.name)
+    if (!snapshot) throw new Error(`no project "${input.name}"`)
+    const checked = fillCandidate(snapshot, input)
+    const branchCheck = checked.project ? registerBranchCheck(checked.project) : null
+    try {
+      writeTransaction(() => {
+        const current = projectByName(input.name)
+        if (!current) throw new Error(`no project "${input.name}"`)
+        const next = fillCandidate(current, input)
+        if (
+          !checked.project ||
+          !next.project ||
+          !sameProjectConfiguration(checked.project, next.project)
+        ) {
+          if (!checked.project && !next.project && sameProjectConfiguration(snapshot, current)) {
+            throw next.error
+          }
+          throw new FillAbsentProjectChanged()
+        }
+        assertRegisterBranches(next.project, branchCheck!)
+        upsertProject(next.project)
+        candidate = next.project
+      })
+      break
+    } catch (error) {
+      if (!(error instanceof FillAbsentProjectChanged)) throw error
+      if (restart === MAX_FILL_ABSENT_PROJECT_RESTARTS) {
+        throw new Error(`project ${input.name} kept changing; run the command again`)
+      }
     }
-    const settings = fillAbsentSettings(current, input)
-    const malformed = validateProjectSettings(settings, current.path, {
-      validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
-      currentProjectName: current.name,
-      register: projects(),
-    })
-    if (malformed.length) throw new Error(malformed.join('\n'))
-    const next: Project = {
-      ...current,
-      stack: input.fill.stack ?? current.stack,
-      settings,
-    }
-    const incomplete = incompleteWorktreeProblems(next)
-    if (incomplete.length) throw new Error(incomplete.join('\n'))
-    assertRegisterBranches(next)
-    upsertProject(next)
-    candidate = next
-  })
+  }
   if (!candidate) throw new Error(`project ${input.name} was not updated`)
   await writeHostedProject(candidate)
 }

@@ -55,6 +55,7 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
+import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
@@ -717,10 +718,23 @@ export function nextWorkflowStep(
   ports: FloorEvidencePorts = productionFloorPorts(),
   cursor?: number,
 ): string {
-  return writeTransaction(
-    () =>
-      nextWorkflowStepImpl(slug, project, mode, args, note, context, evidence, ports, d, cursor),
-    d,
+  return withReplayedFloorEvidence(ports, (replayPorts) =>
+    writeTransaction(
+      () =>
+        nextWorkflowStepImpl(
+          slug,
+          project,
+          mode,
+          args,
+          note,
+          context,
+          evidence,
+          replayPorts,
+          d,
+          cursor,
+        ),
+      d,
+    ),
   )
 }
 

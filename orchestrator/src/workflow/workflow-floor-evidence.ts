@@ -22,7 +22,14 @@ import {
   parseArtifactRef,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import {
+  type FloorEvidencePorts,
+  invokeFloorEvidencePort,
+  rethrowFloorEvidencePortMiss,
+} from './workflow-floor-evidence-replay.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
+
+export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
 
 export type WorkflowEvidenceInput = {
   ruling?: number
@@ -68,26 +75,12 @@ export function classifyCheckoutEvidence(input: {
   return 'outside-change'
 }
 
-type PullRequestMergeView = { state: string; mergedAt: string | null }
-
 type HubTaskRead = {
   key: string
   status: string | null
   statusCategory: string | null
   commentIds: Array<string | number>
   commentsVerifiable?: boolean
-}
-
-export type FloorEvidencePorts = {
-  readTask?: (key: string, options: { fresh: true }) => HubTaskRead
-  runHasArtifacts?: (runId: number) => boolean
-  resolveCheckout?: (
-    cwd: string,
-    headCommit: string | null,
-    expectedBranch: string | null,
-  ) => CheckoutResolution
-  viewPullRequest?: (project: string, number: number) => PullRequestMergeView
-  resolveTreeCommit?: (worktree: string) => string | null
 }
 
 function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
@@ -525,10 +518,9 @@ function resolveTaskArtifact(
     throw new Error(
       `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
     )
-  const readTask = ports.readTask
-  if (!readTask)
+  if (!ports.readTask)
     throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
-  const task = readTask(ref.key, { fresh: true })
+  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
   if (task.commentsVerifiable === false)
     throw new Error(
@@ -626,21 +618,26 @@ function gatherTask(
 ): ValidatedEvidence['task'] {
   if (identity.workflowKey && key !== identity.workflowKey)
     throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
-  const readTask = ports.readTask
-  if (!readTask) throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
-  const task = readTask(key, { fresh: true })
+  if (!ports.readTask)
+    throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
+  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, { fresh: true })
   const trackerStates = projectByName(identity.project, d)?.settings.tracker?.states ?? {}
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null
   let mergedPullRequest = false
   if (number !== null) {
     try {
-      const view = (ports.viewPullRequest ?? productionFloorPorts().viewPullRequest)?.(
+      const fallback = productionFloorPorts().viewPullRequest!
+      const view = invokeFloorEvidencePort(
+        ports,
+        'viewPullRequest',
+        fallback,
         identity.project,
         number,
       )
       mergedPullRequest = view?.state === 'MERGED'
-    } catch {
+    } catch (error) {
+      rethrowFloorEvidencePortMiss(error)
       mergedPullRequest = false
     }
   }
@@ -742,14 +739,23 @@ export function gatherValidatedEvidence(input: {
 }): ValidatedEvidence {
   const d = input.d ?? db()
   const ports = input.ports ?? {}
-  const resolveCheckout =
-    ports.resolveCheckout ??
-    ((cwd, head, branch) => productionResolveCheckout(cwd, head, branch, input.identity, d))
+  const resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']> = (cwd, head, branch) =>
+    invokeFloorEvidencePort(
+      ports,
+      'resolveCheckout',
+      (at, commit, expected) => productionResolveCheckout(at, commit, expected, input.identity, d),
+      cwd,
+      head,
+      branch,
+    )
   const gathered: ValidatedEvidence = {}
   gathered.tree = {
     project: input.identity.project,
     commit: input.identity.worktree
-      ? (ports.resolveTreeCommit ?? ((worktree) => gitText(worktree, ['rev-parse', 'HEAD'])))(
+      ? invokeFloorEvidencePort(
+          ports,
+          'resolveTreeCommit',
+          (worktree) => gitText(worktree, ['rev-parse', 'HEAD']),
           input.identity.worktree,
         )
       : null,
