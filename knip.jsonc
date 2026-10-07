@@ -16,7 +16,9 @@
     // Cross-concern session API includes clear before its sign-out caller lands.
     "shared/record-session.ts": ["exports"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
-    "orchestrator/src/transport/ajv-validator.ts": ["exports"]
+    "orchestrator/src/transport/ajv-validator.ts": ["exports"],
+    // Cloudflare loads this default export through wrangler.toml rather than an import.
+    "hub/deploy/site/src/worker.ts": ["exports"]
   },
   "workspaces": {
     ".": {
@@ -94,6 +96,10 @@
       "project": ["src/**/*.{ts,tsx}!", "vite.config.ts!"],
       // Loaded through the CSS import in src/app/globals.css.
       "ignoreDependencies": ["tailwindcss"]
+    },
+    "hub/deploy/site": {
+      "entry": ["src/worker.ts!", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts!"]
     }
   }
 }

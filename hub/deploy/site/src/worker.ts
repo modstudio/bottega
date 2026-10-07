@@ -1,7 +1,7 @@
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { decideSiteRequest } from './decision.ts'
 
-export const APP_ORIGIN = `https://app.${PLATFORM_SLUG}.run`
+const APP_ORIGIN = `https://app.${PLATFORM_SLUG}.run`
 
 async function forward(request: Request, target: URL) {
   const headers = new Headers(request.headers)
@@ -17,7 +17,7 @@ async function forward(request: Request, target: URL) {
   })
 }
 
-export async function handleRequest(request: Request) {
+async function handleRequest(request: Request) {
   const source = new URL(request.url)
   const target = new URL(`${source.pathname}${source.search}`, APP_ORIGIN)
   switch (decideSiteRequest(request.method, source.pathname)) {

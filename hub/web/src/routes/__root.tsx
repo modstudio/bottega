@@ -129,14 +129,7 @@ function ShellContent() {
   })
   const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
   if (origin.kind === 'public') {
-    if (!isPublicSitePath(pathname)) return null
-    return (
-      <HostedPublicFrame>
-        <SiteFrame identity="signed-out" appSignInHref={`${origin.appOrigin}/sign-in`}>
-          <Outlet />
-        </SiteFrame>
-      </HostedPublicFrame>
-    )
+    return <PublicOriginShell pathname={pathname} appOrigin={origin.appOrigin} />
   }
   if (hosted && isHostedSignInFramePath(pathname)) {
     return (
@@ -145,14 +138,13 @@ function ShellContent() {
       </HostedSignInFrame>
     )
   }
-  if (
-    origin.kind === 'app' &&
-    (isMarketingPath(pathname) || isDocsPath(pathname)) &&
-    whoami.isFetched &&
-    !signedIn
-  ) {
-    return <OriginNavigation origin={origin.publicOrigin} />
-  }
+  const publicNavigationOrigin = publicOriginForNavigation(
+    origin,
+    pathname,
+    whoami.isFetched,
+    signedIn,
+  )
+  if (publicNavigationOrigin) return <OriginNavigation origin={publicNavigationOrigin} />
   if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
     // Wait for the first answer only. A later refetch of a failed, dataless request reports
     // pending again; unmounting the page for it would remount the observer that refetches.
@@ -167,6 +159,34 @@ function ShellContent() {
     )
   }
   return <AppLayout hosted={hosted} pathname={pathname} />
+}
+
+function PublicOriginShell({ pathname, appOrigin }: { pathname: string; appOrigin: string }) {
+  if (!isPublicSitePath(pathname)) return null
+  return (
+    <HostedPublicFrame>
+      <SiteFrame identity="signed-out" appSignInHref={`${appOrigin}/sign-in`}>
+        <Outlet />
+      </SiteFrame>
+    </HostedPublicFrame>
+  )
+}
+
+function publicOriginForNavigation(
+  origin: ReturnType<typeof hostedOrigin>,
+  pathname: string,
+  identityFetched: boolean,
+  signedIn: boolean,
+) {
+  if (
+    origin.kind === 'app' &&
+    (isMarketingPath(pathname) || isDocsPath(pathname)) &&
+    identityFetched &&
+    !signedIn
+  ) {
+    return origin.publicOrigin
+  }
+  return null
 }
 
 type OriginKind = ReturnType<typeof hostedOrigin>['kind']

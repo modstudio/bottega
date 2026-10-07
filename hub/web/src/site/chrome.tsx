@@ -139,13 +139,7 @@ export function SiteHeader({
             </Link>
             <span className="nav-sep" aria-hidden="true" />
             <a href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>GitHub</a>
-            {appSignInHref ? (
-              <a href={appSignInHref}>{identity === 'signed-in' ? 'Open app' : 'Sign in'}</a>
-            ) : (
-              <Link to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
-                {identity === 'signed-in' ? 'Open app' : 'Sign in'}
-              </Link>
-            )}
+            <AppEntryLink identity={identity} appSignInHref={appSignInHref} />
             <Link className="btn sm site-install" to="/docs">
               Install
             </Link>
@@ -302,21 +296,36 @@ export function SiteHeader({
           <a className="mm-link" href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>
             GitHub
           </a>
-          {appSignInHref ? (
-            <a className="mm-link" href={appSignInHref}>
-              {identity === 'signed-in' ? 'Open app' : 'Sign in'}
-            </a>
-          ) : (
-            <Link className="mm-link" to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
-              {identity === 'signed-in' ? 'Open app' : 'Sign in'}
-            </Link>
-          )}
+          <AppEntryLink identity={identity} appSignInHref={appSignInHref} className="mm-link" />
           <Link className="mm-link" to="/docs">
             Install {PLATFORM_NAME}
           </Link>
         </div>
       </div>
     </>
+  )
+}
+function AppEntryLink({
+  identity,
+  appSignInHref,
+  className,
+}: {
+  identity: SiteIdentity
+  appSignInHref?: string
+  className?: string
+}) {
+  const label = identity === 'signed-in' ? 'Open app' : 'Sign in'
+  if (appSignInHref) {
+    return (
+      <a className={className} href={appSignInHref}>
+        {label}
+      </a>
+    )
+  }
+  return (
+    <Link className={className} to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
+      {label}
+    </Link>
   )
 }
 function Flyout({

@@ -6,6 +6,7 @@ import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
+import { hubModuleSpecs } from './architecture-hub-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
@@ -63,8 +64,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
-  module('hub/deploy/site/src/decision.ts', []),
-  module('hub/deploy/site/src/worker.ts', ['./decision.ts', 'shared/brand.ts']),
+  ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
   ...releaseModules,
   ...retrievalModules,
@@ -727,17 +727,6 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
   ]),
   module('orchestrator/src/worktree/worktree-types.ts', []),
-  module('hub/src/fixture-question-reclaim.ts', ['./db.ts', './orch.ts', './reconcile.ts']),
-  module('hub/src/task-identity.ts', ['bun:sqlite', './db.ts', './task-adoption.ts']),
-  module('hub/src/service-revision.ts', [
-    '../../shared/install-root.ts',
-    '../../shared/process-identity.ts',
-    './db.ts',
-  ]),
-  module('hub/src/serve-lifecycle.ts', [
-    '../../shared/process-identity.ts',
-    '../../shared/state-directory.ts',
-  ]),
 ]
 
 export const inversions: ArchitectureInversion[] = [
