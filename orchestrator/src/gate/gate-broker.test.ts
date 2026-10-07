@@ -26,6 +26,14 @@ async function waitForFinishedGate(id: number): Promise<void> {
   throw new Error(`gate execution ${id} did not finish`)
 }
 
+async function waitFor(check: () => boolean, description: string): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (check()) return
+    await Bun.sleep(10)
+  }
+  throw new Error(`timed out waiting for ${description}`)
+}
+
 test("a rebased writer runs the gate from its tree and records only a clean tree's HEAD", async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-'))
   const repository = join(root, 'repository')
@@ -90,11 +98,15 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
       .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
       .get(runId, new Date().toISOString()) as { id: number }
   ).id
+  const started: number[] = []
+  const finished: number[] = []
 
   const broker = startGateBroker({
     runId,
     scratchDir: scratch,
     environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
+    onExecutionStart: ({ executionId }) => started.push(executionId),
+    onExecutionFinish: ({ executionId }) => finished.push(executionId),
   })
   try {
     await waitForFinishedGate(gateId)
@@ -134,6 +146,27 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
         }
       ).head_commit,
     ).toBeNull()
+
+    writeFileSync(join(repository, 'scripts', 'gate'), '#!/bin/sh\nwhile :; do sleep 1; done\n')
+    const cancelledGateId = (
+      db()
+        .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+        .get(runId, new Date().toISOString()) as { id: number }
+    ).id
+    await waitFor(() => started.includes(cancelledGateId), `gate ${cancelledGateId} to start`)
+    await broker.close()
+
+    expect(started).toEqual([gateId, dirtyGateId, cancelledGateId])
+    expect(finished).toEqual([gateId, dirtyGateId, cancelledGateId])
+    expect(
+      (
+        db()
+          .query('SELECT cancelled_reason FROM gate_execution WHERE id=?')
+          .get(cancelledGateId) as {
+          cancelled_reason: string | null
+        }
+      ).cancelled_reason,
+    ).not.toBeNull()
   } finally {
     await broker.close()
     rmSync(root, { recursive: true, force: true })

@@ -24,8 +24,9 @@ import {
 /** A pending check is a plain read; only an actual claim takes the write lock. */
 const GATE_REQUEST_POLL_MS = 1000
 
-type PendingGate = { id: number; run_id: number }
+type PendingGate = { id: number; run_id: number; startedAt: string }
 type ActiveGate = { completion: Promise<void>; cancel(reason: string): Promise<void> }
+export type GateExecutionMoment = { executionId: number; at: string }
 
 const PENDING_GATE_SQL = `SELECT id,run_id FROM gate_execution
   WHERE run_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`
@@ -33,12 +34,13 @@ const PENDING_GATE_SQL = `SELECT id,run_id FROM gate_execution
 function claimPendingGate(runId: number): PendingGate | null {
   if (!db().query(PENDING_GATE_SQL).get(runId)) return null
   return writeTransaction(() => {
-    const row = db().query(PENDING_GATE_SQL).get(runId) as PendingGate | null
+    const row = db().query(PENDING_GATE_SQL).get(runId) as Omit<PendingGate, 'startedAt'> | null
     if (!row) return null
+    const startedAt = nowIso()
     const claimed = db()
       .query('UPDATE gate_execution SET started_at=? WHERE id=? AND started_at IS NULL')
-      .run(nowIso(), row.id)
-    return claimed.changes === 1 ? row : null
+      .run(startedAt, row.id)
+    return claimed.changes === 1 ? { ...row, startedAt } : null
   })
 }
 
@@ -128,6 +130,7 @@ function startGateExecution(
   scratchDir: string,
   environment: Record<string, string>,
   registerActive: (terminate: () => Promise<void>) => () => void,
+  onFinish: ((moment: GateExecutionMoment) => void) | undefined,
 ): ActiveGate {
   let child: ReturnType<typeof spawn> | null = null
   let termination: Promise<void> | null = null
@@ -219,6 +222,7 @@ function startGateExecution(
     } finally {
       closeSync(fd)
     }
+    const finishedAt = nowIso()
     db()
       .query(
         `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
@@ -226,7 +230,7 @@ function startGateExecution(
          WHERE id=?`,
       )
       .run(
-        nowIso(),
+        finishedAt,
         exitCode,
         timedOut ? 1 : 0,
         Date.now() - started,
@@ -236,6 +240,7 @@ function startGateExecution(
         command,
         request.id,
       )
+    onFinish?.({ executionId: request.id, at: finishedAt })
   })().finally(unregister)
   return { completion, cancel: (reason) => stop(reason) }
 }
@@ -248,6 +253,8 @@ export function startGateBroker(input: {
   scratchDir: string
   environment: Record<string, string>
   registerActive?: (terminate: () => Promise<void>) => () => void
+  onExecutionStart?: (moment: GateExecutionMoment) => void
+  onExecutionFinish?: (moment: GateExecutionMoment) => void
 }): GateBroker {
   let closed = false
   let active: ActiveGate | null = null
@@ -256,11 +263,13 @@ export function startGateBroker(input: {
     if (closed || active) return
     const request = claimPendingGate(input.runId)
     if (!request) return
+    input.onExecutionStart?.({ executionId: request.id, at: request.startedAt })
     const execution = startGateExecution(
       request,
       input.scratchDir,
       input.environment,
       registerActive,
+      input.onExecutionFinish,
     )
     active = execution
     void execution.completion.then(
