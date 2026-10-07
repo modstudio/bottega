@@ -87,6 +87,17 @@ const identity: CursorIdentity = {
   branch: 'DEV-977-work',
   worktree: '/fixture/work',
   session: 's',
+  createdAt: '2026-09-01',
+  stepActivatedAt: '2026-09-01',
+}
+
+const planningIdentity: CursorIdentity = {
+  project: 'fixture',
+  workflowKey: '',
+  branch: null,
+  worktree: '/fixture/work',
+  session: 's',
+  createdAt: '2026-09-01',
   stepActivatedAt: '2026-09-01',
 }
 
@@ -153,20 +164,29 @@ const projectId = (d: Database, name: string) =>
 
 const insertRun = (
   d: Database,
-  input: { project: string; launchKey?: string | null; branch?: string | null; status?: string },
+  input: {
+    project: string
+    launchKey?: string | null
+    branch?: string | null
+    status?: string
+    sessionId?: string | null
+    startedAt?: string
+  },
 ) =>
   (
     d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO run (started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch)
-         VALUES ('2026-09-01','codex','implement',?,?, 'sha',1,'p',?,0,?,?) RETURNING id`,
+        `INSERT INTO run (started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
+         VALUES (?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING id`,
       )
       .get(
+        input.startedAt ?? '2026-09-01',
         input.project,
         projectId(d, input.project),
         input.status ?? 'ok',
         input.launchKey ?? null,
         input.branch ?? null,
+        input.sessionId ?? null,
       ) as { id: number }
   ).id
 
@@ -174,10 +194,11 @@ const gather = (
   d: Database,
   evidence: Parameters<typeof gatherValidatedEvidence>[0]['evidence'],
   extraPorts: FloorEvidencePorts = {},
+  cursorIdentity: CursorIdentity = identity,
 ) =>
   gatherValidatedEvidence({
     cursorId: 1,
-    identity,
+    identity: cursorIdentity,
     stepOrdinal: 1,
     stepSlug: 'rebase',
     evidence,
@@ -681,5 +702,70 @@ test('an obligation preserves its operator ruling requirement', () => {
   expect(gather(d, { satisfies: 1 }).satisfy).toMatchObject({
     found: true,
     floor: { kind: 'ruling', operatorRuling: true },
+  })
+})
+
+test('a keyless branchless cursor accepts a same-session run created after it', () => {
+  const d = database()
+  const matching = insertRun(d, {
+    project: 'fixture',
+    sessionId: 's',
+    startedAt: '2026-09-02',
+  })
+  expect(gather(d, { run: matching }, {}, planningIdentity).run).toEqual({
+    id: matching,
+    terminal: true,
+    exitCode: 0,
+  })
+})
+
+test('a keyless branchless cursor refuses a later run from another session', () => {
+  const d = database()
+  const foreign = insertRun(d, {
+    project: 'fixture',
+    sessionId: 'other',
+    startedAt: '2026-09-02',
+  })
+  expect(() => gather(d, { run: foreign }, {}, planningIdentity)).toThrow(
+    `--run ${foreign} session is other, not this cursor's owning session s; dispatch the run from the cursor's owning session after composing the workflow, or pass --key once a task exists`,
+  )
+})
+
+test('a keyless branchless cursor refuses a same-session run created before it', () => {
+  const d = database()
+  const earlier = insertRun(d, {
+    project: 'fixture',
+    sessionId: 's',
+    startedAt: '2026-08-31',
+  })
+  expect(() => gather(d, { run: earlier }, {}, planningIdentity)).toThrow(
+    `--run ${earlier} predates this cursor; dispatch the run from the cursor's owning session after composing the workflow, or pass --key once a task exists`,
+  )
+})
+
+test('a keyed cursor refuses a same-session run whose key and branch both mismatch', () => {
+  const d = database()
+  const mismatched = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-1',
+    branch: 'other-branch',
+    sessionId: 's',
+    startedAt: '2026-09-02',
+  })
+  expect(() => gather(d, { run: mismatched })).toThrow(
+    `--run ${mismatched} launch_key is DEV-1, not this cursor's DEV-977, and branch is other-branch, not this cursor's DEV-977-work`,
+  )
+})
+
+test('an explicit run artifact reaches keyless binding', () => {
+  const d = database()
+  const matching = insertRun(d, {
+    project: 'fixture',
+    sessionId: 's',
+    startedAt: '2026-09-02',
+  })
+  expect(gather(d, { artifact: `run:${matching}` }, {}, planningIdentity).artifact).toEqual({
+    ref: `run:${matching}`,
+    exists: true,
   })
 })
