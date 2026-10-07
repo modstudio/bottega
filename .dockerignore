@@ -16,9 +16,12 @@
 # A workspace member's manifest, needed by the frozen install even though the
 # image never runs its code.
 !retrieval/package.json
+!hub/deploy/site/package.json
 !hub/web/tsconfig.json
 !hub/web/vite.config.ts
 !hub/web/index.html
+# Root static files the page links to, such as the favicon.
+!hub/web/public/
 !hub/web/src/
 **/*.test.ts
 **/*.test.tsx
