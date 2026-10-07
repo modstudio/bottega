@@ -680,13 +680,13 @@
 .site-page .docs-home-topics > .docs-home-eyebrow {
   margin-bottom: 22px;
 }
-.site-page .docs-home button {
+.site-page.docs-home button {
   color: inherit;
   cursor: pointer;
   font: inherit;
   text-align: left;
 }
-.site-page .docs-home .cell {
+.site-page.docs-home .cell {
   border: 0;
 }
 .site-page .topics {
