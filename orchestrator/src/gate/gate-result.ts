@@ -1,17 +1,31 @@
 // concern: recorded gate evidence for read-only workers
 
 import { db } from '../database/db.ts'
+import { projectAt } from '../project/projects.ts'
 
 export type RecordedGateCandidate = {
   id: number
   projectId: number | null
   headCommit: string | null
-  runId: number
+  runId: number | null
   exitCode: number | null
   timedOut: boolean | null
   elapsedMs: number | null
   finishedAt: string
   outputTail: string
+}
+
+type GateExecutionRow = {
+  id: number
+  project_id: number | null
+  head_commit: string | null
+  run_id: number | null
+  exit_code: number | null
+  timed_out: number | null
+  elapsed_ms: number | null
+  finished_at: string
+  output_tail: string | null
+  cwd: string | null
 }
 
 /** Choose the newest finished gate for the exact project commit under review. */
@@ -33,6 +47,34 @@ export function selectRecordedGateResult(
     }, null)
 }
 
+function architectProjectIdsByCwd(
+  rows: readonly Pick<GateExecutionRow, 'project_id' | 'cwd'>[],
+): Map<string, number | null> {
+  const cwdProjectIds = new Map<string, number | null>()
+  for (const row of rows) {
+    if (row.project_id !== null || !row.cwd || cwdProjectIds.has(row.cwd)) continue
+    cwdProjectIds.set(row.cwd, projectAt(row.cwd)?.id ?? null)
+  }
+  return cwdProjectIds
+}
+
+function recordedGateCandidateFromRow(
+  row: GateExecutionRow,
+  cwdProjectIds: ReadonlyMap<string, number | null>,
+): RecordedGateCandidate {
+  return {
+    id: row.id,
+    projectId: row.project_id ?? (row.cwd ? (cwdProjectIds.get(row.cwd) ?? null) : null),
+    headCommit: row.head_commit,
+    runId: row.run_id,
+    exitCode: row.exit_code,
+    timedOut: row.timed_out === null ? null : row.timed_out === 1,
+    elapsedMs: row.elapsed_ms,
+    finishedAt: row.finished_at,
+    outputTail: row.output_tail ?? '',
+  }
+}
+
 export function recordedGateResult(runId: number): {
   headCommit: string | null
   result: RecordedGateCandidate | null
@@ -44,38 +86,19 @@ export function recordedGateResult(runId: number): {
   if (!run?.project_id || !run.head_commit)
     return { headCommit: run?.head_commit ?? null, result: null }
 
-  const candidates = db()
+  const rows = db()
     .query(
       `SELECT g.id,r.project_id,g.head_commit,g.run_id,g.exit_code,g.timed_out,g.elapsed_ms,
-              g.finished_at,g.output_tail
-       FROM gate_execution g JOIN run r ON r.id=g.run_id
+              g.finished_at,g.output_tail,g.cwd
+       FROM gate_execution g LEFT JOIN run r ON r.id=g.run_id
        WHERE g.finished_at IS NOT NULL`,
     )
-    .all() as Array<{
-    id: number
-    project_id: number | null
-    head_commit: string | null
-    run_id: number
-    exit_code: number | null
-    timed_out: number | null
-    elapsed_ms: number | null
-    finished_at: string
-    output_tail: string | null
-  }>
+    .all() as GateExecutionRow[]
+  const cwdProjectIds = architectProjectIdsByCwd(rows)
   return {
     headCommit: run.head_commit,
     result: selectRecordedGateResult(
-      candidates.map((candidate) => ({
-        id: candidate.id,
-        projectId: candidate.project_id,
-        headCommit: candidate.head_commit,
-        runId: candidate.run_id,
-        exitCode: candidate.exit_code,
-        timedOut: candidate.timed_out === null ? null : candidate.timed_out === 1,
-        elapsedMs: candidate.elapsed_ms,
-        finishedAt: candidate.finished_at,
-        outputTail: candidate.output_tail ?? '',
-      })),
+      rows.map((row) => recordedGateCandidateFromRow(row, cwdProjectIds)),
       { projectId: run.project_id, headCommit: run.head_commit },
     ),
   }
@@ -93,7 +116,7 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
   return [
     `Recorded gate result for commit ${result.headCommit}:`,
     "This result was recorded by the project's writer gate or by orch gate run for that commit.",
-    `executing run id: ${result.runId}`,
+    result.runId === null ? 'recorded by: orch gate run' : `executing run id: ${result.runId}`,
     `exit code: ${result.exitCode ?? 'not recorded'}`,
     `timed out: ${result.timedOut ?? 'not recorded'}`,
     `elapsed ms: ${result.elapsedMs ?? 'not recorded'}`,
