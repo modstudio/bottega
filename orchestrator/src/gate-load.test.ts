@@ -7,6 +7,7 @@ import {
   GATE_CONCURRENCY_LIMIT,
   gateHoldConditions,
   holdForGateCapacity,
+  parseMacOSMemoryPressure,
   shouldHoldShard,
   withGateSlot,
 } from './gate-load.ts'
@@ -21,6 +22,7 @@ const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
   loadavg: 0.2,
   ncpu: 8,
   freeMem: 8 * 1024 * 1024 * 1024,
+  pressure: 'unknown',
   ...over,
 })
 
@@ -102,19 +104,54 @@ describe('gate load hold', () => {
 
   test('CPU and memory floors hold even with one gate', () => {
     expect(shouldHoldShard(idle({ gates: 1, loadavg: 8, ncpu: 8 }))).toBe(true)
-    expect(shouldHoldShard(idle({ gates: 1, freeMem: 512 * 1024 * 1024 }))).toBe(true)
+    expect(
+      gateHoldConditions(idle({ gates: 1, freeMem: 512 * 1024 * 1024 }), undefined, 'linux'),
+    ).toEqual(['memory'])
     expect(shouldHoldShard(idle({ gates: 2 }))).toBe(false)
     expect(shouldHoldShard(idle({ gates: 3 }))).toBe(true)
   })
 
   test('hold conditions name each threshold alone and in combination', () => {
-    expect(gateHoldConditions(idle({ gates: 3 }))).toEqual(['gates'])
-    expect(gateHoldConditions(idle({ loadavg: 8, ncpu: 8 }))).toEqual(['load'])
-    expect(gateHoldConditions(idle({ freeMem: 64 * 1024 * 1024 }))).toEqual(['memory'])
+    expect(gateHoldConditions(idle({ gates: 3 }), undefined, 'linux')).toEqual(['gates'])
+    expect(gateHoldConditions(idle({ loadavg: 8, ncpu: 8 }), undefined, 'linux')).toEqual(['load'])
+    expect(gateHoldConditions(idle({ freeMem: 64 * 1024 * 1024 }), undefined, 'linux')).toEqual([
+      'memory',
+    ])
     expect(
-      gateHoldConditions(idle({ gates: 3, loadavg: 8, ncpu: 8, freeMem: 64 * 1024 * 1024 })),
+      gateHoldConditions(
+        idle({ gates: 3, loadavg: 8, ncpu: 8, freeMem: 64 * 1024 * 1024 }),
+        undefined,
+        'linux',
+      ),
     ).toEqual(['gates', 'load', 'memory'])
-    expect(gateHoldConditions(idle())).toEqual([])
+    expect(gateHoldConditions(idle(), undefined, 'linux')).toEqual([])
+  })
+
+  test('macOS memory holds only on warning or critical pressure', () => {
+    const lowFreeMem = 64 * 1024 * 1024
+    expect(
+      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'warning' }), undefined, 'darwin'),
+    ).toEqual(['memory'])
+    expect(
+      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'critical' }), undefined, 'darwin'),
+    ).toEqual(['memory'])
+    expect(
+      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'normal' }), undefined, 'darwin'),
+    ).toEqual([])
+    expect(
+      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'unknown' }), undefined, 'darwin'),
+    ).toEqual([])
+  })
+
+  test('other platforms use free memory regardless of pressure', () => {
+    for (const pressure of ['normal', 'warning', 'critical', 'unknown'] as const) {
+      expect(
+        gateHoldConditions(idle({ freeMem: 64 * 1024 * 1024, pressure }), undefined, 'linux'),
+      ).toEqual(['memory'])
+      expect(
+        gateHoldConditions(idle({ freeMem: 8 * 1024 * 1024 * 1024, pressure }), undefined, 'linux'),
+      ).toEqual([])
+    }
   })
 
   test('withGateSlot holds then runs', async () => {
@@ -164,6 +201,7 @@ describe('gate load hold', () => {
         now: () => clock,
         pollMs: 25,
         maxMs: 100,
+        platform: 'linux',
       })
     } finally {
       error.mockRestore()
@@ -187,6 +225,7 @@ describe('gate load hold', () => {
         now: () => clock,
         pollMs: 25,
         maxMs: 50,
+        platform: 'linux',
       })
       expect(result).toBe('ok')
     } finally {
@@ -195,6 +234,7 @@ describe('gate load hold', () => {
     expect(lines[0]).toStartWith('held 50ms for host load ')
     expect(lines[0]).toContain('gates=2 loadavg=0.2 ncpu=8')
     expect(lines[0]).toContain('free_mb=64 floor_mb=1024')
+    expect(lines[0]).toContain('floor_mb=1024 pressure=unknown held_on=memory')
     expect(lines[0]).toContain('held_on=memory')
     expect(lines[1]).toBe(
       'admitted over the load threshold after the maximum hold; a per-test timeout in this run is suspect, rerun before treating it as a failure',
@@ -210,6 +250,20 @@ describe('gate load hold', () => {
       },
     })
     expect(result).toBe('ok')
+  })
+})
+
+describe('macOS memory pressure parsing', () => {
+  test.each([
+    ['1', 'normal'],
+    [' 2\n', 'warning'],
+    ['\t4 ', 'critical'],
+    ['', 'unknown'],
+    ['3', 'unknown'],
+    ['warning', 'unknown'],
+    [undefined, 'unknown'],
+  ] as const)('maps %p to %s', (output, expected) => {
+    expect(parseMacOSMemoryPressure(output)).toBe(expected)
   })
 })
 

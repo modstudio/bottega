@@ -7,13 +7,17 @@ export type HostLoad = {
   loadavg: number
   ncpu: number
   freeMem: number
+  pressure: MemoryPressure
 }
+
+export type MemoryPressure = 'normal' | 'warning' | 'critical' | 'unknown'
 
 /** Two concurrent gates is the measured safe operating point. */
 export const GATE_CONCURRENCY_LIMIT = 2
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
 const GATE_HOLD_MAX_MS = 10 * 60_000
+const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -52,12 +56,48 @@ function registerGatePid(pid = process.pid, dir = gatePidDir()): () => void {
   return () => rmSync(path, { force: true })
 }
 
-function measureHostLoad(env: NodeJS.ProcessEnv = process.env, selfPid = process.pid): HostLoad {
+export function parseMacOSMemoryPressure(output: string | undefined): MemoryPressure {
+  switch (output?.trim()) {
+    case '1':
+      return 'normal'
+    case '2':
+      return 'warning'
+    case '4':
+      return 'critical'
+    default:
+      return 'unknown'
+  }
+}
+
+function readMemoryPressure(platform: NodeJS.Platform): MemoryPressure {
+  if (platform !== 'darwin') return 'unknown'
+  try {
+    const result = Bun.spawnSync(
+      ['/usr/sbin/sysctl', '-n', 'kern.memorystatus_vm_pressure_level'],
+      {
+        stdout: 'pipe',
+        stderr: 'ignore',
+        timeout: MEMORY_PRESSURE_READ_TIMEOUT_MS,
+      },
+    )
+    if (result.exitCode !== 0) return 'unknown'
+    return parseMacOSMemoryPressure(result.stdout.toString())
+  } catch {
+    return 'unknown'
+  }
+}
+
+function measureHostLoad(
+  env: NodeJS.ProcessEnv = process.env,
+  selfPid = process.pid,
+  platform: NodeJS.Platform = process.platform,
+): HostLoad {
   return {
     gates: countRunningGates(gatePidDir(env), selfPid),
     loadavg: loadavg()[0] ?? 0,
     ncpu: Math.max(1, cpus().length),
     freeMem: freemem(),
+    pressure: readMemoryPressure(platform),
   }
 }
 
@@ -67,11 +107,16 @@ const GATE_HOLD_CONDITION_ORDER: GateHoldCondition[] = ['gates', 'load', 'memory
 export function gateHoldConditions(
   load: HostLoad,
   limit = GATE_CONCURRENCY_LIMIT,
+  platform: NodeJS.Platform = process.platform,
 ): GateHoldCondition[] {
   const conditions: GateHoldCondition[] = []
   if (load.gates > limit) conditions.push('gates')
   if (load.loadavg >= load.ncpu) conditions.push('load')
-  if (load.freeMem < FREE_MEM_FLOOR_BYTES) conditions.push('memory')
+  const memoryHeld =
+    platform === 'darwin'
+      ? load.pressure === 'warning' || load.pressure === 'critical'
+      : load.freeMem < FREE_MEM_FLOOR_BYTES
+  if (memoryHeld) conditions.push('memory')
   return conditions
 }
 
@@ -87,6 +132,7 @@ type GateHoldOpts = {
   pollMs?: number
   maxMs?: number
   limit?: number
+  platform?: NodeJS.Platform
 }
 
 export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts = {}): Promise<T> {
@@ -97,8 +143,9 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
   // keep shouldHoldShard's meaning: total gates including this one, over the
   // limit, holds.
   const env = opts.env ?? process.env
+  const platform = opts.platform ?? process.platform
   if (!env.CI) {
-    const measure = opts.measure ?? (() => measureHostLoad(env))
+    const measure = opts.measure ?? (() => measureHostLoad(env, process.pid, platform))
     const asRunner = (): HostLoad => {
       const load = measure()
       return { ...load, gates: load.gates + 1 }
@@ -110,6 +157,7 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
           `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu} ` +
           `free_mb=${Math.floor(held.load.freeMem / MEBIBYTE_BYTES)} ` +
           `floor_mb=${Math.floor(FREE_MEM_FLOOR_BYTES / MEBIBYTE_BYTES)} ` +
+          `pressure=${held.load.pressure} ` +
           `held_on=${held.heldOn.join('+')})`,
       )
       if (held.exhausted) {
@@ -140,10 +188,11 @@ export async function holdForGateCapacity(opts: GateHoldOpts = {}): Promise<{
   const now = opts.now ?? Date.now
   const pollMs = opts.pollMs ?? GATE_HOLD_POLL_MS
   const maxMs = opts.maxMs ?? GATE_HOLD_MAX_MS
+  const platform = opts.platform ?? process.platform
   const started = now()
   let delayedMs = 0
   let load = measure()
-  const seenConditions = new Set(gateHoldConditions(load, opts.limit))
+  const seenConditions = new Set(gateHoldConditions(load, opts.limit, platform))
   const heldOn = () =>
     GATE_HOLD_CONDITION_ORDER.filter((condition) => seenConditions.has(condition))
   if (seenConditions.size === 0) {
@@ -153,7 +202,7 @@ export async function holdForGateCapacity(opts: GateHoldOpts = {}): Promise<{
     await sleep(Math.min(pollMs, maxMs - delayedMs))
     delayedMs = now() - started
     load = measure()
-    const conditions = gateHoldConditions(load, opts.limit)
+    const conditions = gateHoldConditions(load, opts.limit, platform)
     for (const condition of conditions) seenConditions.add(condition)
     if (conditions.length === 0) {
       return { delayedMs, held: true, exhausted: false, load, heldOn: heldOn() }
