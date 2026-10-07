@@ -694,42 +694,30 @@
 .site-page .topics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 52px 36px;
+  gap: 0 36px;
 }
-.site-page .topics li button.topic-all {
-  color: var(--ink);
-}
-.site-page .topics h4 {
-  margin: 0 0 14px;
-  font-size: 13.5px;
-  font-weight: 400;
-}
-.site-page .topics h4 button,
-.site-page .topics li button {
+.site-page .topics button {
   appearance: none;
   background: none;
   border: 0;
-  padding: 0;
-}
-.site-page .topics ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  border-bottom: 1px solid var(--line);
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0;
+  font-size: 14px;
 }
-.site-page .topics li button {
-  font-size: 13.5px;
-  color: var(--muted);
+.site-page .topics .topic-count {
+  color: var(--faint);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 12px;
 }
 .site-page .topics button:hover {
-  color: var(--ink);
+  border-bottom-color: var(--ink);
 }
 @media (max-width: 720px) {
   .site-page .topics {
     grid-template-columns: 1fr;
-    gap: 28px;
   }
 }
 .site-page .steps {

@@ -7,12 +7,10 @@ import type { DocsSearchMatch, DocsTreeItem } from './types.ts'
 
 export const FEATURED_GUIDE_LIMIT = 9
 
-/** A topic column lists this many of its documents; the rest sit behind its "all" link. */
-export const TOPIC_LINK_LIMIT = 5
-
 export type DocsHomeModel = {
   featured: DocsTreeItem[]
-  topics: Array<{ heading: DocsTreeItem | null; items: DocsTreeItem[]; total: number }>
+  /** Top-level documents in tree order, each with how many documents sit beneath it. */
+  topics: Array<{ doc: DocsTreeItem; count: number }>
 }
 
 export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
@@ -21,16 +19,12 @@ export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
     return [node, ...node.children.flatMap(visit)]
   })
   const featured = ordered.filter((item) => item.featured).slice(0, FEATURED_GUIDE_LIMIT)
-  const topics: DocsHomeModel['topics'] = roots
-    .filter((root) => root.children.length)
-    .map((root) => ({
-      heading: root,
-      items: root.children.slice(0, TOPIC_LINK_LIMIT),
-      total: root.children.length,
-    }))
-  const more = roots.filter((root) => !root.children.length)
-  if (more.length)
-    topics.push({ heading: null, items: more.slice(0, TOPIC_LINK_LIMIT), total: more.length })
+  const topics = roots.map((root) => ({
+    doc: root as DocsTreeItem,
+    count: root.children.flatMap(function visit(node): DocsTreeItem[] {
+      return [node, ...node.children.flatMap(visit)]
+    }).length,
+  }))
   return { featured, topics }
 }
 
@@ -106,37 +100,10 @@ export function DocsHome({
                 <span className="eyebrow docs-home-eyebrow">Browse by topic</span>
                 <div className="topics">
                   {model.topics.map((topic) => (
-                    <div key={topic.heading?.id ?? 'more'}>
-                      <h4>
-                        {topic.heading ? (
-                          <button type="button" onClick={() => onSelect(topic.heading!)}>
-                            {topic.heading.title}
-                          </button>
-                        ) : (
-                          'More'
-                        )}
-                      </h4>
-                      <ul>
-                        {topic.items.map((item) => (
-                          <li key={item.id}>
-                            <button type="button" onClick={() => onSelect(item)}>
-                              {item.title}
-                            </button>
-                          </li>
-                        ))}
-                        {topic.total > topic.items.length ? (
-                          <li>
-                            <button
-                              className="topic-all"
-                              type="button"
-                              onClick={() => onSelect(topic.heading ?? topic.items[0]!)}
-                            >
-                              All {topic.total} →
-                            </button>
-                          </li>
-                        ) : null}
-                      </ul>
-                    </div>
+                    <button type="button" key={topic.doc.id} onClick={() => onSelect(topic.doc)}>
+                      <span>{topic.doc.title}</span>
+                      {topic.count ? <span className="topic-count">{topic.count}</span> : null}
+                    </button>
                   ))}
                 </div>
               </div>
