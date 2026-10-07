@@ -54,30 +54,32 @@ function error(project: string, allocationKey: string, detail: string): string {
 
 function parseRows(stdout: Uint8Array): RecipeDatabaseConnectionRow[] | null {
   try {
-    return new TextDecoder()
-      .decode(stdout)
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
-      // A server's own background processes belong to no database.
-      .filter((row) => row.datname !== null)
-      .map((row) => {
-        const applicationName = row.application_name ?? ''
-        if (
-          typeof row.datname !== 'string' ||
-          typeof applicationName !== 'string' ||
-          typeof row.backend_start !== 'string' ||
-          (typeof row.state !== 'string' && row.state !== null)
-        )
-          throw new Error('invalid activity row')
-        return {
-          datname: row.datname,
-          applicationName,
-          backendStart: row.backend_start,
-          state: row.state,
-        }
-      })
+    return (
+      new TextDecoder()
+        .decode(stdout)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        // A server's own background processes belong to no database.
+        .filter((row) => row.datname !== null)
+        .map((row) => {
+          const applicationName = row.application_name ?? ''
+          if (
+            typeof row.datname !== 'string' ||
+            typeof applicationName !== 'string' ||
+            typeof row.backend_start !== 'string' ||
+            (typeof row.state !== 'string' && row.state !== null)
+          )
+            throw new Error('invalid activity row')
+          return {
+            datname: row.datname,
+            applicationName,
+            backendStart: row.backend_start,
+            state: row.state,
+          }
+        })
+    )
   } catch {
     return null
   }

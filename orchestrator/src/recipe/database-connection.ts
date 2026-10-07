@@ -56,6 +56,7 @@ export function connectionUrlForAllocatedDatabase(
 ): string {
   const url = parseConnectionUrl(value)
   url.pathname = `/${encodeURIComponent(databaseName)}`
-  if (engine === 'postgres') url.searchParams.set('application_name', treeApplicationName(treeLabel))
+  if (engine === 'postgres')
+    url.searchParams.set('application_name', treeApplicationName(treeLabel))
   return url.href
 }
