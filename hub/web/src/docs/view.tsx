@@ -21,6 +21,7 @@ import type {
   DocsTreeItem,
   TreeNode,
 } from './types.ts'
+import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
@@ -88,8 +89,8 @@ function DocsChrome({
     ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
   ]
   return (
-    <div className="docs-chrome-rule relative">
-      <div className="mx-auto flex w-full max-w-(--docs-width) flex-wrap items-end justify-between gap-3 px-5">
+    <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
+      <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-end justify-between gap-3 px-5">
         {/* The tab list's own rule lies on the chrome's, so the selected marker sits on that line. */}
         <div className="relative z-10">
           <Tabs
@@ -162,10 +163,13 @@ function DocsRail({
   audience: DocsAudience
 }) {
   const hasTree = groups ? groups.length > 0 : tree.length > 0
+  const panel = useRef<HTMLElement>(null)
+  useHeldPanel(panel)
   return (
     <nav
+      ref={panel}
       aria-label="Documents"
-      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--topbar-h)-3.5rem)] lg:border-r lg:border-b-0"
+      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-(--docs-stick) lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:border-b-0"
     >
       <button
         type="button"
@@ -322,8 +326,8 @@ export function DocsView({
         'flex flex-col',
         // The public page sits on the site's ground; inside the app every surface is the page's own.
         framed
-          ? 'site-docs-chrome min-h-dvh bg-surface-sunken'
-          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page md:-mt-6 -mx-4 -mb-8 md:-mx-8',
+          ? 'site-docs-chrome min-h-dvh bg-surface-sunken [--docs-top:var(--site-nav-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))]'
+          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page [--docs-top:var(--topbar-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >
       {framed ? null : (
@@ -364,7 +368,7 @@ export function DocsView({
       />
       <div
         className={classes(
-          'mx-auto grid min-h-0 w-full flex-1 grid-cols-1',
+          'mx-auto grid min-h-0 w-full flex-1 grid-cols-1 lg:min-h-[calc(100dvh-var(--docs-stick))]',
           wide
             ? 'lg:grid-cols-[16.75rem_minmax(0,1fr)]'
             : 'max-w-(--docs-width) lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]',

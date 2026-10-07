@@ -1,5 +1,5 @@
 import { Maximize2, Minimize2 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
@@ -7,6 +7,7 @@ import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
+import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
@@ -22,27 +23,80 @@ function updatedLabel(value: string) {
   }).format(date)
 }
 
+/** Room the sticky article header takes, so the title counts as gone once it is behind it. */
+const READING_TOP_HEIGHT = 44
+
+/** Whether the element has scrolled up behind the article's sticky header. */
+function useScrolledPast(target: RefObject<HTMLElement | null>, watch: unknown): boolean {
+  const [past, setPast] = useState(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new document mounts a new title to watch.
+  useEffect(() => {
+    const node = target.current
+    if (!node) {
+      setPast(false)
+      return
+    }
+    const sticky = node.previousElementSibling
+    const line = sticky ? Number.parseFloat(getComputedStyle(sticky).top) || 0 : 0
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry) setPast(!entry.isIntersecting && entry.boundingClientRect.top < line + 200)
+      },
+      { rootMargin: `-${line + READING_TOP_HEIGHT}px 0px 0px 0px` },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [target, watch])
+  return past
+}
+
+/**
+ * The article's own header: it stays at the top of the pane while the article scrolls, and
+ * once the title has scrolled away it carries the title as the last crumb.
+ */
 function ReadingTop({
   crumbs,
+  title,
+  titleGone,
   wide,
   onWide,
 }: {
   crumbs: readonly BreadcrumbPart[]
+  title: string
+  titleGone: boolean
   wide: boolean
   onWide: (wide: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
+    <div
+      className={classes(
+        '-mx-6 md:-mx-11 z-10 flex lg:sticky lg:top-(--docs-stick) items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-11',
+        titleGone ? 'border-border-default' : 'border-transparent',
+      )}
+    >
+      <div
+        className={classes(
+          eyebrow,
+          'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
+        )}
+      >
         {crumbs.map((crumb, index) => (
           <span key={crumb.key} className="contents">
             {index > 0 ? <span>/</span> : null}
             <span>{crumb.label}</span>
           </span>
         ))}
+        {titleGone ? (
+          <>
+            <span>/</span>
+            <span className="min-w-0 truncate font-sans text-md text-text-primary normal-case tracking-normal">
+              {title}
+            </span>
+          </>
+        ) : null}
       </div>
       {/* For an article of wide tables: the pane takes the room of the facts column too. */}
-      <div className="-mt-1.5 hidden shrink-0 lg:block">
+      <div className="hidden shrink-0 lg:block">
         <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
           {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           {wide ? 'Reading width' : 'Wide'}
@@ -61,7 +115,7 @@ function ReadingAround({
 }) {
   const { previous, next } = around
   return (
-    <div className="doc-measure mt-14 flex justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
+    <div className="doc-measure -mb-8 md:-mb-9 mt-14 flex items-center justify-between gap-4 border-border-default border-t py-5 text-md text-text-muted">
       {previous ? (
         <button
           type="button"
@@ -111,9 +165,11 @@ export function DocsReading({
   error?: string | null
 }) {
   const shown = doc ? paneTitle(doc.title, doc.body) : { title: '', lede: null }
+  const heading = useRef<HTMLHeadingElement>(null)
+  const titleGone = useScrolledPast(heading, doc?.id)
   return (
     <main
-      className="min-w-0 bg-surface-page px-6 py-8 md:px-11 md:py-9"
+      className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-11 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
       data-doc-wide={wide ? '' : undefined}
     >
       {error ? (
@@ -123,8 +179,18 @@ export function DocsReading({
       ) : null}
       {doc ? (
         <>
-          <ReadingTop crumbs={crumbs} wide={wide} onWide={onWide} />
-          <h1 className="doc-title" data-long={shown.title.length > LONG_TITLE ? '' : undefined}>
+          <ReadingTop
+            crumbs={crumbs}
+            title={shown.title}
+            titleGone={titleGone}
+            wide={wide}
+            onWide={onWide}
+          />
+          <h1
+            ref={heading}
+            className="doc-title"
+            data-long={shown.title.length > LONG_TITLE ? '' : undefined}
+          >
             {shown.title}
           </h1>
           {shown.lede ? (
@@ -152,8 +218,13 @@ export function DocsFacts({
   headings: readonly DocHeading[]
   signedIn: boolean
 }) {
+  const panel = useRef<HTMLElement>(null)
+  useHeldPanel(panel)
   return (
-    <aside className="hidden border-border-default border-l px-5 py-8 lg:block">
+    <aside
+      ref={panel}
+      className="hidden px-5 py-8 lg:sticky lg:top-(--docs-stick) lg:block lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:overflow-y-auto"
+    >
       {headings.length ? (
         <section>
           <span className={eyebrow}>On this page</span>
