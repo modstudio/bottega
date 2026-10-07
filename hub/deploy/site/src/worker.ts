@@ -19,6 +19,12 @@ async function forward(request: Request, target: URL) {
 
 async function handleRequest(request: Request) {
   const source = new URL(request.url)
+  // The site has one address: the www name answers only to send the visitor to it.
+  if (source.hostname.startsWith('www.')) {
+    const apex = new URL(source.href)
+    apex.hostname = source.hostname.slice('www.'.length)
+    return Response.redirect(apex, 301)
+  }
   const target = new URL(`${source.pathname}${source.search}`, APP_ORIGIN)
   switch (decideSiteRequest(request.method, source.pathname)) {
     case 'forward':

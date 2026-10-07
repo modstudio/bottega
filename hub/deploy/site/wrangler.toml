@@ -3,5 +3,6 @@ main = "src/worker.ts"
 compatibility_date = "2026-10-07"
 
 routes = [
-  { pattern = "bottega.run/*", zone_name = "bottega.run" }
+  { pattern = "bottega.run/*", zone_name = "bottega.run" },
+  { pattern = "www.bottega.run/*", zone_name = "bottega.run" }
 ]
