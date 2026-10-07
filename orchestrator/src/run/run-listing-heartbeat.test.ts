@@ -173,6 +173,143 @@ exec /bin/sleep "$@"
   }
 })
 
+test('heartbeat announces an unchanged notice query failure once with its reason', () => {
+  const fixture = join(dir, 'heartbeat-notice-failure-fixture')
+  const hooks = join(fixture, 'orchestrator', 'hooks')
+  const bin = join(fixture, 'bin')
+  const counterPath = join(fixture, 'monitor-count')
+  mkdirSync(hooks, { recursive: true })
+  mkdirSync(bin)
+  copyFileSync(
+    fileURLToPath(new URL('../../hooks/orch-heartbeat.sh', import.meta.url)),
+    join(hooks, 'orch-heartbeat.sh'),
+  )
+  const orch = join(bin, 'orch')
+  writeFileSync(
+    orch,
+    `#!/bin/sh
+if [ "$1" = "board" ]; then
+  exit 0
+elif [ "$1" = "inbox" ]; then
+  echo '[]'
+elif [ "$1" = "runs" ]; then
+  echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"notice-failure-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
+elif [ "$1" = "monitor" ] && [ "$2" = "--notices" ]; then
+  count=0
+  [ ! -f "$COUNTER_PATH" ] || count=$(<"$COUNTER_PATH")
+  count=$((count + 1))
+  echo "$count" > "$COUNTER_PATH"
+  if [ "$SCENARIO" = "recovery" ] && [ "$count" -eq 2 ]; then
+    echo '[]'
+    exit 0
+  fi
+  if [ "$SCENARIO" = "changed" ] && [ "$count" -gt 1 ]; then
+    printf 'hosted notice query changed\n' >&2
+  elif [ "$SCENARIO" = "escape" ]; then
+    printf '\\033[2Jhosted notice query unavailable\n' >&2
+  elif [ "$SCENARIO" = "credential" ]; then
+    credential_name="to""ken"
+    credential_value="example""-credential"
+    printf '%s=%s\n' "$credential_name" "$credential_value" >&2
+  elif [ "$SCENARIO" = "empty-binary" ]; then
+    if [ "$count" -gt 1 ]; then
+      printf '\\000\\001\\002' >&2
+    fi
+  elif [ "$SCENARIO" = "empty" ]; then
+    :
+  elif [ "$SCENARIO" = "long" ]; then
+    i=0
+    while [ "$i" -lt 100 ]; do
+      printf 'ab-' >&2
+      i=$((i + 1))
+    done
+    printf '\n' >&2
+  else
+    printf 'hosted\tnotice query unavailable\nignored second line\n' >&2
+  fi
+  exit 7
+elif [ "$1" = "monitor" ] && [ "$2" = "--lock-holder" ]; then
+  echo '{}'
+else
+  exit 2
+fi
+`,
+  )
+  chmodSync(orch, 0o755)
+
+  try {
+    const runScenario = (
+      scenario: string,
+      keepaliveTicks = 100,
+      diagnostic = 'monitor notices unavailable',
+      maxTicks = 3,
+    ) => {
+      rmSync(counterPath, { force: true })
+      const result = Bun.spawnSync(
+        ['bash', join(hooks, 'orch-heartbeat.sh'), 'notice-failure-session', '0', String(maxTicks)],
+        {
+          cwd: fixture,
+          env: {
+            ...process.env,
+            ORCH_DB: join(fixture, 'absent.db'),
+            KEEPALIVE_TICKS: String(keepaliveTicks),
+            NOTICE_TIMEOUT_SECONDS: '1',
+            COUNTER_PATH: counterPath,
+            SCENARIO: scenario,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      )
+      expect(result.exitCode).toBe(0)
+      return result.stdout
+        .toString()
+        .split('\n')
+        .filter((line) => line.includes(diagnostic))
+    }
+
+    const unchanged = runScenario('unchanged')
+    expect(unchanged).toHaveLength(1)
+    expect(unchanged[0]).toContain('reason=hostednotice query unavailable)')
+    expect(unchanged[0]).not.toContain('ignored second line')
+
+    const changed = runScenario('changed')
+    expect(changed).toHaveLength(2)
+    expect(changed[1]).toContain('reason=hosted notice query changed)')
+
+    const recovered = runScenario('recovery')
+    expect(recovered).toHaveLength(2)
+    expect(recovered[0]?.replace(/^\[[^\]]+\] /, '')).toBe(
+      recovered[1]?.replace(/^\[[^\]]+\] /, ''),
+    )
+
+    expect(runScenario('keepalive', 2)).toHaveLength(2)
+
+    expect(runScenario('empty', 100, 'monitor notices unavailable', 1)[0]).toContain(
+      'reason=stderr empty)',
+    )
+    const escaped = runScenario('escape', 100, 'monitor notices unavailable', 1)[0]
+    expect(escaped).toContain('reason=[2Jhosted notice query unavailable)')
+    expect(escaped).not.toContain('\u001b')
+
+    expect(runScenario('credential', 100, 'monitor notices unavailable', 1)[0]).toContain(
+      'reason withheld (secret-shaped)',
+    )
+
+    const emptyThenBinary = runScenario('empty-binary')
+    expect(emptyThenBinary).toHaveLength(2)
+    expect(emptyThenBinary[0]).toContain('reason=stderr empty)')
+    expect(emptyThenBinary[1]).toContain('reason=stderr not printable)')
+
+    const longReason = runScenario('long', 100, 'monitor notices unavailable', 1)[0]?.match(
+      /reason=(.*)\)\. Health/,
+    )?.[1]
+    expect(longReason).toHaveLength(240)
+  } finally {
+    rmSync(fixture, { recursive: true })
+  }
+})
+
 test('heartbeat reports a stalled run without BLOCKED or WAITING', async () => {
   const session = 'heartbeat-stalled-only-fixture'
   const sleeper = Bun.spawn(['sleep', '30'])

@@ -70,9 +70,17 @@ INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
 NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
+NOTICE_REASON_MAX_BYTES=4096
+NOTICE_REASON_MAX_CHARS=240
 
 prev_key=""
 since_emit=0
+prev_monitor_failure_key=""
+monitor_failure_ticks=0
+prev_cap_failure_state=""
+cap_failure_ticks=0
+prev_ack_failure_state=""
+ack_failure_ticks=0
 reported_ids=""
 ACTIVE_GUARDED_PID=""
 ACTIVE_WATCHDOG_PID=""
@@ -429,6 +437,36 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   ACTIVE_WATCHDOG_PID=""
   monitor_raw=$(<"$monitor_out")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
+  if [ -s "$monitor_err" ]; then
+    monitor_err_had_bytes=1
+  else
+    monitor_err_had_bytes=0
+  fi
+  monitor_reason=$(LC_ALL=C head -c "$NOTICE_REASON_MAX_BYTES" "$monitor_err" | \
+    LC_ALL=C tr -cd '\12\40-\176' | \
+    LC_ALL=C awk -v limit="$NOTICE_REASON_MAX_CHARS" '
+NF {
+  reason = substr($0, 1, limit)
+  lower = tolower(reason)
+  if (lower ~ /:\/\/[^[:space:]\/@:]+:[^[:space:]\/@]+@/ ||
+      lower ~ /(^|[^[:alnum:]_])(key|token|secret|password)[[:space:]]*=/ ||
+      lower ~ /authorization[[:space:]]*:/ ||
+      lower ~ /bearer[[:space:]]/ ||
+      reason ~ /[[:alnum:]+\/]{32}/) {
+    print "reason withheld (secret-shaped)"
+  } else {
+    print reason
+  }
+  exit
+}
+  ')
+  if [ -z "$monitor_reason" ]; then
+    if [ "$monitor_err_had_bytes" -eq 0 ]; then
+      monitor_reason="stderr empty"
+    else
+      monitor_reason="stderr not printable"
+    fi
+  fi
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '
@@ -474,9 +512,20 @@ for row in rows:
 ' 2>/dev/null); monitor_parse_rc=$?
 
   if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then
-    echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc). Health state still follows inbox and runs; inspect monitor diagnostics directly."
+    monitor_failure_key="$monitor_rc|$monitor_parse_rc|$monitor_reason"
+    monitor_failure_ticks=$((monitor_failure_ticks + 1))
+    if [ "$monitor_failure_key" != "$prev_monitor_failure_key" ] || \
+       [ "$monitor_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
+      prev_monitor_failure_key="$monitor_failure_key"
+      monitor_failure_ticks=0
+      echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc reason=$monitor_reason). Health state still follows inbox and runs; inspect monitor diagnostics directly."
+    fi
     report_store_write_lock
-  elif [ -n "$monitor_observed" ]; then
+  else
+    prev_monitor_failure_key=""
+    monitor_failure_ticks=0
+  fi
+  if [ "$monitor_rc" -eq 0 ] && [ "$monitor_parse_rc" -eq 0 ] && [ -n "$monitor_observed" ]; then
     monitor_ids=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning" {print $1}' | paste -sd, -)
     if [ -z "$monitor_ids" ]; then
       printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'
@@ -496,25 +545,46 @@ print(token)
       fi
       if [ "$cap_mint_rc" -ne 0 ]; then
         [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
-        echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
-      elif printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
-        export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
-        export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
-        ack_timed_out=$(mktemp)
-        CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
-        ACTIVE_GUARDED_PID=$!
-        start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
-        ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
-        wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
-        ACTIVE_GUARDED_PID=""
-        cancel_watchdog "$ACTIVE_WATCHDOG_PID"
-        ACTIVE_WATCHDOG_PID=""
-        if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
-        rm -f "$ack_timed_out"
-        rm -rf "$CAP_DIR"
-        unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
-        if [ "$ack_rc" -ne 0 ]; then
-          echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+        cap_failure_state="$cap_mint_rc"
+        cap_failure_ticks=$((cap_failure_ticks + 1))
+        if [ "$cap_failure_state" != "$prev_cap_failure_state" ] || \
+           [ "$cap_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
+          prev_cap_failure_state="$cap_failure_state"
+          cap_failure_ticks=0
+          echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
+        fi
+      else
+        prev_cap_failure_state=""
+        cap_failure_ticks=0
+        if printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
+          export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
+          export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
+          ack_timed_out=$(mktemp)
+          CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
+          ACTIVE_GUARDED_PID=$!
+          start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
+          ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
+          wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
+          ACTIVE_GUARDED_PID=""
+          cancel_watchdog "$ACTIVE_WATCHDOG_PID"
+          ACTIVE_WATCHDOG_PID=""
+          if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
+          rm -f "$ack_timed_out"
+          rm -rf "$CAP_DIR"
+          unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
+          if [ "$ack_rc" -ne 0 ]; then
+            ack_failure_state="$ack_rc"
+            ack_failure_ticks=$((ack_failure_ticks + 1))
+            if [ "$ack_failure_state" != "$prev_ack_failure_state" ] || \
+               [ "$ack_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
+              prev_ack_failure_state="$ack_failure_state"
+              ack_failure_ticks=0
+              echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+            fi
+          else
+            prev_ack_failure_state=""
+            ack_failure_ticks=0
+          fi
         fi
       fi
     fi
