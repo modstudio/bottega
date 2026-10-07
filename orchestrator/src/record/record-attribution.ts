@@ -2,6 +2,7 @@
 /** Resolves run attribution without making dispatch depend on the hosted record. */
 
 import type { Database } from 'bun:sqlite'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { currentRecordUserSession, storedRecordToken } from './record-session.ts'
@@ -62,7 +63,7 @@ export async function signedInRecordUserId(local: Database = db()): Promise<stri
   }
 
   const failures: string[] = []
-  if (process.env.ORCH_RECORD_API_URL) {
+  if (resolveRecordApiUrl()) {
     try {
       const id = String((await recordApiClient().whoami()).user.id)
       writeFailure(local, null)

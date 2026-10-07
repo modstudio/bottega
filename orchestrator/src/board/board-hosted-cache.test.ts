@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -23,6 +24,10 @@ import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 
 const userId = '01990000-0000-7000-8000-000000000001'
 const createdAt = '2026-10-05T12:00:00.000Z'
+const noRecordEnv = {
+  [CONFIG_HOME_ENV]: '/definitely-missing-config',
+  [HARNESS_ENV_FILE_ENV]: '',
+}
 
 const message = (overrides: Partial<HostedBoardMessage> = {}): HostedBoardMessage => ({
   id: newRecordId(),
@@ -374,7 +379,7 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
 
 test('an adopted install without record configuration records a failed refresh with the remedy', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  expect(await refreshHostedBoard({ budgetMs: 50, env: {} })).toBe('failed')
+  expect(await refreshHostedBoard({ budgetMs: 50, env: noRecordEnv })).toBe('failed')
   expect(hostedBoardVerificationWarning()).toContain('ORCH_RECORD_API_URL is not configured')
   expect(hostedBoardVerificationWarning()).toContain('orch record sign-in')
 })

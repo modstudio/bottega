@@ -1,8 +1,18 @@
 import { expect, test } from 'bun:test'
 import { ConfigClientError, configClient } from './config-client.ts'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 
 test('missing URL or session is a typed not-configured error', () => {
-  expect(() => configClient({}, fetch, null)).toThrow(ConfigClientError)
+  expect(() =>
+    configClient(
+      {
+        [CONFIG_HOME_ENV]: '/definitely-missing-config',
+        [HARNESS_ENV_FILE_ENV]: '',
+      },
+      fetch,
+      null,
+    ),
+  ).toThrow(ConfigClientError)
   expect(() => configClient({ ORCH_RECORD_API_URL: 'https://record.test' }, fetch, null)).toThrow(
     'hosted config is not configured',
   )

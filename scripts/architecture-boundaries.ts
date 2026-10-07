@@ -666,6 +666,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-api-client.ts',
     [
       '../../../shared/docs.ts',
+      '../../../shared/record-api-url.ts',
       '../doc/doc-write-allowed.ts',
       '../verdict/verdict-payload.ts',
       './record-auth.ts',

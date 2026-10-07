@@ -1,4 +1,5 @@
 import { jsonBody } from './http-json.ts'
+import { resolveRecordApiUrl } from './record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { readRecordSessionToken } from './record-session.ts'
 
@@ -214,7 +215,7 @@ export function configClient(
   token?: string | null,
   signal?: AbortSignal,
 ): ConfigClient {
-  const url = env.ORCH_RECORD_API_URL
+  const url = resolveRecordApiUrl(env)
   if (!url) throw new ConfigClientError('not-configured', '/v1/config')
   const resolvedToken = token === undefined ? readRecordSessionToken() : token
   if (!resolvedToken) throw new ConfigClientError('not-configured', '/v1/config')

@@ -15,6 +15,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/record/record-write-decision.ts', []),
   module('orchestrator/src/record/record-write-authority.ts', [
+    '../../../shared/record-api-url.ts',
     './install-binding.ts',
     './record-write-decision.ts',
   ]),
@@ -55,6 +56,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-release-decision.ts', []),
   module('orchestrator/src/record/record-attribution.ts', [
     'bun:sqlite',
+    '../../../shared/record-api-url.ts',
     '../database/db.ts',
     './record-api-client.ts',
     './record-session.ts',

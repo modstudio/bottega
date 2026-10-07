@@ -28,6 +28,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-mode.ts', [
     'bun:sqlite',
     '../../../shared/board-mode.ts',
+    '../../../shared/record-api-url.ts',
     '../database/db.ts',
   ]),
   module('orchestrator/src/board/board-hosted-cache.ts', [

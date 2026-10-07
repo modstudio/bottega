@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
-import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 import { WORKER_ENVIRONMENT_MARKERS } from '../src/caller-classification.ts'
 
@@ -55,6 +55,7 @@ export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
 const originalSandbox = process.env.ORCH_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
+const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
 const originalRunId = process.env.ORCH_RUN_ID
 const originalDepth = process.env.ORCH_DEPTH
@@ -64,6 +65,7 @@ const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env[CONFIG_HOME_ENV] = configDir
+process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.ORCH_RECORD_API_URL
 process.env.ORCH_DB = store
 process.env.HUB_DB = join(dir, FROZEN_STATE_NAMES.hubDatabase)
@@ -259,24 +261,24 @@ afterEach(() => {
   console.warn(message)
 })
 
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+}
+
 afterAll(() => {
   closeDatabaseForFixture()
   delete process.env.ORCH_DB
   delete process.env.HUB_DB
   delete process.env.ORCH_RUNS
   delete process.env.ORCH_GATE_PIDS
-  if (originalPath === undefined) delete process.env.PATH
-  else process.env.PATH = originalPath
-  if (originalSandbox === undefined) delete process.env.ORCH_SANDBOX
-  else process.env.ORCH_SANDBOX = originalSandbox
-  if (originalConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
-  else process.env[CONFIG_HOME_ENV] = originalConfigHome
-  if (originalRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = originalRecordApiUrl
-  if (originalRunId === undefined) delete process.env.ORCH_RUN_ID
-  else process.env.ORCH_RUN_ID = originalRunId
-  if (originalDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = originalDepth
+  restoreEnvironment('PATH', originalPath)
+  restoreEnvironment('ORCH_SANDBOX', originalSandbox)
+  restoreEnvironment(CONFIG_HOME_ENV, originalConfigHome)
+  restoreEnvironment(HARNESS_ENV_FILE_ENV, originalHarnessEnvFile)
+  restoreEnvironment('ORCH_RECORD_API_URL', originalRecordApiUrl)
+  restoreEnvironment('ORCH_RUN_ID', originalRunId)
+  restoreEnvironment('ORCH_DEPTH', originalDepth)
   for (const key of Object.keys(process.env)) {
     if (gitConfigEnvironmentName.test(key)) delete process.env[key]
   }
