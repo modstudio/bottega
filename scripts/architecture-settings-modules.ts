@@ -82,6 +82,7 @@ export const settingsModules: SettingsModule[] = [
     './settings-write.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-hooks.ts', [
+    'node:path',
     '../../../shared/install-root.ts',
     '../../../shared/state-directory.ts',
     '../board/board-delivery.ts',

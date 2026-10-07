@@ -145,6 +145,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     name: 'settings-machine-hooks-boundary',
     file: `${source}settings-machine-hooks.ts`,
     allowed: [
+      'node:path',
       'shared/install-root.ts',
       'shared/state-directory.ts',
       'orchestrator/src/board/board-delivery.ts',

@@ -185,7 +185,7 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
     ["m.kind='notice'", "message.kind === 'notice'"],
     ["json_extract(m.payload,'$.ackRequired')=1", 'message.ackRequired'],
     ["json_extract(m.payload,'$.authorSession')<>?", 'message.authorSession !== session'],
-  ]) {
+  ] as const) {
     expect(hook).toContain(hookClause)
     expect(owner).toContain(ownerClause)
   }
