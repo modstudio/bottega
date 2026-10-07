@@ -5,6 +5,7 @@ import { trackedTestResidue } from '../test/residue.ts'
 import type { HostLoad } from './gate-load.ts'
 import {
   GATE_CONCURRENCY_LIMIT,
+  gateHoldConditions,
   holdForGateCapacity,
   shouldHoldShard,
   withGateSlot,
@@ -102,6 +103,16 @@ describe('gate load hold', () => {
     expect(shouldHoldShard(idle({ gates: 3 }))).toBe(true)
   })
 
+  test('hold conditions name each threshold alone and in combination', () => {
+    expect(gateHoldConditions(idle({ gates: 3 }))).toEqual(['gates'])
+    expect(gateHoldConditions(idle({ loadavg: 8, ncpu: 8 }))).toEqual(['load'])
+    expect(gateHoldConditions(idle({ freeMem: 64 * 1024 * 1024 }))).toEqual(['memory'])
+    expect(
+      gateHoldConditions(idle({ gates: 3, loadavg: 8, ncpu: 8, freeMem: 64 * 1024 * 1024 })),
+    ).toEqual(['gates', 'load', 'memory'])
+    expect(gateHoldConditions(idle())).toEqual([])
+  })
+
   test('withGateSlot holds then runs', async () => {
     let n = 0
     const sleeps: number[] = []
@@ -132,7 +143,7 @@ describe('gate load hold', () => {
     try {
       const result = await withGateSlot(async () => 'ok', {
         env: { ...process.env, CI: undefined },
-        measure: () => idle({ gates: 2 }),
+        measure: () => idle({ gates: 1, freeMem: 64 * 1024 * 1024 }),
         sleep: async (ms) => {
           clock += ms
         },
@@ -144,10 +155,13 @@ describe('gate load hold', () => {
     } finally {
       error.mockRestore()
     }
-    expect(lines).toEqual([
-      'held 50ms for host load (gates=3 loadavg=0.2 ncpu=8)',
+    expect(lines[0]).toStartWith('held 50ms for host load ')
+    expect(lines[0]).toContain('gates=2 loadavg=0.2 ncpu=8')
+    expect(lines[0]).toContain('free_mb=64 floor_mb=1024')
+    expect(lines[0]).toContain('held_on=memory')
+    expect(lines[1]).toBe(
       'admitted over the load threshold after the maximum hold; a per-test timeout in this run is suspect, rerun before treating it as a failure',
-    ])
+    )
   })
 
   test('withGateSlot does not hold for host load under CI', async () => {

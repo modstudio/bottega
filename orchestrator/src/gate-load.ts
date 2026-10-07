@@ -14,6 +14,7 @@ export const GATE_CONCURRENCY_LIMIT = 2
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
 const GATE_HOLD_MAX_MS = 10 * 60_000
+const MEBIBYTE_BYTES = 1024 * 1024
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.ORCH_GATE_PIDS ?? join(tmpdir(), 'orch-gates')
@@ -60,8 +61,21 @@ function measureHostLoad(env: NodeJS.ProcessEnv = process.env, selfPid = process
   }
 }
 
+export type GateHoldCondition = 'gates' | 'load' | 'memory'
+
+export function gateHoldConditions(
+  load: HostLoad,
+  limit = GATE_CONCURRENCY_LIMIT,
+): GateHoldCondition[] {
+  const conditions: GateHoldCondition[] = []
+  if (load.gates > limit) conditions.push('gates')
+  if (load.loadavg >= load.ncpu) conditions.push('load')
+  if (load.freeMem < FREE_MEM_FLOOR_BYTES) conditions.push('memory')
+  return conditions
+}
+
 export function shouldHoldShard(load: HostLoad, limit = GATE_CONCURRENCY_LIMIT): boolean {
-  return load.gates > limit || load.loadavg >= load.ncpu || load.freeMem < FREE_MEM_FLOOR_BYTES
+  return gateHoldConditions(load, limit).length > 0
 }
 
 type GateHoldOpts = {
@@ -90,9 +104,12 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
     }
     const held = await holdForGateCapacity({ ...opts, measure: asRunner })
     if (held.held) {
+      const heldOn = gateHoldConditions(held.load, opts.limit).join('+') || 'none'
       console.error(
         `held ${held.delayedMs}ms for host load ` +
-          `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`,
+          `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu} ` +
+          `free_mb=${Math.floor(held.load.freeMem / MEBIBYTE_BYTES)} ` +
+          `floor_mb=${Math.floor(FREE_MEM_FLOOR_BYTES / MEBIBYTE_BYTES)} held_on=${heldOn})`,
       )
       if (held.exhausted) {
         console.error(
