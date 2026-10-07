@@ -15,10 +15,13 @@ from board_hook_common import (
 )
 
 
-def block_count(session: str) -> tuple[str, int]:
+def block_count(session: str) -> tuple[str, int | None]:
+    """The session's spent Stop blocks, or None when the marker cannot be read."""
     path = marker_path("stop", session)
     value = read_marker(path)
-    count = value.get("blocks", 0) if isinstance(value, dict) else 0
+    if not isinstance(value, dict):
+        return path, None
+    count = value.get("blocks", 0)
     if not isinstance(count, int) or count < 0:
         count = 0
     return path, count
@@ -55,8 +58,13 @@ def main() -> int:
             write_marker(path, {"blocks": 0})
             return 0
         limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
+        # A block is spent only once it is recorded: a marker that cannot be
+        # read or written would otherwise hold the turn without ever counting.
+        if count is None:
+            return 0
         if count < limit:
-            write_marker(path, {"blocks": count + 1})
+            if not write_marker(path, {"blocks": count + 1}):
+                return 0
             value = {
                 "decision": "block",
                 "reason": notice_summary(notices),

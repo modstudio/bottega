@@ -408,7 +408,7 @@ test('Stop budget is per session, is not rearmed by new notices, and resets when
   expect(JSON.parse(values[5]!).decision).toBe('block')
 })
 
-test('Stop treats an unreadable counter as zero and does not follow its symlink', () => {
+test('Stop never holds a turn on a counter it cannot record, and does not follow its symlink', () => {
   const item = createHookFixture(hookOutput)
   const root = join(item.root, 'board-hook-state', 'stop')
   mkdirSync(root, { recursive: true })
@@ -416,9 +416,11 @@ test('Stop treats an unreadable counter as zero and does not follow its symlink'
   writeFileSync(target, 'sentinel')
   symlinkSync(target, join(root, createHash('sha256').update('reader').digest('hex')))
 
-  const [result] = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 1, [
-    JSON.parse(hookOutput).notices,
+  const notices = JSON.parse(hookOutput).notices
+  const results = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 2, [
+    notices,
+    notices,
   ])
-  expect(JSON.parse(result!).decision).toBe('block')
+  expect(results).toEqual(['', ''])
   expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
