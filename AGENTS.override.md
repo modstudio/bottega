@@ -68,7 +68,7 @@ After cloning, configure the tracked hooks with `git config core.hooksPath
 .githooks`. The hooks refuse AI attribution in commit messages; the harness
 counterpart is `orchestrator/hooks/no-attribution.py`.
 
-Landing goes through the private `origin` by pull request. Push the branch,
+Landing goes through `origin`, a public repository, by pull request. Push the branch,
 open the pull request and merge on GitHub. Trunk moves remotely; the local
 checkout follows it. Never fast-forward local trunk and call that landed, and do
 not invent a local admission queue.
