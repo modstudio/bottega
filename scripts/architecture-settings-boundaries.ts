@@ -134,10 +134,23 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       `${source}settings-files.ts`,
       `${source}settings-render.ts`,
       `${source}settings-permission-overlay.ts`,
+      `${source}settings-machine-hooks.ts`,
       `${source}settings-write.ts`,
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep machine settings application independent of CLI grammar, scheduling, and run lifecycle.',
+  },
+  {
+    name: 'settings-machine-hooks-boundary',
+    file: `${source}settings-machine-hooks.ts`,
+    allowed: [
+      'shared/install-root.ts',
+      'shared/state-directory.ts',
+      'orchestrator/src/board/board-delivery.ts',
+      `${source}settings.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep product-owned machine hook registration independent of stores and CLI grammar.',
   },
 ]

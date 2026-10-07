@@ -9,6 +9,7 @@ import { projectAt } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import {
+  acknowledgementRefusal,
   architectIdentity,
   audienceRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
@@ -389,6 +390,14 @@ export function insertRootMessage(
       : null,
   )
   if (runRefusal) throw new Error(runRefusal)
+  const origin = resolvePostOrigin(actor, env, cwd)
+  const ackRefusal = acknowledgementRefusal({
+    ackRequired: Boolean(input.ackRequired),
+    audience,
+    authorKind: actor.kind,
+    authorProject: origin.project,
+  })
+  if (ackRefusal) throw new Error(ackRefusal)
   const senderTags = senderBoardTags(input)
   const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
   const expiresMs = input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS
@@ -396,7 +405,6 @@ export function insertRootMessage(
     throw new Error(
       `ack deadline ${deadlineMs}ms is later than expiry ${expiresMs}ms; set --deadline no later than --expires`,
     )
-  const origin = resolvePostOrigin(actor, env, cwd)
   const duplicateCandidates = database
     .query(
       `SELECT id FROM board_message

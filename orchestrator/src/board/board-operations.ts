@@ -30,7 +30,12 @@ import {
 } from './board-claim-service.ts'
 import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
-import { architectIdentity, OPERATOR_READER, parseAudience } from './board-policy.ts'
+import {
+  acknowledgementRefusal,
+  architectIdentity,
+  OPERATOR_READER,
+  parseAudience,
+} from './board-policy.ts'
 import {
   acknowledgeNotice,
   noticeStatus,
@@ -330,6 +335,14 @@ function hostedPostInput(
 
 export async function boardPost(input: PostNoticeInput, inputContext?: Context) {
   const c = context(inputContext)
+  const actor = boardActor(c.env)
+  const refusal = acknowledgementRefusal({
+    ackRequired: Boolean(input.ackRequired),
+    audience: parseAudience(input.audience),
+    authorKind: actor.kind,
+    authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
+  })
+  if (refusal) throw new Error(refusal)
   if (boardMode(locality(input.audience), c.env) === 'local')
     return localPostResult(postNotice(input, c.env, c.clock, c.cwd))
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('notice', input, c))

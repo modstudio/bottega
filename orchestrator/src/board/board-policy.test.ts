@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  acknowledgementRefusal,
   architectIdentity,
   audienceRefusal,
   BOARD_POST_RATE_LIMIT,
@@ -202,7 +203,7 @@ test('run audience policy permits the owner and operator but identifies a foreig
   )
 })
 
-test('operator and machine ack-required notices interrupt', () => {
+test('every addressed ack-required notice interrupts except the reader own post and a foreign operator', () => {
   expect(
     shouldInterrupt({ authorKind: 'operator', audienceKind: 'architects', ackRequired: true }),
   ).toBe(true)
@@ -211,10 +212,26 @@ test('operator and machine ack-required notices interrupt', () => {
   ).toBe(false)
   expect(
     shouldInterrupt({ authorKind: 'architect', audienceKind: 'project', ackRequired: true }),
-  ).toBe(false)
+  ).toBe(true)
   expect(
     shouldInterrupt({ authorKind: 'architect', audienceKind: 'machine', ackRequired: true }),
   ).toBe(true)
+  expect(
+    shouldInterrupt({
+      authorKind: 'architect',
+      audienceKind: 'project',
+      ackRequired: true,
+      ownPost: true,
+    }),
+  ).toBe(false)
+  expect(
+    shouldInterrupt({
+      authorKind: 'operator',
+      authorIsSignedInUser: false,
+      audienceKind: 'project',
+      ackRequired: true,
+    }),
+  ).toBe(false)
   expect(
     shouldInterrupt({
       authorKind: 'architect',
@@ -223,6 +240,37 @@ test('operator and machine ack-required notices interrupt', () => {
       claimConflict: true,
     }),
   ).toBe(true)
+})
+
+test('acknowledgement authority is operator-wide and architect-project-local', () => {
+  for (const expression of ['operator', 'architects', 'task:DEV-1', 'machine:host']) {
+    expect(
+      acknowledgementRefusal({
+        ackRequired: true,
+        audience: parseAudience(expression),
+        authorKind: 'operator',
+        authorProject: null,
+      }),
+    ).toBeNull()
+  }
+  expect(
+    acknowledgementRefusal({
+      ackRequired: true,
+      audience: parseAudience(`project:${PLATFORM_SLUG}`),
+      authorKind: 'architect',
+      authorProject: PLATFORM_SLUG,
+    }),
+  ).toBeNull()
+  for (const expression of ['project:other', 'architects', 'task:DEV-1', 'machine:host']) {
+    expect(
+      acknowledgementRefusal({
+        ackRequired: true,
+        audience: parseAudience(expression),
+        authorKind: 'architect',
+        authorProject: PLATFORM_SLUG,
+      }),
+    ).toContain('project:<your project>')
+  }
 })
 
 test('expiry, withdrawal, and retention are separate decisions', () => {

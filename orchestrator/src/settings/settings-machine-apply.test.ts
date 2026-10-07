@@ -13,6 +13,7 @@ import { setDoc } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
+import { withMachineBoardHooks } from './settings-machine-hooks.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
@@ -81,7 +82,10 @@ function writeCurrentSettings() {
   writeFileSync(
     join(root, '.claude', 'settings.json'),
     `${JSON.stringify(
-      { permissions: { allow: ['Bash(orch *)'] }, hooks: {}, env: {} },
+      {
+        ...withMachineBoardHooks({ permissions: { allow: ['Bash(orch *)'] }, hooks: {} }),
+        env: {},
+      },
       null,
       2,
     )}\n`,
