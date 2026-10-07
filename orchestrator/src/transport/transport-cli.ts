@@ -221,9 +221,14 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   return handle
 }
 
+export function configuredCliAsk(opts: Pick<TransportStartOpts, 'agent' | 'env'>): string[] | null {
+  return opts.agent.askServerCommand?.(opts.env) ?? null
+}
+
 const cliTransport: AgentTransport = {
   name: 'cli',
   canInjectMidTurn: false,
+  configuredAsk: configuredCliAsk,
   start(opts) {
     return spawnCli(opts)
   },

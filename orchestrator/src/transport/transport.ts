@@ -104,6 +104,8 @@ export type TransportAgent = {
   baseUrl?: string | null
   bin: string
   defaultTransport: TransportName
+  /** Exact orch-ask command this agent definition configures, if any. */
+  askServerCommand?(environment: Record<string, string>): string[] | null
   argv(opts: ArgvOpts): string[]
   resumeArgv?(opts: ArgvOpts & { session: string }): string[]
   readSession?(ctx: {
@@ -237,6 +239,8 @@ export type AgentTransport = {
   readonly name: TransportName
   /** Whether prompt() can add context while a turn is already running. */
   readonly canInjectMidTurn: boolean
+  /** Read-only prelaunch view of the orch-ask registration this transport will use. */
+  configuredAsk(opts: TransportStartOpts): string[] | null
   start(opts: TransportStartOpts): Promise<TransportHandle>
   prompt(handle: TransportHandle, text: string): Promise<void>
   events(handle: TransportHandle): AsyncIterable<NormalizedEvent>

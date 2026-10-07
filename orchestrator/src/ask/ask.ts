@@ -60,6 +60,8 @@ import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
+import { writeAskServerFailure } from './ask-failure.ts'
+import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
 import { validateWorkerNoteInput, type WorkerNoteInput, type WorkerNoteRun } from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
@@ -431,6 +433,7 @@ type AskServerDependencies = {
     anchorDropped?: string
   }>
   gate?: GateWaitDependencies
+  lifecycle?: AskLifecycle
 }
 
 function workerNoteRun(runId: number): WorkerNoteRun {
@@ -487,8 +490,14 @@ export function createAskMcpServer(
    */
   const authorized = (): boolean => authenticatedWorkerRun(runId, token)
   const pendingGateResults = new Set<number>()
+  const lifecycle = dependencies.lifecycle ?? askLifecycle(runId)
+  const toolNames: string[] = []
 
   const server = new McpServer({ name: 'orch-ask', version: '1' })
+  const registerTool = ((...args: unknown[]) => {
+    if (typeof args[0] === 'string') toolNames.push(args[0])
+    return Reflect.apply(server.registerTool, server, args)
+  }) as typeof server.registerTool
   const text = (value: string, isError?: true) => ({
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError } : {}),
@@ -506,9 +515,9 @@ export function createAskMcpServer(
   // the worker to ask again rather than decide the matter itself.
   const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
 
-  registerAskBoardTools({ server, runId, authorized, unauthorized, text })
+  toolNames.push(...registerAskBoardTools({ server, runId, authorized, unauthorized, text }))
 
-  server.registerTool(
+  registerTool(
     'ask_orchestrator',
     {
       description:
@@ -559,7 +568,7 @@ export function createAskMcpServer(
   // A no-gate writer sees the tool and receives the explicit no-op message.
   // Readers and inline jobs do not receive an execution surface at all.
   if (gateToolAvailable(runId, token)) {
-    server.registerTool(
+    registerTool(
       'run_gate',
       {
         description:
@@ -582,7 +591,7 @@ export function createAskMcpServer(
   }
 
   if (gateResultToolAvailable(runId, token)) {
-    server.registerTool(
+    registerTool(
       'gate_result',
       {
         description:
@@ -600,7 +609,7 @@ export function createAskMcpServer(
     )
   }
 
-  server.registerTool(
+  registerTool(
     'note',
     {
       description:
@@ -639,7 +648,7 @@ export function createAskMcpServer(
     },
   )
 
-  server.registerTool(
+  registerTool(
     'message_orchestrator',
     {
       description:
@@ -661,7 +670,7 @@ export function createAskMcpServer(
     },
   )
 
-  server.registerTool(
+  registerTool(
     'check_orchestrator_messages',
     {
       description:
@@ -695,6 +704,18 @@ export function createAskMcpServer(
     },
   )
 
+  try {
+    lifecycle.started(toolNames)
+  } catch {
+    // Lifecycle evidence must never prevent the server from serving.
+  }
+  server.server.oninitialized = () => {
+    try {
+      lifecycle.initialized()
+    } catch {
+      // Lifecycle evidence must never break a completed handshake.
+    }
+  }
   return server
 }
 
@@ -708,8 +729,9 @@ export async function startAskLoopback(runId: number, token: string): Promise<As
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
-    const mcp = serveStdio(() => createAskMcpServer(runId, token), {
-      transport: new StdioServerTransport(socket, socket),
+    const askServer = createAskMcpServer(runId, token)
+    const mcp = serveStdio(() => askServer, {
+      transport: observeAskTransport(new StdioServerTransport(socket, socket), runId),
     })
     socket.once('close', () => {
       sockets.delete(socket)
@@ -762,5 +784,8 @@ export async function serveAsk(): Promise<void> {
   if (loopback) return proxyAsk(loopback)
   const runId = Number(process.env.ORCH_RUN_ID ?? 0)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
-  serveStdio(() => createAskMcpServer(runId, token))
+  serveStdio(() => createAskMcpServer(runId, token), {
+    transport: observeAskTransport(new StdioServerTransport(), runId),
+    onerror: writeAskServerFailure,
+  })
 }

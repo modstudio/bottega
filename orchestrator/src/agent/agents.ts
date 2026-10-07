@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
+import { join } from 'node:path'
+import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
+import { grokAskCommandFromConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 import type { Caps } from './capabilities.ts'
 import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
@@ -13,6 +15,12 @@ import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
  * legible when someone comes looking for it.
  */
 const CODEX_EXEC_SANDBOX = 'danger-full-access'
+
+function grokAskCommandFromEnvironment(environment: Record<string, string>): string[] {
+  const home = environment.GROK_HOME
+  if (!home) throw new Error('Grok turn has no configured MCP home')
+  return grokAskCommandFromConfig(readFileSync(join(home, 'config.toml'), 'utf8'))
+}
 /**
  * Policy and capabilities for a vendor. How it is spawned lives on
  * `AgentTransport` (`cli` by default; `acp` is selectable for paid read-only jobs).
@@ -35,6 +43,8 @@ export type Agent = {
   preferredJobs?: string[]
   maxConcurrent?: number | null
   bin: string
+  /** Exact orch-ask command this harness registration configures, if any. */
+  askServerCommand?(environment: Record<string, string>): string[] | null
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
   /** What its usage costs. Metered is refused; free and none spend no quota. */
@@ -397,6 +407,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
       resumable: true,
     },
     defaultTransport: 'cli',
+    askServerCommand: () => codexAskServerCommand(),
     acp: {
       mcpServers: true,
       mcpReason:
@@ -512,6 +523,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
       resumable: true,
     },
     defaultTransport: 'cli',
+    askServerCommand: grokAskCommandFromEnvironment,
     acp: {
       mcpServers: false,
       mcpReason:

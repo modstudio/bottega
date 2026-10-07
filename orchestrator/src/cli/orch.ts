@@ -85,6 +85,10 @@ export async function main(argv: string[]): Promise<number> {
   try {
     return await fullCli(argv, storeFree)
   } catch (error) {
+    if (argv[0] === 'ask-server') {
+      const { writeAskServerFailure } = await import('../ask/ask-failure.ts')
+      writeAskServerFailure(error)
+    }
     if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
     return degradedCollection(argv, error)
   }

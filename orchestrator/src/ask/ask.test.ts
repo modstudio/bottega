@@ -10,8 +10,10 @@ import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
+import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { ask, createAskMcpServer } from './ask.ts'
+import { observeAskTransport } from './ask-lifecycle.ts'
 
 async function askClient(
   runId: number,
@@ -48,6 +50,83 @@ afterEach(() => {
 })
 
 describe('the live ask channel always answers', () => {
+  test('reports the tools actually registered for writers, readers, and unauthenticated runs', async () => {
+    const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    db().query('UPDATE run SET run_token=? WHERE id=?').run('writer-token', writer)
+    const toolsFor = async (runId: number, token = '') => {
+      let reported: string[] = []
+      const server = createAskMcpServer(runId, token, undefined, {
+        fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+        lifecycle: {
+          started: (tools) => {
+            reported = tools
+          },
+          initialized: () => {},
+        },
+      })
+      const client = new Client({ name: 'orch-ask-tools-test', version: '1.0.0' })
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      await server.connect(serverTransport)
+      await client.connect(clientTransport)
+      try {
+        const listed = await client.listTools()
+        return { reported: reported.sort(), listed: listed.tools.map((tool) => tool.name).sort() }
+      } finally {
+        await client.close()
+        await server.close()
+      }
+    }
+    for (const [runId, token] of [
+      [writer, 'writer-token'],
+      [reader, ''],
+      [writer, 'not-the-run-token'],
+    ] as const) {
+      const tools = await toolsFor(runId, token)
+      expect(tools.reported).toEqual(tools.listed)
+    }
+  })
+
+  test('reports a completed initialize through the SDK hook', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    let initialized = 0
+    const connection = await askClient(run, '', undefined, {
+      fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+      lifecycle: {
+        started: () => {},
+        initialized: () => {
+          initialized += 1
+        },
+      },
+    })
+    try {
+      expect(initialized).toBe(1)
+    } finally {
+      await connection.close()
+    }
+  })
+
+  test('observes the names returned by tools/list at the transport boundary', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const server = createAskMcpServer(run, '')
+    const client = new Client({ name: 'orch-ask-list-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(observeAskTransport(serverTransport, run))
+    await client.connect(clientTransport)
+    try {
+      const listed = await client.listTools()
+      const event = readEventLog(runEventsPath(run)).findLast((item) => item.type === 'ask_listed')
+      expect(event).toEqual({
+        ts: expect.any(String),
+        type: 'ask_listed',
+        tools: listed.tools.map((tool) => tool.name),
+      })
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('check_orchestrator_messages emits hosted beside local once with the failed-refresh warning', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
     db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
