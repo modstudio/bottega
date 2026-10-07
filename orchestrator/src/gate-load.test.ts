@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { join } from 'node:path'
 import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
@@ -24,35 +24,75 @@ const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
 })
 
 describe('gate load hold', () => {
-  test('the load hold delays a shard', async () => {
-    let n = 0
-    const sleeps: number[] = []
+  test('persistent overload waits the full maximum and reports exhaustion', async () => {
+    let clock = 0
     const result = await holdForGateCapacity({
-      measure: () => {
-        n++
-        return n === 1 ? idle({ gates: 3 }) : idle({ gates: 1 })
-      },
+      measure: () => idle({ gates: 3 }),
       sleep: async (ms) => {
-        sleeps.push(ms)
+        clock += ms
       },
+      now: () => clock,
       pollMs: 25,
-      maxMs: 1_000,
+      maxMs: 100,
     })
-    expect(result.held).toBe(true)
-    expect(result.delayedMs).toBeGreaterThan(0)
-    expect(sleeps.length).toBeGreaterThan(0)
-    expect(n).toBe(2)
+    expect(result).toEqual({
+      delayedMs: 100,
+      held: true,
+      exhausted: true,
+      load: idle({ gates: 3 }),
+    })
   })
 
-  test('two concurrent gates do not hold a shard', async () => {
+  test('capacity freeing mid-hold reports the elapsed wait without exhaustion', async () => {
+    let clock = 0
+    const result = await holdForGateCapacity({
+      measure: () => (clock < 50 ? idle({ gates: 3 }) : idle({ gates: 1 })),
+      sleep: async (ms) => {
+        clock += ms
+      },
+      now: () => clock,
+      pollMs: 25,
+      maxMs: 100,
+    })
+    expect(result).toEqual({
+      delayedMs: 50,
+      held: true,
+      exhausted: false,
+      load: idle({ gates: 1 }),
+    })
+  })
+
+  test('two concurrent gates need no hold and report no exhaustion', async () => {
     const result = await holdForGateCapacity({
       measure: () => idle({ gates: GATE_CONCURRENCY_LIMIT }),
       sleep: async () => {
         throw new Error('must not sleep under the limit')
       },
     })
-    expect(result.held).toBe(false)
-    expect(result.delayedMs).toBe(0)
+    expect(result).toEqual({
+      delayedMs: 0,
+      held: false,
+      exhausted: false,
+      load: idle({ gates: GATE_CONCURRENCY_LIMIT }),
+    })
+  })
+
+  test('elapsed clock time, rather than poll count, ends the hold', async () => {
+    let clock = 0
+    const sleeps: number[] = []
+    const result = await holdForGateCapacity({
+      measure: () => idle({ gates: 3 }),
+      sleep: async (ms) => {
+        sleeps.push(ms)
+        clock += ms + 15
+      },
+      now: () => clock,
+      pollMs: 25,
+      maxMs: 100,
+    })
+    expect(sleeps).toEqual([25, 25, 20])
+    expect(result.delayedMs).toBe(115)
+    expect(result.exhausted).toBe(true)
   })
 
   test('CPU and memory floors hold even with one gate', () => {
@@ -81,6 +121,33 @@ describe('gate load hold', () => {
     expect(result).toBe('ok')
     expect(sleeps.length).toBeGreaterThan(0)
     expect(n).toBe(2)
+  })
+
+  test('withGateSlot preserves the held line and warns after exhaustion', async () => {
+    let clock = 0
+    const lines: string[] = []
+    const error = spyOn(console, 'error').mockImplementation((line) => {
+      lines.push(String(line))
+    })
+    try {
+      const result = await withGateSlot(async () => 'ok', {
+        env: { ...process.env, CI: undefined },
+        measure: () => idle({ gates: 2 }),
+        sleep: async (ms) => {
+          clock += ms
+        },
+        now: () => clock,
+        pollMs: 25,
+        maxMs: 50,
+      })
+      expect(result).toBe('ok')
+    } finally {
+      error.mockRestore()
+    }
+    expect(lines).toEqual([
+      'held 50ms for host load (gates=3 loadavg=0.2 ncpu=8)',
+      'admitted over the load threshold after the maximum hold; a per-test timeout in this run is suspect, rerun before treating it as a failure',
+    ])
   })
 
   test('withGateSlot does not hold for host load under CI', async () => {
