@@ -7,6 +7,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
+import { configuredAskCommand } from '../ask/ask-configuration.ts'
+import { recordAskExpected } from '../ask/ask-lifecycle.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
 import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
@@ -76,6 +78,23 @@ function readReplyFile(path: string): string | null {
 function replyContract(schemaPath: string | undefined, textContract: boolean): ReplyContract {
   if (schemaPath) return 'custom'
   return textContract ? 'text' : 'none'
+}
+
+function recordConfiguredAsk(input: {
+  runId: number
+  harness: string
+  sandbox: SandboxSelection['sandbox']
+  grokEnvironment: Record<string, string>
+}): void {
+  try {
+    recordAskExpected(
+      input.runId,
+      input.sandbox === 'srt' ? 'srt' : 'host',
+      configuredAskCommand(input.harness, input.grokEnvironment),
+    )
+  } catch {
+    // Configuration evidence is best effort and must never prevent launch.
+  }
 }
 
 function replyFileMatches(
@@ -426,6 +445,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
       ),
     }
+    recordConfiguredAsk({
+      runId: claim.id,
+      harness: a.harness ?? a.name,
+      sandbox: sandboxSelection.sandbox,
+      grokEnvironment: grokMcpEnvironment,
+    })
     const handle =
       opts.resume?.session && opts.resume.kind === 'continue'
         ? await t.resume({

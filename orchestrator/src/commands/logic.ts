@@ -8,6 +8,7 @@ import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
+import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
@@ -417,7 +418,14 @@ export function register(program: Command): void {
   program
     .command('ask-server')
     .allowExcessArguments(false)
-    .action(() => serveAsk())
+    .action(async () => {
+      try {
+        await serveAsk()
+      } catch (error) {
+        writeAskServerFailure(error)
+        throw error
+      }
+    })
   program
     .command('setup-ask')
     .allowExcessArguments(false)

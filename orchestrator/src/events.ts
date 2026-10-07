@@ -37,6 +37,15 @@ export type RunLogEvent =
     }
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
+  | {
+      ts: string
+      type: 'ask_expected'
+      transport: 'host' | 'srt'
+      command: string[]
+    }
+  | { ts: string; type: 'ask_started'; tools: string[] }
+  | { ts: string; type: 'ask_initialised' }
+  | { ts: string; type: 'ask_listed'; tools: string[] }
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
@@ -44,6 +53,10 @@ type PeekEventSummary =
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
+  | { type: 'ask_expected'; transport: 'host' | 'srt'; command: string[] }
+  | { type: 'ask_started'; tools: string[] }
+  | { type: 'ask_initialised' }
+  | { type: 'ask_listed'; tools: string[] }
 
 export type PeekSummary = {
   id: number
@@ -112,6 +125,7 @@ export function appendRunEvent(
   runId: number,
   event: RunLogEvent,
   path = runEventsPath(runId),
+  options: { notWorkerActivity?: boolean } = {},
 ): void {
   // Best-effort, like touchLastEventAt: the live log observes the vendor
   // stream and must never fail the run or reach its outcome (review 349).
@@ -121,7 +135,7 @@ export function appendRunEvent(
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
-  touchLastEventAt(runId, event.ts)
+  if (!options.notWorkerActivity) touchLastEventAt(runId, event.ts)
 }
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
@@ -434,7 +448,7 @@ export function eventsFromVendorLine(line: string): StreamEvent[] {
   return []
 }
 
-function readEventLog(path: string): RunLogEvent[] {
+export function readEventLog(path: string): RunLogEvent[] {
   if (!existsSync(path)) return []
   const events: RunLogEvent[] = []
   for (const line of readFileSync(path, 'utf8').split('\n')) {
@@ -466,7 +480,17 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }
-  return { type: 'usage', tokens: event.tokens }
+  if (event.type === 'usage') return { type: 'usage', tokens: event.tokens }
+  if (event.type === 'ask_expected') {
+    return {
+      type: 'ask_expected',
+      transport: event.transport,
+      command: event.command,
+    }
+  }
+  if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
+  if (event.type === 'ask_listed') return { type: 'ask_listed', tools: event.tools }
+  return { type: 'ask_initialised' }
 }
 
 function git(cwd: string, args: string[]): string | null {
@@ -556,7 +580,13 @@ function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'tool_result') {
     return `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd()
   }
-  return `  usage ${event.tokens}`
+  if (event.type === 'usage') return `  usage ${event.tokens}`
+  if (event.type === 'ask_expected') {
+    return `  ask expected ${event.transport} ${event.command.join(' ')}`
+  }
+  if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
+  if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
+  return '  ask initialised'
 }
 
 export function formatPeek(summary: PeekSummary): string {

@@ -3,7 +3,13 @@ import { readFileSync } from 'node:fs'
 import { addRun } from '../test/fixtures/store.ts'
 import { registrationProbeReadsRepo } from './agent/agent-probe.ts'
 import { db } from './database/db.ts'
-import { createEventLog, eventsFromVendorLine, idleLabel, runEventsPath } from './events.ts'
+import {
+  appendRunEvent,
+  createEventLog,
+  eventsFromVendorLine,
+  idleLabel,
+  runEventsPath,
+} from './events.ts'
 import type { NormalizedEvent } from './transport/transport.ts'
 
 const CODEX_PROBE_COMMAND_STARTED = JSON.stringify({
@@ -57,6 +63,23 @@ function probeEvents(...lines: string[]): NormalizedEvent[] {
 }
 
 describe('vendor event log', () => {
+  test('non-worker activity appends without moving the activity clock', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db().query('UPDATE run SET last_event_at=? WHERE id=?').run('worker-time', id)
+    appendRunEvent(id, { ts: 'server-time', type: 'ask_initialised' }, runEventsPath(id), {
+      notWorkerActivity: true,
+    })
+    expect(
+      (db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as { last_event_at: string })
+        .last_event_at,
+    ).toBe('worker-time')
+    appendRunEvent(id, { ts: 'next-worker-time', type: 'text', text: 'worker output' })
+    expect(
+      (db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as { last_event_at: string })
+        .last_event_at,
+    ).toBe('next-worker-time')
+  })
+
   test('coalesces assistant chunks and records tool results without bodies', () => {
     const id = addRun({ agent: 'grok', job: 'summarize', status: 'running' })
     const path = runEventsPath(id)

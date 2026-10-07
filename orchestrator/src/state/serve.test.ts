@@ -5,6 +5,7 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db, nowIso } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { runDetail, state } from './serve.ts'
 
@@ -42,6 +43,27 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
+  test('publishes ask lifecycle evidence and distinguishes a missing log', () => {
+    const missing = addRun({ agent: 'codex', job: 'implement' })
+    expect(runDetail(missing)!.ask_server).toMatchObject({
+      expected: 'not_recorded',
+      started: 'not_recorded',
+    })
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    appendRunEvent(
+      id,
+      { ts: 't1', type: 'ask_expected', transport: 'srt', command: ['orch', 'ask-proxy'] },
+      undefined,
+      { notWorkerActivity: true },
+    )
+    expect(runDetail(id)!.ask_server).toMatchObject({
+      expected: 'seen',
+      started: 'not_seen',
+      transport: 'srt',
+      command: ['orch', 'ask-proxy'],
+    })
+  })
+
   test('publishes overturned questions with their reason', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()
