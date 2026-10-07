@@ -49,29 +49,32 @@ export function FilterPanel({
   return (
     <div className="w-[min(17.5rem,calc(100vw-2.5rem))]">
       {offered.map((filter) => (
-        <fieldset
+        // A legend sits on its fieldset's border, so the rule between groups belongs to a wrapper.
+        <div
           key={filter.key}
-          className="m-0 border-0 border-border-default border-t p-0 pt-3 first:border-t-0 first:pt-0"
+          className="mt-3 border-border-default border-t pt-3 first:mt-0 first:border-t-0 first:pt-0"
         >
-          <legend className={classes(eyebrow, 'mb-1.5 px-0')}>{labels[filter.key]}</legend>
-          <FilterOption
-            name={`docs-filter-${filter.key}`}
-            checked={chosen[filter.key] === null}
-            label="Any"
-            count={total}
-            onSelect={() => onChange({ ...chosen, [filter.key]: null })}
-          />
-          {filter.options.map((option) => (
+          <fieldset className="m-0 border-0 p-0">
+            <legend className={classes(eyebrow, 'mb-1.5 px-0')}>{labels[filter.key]}</legend>
             <FilterOption
-              key={option.value}
               name={`docs-filter-${filter.key}`}
-              checked={chosen[filter.key] === option.value}
-              label={option.value}
-              count={option.count}
-              onSelect={() => onChange({ ...chosen, [filter.key]: option.value })}
+              checked={chosen[filter.key] === null}
+              label="Any"
+              count={total}
+              onSelect={() => onChange({ ...chosen, [filter.key]: null })}
             />
-          ))}
-        </fieldset>
+            {filter.options.map((option) => (
+              <FilterOption
+                key={option.value}
+                name={`docs-filter-${filter.key}`}
+                checked={chosen[filter.key] === option.value}
+                label={option.value}
+                count={option.count}
+                onSelect={() => onChange({ ...chosen, [filter.key]: option.value })}
+              />
+            ))}
+          </fieldset>
+        </div>
       ))}
       <div className="mt-3 flex justify-between border-border-default border-t pt-2.5 text-sm text-text-muted">
         <span>Only filters these docs can use</span>
