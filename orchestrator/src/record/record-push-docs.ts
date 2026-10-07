@@ -23,6 +23,7 @@ type LocalDoc = {
   audience: DocAudience
   parent_id: number | null
   position: number
+  featured: boolean
   project_id: number | null
   created_at: string
   updated_at: string
@@ -43,6 +44,7 @@ type LocalRevision = {
   audience: DocAudience
   parent_id: number | null
   position: number
+  featured: boolean
   author: string
   reason: string
   session_id: string | null

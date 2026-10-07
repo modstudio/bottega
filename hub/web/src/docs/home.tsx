@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { Kbd } from '@/ui/kbd/kbd'
 import { SearchDialog } from './search.tsx'
 import { buildDocTree } from './tree.ts'
@@ -44,6 +44,17 @@ export function DocsHome({
 }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const model = docsHomeModel(items)
+  useEffect(() => {
+    const openFromShortcut = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
+        return
+      event.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', openFromShortcut)
+    return () => window.removeEventListener('keydown', openFromShortcut)
+  }, [])
   const openSearch = (event: FormEvent) => {
     event.preventDefault()
     setSearchOpen(true)
@@ -59,7 +70,6 @@ export function DocsHome({
             type="search"
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            onFocus={() => setSearchOpen(true)}
             placeholder="Search titles and text"
             aria-label="Search titles and text"
           />

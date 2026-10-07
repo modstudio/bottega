@@ -29,16 +29,22 @@ test('legacy doc imports default omitted tree fields and allow the service to mi
     ],
   })
 
-  expect(parsed.doc).toMatchObject({ audience: 'technical', parentId: null, position: 0 })
+  expect(parsed.doc).toMatchObject({
+    audience: 'technical',
+    parentId: null,
+    position: 0,
+    featured: false,
+  })
   expect(parsed.doc.id).toBeUndefined()
   expect(parsed.revisions[0]).toMatchObject({
     audience: 'technical',
     parentId: null,
     position: 0,
+    featured: false,
   })
   const mintedId = '01990000-0000-7000-8000-000000000099'
   expect(normalizeRecordDocImport(parsed, mintedId)).toMatchObject({
-    doc: { id: mintedId, audience: 'technical', parentId: null, position: 0 },
-    revisions: [{ audience: 'technical', parentId: null, position: 0 }],
+    doc: { id: mintedId, audience: 'technical', parentId: null, position: 0, featured: false },
+    revisions: [{ audience: 'technical', parentId: null, position: 0, featured: false }],
   })
 })

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { getDoc, getDocRevision, listDocRevisions, listDocs, setDoc } from './docs.ts'
 
-test('audience, parent, and position round trip through set, list, and history', async () => {
+test('audience, parent, position, and featured round trip through set, list, and history', async () => {
   const parent = await setDoc({
     scope: 'global',
     subject: null,
@@ -23,6 +23,7 @@ test('audience, parent, and position round trip through set, list, and history',
     audience: 'user',
     parentSlug: parent.slug,
     position: 7,
+    featured: true,
     reason: 'create tree child',
   })
   expect(getDoc('global', null, child.slug)).toMatchObject({
@@ -30,11 +31,13 @@ test('audience, parent, and position round trip through set, list, and history',
     parent_id: parent.id,
     parent_slug: parent.slug,
     position: 7,
+    featured: true,
   })
   expect(listDocs({ scope: 'global', audience: 'user' })).toContainEqual(child)
   expect(getDocRevision(listDocRevisions('global', null, child.slug)[0]!.id)).toMatchObject({
     audience: 'user',
     parent_id: parent.id,
     position: 7,
+    featured: true,
   })
 })

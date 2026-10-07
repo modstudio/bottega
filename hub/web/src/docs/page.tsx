@@ -86,7 +86,7 @@ export function DocsPage() {
   )
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
 
-  if (source === 'public' && !selected) {
+  if (source === 'public' && whoami.isFetched && !selected) {
     return (
       <DocsHome
         items={catalog.items}
