@@ -24,6 +24,7 @@ import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
   grokAskCommandFromConfig,
+  grokAskServerCommand,
   grokSandboxConfig,
   prepareCodexHome,
   prepareGrokMcpHome,
@@ -85,7 +86,7 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
         '[mcp_servers.orch-ask]\ncommand = "/old/bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n' +
         '[mcp_servers.orch-ask.env]\nSTALE = "1"\n',
     )
-    expect(prepareGrokMcpHome(runDir, ['stopal', 'alephbeis'], source)).toEqual({
+    expect(prepareGrokMcpHome(runDir, ['stopal', 'alephbeis'], source, 'host')).toEqual({
       GROK_HOME: runDir,
       GROK_DISABLE_AUTOUPDATER: '1',
     })
@@ -97,15 +98,23 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     expect(written).toContain(`command = ${JSON.stringify(process.execPath)}`)
     expect(written).toContain(JSON.stringify(join(ROOT, 'src', 'cli', 'orch.ts')))
     writeFileSync(join(source, 'config.toml'), 'replacement = true\n')
-    prepareGrokMcpHome(runDir, [], source)
-    expect(readFileSync(join(runDir, 'config.toml'), 'utf8')).toBe(written)
+    prepareGrokMcpHome(runDir, [], source, 'srt')
+    const sandboxed = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(grokAskCommandFromConfig(sandboxed)).toEqual(grokAskServerCommand('srt'))
+    expect(withoutRegisteredOrchAskServer(sandboxed)).toBe(withoutRegisteredOrchAskServer(written))
+    prepareGrokMcpHome(runDir, [], source, 'host')
+    const hostedAgain = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(grokAskCommandFromConfig(hostedAgain)).toEqual(grokAskServerCommand('host'))
+    expect(withoutRegisteredOrchAskServer(hostedAgain)).toBe(
+      withoutRegisteredOrchAskServer(sandboxed),
+    )
     const conflict = join(fixture, 'conflict')
     mkdirSync(conflict)
     writeFileSync(
       join(conflict, 'config.toml'),
       'disabled_mcp_servers = ["x"]\n[mcp_servers.orch]\n',
     )
-    expect(() => prepareGrokMcpHome(join(fixture, 'conflict-run'), [], conflict)).toThrow(
+    expect(() => prepareGrokMcpHome(join(fixture, 'conflict-run'), [], conflict, 'host')).toThrow(
       `disabled_mcp_servers is already declared in ${join(conflict, 'config.toml')}`,
     )
   } finally {
@@ -141,7 +150,12 @@ test('prepares one persistent Codex home per chain without operator canon or ses
     writeFileSync(join(source, 'config.toml'), 'model = "changed-after-first-turn"\n')
     chmodSync(runDir, 0o755)
     chmodSync(first.CODEX_HOME!, 0o755)
-    const resumed = prepareSandboxHome('codex', runDir, { HOME: fixture, CODEX_HOME: source })
+    const resumed = prepareSandboxHome(
+      'codex',
+      runDir,
+      { HOME: fixture, CODEX_HOME: source },
+      'host',
+    )
     expect(resumed).toEqual(first)
     expect(readFileSync(join(resumed.CODEX_HOME!, 'config.toml'), 'utf8')).toBe(config)
     expect(statSync(runDir).mode & 0o777).toBe(0o700)
@@ -175,6 +189,50 @@ test('reads the configured Grok ask command from the table its writer owns', () 
         'args = ["/stale/orch.ts", "ask-server"]\n[ui]\ncommand = "ignored"\n',
     ),
   ).toEqual(['/stale/bun', '/stale/orch.ts', 'ask-server'])
+})
+
+test('chooses the Grok ask command from the launch sandbox', () => {
+  expect(grokAskServerCommand('srt')).toEqual([
+    Bun.which('bun') ?? process.execPath,
+    '--no-env-file',
+    join(ROOT, 'src', 'ask', 'ask-proxy.ts'),
+    'ask-server',
+  ])
+  expect(grokAskServerCommand('host')).toEqual([
+    process.execPath,
+    '--no-env-file',
+    join(ROOT, 'src', 'cli', 'orch.ts'),
+    'ask-server',
+  ])
+})
+
+test('prepares and updates a Grok home for the launch sandbox only', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-grok-sandbox-command-'))
+  try {
+    const operator = join(fixture, 'operator')
+    const runDir = join(fixture, 'run')
+    mkdirSync(join(operator, '.grok'), { recursive: true })
+    writeFileSync(
+      join(operator, '.grok', 'config.toml'),
+      'model = "grok"\ndisabled_mcp_servers = ["kept"]\n[mcp_servers.other]\ncommand = "kept"\n',
+    )
+
+    prepareSandboxHome('grok', runDir, { HOME: operator }, 'host')
+    const host = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(grokAskCommandFromConfig(host)).toEqual(grokAskServerCommand('host'))
+
+    prepareSandboxHome('grok', runDir, { HOME: operator }, 'srt')
+    const srt = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(grokAskCommandFromConfig(srt)).toEqual(grokAskServerCommand('srt'))
+    expect(withoutRegisteredOrchAskServer(srt)).toBe(withoutRegisteredOrchAskServer(host))
+
+    prepareSandboxHome('grok', runDir, { HOME: operator }, 'host')
+    const hostAgain = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(grokAskCommandFromConfig(hostAgain)).toEqual(grokAskServerCommand('host'))
+    expect(withoutRegisteredOrchAskServer(hostAgain)).toBe(withoutRegisteredOrchAskServer(srt))
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
 })
 
 test('prepares Codex home without a user-registered orch-ask server', () => {
@@ -351,11 +409,13 @@ test('harness aliases prepare the Codex and Grok chain homes', () => {
       workerHarnessName({ name: 'registered-codex', harness: 'codex' }),
       join(fixture, 'codex-run'),
       environment,
+      'host',
     )
     const grok = prepareSandboxHome(
       workerHarnessName({ name: 'registered-grok', harness: 'grok' }),
       join(fixture, 'grok-run'),
       environment,
+      'srt',
     )
     expect(codex.CODEX_HOME).toBe(join(fixture, 'codex-run', 'codex'))
     expect(grok.GROK_HOME).toBe(join(fixture, 'grok-run'))
@@ -373,7 +433,7 @@ test('failed home setup or MCP preflight removes only a newly created chain dire
     writeFileSync(join(grokSource, 'config.toml'), 'disabled_mcp_servers = []\n')
     const failedSetup = join(fixture, 'home-setup')
     try {
-      prepareGrokMcpHome(failedSetup, [], grokSource)
+      prepareGrokMcpHome(failedSetup, [], grokSource, 'host')
     } catch {
       removeNewSandboxHomeAfterFailure(failedSetup, false)
     }
@@ -460,7 +520,7 @@ describe('readonly-lens sandbox profile', () => {
   test('replaces a stale registered Grok orch-ask entry with this checkout proxy', () => {
     const config =
       '[mcp_servers.orch-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
-    const rewritten = grokSandboxConfig(config)
+    const rewritten = grokSandboxConfig(config, 'srt')
     expect(rewritten).toContain(`command = ${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
     expect(rewritten).toContain('"ask-server"')
     expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
@@ -471,7 +531,7 @@ describe('readonly-lens sandbox profile', () => {
       '[cli]\na = 1\n[marketplace]\nb = 2\n[[marketplace.sources]]\nurl = "before"\n' +
       '[mcp_servers.orch-ask]\ncommand = "x"\n[mcp_servers.orch-ask.env]\nK = "v"\n' +
       '[[marketplace.sources]]\nurl = "after"\n[ui]\nc = 3\n'
-    const rewritten = grokSandboxConfig(config)
+    const rewritten = grokSandboxConfig(config, 'srt')
     for (const kept of ['[cli]', '[marketplace]', 'url = "before"', 'url = "after"', '[ui]']) {
       expect(rewritten).toContain(kept)
     }
@@ -480,7 +540,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(rewritten).not.toContain('K = "v"')
   })
   test('adds a live orch-ask table when the user config has none', () => {
-    const rewritten = grokSandboxConfig('model = "grok"\n')
+    const rewritten = grokSandboxConfig('model = "grok"\n', 'srt')
     expect(rewritten).toContain('model = "grok"')
     expect(rewritten).toContain('[mcp_servers.orch-ask]')
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')

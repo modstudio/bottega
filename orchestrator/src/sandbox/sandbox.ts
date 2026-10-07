@@ -48,7 +48,7 @@ export type SandboxRuntimeConfig = {
   }
 }
 
-type RunSandbox = 'host' | 'srt'
+export type RunSandbox = 'host' | 'srt'
 
 /** Sensitive operator paths denied by every readonly-lens profile. */
 export const READONLY_LENS_DENY_PATHS = [
@@ -481,9 +481,14 @@ function withLiveGrokAskServer(config: string, command: string[]): string {
   return `${kept.trimEnd()}\n\n${section}\n`
 }
 
-/** Point a sandboxed Grok run's orch-ask at this checkout's proxy. */
-export function grokSandboxConfig(config: string): string {
-  return withLiveGrokAskServer(config, bottegaEntryArgv('ask-proxy'))
+/** Choose the Grok orch-ask command from the sandbox this turn launches in. */
+export function grokAskServerCommand(sandbox: RunSandbox): string[] {
+  return bottegaEntryArgv(sandbox === 'srt' ? 'ask-proxy' : 'ask-server')
+}
+
+/** Point a Grok run's orch-ask at the command for its launch sandbox. */
+export function grokSandboxConfig(config: string, sandbox: RunSandbox): string {
+  return withLiveGrokAskServer(config, grokAskServerCommand(sandbox))
 }
 
 /** Prepare the MCP home and visible scope line only for Grok. */
@@ -493,6 +498,7 @@ export function prepareProjectGrokMcpScope(
   names: string[],
   allowed: string[] | undefined,
   header: string | null,
+  sandbox: RunSandbox,
 ): { environment: Record<string, string>; header: string | null } {
   if (agent !== 'grok') return { environment: {}, header }
   const disabled = disabledProjectMcpServers(names, allowed)
@@ -500,7 +506,7 @@ export function prepareProjectGrokMcpScope(
     ? `MCP scope: withheld ${disabled.join(', ')} (not in workerMcpServers)`
     : null
   return {
-    environment: prepareGrokMcpHome(runDir, disabled),
+    environment: prepareGrokMcpHome(runDir, disabled, join(homedir(), '.grok'), sandbox),
     header: header && line ? `${header}\n${line}` : (header ?? line),
   }
 }
@@ -509,7 +515,8 @@ export function prepareProjectGrokMcpScope(
 export function prepareGrokMcpHome(
   runDir: string,
   disabled: string[],
-  source = join(homedir(), '.grok'),
+  source: string,
+  sandbox: RunSandbox,
 ): Record<string, string> {
   ensurePrivateDirectory(runDir)
   const authSource = join(source, 'auth.json')
@@ -517,23 +524,30 @@ export function prepareGrokMcpHome(
   if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
 
   const configTarget = join(runDir, 'config.toml')
+  let config: string
   if (!existsSync(configTarget)) {
     const configSource = join(source, 'config.toml')
-    const config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
+    config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
     const topLevel = config.split(/^\s*\[/m, 1)[0] ?? ''
     if (/^\s*disabled_mcp_servers\s*=/m.test(topLevel)) {
       throw new Error(`disabled_mcp_servers is already declared in ${configSource}`)
     }
-    const live = withLiveGrokAskServer(config, bottegaEntryArgv('ask-server'))
-    writeFileSync(configTarget, `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${live}`, {
-      mode: 0o600,
-    })
+    config = `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${config}`
+  } else {
+    config = readFileSync(configTarget, 'utf8')
   }
+  writeFileSync(configTarget, grokSandboxConfig(config, sandbox), {
+    mode: 0o600,
+  })
   chmodSync(configTarget, 0o600)
   return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
 }
 
-function prepareGrokSandboxHome(runDir: string, operatorHome: string): Record<string, string> {
+function prepareGrokSandboxHome(
+  runDir: string,
+  operatorHome: string,
+  sandbox: RunSandbox,
+): Record<string, string> {
   ensurePrivateDirectory(runDir)
   const authSource = join(operatorHome, '.grok', 'auth.json')
   const authTarget = join(runDir, 'auth.json')
@@ -541,10 +555,14 @@ function prepareGrokSandboxHome(runDir: string, operatorHome: string): Record<st
 
   const configSource = join(operatorHome, '.grok', 'config.toml')
   const configTarget = join(runDir, 'config.toml')
-  if (!existsSync(configTarget)) {
-    const config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
-    writeFileSync(configTarget, grokSandboxConfig(config), { mode: 0o600 })
-  }
+  const config = existsSync(configTarget)
+    ? readFileSync(configTarget, 'utf8')
+    : existsSync(configSource)
+      ? readFileSync(configSource, 'utf8')
+      : ''
+  writeFileSync(configTarget, grokSandboxConfig(config, sandbox), {
+    mode: 0o600,
+  })
   chmodSync(configTarget, 0o600)
   return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
 }
@@ -745,6 +763,7 @@ export function prepareSandboxHome(
   agent: string,
   runDir: string,
   environment: NodeJS.ProcessEnv = process.env,
+  sandbox: RunSandbox,
 ): Record<string, string> {
   if (agent === 'codex') return prepareCodexHome(runDir, environment)
   if (agent === 'grok') {
@@ -755,7 +774,7 @@ export function prepareSandboxHome(
       )
     }
     const home = prepareWorkerHomeMirror(runDir, resolve(operatorHome))
-    return { ...prepareGrokSandboxHome(runDir, resolve(operatorHome)), HOME: home }
+    return { ...prepareGrokSandboxHome(runDir, resolve(operatorHome), sandbox), HOME: home }
   }
   if (agent === 'qwen36-qwencli') {
     const qwenDir = join(runDir, '.qwen')

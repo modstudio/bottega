@@ -6,6 +6,7 @@ import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import {
   prepareProjectGrokMcpScope,
   prepareSandboxHome,
+  type RunSandbox,
   removeNewSandboxHomeAfterFailure,
 } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -27,7 +28,7 @@ export function trackedWorkerEnvironment(
 export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
   harness: string
-  sandboxProfile: boolean
+  sandbox: RunSandbox
   runDir: string
   runId: number
   runToken: string
@@ -37,8 +38,10 @@ export async function prepareWorkerHomeLaunch(input: {
   codexMcpScope: CodexMcpScope | null
 }) {
   const hasRunScopedHome =
-    input.harness === 'codex' || input.harness === 'grok' || input.sandboxProfile
-  const home = hasRunScopedHome ? prepareSandboxHome(input.harness, input.runDir) : {}
+    input.harness === 'codex' || input.harness === 'grok' || input.sandbox === 'srt'
+  const home = hasRunScopedHome
+    ? prepareSandboxHome(input.harness, input.runDir, process.env, input.sandbox)
+    : {}
   const environment = childEnv(
     input.agent,
     input.runId,
@@ -62,12 +65,15 @@ export function prepareClaimedGrokMcpScope(
   recordClaim: () => void,
 ) {
   try {
+    // This preparation exists only for a requested MCP preflight, and MCP
+    // selection always launches on the host because srt blocks its transports.
     const scope = prepareProjectGrokMcpScope(
       input.agent,
       input.runDir,
       input.names,
       input.allowed,
       input.header,
+      'host',
     )
     if (input.agent === 'grok') recordClaim()
     return scope

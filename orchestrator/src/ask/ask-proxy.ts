@@ -1,4 +1,10 @@
 import { createConnection } from 'node:net'
+import { writeAskServerFailure } from './ask-failure.ts'
+
+export function recordAskProxyFailure(error: unknown, scratchDir?: string): unknown {
+  writeAskServerFailure(error, scratchDir)
+  return error
+}
 
 export async function main(_argv: string[] = []): Promise<number> {
   const value = process.env.ORCH_ASK_URL
@@ -22,4 +28,10 @@ export async function main(_argv: string[] = []): Promise<number> {
   return 0
 }
 
-if (import.meta.main) process.exitCode = await main()
+if (import.meta.main) {
+  try {
+    process.exitCode = await main()
+  } catch (error) {
+    throw recordAskProxyFailure(error)
+  }
+}
