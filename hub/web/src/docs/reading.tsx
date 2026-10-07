@@ -70,11 +70,16 @@ function ReadingTop({
   return (
     <div
       className={classes(
-        '-mx-6 md:-mx-11 sticky top-(--docs-stick) z-10 flex items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-11',
+        '-mx-6 md:-mx-11 z-10 flex lg:sticky lg:top-(--docs-stick) items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-11',
         titleGone ? 'border-border-default' : 'border-transparent',
       )}
     >
-      <div className={classes(eyebrow, 'flex min-w-0 items-baseline gap-2 whitespace-nowrap')}>
+      <div
+        className={classes(
+          eyebrow,
+          'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
+        )}
+      >
         {crumbs.map((crumb, index) => (
           <span key={crumb.key} className="contents">
             {index > 0 ? <span>/</span> : null}

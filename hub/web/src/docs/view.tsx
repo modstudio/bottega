@@ -89,7 +89,7 @@ function DocsChrome({
     ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
   ]
   return (
-    <div className="docs-chrome-rule sticky top-(--docs-top) z-20 bg-inherit">
+    <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
       <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-end justify-between gap-3 px-5">
         {/* The tab list's own rule lies on the chrome's, so the selected marker sits on that line. */}
         <div className="relative z-10">
