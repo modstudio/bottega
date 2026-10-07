@@ -66,6 +66,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../canon/canon-import-policy.ts',
       '../doc/doc-write-allowed.ts',
       './record-canon-facts.ts',
+      './record-doc-errors.ts',
       './record-doc-mapping.ts',
       './record-doc-tree.ts',
     ],
