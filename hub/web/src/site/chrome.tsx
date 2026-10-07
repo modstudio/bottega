@@ -428,6 +428,9 @@ function SiteFooter() {
               <li>
                 <Link to="/docs">Context</Link>
               </li>
+              <li>
+                <a href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>GitHub</a>
+              </li>
             </ul>
           </div>
           <div>
