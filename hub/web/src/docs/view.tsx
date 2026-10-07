@@ -164,7 +164,7 @@ function DocsRail({
       <button
         type="button"
         onClick={onSearch}
-        className="mb-4 flex w-full shrink-0 items-center justify-between text-left text-md text-text-muted"
+        className="mb-4 flex h-control-md w-full shrink-0 items-center justify-between border border-border-default bg-surface-page px-2.5 text-left text-md text-text-muted transition-colors duration-(--duration-fast) hover:border-border-strong"
       >
         <span>Search docs</span>
         <Kbd>/</Kbd>

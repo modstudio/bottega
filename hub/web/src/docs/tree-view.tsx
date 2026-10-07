@@ -7,12 +7,15 @@ const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
 function TreeRow({
   node,
+  gutter,
   selectedId,
   collapsed,
   onToggle,
   onSelect,
 }: {
   node: TreeNode
+  /** Reserve the toggle's width, so rows align in a list where some row can expand. */
+  gutter: boolean
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
@@ -43,9 +46,9 @@ function TreeRow({
               <ChevronRight className="size-3" aria-hidden />
             )}
           </button>
-        ) : (
+        ) : gutter ? (
           <span className="size-6 shrink-0" />
-        )}
+        ) : null}
         <button
           ref={rowRef}
           type="button"
@@ -90,12 +93,14 @@ export function TreeList({
   onToggle: (id: string) => void
   onSelect: (item: DocsTreeItem) => void
 }) {
+  const gutter = nodes.some((node) => node.children.length > 0)
   return (
     <ul className="m-0 list-none p-0 text-md">
       {nodes.map((node) => (
         <TreeRow
           key={node.id}
           node={node}
+          gutter={gutter}
           selectedId={selectedId}
           collapsed={collapsed}
           onToggle={onToggle}
