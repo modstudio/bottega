@@ -135,6 +135,10 @@
 .markdown [role="note"] ol {
   color: inherit;
 }
+/* A diagram is a layout and paint root so its CSS cannot restyle the page. */
+.markdown .doc-mermaid {
+  contain: layout paint;
+}
 .markdown .doc-mermaid svg {
   display: block;
   max-width: none;
@@ -203,7 +207,7 @@
 }
 .markdown .doc-overflow-scroll {
   max-width: 100%;
-  overflow-x: auto;
+  overflow: auto;
 }
 .markdown table {
   width: max-content;

@@ -11,7 +11,7 @@ const MERMAID_SECURE_EXTRA = ['htmlLabels', 'themeCSS', 'fontFamily', 'altFontFa
 
 const SVG_PURIFY = {
   USE_PROFILES: { svg: true, svgFilters: true },
-  FORBID_TAGS: ['foreignObject', 'img', 'image', 'style'],
+  FORBID_TAGS: ['foreignObject', 'img', 'image'],
   FORBID_ATTR: ['style'],
 }
 
