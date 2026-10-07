@@ -87,8 +87,7 @@ describe('git guard', () => {
     for (const flag of ['-fu', '-uf', '-ff']) {
       for (const cwd of [worktree, project]) {
         expect(
-          invoke(databasePath, cwd, `git push ${flag} origin feature:feature`)
-            ?.permissionDecision,
+          invoke(databasePath, cwd, `git push ${flag} origin feature:feature`)?.permissionDecision,
         ).toBe('ask')
       }
     }
@@ -97,18 +96,11 @@ describe('git guard', () => {
   test('honours both workflow exec cwd forms and rejects ambiguous cwd flags', () => {
     const { databasePath, outside, project, worktree } = fixture()
     expect(
-      invoke(
-        databasePath,
-        worktree,
-        `orch workflow exec --cwd=${project} -- git reset --hard`,
-      ),
+      invoke(databasePath, worktree, `orch workflow exec --cwd=${project} -- git reset --hard`),
     ).toBeNull()
     expect(
-      invoke(
-        databasePath,
-        outside,
-        `orch workflow exec --cwd=${worktree} -- git reset --hard`,
-      )?.permissionDecision,
+      invoke(databasePath, outside, `orch workflow exec --cwd=${worktree} -- git reset --hard`)
+        ?.permissionDecision,
     ).toBe('allow')
     expect(
       invoke(
@@ -117,9 +109,7 @@ describe('git guard', () => {
         `orch workflow exec --cwd ${worktree} --cwd=${project} -- git status`,
       ),
     ).toBeNull()
-    expect(
-      invoke(databasePath, outside, 'orch workflow exec --cwd -- git status'),
-    ).toBeNull()
+    expect(invoke(databasePath, outside, 'orch workflow exec --cwd -- git status')).toBeNull()
   })
 
   test('does not allow repository-redirection options based on the worktree cwd', () => {
@@ -159,9 +149,7 @@ describe('git guard', () => {
       invoke(databasePath, worktree, '/usr/bin/git push --force origin feature:feature')
         ?.permissionDecision,
     ).toBe('ask')
-    expect(
-      invoke(databasePath, worktree, '/usr/bin/git status')?.permissionDecision,
-    ).toBe('allow')
+    expect(invoke(databasePath, worktree, '/usr/bin/git status')?.permissionDecision).toBe('allow')
   })
 
   test('allows scoped cleanup only for ordinary named branches', () => {
