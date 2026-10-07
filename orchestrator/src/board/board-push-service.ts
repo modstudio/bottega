@@ -2,8 +2,7 @@
 /** Resolves pending acknowledgement delivery across the local and hosted caches. */
 
 import type { Database } from 'bun:sqlite'
-import { writableDb, writeTransaction } from '../database/db.ts'
-import { BOARD_PUSH_REMIND_SECONDS } from './board-delivery.ts'
+import { writableDb } from '../database/db.ts'
 import {
   cachedMessageAddressed,
   cachedRows,
@@ -11,7 +10,8 @@ import {
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { requireRealSession } from './board-policy.ts'
-import { type PendingAcknowledgement, pendingForDelivery } from './board-push-policy.ts'
+import type { PendingAcknowledgement } from './board-render.ts'
+import { markNoticesDelivered } from './board-service.ts'
 import { addressed, boardOrigin, messageRows, originText, rowIsLive } from './board-store.ts'
 
 type PendingInput = {
@@ -19,7 +19,6 @@ type PendingInput = {
   deliver: boolean
   budgetMs: number
   clock?: number
-  remindSeconds?: number
   database?: Database
 }
 
@@ -87,17 +86,6 @@ function hostedPending(
     }))
 }
 
-function stampLocal(session: string, ids: number[], clock: number, database: Database): void {
-  const at = new Date(clock).toISOString()
-  const stamp = database.query(
-    `INSERT INTO board_receipt(message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET delivered_at=excluded.delivered_at`,
-  )
-  writeTransaction(() => {
-    for (const id of ids) stamp.run(id, session, at)
-  }, database)
-}
-
 export async function pendingBoardAcknowledgements(input: PendingInput) {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
@@ -107,23 +95,19 @@ export async function pendingBoardAcknowledgements(input: PendingInput) {
     ...localPending(input.session, clock, database),
     ...hostedPending(input.session, clock, database),
   ]
-  const notices = input.deliver
-    ? pendingForDelivery(all, clock, input.remindSeconds ?? BOARD_PUSH_REMIND_SECONDS)
-    : all
-  if (input.deliver && notices.length) {
-    const local = notices
+  if (input.deliver && all.length) {
+    const firstDeliveries = all.filter((notice) => notice.deliveredAt === null)
+    const local = firstDeliveries
       .filter((notice) => /^\d+$/.test(notice.id))
       .map((notice) => Number(notice.id))
-    const hosted = notices.filter((notice) => !/^\d+$/.test(notice.id)).map((notice) => notice.id)
-    if (local.length) stampLocal(input.session, local, clock, database)
+    const hosted = firstDeliveries
+      .filter((notice) => !/^\d+$/.test(notice.id))
+      .map((notice) => notice.id)
+    if (local.length)
+      markNoticesDelivered(local, { CLAUDE_CODE_SESSION_ID: input.session }, clock, database)
     if (hosted.length) {
-      const at = new Date(clock).toISOString()
-      const stamp = database.query(
-        'UPDATE hosted_board_receipt_cache SET delivered_at=? WHERE message_id=? AND reader_session=?',
-      )
-      for (const id of hosted) stamp.run(at, id, input.session)
       await markCachedHostedDelivered(input.session, hosted, { database, clock })
     }
   }
-  return notices
+  return all
 }

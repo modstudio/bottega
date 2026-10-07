@@ -3,7 +3,6 @@ import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
-  BOARD_PUSH_REMIND_SECONDS,
   BOARD_READ_REFRESH_BUDGET_MS,
   claimBoardNotices,
   markBoardNoticesDelivered,
@@ -21,8 +20,8 @@ import {
   boardWithdraw,
 } from './board-operations.ts'
 import { listBoardOverview } from './board-overview.ts'
-import { renderPendingAcknowledgement } from './board-push-policy.ts'
 import { pendingBoardAcknowledgements } from './board-push-service.ts'
+import { renderPendingAcknowledgement } from './board-render.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 
@@ -72,14 +71,12 @@ export function registerBoardCommands(program: Command): void {
   board
     .command('pending')
     .requiredOption('--session <id>')
-    .option('--all', 'return pending notices even when they are not due for a reminder')
     .option('--json')
     .action(async (options) => {
       const notices = await pendingBoardAcknowledgements({
         session: options.session,
-        deliver: !options.all,
+        deliver: true,
         budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
-        remindSeconds: BOARD_PUSH_REMIND_SECONDS,
       })
       console.log(
         JSON.stringify({

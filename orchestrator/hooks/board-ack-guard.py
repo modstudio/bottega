@@ -2,33 +2,39 @@
 """Stop hook: hold an architect turn briefly for pending board acknowledgements."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
-import tempfile
 
-from board_hook_common import pending, store_path
+from board_hook_common import (
+    marker_path,
+    pending,
+    read_marker,
+    store_path,
+    write_marker,
+)
 
 
-def observation_count(session: str, notice_id: str) -> int | None:
-    root = os.path.join(
-        os.environ.get("TMPDIR") or tempfile.gettempdir(),
-        "orch-board-ack-guard",
-    )
-    key = f"{session}:{notice_id}"
-    path = os.path.join(root, hashlib.sha256(key.encode()).hexdigest())
-    try:
-        os.makedirs(root, mode=0o700, exist_ok=True)
+def block_count(session: str) -> tuple[str, int]:
+    path = marker_path("stop", session)
+    value = read_marker(path)
+    count = value.get("blocks", 0) if isinstance(value, dict) else 0
+    if not isinstance(count, int) or count < 0:
         count = 0
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as handle:
-                count = int(handle.read())
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(str(count + 1))
-        return count + 1
-    except Exception:
-        return None
+    return path, count
+
+
+def notice_summary(notices, stopping: bool = False) -> str:
+    count = len(notices)
+    state = "is stopping with" if stopping else "has"
+    noun = "notice" if count == 1 else "notices"
+    commands = "\n".join(f"orch board ack {item['id']}" for item in notices)
+    lead = (
+        f"This architect session {state} {count} unacknowledged board {noun}. "
+        "Acknowledge with:\n"
+        f"{commands}"
+    )
+    return lead + "\n\n" + "\n\n".join(item["text"] for item in notices)
 
 
 def main() -> int:
@@ -37,29 +43,27 @@ def main() -> int:
             return 0
         payload = json.load(sys.stdin)
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
-        if not isinstance(session, str) or not session or not os.path.exists(store_path()):
+        if (
+            not isinstance(session, str)
+            or not session
+            or not os.path.exists(store_path())
+        ):
             return 0
-        notices = pending(session, True)
+        notices = pending(session)
+        path, count = block_count(session)
         if not notices:
+            write_marker(path, {"blocks": 0})
             return 0
         limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
-        counts = [observation_count(session, item["id"]) for item in notices]
-        if any(count is None for count in counts):
-            return 0
-        blocking = [item for item, count in zip(notices, counts) if count <= limit]
-        exhausted = [item for item, count in zip(notices, counts) if count > limit]
-        if blocking:
+        if count < limit:
+            write_marker(path, {"blocks": count + 1})
             value = {
                 "decision": "block",
-                "reason": "\n\n".join(item["text"] for item in blocking),
+                "reason": notice_summary(notices),
             }
-            if exhausted:
-                value["systemMessage"] = "\n\n".join(item["text"] for item in exhausted)
             sys.stdout.write(json.dumps(value) + "\n")
         else:
-            value = {
-                "systemMessage": "\n\n".join(item["text"] for item in exhausted)
-            }
+            value = {"systemMessage": notice_summary(notices, True)}
             sys.stdout.write(json.dumps(value) + "\n")
     except Exception:
         pass

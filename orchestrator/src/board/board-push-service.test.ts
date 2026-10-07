@@ -8,6 +8,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -59,6 +60,14 @@ function invocationCount(fixture: ReturnType<typeof createHookFixture>) {
   }
 }
 
+function setCommandOutput(fixture: ReturnType<typeof createHookFixture>, output: string) {
+  writeFileSync(
+    fixture.command,
+    `#!/bin/sh\nprintf x >> '${fixture.invocationLog}'\nprintf '%s\\n' '${output}'\n`,
+  )
+  chmodSync(fixture.command, 0o700)
+}
+
 function addCandidate(fixture: ReturnType<typeof createHookFixture>, id: number) {
   fixture.database
     .query("INSERT INTO board_message VALUES (?,'notice',1,NULL,?,NULL)")
@@ -83,8 +92,10 @@ function runHook(
       TMPDIR: fixture.root,
       BOARD_PUSH_REFRESH_SECONDS: '60',
       BOARD_PUSH_REMIND_SECONDS: '300',
+      BOARD_PUSH_RETRY_SECONDS: '15',
       BOARD_ACK_STOP_BLOCKS: '3',
       BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
+      ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
       ...extra,
     },
   })
@@ -162,7 +173,25 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
   expect(pending.map((notice) => notice.id).sort()).toEqual([String(local.id), hosted.id].sort())
 })
 
-test('delivery stamps the notice and suppresses it until the reminder interval', async () => {
+test('the hook SQL remains a deliberately broad prefilter of the TypeScript owner', () => {
+  const hook = readFileSync(interruptHook, 'utf8')
+  const owner = readFileSync(resolve(import.meta.dir, 'board-push-service.ts'), 'utf8')
+  expect(hook).toContain('Broad prefilter for board-push-service.ts, the eligibility owner.')
+  for (const [hookClause, ownerClause] of [
+    ["m.kind='notice'", "row.kind === 'notice'"],
+    ['m.ack_required=1', 'row.ack_required === 1'],
+    ['m.author_session<>?', 'row.author_session !== session'],
+    ['r.acknowledged_at IS NOT NULL', 'receipt.acknowledged_at === null'],
+    ["m.kind='notice'", "message.kind === 'notice'"],
+    ["json_extract(m.payload,'$.ackRequired')=1", 'message.ackRequired'],
+    ["json_extract(m.payload,'$.authorSession')<>?", 'message.authorSession !== session'],
+  ]) {
+    expect(hook).toContain(hookClause)
+    expect(owner).toContain(ownerClause)
+  }
+})
+
+test('delivery returns every pending notice and preserves its first delivered time', async () => {
   const clock = Date.parse('2026-10-08T12:00:00.000Z')
   db()
     .query(
@@ -180,12 +209,19 @@ test('delivery stamps the notice and suppresses it until the reminder interval',
       session: 'remind-reader',
       deliver: true,
       budgetMs: 1,
-      remindSeconds: 300,
       clock: at,
     })
   expect((await claim(clock + 1)).map((notice) => notice.id)).toEqual([String(posted.id)])
-  expect(await claim(clock + 299_999)).toEqual([])
+  const first = db()
+    .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
+    .get(posted.id, 'remind-reader') as { delivered_at: string }
+  expect((await claim(clock + 299_999)).map((notice) => notice.id)).toEqual([String(posted.id)])
   expect((await claim(clock + 300_001)).map((notice) => notice.id)).toEqual([String(posted.id)])
+  expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
+      .get(posted.id, 'remind-reader'),
+  ).toEqual(first)
 })
 
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
@@ -202,7 +238,7 @@ test('PostToolUse is silent for workers, malformed input, missing stores, and th
   }
 })
 
-test('PostToolUse injects pending text and fails open on command timeout', () => {
+test('PostToolUse injects pending text and fails open on command timeout or malformed output', () => {
   const item = createHookFixture(hookOutput)
   addCandidate(item, 1)
   const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
@@ -217,6 +253,12 @@ test('PostToolUse injects pending text and fails open on command timeout', () =>
   const timed = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), slow)
   expect(timed.exitCode).toBe(0)
   expect(timed.stdout.toString()).toBe('')
+
+  const malformed = createHookFixture('{')
+  addCandidate(malformed, 1)
+  const broken = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), malformed)
+  expect(broken.exitCode).toBe(0)
+  expect(broken.stdout.toString()).toBe('')
 })
 
 test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
@@ -232,17 +274,35 @@ test('PostToolUse checks an unaddressed candidate only once until a new id arriv
   expect(invocationCount(item)).toBe(2)
 })
 
-test('PostToolUse rechecks candidates after the reminder interval', () => {
-  const item = createHookFixture('{"notices":[]}')
+test('PostToolUse injects once and again only after the reminder interval', () => {
+  const item = createHookFixture(hookOutput)
+  addCandidate(item, 1)
+  const payload = JSON.stringify({ session_id: 'reader' })
+  expect(runHook(interruptHook, payload, item).stdout.toString()).not.toBe('')
+  expect(runHook(interruptHook, payload, item).stdout.toString()).toBe('')
+  const markerRoot = join(item.root, 'board-hook-state', 'interrupt')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  const value = JSON.parse(readFileSync(marker, 'utf8'))
+  writeFileSync(marker, JSON.stringify({ ...value, ran_at: 0, injected_at: { '7': 0 } }))
+
+  expect(runHook(interruptHook, payload, item).stdout.toString()).not.toBe('')
+  expect(invocationCount(item)).toBe(2)
+})
+
+test('PostToolUse throttles a failed slow path until the retry interval', () => {
+  const item = createHookFixture(hookOutput, true)
   addCandidate(item, 1)
   const payload = JSON.stringify({ session_id: 'reader' })
   runHook(interruptHook, payload, item)
-  const markerRoot = join(item.root, 'orch-board-interrupt')
+  runHook(interruptHook, payload, item)
+  expect(invocationCount(item)).toBe(1)
+
+  const markerRoot = join(item.root, 'board-hook-state', 'interrupt')
   const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
   const value = JSON.parse(readFileSync(marker, 'utf8'))
-  writeFileSync(marker, JSON.stringify({ ...value, ran_at: 0 }))
-
-  runHook(interruptHook, payload, item)
+  writeFileSync(marker, JSON.stringify({ ...value, failure_at: 0 }))
+  setCommandOutput(item, hookOutput)
+  expect(runHook(interruptHook, payload, item).stdout.toString()).not.toBe('')
   expect(invocationCount(item)).toBe(2)
 })
 
@@ -262,7 +322,8 @@ test('PostToolUse runs and returns correct output when its marker is unreadable'
   addCandidate(item, 1)
   const marker = join(
     item.root,
-    'orch-board-interrupt',
+    'board-hook-state',
+    'interrupt',
     createHash('sha256').update('reader').digest('hex'),
   )
   mkdirSync(marker, { recursive: true })
@@ -275,6 +336,22 @@ test('PostToolUse runs and returns correct output when its marker is unreadable'
   expect(invocationCount(item)).toBe(1)
 })
 
+test('PostToolUse does not follow a marker symlink', () => {
+  const item = createHookFixture(hookOutput)
+  addCandidate(item, 1)
+  const root = join(item.root, 'board-hook-state', 'interrupt')
+  mkdirSync(root, { recursive: true })
+  const target = join(item.root, 'target')
+  writeFileSync(target, 'sentinel')
+  const marker = join(root, createHash('sha256').update('reader').digest('hex'))
+  symlinkSync(target, marker)
+
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  expect(invocationCount(item)).toBe(1)
+  expect(result.stdout.toString()).not.toBe('')
+  expect(readFileSync(target, 'utf8')).toBe('sentinel')
+})
+
 test('Stop blocks three times and allows the fourth with a system message', () => {
   const item = createHookFixture(hookOutput)
   const values = Array.from({ length: 4 }, () =>
@@ -283,5 +360,45 @@ test('Stop blocks three times and allows the fourth with a system message', () =
     ),
   )
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
-  expect(values[3]).toEqual({ systemMessage: JSON.parse(hookOutput).notices[0].text })
+  expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
+  expect(values[3].systemMessage).toStartWith(
+    'This architect session is stopping with 1 unacknowledged board notice.',
+  )
+})
+
+test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {
+  const item = createHookFixture(hookOutput)
+  const payload = JSON.stringify({ session_id: 'reader' })
+  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
+  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
+  setCommandOutput(
+    item,
+    JSON.stringify({
+      notices: [
+        ...JSON.parse(hookOutput).notices,
+        { id: '8', text: 'second notice' },
+        { id: '9', text: 'third notice' },
+      ],
+    }),
+  )
+  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
+  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBeUndefined()
+
+  setCommandOutput(item, '{"notices":[]}')
+  expect(runHook(guardHook, payload, item).stdout.toString()).toBe('')
+  setCommandOutput(item, hookOutput)
+  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
+})
+
+test('Stop treats an unreadable counter as zero and does not follow its symlink', () => {
+  const item = createHookFixture(hookOutput)
+  const root = join(item.root, 'board-hook-state', 'stop')
+  mkdirSync(root, { recursive: true })
+  const target = join(item.root, 'stop-target')
+  writeFileSync(target, 'sentinel')
+  symlinkSync(target, join(root, createHash('sha256').update('reader').digest('hex')))
+
+  const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), item)
+  expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+  expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
