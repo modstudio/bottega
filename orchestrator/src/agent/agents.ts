@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
+import { grokAskCommandFromEnvironment } from '../ask/ask-configuration.ts'
+import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 import type { Caps } from './capabilities.ts'
 import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
@@ -35,6 +36,8 @@ export type Agent = {
   preferredJobs?: string[]
   maxConcurrent?: number | null
   bin: string
+  /** Exact orch-ask command this harness registration configures, if any. */
+  askServerCommand?(environment: Record<string, string>): string[] | null
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
   /** What its usage costs. Metered is refused; free and none spend no quota. */
@@ -397,6 +400,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
       resumable: true,
     },
     defaultTransport: 'cli',
+    askServerCommand: () => codexAskServerCommand(),
     acp: {
       mcpServers: true,
       mcpReason:
@@ -512,6 +516,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
       resumable: true,
     },
     defaultTransport: 'cli',
+    askServerCommand: grokAskCommandFromEnvironment,
     acp: {
       mcpServers: false,
       mcpReason:

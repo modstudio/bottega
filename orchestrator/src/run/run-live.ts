@@ -7,7 +7,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
-import { configuredAskCommand } from '../ask/ask-configuration.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
 import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
@@ -82,16 +81,15 @@ function replyContract(schemaPath: string | undefined, textContract: boolean): R
 
 function recordConfiguredAsk(input: {
   runId: number
-  harness: string
   sandbox: SandboxSelection['sandbox']
-  grokEnvironment: Record<string, string>
+  transport: ReturnType<typeof transportFor>
+  startOpts: TransportStartOpts
 }): void {
   try {
-    recordAskExpected(
-      input.runId,
-      input.sandbox === 'srt' ? 'srt' : 'host',
-      configuredAskCommand(input.harness, input.grokEnvironment),
-    )
+    const command = input.transport.configuredAsk(input.startOpts)
+    if (command) {
+      recordAskExpected(input.runId, input.sandbox === 'srt' ? 'srt' : 'host', command)
+    }
   } catch {
     // Configuration evidence is best effort and must never prevent launch.
   }
@@ -447,9 +445,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     recordConfiguredAsk({
       runId: claim.id,
-      harness: a.harness ?? a.name,
       sandbox: sandboxSelection.sandbox,
-      grokEnvironment: grokMcpEnvironment,
+      transport: t,
+      startOpts,
     })
     const handle =
       opts.resume?.session && opts.resume.kind === 'continue'

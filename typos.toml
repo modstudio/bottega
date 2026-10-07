@@ -14,6 +14,9 @@ nd = "nd"
 unparseable = "unparseable"
 # Composer uses `analyse` as a conventional script name.
 analyse = "analyse"
+# The MCP lifecycle and its public evidence field use the specification's `initialised` spelling.
+initialise = "initialise"
+initialised = "initialised"
 
 [default.extend-identifiers]
 # `ba` is a regex fragment that includes both `bash` and `sh`.

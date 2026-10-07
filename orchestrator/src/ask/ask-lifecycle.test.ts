@@ -14,7 +14,7 @@ const listed: RunLogEvent = { ts: 't4', type: 'ask_listed', tools: ['ask_orchest
 const lifecycle = [expected, started, initialised, listed]
 
 describe('ask server summary', () => {
-  test('summarises every combination of recorded lifecycle events', () => {
+  test('summarizes every combination of recorded lifecycle events', () => {
     for (let mask = 0; mask < 16; mask += 1) {
       const events = lifecycle.filter((_, index) => mask & (1 << index))
       const summary = summarizeAskServer(events, null)

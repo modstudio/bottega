@@ -1,7 +1,6 @@
 // concern: read the orch-ask command exactly as configured for a vendor turn
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 function tomlJsonValue(section: string, key: string): unknown {
   const match = section.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'))
@@ -28,12 +27,8 @@ export function grokAskCommandFromConfig(config: string): string[] {
   return [command, ...args]
 }
 
-export function configuredAskCommand(
-  harness: string,
-  grokEnvironment: Record<string, string>,
-): string[] {
-  if (harness !== 'grok') return bottegaEntryArgv('ask-server')
-  const home = grokEnvironment.GROK_HOME
+export function grokAskCommandFromEnvironment(environment: Record<string, string>): string[] {
+  const home = environment.GROK_HOME
   if (!home) throw new Error('Grok turn has no configured MCP home')
   return grokAskCommandFromConfig(readFileSync(join(home, 'config.toml'), 'utf8'))
 }

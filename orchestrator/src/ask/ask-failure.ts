@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const ASK_SERVER_FAILURE_FILE = 'ask-server-failure.txt'
+const ASK_SERVER_FAILURE_FILE = 'ask-server-failure.txt'
 
 export function askServerFailurePath(scratchDir: string): string {
   return join(scratchDir, ASK_SERVER_FAILURE_FILE)

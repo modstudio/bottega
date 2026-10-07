@@ -61,6 +61,10 @@ function serverOverlay(name: string, server: CodexMcpServer): string {
   return `mcp_servers.${name}={${fields.join(',')}}`
 }
 
+export function codexAskServerCommand(): string[] {
+  return bottegaEntryArgv('ask-server')
+}
+
 /** Select project MCP launch definitions that are safe to expose on argv. */
 export function codexProjectServers(
   config: Record<string, McpServerConfig>,
@@ -147,7 +151,7 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
     '-c',
     `model_reasoning_effort=${JSON.stringify(CODEX_REASONING_EFFORT)}`,
   ]
-  const [askCommand, ...askArgs] = bottegaEntryArgv('ask-server')
+  const [askCommand, ...askArgs] = codexAskServerCommand()
   const askServer = {
     command: askCommand,
     args: askArgs,

@@ -23,7 +23,7 @@ import { reviewCalibration } from '../review/review-calibration.ts'
 import { candidates, scoreboard } from '../route/route.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
-import { runScratchDir } from '../run/run-artifacts.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -135,7 +135,7 @@ export function runDetail(id: number, receipt = false) {
     output: read(row.output_path),
     ask_server: summarizeAskServer(
       existsSync(eventsPath) ? readEventLog(eventsPath) : null,
-      readAskServerFailure(runScratchDir(id)),
+      readAskServerFailure(runScratchDir(id)) ?? readAskServerFailure(runArtifactsDir(id)),
     ),
     reviews: reviewsForRun(id),
     messages,
