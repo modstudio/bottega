@@ -11,14 +11,15 @@ import {
   consumeDocBody,
   type DocDelivery,
   type DocRevisionOp,
-  decideDocRevisionWrite,
   docWriteProjectName,
   recordDocLintRefusal,
   refuseDocWrite,
+  refuseMismatchedDocProject,
   refuseOwnedDocAddress,
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
+import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import {
   type NormalizedRecordDocImport,
   newerHostedImportRefusal,
@@ -36,6 +37,7 @@ import {
   recordTreeWriteRefusal,
 } from './record-doc-tree.ts'
 
+export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 
 export type RecordCanonImportInput = {
@@ -51,14 +53,6 @@ export type RecordCanonImportResult = {
   deletions: Array<{ slug: string; id: string; revisionId: string }>
   findings: CanonFinding[]
   bootstrap: boolean
-}
-
-export class RecordDocError extends Error {
-  status: 400 | 404 | 409 | 422
-  constructor(message: string, status: 400 | 404 | 409 | 422 = 400) {
-    super(message)
-    this.status = status
-  }
 }
 
 type Tenant = { url: string } & TenantPrincipal
@@ -96,25 +90,6 @@ async function projectId(
   const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
   if (rows.length !== 1) throw new RecordDocError(`record project is absent: ${name}`, 422)
   return String(rows[0]!.id)
-}
-
-function assertWrite(refusal: string | null): void {
-  if (refusal) throw new RecordDocError(refusal)
-}
-
-function assertRevisionWrite(input: {
-  expectedRevision?: string
-  current: unknown
-  isCreate: boolean
-  scope: string
-}): void {
-  const decision = decideDocRevisionWrite({
-    expected: input.expectedRevision,
-    current: input.current == null ? null : String(input.current),
-    isCreate: input.isCreate,
-    scope: input.scope,
-  })
-  if (!decision.allow) throw new RecordDocError(decision.reason, 409)
 }
 
 export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
@@ -206,6 +181,7 @@ export async function upsertRecordDoc(
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
     refuseSettingsAddress(input.scope, input.subject, input.owner)
   if (ownedAddress) throw new RecordDocError(ownedAddress)
+  assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, audience, parent_id, position, latest_revision_id FROM doc
@@ -937,6 +913,7 @@ export async function importRecordDoc(
     refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
     refuseSettingsAddress(doc.scope, doc.subject, doc.owner)
   if (ownedAddress) throw new RecordDocError(ownedAddress)
+  assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
   for (const revision of revisions) {
     assertWrite(recordDocRevisionIdentityRefusal(doc, revision, 'import'))
   }
@@ -970,7 +947,11 @@ export async function importRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await projectId(tx, input.spaceId, doc.projectName)
+    const resolvedProject = await projectId(
+      tx,
+      input.spaceId,
+      doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
+    )
     const id = existing ? String(existing.id) : doc.id
     assertWrite(
       await recordTreeWriteRefusal(tx, {

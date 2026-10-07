@@ -5,6 +5,7 @@ import {
   docWriteProjectName,
   globalCanonWriteTargets,
   refuseCanonWrite,
+  refuseMismatchedDocProject,
   refuseOwnedDocAddress,
   refuseSettingsAddress,
   userCanonWriteTargets,
@@ -28,6 +29,16 @@ test('document writes derive their project from the shared scope subject kind', 
   for (const [scope, subject, expected] of cases) {
     expect(docWriteProjectName(scope, subject), scope).toBe(expected)
   }
+})
+
+test('project-address consistency accepts match and omission and refuses mismatch', () => {
+  expect(refuseMismatchedDocProject('project', 'alpha', 'alpha')).toBeNull()
+  expect(refuseMismatchedDocProject('project', 'alpha', undefined)).toBeNull()
+  expect(refuseMismatchedDocProject('global', null, 'alpha')).toBeNull()
+  expect(refuseMismatchedDocProject('project', 'alpha-two', 'alpha')).toBe(
+    'document project "alpha" does not match address project "alpha-two"\n' +
+      'cleared by: omit the project name, or correct the address',
+  )
 })
 
 test('owned settings share the owner-private address rule with canon', () => {

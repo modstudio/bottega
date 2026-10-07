@@ -1,5 +1,6 @@
 import { beforeAll, expect, test } from 'bun:test'
 import { RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../shared/record/schema.ts'
+import { upsertRecordDoc } from '../src/record/record-docs.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -12,13 +13,13 @@ const OTHER_PROJECT_DOC = '01990000-0000-7000-8000-00000000030f'
 const NO_PROJECT_DOC = '01990000-0000-7000-8000-000000000310'
 
 export function registerPublicDocProofs(input: {
-  spaces: readonly [publicSpaceId: string, privateSpaceId: string]
+  spaces: readonly [publicSpaceId: string, privateSpaceId: string, actorUrl: string]
   projects: readonly [publicProjectId: string, otherProjectId: string, privateProjectId: string]
   ownerUserId: string
   admin(statement: string): string
   psql(user: string, password: string, statement: string): PsqlResult
 }): void {
-  const [publicSpaceId, privateSpaceId] = input.spaces
+  const [publicSpaceId, privateSpaceId, actorUrl] = input.spaces
   const [publicProjectId, otherProjectId, privateProjectId] = input.projects
   const asPublic = (statement: string) =>
     input.psql(
@@ -56,6 +57,26 @@ export function registerPublicDocProofs(input: {
     const result = asPublic('SELECT id FROM doc ORDER BY id; COMMIT;')
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout).toBe(PUBLIC_DOC)
+  })
+
+  test('record service refuses attaching another project address to the public project', async () => {
+    await expect(
+      upsertRecordDoc({
+        url: actorUrl,
+        userId: input.ownerUserId,
+        spaceId: publicSpaceId,
+        scope: 'project',
+        subject: 'alpha-two',
+        slug: 'mismatched-project',
+        title: 'Mismatched project',
+        body: 'must never become public',
+        delivery: 'demand',
+        audience: 'user',
+        projectName: 'alpha',
+        reason: 'prove project/address consistency',
+        author: 'postgres proof',
+      }),
+    ).rejects.toThrow('document project "alpha" does not match address project "alpha-two"')
   })
 
   test('record public has no access to any other table', () => {
