@@ -211,6 +211,20 @@ elif [ "$1" = "monitor" ] && [ "$2" = "--notices" ]; then
     credential_name="to""ken"
     credential_value="example""-credential"
     printf '%s=%s\n' "$credential_name" "$credential_value" >&2
+  elif [ "$SCENARIO" = "compound-key" ]; then
+    credential_name="AWS_""ACCESS_""KEY_""ID"
+    credential_value="example""-credential"
+    printf '%s=%s\n' "$credential_name" "$credential_value" >&2
+  elif [ "$SCENARIO" = "json-key" ]; then
+    credential_name="api_""key"
+    credential_value="example""-credential"
+    printf '{"%s": "%s"}\n' "$credential_name" "$credential_value" >&2
+  elif [ "$SCENARIO" = "yaml-secret" ]; then
+    credential_name="client_""secret"
+    credential_value="example""-credential"
+    printf '%s: %s\n' "$credential_name" "$credential_value" >&2
+  elif [ "$SCENARIO" = "literal-backslash" ]; then
+    printf '%s\n' '\\033[2Jordinary notice query failure' >&2
   elif [ "$SCENARIO" = "empty-binary" ]; then
     if [ "$count" -gt 1 ]; then
       printf '\\000\\001\\002' >&2
@@ -243,10 +257,18 @@ fi
       keepaliveTicks = 100,
       diagnostic = 'monitor notices unavailable',
       maxTicks = 3,
+      xpgEcho = false,
     ) => {
       rmSync(counterPath, { force: true })
       const result = Bun.spawnSync(
-        ['bash', join(hooks, 'orch-heartbeat.sh'), 'notice-failure-session', '0', String(maxTicks)],
+        [
+          'bash',
+          ...(xpgEcho ? ['-O', 'xpg_echo'] : []),
+          join(hooks, 'orch-heartbeat.sh'),
+          'notice-failure-session',
+          '0',
+          String(maxTicks),
+        ],
         {
           cwd: fixture,
           env: {
@@ -294,6 +316,25 @@ fi
 
     expect(runScenario('credential', 100, 'monitor notices unavailable', 1)[0]).toContain(
       'reason withheld (secret-shaped)',
+    )
+    const literalBackslash = runScenario(
+      'literal-backslash',
+      100,
+      'monitor notices unavailable',
+      1,
+      true,
+    )[0]
+    expect(literalBackslash).toContain('reason=\\033[2Jordinary notice query failure)')
+    expect(literalBackslash).not.toContain('\u001b')
+
+    for (const scenario of ['compound-key', 'json-key', 'yaml-secret']) {
+      expect(runScenario(scenario, 100, 'monitor notices unavailable', 1)[0]).toContain(
+        'reason withheld (secret-shaped)',
+      )
+    }
+
+    expect(runScenario('unchanged', 100, 'monitor notices unavailable', 1)[0]).toContain(
+      'reason=hostednotice query unavailable)',
     )
 
     const emptyThenBinary = runScenario('empty-binary')

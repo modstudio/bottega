@@ -449,8 +449,7 @@ NF {
   reason = substr($0, 1, limit)
   lower = tolower(reason)
   if (lower ~ /:\/\/[^[:space:]\/@:]+:[^[:space:]\/@]+@/ ||
-      lower ~ /(^|[^[:alnum:]_])(key|token|secret|password)[[:space:]]*=/ ||
-      lower ~ /authorization[[:space:]]*:/ ||
+      lower ~ /(key|token|secret|password|passwd|credential|auth)[[:alnum:]_.-]*["\047]?[[:space:]]*[=:]/ ||
       lower ~ /bearer[[:space:]]/ ||
       reason ~ /[[:alnum:]+\/]{32}/) {
     print "reason withheld (secret-shaped)"
@@ -518,7 +517,8 @@ for row in rows:
        [ "$monitor_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
       prev_monitor_failure_key="$monitor_failure_key"
       monitor_failure_ticks=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc reason=$monitor_reason). Health state still follows inbox and runs; inspect monitor diagnostics directly."
+      printf '[%s] DEGRADED - monitor notices unavailable (rc=%s parse=%s reason=%s). Health state still follows inbox and runs; inspect monitor diagnostics directly.\n' \
+        "$(date +%H:%M:%S)" "$monitor_rc" "$monitor_parse_rc" "$monitor_reason"
     fi
     report_store_write_lock
   else
