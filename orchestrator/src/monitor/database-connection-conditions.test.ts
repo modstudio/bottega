@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { RecipeDatabaseConnectionRow } from '../recipe/database-connection-observation.ts'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
 
-const row = (datname: string, applicationName: string): RecipeDatabaseConnectionRow => ({
+const row = (datname: string, applicationName: string) => ({
   datname,
   applicationName,
   backendStart: '2026-10-07T12:00:00.000Z',

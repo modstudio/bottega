@@ -1,7 +1,6 @@
 // concern: tree database connection classification
 /** Classifies sampled database sessions from plain values without observing a server or clock. */
 
-import type { RecipeDatabaseConnectionRow } from '../recipe/database-connection-observation.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export type TreeDatabaseOwner = { database: string; ownerLabel: string }
@@ -9,6 +8,13 @@ export type TreeDatabaseOwner = { database: string; ownerLabel: string }
 type OffenseKind = 'cross-tree-database-connection' | 'untagged-tree-database-connection'
 
 type Offense = { kind: OffenseKind; applicationName: string }
+
+type SampledDatabaseConnection = {
+  datname: string
+  applicationName: string
+  backendStart: string
+  state: string | null
+}
 
 function offense(applicationName: string, ownerLabel: string): Offense | null {
   if (applicationName === 'orch-admin' || applicationName === `orch-tree-${ownerLabel}`) return null
@@ -28,7 +34,7 @@ function applicationSummary(applications: Map<string, number>): string {
 export function treeDatabaseConnectionConditions(input: {
   project: string
   allocationKey: string
-  rows: readonly RecipeDatabaseConnectionRow[]
+  rows: readonly SampledDatabaseConnection[]
   owners: readonly TreeDatabaseOwner[]
 }): MonitorCondition[] {
   const owners = new Map(input.owners.map((owner) => [owner.database, owner.ownerLabel]))

@@ -10,18 +10,18 @@ import type { TrackedRecipe } from './recipe-schema.ts'
 
 type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
 
-export const RECIPE_DATABASE_CONNECTION_OBSERVATION_TIMEOUT_MS = 5_000
+const RECIPE_DATABASE_CONNECTION_OBSERVATION_TIMEOUT_MS = 5_000
 export const RECIPE_DATABASE_CONNECTION_OBSERVATION_DESCRIPTION =
   'This is a sample taken when orch monitor runs, so a connection that opens and closes between samples is not seen; trees provisioned before this change carry no tag and will show as untagged until they are released.'
 
-export type RecipeDatabaseConnectionRow = {
+type RecipeDatabaseConnectionRow = {
   datname: string
   applicationName: string
   backendStart: string
   state: string | null
 }
 
-export type RecipeDatabaseConnectionObservation = {
+type RecipeDatabaseConnectionObservation = {
   project: string
   allocationKey: string
   rows: RecipeDatabaseConnectionRow[]
