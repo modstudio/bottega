@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Judge destructive pushes and allow selected git commands in throwaway worktrees.
 
-A push that can destroy refs on a shared remote asks. Lease-guarded pushes and
+A push that can broadly destroy refs on a shared remote asks. Lease-guarded pushes and
 deletions of ordinary named branches are allowed when they select no alternate
 remote program. Other git commands are allowed only when their subcommand is on
 a named list, they act beneath a registered project's worktree root, and they
