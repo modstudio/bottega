@@ -11,8 +11,6 @@ import type { TrackedRecipe } from './recipe-schema.ts'
 type Allocation = NonNullable<NonNullable<TrackedRecipe['allocate']>['databases']>[string]
 
 const RECIPE_DATABASE_CONNECTION_OBSERVATION_TIMEOUT_MS = 5_000
-export const RECIPE_DATABASE_CONNECTION_OBSERVATION_DESCRIPTION =
-  'This is a sample taken when orch monitor runs, so a connection that opens and closes between samples is not seen; trees provisioned before this change carry no tag and will show as untagged until they are released.'
 
 type RecipeDatabaseConnectionRow = {
   datname: string
@@ -27,8 +25,7 @@ type RecipeDatabaseConnectionObservation = {
   rows: RecipeDatabaseConnectionRow[]
 }
 
-export type RecipeDatabaseConnectionInventory = {
-  description: string
+type RecipeDatabaseConnectionInventory = {
   observations: RecipeDatabaseConnectionObservation[]
   errors: string[]
 }
@@ -44,10 +41,10 @@ const activityCommand: DatabaseCommand = {
     '--command',
     `SELECT json_build_object(
        'datname', datname,
-       'application_name', application_name,
+       'application_name', coalesce(application_name, ''),
        'backend_start', backend_start,
        'state', state
-     )::text FROM pg_stat_activity`,
+     )::text FROM pg_stat_activity WHERE datname IS NOT NULL`,
   ],
 }
 
@@ -62,18 +59,21 @@ function parseRows(stdout: Uint8Array): RecipeDatabaseConnectionRow[] | null {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean)
-      .map((line) => {
-        const row = JSON.parse(line) as Record<string, unknown>
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      // A server's own background processes belong to no database.
+      .filter((row) => row.datname !== null)
+      .map((row) => {
+        const applicationName = row.application_name ?? ''
         if (
           typeof row.datname !== 'string' ||
-          typeof row.application_name !== 'string' ||
+          typeof applicationName !== 'string' ||
           typeof row.backend_start !== 'string' ||
           (typeof row.state !== 'string' && row.state !== null)
         )
           throw new Error('invalid activity row')
         return {
           datname: row.datname,
-          applicationName: row.application_name,
+          applicationName,
           backendStart: row.backend_start,
           state: row.state,
         }
@@ -152,7 +152,6 @@ export function observeRecipeDatabaseConnections(
   const loaded = loadTrackedRecipe(input.projectRoot, input.recipePath)
   if (!loaded.ok) {
     return {
-      description: RECIPE_DATABASE_CONNECTION_OBSERVATION_DESCRIPTION,
       observations: [],
       errors: [
         `project ${input.project} tracked recipe database connection observation failed: ${loaded.errors.join('; ')}; repair the tracked recipe and retry`,
@@ -174,9 +173,5 @@ export function observeRecipeDatabaseConnections(
     if (typeof observed === 'string') errors.push(observed)
     else observations.push(observed)
   }
-  return {
-    description: RECIPE_DATABASE_CONNECTION_OBSERVATION_DESCRIPTION,
-    observations,
-    errors,
-  }
+  return { observations, errors }
 }

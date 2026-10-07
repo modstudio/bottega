@@ -34,6 +34,20 @@ export function parseConnectionUrl(value: string): URL {
   }
 }
 
+/** How Bottega's own database clients identify themselves to the server. */
+export const ADMIN_APPLICATION_NAME = 'orch-admin'
+
+const TREE_APPLICATION_NAME_PREFIX = 'orch-tree-'
+
+/** The application name every connection from one tree carries. */
+export function treeApplicationName(treeLabel: string): string {
+  return `${TREE_APPLICATION_NAME_PREFIX}${treeLabel}`
+}
+
+export function isTreeApplicationName(applicationName: string): boolean {
+  return applicationName.startsWith(TREE_APPLICATION_NAME_PREFIX)
+}
+
 export function connectionUrlForAllocatedDatabase(
   value: string,
   databaseName: string,
@@ -42,6 +56,6 @@ export function connectionUrlForAllocatedDatabase(
 ): string {
   const url = parseConnectionUrl(value)
   url.pathname = `/${encodeURIComponent(databaseName)}`
-  if (engine === 'postgres') url.searchParams.set('application_name', `orch-tree-${treeLabel}`)
+  if (engine === 'postgres') url.searchParams.set('application_name', treeApplicationName(treeLabel))
   return url.href
 }

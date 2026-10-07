@@ -2,10 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  observeRecipeDatabaseConnections,
-  RECIPE_DATABASE_CONNECTION_OBSERVATION_DESCRIPTION,
-} from './database-connection-observation.ts'
+import { observeRecipeDatabaseConnections } from './database-connection-observation.ts'
 import type { DatabaseSpawn } from './database-provision.ts'
 
 const roots: string[] = []
@@ -60,6 +57,19 @@ test('samples only matching built-in postgres allocation activity as orch-admin'
       backend_start: '2026-10-07T12:00:00.000Z',
       state: 'idle',
     },
+    // A background process: no database, no application name.
+    {
+      datname: null,
+      application_name: null,
+      backend_start: '2026-10-07T12:00:00.000Z',
+      state: null,
+    },
+    {
+      datname: 'stopal_orch_2',
+      application_name: null,
+      backend_start: '2026-10-07T12:00:00.000Z',
+      state: 'idle',
+    },
   ]
   const result = observeRecipeDatabaseConnections(
     { project: 'stopal', projectRoot, recipePath: 'recipe.json' },
@@ -72,7 +82,6 @@ test('samples only matching built-in postgres allocation activity as orch-admin'
       }
     },
   )
-  expect(result.description).toBe(RECIPE_DATABASE_CONNECTION_OBSERVATION_DESCRIPTION)
   expect(result.errors).toEqual([])
   expect(result.observations).toEqual([
     {
@@ -84,6 +93,12 @@ test('samples only matching built-in postgres allocation activity as orch-admin'
           applicationName: 'orch-tree-orch.run=1',
           backendStart: '2026-10-07T12:00:00.000Z',
           state: 'active',
+        },
+        {
+          datname: 'stopal_orch_2',
+          applicationName: '',
+          backendStart: '2026-10-07T12:00:00.000Z',
+          state: 'idle',
         },
       ],
     },

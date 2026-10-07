@@ -54,7 +54,10 @@ export const monitorModules: MonitorModule[] = [
     '../worktree/worktree-attribution.ts',
     './database-connection-conditions.ts',
   ]),
-  module('orchestrator/src/monitor/database-connection-conditions.ts', ['./monitor-types.ts']),
+  module('orchestrator/src/monitor/database-connection-conditions.ts', [
+    '../recipe/database-connection.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-branches.ts', []),
   module('orchestrator/src/monitor/monitor-harness-load.ts', [
     '../canon/canon-load.ts',

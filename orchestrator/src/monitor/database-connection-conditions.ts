@@ -1,6 +1,11 @@
 // concern: tree database connection classification
 /** Classifies sampled database sessions from plain values without observing a server or clock. */
 
+import {
+  ADMIN_APPLICATION_NAME,
+  isTreeApplicationName,
+  treeApplicationName,
+} from '../recipe/database-connection.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export type TreeDatabaseOwner = { database: string; ownerLabel: string }
@@ -8,6 +13,9 @@ export type TreeDatabaseOwner = { database: string; ownerLabel: string }
 type OffenseKind = 'cross-tree-database-connection' | 'untagged-tree-database-connection'
 
 type Offense = { kind: OffenseKind; applicationName: string }
+
+const SAMPLE_LIMIT =
+  'sessions are sampled when orch monitor runs, so one that opens and closes between runs is not seen, and a tree provisioned without a tag reads as untagged until it is released'
 
 type SampledDatabaseConnection = {
   datname: string
@@ -17,8 +25,12 @@ type SampledDatabaseConnection = {
 }
 
 function offense(applicationName: string, ownerLabel: string): Offense | null {
-  if (applicationName === 'orch-admin' || applicationName === `orch-tree-${ownerLabel}`) return null
-  return applicationName.startsWith('orch-tree-')
+  if (
+    applicationName === ADMIN_APPLICATION_NAME ||
+    applicationName === treeApplicationName(ownerLabel)
+  )
+    return null
+  return isTreeApplicationName(applicationName)
     ? { kind: 'cross-tree-database-connection', applicationName }
     : { kind: 'untagged-tree-database-connection', applicationName }
 }
@@ -67,7 +79,7 @@ export function treeDatabaseConnectionConditions(input: {
       subject: `${input.project}:${input.allocationKey}:postgres:${group.database}`,
       since: null,
       ageMs: null,
-      detail: `${input.project} allocation ${input.allocationKey} database ${group.database} owned by ${group.ownerLabel} has ${count} ${group.kind} sample row(s); offending application_name: ${applicationSummary(group.applications)}`,
+      detail: `${input.project} allocation ${input.allocationKey} database ${group.database} owned by ${group.ownerLabel} has ${count} ${group.kind} sample row(s); offending application_name: ${applicationSummary(group.applications)}; ${SAMPLE_LIMIT}`,
       action: 'report only',
       affectedProject: input.project,
     }
