@@ -110,7 +110,7 @@ function ReadingAround({
 }) {
   const { previous, next } = around
   return (
-    <div className="doc-measure mt-14 flex justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
+    <div className="doc-measure -mb-8 md:-mb-9 mt-14 flex items-center justify-between gap-4 border-border-default border-t py-5 text-md text-text-muted">
       {previous ? (
         <button
           type="button"
