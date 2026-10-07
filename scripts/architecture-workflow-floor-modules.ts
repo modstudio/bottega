@@ -36,6 +36,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor.ts', []),
+  module('orchestrator/src/workflow/workflow-run-binding.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
@@ -53,6 +54,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../project/projects.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-run-binding.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-text.ts', [

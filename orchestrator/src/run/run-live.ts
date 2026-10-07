@@ -56,9 +56,18 @@ import {
 } from './checkpoint.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
+import { STALE_AFTER_MS } from './run-liveness.ts'
 import { childEnv, errorTail, live, liveCheckpoints, registerLiveGate } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
+import {
+  appendGateExclusionToTimeoutError,
+  currentExcludedGateMs,
+  decideRunWallDeadline,
+  excludedGateIntervalMs,
+  gateExclusionNoteSuffix,
+  type RunWallDeadlineFacts,
+} from './run-wall-deadline.ts'
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
@@ -206,6 +215,8 @@ function startWorkerGateBroker(input: {
   runId: number
   scratchDir: string
   environment: Record<string, string>
+  onExecutionStart: (at: string) => void
+  onExecutionFinish: (at: string) => void
 }): GateBroker | null {
   if (!input.repoJob || !input.worktree) return null
   return startGateBroker({
@@ -213,7 +224,24 @@ function startWorkerGateBroker(input: {
     scratchDir: input.scratchDir,
     environment: input.environment,
     registerActive: registerLiveGate,
+    onExecutionStart: ({ at }) => input.onExecutionStart(at),
+    onExecutionFinish: ({ at }) => input.onExecutionFinish(at),
   })
+}
+
+function applyRunWallDeadline(input: {
+  currentTimer: ReturnType<typeof setTimeout> | null
+  facts: RunWallDeadlineFacts
+  expire: () => void
+  rearm: () => void
+}): ReturnType<typeof setTimeout> | null {
+  if (input.currentTimer) clearTimeout(input.currentTimer)
+  const decision = decideRunWallDeadline(input.facts)
+  if (decision.expireNow) {
+    input.expire()
+    return null
+  }
+  return setTimeout(input.rearm, decision.delayMs)
 }
 
 async function closeWorkerGateBroker(broker: GateBroker | null): Promise<void> {
@@ -300,6 +328,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let gateBroker: GateBroker | null = null
   let noteBroker: WorkerNoteBroker | null = null
   let workerEvents: StreamEvent[] = []
+  let wallArmedAtMs: number | null = null
+  let accruedGateMs = 0
+  let gateStartedAtMs: number | null = null
+  let excludedGateMsAtTimeout = 0
+  let rearmWallDeadline = () => {}
 
   try {
     if (repoJob) {
@@ -325,6 +358,15 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
+      onExecutionStart: (at) => {
+        gateStartedAtMs = Date.parse(at)
+        rearmWallDeadline()
+      },
+      onExecutionFinish: (at) => {
+        accruedGateMs += excludedGateIntervalMs(wallArmedAtMs, gateStartedAtMs, Date.parse(at))
+        gateStartedAtMs = null
+        rearmWallDeadline()
+      },
     })
     noteBroker = startWorkerNoteBroker(claim.id)
     const t = transportFor(transportName)
@@ -459,14 +501,39 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
 
     // Two timeouts, composed, not one: the wall stays, and idle kill is the
     // second, shorter no-activity bound. Do not replace the wall.
-    timer = setTimeout(() => {
+    wallArmedAtMs = Date.now()
+    const expireWall = () => {
+      rearmWallDeadline = () => {}
       if (idleKilled) return
+      excludedGateMsAtTimeout = currentExcludedGateMs(
+        wallArmedAtMs!,
+        accruedGateMs,
+        gateStartedAtMs,
+        Date.now(),
+      )
       timedOut = true
       void t.cancel(handle)
       // Descendant-aware SIGTERM, bounded grace, then SIGKILL. A CLI that
       // ignores SIGTERM would otherwise keep the caller waiting for ever.
       void terminateProcessGroup(handle.pid ?? 0, { direct: handle })
-    }, boundMs)
+    }
+    rearmWallDeadline = () => {
+      const nowMs = Date.now()
+      timer = applyRunWallDeadline({
+        currentTimer: timer,
+        facts: {
+          boundMs,
+          armedAtMs: wallArmedAtMs!,
+          accruedGateMs,
+          gateStartedAtMs,
+          nowMs,
+          ceilingMs: STALE_AFTER_MS - 1,
+        },
+        expire: expireWall,
+        rearm: rearmWallDeadline,
+      })
+    }
+    rearmWallDeadline()
 
     let forceCollect: ((result: TransportResult) => void) | null = null
     const forcedCollect = new Promise<TransportResult>((resolve) => {
@@ -750,7 +817,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       boundMs,
       agentName: name,
     })
-    error = replyFileFallbackError(replyFile, replyFilePresent, derived.error)
+    error = appendGateExclusionToTimeoutError(
+      replyFileFallbackError(replyFile, replyFilePresent, derived.error),
+      timedOut,
+      excludedGateMsAtTimeout,
+    )
 
     if (idleKilled && derived.inputs.completedReply) {
       console.error(
@@ -789,7 +860,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when the ` +
           `${Math.round(boundMs / 60_000)}m bound killed it. Recorded ` +
-          `${acceptedQuestions.length ? 'asking' : 'ok'}; the bound may be short.`,
+          `${acceptedQuestions.length ? 'asking' : 'ok'}; the bound may be short` +
+          gateExclusionNoteSuffix(excludedGateMsAtTimeout),
       )
     }
 
@@ -801,6 +873,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
     failureKind = proc ? 'other' : 'harness'
   }
+  rearmWallDeadline = () => {}
+  clearTimeout(timer ?? undefined)
+  timer = null
   await closeWorkerGateBroker(gateBroker)
   await closeWorkerNoteBroker(noteBroker)
 

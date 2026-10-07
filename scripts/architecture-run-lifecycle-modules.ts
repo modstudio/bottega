@@ -30,6 +30,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-retry.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',
@@ -147,6 +148,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-board-prompt.ts',
     './run-reply-source.ts',
     './run-resume-kind.ts',
+    './run-liveness.ts',
+    './run-wall-deadline.ts',
     '../sandbox/sandbox.ts',
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',

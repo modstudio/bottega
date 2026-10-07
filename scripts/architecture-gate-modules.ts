@@ -41,4 +41,5 @@ export const gateModules: GateModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
   ]),
+  module('orchestrator/src/gate/gate-result.ts', ['../database/db.ts', '../project/projects.ts']),
 ]
