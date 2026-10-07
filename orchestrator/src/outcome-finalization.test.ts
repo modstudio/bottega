@@ -4,10 +4,15 @@ import type { WorkerReply } from './contract/contract.ts'
 import { FAILS_OVER } from './failure/failure.ts'
 import { finalizeWorkerReply } from './outcome.ts'
 
-const classify = (reply: WorkerReply, measuredFiles: string[] | null = ['changed']) =>
+const classify = (
+  reply: WorkerReply,
+  measuredFiles: string[] | null = ['changed'],
+  turnChanged: boolean | null = true,
+) =>
   finalizeWorkerReply({
     reply,
     measuredFiles,
+    turnChanged,
     status: reply.status === 'asking' ? 'asking' : 'ok',
     failureKind: null,
     error: null,
@@ -16,6 +21,52 @@ const reply = (overrides: Record<string, unknown>): WorkerReply =>
   fixtureWorkerReply(overrides) as WorkerReply
 
 describe('worker reply finalization', () => {
+  test('done with no turn-local change keeps ok and records the earlier-work note', () => {
+    const result = classify(
+      reply({ status: 'done', files_changed: ['earlier.ts'], tests: { ran: true } }),
+      ['earlier.ts'],
+      false,
+    )
+    expect(result).toMatchObject({ status: 'ok', failureKind: null })
+    expect(result.error).toBe(
+      'this turn changed nothing: the tree and tip are as it started; files_changed in the reply describes earlier work',
+    )
+  })
+
+  test.each([true, null])('done with turnChanged %s records no turn-local note', (turnChanged) => {
+    const result = classify(
+      reply({ status: 'done', files_changed: ['changed.ts'], tests: { ran: true } }),
+      ['changed.ts'],
+      turnChanged,
+    )
+    expect(result).toMatchObject({ status: 'ok', error: null })
+  })
+
+  test('asking with no turn-local change records no turn-local note', () => {
+    const result = classify(
+      reply({
+        status: 'asking',
+        questions: [{ question: 'Which shape?', why: 'The interface depends on it.' }],
+      }),
+      ['earlier.ts'],
+      false,
+    )
+    expect(result).toMatchObject({ status: 'asking', error: null })
+  })
+
+  test('the existing empty-done rejection wins over the turn-local note', () => {
+    const result = classify(
+      reply({ status: 'done', files_changed: [], tests: { ran: false } }),
+      [],
+      false,
+    )
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureKind: 'other',
+      error: 'reported done with no change and no test run',
+    })
+  })
+
   test('run 1743 placeholder shape is a visible contract failure with no question', () => {
     const result = classify(
       reply({

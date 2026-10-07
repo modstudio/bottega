@@ -6,7 +6,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
-import { branchNote, failoverSummary, resolveFailover } from '../collect/collect.ts'
+import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
@@ -223,6 +223,7 @@ export async function follow(
           (row.route_reason ? ` (${row.route_reason})` : '') +
           ` · ${presentation.dur(row.latency_ms ?? 0)}` +
           (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
+          okOutcomeNote(row) +
           `\n  score it:  ${presentation.scoreHint(chain.finalId, row.job, row.parent_run_id)}` +
           branchNote(db(), row.id) +
           runEvidenceNote(row),

@@ -131,6 +131,22 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
+  test('result shows an ok outcome note directly before the score hint', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET error=? WHERE id=?').run('this turn changed nothing', id)
+    const shown = recordedResult(id).errors.join('\n')
+    expect(shown).toContain(
+      `— run ${id} · codex · 1.0s · vendor tokens not reported\n  this turn changed nothing\n  score it:`,
+    )
+  })
+
+  test('result rendering is byte-identical when an ok run has no outcome note', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    expect(recordedResult(id).errors).toEqual([
+      `\n— run ${id} · codex · 1.0s · vendor tokens not reported\n  score it:  orch score ${id} <none|partial|full> [wrong|mixed|right] --note "..."`,
+    ])
+  })
+
   test.each([
     ['tree present', { writingRun: true, worktree: '/tmp/tree' }, ''],
     ['tree released', { writingRun: true, worktree: null }, '\n  open tree:  orch tree open 42'],

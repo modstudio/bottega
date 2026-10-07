@@ -56,6 +56,7 @@ import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { blockersToRecord } from './run-terminal-blockers.ts'
+import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
   applyPrematureFinalFailure,
@@ -438,6 +439,14 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     }
   }
 
+  const turnChanged = terminalTurnChanged({
+    database: db(),
+    runId: claim.id,
+    writingJob: writesJob,
+    worktreePath: worktree?.path ?? null,
+    measurementScope: provisionedMcpConfig,
+  })
+
   if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
     const startedAt = db()
       .query('SELECT started_at, head_commit FROM run WHERE id=?')
@@ -456,6 +465,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const finalization = finalizeWorkerReply({
     reply: contract,
     measuredFiles: changes?.files ?? null,
+    turnChanged,
     status,
     failureKind,
     error,

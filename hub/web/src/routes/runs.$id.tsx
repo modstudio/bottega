@@ -277,11 +277,16 @@ function RunDetailPage({ id }: { id: string }) {
           {score.error.message}
         </p>
       ) : null}
-      {run.error ? <DetailBlock label="Error" value={run.error} /> : null}
+      {run.error ? <DetailBlock label={runErrorLabel(run.status)} value={run.error} /> : null}
       <RunTranscript run={run} hosted={hosted} />
       <ReviewLensList lenses={run.reviews} />
     </Companion>
   )
+}
+
+/** A successful run's error column carries an outcome note, not a failure. */
+function runErrorLabel(status: string): string {
+  return status === 'ok' ? 'Outcome note' : 'Error'
 }
 
 function DetailBlock({ label, value }: { label: string; value: string }) {
