@@ -49,6 +49,16 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-service.ts',
   ]),
+  module('orchestrator/src/board/board-push-service.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './board-delivery.ts',
+    './board-hosted-cache.ts',
+    './board-policy.ts',
+    './board-render.ts',
+    './board-service.ts',
+    './board-store.ts',
+  ]),
   module('orchestrator/src/board/board-overview.ts', [
     '../database/db.ts',
     '../record/record-api-client.ts',
@@ -115,6 +125,7 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
   ]),
   module('orchestrator/src/board/board-service.ts', [
+    'bun:sqlite',
     'node:os',
     '../caller-classification.ts',
     '../database/db.ts',
@@ -157,6 +168,8 @@ export const boardModules: BoardModule[] = [
     './board-claim-commands.ts',
     './board-operations.ts',
     './board-overview.ts',
+    './board-push-service.ts',
+    './board-render.ts',
     './board-delivery.ts',
     './board-service.ts',
     './board-suggestions.ts',

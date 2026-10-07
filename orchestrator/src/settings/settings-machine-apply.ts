@@ -28,6 +28,7 @@ import {
   userSettingsEnvPath,
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
+import { withMachineBoardHooks } from './settings-machine-hooks.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
@@ -90,7 +91,7 @@ function applyUserSettings(
       parseStoredOwnedSettings(row.body),
       readMachinePermissions(deps.environment),
     )
-    const owned = merged.settings
+    const owned = withMachineBoardHooks(merged.settings)
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
     const removed = parsed.envKeys.filter((name) => !(owned.envKeys ?? []).includes(name))

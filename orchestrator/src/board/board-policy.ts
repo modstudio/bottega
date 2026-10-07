@@ -73,6 +73,17 @@ export function audienceRefusal(
     : null
 }
 
+export function acknowledgementRefusal(input: {
+  ackRequired: boolean
+  audience: Audience
+  authorKind: 'operator' | 'architect'
+  authorProject: string | null
+}): string | null {
+  if (!input.ackRequired || input.authorKind === 'operator') return null
+  if (input.audience.kind === 'project' && input.audience.value === input.authorProject) return null
+  return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, or post without acknowledgement'
+}
+
 export function runAudienceRefusal(
   audience: Audience,
   author: 'operator' | 'architect',
@@ -120,11 +131,15 @@ export const shouldInterrupt = (message: {
   audienceKind: Audience['kind']
   ackRequired: boolean
   claimConflict?: boolean
-}): boolean =>
-  message.claimConflict === true ||
-  (message.ackRequired &&
-    ((message.authorKind === 'operator' && message.authorIsSignedInUser !== false) ||
-      message.audienceKind === 'machine'))
+  ownPost?: boolean
+}): boolean => {
+  if (message.ownPost) return false
+  return (
+    message.claimConflict === true ||
+    (message.ackRequired &&
+      !(message.authorKind === 'operator' && message.authorIsSignedInUser === false))
+  )
+}
 
 export function requireRealSession(session: string, action: string): void {
   if (!session.trim() || session === OPERATOR_READER || session.startsWith('run:'))

@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
+  acknowledgementRefusal,
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
@@ -394,6 +395,13 @@ export async function postHostedBoardMessage(
     )
   }
   const session = sessionOrNull(input.authorSession)
+  const ackRefusal = acknowledgementRefusal({
+    ackRequired,
+    audience,
+    authorKind: session ? 'architect' : 'operator',
+    authorProject: input.project?.trim() || null,
+  })
+  if (ackRefusal) throw new RecordBoardError(ackRefusal, 400)
   const senderTags = asBoardError(() => senderBoardTags(input))
   const tags = [
     ...senderTags,

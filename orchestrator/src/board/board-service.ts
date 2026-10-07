@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
@@ -251,13 +252,13 @@ export function markNoticesDelivered(
   ids: number[],
   env: Environment = process.env,
   clock = Date.now(),
+  database: Database = writableDb(),
 ): void {
   const reader = boardReader(env)
   const idSet = new Set(ids)
-  const rows = messageRows().filter(
+  const rows = messageRows(database).filter(
     (row) => idSet.has(row.id) && rowIsLive(row, clock) && deliverableTo(row, reader, clock),
   )
-  const database = writableDb()
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
     const stamp = database.query(
@@ -368,6 +369,7 @@ export function claimInterruptNotices(session: string, clock = Date.now()) {
           audienceKind: parseAudience(row.audience!).kind,
           ackRequired: row.ack_required === 1,
           claimConflict: row.claim_id !== null,
+          ownPost: row.author_session === session,
         }) &&
         !wasDelivered(row.id, session),
     )

@@ -279,7 +279,7 @@ function loadCachedRows(
   }))
 }
 
-function cachedRows(database: Database): Array<{ message: HostedBoardMessage; tags: BoardTag[] }> {
+export function cachedRows(database: Database) {
   const owner = meta(database, BOARD_CACHE_OWNER_KEY)
   if (!owner || meta(database, BOARD_REFRESH_USER_KEY) !== owner) return []
   return loadCachedRows(database)
@@ -527,9 +527,7 @@ export async function markCachedHostedDelivered(
            WHERE message_id=? AND reader_session=?`,
         )
         .run(id, reader)
-    } catch {
-      /* deferred until refresh */
-    }
+    } catch {}
   }
 }
 
@@ -552,6 +550,7 @@ export function claimCachedHostedInterrupts(
           audienceKind: parseAudience(message.audience!).kind,
           ackRequired: message.ackRequired,
           claimConflict: message.claimId !== null,
+          ownPost: message.authorSession === session,
         })
       )
     })
