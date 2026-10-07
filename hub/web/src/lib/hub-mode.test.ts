@@ -1,11 +1,38 @@
 import { expect, test } from 'bun:test'
 import {
+  hostedOrigin,
   isDocsPath,
   isHostedPath,
   isHostedSignInFramePath,
   isMarketingPath,
   navForMode,
+  sameLocationOn,
+  unauthorizedLeadsToSignIn,
 } from './hub-mode.ts'
+
+test('hosted origin is public, app, or unconfigured', () => {
+  const configured = {
+    publicOrigin: 'https://public.example.test/',
+    appOrigin: 'https://app.example.test/',
+  }
+  expect(hostedOrigin('https://public.example.test', configured)).toEqual({
+    kind: 'public',
+    publicOrigin: 'https://public.example.test',
+    appOrigin: 'https://app.example.test',
+  })
+  expect(hostedOrigin('https://app.example.test', configured)).toEqual({
+    kind: 'app',
+    publicOrigin: 'https://public.example.test',
+    appOrigin: 'https://app.example.test',
+  })
+  expect(hostedOrigin('http://localhost:5173', configured).kind).toBe('app')
+  expect(hostedOrigin('https://public.example.test', { ...configured, publicOrigin: '' })).toEqual({
+    kind: 'unconfigured',
+  })
+  expect(hostedOrigin('https://public.example.test', { ...configured, appOrigin: '' })).toEqual({
+    kind: 'unconfigured',
+  })
+})
 
 const destinations = (mode: 'hosted' | 'local') =>
   navForMode(mode).flatMap((section) =>
@@ -103,4 +130,23 @@ test('hosted member-management routes remain reachable and members appear in set
   expect(settings && 'items' in settings ? settings.items.map((item) => item.to) : []).toContain(
     '/members',
   )
+})
+
+test('a move to another origin stays on that origin whatever the path looks like', () => {
+  const app = 'https://app.example.test'
+  for (const pathname of ['//evil.test/phish', '///evil.test', '/\\evil.test', '/flight']) {
+    const href = sameLocationOn(app, { pathname, search: '?x=1', hash: '#frag' })
+    expect(new URL(href).origin).toBe(app)
+    expect(href.endsWith('?x=1#frag')).toBe(true)
+  }
+})
+
+test('an unauthorized answer leads to sign-in only from the signed-in app', () => {
+  for (const path of ['/', '/product/board', '/docs', '/docs/project/x/y', '/sign-in']) {
+    expect(unauthorizedLeadsToSignIn(path, 'app')).toBe(false)
+    expect(unauthorizedLeadsToSignIn(path, 'unconfigured')).toBe(false)
+  }
+  expect(unauthorizedLeadsToSignIn('/flight', 'app')).toBe(true)
+  expect(unauthorizedLeadsToSignIn('/flight', 'unconfigured')).toBe(true)
+  expect(unauthorizedLeadsToSignIn('/flight', 'public')).toBe(false)
 })

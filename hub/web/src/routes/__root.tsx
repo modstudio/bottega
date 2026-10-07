@@ -8,15 +8,18 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import {
+  hostedOrigin,
   isDocsPath,
   isHostedMode,
   isHostedPath,
   isHostedSignInFramePath,
   isMarketingPath,
   navForMode,
+  sameLocationOn,
 } from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
@@ -97,6 +100,11 @@ export function RailFooterIdentity({
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     if (!isHostedMode()) return
+    const origin = hostedOrigin()
+    if (origin.kind === 'public' && !isPublicSitePath(location.pathname)) {
+      navigateToOrigin(origin.appOrigin)
+      return
+    }
     if (!isHostedPath(location.pathname)) throw redirect({ to: '/runs' })
   },
   component: RootShell,
@@ -113,13 +121,17 @@ function RootShell() {
 
 function ShellContent() {
   const hosted = isHostedMode()
+  const origin = hostedOrigin()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const whoami = useQuery({
     ...trpc.record.whoami.queryOptions(),
-    enabled: hosted && !isHostedSignInFramePath(pathname),
+    enabled: identityQueryEnabled(hosted, pathname, origin.kind),
     retry: false,
   })
   const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
+  if (origin.kind === 'public') {
+    return <PublicOriginShell pathname={pathname} appOrigin={origin.appOrigin} />
+  }
   if (hosted && isHostedSignInFramePath(pathname)) {
     return (
       <HostedSignInFrame>
@@ -127,6 +139,13 @@ function ShellContent() {
       </HostedSignInFrame>
     )
   }
+  const publicNavigationOrigin = publicOriginForNavigation(
+    origin,
+    pathname,
+    whoami.isFetched,
+    signedIn,
+  )
+  if (publicNavigationOrigin) return <OriginNavigation origin={publicNavigationOrigin} />
   if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
     // Wait for the first answer only. A later refetch of a failed, dataless request reports
     // pending again; unmounting the page for it would remount the observer that refetches.
@@ -141,6 +160,53 @@ function ShellContent() {
     )
   }
   return <AppLayout hosted={hosted} pathname={pathname} />
+}
+
+function PublicOriginShell({ pathname, appOrigin }: { pathname: string; appOrigin: string }) {
+  if (!isPublicSitePath(pathname)) return null
+  return (
+    <HostedPublicFrame>
+      <SiteFrame identity="signed-out" appSignInHref={`${appOrigin}/sign-in`}>
+        <Outlet />
+      </SiteFrame>
+    </HostedPublicFrame>
+  )
+}
+
+function publicOriginForNavigation(
+  origin: ReturnType<typeof hostedOrigin>,
+  pathname: string,
+  identityFetched: boolean,
+  signedIn: boolean,
+) {
+  if (
+    origin.kind === 'app' &&
+    (isMarketingPath(pathname) || isDocsPath(pathname)) &&
+    identityFetched &&
+    !signedIn
+  ) {
+    return origin.publicOrigin
+  }
+  return null
+}
+
+type OriginKind = ReturnType<typeof hostedOrigin>['kind']
+
+export function identityQueryEnabled(hosted: boolean, pathname: string, origin: OriginKind) {
+  return hosted && origin !== 'public' && !isHostedSignInFramePath(pathname)
+}
+
+function isPublicSitePath(pathname: string) {
+  return isMarketingPath(pathname) || isDocsPath(pathname)
+}
+
+function navigateToOrigin(origin: string) {
+  window.location.assign(sameLocationOn(origin, window.location))
+}
+
+function OriginNavigation({ origin }: { origin: string }) {
+  useEffect(() => navigateToOrigin(origin), [origin])
+  return null
 }
 
 function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {

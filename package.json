@@ -6,6 +6,7 @@
   "workspaces": [
     "orchestrator",
     "hub",
+    "hub/deploy/site",
     "hub/web",
     "retrieval"
   ],

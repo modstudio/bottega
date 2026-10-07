@@ -27,6 +27,52 @@ export function isHostedMode() {
   return import.meta.env.VITE_HUB_MODE === 'hosted'
 }
 
+export type HostedOrigin =
+  | { kind: 'unconfigured' }
+  | { kind: 'public'; publicOrigin: string; appOrigin: string }
+  | { kind: 'app'; publicOrigin: string; appOrigin: string }
+
+function normalizedOrigin(value: unknown) {
+  if (typeof value !== 'string' || !value) return ''
+  try {
+    return new URL(value).origin
+  } catch {
+    return ''
+  }
+}
+
+/** Classify this page only when both halves of the hosted origin split are configured. */
+export function hostedOrigin(
+  currentOrigin = typeof window === 'undefined' ? '' : window.location.origin,
+  configured = {
+    publicOrigin: import.meta.env.VITE_PUBLIC_SITE_ORIGIN,
+    appOrigin: import.meta.env.VITE_APP_ORIGIN,
+  },
+): HostedOrigin {
+  const publicOrigin = normalizedOrigin(configured.publicOrigin)
+  const appOrigin = normalizedOrigin(configured.appOrigin)
+  if (!publicOrigin || !appOrigin) return { kind: 'unconfigured' }
+  return currentOrigin === publicOrigin
+    ? { kind: 'public', publicOrigin, appOrigin }
+    : { kind: 'app', publicOrigin, appOrigin }
+}
+
+/**
+ * The same path, query and fragment on another origin. The parts are assigned rather than
+ * resolved as a relative reference, because a path beginning with two slashes resolves to
+ * another host.
+ */
+export function sameLocationOn(
+  origin: string,
+  location: { pathname: string; search: string; hash: string },
+): string {
+  const target = new URL(origin)
+  target.pathname = location.pathname
+  target.search = location.search
+  target.hash = location.hash
+  return target.href
+}
+
 type Counted = 'flight' | 'done' | 'runs' | 'inbox'
 type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted }
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
@@ -212,4 +258,13 @@ export function isHostedPath(pathname: string) {
 export function recordApiUrl() {
   const value = import.meta.env.VITE_RECORD_API_URL
   return typeof value === 'string' && value ? value.replace(/\/$/, '') : ''
+}
+
+/**
+ * Whether an unauthorized answer should send the visitor to sign in. The public pages are for
+ * signed-out visitors: there it is the expected signal that nobody is signed in.
+ */
+export function unauthorizedLeadsToSignIn(pathname: string, origin: HostedOrigin['kind']) {
+  if (origin === 'public') return false
+  return !(isHostedSignInFramePath(pathname) || isDocsPath(pathname) || isMarketingPath(pathname))
 }

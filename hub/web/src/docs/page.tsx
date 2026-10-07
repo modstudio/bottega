@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMatch, useNavigate } from '@tanstack/react-router'
 import { History, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isHostedMode } from '@/lib/hub-mode'
+import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
@@ -15,13 +15,15 @@ import { DocsView } from './view.tsx'
 
 export function DocsPage() {
   const hosted = isHostedMode()
+  const origin = hostedOrigin()
   const navigate = useNavigate()
   const whoami = useQuery({
     ...trpc.record.whoami.queryOptions(),
-    enabled: hosted,
+    enabled: hosted && origin.kind !== 'public',
     retry: false,
   })
   const signedIn = hosted ? Boolean(whoami.data?.user && 'email' in whoami.data.user) : true
+  const identityResolved = !hosted || origin.kind === 'public' || whoami.isFetched
   const source = docsSource(hosted, signedIn)
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const params = detail?.params
@@ -86,7 +88,7 @@ export function DocsPage() {
   )
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
 
-  if (source === 'public' && whoami.isFetched && !selected) {
+  if (source === 'public' && identityResolved && !selected) {
     return (
       <DocsHome
         items={catalog.items}
@@ -118,7 +120,7 @@ export function DocsPage() {
         onSelect={open}
         onOpenFirst={openFirst}
         onLeaveTree={() => void navigate({ to: '/docs' })}
-        ready={!catalog.isPending && emptyChooserSet && (!hosted || whoami.isFetched)}
+        ready={!catalog.isPending && emptyChooserSet && identityResolved}
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}
         searchResults={results.items}

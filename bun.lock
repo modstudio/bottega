@@ -41,6 +41,14 @@
         "typescript": "^5",
       },
     },
+    "hub/deploy/site": {
+      "name": "@bottega/hub-site",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5",
+      },
+    },
     "hub/web": {
       "name": "@bottega/hub-web",
       "version": "0.1.0",
@@ -250,6 +258,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.13", "", { "os": "win32", "cpu": "x64" }, "sha512-VOofU/nW761XWzUeUNE8zzYNyPrxuMuNFMizL0qz7J75yeV8N7WFheUlk1/K6dOkaFpH9wJ+lDKlwjAbw0346w=="],
 
     "@bottega/hub": ["@bottega/hub@workspace:hub"],
+
+    "@bottega/hub-site": ["@bottega/hub-site@workspace:hub/deploy/site"],
 
     "@bottega/hub-web": ["@bottega/hub-web@workspace:hub/web"],
 
