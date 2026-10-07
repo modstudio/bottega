@@ -37,6 +37,15 @@ export type RunLogEvent =
     }
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
+  | {
+      ts: string
+      type: 'ask_expected'
+      transport: 'host' | 'srt'
+      command: string[]
+    }
+  | { ts: string; type: 'ask_started'; tools: string[] }
+  | { ts: string; type: 'ask_initialized' }
+  | { ts: string; type: 'ask_listed'; tools: string[] }
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
@@ -44,6 +53,10 @@ type PeekEventSummary =
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
+  | { type: 'ask_expected'; transport: 'host' | 'srt'; command: string[] }
+  | { type: 'ask_started'; tools: string[] }
+  | { type: 'ask_initialized' }
+  | { type: 'ask_listed'; tools: string[] }
 
 export type PeekSummary = {
   id: number
@@ -121,7 +134,11 @@ export function appendRunEvent(
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
-  touchLastEventAt(runId, event.ts)
+  if (isWorkerActivity(event)) touchLastEventAt(runId, event.ts)
+}
+
+function isWorkerActivity(event: RunLogEvent): boolean {
+  return !['ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(event.type)
 }
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
@@ -434,7 +451,7 @@ export function eventsFromVendorLine(line: string): StreamEvent[] {
   return []
 }
 
-function readEventLog(path: string): RunLogEvent[] {
+export function readEventLog(path: string): RunLogEvent[] {
   if (!existsSync(path)) return []
   const events: RunLogEvent[] = []
   for (const line of readFileSync(path, 'utf8').split('\n')) {
@@ -466,7 +483,17 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }
-  return { type: 'usage', tokens: event.tokens }
+  if (event.type === 'usage') return { type: 'usage', tokens: event.tokens }
+  if (event.type === 'ask_expected') {
+    return {
+      type: 'ask_expected',
+      transport: event.transport,
+      command: event.command,
+    }
+  }
+  if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
+  if (event.type === 'ask_listed') return { type: 'ask_listed', tools: event.tools }
+  return { type: 'ask_initialized' }
 }
 
 function git(cwd: string, args: string[]): string | null {
@@ -519,8 +546,10 @@ export function peekRun(
   const now = opts.now ?? Date.now()
   const started = Date.parse(row.started_at)
   const events = readEventLog(runEventsPath(id, opts.runsDir))
-  const lastTs = events.at(-1)?.ts ?? row.last_event_at
-  const lastAt = lastTs ? Date.parse(lastTs) : Date.parse(row.last_event_at || row.started_at)
+  const lastWorkerTs = events.findLast(isWorkerActivity)?.ts ?? row.last_event_at
+  const lastAt = lastWorkerTs
+    ? Date.parse(lastWorkerTs)
+    : Date.parse(row.last_event_at || row.started_at)
   const limit = opts.events ?? DEFAULT_PEEK_EVENTS
   const locations = events.flatMap((event) =>
     event.type === 'tool_call' ? (event.locations ?? []).map((item) => item.path) : [],
@@ -540,8 +569,8 @@ export function peekRun(
     files: worktreeFiles(row.worktree, locations),
     commits: worktreeCommits(row.worktree, row.base_commit),
     vendor_tokens: usage?.type === 'usage' ? usage.tokens : row.vendor_tokens,
-    last_event_at: row.last_event_at ?? lastTs ?? null,
-    idle: idleLabel(row.last_event_at ?? lastTs, row.started_at, now),
+    last_event_at: row.last_event_at ?? lastWorkerTs ?? null,
+    idle: idleLabel(row.last_event_at ?? lastWorkerTs, row.started_at, now),
   }
 }
 
@@ -556,7 +585,13 @@ function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'tool_result') {
     return `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd()
   }
-  return `  usage ${event.tokens}`
+  if (event.type === 'usage') return `  usage ${event.tokens}`
+  if (event.type === 'ask_expected') {
+    return `  ask expected ${event.transport} ${event.command.join(' ')}`
+  }
+  if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
+  if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
+  return '  ask initialized'
 }
 
 export function formatPeek(summary: PeekSummary): string {

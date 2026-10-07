@@ -23,6 +23,7 @@ import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
+  grokAskCommandFromConfig,
   grokSandboxConfig,
   prepareCodexHome,
   prepareGrokMcpHome,
@@ -165,6 +166,15 @@ test('removes registered orch-ask tables from Codex config and keeps neighboring
 test('leaves Codex config without a registered orch-ask table unchanged', () => {
   const config = 'model = "codex"\r\n[mcp_servers.orch]\r\ncommand = "orch"\r\n'
   expect(withoutRegisteredOrchAskServer(config)).toBe(config)
+})
+
+test('reads the configured Grok ask command from the table its writer owns', () => {
+  expect(
+    grokAskCommandFromConfig(
+      'model = "grok"\n[mcp_servers.orch-ask]\ncommand = "/stale/bun"\n' +
+        'args = ["/stale/orch.ts", "ask-server"]\n[ui]\ncommand = "ignored"\n',
+    ),
+  ).toEqual(['/stale/bun', '/stale/orch.ts', 'ask-server'])
 })
 
 test('prepares Codex home without a user-registered orch-ask server', () => {

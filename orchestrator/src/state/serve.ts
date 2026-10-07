@@ -10,7 +10,10 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
+import { readAskServerFailure } from '../ask/ask-failure.ts'
+import { summarizeAskServer } from '../ask/ask-lifecycle.ts'
 import { db } from '../database/db.ts'
+import { readEventLog, runEventsPath } from '../events.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.ts'
@@ -20,6 +23,7 @@ import { reviewCalibration } from '../review/review-calibration.ts'
 import { candidates, scoreboard } from '../route/route.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -94,6 +98,7 @@ export function runDetail(id: number, receipt = false) {
   if (!row) return null
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
+  const eventsPath = runEventsPath(id)
   const identity = db()
     .query('SELECT parent_run_id, COALESCE(parent_run_id, id) root_id FROM run WHERE id=?')
     .get(id) as { parent_run_id: number | null; root_id: number }
@@ -128,6 +133,10 @@ export function runDetail(id: number, receipt = false) {
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
+    ask_server: summarizeAskServer(
+      existsSync(eventsPath) ? readEventLog(eventsPath) : null,
+      readAskServerFailure(runScratchDir(id)) ?? readAskServerFailure(runArtifactsDir(id)),
+    ),
     reviews: reviewsForRun(id),
     messages,
     audit,

@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
+import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { db, nowIso } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import { recordReview } from '../review/review-triage.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { runDetail, state } from './serve.ts'
 
 const trackResidue = trackedTestResidue()
@@ -42,6 +45,39 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
+  test('publishes ask lifecycle evidence and distinguishes a missing log', () => {
+    const missing = addRun({ agent: 'codex', job: 'implement' })
+    expect(runDetail(missing)!.ask_server).toMatchObject({
+      expected: 'not_recorded',
+      started: 'not_recorded',
+    })
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    appendRunEvent(id, {
+      ts: 't1',
+      type: 'ask_expected',
+      transport: 'srt',
+      command: ['orch', 'ask-proxy'],
+    })
+    expect(runDetail(id)!.ask_server).toMatchObject({
+      expected: 'seen',
+      started: 'not_seen',
+      transport: 'srt',
+      command: ['orch', 'ask-proxy'],
+    })
+  })
+
+  test('reads an ask startup failure while live and after scratch is persisted', () => {
+    const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    mkdirSync(runScratchDir(live), { recursive: true })
+    writeAskServerFailure(new Error('live startup failed'), runScratchDir(live))
+    expect(runDetail(live)!.ask_server).toMatchObject({ failure: 'live startup failed' })
+
+    const finished = addRun({ agent: 'codex', job: 'implement' })
+    mkdirSync(runArtifactsDir(finished), { recursive: true })
+    writeAskServerFailure(new Error('persisted startup failed'), runArtifactsDir(finished))
+    expect(runDetail(finished)!.ask_server).toMatchObject({ failure: 'persisted startup failed' })
+  })
+
   test('publishes overturned questions with their reason', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()

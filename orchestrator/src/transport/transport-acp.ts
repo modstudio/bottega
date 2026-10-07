@@ -467,6 +467,27 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
     : null
 }
 
+function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
+  if (opts.agent.name === 'grok' || !opts.env.ORCH_RUN_ID || !opts.env.ORCH_RUN_TOKEN) return []
+  const [command, ...args] = bottegaEntryArgv('ask-server')
+  return [
+    {
+      name: 'orch-ask',
+      command: command!,
+      args,
+      env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
+        opts.env[name] ? [{ name, value: opts.env[name]! }] : [],
+      ),
+    },
+  ]
+}
+
+export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
+  if (opts.agent.name === 'grok') return opts.agent.askServerCommand?.(opts.env) ?? null
+  const server = acpMcpServers(opts).find((entry) => entry.name === 'orch-ask')
+  return server && 'command' in server ? [server.command, ...(server.args ?? [])] : null
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
@@ -654,19 +675,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     // codex-acp needs it on session/new. Grok loads the per-run config prepared
     // in GROK_HOME; passing the same stdio server here makes 1.0.13 reject
     // session/new with "Path not found."
-    const mcpServers: acp.McpServer[] =
-      !grok && opts.env.ORCH_RUN_ID && opts.env.ORCH_RUN_TOKEN
-        ? [
-            {
-              name: 'orch-ask',
-              command: bottegaEntryArgv('ask-server')[0]!,
-              args: bottegaEntryArgv('ask-server').slice(1),
-              env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
-                opts.env[name] ? [{ name, value: opts.env[name]! }] : [],
-              ),
-            },
-          ]
-        : []
+    const mcpServers = acpMcpServers(opts)
     if (opts.session) {
       const loaded = await handshake(
         ctx.request(acp.methods.agent.session.load, {
@@ -837,6 +846,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 const acpTransport: AgentTransport = {
   name: 'acp',
   canInjectMidTurn: false,
+  configuredAsk: configuredAcpAsk,
   start(opts) {
     return openAcp(opts)
   },

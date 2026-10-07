@@ -59,6 +59,7 @@ function installVendor(collected: TransportResult) {
   const transport: AgentTransport = {
     name: 'cli',
     canInjectMidTurn: false,
+    configuredAsk: () => null,
     async start(opts) {
       return handleFor(opts.outPath)
     },
