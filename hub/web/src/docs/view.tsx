@@ -87,48 +87,50 @@ function DocsChrome({
     ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
   ]
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3 border-border-default border-b px-5">
-      <Tabs
-        label="Audience"
-        value={audience}
-        onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
-        items={tabs}
-      />
-      <div className="flex flex-wrap items-center gap-3 py-2">
-        {showProjectChooser ? (
-          <div className="flex items-center gap-2">
-            <span className={eyebrow}>Project</span>
-            <Select
-              label="Project"
-              size="sm"
-              value={project}
-              onChange={(value) => onProject(value === 'all' ? 'all' : value)}
-              options={[
-                ...subjects.map((name) => ({ value: name, label: name })),
-                { value: 'all', label: 'All projects' },
-              ]}
-            />
-          </div>
-        ) : null}
-        {offered.length ? (
-          <Popover
-            label="Filters"
-            align="end"
-            trigger={
-              <Button size="sm">
-                Filter
-                {active ? (
-                  <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
-                    {active}
-                  </span>
-                ) : null}
-              </Button>
-            }
-          >
-            <FilterPanel offered={offered} chosen={chosen} onChange={onFilters} total={inView} />
-          </Popover>
-        ) : null}
-        {createAction}
+    <div className="border-border-default border-b">
+      <div className="mx-auto flex w-full max-w-(--docs-width) flex-wrap items-end justify-between gap-3 px-5">
+        <Tabs
+          label="Audience"
+          value={audience}
+          onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
+          items={tabs}
+        />
+        <div className="flex flex-wrap items-center gap-3 py-2">
+          {showProjectChooser ? (
+            <div className="flex items-center gap-2">
+              <span className={eyebrow}>Project</span>
+              <Select
+                label="Project"
+                size="sm"
+                value={project}
+                onChange={(value) => onProject(value === 'all' ? 'all' : value)}
+                options={[
+                  ...subjects.map((name) => ({ value: name, label: name })),
+                  { value: 'all', label: 'All projects' },
+                ]}
+              />
+            </div>
+          ) : null}
+          {offered.length ? (
+            <Popover
+              label="Filters"
+              align="end"
+              trigger={
+                <Button size="sm">
+                  Filter
+                  {active ? (
+                    <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
+                      {active}
+                    </span>
+                  ) : null}
+                </Button>
+              }
+            >
+              <FilterPanel offered={offered} chosen={chosen} onChange={onFilters} total={inView} />
+            </Popover>
+          ) : null}
+          {createAction}
+        </div>
       </div>
     </div>
   )
@@ -344,7 +346,7 @@ export function DocsView({
         active={model.active}
         createAction={createAction}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
+      <div className="mx-auto grid min-h-0 w-full max-w-(--docs-width) flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
         <DocsRail
           tree={model.tree}
           groups={model.groups}
