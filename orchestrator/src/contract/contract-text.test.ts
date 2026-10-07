@@ -89,6 +89,10 @@ describe('job contracts are visible before submission', () => {
   })
   test('writers run the registered gate while readers inspect its recorded result', () => {
     expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
+    expect(WORKER_PREAMBLE).toContain(
+      'call it again while its reply says the gate is still running',
+    )
+    expect(WORKER_PREAMBLE).toContain('report done only with a finished result or a refusal')
     expect(WORKER_PREAMBLE).toContain("reply's tests section")
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
     expect(READONLY_PREAMBLE).toContain('Call the `gate_result` tool on the `orch-ask` MCP server')

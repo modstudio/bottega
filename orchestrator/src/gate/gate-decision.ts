@@ -5,6 +5,8 @@ import { isAbsolute, resolve } from 'node:path'
 
 export const GATE_OUTPUT_TAIL_BYTES = 16 * 1024
 export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000
+/** Stay below the shortest harness tool-call ceiling observed. */
+export const RUN_GATE_WAIT_MS = 4 * 60_000
 export const GATE_CLOSE_REASON = 'Gate run cancelled because the supervising run closed.'
 const GATE_TOOLING_PATH_NAMES = [
   'package.json',
@@ -81,10 +83,48 @@ export function decideGateEligibility(input: {
   return { eligible: true, gate }
 }
 
-export function decideGateConcurrency(inProgress: boolean): { allowed: boolean; message?: string } {
-  return inProgress
-    ? { allowed: false, message: 'A gate run is already in progress.' }
-    : { allowed: true }
+export type GateRequestDecision =
+  | { action: 'start' }
+  | { action: 'join'; executionId: number }
+  | { action: 'return'; executionId: number }
+
+/** Decide whether one worker call starts, joins, or collects a gate execution. */
+export function decideGateRequest(input: {
+  execution: { id: number; finished: boolean } | null
+  resultPending: boolean
+}): GateRequestDecision {
+  if (!input.execution) return { action: 'start' }
+  if (!input.execution.finished) return { action: 'join', executionId: input.execution.id }
+  if (input.resultPending) return { action: 'return', executionId: input.execution.id }
+  return { action: 'start' }
+}
+
+/** Present how a repeated call reached an existing execution. */
+export function formatGateRequestDecision(decision: GateRequestDecision): string | null {
+  if (decision.action === 'join') {
+    return `Gate execution ${decision.executionId} was already running; this call waited for the same execution.`
+  }
+  if (decision.action === 'return') {
+    return `Gate execution ${decision.executionId} finished after an earlier run_gate call stopped waiting; returning that result.`
+  }
+  return null
+}
+
+export function decideGateWait(input: {
+  finished: boolean
+  waitElapsedMs: number
+  executionElapsedMs: number
+  waitMs?: number
+}): { wait: true } | { wait: false; message?: string } {
+  if (input.finished) return { wait: false }
+  if (input.waitElapsedMs < (input.waitMs ?? RUN_GATE_WAIT_MS)) return { wait: true }
+  return {
+    wait: false,
+    message:
+      `The gate is still running after ${input.executionElapsedMs}ms. ` +
+      'Call run_gate again to wait for this same execution. ' +
+      'Do not report done before you have its result.',
+  }
 }
 
 export function decideGateCancellation(input: {

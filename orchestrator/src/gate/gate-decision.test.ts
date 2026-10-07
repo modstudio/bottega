@@ -3,12 +3,16 @@ import {
   boundedGateOutputTail,
   brokerGateEnvironment,
   decideGateCancellation,
-  decideGateConcurrency,
   decideGateEligibility,
   decideGateHeadCommit,
+  decideGateRequest,
+  decideGateWait,
+  formatGateRequestDecision,
   GATE_CLOSE_REASON,
+  GATE_COMMAND_TIMEOUT_MS,
   GATE_OUTPUT_TAIL_BYTES,
   isGateToolingPath,
+  RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
@@ -62,12 +66,59 @@ describe('worker gate eligibility', () => {
   })
 })
 
-test('an active execution refuses a concurrent gate', () => {
-  expect(decideGateConcurrency(true)).toEqual({
-    allowed: false,
-    message: 'A gate run is already in progress.',
+test('worker gate requests join, return an undelivered result, or start', () => {
+  const join = decideGateRequest({
+    execution: { id: 7, finished: false },
+    resultPending: false,
   })
-  expect(decideGateConcurrency(false)).toEqual({ allowed: true })
+  expect(join).toEqual({ action: 'join', executionId: 7 })
+  expect(formatGateRequestDecision(join)).toBe(
+    'Gate execution 7 was already running; this call waited for the same execution.',
+  )
+  const late = decideGateRequest({
+    execution: { id: 8, finished: true },
+    resultPending: true,
+  })
+  expect(late).toEqual({ action: 'return', executionId: 8 })
+  expect(formatGateRequestDecision(late)).toBe(
+    'Gate execution 8 finished after an earlier run_gate call stopped waiting; returning that result.',
+  )
+  expect(decideGateRequest({ execution: { id: 8, finished: true }, resultPending: false })).toEqual(
+    { action: 'start' },
+  )
+  expect(decideGateRequest({ execution: null, resultPending: false })).toEqual({ action: 'start' })
+})
+
+test('worker gate wait is bounded below the harness and gate command ceilings', () => {
+  expect(RUN_GATE_WAIT_MS).toBeLessThan(5 * 60_000)
+  expect(RUN_GATE_WAIT_MS).toBeLessThan(GATE_COMMAND_TIMEOUT_MS)
+  expect(
+    decideGateWait({
+      finished: false,
+      waitElapsedMs: RUN_GATE_WAIT_MS,
+      executionElapsedMs: RUN_GATE_WAIT_MS,
+    }),
+  ).toEqual({
+    wait: false,
+    message:
+      `The gate is still running after ${RUN_GATE_WAIT_MS}ms. ` +
+      'Call run_gate again to wait for this same execution. ' +
+      'Do not report done before you have its result.',
+  })
+  expect(
+    decideGateWait({
+      finished: false,
+      waitElapsedMs: RUN_GATE_WAIT_MS - 1,
+      executionElapsedMs: RUN_GATE_WAIT_MS,
+    }),
+  ).toEqual({ wait: true })
+  expect(
+    decideGateWait({
+      finished: true,
+      waitElapsedMs: RUN_GATE_WAIT_MS,
+      executionElapsedMs: RUN_GATE_WAIT_MS,
+    }),
+  ).toEqual({ wait: false })
 })
 
 test('broker close cancels requests before a run ceases to be live', () => {

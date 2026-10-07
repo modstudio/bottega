@@ -786,8 +786,8 @@ system cannot catch automatically, and hiding one costs far more than admitting
 it. Run the project's tests if you can, and report what actually happened rather
 than what you expect would happen.
 
-When the \`run_gate\` tool is available, run it before reporting done and report
-its last result in your reply's tests section.
+When the \`run_gate\` tool is available, run it before reporting done,
+call it again while its reply says the gate is still running, and report done only with a finished result or a refusal, recording that last result in your reply's tests section.
 
 REPORT WHAT STOPPED YOU, IN "blockers"
 
