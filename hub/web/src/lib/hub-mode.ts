@@ -261,7 +261,7 @@ export function recordApiUrl() {
 }
 
 /**
- * Whether an unauthorised answer should send the visitor to sign in. The public pages are for
+ * Whether an unauthorized answer should send the visitor to sign in. The public pages are for
  * signed-out visitors: there it is the expected signal that nobody is signed in.
  */
 export function unauthorizedLeadsToSignIn(pathname: string, origin: HostedOrigin['kind']) {

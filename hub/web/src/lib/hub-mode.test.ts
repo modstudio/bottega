@@ -141,7 +141,7 @@ test('a move to another origin stays on that origin whatever the path looks like
   }
 })
 
-test('an unauthorised answer leads to sign-in only from the signed-in app', () => {
+test('an unauthorized answer leads to sign-in only from the signed-in app', () => {
   for (const path of ['/', '/product/board', '/docs', '/docs/project/x/y', '/sign-in']) {
     expect(unauthorizedLeadsToSignIn(path, 'app')).toBe(false)
     expect(unauthorizedLeadsToSignIn(path, 'unconfigured')).toBe(false)
