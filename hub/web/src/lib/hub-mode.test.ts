@@ -6,6 +6,7 @@ import {
   isHostedSignInFramePath,
   isMarketingPath,
   navForMode,
+  sameLocationOn,
 } from './hub-mode.ts'
 
 test('hosted origin is public, app, or unconfigured', () => {
@@ -128,4 +129,13 @@ test('hosted member-management routes remain reachable and members appear in set
   expect(settings && 'items' in settings ? settings.items.map((item) => item.to) : []).toContain(
     '/members',
   )
+})
+
+test('a move to another origin stays on that origin whatever the path looks like', () => {
+  const app = 'https://app.example.test'
+  for (const pathname of ['//evil.test/phish', '///evil.test', '/\\evil.test', '/flight']) {
+    const href = sameLocationOn(app, { pathname, search: '?x=1', hash: '#frag' })
+    expect(new URL(href).origin).toBe(app)
+    expect(href.endsWith('?x=1#frag')).toBe(true)
+  }
 })

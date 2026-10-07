@@ -3,6 +3,17 @@ import { decideSiteRequest } from './decision.ts'
 
 const APP_ORIGIN = `https://app.${PLATFORM_SLUG}.run`
 
+/**
+ * The same path and query on the app origin. The parts are assigned rather than resolved as a
+ * relative reference, because a path beginning with two slashes resolves to another host.
+ */
+export function appTarget(source: URL): URL {
+  const target = new URL(APP_ORIGIN)
+  target.pathname = source.pathname
+  target.search = source.search
+  return target
+}
+
 async function forward(request: Request, target: URL) {
   const headers = new Headers(request.headers)
   headers.delete('authorization')
@@ -25,7 +36,7 @@ async function handleRequest(request: Request) {
     apex.hostname = source.hostname.slice('www.'.length)
     return Response.redirect(apex, 301)
   }
-  const target = new URL(`${source.pathname}${source.search}`, APP_ORIGIN)
+  const target = appTarget(source)
   switch (decideSiteRequest(request.method, source.pathname)) {
     case 'forward':
       return forward(request, target)

@@ -19,6 +19,7 @@ import {
   isHostedSignInFramePath,
   isMarketingPath,
   navForMode,
+  sameLocationOn,
 } from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
@@ -200,11 +201,7 @@ function isPublicSitePath(pathname: string) {
 }
 
 function navigateToOrigin(origin: string) {
-  const target = new URL(
-    `${window.location.pathname}${window.location.search}${window.location.hash}`,
-    origin,
-  )
-  window.location.assign(target.href)
+  window.location.assign(sameLocationOn(origin, window.location))
 }
 
 function OriginNavigation({ origin }: { origin: string }) {

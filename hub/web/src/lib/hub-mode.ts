@@ -57,6 +57,22 @@ export function hostedOrigin(
     : { kind: 'app', publicOrigin, appOrigin }
 }
 
+/**
+ * The same path, query and fragment on another origin. The parts are assigned rather than
+ * resolved as a relative reference, because a path beginning with two slashes resolves to
+ * another host.
+ */
+export function sameLocationOn(
+  origin: string,
+  location: { pathname: string; search: string; hash: string },
+): string {
+  const target = new URL(origin)
+  target.pathname = location.pathname
+  target.search = location.search
+  target.hash = location.hash
+  return target.href
+}
+
 type Counted = 'flight' | 'done' | 'runs' | 'inbox'
 type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted }
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
