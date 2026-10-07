@@ -1,7 +1,9 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
@@ -273,10 +275,10 @@ function recordApiError(body: unknown, status: number): Error {
   return recordApiUnreachable(new Error(message))
 }
 
-function recordApiBaseUrl(): string {
-  const url = process.env.ORCH_RECORD_API_URL
+export function recordApiBaseUrl(environment: ConfigEnvironment = process.env): string {
+  const url = resolveRecordApiUrl(environment)
   if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
-  if (process.env.NODE_ENV === 'test' && !injectedClient()) throw new Error(TEST_REFUSAL)
+  if (environment.NODE_ENV === 'test' && !injectedClient()) throw new Error(TEST_REFUSAL)
   return url.replace(/\/$/, '')
 }
 

@@ -1,4 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -8,7 +12,27 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { recordApiClient } from './record-api-client.ts'
+import { recordApiBaseUrl, recordApiClient } from './record-api-client.ts'
+
+test('the record API base URL resolves from configured files', () => {
+  const root = mkdtempSync(join(tmpdir(), 'record-api-client-url-'))
+  try {
+    const config = join(root, 'config')
+    const harness = join(root, 'harness.env')
+    mkdirSync(config)
+    writeFileSync(harness, 'ORCH_RECORD_API_URL=https://file.example.test/\n')
+
+    expect(
+      recordApiBaseUrl({
+        NODE_ENV: 'development',
+        [CONFIG_HOME_ENV]: config,
+        [HARNESS_ENV_FILE_ENV]: harness,
+      }),
+    ).toBe('https://file.example.test')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 describe('record API client test safety', () => {
   test('refuses a real base URL unless a stub is injected', () => {

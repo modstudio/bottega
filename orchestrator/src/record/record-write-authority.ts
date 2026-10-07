@@ -1,6 +1,7 @@
 // concern: record-write-authority
 /** Applies shared-state write authority at the hosted-record boundary. */
 
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordInstallBinding, rememberHostedRecord } from './install-binding.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 
@@ -10,7 +11,7 @@ export const BOUND_RECORD_WRITE_REFUSAL =
 
 export function currentRecordWriteDecision(): RecordWriteDecision {
   return decideRecordWrite({
-    recordApiUrlSet: Boolean(process.env.ORCH_RECORD_API_URL?.trim()),
+    recordApiUrlSet: Boolean(resolveRecordApiUrl()?.trim()),
     installBound: readRecordInstallBinding().bound,
   })
 }
