@@ -1,3 +1,4 @@
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { Cards, Check, Cta, PageHero, Panel, Section } from './shared'
 
 const features = [
@@ -9,7 +10,7 @@ const features = [
   [
     'Provider-agnostic',
     'Whatever is behind it',
-    "A project's own database, a Laravel app's task tables, a hosted issue tracker, or Bottega's native store. The board does not care which.",
+    `A project's own database, a Laravel app's task tables, a hosted issue tracker, or ${PLATFORM_NAME}'s native store. The board does not care which.`,
   ],
   [
     'Two directions',
@@ -40,7 +41,7 @@ const notes = [
 ]
 const mcp = [
   "Outbound: one client per project, speaking that project's own MCP server.",
-  'Inbound: agents read tasks, docs and rules from Bottega through its own server.',
+  `Inbound: agents read tasks, docs and rules from ${PLATFORM_NAME} through its own server.`,
   "Scoped per project, so one project's agent never sees another's surface.",
   'A worker fetches its own context instead of the architect pasting it in.',
 ]
@@ -51,7 +52,7 @@ export function BoardPage() {
         crumb="Project"
         title="Every project on one board."
         muted="Whatever runs them."
-        copy="Each project keeps the tracker it already has — its own database, its own MCP server, its own conventions. Bottega speaks to each one over MCP and aggregates the result: one board, one cost view, one place where a run is already attributed to the task that caused it."
+        copy={`Each project keeps the tracker it already has — its own database, its own MCP server, its own conventions. ${PLATFORM_NAME} speaks to each one over MCP and aggregates the result: one board, one cost view, one place where a run is already attributed to the task that caused it.`}
         actions={[['/docs', 'Connect a project']]}
       />
       <section className="section-tight">
@@ -62,7 +63,7 @@ export function BoardPage() {
       <Section
         eyebrow="Aggregation"
         title="One board without migrating anything"
-        intro="A project that already has a tracker does not need a second one. Bottega reads and writes each project's own system over MCP, and keeps the register of which project owns what."
+        intro={`A project that already has a tracker does not need a second one. ${PLATFORM_NAME} reads and writes each project's own system over MCP, and keeps the register of which project owns what.`}
       >
         <Cards items={features} />
       </Section>
@@ -99,7 +100,7 @@ export function BoardPage() {
       <Split
         eyebrow="MCP"
         title="The board is a surface your agents can use"
-        copy="Bottega talks to your projects over MCP, and exposes its own surface the same way. Any agent in any harness can read the board, file a note, open a task or record evidence — without a bespoke integration per tool."
+        copy={`${PLATFORM_NAME} talks to your projects over MCP, and exposes its own surface the same way. Any agent in any harness can read the board, file a note, open a task or record evidence — without a bespoke integration per tool.`}
         checks={mcp}
       >
         <Panel eyebrow="Connected projects">
@@ -133,7 +134,7 @@ export function BoardPage() {
             without moving its tasks.
           </>
         }
-        copy="Register the project, point Bottega at its MCP server, and its work joins the board."
+        copy={`Register the project, point ${PLATFORM_NAME} at its MCP server, and its work joins the board.`}
         actions={[['/docs', 'Read the MCP guide']]}
       />
     </main>

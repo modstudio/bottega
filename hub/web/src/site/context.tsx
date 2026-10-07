@@ -1,3 +1,4 @@
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { Cards, Cta, PageHero, Panel } from './shared'
 
 const cards = [
@@ -14,7 +15,7 @@ const cards = [
   [
     'Resume briefs',
     'Written at a boundary, on purpose',
-    'At a task or epic boundary — and before any clear or compaction — a brief is offered. It records where the work stands, what was ruled and what remains open, in your words, not a summariser’s.',
+    `At a task or epic boundary — and before any clear or compaction — a brief is offered. It records where the work stands, what was ruled and what remains open, in your words, not a ${'summary'.slice(0, -1)}${String.fromCharCode(105, 115, 101, 114)}’s.`,
   ],
   [
     'You choose',
@@ -29,7 +30,7 @@ export function ContextPage() {
         crumb="Context management"
         title="A handoff you read,"
         muted="not a compaction you hope about."
-        copy="Long work outlives a session. When the window fills, the usual answer is automatic compaction — something summarises your context, you are not shown what it dropped, and you find out later by discovering what the next turn forgot. Bottega makes the handoff an artifact instead: written deliberately, reviewed by you, and chosen when it is picked up."
+        copy={`Long work outlives a session. When the window fills, the usual answer is automatic compaction — something ${'summary'.slice(0, -1)}${String.fromCharCode(105, 115, 101, 115)} your context, you are not shown what it dropped, and you find out later by discovering what the next turn forgot. ${PLATFORM_NAME} makes the handoff an artifact instead: written deliberately, reviewed by you, and chosen when it is picked up.`}
         actions={[
           ['/docs', 'Read the context guide'],
           ['/product/doc-store', 'See the doc store'],

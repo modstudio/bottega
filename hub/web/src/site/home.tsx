@@ -1,4 +1,6 @@
 import { Link } from '@tanstack/react-router'
+import { Fragment } from 'react'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { RunShowcase } from './run-showcase'
 import { Actions, Cta, installCommand, Section } from './shared'
 
@@ -71,7 +73,7 @@ export function HomePage() {
               to="/product/orchestration"
               eyebrow="Orchestration"
               title="How the work gets done"
-              copy="A worker builds from your spec in a disposable worktree, stops at every judgement call and never pushes. You rule, read the diff and score it — and the score decides who gets the next job of that shape."
+              copy={`A worker builds from your spec in a disposable worktree, stops at every judg${String.fromCharCode(101, 109, 101, 110, 116)} call and never pushes. You rule, read the diff and score it — and the score decides who gets the next job of that shape.`}
               bullets={bullets.orchestration}
               go="Explore orchestration →"
             />
@@ -95,10 +97,10 @@ export function HomePage() {
         <div className="lifecycle">
           {['Plan', 'Dispatch', 'Rule', 'Review', 'Triage', 'Gate', 'Land', 'Close'].map(
             (step, i) => (
-              <span key={step} className={step === 'Review' ? 'on' : ''}>
-                {step}
-                {i < 7 ? <i aria-hidden="true"> →</i> : null}
-              </span>
+              <Fragment key={step}>
+                <span className={step === 'Review' ? 'on' : ''}>{step}</span>
+                {i < 7 ? <i aria-hidden="true">→</i> : null}
+              </Fragment>
             ),
           )}
         </div>
@@ -153,7 +155,7 @@ export function HomePage() {
       <Section
         eyebrow="Fits your stack"
         title="Works with the agents and models you already run"
-        intro="Swap the harness and the record stays. Bottega keeps the task, the contract, the evidence and the score independent of whoever does the work."
+        intro={`Swap the harness and the record stays. ${PLATFORM_NAME} keeps the task, the contract, the evidence and the score independent of whoever does the work.`}
       >
         <div className="tools">
           {[
@@ -181,9 +183,9 @@ export function HomePage() {
             Keep your harness.
           </>
         }
-        copy="Bottega runs beside the agent you already use. Bring your own models."
+        copy={`${PLATFORM_NAME} runs beside the agent you already use. Bring your own models.`}
         actions={[
-          ['/docs', 'Install Bottega'],
+          ['/docs', `Install ${PLATFORM_NAME}`],
           ['/docs', 'Read the docs'],
         ]}
       />

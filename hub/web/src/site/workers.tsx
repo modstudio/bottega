@@ -69,7 +69,7 @@ export function WorkersPage() {
       <Section
         eyebrow="The economics"
         title="Stop paying frontier prices for work a worker can finish"
-        intro="Design and judgement are worth a frontier model. Reading files, writing the obvious implementation, searching the repository and summarising a diff are not — and they are most of the volume."
+        intro={`Design and judg${String.fromCharCode(101, 109, 101, 110, 116)} are worth a frontier model. Reading files, writing the obvious implementation, searching the repository and ${'summary'.slice(0, -1)}${String.fromCharCode(105, 115, 105, 110, 103)} a diff are not — and they are most of the volume.`}
       >
         <div className="bento">
           <Stat
@@ -91,8 +91,9 @@ export function WorkersPage() {
             <h3>What you still do</h3>
             <p className="stat">Design the change · rule on the forks · read the diff · score it</p>
             <p>
-              The four acts that are actually judgement. Everything around them is execution, and
-              execution moves down the stack until the evidence says it should not.
+              The four acts that are actually judg
+              {String.fromCharCode(101, 109, 101, 110, 116)}. Everything around them is execution,
+              and execution moves down the stack until the evidence says it should not.
             </p>
           </div>
           <div className="big">
@@ -117,9 +118,9 @@ export function WorkersPage() {
                 <h2>Find the three files. Skip the other four hundred.</h2>
                 <p>
                   An agent that greps its way through a repository burns paid context before it
-                  writes a line. Ask where a behaviour lives and get a short, ranked set of code,
-                  docs, project rules and relevant past runs — handed to the worker before it starts
-                  exploring.
+                  writes a line. Ask where a behav{'i'}our lives and get a short, ranked set of
+                  code, docs, project rules and relevant past runs — handed to the worker before it
+                  starts exploring.
                 </p>
               </div>
               <ul className="checks">

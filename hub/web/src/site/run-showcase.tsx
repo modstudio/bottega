@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 const rows = [
   ['r-4f19', 'implement', 'codex', 'ATL-412 webhook retries', 'running', '—', 'run'],
@@ -26,7 +27,7 @@ export function RunShowcase() {
               <i />
               <i />
             </div>
-            <span className="path mono">bottega — orch board</span>
+            <span className="path mono">{PLATFORM_SLUG} — orch board</span>
           </div>
           <div className="app-body">
             <aside className="app-side">

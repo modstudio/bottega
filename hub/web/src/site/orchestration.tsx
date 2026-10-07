@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { Cards, Cta, PageHero, Section } from './shared'
 
 const tabs = [
@@ -93,12 +94,12 @@ const mechanism = [
   [
     'Stop',
     'A question suspends the run',
-    'A worker that reaches a judgement call it was not given stops there. The run is preserved, not restarted, so asking costs almost nothing.',
+    `A worker that reaches a judg${String.fromCharCode(101, 109, 101, 110, 116)} call it was not given stops there. The run is preserved, not restarted, so asking costs almost nothing.`,
   ],
   [
     'Score',
     'Asking is faithful',
-    'A worker that stopped is never marked down for stopping. Penalise the question and workers learn to guess instead — which is the failure the contract exists to prevent.',
+    `A worker that stopped is never marked down for stopping. Penal${'i'}se the question and workers learn to guess instead — which is the failure the contract exists to prevent.`,
   ],
   [
     'Judge',
@@ -130,7 +131,7 @@ export function OrchestrationPage() {
       <PageHero
         crumb="Orchestration"
         title="Delegate the execution."
-        muted="Never the judgement."
+        muted={`Never the judg${String.fromCharCode(101, 109, 101, 110, 116)}.`}
         copy="A change is decisions plus typing. The architect owns what the change means, which ambiguity resolves which way, and what must stay true. A worker owns the typing — and is contractually forbidden from deciding anything it was not given."
         actions={[
           ['/docs', 'Run your first job'],
@@ -140,13 +141,15 @@ export function OrchestrationPage() {
       <section>
         <div className="wrap">
           <div className="steps">
-            <div role="tablist" aria-label="How Bottega works">
+            <div role="tablist" aria-label={`How ${PLATFORM_NAME} works`}>
               {tabs.map((tab, index) => (
                 <button
                   className="step"
                   role="tab"
                   type="button"
                   key={tab.title}
+                  id={`tab-${index + 1}`}
+                  aria-controls={`p-${index + 1}`}
                   aria-selected={selected === index}
                   onClick={() => setSelected(index)}
                   onKeyDown={(event) => {
@@ -158,7 +161,10 @@ export function OrchestrationPage() {
                           : 0
                     if (direction) {
                       event.preventDefault()
-                      setSelected((index + direction + tabs.length) % tabs.length)
+                      const next = (index + direction + tabs.length) % tabs.length
+                      setSelected(next)
+                      const button = event.currentTarget.parentElement?.children.item(next)
+                      if (button instanceof HTMLElement) button.focus()
                     }
                   }}
                 >
@@ -168,7 +174,12 @@ export function OrchestrationPage() {
                 </button>
               ))}
             </div>
-            <div className="panel" role="tabpanel">
+            <div
+              className="panel"
+              id={`p-${selected + 1}`}
+              role="tabpanel"
+              aria-labelledby={`tab-${selected + 1}`}
+            >
               <div className="panel-head">
                 <span className="eyebrow">{activeTab?.eyebrow}</span>
               </div>

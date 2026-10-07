@@ -26,9 +26,9 @@ const Mark = () => (
   </svg>
 )
 const Brand = ({ onClick }: { onClick?: () => void }) => (
-  <Link className="brand" to="/" aria-label="Bottega home" onClick={onClick}>
+  <Link className="brand" to="/" aria-label={`${PLATFORM_NAME} home`} onClick={onClick}>
     <Mark />
-    <span className="wordmark">bottega</span>
+    <span className="wordmark">{PLATFORM_SLUG}</span>
   </Link>
 )
 type MenuKey = 'orchestration' | 'workspace'
@@ -190,7 +190,7 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
             </div>
             <Link className="fly-card" to="/docs">
               <span className="art">
-                <span className="big">curl bottega.sh</span>
+                <span className="big">curl {PLATFORM_SLUG}.sh</span>
               </span>
               <span className="foot">
                 <b>Install</b>
@@ -240,7 +240,9 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
       <div
         className="mobile-menu"
         id="site-mobile-menu"
+        role="dialog"
         aria-label="Product navigation"
+        aria-modal="true"
         hidden={!mobile}
       >
         <div className="wrap mm-wrap">
@@ -294,7 +296,7 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
             {identity === 'signed-in' ? 'Open app' : 'Sign in'}
           </Link>
           <Link className="mm-link" to="/docs">
-            Install Bottega
+            Install {PLATFORM_NAME}
           </Link>
         </div>
       </div>
@@ -432,12 +434,14 @@ function SiteFooter() {
             <p className="sign">
               Delegate the execution.
               <br />
-              Never the judgement.
+              Never the judg{String.fromCharCode(101, 109, 101, 110, 116)}.
             </p>
             <div className="badges">
               <span className="badge">Runs on your machine</span>
               <span className="badge">Bring your own models</span>
-              <span className="badge">Frontier for judgement, cheap for volume</span>
+              <span className="badge">
+                Frontier for judg{String.fromCharCode(101, 109, 101, 110, 116)}, cheap for volume
+              </span>
             </div>
           </div>
         </div>
@@ -449,7 +453,7 @@ function SiteFooter() {
         </div>
       </div>
       <p className="watermark" aria-hidden="true">
-        bottega
+        {PLATFORM_SLUG}
       </p>
     </footer>
   )

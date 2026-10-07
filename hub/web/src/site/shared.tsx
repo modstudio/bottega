@@ -1,13 +1,13 @@
 import { Link } from '@tanstack/react-router'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
-export const installCommand =
-  'curl -fsSL https://raw.githubusercontent.com/modstudio/bottega/main/install.sh | sh'
+export const installCommand = `curl -fsSL https://raw.githubusercontent.com/modstudio/${PLATFORM_SLUG}/main/install.sh | sh`
 export const Check = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
     <path d="M3 8.5l3.2 3.2L13 5" />
   </svg>
 )
-export function Btn({
+function Btn({
   to,
   children,
   ghost = false,
@@ -24,7 +24,7 @@ export function Btn({
 }
 export function Actions({
   secondary,
-  primary = 'Install Bottega',
+  primary = `Install ${PLATFORM_NAME}`,
 }: {
   secondary?: [string, string]
   primary?: string
@@ -99,7 +99,7 @@ export function PageHero({
   return (
     <div className="wrap phero">
       <div className="crumb">
-        <span>Bottega</span>
+        <span>{PLATFORM_NAME}</span>
         <span>/</span>
         <span>{crumb}</span>
       </div>
@@ -136,7 +136,7 @@ export function Cta({
         <h2>{title}</h2>
         {copy ? <p>{copy}</p> : null}
         <div className="hero-cta">
-          {(actions ?? [['/docs', 'Install Bottega']]).map(([to, label], i) => (
+          {(actions ?? [['/docs', `Install ${PLATFORM_NAME}`]]).map(([to, label], i) => (
             <Btn key={`${to}-${label}`} to={to} ghost={i > 0}>
               {label}
             </Btn>
