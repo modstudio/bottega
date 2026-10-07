@@ -163,6 +163,12 @@ describe('scoped operator docs', () => {
       title: 'Project doc',
       body: resumeBody('open', '2026-09-03T11:59:00.000Z'),
     })
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
+      .run('2026-09-01T12:00:00.000Z', 'resume', 'known', 'older')
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
+      .run('2026-09-03T11:40:00.000Z', 'resume', 'known', 'newer')
     expect(listOpenResumes('/nowhere', now)).toEqual({ open: [], unreadable: [] })
     expect(listOpenResumes(`${knownRepository}/src`, now)).toEqual({
       open: [
@@ -181,6 +187,59 @@ describe('scoped operator docs', () => {
       ],
       unreadable: [{ slug: 'broken', reason: 'no-frontmatter' }],
     })
+  })
+
+  test('listOpenResumes measures an open brief from its store write time', async () => {
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    await setDoc({
+      scope: 'resume',
+      subject: 'known',
+      slug: 'store-time',
+      title: 'Store time',
+      body: resumeBody('open', '2026-10-07T03:40:00.000Z'),
+    })
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
+      .run('2026-10-07T13:00:40.000Z', 'resume', 'known', 'store-time')
+    const now = Date.parse('2026-10-07T13:01:40.000Z')
+
+    expect(listOpenResumes(knownRepository, now).open).toEqual([
+      {
+        slug: 'store-time',
+        title: 'Store time',
+        age: '1m',
+        at: Date.parse('2026-10-07T13:00:40.000Z'),
+      },
+    ])
+  })
+
+  test('listOpenResumes orders briefs by store write time instead of written frontmatter', async () => {
+    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    await setDoc({
+      scope: 'resume',
+      subject: 'known',
+      slug: 'earlier-store-write',
+      title: 'Earlier store write',
+      body: resumeBody('open', '2026-10-07T13:00:00.000Z'),
+    })
+    await setDoc({
+      scope: 'resume',
+      subject: 'known',
+      slug: 'later-store-write',
+      title: 'Later store write',
+      body: resumeBody('open', '2026-10-07T03:00:00.000Z'),
+    })
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
+      .run('2026-10-07T12:00:00.000Z', 'resume', 'known', 'earlier-store-write')
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
+      .run('2026-10-07T12:30:00.000Z', 'resume', 'known', 'later-store-write')
+
+    expect(listOpenResumes(knownRepository).open.map(({ slug, at }) => ({ slug, at }))).toEqual([
+      { slug: 'later-store-write', at: Date.parse('2026-10-07T12:30:00.000Z') },
+      { slug: 'earlier-store-write', at: Date.parse('2026-10-07T12:00:00.000Z') },
+    ])
   })
 
   test('indented resume frontmatter cases A-D parse and list, with top-level keys winning', async () => {
@@ -445,6 +504,9 @@ describe('scoped operator docs', () => {
       title: 'Title here',
       body: resumeBody('open', new Date(now).toISOString()),
     })
+    db()
+      .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
+      .run(new Date(now).toISOString(), 'resume', 'known', 'epic-name')
     expect(listOpenResumes(knownRepository, now)).toEqual({
       open: [{ slug: 'epic-name', title: 'Title here', age: '0s', at: now }],
       unreadable: [],
