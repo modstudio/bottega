@@ -7,6 +7,7 @@ import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
+import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
@@ -69,7 +70,7 @@ function ReadingTop({
   return (
     <div
       className={classes(
-        '-mx-6 md:-mx-11 sticky top-(--docs-top) z-10 flex items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-11',
+        '-mx-6 md:-mx-11 sticky top-(--docs-stick) z-10 flex items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-11',
         titleGone ? 'border-border-default' : 'border-transparent',
       )}
     >
@@ -212,8 +213,13 @@ export function DocsFacts({
   headings: readonly DocHeading[]
   signedIn: boolean
 }) {
+  const panel = useRef<HTMLElement>(null)
+  useHeldPanel(panel)
   return (
-    <aside className="hidden px-5 py-8 lg:sticky lg:top-(--docs-top) lg:block lg:max-h-[calc(100dvh-var(--docs-top))] lg:self-start lg:overflow-y-auto">
+    <aside
+      ref={panel}
+      className="hidden px-5 py-8 lg:sticky lg:top-(--docs-stick) lg:block lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:overflow-y-auto"
+    >
       {headings.length ? (
         <section>
           <span className={eyebrow}>On this page</span>

@@ -270,6 +270,8 @@
   --topbar-h: 3.5rem;
   /* The docs page: tree rail, reading pane at its measure, and facts column, centered as one block. */
   --docs-width: 75.75rem;
+  /* The docs tab row, which the side panels and article header stick beneath. */
+  --docs-chrome-h: 2.8125rem;
   --sheet-w: min(34rem, 100vw);
   --sheet-w-wide: min(46rem, 100vw);
   --sheet-w-document: min(64rem, 100vw);
