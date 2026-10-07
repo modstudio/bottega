@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -24,6 +25,10 @@ import { originText } from './board-store.ts'
 const env = {
   CLAUDE_CODE_SESSION_ID: 'board-route-session',
   ORCH_RECORD_API_URL: 'https://record.test',
+}
+const noRecordEnv = {
+  [CONFIG_HOME_ENV]: '/definitely-missing-config',
+  [HARNESS_ENV_FILE_ENV]: '',
 }
 
 const hostedMessage = (id = newRecordId()) => ({
@@ -143,10 +148,10 @@ test('thread results have one pinned shape in local and hosted modes', async () 
   const clock = Date.parse('2026-10-05T12:00:00Z')
   const question = await boardAsk(
     { audience: 'operator', title: 'Local question', body: 'Question body' },
-    { env: {}, clock },
+    { env: noRecordEnv, clock },
   )
   db().query('UPDATE board_message SET note_id=42 WHERE id=?').run(Number(question.id))
-  const local = await boardThread(question.id, { env: {}, clock })
+  const local = await boardThread(question.id, { env: noRecordEnv, clock })
   expect(local).toEqual({
     root: {
       id: question.id,
@@ -195,9 +200,9 @@ test('status results have one pinned shape in local and hosted modes', async () 
   const clock = Date.parse('2026-10-05T12:00:00Z')
   const posted = await boardPost(
     { audience: 'operator', title: 'Local status', body: 'Status body' },
-    { env: {}, clock },
+    { env: noRecordEnv, clock },
   )
-  const local = await boardStatus(posted.id, { env: {}, clock })
+  const local = await boardStatus(posted.id, { env: noRecordEnv, clock })
   expect(local).toEqual({
     message: {
       id: posted.id,
@@ -272,7 +277,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
   const clock = Date.parse('2026-10-05T12:00:00Z')
   const local = await boardClaimTake(
     { subject: 'resource:local', project: 'board-route-project' },
-    { env: {}, clock },
+    { env: noRecordEnv, clock },
   )
   expect(local.id).toMatch(/^[1-9]\d*$/)
   expect(local).toEqual({
@@ -293,13 +298,16 @@ test('claim verbs stringify every id and share the same local and hosted result 
     action: 'taken',
   })
   const { action: _action, ...localView } = local
-  const localRenewed = await boardClaimRenew(local.id, { env: {}, clock: clock + 1_000 })
+  const localRenewed = await boardClaimRenew(local.id, { env: noRecordEnv, clock: clock + 1_000 })
   expect(localRenewed).toEqual({
     ...localView,
     renewedAt: '2026-10-05T12:00:01.000Z',
     lapsesAt: '2026-10-05T16:00:01.000Z',
   })
-  const localReleased = await boardClaimRelease(local.id, { env: {}, clock: clock + 2_000 })
+  const localReleased = await boardClaimRelease(local.id, {
+    env: noRecordEnv,
+    clock: clock + 2_000,
+  })
   expect(localReleased).toEqual({
     ...localRenewed,
     closedAt: '2026-10-05T12:00:02.000Z',
@@ -307,7 +315,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
     live: false,
   })
   await expect(
-    boardClaimList('board-route-project', true, { env: {}, clock: clock + 2_000 }),
+    boardClaimList('board-route-project', true, { env: noRecordEnv, clock: clock + 2_000 }),
   ).resolves.toEqual({ claims: [localReleased] })
 
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -373,7 +381,7 @@ test('a local claim run id is exposed as an opaque string', async () => {
   const result = await boardClaimTake(
     { subject: 'resource:run-bound', runId: inserted.id },
     {
-      env: { CLAUDE_CODE_SESSION_ID: 'claim-route-session' },
+      env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: 'claim-route-session' },
       cwd: process.cwd(),
       clock: Date.parse('2026-10-05T12:00:00Z'),
     },
@@ -635,7 +643,7 @@ test('an adopted install without hosted configuration refuses instead of writing
   await expect(
     boardPost(
       { audience: 'operator', title: 'No fallback', body: 'body' },
-      { env: { CLAUDE_CODE_SESSION_ID: 'board-route-session' } },
+      { env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: 'board-route-session' } },
     ),
   ).rejects.toThrow('ORCH_RECORD_API_URL')
   expect(

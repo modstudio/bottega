@@ -261,26 +261,24 @@ afterEach(() => {
   console.warn(message)
 })
 
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+}
+
 afterAll(() => {
   closeDatabaseForFixture()
   delete process.env.ORCH_DB
   delete process.env.HUB_DB
   delete process.env.ORCH_RUNS
   delete process.env.ORCH_GATE_PIDS
-  if (originalPath === undefined) delete process.env.PATH
-  else process.env.PATH = originalPath
-  if (originalSandbox === undefined) delete process.env.ORCH_SANDBOX
-  else process.env.ORCH_SANDBOX = originalSandbox
-  if (originalConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
-  else process.env[CONFIG_HOME_ENV] = originalConfigHome
-  if (originalHarnessEnvFile === undefined) delete process.env[HARNESS_ENV_FILE_ENV]
-  else process.env[HARNESS_ENV_FILE_ENV] = originalHarnessEnvFile
-  if (originalRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = originalRecordApiUrl
-  if (originalRunId === undefined) delete process.env.ORCH_RUN_ID
-  else process.env.ORCH_RUN_ID = originalRunId
-  if (originalDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = originalDepth
+  restoreEnvironment('PATH', originalPath)
+  restoreEnvironment('ORCH_SANDBOX', originalSandbox)
+  restoreEnvironment(CONFIG_HOME_ENV, originalConfigHome)
+  restoreEnvironment(HARNESS_ENV_FILE_ENV, originalHarnessEnvFile)
+  restoreEnvironment('ORCH_RECORD_API_URL', originalRecordApiUrl)
+  restoreEnvironment('ORCH_RUN_ID', originalRunId)
+  restoreEnvironment('ORCH_DEPTH', originalDepth)
   for (const key of Object.keys(process.env)) {
     if (gitConfigEnvironmentName.test(key)) delete process.env[key]
   }

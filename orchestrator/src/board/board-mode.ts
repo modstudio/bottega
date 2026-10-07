@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import {
   type BoardLocality,
+  classifyBoardId,
   decideBoardIdMode,
   decideBoardMode,
 } from '../../../shared/board-mode.ts'
@@ -39,6 +40,7 @@ export function boardModeForId(
   environment: Record<string, string | undefined> = process.env,
   database: Database = db(),
 ): 'local' | 'hosted' {
+  if (classifyBoardId(id) === 'local') return 'local'
   const decision = decideBoardIdMode({
     id,
     noun,

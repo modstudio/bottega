@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -15,6 +16,10 @@ import { postNotice, readNotices } from './board-service.ts'
 import type { BoardThreadState } from './board-thread-policy.ts'
 
 const clock = Date.parse('2026-10-05T12:00:00.000Z')
+const noRecordEnv = {
+  [CONFIG_HOME_ENV]: '/definitely-missing-config',
+  [HARNESS_ENV_FILE_ENV]: '',
+}
 const origin = {
   kind: 'architect',
   session: 'overview-author',
@@ -114,7 +119,7 @@ test('an unadopted overview ignores caller audience and stamps no delivery recei
   const listed = await listBoardOverview(
     {},
     {
-      env: { CLAUDE_CODE_SESSION_ID: 'overview-caller' },
+      env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: 'overview-caller' },
       clock,
     },
   )
