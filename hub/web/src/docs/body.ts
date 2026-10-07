@@ -5,7 +5,7 @@
 /** The text of a body's leading level-one ATX heading, when it has one. */
 export function leadingHeading(body: string): string | null {
   const first = body.split('\n').find((line) => line.trim() !== '')
-  const match = first === undefined ? null : /^#(?!#)[ \t]+(.*?)[ \t]*#*[ \t]*$/.exec(first)
+  const match = first === undefined ? null : /^#(?!#)[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/.exec(first)
   return match?.[1] ? match[1] : null
 }
 

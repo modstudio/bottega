@@ -31,6 +31,8 @@ test('a body that does not begin with a level-one heading is unchanged', () => {
 test('the leading heading text is the line readingBody removes, without closing hashes', () => {
   expect(leadingHeading('\n\n# Product philosophy ##\n\nBody.')).toBe('Product philosophy')
   expect(leadingHeading('# Title\n\nText.')).toBe('Title')
+  // A hash with no space before it is part of the heading, not a closing sequence.
+  expect(leadingHeading('# C#\n\nText.')).toBe('C#')
 })
 
 test('there is no leading heading when the body opens with prose or a deeper heading', () => {
