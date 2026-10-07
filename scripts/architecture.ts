@@ -1,7 +1,7 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { boardModules } from './architecture-board-modules.ts'
-import { importBoundaries } from './architecture-boundaries.ts'
+import { importBoundaries, metricModules } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { docModules } from './architecture-doc-modules.ts'
@@ -86,6 +86,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
   ]),
   ...docModules,
+  ...metricModules,
   module('orchestrator/src/doc/doc-owner.ts', [
     '../record/record-attribution.ts',
     '../record/record-auth.ts',

@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
@@ -182,16 +183,6 @@ async function claudeTokensByDay(since: string) {
 
 /** Distinct task keys committed per day, as the denominator for shipped work. */
 /**
- * Generated files, which are not work.
- *
- * Measured over fourteen days across the four repos, **81.5% of all line churn
- * was generated** - drizzle rewrites a 25-50k line schema snapshot on every
- * migration, so adding one column reads as a 23,000-line day. Left in, the
- * lines lens measures the ORM's verbosity rather than anything anyone did.
- */
-type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
-
-/**
  * What kind of file a change touched.
  *
  * Categorized rather than filtered, because the mix is itself information: a
@@ -209,36 +200,6 @@ type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
  * one project's window - but they are real work, and scoring them at zero would make
  * writing them look free.
  */
-const RULES: [FileKind, RegExp][] = [
-  ['generated', /drizzle\/(.*snapshot\.json$|meta\/)/],
-  [
-    'generated',
-    /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|composer\.lock|pnpm-lock\.yaml)$/,
-  ],
-  ['generated', /\.min\.(js|css)$/],
-  ['generated', /(^|\/)(dist|build|vendor|node_modules)\//],
-  ['generated', /\.(map|snap|svg|png|jpe?g|gif|ico|woff2?|ttf|pdf|lock)$/],
-  ['generated', /(^|\/)__snapshots__\//],
-  ['test', /\.(test|spec)\.[jt]sx?$/],
-  ['test', /\.integration\.test\./],
-  ['test', /(^|\/)__tests__\//],
-  ['test', /(^|\/)tests?\//i],
-  ['test', /Test\.php$/],
-  ['test', /_test\.(go|py|rb)$/],
-  ['test', /(^|\/)(cypress|e2e|playwright)\//],
-  ['docs', /\.mdx?$/],
-  ['docs', /(^|\/)docs?\//i],
-  ['config', /\.(ya?ml|toml|ini|conf)$/],
-  ['config', /(^|\/)\.[\w.-]+$/],
-  ['config', /\.config\.[jt]s$/],
-  ['config', /(^|\/)(tsconfig|package)\.json$/],
-]
-
-function categorize(file: string): FileKind {
-  for (const [kind, re] of RULES) if (re.test(file)) return kind
-  return 'product'
-}
-
 type DayActivity = {
   tasks: Set<string>
   commits: number
@@ -303,7 +264,7 @@ function activityByDay(since: string) {
       // "-" is git's marker for a binary file: no line count exists.
       if (add === undefined || add === '-' || !file) continue
       const row = get(day)
-      const kind = categorize(file)
+      const kind = categorizeFile(file)
       row.lines[kind] += Number(add) + Number(del ?? 0)
       if (kind === 'product') row.files.add(`${repo}:${file}`)
     }
