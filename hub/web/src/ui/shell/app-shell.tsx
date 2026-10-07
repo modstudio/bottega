@@ -292,7 +292,7 @@ function BrandCell({
     >
       <span
         className={classes(
-          'flex items-center gap-3 whitespace-nowrap font-semibold transition-opacity',
+          'flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase transition-opacity',
           collapsed &&
             canToggle &&
             'group-has-focus-visible/brand:opacity-0 group-hover/brand:opacity-0 [@media(hover:none)]:opacity-0',
@@ -352,7 +352,7 @@ export function AppShell({
   const pinnedByPanel = forced || docked > 0
   const collapsed = pinnedByPanel || rail === 'collapsed'
   const brand = (
-    <span className="flex items-center gap-3 whitespace-nowrap font-semibold">
+    <span className="flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase">
       {mark}
       {name}
     </span>

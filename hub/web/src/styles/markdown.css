@@ -153,3 +153,13 @@
 .markdown img {
   max-width: 100%;
 }
+/* The rule under the docs tabs runs the full width of the window, past the centred block. */
+.docs-chrome-rule::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: var(--border-default);
+  box-shadow: 0 0 0 100vmax var(--border-default);
+  clip-path: inset(0 -100vmax);
+}

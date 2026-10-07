@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
 import { Select } from '@/ui/listbox/select'
+import { PageHeader } from '@/ui/page-header/page-header'
 import { Popover } from '@/ui/popover/popover'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
@@ -87,14 +88,17 @@ function DocsChrome({
     ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
   ]
   return (
-    <div className="border-border-default border-b">
+    <div className="docs-chrome-rule relative">
       <div className="mx-auto flex w-full max-w-(--docs-width) flex-wrap items-end justify-between gap-3 px-5">
-        <Tabs
-          label="Audience"
-          value={audience}
-          onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
-          items={tabs}
-        />
+        {/* The tab list's own rule lies on the chrome's, so the selected marker sits on that line. */}
+        <div className="relative z-10">
+          <Tabs
+            label="Audience"
+            value={audience}
+            onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
+            items={tabs}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-3 py-2">
           {showProjectChooser ? (
             <div className="flex items-center gap-2">
@@ -314,11 +318,22 @@ export function DocsView({
   return (
     <div
       className={classes(
-        'flex flex-col bg-surface-sunken',
-        framed ? 'site-docs-chrome' : '',
-        framed ? 'min-h-dvh' : 'min-h-[calc(100dvh-var(--topbar-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
+        'flex flex-col',
+        // The public page sits on the site's ground; inside the app every surface is the page's own.
+        framed
+          ? 'site-docs-chrome min-h-dvh bg-surface-sunken'
+          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >
+      {framed ? null : (
+        <div className="px-4 md:px-8">
+          <PageHeader
+            title="Docs"
+            subtitle={`${model.userCount + model.technicalCount} documents`}
+            actions={createAction}
+          />
+        </div>
+      )}
       <DocsChrome
         audience={audience}
         onAudience={(next) => {
@@ -344,7 +359,7 @@ export function DocsView({
         }}
         inView={model.inView}
         active={model.active}
-        createAction={createAction}
+        createAction={framed ? createAction : null}
       />
       <div className="mx-auto grid min-h-0 w-full max-w-(--docs-width) flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
         <DocsRail
