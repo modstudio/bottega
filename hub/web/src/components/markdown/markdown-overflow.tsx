@@ -30,16 +30,16 @@ export function DocOverflow({
     return () => observer.disconnect()
   }, [])
   return (
-    <div className="doc-table">
+    <div className="doc-overflow">
       {wide ? (
-        <div className="doc-table-actions">
+        <div className="doc-overflow-actions">
           <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
             <Maximize2 size={13} />
             {expandLabel}
           </Button>
         </div>
       ) : null}
-      <div className="doc-table-scroll" ref={scroller}>
+      <div className="doc-overflow-scroll" ref={scroller}>
         {children}
       </div>
       {open ? (
@@ -49,7 +49,7 @@ export function DocOverflow({
           title={title}
           className="w-[min(96rem,calc(100vw-3rem))] max-w-none"
         >
-          <div className="markdown doc-table-full">{children}</div>
+          <div className="markdown doc-overflow-full">{children}</div>
         </Dialog>
       ) : null}
     </div>

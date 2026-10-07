@@ -192,16 +192,16 @@
   border: 0;
   border-top: 1px solid var(--border-default);
 }
-/* A table wider than the measure scrolls inside it instead of running under the next column. */
-.markdown .doc-table {
+/* Content wider than the measure scrolls inside it instead of running under the next column. */
+.markdown .doc-overflow {
   margin: 0.75rem 0 0;
 }
-.markdown .doc-table-actions {
+.markdown .doc-overflow-actions {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 0.5rem;
 }
-.markdown .doc-table-scroll {
+.markdown .doc-overflow-scroll {
   max-width: 100%;
   overflow-x: auto;
 }
@@ -215,14 +215,14 @@
   min-width: 7rem;
   max-width: 24rem;
 }
-/* Opened at the window's width: no measure, and the table's own scroll only if it still needs one. */
-.markdown.doc-table-full {
+/* Opened at the window's width: no measure, and the content's own scroll only if it still needs one. */
+.markdown.doc-overflow-full {
   max-width: none;
   max-height: calc(100dvh - 10rem);
   overflow: auto;
 }
-.markdown.doc-table-full td,
-.markdown.doc-table-full th {
+.markdown.doc-overflow-full td,
+.markdown.doc-overflow-full th {
   max-width: 36rem;
 }
 .markdown th,

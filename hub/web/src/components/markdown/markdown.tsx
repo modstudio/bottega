@@ -1,10 +1,10 @@
-import { isValidElement, type ReactNode, useEffect, useState } from 'react'
+import { isValidElement, type ReactNode, useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { secondLevelHeadings } from '@/docs/headings'
 import { Callout } from '@/ui/callout/callout'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
-import { fenceUse, markdownImportNeeds } from './markdown-fences'
+import { fenceUse } from './markdown-fences'
 import { DocOverflow } from './markdown-overflow'
 
 const HIGHLIGHT_OPTIONS: { detect: boolean; plainText: string[] } = {
@@ -56,9 +56,22 @@ function MermaidSlot({ source }: { source: string }) {
   return <Block source={source} />
 }
 
-function DocPre({ children, node: _node, ...props }: { children?: ReactNode; node?: unknown }) {
+function DocPre({
+  children,
+  node: _node,
+  onHighlightNeeded,
+  ...props
+}: {
+  children?: ReactNode
+  node?: unknown
+  onHighlightNeeded: () => void
+}) {
   const child = Array.isArray(children) ? children[0] : children
-  if (fenceUse(nodeLanguage(child)) === 'diagram' && isValidElement(child)) {
+  const use = fenceUse(nodeLanguage(child))
+  useEffect(() => {
+    if (use === 'highlight') onHighlightNeeded()
+  }, [use, onHighlightNeeded])
+  if (use === 'diagram' && isValidElement(child)) {
     return <MermaidSlot source={nodeText((child.props as { children?: ReactNode }).children)} />
   }
   return <pre {...props}>{children}</pre>
@@ -104,8 +117,9 @@ function useHighlight(needed: boolean) {
 // Raw HTML in a doc is NOT rendered (react-markdown's default).
 export function Markdown({ content }: { content: string }) {
   const headings = secondLevelHeadings(content)
-  const needs = markdownImportNeeds(content)
-  const highlight = useHighlight(needs.highlight)
+  const [highlightNeeded, setHighlightNeeded] = useState(false)
+  const requestHighlight = useCallback(() => setHighlightNeeded(true), [])
+  const highlight = useHighlight(highlightNeeded)
   let heading = 0
   return (
     <div className="markdown">
@@ -123,7 +137,7 @@ export function Markdown({ content }: { content: string }) {
             return <h2 id={id}>{children}</h2>
           },
           table: ({ children }) => <DocTable>{children}</DocTable>,
-          pre: DocPre,
+          pre: (props) => <DocPre {...props} onHighlightNeeded={requestHighlight} />,
           div: DocCallout,
         }}
       >

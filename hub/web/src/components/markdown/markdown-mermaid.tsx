@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify'
 import { useEffect, useRef, useState } from 'react'
 import { DocOverflow } from './markdown-overflow'
 
@@ -5,6 +6,16 @@ type DrawState =
   | { kind: 'pending' }
   | { kind: 'drawn'; svg: string }
   | { kind: 'failed'; reason: string }
+
+const MERMAID_SECURE_EXTRA = ['htmlLabels', 'themeCSS', 'fontFamily', 'altFontFamily']
+
+const SVG_PURIFY = {
+  USE_PROFILES: { svg: true, svgFilters: true },
+  FORBID_TAGS: ['foreignObject', 'img', 'image', 'style'],
+  FORBID_ATTR: ['style'],
+}
+
+let purifyHooked = false
 
 /**
  * A mermaid fence: the source while the library loads, the drawing once it
@@ -90,10 +101,13 @@ let mermaidSeq = 0
 
 async function drawMermaid(source: string, dark: boolean): Promise<string> {
   const mermaid = (await import('mermaid')).default
+  const defaultSecure = mermaid.mermaidAPI.defaultConfig.secure ?? []
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
     suppressErrorRendering: true,
+    htmlLabels: false,
+    secure: [...defaultSecure, ...MERMAID_SECURE_EXTRA],
     theme: 'base',
     darkMode: dark,
     fontFamily: cssToken('--family-mono'),
@@ -107,7 +121,26 @@ async function drawMermaid(source: string, dark: boolean): Promise<string> {
   await mermaid.parse(source)
   const id = `docmmd${mermaidSeq++}`
   const { svg } = await mermaid.render(id, source)
-  return svg
+  return sanitizeMermaidSvg(svg)
+}
+
+/** Strip diagram markup that could restyle the page or load a foreign resource. */
+function sanitizeMermaidSvg(svg: string): string {
+  if (!purifyHooked) {
+    DOMPurify.addHook('afterSanitizeAttributes', forbidExternalUse)
+    purifyHooked = true
+  }
+  return DOMPurify.sanitize(svg, SVG_PURIFY)
+}
+
+function forbidExternalUse(node: Element) {
+  if (node.nodeName.toLowerCase() !== 'use') return
+  const href =
+    node.getAttribute('href') ??
+    node.getAttribute('xlink:href') ??
+    node.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ??
+    ''
+  if (href !== '' && !href.startsWith('#')) node.remove()
 }
 
 function cssToken(name: string): string {
