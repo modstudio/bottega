@@ -206,6 +206,72 @@ describe('git guard', () => {
     }
   })
 
+  test('allows only listed worktree subcommands without program options', () => {
+    const { databasePath, worktree } = fixture()
+    const commands = [
+      'git status',
+      'git commit',
+      'git rebase main',
+      'git config user.name test',
+      'git remote -v',
+      'git x',
+      'git rebase --exec true main',
+      'git rebase -x true main',
+      'git fetch --upload-pack=true origin',
+      'git grep -O less pattern',
+      'git diff --ext-diff',
+      'git log --output=/tmp/log',
+    ]
+    const decisions = invokeMany(
+      databasePath,
+      commands.map((command) => ({ cwd: worktree, command })),
+    )
+    expect(decisions.map((decision) => decision?.permissionDecision ?? null)).toEqual([
+      'allow',
+      'allow',
+      'allow',
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ])
+  })
+
+  test('withholds scoped push allow for remote helpers but still asks on force', () => {
+    const { databasePath, worktree } = fixture()
+    const decisions = invokeMany(databasePath, [
+      {
+        cwd: worktree,
+        command: 'git push --force-with-lease origin feature:feature',
+      },
+      {
+        cwd: worktree,
+        command: 'git push --force-with-lease --receive-pack=true origin feature:feature',
+      },
+      {
+        cwd: worktree,
+        command: 'git push --force --receive-pack=true origin feature:feature',
+      },
+    ])
+    expect(decisions.map((decision) => decision?.permissionDecision ?? null)).toEqual([
+      'allow',
+      null,
+      'ask',
+    ])
+  })
+
+  test('finds a listed subcommand after global options', () => {
+    const { databasePath, outside, worktree } = fixture()
+    expect(invoke(databasePath, outside, `git -C ${worktree} status`)?.permissionDecision).toBe(
+      'allow',
+    )
+  })
+
   test('falls through outside registered worktrees and for ambiguous commands', () => {
     const { databasePath, outside, worktree } = fixture()
     expect(invoke(databasePath, outside, 'git status')).toBeNull()

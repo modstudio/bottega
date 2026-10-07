@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Judge destructive pushes and allow git inside registered throwaway worktrees.
+"""Judge destructive pushes and allow selected git commands in throwaway worktrees.
 
-A push that can destroy refs on a shared remote asks unless every target is an
-ordinary named branch and the operation is lease-guarded or deletes it. Other
-git commands are allowed only beneath a registered project's worktree root.
-Commands outside those cases fall through to the harness permission flow.
+A push that can destroy refs on a shared remote asks. Lease-guarded pushes and
+deletions of ordinary named branches are allowed when they select no alternate
+remote program. Other git commands are allowed only when their subcommand is on
+a named list, they act beneath a registered project's worktree root, and they
+carry no repository redirection or program-executing option. All others fall
+through.
 """
 
 import json
@@ -25,6 +27,20 @@ SCOPED_FLAGS = ("--delete", "-d", "--force-if-includes")
 BROAD_FLAGS = ("--force", "-f", "--mirror", "--prune", "--all", "--branches", "--tags")
 # Push options that consume the following argument.
 VALUE_OPTS = ("-o", "--push-option", "--repo", "--receive-pack", "--exec")
+
+WORKTREE_SUBCOMMANDS = {
+    "status", "diff", "log", "show", "blame", "grep", "ls-files", "ls-tree",
+    "cat-file", "rev-parse", "rev-list", "merge-base", "show-ref",
+    "for-each-ref", "symbolic-ref", "name-rev", "describe", "reflog",
+    "shortlog", "add", "rm", "mv", "restore", "commit", "switch",
+    "checkout", "branch", "tag", "merge", "rebase", "cherry-pick", "revert",
+    "reset", "stash", "clean", "apply", "am", "fetch", "pull", "worktree",
+}
+PUSH_PROGRAM_OPTIONS = ("--exec", "--receive-pack")
+PROGRAM_EXECUTING_OPTIONS = (
+    "-x", *PUSH_PROGRAM_OPTIONS, "--upload-pack", "-O",
+    "--open-files-in-pager", "--ext-diff", "--output",
+)
 
 PROTECTED_BRANCHES = {
     "main", "master", "develop", "dev", "trunk",
@@ -228,6 +244,11 @@ def push_verdict(argv, protected):
     if "push" not in head:
         return None
     args = head[head.index("push") + 1:]
+    runs_remote_program = any(
+        arg == option or arg.startswith(option + "=")
+        for arg in args
+        for option in PUSH_PROGRAM_OPTIONS
+    )
     expanded = []
     for arg in args:
         if re.fullmatch(r"-[A-Za-z]{2,}", arg):
@@ -270,7 +291,38 @@ def push_verdict(argv, protected):
         return None
     if broad or not refspecs:
         return "ask"
+    if runs_remote_program:
+        return None
     return "safe"
+
+
+def git_subcommand(argv):
+    """Return the git subcommand after global options and their values."""
+    value_options = {
+        "-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace",
+        "--exec-path", "--super-prefix",
+    }
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if not arg.startswith("-"):
+            return arg
+        if arg in value_options:
+            index += 2
+        else:
+            index += 1
+    return None
+
+
+def worktree_command_allowed(argv):
+    """Whether the invocation is a listed command with no program option."""
+    if git_subcommand(argv) not in WORKTREE_SUBCOMMANDS:
+        return False
+    return not any(
+        arg == option or (option.startswith("--") and arg.startswith(option))
+        for arg in argv[1:]
+        for option in PROGRAM_EXECUTING_OPTIONS
+    )
 
 
 def is_throwaway_worktree(directory, worktree_root):
@@ -304,7 +356,10 @@ def main():
             return decide("allow", "lease-guarded or feature-branch push")
 
         worktree_root = os.path.join(root, WORKTREE_DIRECTORY) if root else None
-        if is_throwaway_worktree(directory, worktree_root):
+        if (
+            is_throwaway_worktree(directory, worktree_root)
+            and worktree_command_allowed(argv)
+        ):
             return decide("allow", f"git confined to throwaway worktree {directory}")
         return 0
     except Exception:
