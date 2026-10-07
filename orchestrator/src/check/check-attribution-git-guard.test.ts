@@ -310,6 +310,15 @@ describe('git guard', () => {
       'git tag -f v1',
       'git symbolic-ref HEAD',
       'git reflog expire',
+      'git stash pop',
+      'git fetch --refmap=refs/heads/main:refs/heads/main origin main',
+      'git fetch -u origin main',
+      'git cherry-pick --strategy=evil HEAD',
+      'git pull -s evil origin main',
+      'git apply --build-fake-ancestor=../x patch.diff',
+      'git rebase --exe=true main',
+      'git push --del origin main',
+      'git push --mir origin',
     ]
     expect(
       invokeMany(
@@ -339,6 +348,15 @@ describe('git guard', () => {
       null,
       null,
       null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      'ask',
+      'ask',
     ])
   })
 

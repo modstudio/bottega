@@ -59,10 +59,10 @@ WORKTREE_COMMAND_POLICIES = {
     "commit": {},
     "clean": {},
     "reset": {},
-    "revert": {},
-    "cherry-pick": {},
+    "revert": {"long": ("--strategy",)},
+    "cherry-pick": {"long": ("--strategy",)},
     "am": {},
-    "apply": {"long": ("--unsafe-paths", "--directory")},
+    "apply": {"long": ("--unsafe-paths", "--directory", "--build-fake-ancestor")},
     "switch": {"long": ("--ignore-other-worktrees",)},
     "checkout": {"long": ("--ignore-other-worktrees",)},
     "merge": {"short": "s", "long": ("--strategy",)},
@@ -77,12 +77,22 @@ WORKTREE_COMMAND_POLICIES = {
             "--set-upstream-to", "--unset-upstream",
         ),
     },
-    "stash": {"blocked_actions": ("clear", "drop")},
+    # The stash is one list shared by every worktree of the repository.
+    "stash": {"blocked_actions": ("clear", "drop", "pop", "branch")},
     "worktree": {"only_action": "list"},
-    "fetch": {"fetch_or_pull": True},
-    "pull": {"fetch_or_pull": True},
+    "fetch": {"fetch_or_pull": True, "short": "u", "long": ("--refmap",)},
+    "pull": {
+        "fetch_or_pull": True,
+        "short": "su",
+        "long": ("--refmap", "--strategy"),
+    },
 }
 PUSH_PROGRAM_OPTIONS = ("--exec", "--receive-pack")
+PUSH_DESTRUCTIVE_LONG = (
+    "--force", "--force-with-lease", "--force-if-includes", "--delete",
+    "--mirror", "--prune", "--all", "--branches", "--tags", "--repo",
+    *PUSH_PROGRAM_OPTIONS,
+)
 REMOTE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 PROTECTED_BRANCHES = {
@@ -321,7 +331,12 @@ def push_verdict(argv, protected):
             if letters.endswith("o"):
                 skip = True
             continue
-        if arg.startswith("--force-with-lease") or arg in SCOPED_FLAGS:
+        # Git expands an unambiguous prefix such as --del or --mir; an
+        # incomplete name that could become a destructive option asks.
+        name = arg.split("=", 1)[0]
+        if name not in PUSH_DESTRUCTIVE_LONG and abbreviates(name, PUSH_DESTRUCTIVE_LONG):
+            destructive = broad = True
+        elif arg.startswith("--force-with-lease") or arg in SCOPED_FLAGS:
             destructive = True
         elif arg in BROAD_FLAGS or arg.startswith("--force"):
             destructive = broad = True
@@ -370,10 +385,21 @@ def git_subcommand(argv):
     return argv[index] if index is not None else None
 
 
+def abbreviates(name, options):
+    """Whether git could expand name, an incomplete long option, to one of options."""
+    return (
+        len(name) > 2
+        and name.startswith("--")
+        and any(option.startswith(name) for option in options)
+    )
+
+
 def has_long_option(args, *options, prefix=False):
-    """Whether args contain a named long option, including its equals form."""
+    """Whether args contain a named long option, its equals form, or a prefix of it."""
     return any(
-        arg == option or arg.startswith(option if prefix else option + "=")
+        arg == option
+        or arg.startswith(option if prefix else option + "=")
+        or abbreviates(arg.split("=", 1)[0], (option,))
         for arg in args
         for option in options
     )
@@ -441,11 +467,14 @@ def worktree_command_allowed(argv):
             return False
         if has_long_option(args, "--update-head-ok"):
             return False
-        recurse = [arg for arg in args if arg.startswith("--recurse-submodules")]
-        if any(arg != "--recurse-submodules=no" for arg in recurse):
+        if any(
+            arg != "--recurse-submodules=no"
+            and abbreviates(arg.split("=", 1)[0], ("--recurse-submodules",))
+            for arg in args
+        ):
             return False
         positionals = command_positionals(
-            args, short_value_options=("-j", "-o", "-u", "-s", "-X", "-S"),
+            args, short_value_options=("-j", "-o", "-X", "-S"),
         )
         if not positionals:
             return True
