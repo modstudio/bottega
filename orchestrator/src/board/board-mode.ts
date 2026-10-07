@@ -3,7 +3,6 @@
 import type { Database } from 'bun:sqlite'
 import {
   type BoardLocality,
-  classifyBoardId,
   decideBoardIdMode,
   decideBoardMode,
 } from '../../../shared/board-mode.ts'
@@ -27,7 +26,7 @@ export function boardMode(
 ): 'local' | 'hosted' {
   const decision = decideBoardMode({
     adopted: boardHasAdoptedHosted(database),
-    hostedConfigured: Boolean(resolveRecordApiUrl(environment)?.trim()),
+    hostedConfigured: () => Boolean(resolveRecordApiUrl(environment)?.trim()),
     locality,
   })
   if (decision.mode === 'refused') throw new Error(decision.reason)
@@ -40,12 +39,11 @@ export function boardModeForId(
   environment: Record<string, string | undefined> = process.env,
   database: Database = db(),
 ): 'local' | 'hosted' {
-  if (classifyBoardId(id) === 'local') return 'local'
   const decision = decideBoardIdMode({
     id,
     noun,
     adopted: boardHasAdoptedHosted(database),
-    hostedConfigured: Boolean(resolveRecordApiUrl(environment)?.trim()),
+    hostedConfigured: () => Boolean(resolveRecordApiUrl(environment)?.trim()),
   })
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode
