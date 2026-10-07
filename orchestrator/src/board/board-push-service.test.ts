@@ -129,20 +129,20 @@ function runHookRepeated(
   const result = Bun.spawnSync(
     ['python3', '-c', runner, path, payload, String(times), JSON.stringify(pendingValues)],
     {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: {
-      ...process.env,
-      ORCH_RUN_ID: '',
-      ORCH_DB: fixture.databasePath,
-      ORCH_BOARD_BIN: fixture.command,
-      BOARD_PUSH_REFRESH_SECONDS: '60',
-      BOARD_PUSH_REMIND_SECONDS: '300',
-      BOARD_PUSH_RETRY_SECONDS: '15',
-      BOARD_ACK_STOP_BLOCKS: '3',
-      BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
-      ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
-    },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        ORCH_RUN_ID: '',
+        ORCH_DB: fixture.databasePath,
+        ORCH_BOARD_BIN: fixture.command,
+        BOARD_PUSH_REFRESH_SECONDS: '60',
+        BOARD_PUSH_REMIND_SECONDS: '300',
+        BOARD_PUSH_RETRY_SECONDS: '15',
+        BOARD_ACK_STOP_BLOCKS: '3',
+        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
+        ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
+      },
     },
   )
   expect(result.exitCode).toBe(0)
@@ -381,9 +381,14 @@ test('PostToolUse runs correctly without following an unreadable marker symlink'
 
 test('Stop blocks three times and allows the fourth with a system message', () => {
   const item = createHookFixture(hookOutput)
-  const values = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 4).map(
-    (value) => JSON.parse(value),
-  )
+  const pendingValues = Array.from({ length: 4 }, () => JSON.parse(hookOutput).notices)
+  const values = runHookRepeated(
+    guardHook,
+    JSON.stringify({ session_id: 'reader' }),
+    item,
+    4,
+    pendingValues,
+  ).map((value) => JSON.parse(value))
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
   expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
   expect(values[3].systemMessage).toStartWith(
@@ -394,15 +399,9 @@ test('Stop blocks three times and allows the fourth with a system message', () =
 test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {
   const item = createHookFixture(hookOutput)
   const payload = JSON.stringify({ session_id: 'reader' })
-  const more = JSON.stringify({
-    notices: [
-      ...JSON.parse(hookOutput).notices,
-      { id: '8', text: 'second notice' },
-      { id: '9', text: 'third notice' },
-    ],
-  })
-  setCommandOutputs(item, [hookOutput, hookOutput, more, more, '{"notices":[]}', hookOutput])
-  const values = runHookRepeated(guardHook, payload, item, 6)
+  const one = JSON.parse(hookOutput).notices
+  const more = [...one, { id: '8', text: 'second notice' }, { id: '9', text: 'third notice' }]
+  const values = runHookRepeated(guardHook, payload, item, 6, [one, one, more, more, [], one])
   expect(values.slice(0, 3).every((value) => JSON.parse(value).decision === 'block')).toBe(true)
   expect(JSON.parse(values[3]!).decision).toBeUndefined()
   expect(values[4]).toBe('')
@@ -417,7 +416,9 @@ test('Stop treats an unreadable counter as zero and does not follow its symlink'
   writeFileSync(target, 'sentinel')
   symlinkSync(target, join(root, createHash('sha256').update('reader').digest('hex')))
 
-  const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), item)
-  expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+  const [result] = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 1, [
+    JSON.parse(hookOutput).notices,
+  ])
+  expect(JSON.parse(result!).decision).toBe('block')
   expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
