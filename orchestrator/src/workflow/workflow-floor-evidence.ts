@@ -27,7 +27,12 @@ import {
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
-import { decideRunBinding, sessionOrAdopterMatch } from './workflow-run-binding.ts'
+import {
+  type BoundRun,
+  decideRunBinding,
+  type SessionMatch,
+  sessionOrAdopterMatch,
+} from './workflow-run-binding.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
@@ -321,15 +326,7 @@ function gatherReview(
   }
 }
 
-type RunBinding = {
-  project: string | null
-  launchKey: string | null
-  branch: string | null
-  sessionId: string | null
-  createdAt: string
-}
-
-function loadRunBinding(runId: number, d: Database): RunBinding | null {
+function loadRunBinding(runId: number, d: Database): BoundRun | null {
   const row = d
     .query<
       {
@@ -377,7 +374,7 @@ function sessionOrAdopterFor(
   cursorSession: string | null,
   actorSession: string | null,
   d: Database,
-): { sessionMatches: boolean; sessionAdoptedCursor: boolean } {
+): SessionMatch {
   const adoptionReasons =
     cursorSession !== null && actorSession !== null
       ? loadAdoptionReasons(cursorId, actorSession, d)
@@ -387,24 +384,13 @@ function sessionOrAdopterFor(
 
 function requireRunBinding(
   flag: string,
-  run: RunBinding,
+  run: BoundRun,
   identity: CursorIdentity,
   cursorId: number,
   d: Database,
 ): void {
   const session = sessionOrAdopterFor(cursorId, identity.session, run.sessionId, d)
-  const refusal = decideRunBinding({
-    flag,
-    run,
-    identity: {
-      project: identity.project,
-      workflowKey: identity.workflowKey,
-      branch: identity.branch,
-      session: identity.session,
-      createdAt: identity.createdAt,
-    },
-    ...session,
-  })
+  const refusal = decideRunBinding({ flag, run, identity, ...session })
   if (refusal) throw new Error(refusal)
 }
 

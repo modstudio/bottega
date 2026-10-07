@@ -9,13 +9,15 @@ type RunBindingIdentity = {
   createdAt: string
 }
 
-type BoundRun = {
+export type BoundRun = {
   project: string | null
   launchKey: string | null
   branch: string | null
   sessionId: string | null
   createdAt: string
 }
+
+export type SessionMatch = { sessionMatches: boolean; sessionAdoptedCursor: boolean }
 
 const KEYLESS_REMEDY =
   "dispatch the run from the cursor's owning session after composing the workflow, or pass --key once a task exists"
@@ -25,7 +27,7 @@ export function sessionOrAdopterMatch(input: {
   cursorSession: string | null
   actorSession: string | null
   adoptionReasons: Array<string | null>
-}): { sessionMatches: boolean; sessionAdoptedCursor: boolean } {
+}): SessionMatch {
   const adoption =
     input.cursorSession !== null && input.actorSession !== null
       ? `adopted from gone owner ${input.cursorSession} by ${input.actorSession}`
