@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { mapDoc, mapSearchMatch, mapTreeItem } from './map.ts'
@@ -52,18 +52,21 @@ export function useDocsDocument(source: DocsSource, selected: DocsTreeItem | nul
       slug: selected?.slug ?? '',
     }),
     enabled: source === 'local' && Boolean(selected && localScope),
+    placeholderData: keepPreviousData,
   })
   const hosted = useQuery({
     ...trpc.record.doc.queryOptions({
       id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
     }),
     enabled: source === 'hosted' && Boolean(selected?.id),
+    placeholderData: keepPreviousData,
   })
   const published = useQuery({
     ...hostedTrpc.publicDocs.get.queryOptions({
       id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
     }),
     enabled: source === 'public' && Boolean(selected?.id),
+    placeholderData: keepPreviousData,
   })
   const result = source === 'local' ? local : source === 'hosted' ? hosted : published
   const document: DocsDoc | null = result.data

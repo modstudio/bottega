@@ -382,6 +382,7 @@ export function DocsView({
         />
         <DocsReading
           doc={visible}
+          pending={!visible && (Boolean(model.selected) || !ready)}
           crumbs={model.crumbs}
           around={model.around}
           onSelect={onSelect}

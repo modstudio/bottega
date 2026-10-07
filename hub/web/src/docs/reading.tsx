@@ -27,8 +27,11 @@ export function DocsReading({
   onSelect,
   localActions,
   error,
+  pending,
 }: {
   doc: DocsDoc | null
+  /** A document is chosen and on its way, so the pane stays quiet rather than saying there is none. */
+  pending: boolean
   crumbs: readonly BreadcrumbPart[]
   around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
   onSelect: (item: DocsTreeItem) => void
@@ -90,7 +93,7 @@ export function DocsReading({
             )}
           </div>
         </>
-      ) : (
+      ) : pending ? null : (
         <p className="text-md text-text-muted">No document to show.</p>
       )}
     </main>
