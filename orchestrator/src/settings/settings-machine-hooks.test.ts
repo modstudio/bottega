@@ -25,8 +25,8 @@ test('machine board hooks cover every tool and Stop with the shared budgets', ()
     expect(command).toContain(`BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`)
     expect(command).toContain('ORCH_BOARD_HOOK_STATE=')
   }
-  expect(commands[0]).toContain('board-interrupt.py')
-  expect(commands[1]).toContain('board-ack-guard.py')
+  expect(commands[0]).toMatch(/python3 '[^']*\/board-interrupt\.py'$/)
+  expect(commands[1]).toMatch(/python3 '[^']*\/board-ack-guard\.py'$/)
   expect(hooks.PostToolUse?.[0]?.hooks[0]?.timeout).toBeGreaterThanOrEqual(
     BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1,
   )

@@ -25,6 +25,7 @@ function command(file: string): string {
     `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
     `ORCH_DB=${shellQuote(database)}`,
     `ORCH_BOARD_HOOK_STATE=${shellQuote(join(dirname(database), 'board-hook-state'))}`,
+    'python3',
     shellQuote(assetPath('orchestrator', 'hooks', file)),
   ].join(' ')
 }
