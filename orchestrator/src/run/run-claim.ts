@@ -71,8 +71,11 @@ import {
   type runFilePaths,
   runScratchDir,
   writeDispatchState,
+  writeGeneratedSchema,
 } from './run-artifacts.ts'
+import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import {
+  claimedRunBranch,
   decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
@@ -140,6 +143,7 @@ export type ClaimInput = {
   timeoutMs: number
   forbidsRepo: boolean
   reviewTarget: { branch: string; commit: string; base: string } | null
+  implicitReview: { branch: string | null; findings: boolean }
   coverageBase: string | null
   readOnlyBase: string | null
   deferredCwdMcpPreflight: boolean
@@ -206,6 +210,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     timeoutMs,
     forbidsRepo,
     reviewTarget,
+    implicitReview,
     coverageBase,
     readOnlyBase,
     deferredCwdMcpPreflight,
@@ -240,14 +245,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * is a deliberate act by someone who wants a different contract, and silently
    * overriding it would make the flag a lie.
    */
-  const originalSchemaPath =
-    generatedSchema && !opts.schemaPath
-      ? (() => {
-          const p = join(runsDir, `${stamp}.schema.json`)
-          writeFileSync(p, JSON.stringify(generatedSchema, null, 2))
-          return p
-        })()
-      : opts.schemaPath
+  const originalSchemaPath = writeGeneratedSchema(runsDir, stamp, generatedSchema, opts.schemaPath)
   const textReplyContract = !opts.schemaPath && generatedSchema === TEXT_REPLY_SCHEMA
   // Codex's --output-schema is OpenAI strict structured output. Its copy is
   // normalized beside the prompt; the caller's file remains byte-for-byte
@@ -265,21 +263,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const recordId = newRecordId()
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
-    resume.workspaceSource === 'retained'
-      ? (db()
-          .query(
-            `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, task_record_id
-             FROM run WHERE id=?`,
-          )
-          .get(opts.resume!.parent) as {
-          launch_cwd: string | null
-          launch_seed: string | null
-          launch_key: string | null
-          launch_base: string | null
-          no_failover: number
-          task_record_id: string | null
-        })
-      : null
+    resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
+  const recordedBranch = (worktreeBranch: string | null) =>
+    claimedRunBranch(
+      reviewTarget?.branch ?? null,
+      implicitReview.branch,
+      implicitReview.findings ? (inheritedLaunch?.branch ?? null) : null,
+      worktreeBranch,
+    )
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   // A read-only run's key is an address on its record, not an input to the
@@ -623,7 +614,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               .run(
                 created.path,
                 created.path,
-                reviewTarget?.branch ?? (created.branch || null),
+                recordedBranch(created.branch),
                 created.mintedBranch ?? null,
                 coverageBase ?? created.base,
                 created.source ?? null,
@@ -810,7 +801,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           .run(
             inheritedWorktree.path,
             inheritedWorktree.path,
-            reviewTarget?.branch ?? (inheritedWorktree.branch || null),
+            recordedBranch(inheritedWorktree.branch),
             inheritedWorktree.mintedBranch ?? null,
             coverageBase ?? inheritedWorktree.base,
             inheritedWorktree.source ?? null,

@@ -8,12 +8,21 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
   emptyReviewRefusal,
+  implicitReviewBranch,
+  implicitReviewBranchFrom,
   implicitReviewRefusal,
   reviewArtifactBlock,
   reviewTrunkRef,
 } from './review-target.ts'
 
 describe('review target', () => {
+  test('implicit review branch excludes trunk and detached HEAD', () => {
+    expect(implicitReviewBranch).toBeFunction()
+    expect(implicitReviewBranchFrom('DEV-1147-branch', 'main')).toBe('DEV-1147-branch')
+    expect(implicitReviewBranchFrom('main', 'main')).toBeNull()
+    expect(implicitReviewBranchFrom(null, 'main')).toBeNull()
+  })
+
   test('names the resolved artifact and makes checkout HEAD authoritative', () => {
     const prompt = reviewArtifactBlock({
       branch: 'DEV-911-fix',
