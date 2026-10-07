@@ -32,6 +32,7 @@ export const uiLayers: { name: string; folders: string[] }[] = [
       'tabs',
       'segmented',
       'empty-state',
+      'callout',
       'stat',
       'table',
       'page-header',

@@ -124,6 +124,69 @@
   font-size: 0.84375rem;
   color: var(--text-secondary);
 }
+.markdown [role="note"] {
+  margin: 1.125rem 0 0;
+}
+.markdown [role="note"] > div > :first-child {
+  margin-top: 0.25rem;
+}
+.markdown [role="note"] p,
+.markdown [role="note"] ul,
+.markdown [role="note"] ol {
+  color: inherit;
+}
+.markdown .doc-mermaid svg {
+  display: block;
+  max-width: none;
+}
+.markdown .doc-mermaid-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: var(--status-text);
+}
+.markdown pre code.hljs {
+  color: var(--text-secondary);
+}
+.markdown .hljs-comment,
+.markdown .hljs-quote {
+  color: var(--text-muted);
+}
+.markdown .hljs-keyword,
+.markdown .hljs-selector-tag,
+.markdown .hljs-addition,
+.markdown .hljs-title,
+.markdown .hljs-section,
+.markdown .hljs-name,
+.markdown .hljs-selector-id,
+.markdown .hljs-selector-class,
+.markdown .hljs-built_in {
+  color: var(--text-primary);
+}
+.markdown .hljs-number,
+.markdown .hljs-string,
+.markdown .hljs-meta,
+.markdown .hljs-literal,
+.markdown .hljs-doctag,
+.markdown .hljs-regexp {
+  color: var(--accent-text);
+}
+.markdown .hljs-attribute,
+.markdown .hljs-attr,
+.markdown .hljs-variable,
+.markdown .hljs-template-variable,
+.markdown .hljs-type,
+.markdown .hljs-symbol,
+.markdown .hljs-bullet,
+.markdown .hljs-link,
+.markdown .hljs-deletion {
+  color: var(--text-secondary);
+}
+.markdown .hljs-emphasis {
+  font-style: italic;
+}
+.markdown .hljs-strong {
+  font-weight: 600;
+}
 .markdown hr {
   margin: 2rem 0 0;
   border: 0;

@@ -1,71 +1,130 @@
-import { Maximize2 } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { isValidElement, type ReactNode, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { secondLevelHeadings } from '@/docs/headings'
-import { Button } from '@/ui/button/button'
-import { Dialog } from '@/ui/dialog/dialog'
+import { Callout } from '@/ui/callout/callout'
+import { githubAlertPlugin, isTone } from './markdown-alerts'
+import { fenceUse, markdownImportNeeds } from './markdown-fences'
+import { DocOverflow } from './markdown-overflow'
 
-/**
- * A table scrolls inside the reading measure. One too wide for it also offers to open at the
- * window's width, where its columns can be read side by side.
- */
+const HIGHLIGHT_OPTIONS: { detect: boolean; plainText: string[] } = {
+  detect: false,
+  plainText: ['mermaid'],
+}
+
 function DocTable({ children }: { children: ReactNode }) {
-  const scroller = useRef<HTMLDivElement>(null)
-  const [wide, setWide] = useState(false)
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    const node = scroller.current
-    if (!node) return
-    const measure = () => setWide(node.scrollWidth > node.clientWidth + 1)
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
   return (
-    <div className="doc-table">
-      {wide ? (
-        <div className="doc-table-actions">
-          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-            <Maximize2 size={13} />
-            Expand table
-          </Button>
-        </div>
-      ) : null}
-      <div className="doc-table-scroll" ref={scroller}>
-        <table>{children}</table>
-      </div>
-      {open ? (
-        <Dialog
-          open
-          onOpenChange={setOpen}
-          title="Table"
-          className="w-[min(96rem,calc(100vw-3rem))] max-w-none"
-        >
-          <div className="markdown doc-table-full">
-            <table>{children}</table>
-          </div>
-        </Dialog>
-      ) : null}
-    </div>
+    <DocOverflow expandLabel="Expand table" title="Table">
+      <table>{children}</table>
+    </DocOverflow>
   )
+}
+
+function nodeLanguage(node: unknown): string | undefined {
+  if (!isValidElement(node)) return undefined
+  const className = (node.props as { className?: unknown }).className
+  if (typeof className !== 'string') return undefined
+  const match = /(?:^|\s)language-([^\s]+)/.exec(className)
+  return match?.[1]
+}
+
+function nodeText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join('')
+  if (isValidElement(node)) return nodeText((node.props as { children?: ReactNode }).children)
+  return ''
+}
+
+function MermaidSlot({ source }: { source: string }) {
+  const [Block, setBlock] = useState<null | ((props: { source: string }) => ReactNode)>(null)
+  useEffect(() => {
+    let live = true
+    void import('./markdown-mermaid').then((mod) => {
+      if (live) setBlock(() => mod.MermaidBlock)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  if (!Block) {
+    return (
+      <pre>
+        <code>{source}</code>
+      </pre>
+    )
+  }
+  return <Block source={source} />
+}
+
+function DocPre({ children, node: _node, ...props }: { children?: ReactNode; node?: unknown }) {
+  const child = Array.isArray(children) ? children[0] : children
+  if (fenceUse(nodeLanguage(child)) === 'diagram' && isValidElement(child)) {
+    return <MermaidSlot source={nodeText((child.props as { children?: ReactNode }).children)} />
+  }
+  return <pre {...props}>{children}</pre>
+}
+
+function DocCallout({
+  children,
+  node: _node,
+  ...props
+}: {
+  children?: ReactNode
+  node?: unknown
+  'data-callout'?: unknown
+  'data-tone'?: unknown
+}) {
+  const title = props['data-callout']
+  const tone = props['data-tone']
+  if (typeof title === 'string' && isTone(tone)) {
+    return (
+      <Callout tone={tone} title={title}>
+        {children}
+      </Callout>
+    )
+  }
+  return <div {...props}>{children}</div>
+}
+
+function useHighlight(needed: boolean) {
+  const [plugin, setPlugin] = useState<null | typeof import('rehype-highlight').default>(null)
+  useEffect(() => {
+    if (!needed) return
+    let live = true
+    void import('rehype-highlight').then((mod) => {
+      if (live) setPlugin(() => mod.default)
+    })
+    return () => {
+      live = false
+    }
+  }, [needed])
+  return needed ? plugin : null
 }
 
 // Raw HTML in a doc is NOT rendered (react-markdown's default).
 export function Markdown({ content }: { content: string }) {
   const headings = secondLevelHeadings(content)
+  const needs = markdownImportNeeds(content)
+  const highlight = useHighlight(needs.highlight)
   let heading = 0
   return (
     <div className="markdown">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[
+          githubAlertPlugin,
+          ...(highlight
+            ? [[highlight, HIGHLIGHT_OPTIONS] as [typeof highlight, typeof HIGHLIGHT_OPTIONS]]
+            : []),
+        ]}
         components={{
           h2: ({ children }) => {
             const id = headings[heading++]?.id
             return <h2 id={id}>{children}</h2>
           },
           table: ({ children }) => <DocTable>{children}</DocTable>,
+          pre: DocPre,
+          div: DocCallout,
         }}
       >
         {content}

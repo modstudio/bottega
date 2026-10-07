@@ -15,7 +15,11 @@ export function Callout({
   children?: ReactNode
 }) {
   return (
-    <aside role="note" data-tone={tone} className="border border-status-border bg-status-surface px-4 py-3">
+    <aside
+      role="note"
+      data-tone={tone}
+      className="border border-status-border bg-status-surface px-4 py-3"
+    >
       <div className="font-medium text-sm text-status-text">{title}</div>
       <div className="text-sm text-text-secondary">{children}</div>
     </aside>
