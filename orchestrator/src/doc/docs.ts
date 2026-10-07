@@ -155,6 +155,7 @@ function assertInjectSize(input: {
         body: input.body,
         delivery: 'inject',
         audience: 'technical',
+        featured: false,
         parent_id: null,
         parent_slug: null,
         position: 0,
@@ -254,6 +255,7 @@ type DocWriteInput = {
   audience?: DocAudience
   parentSlug?: string | null
   position?: number
+  featured?: boolean
 } & DocWriteContext
 
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
@@ -404,6 +406,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
           parent_slug: tree.parentSlug,
         }),
         position: tree.position,
+        featured: tree.featured,
         projectName,
         reason: identity.reason,
         author: identity.author,
@@ -427,20 +430,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   })
 }
 
-export async function setDoc(
-  input: {
-    scope: string
-    subject: string | null
-    owner?: string | null
-    slug: string
-    title: string
-    body: string
-    delivery?: 'inject' | 'demand'
-    audience?: DocAudience
-    parentSlug?: string | null
-    position?: number
-  } & DocWriteContext,
-): Promise<Doc> {
+export async function setDoc(input: DocWriteInput): Promise<Doc> {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
@@ -515,6 +505,7 @@ export async function removeDoc(
           audience: doc.audience,
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
+          featured: doc.featured,
           reason: identity.reason,
           author: identity.author,
           id: undefined,
@@ -599,6 +590,7 @@ export async function consumeDoc(
           audience: doc.audience,
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
+          featured: doc.featured,
           reason: identity.reason,
           author: identity.author,
           expectedRevision: context.expectedRevision,
@@ -876,9 +868,10 @@ export function listDocRevisions(
 }
 
 export function getDocRevision(id: number, owner: string | null = null): DocRevision | null {
-  return db()
-    .query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?')
-    .get(id, owner) as DocRevision | null
+  const row = db().query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?').get(id, owner) as
+    | (DocRevision & { featured: boolean | number })
+    | null
+  return row ? { ...row, featured: Boolean(row.featured) } : null
 }
 
 export async function restoreDoc(
@@ -953,6 +946,7 @@ export async function restoreDoc(
       audience: revision.audience,
       parentSlug: restoredParentSlug,
       position: revision.position,
+      featured: revision.featured,
       ...context,
     },
     getDoc(scope, subject, slug, owner),
@@ -1011,6 +1005,7 @@ export async function restoreDoc(
             parent_slug: tree.parentSlug,
           }),
           position: revision.position,
+          featured: revision.featured,
           projectName,
           reason: identity.reason,
           author: identity.author,

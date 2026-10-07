@@ -15,6 +15,7 @@ export type Doc = {
   body: string
   delivery: 'inject' | 'demand'
   audience: DocAudience
+  featured: boolean
   parent_id: number | null
   parent_slug: string | null
   position: number
@@ -31,6 +32,7 @@ export type DocMetadata = Pick<
   | 'slug'
   | 'title'
   | 'audience'
+  | 'featured'
   | 'parent_id'
   | 'parent_slug'
   | 'position'
@@ -61,6 +63,7 @@ export type DocRevision = {
   body: string
   delivery: 'inject' | 'demand'
   audience: DocAudience
+  featured: boolean
   parent_id: number | null
   position: number
   author: string
@@ -77,6 +80,11 @@ export type DocRevisionMetadata = Omit<
 const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
+const docRow = <T extends { featured: boolean | number }>(row: T): T => ({
+  ...row,
+  featured: Boolean(row.featured),
+})
+
 function treeColumns(database: Database): boolean {
   return Boolean(
     database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audience'").get(),
@@ -92,7 +100,7 @@ function docTreeSelect(database: Database): { columns: string; join: string; pos
       }
     : {
         columns:
-          "d.*, 'technical' AS audience, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
+          "d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
         join: '',
         position: '0+0',
       }
@@ -144,11 +152,12 @@ export function getDocStore(
 ): Doc | null {
   validScope(scope)
   const tree = docTreeSelect(database)
-  return database
+  const row = database
     .query(
       `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join} WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
-    .get(scope, subject, owner, slug) as Doc | null
+    .get(scope, subject, owner, slug) as (Doc & { featured: boolean | number }) | null
+  return row ? docRow(row) : null
 }
 
 export function listDocsStore(
@@ -169,12 +178,14 @@ export function listDocsStore(
       values.push(filters.audience)
     } else if (filters.audience === 'user') where.push('0')
   }
-  return database
-    .query(
-      `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-        `ORDER BY d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
-    )
-    .all(...values) as Doc[]
+  return (
+    database
+      .query(
+        `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
+          `ORDER BY d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
+      )
+      .all(...values) as Array<Doc & { featured: boolean | number }>
+  ).map(docRow)
 }
 
 export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[] {
@@ -212,10 +223,12 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
   const order = filters.updatedAtOrder
     ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
     : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
-  return db()
-    .query(
-      `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+  return (
+    db()
+      .query(
+        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
-    )
-    .all(...values) as DocMetadata[]
+      )
+      .all(...values) as Array<DocMetadata & { featured: boolean | number }>
+  ).map(docRow)
 }

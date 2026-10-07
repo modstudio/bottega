@@ -36,6 +36,8 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     subject,
     audience: audienceOf(row.audience),
     delivery: deliveryOf(row.delivery),
+    summary: typeof row.summary === 'string' ? row.summary : '',
+    featured: row.featured === true,
     projectName: projectNameOf(row, scope, subject),
   }
 }

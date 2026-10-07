@@ -23,6 +23,8 @@ const canonDoc: RecordDoc = {
   audience: 'technical',
   parentId: null,
   position: 0,
+  summary: 'Use concise prose.',
+  featured: false,
   projectName: null,
   createdAt: at,
   updatedAt: at,

@@ -23,6 +23,7 @@ type LocalDoc = {
   audience: DocAudience
   parent_id: number | null
   position: number
+  featured: boolean
   project_id: number | null
   created_at: string
   updated_at: string
@@ -43,6 +44,7 @@ type LocalRevision = {
   audience: DocAudience
   parent_id: number | null
   position: number
+  featured: boolean
   author: string
   reason: string
   session_id: string | null
@@ -93,6 +95,7 @@ function asRevision(
     audience: row.audience,
     parentId: row.parent_id == null ? null : (recordIds.get(row.parent_id) ?? null),
     position: row.position,
+    featured: Boolean(row.featured),
     author: row.author,
     reason: row.reason,
     sessionId: row.session_id,
@@ -126,6 +129,7 @@ function groupFromLive(
         audience: doc.audience,
         parentId: doc.parent_id == null ? null : (recordIds.get(doc.parent_id) ?? null),
         position: doc.position,
+        featured: Boolean(doc.featured),
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
         updatedAt: doc.updated_at,
@@ -166,6 +170,7 @@ function groupFromDeleted(
         body: last.body,
         delivery: last.delivery,
         audience: last.audience,
+        featured: Boolean(last.featured),
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
         position: last.position,
         projectName: projectId == null ? null : (names.get(projectId) ?? null),
@@ -182,13 +187,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )

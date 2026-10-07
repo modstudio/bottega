@@ -101,8 +101,16 @@ describe('record client', () => {
       return jsonResponse({ items: [item] })
     }
     const client = clientWith(fetch, { cookie: 'sid=private', authorization: 'Bearer private' })
-    expect(await client.publicDocs()).toEqual({ items: [{ ...item, audience: 'user' }] })
-    expect(await client.publicDoc(id)).toEqual({ ...item, body: 'Welcome body', audience: 'user' })
+    expect(await client.publicDocs()).toEqual({
+      items: [{ ...item, audience: 'user', summary: '', featured: false }],
+    })
+    expect(await client.publicDoc(id)).toEqual({
+      ...item,
+      body: 'Welcome body',
+      audience: 'user',
+      summary: '',
+      featured: false,
+    })
     expect(await client.publicDocSearch('welcome')).toEqual({
       items: [
         {

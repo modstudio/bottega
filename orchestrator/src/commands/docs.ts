@@ -48,6 +48,8 @@ export function register(program: Command): void {
     .option('--parent <slug>')
     .addOption(new NoParentOption('--no-parent'))
     .option('--position <value>')
+    .option('--featured')
+    .option('--no-featured')
     .option('--force-inject <value>')
     .option('--expect <revision>')
     .option('--cwd <value>')

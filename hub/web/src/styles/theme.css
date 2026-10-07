@@ -144,6 +144,9 @@
     font: inherit;
     color: inherit;
   }
+  input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+  }
   :focus-visible {
     outline: var(--focus-width) solid var(--focus-color);
     outline-offset: var(--focus-offset);

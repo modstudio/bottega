@@ -20,6 +20,51 @@ export const DOC_SCOPES = [
 export type DocScope = (typeof DOC_SCOPES)[number]
 export const DOC_AUDIENCES = ['user', 'technical'] as const
 export type DocAudience = (typeof DOC_AUDIENCES)[number]
+export const DOC_SUMMARY_MAX_LENGTH = 160
+
+/** Derive the short catalogue copy from the first prose paragraph in a markdown body. */
+export function docSummary(body: string): string {
+  const withoutFrontmatter = body.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/, '')
+  const lines = withoutFrontmatter.split(/\r?\n/)
+  let inFence = false
+  const paragraphs: string[] = []
+  let current: string[] = []
+  const finish = () => {
+    if (current.length) paragraphs.push(current.join(' '))
+    current = []
+  }
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      finish()
+      inFence = !inFence
+      continue
+    }
+    if (inFence || /^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s)/.test(line)) {
+      finish()
+      continue
+    }
+    if (!line.trim()) {
+      finish()
+      continue
+    }
+    current.push(line.trim())
+  }
+  finish()
+  const prose = paragraphs[0]
+  if (!prose) return ''
+  const plain = prose
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/[`*_~]/g, '')
+    .replace(/\\([\\`*_{}[\]()#+.!>-])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (plain.length <= DOC_SUMMARY_MAX_LENGTH) return plain
+  const cut = plain.slice(0, DOC_SUMMARY_MAX_LENGTH + 1)
+  const boundary = cut.lastIndexOf(' ')
+  return `${cut.slice(0, boundary > 0 ? boundary : DOC_SUMMARY_MAX_LENGTH).trimEnd()}…`
+}
 export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
   (scope): scope is Exclude<DocScope, 'canon' | 'settings'> =>
     scope !== 'canon' && scope !== 'settings',

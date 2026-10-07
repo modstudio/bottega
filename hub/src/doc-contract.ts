@@ -12,6 +12,8 @@ export const DocTreeItemSchema = z.object({
   subject: z.string().nullable(),
   audience: z.enum(DOC_AUDIENCES),
   delivery: z.enum(['inject', 'demand']).optional(),
+  summary: z.string().optional(),
+  featured: z.boolean().optional(),
 })
 
 export const DocSchema = DocTreeItemSchema.extend({ body: z.string() })

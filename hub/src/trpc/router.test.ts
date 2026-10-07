@@ -500,6 +500,8 @@ describe('doc router', () => {
           subject: null,
           audience: 'technical',
           delivery: 'inject',
+          summary: 'Hi',
+          featured: false,
         },
       ],
     })
@@ -520,6 +522,8 @@ describe('doc router', () => {
       subject: null,
       audience: 'technical',
       delivery: 'inject',
+      summary: 'Hi',
+      featured: false,
       body: 'Hi',
     })
   })

@@ -51,6 +51,7 @@ export type RecordDocUpsertInput = {
   audience: DocAudience
   parentRecordId?: string | null
   position: number
+  featured?: boolean
   projectName?: string | null
   reason: string
   author: string
@@ -76,6 +77,7 @@ export type RecordDocImportInput = {
     audience?: DocAudience
     parentId?: string | null
     position?: number
+    featured?: boolean
     projectName?: string | null
     createdAt: string
     updatedAt: string
@@ -93,6 +95,7 @@ export type RecordDocImportInput = {
     audience?: DocAudience
     parentId?: string | null
     position?: number
+    featured?: boolean
     author: string
     reason: string
     sessionId?: string | null

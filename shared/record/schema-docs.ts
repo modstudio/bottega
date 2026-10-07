@@ -2,6 +2,7 @@
 /** Knows the hosted operator-document record shape. Must not know local cache or synchronization. */
 import { sql } from 'drizzle-orm'
 import {
+  boolean,
   check,
   customType,
   foreignKey,
@@ -84,6 +85,7 @@ export const doc = pgTable.withRLS(
     body: text().notNull(),
     delivery: text().notNull(),
     audience: text().notNull().default('technical'),
+    featured: boolean().notNull().default(false),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
     projectId: uuid('project_id').references(() => project.id),
@@ -179,6 +181,7 @@ export const docRevision = pgTable.withRLS(
     body: text().notNull(),
     delivery: text().notNull(),
     audience: text().notNull().default('technical'),
+    featured: boolean().notNull().default(false),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
     author: text().notNull(),

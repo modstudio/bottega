@@ -27,11 +27,14 @@ const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
 function getDoc(input: Address): Doc | null {
-  return db()
+  const row = db()
     .query(
       `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
-    .get(input.scope, input.subject, input.owner, input.slug) as Doc | null
+    .get(input.scope, input.subject, input.owner, input.slug) as
+    | (Doc & { featured: boolean | number })
+    | null
+  return row ? { ...row, featured: Boolean(row.featured) } : null
 }
 
 type SetInput = Address & {
@@ -42,6 +45,7 @@ type SetInput = Address & {
   audience: DocAudience
   parentId: number | null
   position: number
+  featured?: boolean
   expectedRevision?: string
   requestedOp?: Extract<DocRevisionOp, 'import'>
   identity: WriteIdentity
@@ -63,7 +67,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -73,6 +77,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           input.recordId,
           existing.id,
@@ -80,8 +85,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -95,6 +100,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           at,
           input.recordId,
@@ -172,6 +178,7 @@ type RestoreInput = Address & {
   audience: DocAudience
   parentId: number | null
   position: number
+  featured?: boolean
   expectedRevision?: string
   identity: WriteIdentity
 }
@@ -200,7 +207,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -210,6 +217,7 @@ export function commitDocRestore(
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           input.recordId,
           existing.id,
@@ -217,8 +225,8 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -232,6 +240,7 @@ export function commitDocRestore(
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           at,
           input.recordId,

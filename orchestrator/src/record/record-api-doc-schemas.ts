@@ -16,6 +16,33 @@ const revisionOpSchema = z.enum([
   'backfill',
 ])
 
+const recordDocTreeFieldShape = {
+  audience: z.enum(DOC_AUDIENCES).optional(),
+  parentRecordId: z.string().uuid().nullable().optional(),
+  position: z.number().int().optional(),
+  featured: z.boolean().optional(),
+}
+
+export const recordDocUpsertSchema = z.object({
+  scope: z.string().min(1),
+  subject: z.string().nullable(),
+  owner: z.string().uuid().nullable().optional(),
+  slug: z.string().min(1),
+  title: z.string(),
+  body: z.string(),
+  delivery: deliverySchema,
+  ...recordDocTreeFieldShape,
+  projectName: z.string().nullable().optional(),
+  reason: z.string().trim().min(1),
+  author: z.string().trim().min(1),
+  forceInject: z.string().min(1).optional(),
+  op: revisionOpSchema.optional(),
+  at: isoSchema.optional(),
+  id: z.string().uuid().optional(),
+  revisionId: z.string().uuid().optional(),
+  expectedRevision: z.string().uuid().optional(),
+})
+
 export const recordDocImportSchema = z.object({
   expectedRevision: z.string().uuid().optional(),
   doc: z.object({
@@ -30,6 +57,7 @@ export const recordDocImportSchema = z.object({
     audience: z.enum(DOC_AUDIENCES).optional().default('technical'),
     parentId: z.string().uuid().nullable().optional().default(null),
     position: z.number().int().optional().default(0),
+    featured: z.boolean().optional().default(false),
     projectName: z.string().nullable().optional(),
     createdAt: isoSchema,
     updatedAt: isoSchema,
@@ -48,6 +76,7 @@ export const recordDocImportSchema = z.object({
       audience: z.enum(DOC_AUDIENCES).optional().default('technical'),
       parentId: z.string().uuid().nullable().optional().default(null),
       position: z.number().int().optional().default(0),
+      featured: z.boolean().optional().default(false),
       author: z.string().trim().min(1),
       reason: z.string().trim().min(1),
       sessionId: z.string().nullable().optional(),

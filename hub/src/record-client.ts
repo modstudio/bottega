@@ -220,6 +220,8 @@ const docSchema = DocSchema.extend({
   audience: z.enum(DOC_AUDIENCES).default('technical'),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
+  summary: z.string().default(''),
+  featured: z.boolean().default(false),
   projectName: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
@@ -230,6 +232,8 @@ const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().
 
 const publicDocTreeItemSchema = DocTreeItemSchema.omit({ audience: true }).transform((doc) => ({
   ...doc,
+  summary: doc.summary ?? '',
+  featured: doc.featured ?? false,
   // The record public role's policy admits only user-audience documents.
   audience: 'user' as const,
 }))
