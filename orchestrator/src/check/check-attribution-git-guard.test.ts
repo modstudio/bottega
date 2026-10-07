@@ -266,6 +266,81 @@ describe('git guard', () => {
     ])
   })
 
+  test('classifies only the push subcommand and parses push arguments after --', () => {
+    const { databasePath, worktree } = fixture()
+    const commands = [
+      'git stash push -f',
+      'git commit -m push --force',
+      'git push -- origin +x:x',
+      'git push origin -- +x:x',
+      'git push --force-with-lease -ofoo origin feature:feature',
+      'git push -odelete origin x:x',
+    ]
+    expect(
+      invokeMany(
+        databasePath,
+        commands.map((command) => ({ cwd: worktree, command })),
+      ).map((decision) => decision?.permissionDecision ?? null),
+    ).toEqual(['allow', 'allow', 'ask', 'ask', 'allow', null])
+  })
+
+  test('applies the per-subcommand worktree policies', () => {
+    const { databasePath, project, worktree } = fixture()
+    const commands = [
+      'git rebase -xtrue main',
+      'git rebase -ix true main',
+      'git grep -Oless pattern',
+      'git apply patch.diff',
+      'git apply --unsafe-paths patch.diff',
+      'git switch topic',
+      'git switch --ignore-other-worktrees topic',
+      'git merge topic',
+      'git merge -s ours topic',
+      'git branch',
+      'git branch topic',
+      'git branch -D topic',
+      'git stash push',
+      'git stash clear',
+      'git worktree list',
+      'git worktree remove other',
+      'git fetch origin',
+      `git fetch ${project}`,
+      'git fetch origin +main:main',
+      'git tag -f v1',
+      'git symbolic-ref HEAD',
+      'git reflog expire',
+    ]
+    expect(
+      invokeMany(
+        databasePath,
+        commands.map((command) => ({ cwd: worktree, command })),
+      ).map((decision) => decision?.permissionDecision ?? null),
+    ).toEqual([
+      null,
+      null,
+      null,
+      'allow',
+      null,
+      'allow',
+      null,
+      'allow',
+      null,
+      'allow',
+      'allow',
+      null,
+      'allow',
+      null,
+      'allow',
+      null,
+      'allow',
+      null,
+      null,
+      null,
+      null,
+      null,
+    ])
+  })
+
   test('falls through outside registered worktrees and for ambiguous commands', () => {
     const { databasePath, outside, worktree } = fixture()
     expect(

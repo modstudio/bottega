@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Judge destructive pushes and allow selected git commands in throwaway worktrees.
+"""Decide when a session may skip the permission prompt for a git command.
 
-A push that can broadly destroy refs on a shared remote asks. Lease-guarded pushes and
-deletions of ordinary named branches are allowed when they select no alternate
-remote program. Other git commands are allowed only when their subcommand is on
-a named list, they act beneath a registered project's worktree root, and they
-carry no repository redirection or program-executing option. All others fall
-through.
+This hook is a convenience, not a sandbox. Git still runs whatever repository
+configuration selects, including hooks, filters, editors, external diffs, and
+signing programs. Worker runs are confined by the operating-system sandbox, not
+by this hook.
 """
 
 import json
@@ -28,19 +26,64 @@ BROAD_FLAGS = ("--force", "-f", "--mirror", "--prune", "--all", "--branches", "-
 # Push options that consume the following argument.
 VALUE_OPTS = ("-o", "--push-option", "--repo", "--receive-pack", "--exec")
 
-WORKTREE_SUBCOMMANDS = {
-    "status", "diff", "log", "show", "blame", "grep", "ls-files", "ls-tree",
-    "cat-file", "rev-parse", "rev-list", "merge-base", "show-ref",
-    "for-each-ref", "symbolic-ref", "name-rev", "describe", "reflog",
-    "shortlog", "add", "rm", "mv", "restore", "commit", "switch",
-    "checkout", "branch", "tag", "merge", "rebase", "cherry-pick", "revert",
-    "reset", "stash", "clean", "apply", "am", "fetch", "pull", "worktree",
+# Each allowed worktree subcommand and the additional policy applied to it.
+WORKTREE_COMMAND_POLICIES = {
+    "status": {},
+    "log": {"long": ("--textconv", "--ext-diff"), "long_prefix": ("--output",)},
+    "show": {"long": ("--textconv", "--ext-diff"), "long_prefix": ("--output",)},
+    "diff": {
+        "long": ("--textconv", "--ext-diff", "--no-index"),
+        "long_prefix": ("--output",),
+    },
+    "blame": {},
+    "grep": {
+        "short": "O",
+        "long": ("--no-index",),
+        "long_prefix": ("--open-files-in-pager",),
+    },
+    "ls-files": {},
+    "ls-tree": {},
+    "cat-file": {"long": ("--filters", "--textconv")},
+    "rev-parse": {},
+    "rev-list": {},
+    "merge-base": {},
+    "show-ref": {},
+    "for-each-ref": {},
+    "name-rev": {},
+    "describe": {},
+    "shortlog": {},
+    "add": {},
+    "rm": {},
+    "mv": {},
+    "restore": {},
+    "commit": {},
+    "clean": {},
+    "reset": {},
+    "revert": {},
+    "cherry-pick": {},
+    "am": {},
+    "apply": {"long": ("--unsafe-paths", "--directory")},
+    "switch": {"long": ("--ignore-other-worktrees",)},
+    "checkout": {"long": ("--ignore-other-worktrees",)},
+    "merge": {"short": "s", "long": ("--strategy",)},
+    "rebase": {
+        "short": "xis",
+        "long": ("--exec", "--interactive", "--strategy"),
+    },
+    "branch": {
+        "short": "dDfFmMcCu",
+        "long": (
+            "--delete", "--force", "--move", "--copy", "--edit-description",
+            "--set-upstream-to", "--unset-upstream",
+        ),
+    },
+    "stash": {"blocked_actions": ("clear", "drop")},
+    "worktree": {"only_action": "list"},
+    "fetch": {"fetch_or_pull": True},
+    "pull": {"fetch_or_pull": True},
 }
 PUSH_PROGRAM_OPTIONS = ("--exec", "--receive-pack")
-PROGRAM_EXECUTING_OPTIONS = (
-    "-x", *PUSH_PROGRAM_OPTIONS, "--upload-pack", "-O",
-    "--open-files-in-pager", "--ext-diff", "--output",
-)
+REMOTE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 PROTECTED_BRANCHES = {
     "main", "master", "develop", "dev", "trunk",
@@ -240,41 +283,48 @@ def ordinary_branch(ref, protected):
 
 def push_verdict(argv, protected):
     """Return safe or ask for a push that can destroy refs, else None."""
-    head = argv[:argv.index("--")] if "--" in argv else argv
-    if "push" not in head:
+    subcommand = git_subcommand_index(argv)
+    if subcommand is None or argv[subcommand] != "push":
         return None
-    args = head[head.index("push") + 1:]
-    runs_remote_program = any(
-        arg == option or arg.startswith(option + "=")
-        for arg in args
-        for option in PUSH_PROGRAM_OPTIONS
-    )
-    expanded = []
-    for arg in args:
-        if re.fullmatch(r"-[A-Za-z]{2,}", arg):
-            last = len(arg) - 1
-            expanded.extend(
-                (f"-{letter}", letter == "o" and index == last)
-                for index, letter in enumerate(arg[1:], start=1)
-            )
-        else:
-            expanded.append((arg, arg == "-o"))
-    args = expanded
-
+    args = argv[subcommand + 1:]
+    runs_remote_program = False
     destructive = broad = False
     positional = []
     skip = False
-    for arg, consumes_value in args:
+    options = True
+    for arg in args:
         if skip:
             skip = False
-        elif arg in VALUE_OPTS and (arg != "-o" or consumes_value):
+            continue
+        if options and arg == "--":
+            options = False
+            continue
+        if not options or not arg.startswith("-") or arg == "-":
+            positional.append(arg)
+            continue
+        if any(arg == option or arg.startswith(option + "=") for option in PUSH_PROGRAM_OPTIONS):
+            runs_remote_program = True
+        if arg in VALUE_OPTS:
             skip = True
-        elif arg.startswith("--force-with-lease") or arg in SCOPED_FLAGS:
+            continue
+        if any(arg.startswith(option + "=") for option in VALUE_OPTS if option.startswith("--")):
+            continue
+        # -oVALUE is one push-option, not a cluster containing force/delete.
+        if arg.startswith("-o"):
+            continue
+        if re.fullmatch(r"-[A-Za-z]{2,}", arg):
+            letters = arg[1:]
+            if "f" in letters:
+                destructive = broad = True
+            if "d" in letters:
+                destructive = True
+            if letters.endswith("o"):
+                skip = True
+            continue
+        if arg.startswith("--force-with-lease") or arg in SCOPED_FLAGS:
             destructive = True
         elif arg in BROAD_FLAGS or arg.startswith("--force"):
             destructive = broad = True
-        elif not arg.startswith("-"):
-            positional.append(arg)
 
     refspecs = positional[1:]
     for spec in refspecs:
@@ -296,8 +346,8 @@ def push_verdict(argv, protected):
     return "safe"
 
 
-def git_subcommand(argv):
-    """Return the git subcommand after global options and their values."""
+def git_subcommand_index(argv):
+    """Return the index of the git subcommand after global options."""
     value_options = {
         "-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace",
         "--exec-path", "--super-prefix",
@@ -306,7 +356,7 @@ def git_subcommand(argv):
     while index < len(argv):
         arg = argv[index]
         if not arg.startswith("-"):
-            return arg
+            return index
         if arg in value_options:
             index += 2
         else:
@@ -314,15 +364,98 @@ def git_subcommand(argv):
     return None
 
 
-def worktree_command_allowed(argv):
-    """Whether the invocation is a listed command with no program option."""
-    if git_subcommand(argv) not in WORKTREE_SUBCOMMANDS:
-        return False
-    return not any(
-        arg == option or (option.startswith("--") and arg.startswith(option))
-        for arg in argv[1:]
-        for option in PROGRAM_EXECUTING_OPTIONS
+def git_subcommand(argv):
+    """Return the git subcommand after global options and their values."""
+    index = git_subcommand_index(argv)
+    return argv[index] if index is not None else None
+
+
+def has_long_option(args, *options, prefix=False):
+    """Whether args contain a named long option, including its equals form."""
+    return any(
+        arg == option or arg.startswith(option if prefix else option + "=")
+        for arg in args
+        for option in options
     )
+
+
+def has_short_option(args, letters):
+    """Whether a short option appears alone, stuck to a value, or clustered."""
+    return any(
+        len(arg) >= 2 and arg.startswith("-") and not arg.startswith("--")
+        and any(letter in arg[1:] for letter in letters)
+        for arg in args
+    )
+
+
+def command_positionals(args, short_value_options=()):
+    """Return operands while skipping common fetch and pull option values."""
+    value_options = {
+        "--depth", "--deepen", "--shallow-since", "--shallow-exclude",
+        "--jobs", "--server-option", "--negotiation-tip", "--refmap",
+        "--recurse-submodules", "--submodule-prefix", "--upload-pack",
+        "--strategy", "--strategy-option", "--cleanup", "--gpg-sign",
+    }
+    positionals = []
+    skip = False
+    options = True
+    for arg in args:
+        if skip:
+            skip = False
+        elif options and arg == "--":
+            options = False
+        elif options and arg in value_options:
+            skip = True
+        elif options and arg in short_value_options:
+            skip = True
+        elif options and arg.startswith("-"):
+            continue
+        else:
+            positionals.append(arg)
+    return positionals
+
+
+def worktree_command_allowed(argv):
+    """Whether the invocation satisfies its subcommand's worktree policy."""
+    index = git_subcommand_index(argv)
+    if index is None:
+        return False
+    policy = WORKTREE_COMMAND_POLICIES.get(argv[index])
+    if policy is None:
+        return False
+    args = argv[index + 1:]
+    if has_short_option(args, policy.get("short", "")):
+        return False
+    if has_long_option(args, *policy.get("long", ())):
+        return False
+    if has_long_option(args, *policy.get("long_prefix", ()), prefix=True):
+        return False
+    if "blocked_actions" in policy:
+        positionals = command_positionals(args)
+        return not positionals or positionals[0] not in policy["blocked_actions"]
+    if "only_action" in policy:
+        positionals = command_positionals(args)
+        return bool(positionals) and positionals[0] == policy["only_action"]
+    if policy.get("fetch_or_pull"):
+        if has_long_option(args, "--upload-pack", prefix=True):
+            return False
+        if has_long_option(args, "--update-head-ok"):
+            return False
+        recurse = [arg for arg in args if arg.startswith("--recurse-submodules")]
+        if any(arg != "--recurse-submodules=no" for arg in recurse):
+            return False
+        positionals = command_positionals(
+            args, short_value_options=("-j", "-o", "-u", "-s", "-X", "-S"),
+        )
+        if not positionals:
+            return True
+        if "--multiple" in args:
+            return all(REMOTE_NAME.fullmatch(remote) for remote in positionals)
+        remote, *refspecs = positionals
+        return bool(REMOTE_NAME.fullmatch(remote)) and not any(
+            refspec.startswith("+") or ":" in refspec for refspec in refspecs
+        )
+    return False
 
 
 def is_throwaway_worktree(directory, worktree_root):
