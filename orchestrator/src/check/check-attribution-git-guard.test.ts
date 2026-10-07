@@ -7,6 +7,10 @@ import { applyMigrations } from '../database/migrations.ts'
 
 const hook = resolve(import.meta.dir, '../../hooks/git-guard.py')
 const fixtureRoots: string[] = []
+type Decision = {
+  permissionDecision: 'allow' | 'ask'
+  permissionDecisionReason: string
+}
 
 afterEach(() => {
   for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -47,12 +51,45 @@ function invoke(databasePath: string, cwd: string, command: string) {
     stderr: '',
   })
   const output = result.stdout.toString().trim()
-  return output
-    ? (JSON.parse(output).hookSpecificOutput as {
-        permissionDecision: 'allow' | 'ask'
-        permissionDecisionReason: string
-      })
-    : null
+  return output ? (JSON.parse(output).hookSpecificOutput as Decision) : null
+}
+
+function invokeMany(
+  databasePath: string,
+  invocations: Array<{ cwd: string; command: string }>,
+): Array<Decision | null> {
+  const runner = `
+import importlib.util, io, json, sys
+spec = importlib.util.spec_from_file_location("git_guard", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+results = []
+stdout = sys.stdout
+for payload in json.load(sys.stdin):
+    sys.stdin = io.StringIO(json.dumps(payload))
+    sys.stdout = io.StringIO()
+    module.main()
+    output = sys.stdout.getvalue()
+    results.append(json.loads(output)["hookSpecificOutput"] if output else None)
+sys.stdout = stdout
+json.dump(results, sys.stdout)
+`
+  const payloads = invocations.map(({ cwd, command }) => ({
+    tool_name: 'Bash',
+    tool_input: { command },
+    cwd,
+  }))
+  const result = Bun.spawnSync(['python3', '-c', runner, hook], {
+    env: { ...process.env, ORCH_DB: databasePath },
+    stdin: Buffer.from(JSON.stringify(payloads)),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect({ exitCode: result.exitCode, stderr: result.stderr.toString() }).toEqual({
+    exitCode: 0,
+    stderr: '',
+  })
+  return JSON.parse(result.stdout.toString()) as Array<Decision | null>
 }
 
 describe('git guard', () => {
@@ -84,16 +121,18 @@ describe('git guard', () => {
         'orch workflow exec -- git push --force origin feature:feature',
       )?.permissionDecision,
     ).toBe('ask')
-    for (const flag of ['-fu', '-uf', '-ff']) {
-      for (const cwd of [worktree, project]) {
-        expect(
-          invoke(databasePath, cwd, `git push ${flag} origin feature:feature`)?.permissionDecision,
-        ).toBe('ask')
-      }
-    }
+    const clustered = ['-fu', '-uf', '-ff'].flatMap((flag) =>
+      [worktree, project].map((cwd) => ({
+        cwd,
+        command: `git push ${flag} origin feature:feature`,
+      })),
+    )
+    expect(
+      invokeMany(databasePath, clustered).map((decision) => decision?.permissionDecision),
+    ).toEqual(['ask', 'ask', 'ask', 'ask', 'ask', 'ask'])
   })
 
-  test('honours both workflow exec cwd forms and rejects ambiguous cwd flags', () => {
+  test('honors both workflow exec cwd forms and rejects ambiguous cwd flags', () => {
     const { databasePath, outside, project, worktree } = fixture()
     expect(
       invoke(databasePath, worktree, `orch workflow exec --cwd=${project} -- git reset --hard`),
@@ -131,19 +170,18 @@ describe('git guard', () => {
       '--super-prefix=nested/',
       '--bare',
     ]
-    for (const options of redirected) {
-      expect(invoke(databasePath, worktree, `git ${options} status`)).toBeNull()
-    }
-    expect(
-      invoke(
-        databasePath,
-        worktree,
-        `git --git-dir=${join(project, '.git')} push --force origin feature:feature`,
-      )?.permissionDecision,
-    ).toBe('ask')
+    const decisions = invokeMany(databasePath, [
+      ...redirected.map((options) => ({ cwd: worktree, command: `git ${options} status` })),
+      {
+        cwd: worktree,
+        command: `git --git-dir=${join(project, '.git')} push --force origin feature:feature`,
+      },
+    ])
+    expect(decisions.slice(0, -1)).toEqual(redirected.map(() => null))
+    expect(decisions.at(-1)?.permissionDecision).toBe('ask')
   })
 
-  test('recognises git launched by absolute path', () => {
+  test('recognizes git launched by absolute path', () => {
     const { databasePath, worktree } = fixture()
     expect(
       invoke(databasePath, worktree, '/usr/bin/git push --force origin feature:feature')
