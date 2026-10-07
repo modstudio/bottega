@@ -207,7 +207,7 @@ describe('git guard', () => {
   })
 
   test('allows only listed worktree subcommands without program options', () => {
-    const { databasePath, worktree } = fixture()
+    const { databasePath, outside, worktree } = fixture()
     const commands = [
       'git status',
       'git commit',
@@ -222,10 +222,10 @@ describe('git guard', () => {
       'git diff --ext-diff',
       'git log --output=/tmp/log',
     ]
-    const decisions = invokeMany(
-      databasePath,
-      commands.map((command) => ({ cwd: worktree, command })),
-    )
+    const decisions = invokeMany(databasePath, [
+      ...commands.map((command) => ({ cwd: worktree, command })),
+      { cwd: outside, command: `git -C ${worktree} status` },
+    ])
     expect(decisions.map((decision) => decision?.permissionDecision ?? null)).toEqual([
       'allow',
       'allow',
@@ -239,6 +239,7 @@ describe('git guard', () => {
       null,
       null,
       null,
+      'allow',
     ])
   })
 
@@ -265,17 +266,14 @@ describe('git guard', () => {
     ])
   })
 
-  test('finds a listed subcommand after global options', () => {
-    const { databasePath, outside, worktree } = fixture()
-    expect(invoke(databasePath, outside, `git -C ${worktree} status`)?.permissionDecision).toBe(
-      'allow',
-    )
-  })
-
   test('falls through outside registered worktrees and for ambiguous commands', () => {
     const { databasePath, outside, worktree } = fixture()
-    expect(invoke(databasePath, outside, 'git status')).toBeNull()
-    expect(invoke(databasePath, worktree, 'orch workflow exec -- printf nope')).toBeNull()
-    expect(invoke(databasePath, worktree, 'git status && git clean -fd')).toBeNull()
+    expect(
+      invokeMany(databasePath, [
+        { cwd: outside, command: 'git status' },
+        { cwd: worktree, command: 'orch workflow exec -- printf nope' },
+        { cwd: worktree, command: 'git status && git clean -fd' },
+      ]),
+    ).toEqual([null, null, null])
   })
 })
