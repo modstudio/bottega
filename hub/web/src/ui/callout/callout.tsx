@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import type { Tone } from '../badge/badge'
 
 /**
- * A labelled note region. Tone selects the status role through `data-tone`;
- * the title is the kind in text, so the kind never depends on colour alone.
+ * A labeled note region. Tone selects the status role through `data-tone`;
+ * the title is the kind in text, so the kind never depends on color alone.
  */
 export function Callout({
   tone,
