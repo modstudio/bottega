@@ -122,15 +122,51 @@ def git_invocation(payload):
     ):
         split = argv.index("--")
         flags, argv = argv[3:split], argv[split + 1:]
-        if "--cwd" in flags[:-1]:
-            cwd = flags[flags.index("--cwd") + 1]
-    if not argv or argv[0] != "git":
+        cwd_values = []
+        index = 0
+        while index < len(flags):
+            flag = flags[index]
+            if flag == "--cwd":
+                if index + 1 >= len(flags) or flags[index + 1].startswith("-"):
+                    return None
+                cwd_values.append(flags[index + 1])
+                index += 2
+                continue
+            if flag.startswith("--cwd="):
+                value = flag[len("--cwd="):]
+                if not value:
+                    return None
+                cwd_values.append(value)
+            index += 1
+        if len(cwd_values) > 1:
+            return None
+        if cwd_values:
+            cwd = cwd_values[0]
+    if not argv or os.path.basename(argv[0]) != "git":
         return None
     return argv, cwd
 
 
 def command_directory(argv, cwd):
     """Resolve the directory the git invocation acts on, or None."""
+    redirection_options = (
+        "-c", "--config-env", "--git-dir", "--work-tree", "--namespace",
+        "--exec-path", "--super-prefix",
+    )
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if not arg.startswith("-"):
+            break
+        if arg == "--bare":
+            return None
+        if any(arg == option or arg.startswith(option + "=") for option in redirection_options):
+            return None
+        if arg == "-C":
+            index += 2
+            continue
+        index += 1
+
     dash_c = [index for index, arg in enumerate(argv) if arg == "-C"]
     if len(dash_c) > 1:
         return None
@@ -192,14 +228,25 @@ def push_verdict(argv, protected):
     if "push" not in head:
         return None
     args = head[head.index("push") + 1:]
+    expanded = []
+    for arg in args:
+        if re.fullmatch(r"-[A-Za-z]{2,}", arg):
+            last = len(arg) - 1
+            expanded.extend(
+                (f"-{letter}", letter == "o" and index == last)
+                for index, letter in enumerate(arg[1:], start=1)
+            )
+        else:
+            expanded.append((arg, arg == "-o"))
+    args = expanded
 
     destructive = broad = False
     positional = []
     skip = False
-    for arg in args:
+    for arg, consumes_value in args:
         if skip:
             skip = False
-        elif arg in VALUE_OPTS:
+        elif arg in VALUE_OPTS and (arg != "-o" or consumes_value):
             skip = True
         elif arg.startswith("--force-with-lease") or arg in SCOPED_FLAGS:
             destructive = True

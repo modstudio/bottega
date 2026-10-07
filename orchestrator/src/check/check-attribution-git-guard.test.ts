@@ -73,7 +73,7 @@ describe('git guard', () => {
   })
 
   test('asks for force pushes directly and through workflow exec', () => {
-    const { databasePath, worktree } = fixture()
+    const { databasePath, project, worktree } = fixture()
     expect(
       invoke(databasePath, worktree, 'git push --force origin feature:feature')?.permissionDecision,
     ).toBe('ask')
@@ -84,6 +84,84 @@ describe('git guard', () => {
         'orch workflow exec -- git push --force origin feature:feature',
       )?.permissionDecision,
     ).toBe('ask')
+    for (const flag of ['-fu', '-uf', '-ff']) {
+      for (const cwd of [worktree, project]) {
+        expect(
+          invoke(databasePath, cwd, `git push ${flag} origin feature:feature`)
+            ?.permissionDecision,
+        ).toBe('ask')
+      }
+    }
+  })
+
+  test('honours both workflow exec cwd forms and rejects ambiguous cwd flags', () => {
+    const { databasePath, outside, project, worktree } = fixture()
+    expect(
+      invoke(
+        databasePath,
+        worktree,
+        `orch workflow exec --cwd=${project} -- git reset --hard`,
+      ),
+    ).toBeNull()
+    expect(
+      invoke(
+        databasePath,
+        outside,
+        `orch workflow exec --cwd=${worktree} -- git reset --hard`,
+      )?.permissionDecision,
+    ).toBe('allow')
+    expect(
+      invoke(
+        databasePath,
+        outside,
+        `orch workflow exec --cwd ${worktree} --cwd=${project} -- git status`,
+      ),
+    ).toBeNull()
+    expect(
+      invoke(databasePath, outside, 'orch workflow exec --cwd -- git status'),
+    ).toBeNull()
+  })
+
+  test('does not allow repository-redirection options based on the worktree cwd', () => {
+    const { databasePath, project, worktree } = fixture()
+    const redirected = [
+      '-c user.name=test',
+      '-c=user.name=test',
+      '--config-env user.name=HOME',
+      '--config-env=user.name=HOME',
+      `--git-dir ${join(project, '.git')}`,
+      `--git-dir=${join(project, '.git')}`,
+      `--work-tree ${project}`,
+      `--work-tree=${project}`,
+      '--namespace test',
+      '--namespace=test',
+      '--exec-path /tmp',
+      '--exec-path=/tmp',
+      '--super-prefix nested/',
+      '--super-prefix=nested/',
+      '--bare',
+    ]
+    for (const options of redirected) {
+      expect(invoke(databasePath, worktree, `git ${options} status`)).toBeNull()
+    }
+    expect(
+      invoke(
+        databasePath,
+        worktree,
+        `git --git-dir=${join(project, '.git')} push --force origin feature:feature`,
+      )?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('recognises git launched by absolute path', () => {
+    const { databasePath, worktree } = fixture()
+    expect(
+      invoke(databasePath, worktree, '/usr/bin/git push --force origin feature:feature')
+        ?.permissionDecision,
+    ).toBe('ask')
+    expect(
+      invoke(databasePath, worktree, '/usr/bin/git status')?.permissionDecision,
+    ).toBe('allow')
   })
 
   test('allows scoped cleanup only for ordinary named branches', () => {
