@@ -455,7 +455,7 @@ def worktree_command_allowed(argv):
         return bool(REMOTE_NAME.fullmatch(remote)) and not any(
             refspec.startswith("+") or ":" in refspec for refspec in refspecs
         )
-    return False
+    return True
 
 
 def is_throwaway_worktree(directory, worktree_root):

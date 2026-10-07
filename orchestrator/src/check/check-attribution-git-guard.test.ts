@@ -95,18 +95,19 @@ json.dump(results, sys.stdout)
 describe('git guard', () => {
   test('allows git directly and through workflow exec in a registered worktree', () => {
     const { databasePath, outside, worktree } = fixture()
-    expect(invoke(databasePath, worktree, 'git status')?.permissionDecision).toBe('allow')
     expect(
-      invoke(
-        databasePath,
-        outside,
-        `/usr/local/bin/orch workflow exec -- git -C ${worktree} status`,
-      )?.permissionDecision,
-    ).toBe('allow')
-    expect(
-      invoke(databasePath, outside, `orch workflow exec --cwd ${worktree} -- git status`)
-        ?.permissionDecision,
-    ).toBe('allow')
+      invokeMany(databasePath, [
+        { cwd: worktree, command: 'git status' },
+        {
+          cwd: outside,
+          command: `/usr/local/bin/orch workflow exec -- git -C ${worktree} status`,
+        },
+        {
+          cwd: outside,
+          command: `orch workflow exec --cwd ${worktree} -- git status`,
+        },
+      ]).map((decision) => decision?.permissionDecision),
+    ).toEqual(['allow', 'allow', 'allow'])
   })
 
   test('asks for force pushes directly and through workflow exec', () => {
