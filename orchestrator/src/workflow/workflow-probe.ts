@@ -37,8 +37,9 @@ export type ProbeRecord = {
   withheld: boolean
   exitCode: number
   signal: NodeJS.Signals | null
+  outputTail: string
 }
-type RecordedArtifact = Pick<ProbeRecord, 'id' | 'withheld'>
+type RecordedArtifact = Pick<ProbeRecord, 'id' | 'withheld' | 'outputTail'>
 
 function finishRecord(recorded: RecordedArtifact, ran: ProbeRunResult): ProbeRecord {
   return { ...recorded, exitCode: ran.exitCode, signal: ran.signal ?? null }
@@ -192,7 +193,7 @@ async function recordWorkflowCommand(
         kind,
       )
     if (!row) throw new Error('probe record was not inserted')
-    return { id: row.id, withheld }
+    return { id: row.id, withheld, outputTail: tail }
   }, d)
 }
 

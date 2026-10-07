@@ -34,7 +34,13 @@ test('records command, cwd, commit, exit and a bounded tail', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'ok\n' }),
   })
-  expect(result).toEqual({ id: 1, withheld: false, exitCode: 0, signal: null })
+  expect(result).toEqual({
+    id: 1,
+    withheld: false,
+    exitCode: 0,
+    signal: null,
+    outputTail: 'ok\n',
+  })
   expect(
     d.query('SELECT command,cwd,head_commit,exit_code,output_tail,withheld FROM probe').get(),
   ).toEqual({
@@ -73,6 +79,7 @@ test('withholds secret-shaped output', async () => {
     runner: () => ({ exitCode: 0, output: 'token=ghp_exampletokenvalue' }),
   })
   expect(result.withheld).toBe(true)
+  expect(result.outputTail).toBe('[withheld: secret-shaped content]')
   expect(
     (d.query('SELECT output_tail,withheld FROM probe').get() as { output_tail: string })
       .output_tail,
@@ -137,7 +144,13 @@ test('exec records an architect command with its kind and session', async () => 
       commit: 'abc',
       runner: () => ({ exitCode: 0, output: 'ok\n' }),
     })
-    expect(result).toEqual({ id: 1, withheld: false, exitCode: 0, signal: null })
+    expect(result).toEqual({
+      id: 1,
+      withheld: false,
+      exitCode: 0,
+      signal: null,
+      outputTail: 'ok\n',
+    })
     expect(d.query('SELECT kind,session_id,exit_code FROM probe').get()).toEqual({
       kind: 'exec',
       session_id: 'architect-session',
