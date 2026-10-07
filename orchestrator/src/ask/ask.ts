@@ -713,7 +713,7 @@ export function createAskMcpServer(
   }
   server.server.oninitialized = () => {
     try {
-      lifecycle.initialised()
+      lifecycle.initialized()
     } catch {
       // Lifecycle evidence must never break a completed handshake.
     }

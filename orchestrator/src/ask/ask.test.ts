@@ -62,7 +62,7 @@ describe('the live ask channel always answers', () => {
           started: (tools) => {
             names = tools
           },
-          initialised: () => {},
+          initialized: () => {},
         },
       })
       return names.sort()
@@ -79,20 +79,20 @@ describe('the live ask channel always answers', () => {
     expect(toolsFor(writer, 'not-the-run-token')).toEqual(base.sort())
   })
 
-  test('reports a completed initialise through the SDK hook', async () => {
+  test('reports a completed initialize through the SDK hook', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    let initialised = 0
+    let initialized = 0
     const connection = await askClient(run, '', undefined, {
       fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
       lifecycle: {
         started: () => {},
-        initialised: () => {
-          initialised += 1
+        initialized: () => {
+          initialized += 1
         },
       },
     })
     try {
-      expect(initialised).toBe(1)
+      expect(initialized).toBe(1)
     } finally {
       await connection.close()
     }

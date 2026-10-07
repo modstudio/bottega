@@ -66,7 +66,7 @@ describe('vendor event log', () => {
   test('non-worker activity appends without moving the activity clock', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET last_event_at=? WHERE id=?').run('worker-time', id)
-    appendRunEvent(id, { ts: 'server-time', type: 'ask_initialised' }, runEventsPath(id), {
+    appendRunEvent(id, { ts: 'server-time', type: 'ask_initialized' }, runEventsPath(id), {
       notWorkerActivity: true,
     })
     expect(

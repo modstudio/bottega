@@ -4,7 +4,7 @@ import { appendRunEvent, type RunLogEvent } from '../events.ts'
 
 export type AskLifecycle = {
   started(tools: string[]): void
-  initialised(): void
+  initialized(): void
 }
 
 export function askLifecycle(runId: number): AskLifecycle {
@@ -12,7 +12,7 @@ export function askLifecycle(runId: number): AskLifecycle {
     appendRunEvent(runId, event, undefined, { notWorkerActivity: true })
   return {
     started: (tools) => append({ ts: new Date().toISOString(), type: 'ask_started', tools }),
-    initialised: () => append({ ts: new Date().toISOString(), type: 'ask_initialised' }),
+    initialized: () => append({ ts: new Date().toISOString(), type: 'ask_initialized' }),
   }
 }
 
@@ -95,7 +95,7 @@ type Seen = 'seen' | 'not_seen' | 'not_recorded'
 export type AskServerSummary = {
   expected: Seen
   started: Seen
-  initialised: Seen
+  initialized: Seen
   listed: Seen
   transport: 'host' | 'srt' | null
   command: string[] | null
@@ -116,7 +116,7 @@ export function summarizeAskServer(
   return {
     expected: status(Boolean(expected)),
     started: status(Boolean(started)),
-    initialised: status(Boolean(events?.some((event) => event.type === 'ask_initialised'))),
+    initialized: status(Boolean(events?.some((event) => event.type === 'ask_initialized'))),
     listed: status(Boolean(listed)),
     transport: expected?.type === 'ask_expected' ? expected.transport : null,
     command: expected?.type === 'ask_expected' ? expected.command : null,

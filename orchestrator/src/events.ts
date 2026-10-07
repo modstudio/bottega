@@ -44,7 +44,7 @@ export type RunLogEvent =
       command: string[]
     }
   | { ts: string; type: 'ask_started'; tools: string[] }
-  | { ts: string; type: 'ask_initialised' }
+  | { ts: string; type: 'ask_initialized' }
   | { ts: string; type: 'ask_listed'; tools: string[] }
 
 type PeekEventSummary =
@@ -55,7 +55,7 @@ type PeekEventSummary =
   | { type: 'usage'; tokens: number }
   | { type: 'ask_expected'; transport: 'host' | 'srt'; command: string[] }
   | { type: 'ask_started'; tools: string[] }
-  | { type: 'ask_initialised' }
+  | { type: 'ask_initialized' }
   | { type: 'ask_listed'; tools: string[] }
 
 export type PeekSummary = {
@@ -490,7 +490,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
   if (event.type === 'ask_listed') return { type: 'ask_listed', tools: event.tools }
-  return { type: 'ask_initialised' }
+  return { type: 'ask_initialized' }
 }
 
 function git(cwd: string, args: string[]): string | null {
@@ -586,7 +586,7 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
   if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
-  return '  ask initialised'
+  return '  ask initialized'
 }
 
 export function formatPeek(summary: PeekSummary): string {
