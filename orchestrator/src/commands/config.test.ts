@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { program } from '../cli/program.ts'
 import {
   assertConfigWriteAllowed,
   configGetPresentation,
@@ -61,6 +62,13 @@ test('a descendant of an orch run executor cannot write autonomy after unsetting
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'promote', {}, 400, inventory),
   ).not.toThrow()
+})
+
+test('orch config secret help lists run', () => {
+  const secret = program.commands
+    .find((command) => command.name() === 'config')
+    ?.commands.find((command) => command.name() === 'secret')
+  expect(secret?.commands.map((command) => command.name())).toContain('run')
 })
 
 test('an explicit invalid ship-to write is refused with the shared allowed list', () => {

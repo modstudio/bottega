@@ -272,6 +272,9 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
     `\n  ${decided} bucket(s) decided by evidence, ${provisional} provisional, ${blank} with no runs.` +
       `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
   )
+  log(
+    'Named secrets are resolved with orch config secret run --name KEY -- <command>. orch config secret list shows hosted key names. Local keys live in the env files the resolver reads.',
+  )
 }
 
 export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {

@@ -12,6 +12,11 @@ const module = (file: string, allowed: string[]): SettingsModule => ({
 })
 
 export const settingsModules: SettingsModule[] = [
+  module('orchestrator/src/config/secret-run.ts', [
+    '../../../shared/config-client.ts',
+    '../../../shared/env-source.ts',
+    '../../../shared/hosted-secrets.ts',
+  ]),
   module('orchestrator/src/config/config-service.ts', [
     'node:os',
     '../../../shared/config-directory.ts',
@@ -32,6 +37,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/config-client.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
+    '../config/secret-run.ts',
     '../run/run-process.ts',
     './support.ts',
   ]),

@@ -25,8 +25,9 @@ import {
   setMachineEntry,
   setSecret,
 } from '../config/config-service.ts'
+import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
-import { log } from './support.ts'
+import { log, rawArgv } from './support.ts'
 
 const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
 type ConfigRow = Awaited<ReturnType<typeof getEntry>>
@@ -207,5 +208,14 @@ export function register(program: Command): void {
     .option('--space')
     .action(async (key, options) => {
       await deleteSecret(key, scope(options))
+    })
+  secret
+    .command('run')
+    .description('run a command with named secrets resolved')
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .passThroughOptions()
+    .action(async (_options, command: Command) => {
+      process.exitCode = await runNamedSecrets(parseSecretRunArgs(rawArgv(command).slice(3)))
     })
 }
