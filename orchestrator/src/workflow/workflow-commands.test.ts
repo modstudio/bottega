@@ -18,6 +18,22 @@ const presentation = (lines: string[]) => ({
   setExitCode: () => {},
 })
 
+const outcomePresentation = () => {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  const exitCodes: number[] = []
+  return {
+    stdout,
+    stderr,
+    exitCodes,
+    presentation: {
+      log: (line: string) => stdout.push(line),
+      error: (line: string) => stderr.push(line),
+      setExitCode: (code: number) => exitCodes.push(code),
+    },
+  }
+}
+
 const recordedArtifact = (project: string) => {
   const row = db()
     .query<{ id: number }, [string, string]>(
@@ -34,6 +50,14 @@ const registerFixtureProject = (name: string) =>
   upsertProject({
     name,
     path: `/fixture/${name}`,
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+
+const registerCurrentProject = (name: string) =>
+  upsertProject({
+    name,
+    path: process.cwd(),
     stack: 'bun',
     settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
   })
@@ -290,7 +314,13 @@ test('workflow exec service returns each child exit code after recording its row
 
 test('command outcome maps a signal to its shell status and error line', () => {
   expect(
-    commandOutcome('exec', { id: 1, withheld: false, exitCode: -1, signal: 'SIGTERM' }),
+    commandOutcome('exec', {
+      id: 1,
+      withheld: false,
+      exitCode: -1,
+      signal: 'SIGTERM',
+      outputTail: '',
+    }),
   ).toEqual({
     exitCode: 143,
     errorLine: 'orch workflow exec: command was killed by SIGTERM',
@@ -312,6 +342,92 @@ test('workflow probe service returns the recorded child exit code', async () => 
   expect(
     db().query("SELECT exit_code FROM probe WHERE kind='probe' ORDER BY id DESC LIMIT 1").get(),
   ).toEqual({ exit_code: 9 })
+})
+
+test('workflow probe prints a failed command exit and stored output tail after the id', async () => {
+  upsertProject({
+    name: 'workflow-probe-presentation-failure',
+    path: process.cwd(),
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+  const shown = outcomePresentation()
+
+  await workflowCommand(['workflow', 'probe', '--', 'missing'], shown.presentation, {
+    probeRunner: () => ({ exitCode: 127, output: 'command not found\n' }),
+  })
+
+  expect(shown.stdout).toHaveLength(1)
+  expect(shown.stdout[0]).toMatch(/^\d+$/)
+  expect(shown.stderr).toEqual(['orch workflow probe: command exited 127', 'command not found\n'])
+  expect(shown.exitCodes).toEqual([127])
+})
+
+test('workflow probe success prints only the id', async () => {
+  registerCurrentProject('workflow-probe-presentation-success')
+  const shown = outcomePresentation()
+
+  await workflowCommand(['workflow', 'probe', '--', 'passing'], shown.presentation, {
+    probeRunner: () => ({ exitCode: 0, output: 'hidden success output\n' }),
+  })
+
+  expect(shown.stdout).toHaveLength(1)
+  expect(shown.stdout[0]).toMatch(/^\d+$/)
+  expect(shown.stderr).toEqual([])
+  expect(shown.exitCodes).toEqual([0])
+})
+
+test('workflow probe failure prints the stored withheld marker instead of secret-shaped output', async () => {
+  registerCurrentProject('workflow-probe-presentation-withheld')
+  const shown = outcomePresentation()
+
+  await workflowCommand(['workflow', 'probe', '--', 'failing'], shown.presentation, {
+    probeRunner: () => ({ exitCode: 1, output: 'token=ghp_exampletokenvalue' }),
+  })
+
+  expect(shown.stderr).toEqual([
+    'orch workflow probe: command exited 1',
+    '[withheld: secret-shaped content]',
+  ])
+  expect(shown.stderr.join('\n')).not.toContain('ghp_exampletokenvalue')
+})
+
+test('workflow probe failure says when the stored output tail is empty', async () => {
+  registerCurrentProject('workflow-probe-presentation-empty')
+  const shown = outcomePresentation()
+
+  await workflowCommand(['workflow', 'probe', '--', 'silent-failure'], shown.presentation, {
+    probeRunner: () => ({ exitCode: 2, output: '' }),
+  })
+
+  expect(shown.stderr).toEqual(['orch workflow probe: command exited 2', '(no output)'])
+})
+
+test('workflow probe JSON adds exitCode and outputTail only for a failure', async () => {
+  registerCurrentProject('workflow-probe-presentation-json')
+  const failing = outcomePresentation()
+  await workflowCommand(['workflow', 'probe', '--', 'failing'], failing.presentation, {
+    json: true,
+    probeRunner: () => ({ exitCode: 7, output: 'failed\n' }),
+  })
+  expect(JSON.parse(failing.stdout[0]!)).toEqual({
+    id: expect.any(Number),
+    withheld: false,
+    exitCode: 7,
+    outputTail: 'failed\n',
+  })
+  expect(failing.stderr).toEqual(['orch workflow probe: command exited 7', 'failed\n'])
+
+  const passing = outcomePresentation()
+  await workflowCommand(['workflow', 'probe', '--', 'passing'], passing.presentation, {
+    json: true,
+    probeRunner: () => ({ exitCode: 0, output: 'not printed\n' }),
+  })
+  expect(JSON.parse(passing.stdout[0]!)).toEqual({
+    id: expect.any(Number),
+    withheld: false,
+  })
+  expect(passing.stderr).toEqual([])
 })
 
 test('next resolves an omitted mode to the composed cursor default', async () => {

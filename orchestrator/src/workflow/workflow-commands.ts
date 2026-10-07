@@ -35,7 +35,12 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
-import { type ProbeRecord, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import {
+  type ProbeRecord,
+  type ProbeRunner,
+  recordWorkflowExec,
+  recordWorkflowProbe,
+} from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
@@ -63,6 +68,7 @@ type Presentation = {
 type WorkflowCommandOptions = {
   cwd?: string
   json?: boolean
+  probeRunner?: ProbeRunner
   stdinText?: () => Promise<string>
   stdinIsTTY?: () => boolean | undefined
 }
@@ -70,7 +76,9 @@ type WorkflowChildCommandInvocation = {
   argv: string[]
   options: Pick<WorkflowCommandOptions, 'cwd' | 'json'>
 }
-type ProbePrintRecord = Pick<ProbeRecord, 'id' | 'withheld'>
+type ProbePrintRecord =
+  | Pick<ProbeRecord, 'id' | 'withheld'>
+  | Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'outputTail'>
 export type CommandOutcome = { exitCode: number; errorLine?: string }
 const positive = (value: string | undefined, label: string): number | undefined => {
   if (value === undefined) return undefined
@@ -227,7 +235,15 @@ async function execCommand(
     cwd,
     registeredProject,
   })
-  print(result, String(result.id))
+  print(
+    {
+      id: result.id,
+      withheld: result.withheld,
+      exitCode: result.exitCode,
+      signal: result.signal,
+    },
+    String(result.id),
+  )
   presentCommandOutcome('exec', result, presentation)
 }
 
@@ -243,12 +259,19 @@ async function probeCommand(
     )
   const command = argv.slice(3)
   const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
-  const result = await recordWorkflowProbe(command, { cwd })
+  const result = await recordWorkflowProbe(command, { cwd, runner: options.probeRunner })
   print(probePrintRecord(result), String(result.id))
   presentCommandOutcome('probe', result, presentation)
 }
 
 function probePrintRecord(result: ProbeRecord): ProbePrintRecord {
+  if (result.exitCode !== 0 || result.signal)
+    return {
+      id: result.id,
+      withheld: result.withheld,
+      exitCode: result.exitCode,
+      outputTail: result.outputTail,
+    }
   return { id: result.id, withheld: result.withheld }
 }
 
@@ -268,6 +291,10 @@ function presentCommandOutcome(
 ): void {
   const outcome = commandOutcome(verb, result)
   if (outcome.errorLine) presentation.error(outcome.errorLine)
+  else if (verb === 'probe' && result.exitCode !== 0)
+    presentation.error(`orch workflow probe: command exited ${result.exitCode}`)
+  if (verb === 'probe' && (result.exitCode !== 0 || result.signal))
+    presentation.error(result.outputTail || '(no output)')
   presentation.setExitCode(outcome.exitCode)
 }
 
