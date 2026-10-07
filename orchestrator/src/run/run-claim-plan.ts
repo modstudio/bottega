@@ -24,7 +24,7 @@ export function claimedRunBranch(
   implicitReviewBranch: string | null,
   worktreeBranch: string | null,
 ): string | null {
-  return reviewTargetBranch ?? implicitReviewBranch ?? worktreeBranch
+  return reviewTargetBranch ?? implicitReviewBranch ?? (worktreeBranch || null)
 }
 
 /** Decide the claimed run's working-tree mode before performing any effects. */
