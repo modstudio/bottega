@@ -7,6 +7,7 @@ import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
+import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
@@ -86,12 +87,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
   ]),
   ...docModules,
-  module('orchestrator/src/doc/doc-owner.ts', [
-    '../record/record-attribution.ts',
-    '../record/record-auth.ts',
-    '../record/machine-identity.ts',
-    '../record/record-write-authority.ts',
-  ]),
+  ...metricModules,
   module('orchestrator/src/doc/local-doc-write.ts', [
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',

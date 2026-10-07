@@ -24,4 +24,10 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     './doc-tree-rules.ts',
   ]),
+  module('orchestrator/src/doc/doc-owner.ts', [
+    '../record/record-attribution.ts',
+    '../record/record-auth.ts',
+    '../record/machine-identity.ts',
+    '../record/record-write-authority.ts',
+  ]),
 ]
