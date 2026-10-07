@@ -418,7 +418,6 @@ export async function resetSandbox(): Promise<void> {
   await resetSandboxRuntime()
 }
 
-/** Remove any user-registered orch-ask table and its subtables. */
 const ORCH_ASK_TOML_TABLE = 'mcp_servers.orch-ask'
 
 function tomlTableName(line: string): string | null {
@@ -429,6 +428,7 @@ function isOrchAskTable(name: string): boolean {
   return name === ORCH_ASK_TOML_TABLE || name.startsWith(`${ORCH_ASK_TOML_TABLE}.`)
 }
 
+/** Remove any user-registered orch-ask table and its subtables. */
 export function withoutRegisteredOrchAskServer(config: string): string {
   const kept: string[] = []
   let inAskTable = false
