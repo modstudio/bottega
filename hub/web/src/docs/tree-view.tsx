@@ -51,8 +51,9 @@ function TreeRow({
           type="button"
           aria-current={current ? 'page' : undefined}
           onClick={() => onSelect(item)}
+          title={node.title}
           className={classes(
-            'min-w-0 flex-1 rounded-sm px-2 py-1 text-left',
+            'min-w-0 flex-1 truncate rounded-sm px-2 py-1 text-left',
             current
               ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
               : 'text-text-secondary hover:bg-control-hover',

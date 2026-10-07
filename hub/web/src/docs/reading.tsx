@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 import { Markdown } from '@/components/markdown'
 import { classes } from '@/ui/text/classes'
-import { readingBody } from './body.ts'
+import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
+/** Characters past which a title is set at the smaller size. */
+const LONG_TITLE = 40
 
 function updatedLabel(value: string) {
   const date = new Date(value)
@@ -33,6 +35,7 @@ export function DocsReading({
   localActions?: ReactNode
   error?: string | null
 }) {
+  const shown = doc ? paneTitle(doc.title, doc.body) : { title: '', lede: null }
   return (
     <main className="min-w-0 bg-surface-page px-6 py-8 md:px-11 md:py-9">
       {error ? (
@@ -52,10 +55,13 @@ export function DocsReading({
               ))}
             </div>
           ) : null}
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <h1 className="doc-title">{doc.title}</h1>
-            {localActions}
-          </div>
+          <h1 className="doc-title" data-long={shown.title.length > LONG_TITLE ? '' : undefined}>
+            {shown.title}
+          </h1>
+          {shown.lede ? (
+            <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
+          ) : null}
+          {localActions ? <div className="mt-4">{localActions}</div> : null}
           <div className="mt-6">
             <Markdown content={readingBody(doc.body)} />
           </div>
@@ -85,7 +91,7 @@ export function DocsReading({
           </div>
         </>
       ) : (
-        <p className="text-md text-text-muted">Select a document.</p>
+        <p className="text-md text-text-muted">No document to show.</p>
       )}
     </main>
   )

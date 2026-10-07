@@ -34,7 +34,11 @@ export type DocsViewProps = {
   showProjectChooser: boolean
   doc: DocsDoc | null
   onSelect: (item: DocsTreeItem) => void
+  /** Opens a document the reader did not pick, replacing the current history entry. */
+  onOpenFirst: (item: DocsTreeItem) => void
   onLeaveTree: () => void
+  /** True once the tree and the project chooser have settled. */
+  ready: boolean
   searchQuery: string
   onSearchQuery: (query: string) => void
   searchResults: readonly DocsSearchMatch[]
@@ -227,7 +231,9 @@ export function DocsView({
   showProjectChooser,
   doc,
   onSelect,
+  onOpenFirst,
   onLeaveTree,
+  ready,
   searchQuery,
   onSearchQuery,
   searchResults,
@@ -277,6 +283,21 @@ export function DocsView({
   }, [selectedId, model.tree])
   useSearchHotkey(() => setSearchOpen(true))
   const visible = model.selected ? doc : null
+  // With nothing open, the page shows the first document in view instead of an empty pane.
+  const firstId = model.first?.id ?? null
+  const tabChosen = useRef(false)
+  const technicalOnly = audience === 'user' && signedIn && !firstId && model.technicalCount > 0
+  useEffect(() => {
+    if (!ready || selectedId) return
+    // An empty User guide beside a populated Technical tab opens on Technical, until the
+    // reader picks a tab themselves.
+    if (technicalOnly && !tabChosen.current) {
+      onAudience('technical')
+      return
+    }
+    const first = items.find((item) => item.id === firstId)
+    if (first) onOpenFirst(first)
+  }, [ready, selectedId, firstId, technicalOnly, items, onOpenFirst, onAudience])
   const leaveIfGone = (
     nextAudience: DocsAudience,
     nextProject: string | 'all',
@@ -284,7 +305,9 @@ export function DocsView({
   ) => {
     if (!selectedId) return
     const next = docsViewModel(items, nextAudience, nextProject, nextFilters, selectedId, doc)
-    if (!next.selected) onLeaveTree()
+    if (next.selected) return
+    if (next.first) onOpenFirst(next.first)
+    else onLeaveTree()
   }
   return (
     <div
@@ -296,6 +319,7 @@ export function DocsView({
       <DocsChrome
         audience={audience}
         onAudience={(next) => {
+          tabChosen.current = true
           onAudience(next)
           leaveIfGone(next, project, chosen)
         }}
