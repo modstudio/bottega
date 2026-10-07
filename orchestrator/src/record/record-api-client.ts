@@ -1,7 +1,6 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -275,7 +274,9 @@ function recordApiError(body: unknown, status: number): Error {
   return recordApiUnreachable(new Error(message))
 }
 
-export function recordApiBaseUrl(environment: ConfigEnvironment = process.env): string {
+export function recordApiBaseUrl(
+  environment: Record<string, string | undefined> = process.env,
+): string {
   const url = resolveRecordApiUrl(environment)
   if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
   if (environment.NODE_ENV === 'test' && !injectedClient()) throw new Error(TEST_REFUSAL)

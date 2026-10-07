@@ -6,7 +6,7 @@ test('missing URL or session is a typed not-configured error', () => {
   expect(() =>
     configClient(
       {
-        [CONFIG_HOME_ENV]: '/definitely-missing-bottega-config',
+        [CONFIG_HOME_ENV]: '/definitely-missing-config',
         [HARNESS_ENV_FILE_ENV]: '',
       },
       fetch,

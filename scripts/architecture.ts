@@ -378,12 +378,12 @@ export const modules: ArchitectureModule[] = [
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
-    'node:fs',
-    'node:util',
-    './config-directory.ts',
     './config-client.ts',
+    './config-directory.ts',
+    './env-values.ts',
     './hosted-secrets.ts',
   ]),
+  module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/machine-config.ts', [
     '@decimalturn/toml-patch',
     'node:fs',
@@ -397,9 +397,11 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/config-client.ts', [
     './http-json.ts',
+    './record-api-url.ts',
     './record-session.ts',
     './record-remedies.ts',
   ]),
+  module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', []),
   module('shared/keychain.ts', []),
