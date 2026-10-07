@@ -68,13 +68,13 @@ export function Cards({
   items,
   columns = 3,
 }: {
-  items: { eyebrow?: string; title: string; text: string }[]
+  items: { eyebrow?: string; title?: string; text?: string }[]
   columns?: 2 | 3 | 4
 }) {
   return (
     <div className={`grid g${columns} hover`}>
       {items.map((item) => (
-        <div className="cell" key={item.title}>
+        <div className="cell" key={item.title ?? item.text}>
           {item.eyebrow ? <span className="eyebrow">{item.eyebrow}</span> : null}
           <h3>{item.title}</h3>
           <p>{item.text}</p>

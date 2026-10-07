@@ -2,18 +2,212 @@ import { useState } from 'react'
 import { Cards, Cta, PageHero, Section } from './shared'
 
 const tabs = [
-  { title: 'You write the spec', copy: "The architect designs the change and rules on what it means. Your project rules, the job contract and the retrieval context are compiled into the worker's prompt automatically.", eyebrow: 'Dispatch', body: <>$ <b>orch do implement</b> ATL-412 \<br />&nbsp;&nbsp;&nbsp;&nbsp;--spec docs/webhook-retries.md \<br />&nbsp;&nbsp;&nbsp;&nbsp;--lens failure-paths<br /><br /><span className="c">&nbsp;&nbsp;compiling pack …<br />&nbsp;&nbsp;&nbsp;&nbsp;project rules&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;12<br />&nbsp;&nbsp;&nbsp;&nbsp;job contract&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implement<br />&nbsp;&nbsp;&nbsp;&nbsp;retrieval&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;9 files · 2 docs<br />&nbsp;&nbsp;worktree&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.claude/worktrees/atl-412<br />&nbsp;&nbsp;routed to&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;codex&nbsp; (0.82 accepted, n=41)</span><br /><br /><b>&nbsp;&nbsp;run r-4f19 dispatched</b>&nbsp; <span className="c">— detached</span></> },
-  { title: 'A worker builds it', copy: 'One disposable worktree per run. The worker cannot push, cannot widen scope, and cannot resolve an ambiguity — it stops and asks. Asking is not a failure; it is how a worker stays faithful.', eyebrow: 'Contract', stack: [['Writes','Only inside its own disposable worktree.'],['Push',"Never. Landing is the architect's act."],['Scope','The named task key, and nothing adjacent to it.'],['Ambiguity','Stop and ask. A question preserves the turn.'],['Research','Handed down as a ruling, not as a question.'],['Teardown','The run that provisions a resource releases it.']] },
-  { title: 'You rule, it resumes', copy: 'Answer the question and the run continues from where it stopped, with your ruling in hand.', eyebrow: 'Escalation', body: <>$ <b>orch inbox</b><br /><br /><b>&nbsp;&nbsp;r-4f17</b>&nbsp; qwen3-32b · local&nbsp;&nbsp; <span className="c">waiting 4m</span><br />&nbsp;&nbsp;<span className="c">“Two existing callers retry on 429 too. Change<br />&nbsp;&nbsp;&nbsp;them as well, or scope to the new path?”</span><br /><br />$ <b>orch answer</b> r-4f17 \<br />&nbsp;&nbsp;&nbsp;&nbsp;"Scope to the new path. File a note for the<br />&nbsp;&nbsp;&nbsp;&nbsp; two callers; they are a separate change."<br /><br /><b>&nbsp;&nbsp;ruling recorded · run resumed</b></> },
-  { title: 'You judge, routing learns', copy: 'Read the diff and score it — correctness separately from fidelity. After enough scored runs the job routes by measured success on your repositories, not by reputation.', eyebrow: 'Routing', stack: [['implement','codex — 0.82 accepted · n=41'],['fix','claude — 0.91 accepted · n=28'],['review','claude — 0.88 accepted · n=53'],['summarize','qwen3-32b · local — 0.79 · n=64'],['survey','llama3.1-8b · local — 0.74 · n=88']] },
+  {
+    title: 'You write the spec',
+    copy: "The architect designs the change and rules on what it means. Your project rules, the job contract and the retrieval context are compiled into the worker's prompt automatically.",
+    eyebrow: 'Dispatch',
+    body: (
+      <>
+        $ <b>orch do implement</b> ATL-412 \<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;--spec docs/webhook-retries.md \<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;--lens failure-paths
+        <br />
+        <br />
+        <span className="c">
+          &nbsp;&nbsp;compiling pack …<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;project rules&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;12
+          <br />
+          &nbsp;&nbsp;&nbsp;&nbsp;job contract&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implement
+          <br />
+          &nbsp;&nbsp;&nbsp;&nbsp;retrieval&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;9
+          files · 2 docs
+          <br />
+          &nbsp;&nbsp;worktree&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.claude/worktrees/atl-412
+          <br />
+          &nbsp;&nbsp;routed
+          to&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;codex&nbsp; (0.82
+          accepted, n=41)
+        </span>
+        <br />
+        <br />
+        <b>&nbsp;&nbsp;run r-4f19 dispatched</b>&nbsp; <span className="c">— detached</span>
+      </>
+    ),
+  },
+  {
+    title: 'A worker builds it',
+    copy: 'One disposable worktree per run. The worker cannot push, cannot widen scope, and cannot resolve an ambiguity — it stops and asks. Asking is not a failure; it is how a worker stays faithful.',
+    eyebrow: 'Contract',
+    stack: [
+      ['Writes', 'Only inside its own disposable worktree.'],
+      ['Push', "Never. Landing is the architect's act."],
+      ['Scope', 'The named task key, and nothing adjacent to it.'],
+      ['Ambiguity', 'Stop and ask. A question preserves the turn.'],
+      ['Research', 'Handed down as a ruling, not as a question.'],
+      ['Teardown', 'The run that provisions a resource releases it.'],
+    ],
+  },
+  {
+    title: 'You rule, it resumes',
+    copy: 'Answer the question and the run continues from where it stopped, with your ruling in hand.',
+    eyebrow: 'Escalation',
+    body: (
+      <>
+        $ <b>orch inbox</b>
+        <br />
+        <br />
+        <b>&nbsp;&nbsp;r-4f17</b>&nbsp; qwen3-32b · local&nbsp;&nbsp;{' '}
+        <span className="c">waiting 4m</span>
+        <br />
+        &nbsp;&nbsp;
+        <span className="c">
+          “Two existing callers retry on 429 too. Change
+          <br />
+          &nbsp;&nbsp;&nbsp;them as well, or scope to the new path?”
+        </span>
+        <br />
+        <br />$ <b>orch answer</b> r-4f17 \<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;"Scope to the new path. File a note for the
+        <br />
+        &nbsp;&nbsp;&nbsp;&nbsp; two callers; they are a separate change."
+        <br />
+        <br />
+        <b>&nbsp;&nbsp;ruling recorded · run resumed</b>
+      </>
+    ),
+  },
+  {
+    title: 'You judge, routing learns',
+    copy: 'Read the diff and score it — correctness separately from fidelity. After enough scored runs the job routes by measured success on your repositories, not by reputation.',
+    eyebrow: 'Routing',
+    stack: [
+      ['implement', 'codex — 0.82 accepted · n=41'],
+      ['fix', 'claude — 0.91 accepted · n=28'],
+      ['review', 'claude — 0.88 accepted · n=53'],
+      ['summarize', 'qwen3-32b · local — 0.79 · n=64'],
+      ['survey', 'llama3.1-8b · local — 0.74 · n=88'],
+    ],
+  },
 ]
 const mechanism = [
-  ['Stop','A question suspends the run','A worker that reaches a judgement call it was not given stops there. The run is preserved, not restarted, so asking costs almost nothing.'],
-  ['Score','Asking is faithful','A worker that stopped is never marked down for stopping. Penalise the question and workers learn to guess instead — which is the failure the contract exists to prevent.'],
-  ['Judge','Fidelity is scored apart','Correct, tested code that solved a different problem is still a failure. That axis is judged on its own, on the four writing jobs.'],
-  ['Isolation','One worktree per run','A disposable checkout bounds what an agent can touch, and the run that provisions it releases it.'],
-  ['Review','Review is one question at a time','Each pass answers one named question. How many passes run is fixed up front, so review cannot balloon.'],
-  ['Recovery','Nothing runs unwatched','A heartbeat reports blocked, waiting or clear, so a stalled run is never mistaken for a working one.'],
-].map(([eyebrow,title,text]) => ({ eyebrow,title,text }))
+  [
+    'Stop',
+    'A question suspends the run',
+    'A worker that reaches a judgement call it was not given stops there. The run is preserved, not restarted, so asking costs almost nothing.',
+  ],
+  [
+    'Score',
+    'Asking is faithful',
+    'A worker that stopped is never marked down for stopping. Penalise the question and workers learn to guess instead — which is the failure the contract exists to prevent.',
+  ],
+  [
+    'Judge',
+    'Fidelity is scored apart',
+    'Correct, tested code that solved a different problem is still a failure. That axis is judged on its own, on the four writing jobs.',
+  ],
+  [
+    'Isolation',
+    'One worktree per run',
+    'A disposable checkout bounds what an agent can touch, and the run that provisions it releases it.',
+  ],
+  [
+    'Review',
+    'Review is one question at a time',
+    'Each pass answers one named question. How many passes run is fixed up front, so review cannot balloon.',
+  ],
+  [
+    'Recovery',
+    'Nothing runs unwatched',
+    'A heartbeat reports blocked, waiting or clear, so a stalled run is never mistaken for a working one.',
+  ],
+].map(([eyebrow, title, text]) => ({ eyebrow, title, text }))
 
-export function OrchestrationPage() { const [selected, setSelected] = useState(0); return <main className="site-page"><PageHero crumb="Orchestration" title="Delegate the execution." muted="Never the judgement." copy="A change is decisions plus typing. The architect owns what the change means, which ambiguity resolves which way, and what must stay true. A worker owns the typing — and is contractually forbidden from deciding anything it was not given." actions={[['/docs','Run your first job'],['/product/workers','See the hierarchy']]} /><section><div className="wrap"><div className="steps"><div role="tablist" aria-label="How Bottega works">{tabs.map((tab, index) => <button className="step" role="tab" type="button" key={tab.title} aria-selected={selected === index} onClick={() => setSelected(index)} onKeyDown={(event) => { const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0; if (direction) { event.preventDefault(); setSelected((index + direction + tabs.length) % tabs.length) } }}><span className="n">0{index + 1}</span><h3>{tab.title}</h3><p>{tab.copy}</p></button>)}</div><div className="panel" role="tabpanel"><div className="panel-head"><span className="eyebrow">{tabs[selected].eyebrow}</span></div><div className="panel-body">{'stack' in tabs[selected] && tabs[selected].stack ? <div className="stack">{tabs[selected].stack.map(([label,value]) => <div key={label}><span className="lbl">{label}</span><span className="val">{value}</span></div>)}</div> : <pre>{tabs[selected].body}</pre>}</div></div></div></div></section><hr className="rule" /><Section eyebrow="The mechanism" title="Why a worker never guesses" intro="Three parts carry the load. Remove any one and delegation starts costing more than it saves."><Cards items={mechanism} /></Section><Cta title={<>Your first run<br />takes one command.</>} actions={[['/docs','Read the quick start']]} /></main> }
+export function OrchestrationPage() {
+  const [selected, setSelected] = useState(0)
+  const activeTab = tabs[selected] ?? tabs[0]
+  return (
+    <main className="site-page">
+      <PageHero
+        crumb="Orchestration"
+        title="Delegate the execution."
+        muted="Never the judgement."
+        copy="A change is decisions plus typing. The architect owns what the change means, which ambiguity resolves which way, and what must stay true. A worker owns the typing — and is contractually forbidden from deciding anything it was not given."
+        actions={[
+          ['/docs', 'Run your first job'],
+          ['/product/workers', 'See the hierarchy'],
+        ]}
+      />
+      <section>
+        <div className="wrap">
+          <div className="steps">
+            <div role="tablist" aria-label="How Bottega works">
+              {tabs.map((tab, index) => (
+                <button
+                  className="step"
+                  role="tab"
+                  type="button"
+                  key={tab.title}
+                  aria-selected={selected === index}
+                  onClick={() => setSelected(index)}
+                  onKeyDown={(event) => {
+                    const direction =
+                      event.key === 'ArrowDown' || event.key === 'ArrowRight'
+                        ? 1
+                        : event.key === 'ArrowUp' || event.key === 'ArrowLeft'
+                          ? -1
+                          : 0
+                    if (direction) {
+                      event.preventDefault()
+                      setSelected((index + direction + tabs.length) % tabs.length)
+                    }
+                  }}
+                >
+                  <span className="n">0{index + 1}</span>
+                  <h3>{tab.title}</h3>
+                  <p>{tab.copy}</p>
+                </button>
+              ))}
+            </div>
+            <div className="panel" role="tabpanel">
+              <div className="panel-head">
+                <span className="eyebrow">{activeTab?.eyebrow}</span>
+              </div>
+              <div className="panel-body">
+                {activeTab && 'stack' in activeTab && activeTab.stack ? (
+                  <div className="stack">
+                    {activeTab.stack.map(([label, value]) => (
+                      <div key={label}>
+                        <span className="lbl">{label}</span>
+                        <span className="val">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <pre>{activeTab && 'body' in activeTab ? activeTab.body : null}</pre>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <hr className="rule" />
+      <Section
+        eyebrow="The mechanism"
+        title="Why a worker never guesses"
+        intro="Three parts carry the load. Remove any one and delegation starts costing more than it saves."
+      >
+        <Cards items={mechanism} />
+      </Section>
+      <Cta
+        title={
+          <>
+            Your first run
+            <br />
+            takes one command.
+          </>
+        }
+        actions={[['/docs', 'Read the quick start']]}
+      />
+    </main>
+  )
+}

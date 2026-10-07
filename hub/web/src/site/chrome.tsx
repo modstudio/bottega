@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import './site.css'
@@ -34,6 +34,7 @@ const Brand = ({ onClick }: { onClick?: () => void }) => (
 type MenuKey = 'orchestration' | 'workspace'
 
 export function SiteHeader({ identity }: { identity: SiteIdentity }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [openKey, setOpenKey] = useState<MenuKey | null>(null)
   const [mobile, setMobile] = useState(false)
   const [accordion, setAccordion] = useState<MenuKey | null>(null)
@@ -63,6 +64,12 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
       if (timer.current) clearTimeout(timer.current)
     }
   }, [])
+  useEffect(() => {
+    if (pathname) {
+      setOpenKey(null)
+      setMobile(false)
+    }
+  }, [pathname])
   useEffect(() => {
     document.body.style.overflow = mobile ? 'hidden' : ''
     return () => {
@@ -230,70 +237,67 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
           onClick={() => setOpenKey(null)}
         />
       ) : null}
-      {mobile ? (
-        <div
-          className="mobile-menu"
-          id="site-mobile-menu"
-          onClick={(event) => {
-            if ((event.target as Element).closest('a')) setMobile(false)
-          }}
-        >
-          <div className="wrap mm-wrap">
-            <div className="mm-bar">
-              <Brand onClick={() => setMobile(false)} />
-              <button
-                className="burger mm-close"
-                type="button"
-                aria-label="Close menu"
-                onClick={() => setMobile(false)}
+      <div
+        className="mobile-menu"
+        id="site-mobile-menu"
+        aria-label="Product navigation"
+        hidden={!mobile}
+      >
+        <div className="wrap mm-wrap">
+          <div className="mm-bar">
+            <Brand onClick={() => setMobile(false)} />
+            <button
+              className="burger mm-close"
+              type="button"
+              aria-label="Close menu"
+              onClick={() => setMobile(false)}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
               >
-                <svg
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  aria-hidden="true"
-                >
-                  <path d="M4 4l12 12M16 4L4 16" />
-                </svg>
-              </button>
-            </div>
-            <MobileGroup
-              label="Orchestration"
-              open={accordion === 'orchestration'}
-              onToggle={() => setAccordion(accordion === 'orchestration' ? null : 'orchestration')}
-            >
-              <Link to="/product/orchestration">How a run works</Link>
-              <Link to="/product/workers">Workers &amp; cost</Link>
-              <Link to="/product/review">Review</Link>
-            </MobileGroup>
-            <MobileGroup
-              label="Workspace"
-              open={accordion === 'workspace'}
-              onToggle={() => setAccordion(accordion === 'workspace' ? null : 'workspace')}
-            >
-              <Link to="/product/board">Board</Link>
-              <Link to="/product/doc-store">Doc store</Link>
-              <Link to="/product/context">Context</Link>
-            </MobileGroup>
-            <Link className="mm-link" to="/product/workflows">
-              Workflows
-            </Link>
-            <Link className="mm-link" to="/docs">
-              Guides
-            </Link>
-            <a className="mm-link" href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>
-              GitHub
-            </a>
-            <Link className="mm-link" to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
-              {identity === 'signed-in' ? 'Open app' : 'Sign in'}
-            </Link>
-            <Link className="mm-link" to="/docs">
-              Install Bottega
-            </Link>
+                <path d="M4 4l12 12M16 4L4 16" />
+              </svg>
+            </button>
           </div>
+          <MobileGroup
+            label="Orchestration"
+            open={accordion === 'orchestration'}
+            onToggle={() => setAccordion(accordion === 'orchestration' ? null : 'orchestration')}
+          >
+            <Link to="/product/orchestration">How a run works</Link>
+            <Link to="/product/workers">Workers &amp; cost</Link>
+            <Link to="/product/review">Review</Link>
+          </MobileGroup>
+          <MobileGroup
+            label="Workspace"
+            open={accordion === 'workspace'}
+            onToggle={() => setAccordion(accordion === 'workspace' ? null : 'workspace')}
+          >
+            <Link to="/product/board">Board</Link>
+            <Link to="/product/doc-store">Doc store</Link>
+            <Link to="/product/context">Context</Link>
+          </MobileGroup>
+          <Link className="mm-link" to="/product/workflows">
+            Workflows
+          </Link>
+          <Link className="mm-link" to="/docs">
+            Guides
+          </Link>
+          <a className="mm-link" href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>
+            GitHub
+          </a>
+          <Link className="mm-link" to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
+            {identity === 'signed-in' ? 'Open app' : 'Sign in'}
+          </Link>
+          <Link className="mm-link" to="/docs">
+            Install Bottega
+          </Link>
         </div>
-      ) : null}
+      </div>
     </>
   )
 }
@@ -302,7 +306,6 @@ function Flyout({
   children,
   onEnter,
   onLeave,
-  onClose,
 }: {
   id: string
   children: React.ReactNode
@@ -311,15 +314,7 @@ function Flyout({
   onClose: () => void
 }) {
   return (
-    <div
-      className="flyout"
-      id={id}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      onClick={(event) => {
-        if ((event.target as Element).closest('a')) onClose()
-      }}
-    >
+    <div className="flyout" id={id} onMouseEnter={onEnter} onMouseLeave={onLeave} role="menu">
       <div className="flyout-in">{children}</div>
     </div>
   )
