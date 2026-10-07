@@ -694,7 +694,10 @@
 .site-page .topics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 36px;
+  gap: 52px 36px;
+}
+.site-page .topics li button.topic-all {
+  color: var(--ink);
 }
 .site-page .topics h4 {
   margin: 0 0 14px;

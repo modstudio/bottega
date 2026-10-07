@@ -7,9 +7,12 @@ import type { DocsSearchMatch, DocsTreeItem } from './types.ts'
 
 export const FEATURED_GUIDE_LIMIT = 9
 
+/** A topic column lists this many of its documents; the rest sit behind its "all" link. */
+export const TOPIC_LINK_LIMIT = 5
+
 export type DocsHomeModel = {
   featured: DocsTreeItem[]
-  topics: Array<{ heading: DocsTreeItem | null; items: DocsTreeItem[] }>
+  topics: Array<{ heading: DocsTreeItem | null; items: DocsTreeItem[]; total: number }>
 }
 
 export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
@@ -20,9 +23,14 @@ export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
   const featured = ordered.filter((item) => item.featured).slice(0, FEATURED_GUIDE_LIMIT)
   const topics: DocsHomeModel['topics'] = roots
     .filter((root) => root.children.length)
-    .map((root) => ({ heading: root, items: root.children }))
+    .map((root) => ({
+      heading: root,
+      items: root.children.slice(0, TOPIC_LINK_LIMIT),
+      total: root.children.length,
+    }))
   const more = roots.filter((root) => !root.children.length)
-  if (more.length) topics.push({ heading: null, items: more })
+  if (more.length)
+    topics.push({ heading: null, items: more.slice(0, TOPIC_LINK_LIMIT), total: more.length })
   return { featured, topics }
 }
 
@@ -116,6 +124,17 @@ export function DocsHome({
                             </button>
                           </li>
                         ))}
+                        {topic.total > topic.items.length ? (
+                          <li>
+                            <button
+                              className="topic-all"
+                              type="button"
+                              onClick={() => onSelect(topic.heading ?? topic.items[0]!)}
+                            >
+                              All {topic.total} →
+                            </button>
+                          </li>
+                        ) : null}
                       </ul>
                     </div>
                   ))}
