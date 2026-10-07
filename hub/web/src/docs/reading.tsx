@@ -164,7 +164,7 @@ export function DocsReading({
   const titleGone = useScrolledPast(heading, doc?.id)
   return (
     <main
-      className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-11 md:pt-6 md:pb-9 lg:border-x"
+      className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-11 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
       data-doc-wide={wide ? '' : undefined}
     >
       {error ? (
