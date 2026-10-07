@@ -27,6 +27,12 @@ import {
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
+import {
+  type BoundRun,
+  decideRunBinding,
+  type SessionMatch,
+  sessionOrAdopterMatch,
+} from './workflow-run-binding.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
@@ -48,6 +54,7 @@ export type CursorIdentity = {
   branch: string | null
   worktree: string | null
   session: string | null
+  createdAt: string
   stepActivatedAt: string
 }
 
@@ -319,24 +326,20 @@ function gatherReview(
   }
 }
 
-type RunBinding = {
-  project: string | null
-  launchKey: string | null
-  branch: string | null
-}
-
-function loadRunBinding(runId: number, d: Database): RunBinding | null {
+function loadRunBinding(runId: number, d: Database): BoundRun | null {
   const row = d
     .query<
       {
         repo: string | null
         launch_key: string | null
         branch: string | null
+        session_id: string | null
+        started_at: string
         project_name: string | null
       },
       [number]
     >(
-      `SELECT r.repo, r.launch_key, r.branch, p.name AS project_name
+      `SELECT r.repo, r.launch_key, r.branch, r.session_id, r.started_at, p.name AS project_name
          FROM run r LEFT JOIN project p ON p.id=r.project_id
         WHERE r.id=?`,
     )
@@ -346,21 +349,49 @@ function loadRunBinding(runId: number, d: Database): RunBinding | null {
     project: row.project_name ?? row.repo,
     launchKey: row.launch_key,
     branch: row.branch,
+    sessionId: row.session_id,
+    createdAt: row.started_at,
   }
 }
 
-function requireRunBinding(flag: string, run: RunBinding, identity: CursorIdentity): void {
-  if (run.project !== identity.project)
-    throw new Error(
-      `${flag} project is ${run.project ?? 'unset'}, not this cursor's ${identity.project}`,
+function loadAdoptionReasons(
+  cursorId: number,
+  actorSession: string,
+  d: Database,
+): Array<string | null> {
+  return d
+    .query<{ reason: string | null }, [number, string]>(
+      `SELECT a.reason
+         FROM question q JOIN question_mutation_audit a ON a.question_id=q.id
+        WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
     )
-  const keyOk = Boolean(identity.workflowKey) && run.launchKey === identity.workflowKey
-  const branchOk = Boolean(identity.branch) && run.branch === identity.branch
-  if (keyOk || branchOk) return
-  throw new Error(
-    `${flag} launch_key is ${run.launchKey ?? 'unset'}, not this cursor's ${identity.workflowKey || 'task'}, ` +
-      `and branch is ${run.branch ?? 'unset'}, not this cursor's ${identity.branch ?? 'branch'}`,
-  )
+    .all(cursorId, actorSession)
+    .map(({ reason }) => reason)
+}
+
+function sessionOrAdopterFor(
+  cursorId: number,
+  cursorSession: string | null,
+  actorSession: string | null,
+  d: Database,
+): SessionMatch {
+  const adoptionReasons =
+    cursorSession !== null && actorSession !== null
+      ? loadAdoptionReasons(cursorId, actorSession, d)
+      : []
+  return sessionOrAdopterMatch({ cursorSession, actorSession, adoptionReasons })
+}
+
+function requireRunBinding(
+  flag: string,
+  run: BoundRun,
+  identity: CursorIdentity,
+  cursorId: number,
+  d: Database,
+): void {
+  const session = sessionOrAdopterFor(cursorId, identity.session, run.sessionId, d)
+  const refusal = decideRunBinding({ flag, run, identity, ...session })
+  if (refusal) throw new Error(refusal)
 }
 
 function requireCheckout(
@@ -406,6 +437,7 @@ function requireCheckout(
 function gatherGate(
   id: number,
   identity: CursorIdentity,
+  cursorId: number,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   d: Database,
 ): ValidatedEvidence['gate'] {
@@ -426,7 +458,7 @@ function gatherGate(
   if (row.run_id !== null) {
     const run = loadRunBinding(row.run_id, d)
     if (!run) throw new Error(`--gate ${id} run ${row.run_id} does not exist`)
-    requireRunBinding(`--gate ${id}`, run, identity)
+    requireRunBinding(`--gate ${id}`, run, identity, cursorId, d)
     project = run.project
   } else {
     if (!row.cwd) throw new Error(`--gate ${id} architect row has no cwd`)
@@ -448,7 +480,12 @@ function gatherGate(
   }
 }
 
-function gatherRun(id: number, identity: CursorIdentity, d: Database): ValidatedEvidence['run'] {
+function gatherRun(
+  id: number,
+  identity: CursorIdentity,
+  cursorId: number,
+  d: Database,
+): ValidatedEvidence['run'] {
   const row = d
     .query<{ status: string; exit_code: number | null }, [number]>(
       'SELECT status,exit_code FROM run WHERE id=?',
@@ -457,7 +494,7 @@ function gatherRun(id: number, identity: CursorIdentity, d: Database): Validated
   if (!row) throw new Error(`--run ${id} does not exist`)
   const binding = loadRunBinding(id, d)
   if (!binding) throw new Error(`--run ${id} does not exist`)
-  requireRunBinding(`--run ${id}`, binding, identity)
+  requireRunBinding(`--run ${id}`, binding, identity, cursorId, d)
   return {
     id,
     terminal: TERMINAL.has(row.status) && row.exit_code !== null,
@@ -486,6 +523,7 @@ function requireDoc(flag: string, docId: number, identity: CursorIdentity, d: Da
 function resolveNumericArtifact(
   id: number,
   identity: CursorIdentity,
+  cursorId: number,
   d: Database,
   runHasArtifacts: (runId: number) => boolean,
 ): { ref: string; exists: boolean } {
@@ -502,7 +540,7 @@ function resolveNumericArtifact(
     const binding = loadRunBinding(id, d)
     if (!binding)
       throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
-    requireRunBinding(`--artifact ${id}`, binding, identity)
+    requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
     return { ref: String(id), exists: runOk }
   }
   throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
@@ -571,6 +609,7 @@ function resolveArtifact(
     return resolveNumericArtifact(
       ref.id,
       identity,
+      binding.cursorId,
       d,
       ports.runHasArtifacts ?? runHasRecordedArtifacts,
     )
@@ -599,9 +638,9 @@ function resolveArtifact(
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
-    const binding = loadRunBinding(ref.id, d)
-    if (!binding) throw new Error(`--artifact run:${ref.id} does not exist`)
-    requireRunBinding(`--artifact run:${ref.id}`, binding, identity)
+    const run = loadRunBinding(ref.id, d)
+    if (!run) throw new Error(`--artifact run:${ref.id} does not exist`)
+    requireRunBinding(`--artifact run:${ref.id}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
       exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(ref.id),
@@ -702,27 +741,13 @@ function gatheredCommandEvidence(
   d: Database,
 ): Pick<ValidatedEvidence, 'probe' | 'exec'> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
-  const adoption =
-    identity.session !== null && row.session_id !== null
-      ? `adopted from gone owner ${identity.session} by ${row.session_id}`
-      : null
-  const sessionAdoptedCursor = Boolean(
-    adoption &&
-      d
-        .query<{ reason: string | null }, [number, string]>(
-          `SELECT a.reason
-             FROM question q JOIN question_mutation_audit a ON a.question_id=q.id
-            WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
-        )
-        .all(cursorId, row.session_id!)
-        .some(({ reason }) => reason === adoption || reason?.startsWith(`${adoption}; `)),
-  )
+  const session = sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
   return {
     exec: {
       id,
       exitCode: row.exit_code,
-      sessionMatches: identity.session !== null && row.session_id === identity.session,
-      sessionAdoptedCursor,
+      sessionMatches: session.sessionMatches,
+      sessionAdoptedCursor: session.sessionAdoptedCursor,
       createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
     },
   }
@@ -768,8 +793,8 @@ export function gatherValidatedEvidence(input: {
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
   if (review) gathered.review = gatherReview(review, input.identity, d)
-  if (gate) gathered.gate = gatherGate(gate, input.identity, resolveCheckout, d)
-  if (run) gathered.run = gatherRun(run, input.identity, d)
+  if (gate) gathered.gate = gatherGate(gate, input.identity, input.cursorId, resolveCheckout, d)
+  if (run) gathered.run = gatherRun(run, input.identity, input.cursorId, d)
   if (input.evidence.artifact?.trim()) {
     const parsed = parseArtifactRef(input.evidence.artifact)
     if ('error' in parsed) throw new Error(parsed.error)

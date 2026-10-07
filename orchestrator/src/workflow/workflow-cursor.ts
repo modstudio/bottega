@@ -515,6 +515,7 @@ function applyFloorDecision(
       branch: args.branch?.trim() || null,
       worktree: args.worktree?.trim() || null,
       session: row.session_id,
+      createdAt: row.created_at,
       stepActivatedAt: currentStepActivatedAt(
         row,
         cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),

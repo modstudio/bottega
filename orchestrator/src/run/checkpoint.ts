@@ -29,7 +29,10 @@ export function progressFileInstruction(scratchDir: string): string {
     `CHECKPOINT PROGRESS\n\nThe harness checkpoints tracked changes for you. ` +
     `After completing an item, write {"task_pointer":"<last completed item>"} as valid JSON to ` +
     `${join(scratchDir, PROGRESS_FILE_NAME)}; the latest value is injected when a preserved run continues. ` +
-    `You may rely on the harness to preserve staged and modified tracked work at limits and on stop.`
+    `You may rely on the harness to preserve staged and modified tracked work at limits and on stop.` +
+    ` A harness checkpoint may already have committed your work, so a clean tree after you finish an item is expected. ` +
+    `Never create an empty commit to carry a subject, because the architect titles the landed change. ` +
+    `When you do commit your own work, start the subject with the task key.`
   )
 }
 
