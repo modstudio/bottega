@@ -117,6 +117,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/docs.ts',
     '../../../shared/record/tenant.ts',
   ]),
+  module('orchestrator/src/record/record-doc-errors.ts', ['../doc/doc-write-allowed.ts']),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',
     'zod',

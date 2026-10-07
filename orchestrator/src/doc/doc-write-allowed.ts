@@ -81,6 +81,24 @@ export function docWriteProjectName(scope: string, subject: string | null): stri
   return docScopeHasProjectSubject(scope) ? subject : null
 }
 
+export function refuseMismatchedDocProject(
+  scope: string,
+  subject: string | null,
+  suppliedProjectName: string | null | undefined,
+): string | null {
+  const addressProjectName = docWriteProjectName(scope, subject)
+  if (
+    addressProjectName === null ||
+    suppliedProjectName == null ||
+    suppliedProjectName === addressProjectName
+  )
+    return null
+  return (
+    `document project "${suppliedProjectName}" does not match address project "${addressProjectName}"\n` +
+    'cleared by: omit the project name, or correct the address'
+  )
+}
+
 export function refuseOwnedDocAddress(
   scope: string,
   subject: string | null,
