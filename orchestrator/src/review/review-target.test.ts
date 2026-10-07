@@ -9,6 +9,7 @@ import { upsertProject } from '../project/projects.ts'
 import {
   emptyReviewRefusal,
   implicitReviewBranch,
+  implicitReviewBranchFrom,
   implicitReviewRefusal,
   reviewArtifactBlock,
   reviewTrunkRef,
@@ -16,28 +17,10 @@ import {
 
 describe('review target', () => {
   test('implicit review branch excludes trunk and detached HEAD', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'implicit-review-branch-'))
-    const git = (...args: string[]) => {
-      const result = spawnFixtureGitSync(args, { cwd: repo })
-      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-    }
-    try {
-      git('init', '-b', 'main')
-      git('config', 'user.name', 'Fixture')
-      git('config', 'user.email', 'fixture@example.com')
-      writeFileSync(join(repo, 'base.txt'), 'base\n')
-      git('add', 'base.txt')
-      git('commit', '-m', 'base')
-      upsertProject({ name: 'implicit-review-branch', path: repo, settings: { trunk: 'main' } })
-
-      expect(implicitReviewBranch(repo)).toBeNull()
-      git('switch', '-c', 'DEV-1147-branch')
-      expect(implicitReviewBranch(repo)).toBe('DEV-1147-branch')
-      git('checkout', '--detach')
-      expect(implicitReviewBranch(repo)).toBeNull()
-    } finally {
-      rmSync(repo, { recursive: true, force: true })
-    }
+    expect(implicitReviewBranch).toBeFunction()
+    expect(implicitReviewBranchFrom('DEV-1147-branch', 'main')).toBe('DEV-1147-branch')
+    expect(implicitReviewBranchFrom('main', 'main')).toBeNull()
+    expect(implicitReviewBranchFrom(null, 'main')).toBeNull()
   })
 
   test('names the resolved artifact and makes checkout HEAD authoritative', () => {

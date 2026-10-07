@@ -340,9 +340,7 @@ export async function run(opts: {
   const reviewTarget =
     opts.resolvedReviewTarget ??
     resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry)
-  const explicitReview = reviewTarget !== null
-  const findings = Boolean(requestedJob.findings)
-  const implicitReview = implicitReviewClaim(callerCwd, explicitReview, findings)
+  const implicitReview = implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
   const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
@@ -721,7 +719,7 @@ export async function run(opts: {
     timeoutMs: boundMs,
     forbidsRepo,
     reviewTarget,
-    implicitReviewBranch: implicitReview.branch,
+    implicitReview,
     coverageBase,
     readOnlyBase,
     deferredCwdMcpPreflight,

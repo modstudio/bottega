@@ -73,6 +73,7 @@ import {
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
+import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import {
   claimedRunBranch,
   decideClaimTreePlan,
@@ -142,7 +143,7 @@ export type ClaimInput = {
   timeoutMs: number
   forbidsRepo: boolean
   reviewTarget: { branch: string; commit: string; base: string } | null
-  implicitReviewBranch: string | null
+  implicitReview: { branch: string | null; findings: boolean }
   coverageBase: string | null
   readOnlyBase: string | null
   deferredCwdMcpPreflight: boolean
@@ -209,7 +210,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     timeoutMs,
     forbidsRepo,
     reviewTarget,
-    implicitReviewBranch,
+    implicitReview,
     coverageBase,
     readOnlyBase,
     deferredCwdMcpPreflight,
@@ -218,8 +219,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     replySchemaName,
     carriedQuestionIds,
   } = input
-  const recordedBranch = (worktreeBranch: string | null) =>
-    claimedRunBranch(reviewTarget?.branch ?? null, implicitReviewBranch, worktreeBranch)
   const resume = resumeFacts(
     opts.resume?.kind ?? null,
     opts.reserveId ?? 0,
@@ -264,21 +263,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const recordId = newRecordId()
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
-    resume.workspaceSource === 'retained'
-      ? (db()
-          .query(
-            `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, task_record_id
-             FROM run WHERE id=?`,
-          )
-          .get(opts.resume!.parent) as {
-          launch_cwd: string | null
-          launch_seed: string | null
-          launch_key: string | null
-          launch_base: string | null
-          no_failover: number
-          task_record_id: string | null
-        })
-      : null
+    resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
+  const recordedBranch = (worktreeBranch: string | null) =>
+    claimedRunBranch(
+      reviewTarget?.branch ?? null,
+      implicitReview.branch,
+      implicitReview.findings ? (inheritedLaunch?.branch ?? null) : null,
+      worktreeBranch,
+    )
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   // A read-only run's key is an address on its record, not an input to the

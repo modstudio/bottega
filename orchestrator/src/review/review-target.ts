@@ -138,8 +138,13 @@ function implicitReviewCoverageBase(cwd: string): string | null {
 
 /** Branch claim for a findings job dispatched without --review. */
 export function implicitReviewBranch(cwd: string): string | null {
-  const branch = branchOf(cwd)
-  const trunk = projectAt(cwd)?.settings.trunk?.trim()
+  return implicitReviewBranchFrom(branchOf(cwd), projectAt(cwd)?.settings.trunk?.trim() ?? null)
+}
+
+export function implicitReviewBranchFrom(
+  branch: string | null,
+  trunk: string | null,
+): string | null {
   return branch && branch !== trunk ? branch : null
 }
 
@@ -147,9 +152,13 @@ export function implicitReviewClaim(
   cwd: string,
   hasExplicitTarget: boolean,
   findings: boolean,
-): { branch: string | null; coverageBase: string | null } {
-  if (hasExplicitTarget || !findings) return { branch: null, coverageBase: null }
-  return { branch: implicitReviewBranch(cwd), coverageBase: implicitReviewCoverageBase(cwd) }
+): { branch: string | null; coverageBase: string | null; findings: boolean } {
+  if (hasExplicitTarget || !findings) return { branch: null, coverageBase: null, findings }
+  return {
+    branch: implicitReviewBranch(cwd),
+    coverageBase: implicitReviewCoverageBase(cwd),
+    findings,
+  }
 }
 
 export function resolveReviewTarget(

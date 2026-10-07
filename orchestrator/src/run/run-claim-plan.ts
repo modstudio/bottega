@@ -22,9 +22,10 @@ export type ClaimTreePlanRuling =
 export function claimedRunBranch(
   reviewTargetBranch: string | null,
   implicitReviewBranch: string | null,
+  rootReviewBranch: string | null,
   worktreeBranch: string | null,
 ): string | null {
-  return reviewTargetBranch ?? implicitReviewBranch ?? (worktreeBranch || null)
+  return reviewTargetBranch ?? implicitReviewBranch ?? rootReviewBranch ?? (worktreeBranch || null)
 }
 
 /** Decide the claimed run's working-tree mode before performing any effects. */

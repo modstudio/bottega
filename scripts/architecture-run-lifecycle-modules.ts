@@ -21,6 +21,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
     './resume-tree.ts',
   ]),
+  module('orchestrator/src/run/run-claim-inheritance.ts', ['../database/db.ts']),
   module('orchestrator/src/run/run-retry-claim.ts', [
     '../git/git-environment.ts',
     '../worktree/worktree.ts',
@@ -73,6 +74,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
     './run-claim-plan.ts',
+    './run-claim-inheritance.ts',
     './run-resume-kind.ts',
     './run-resume-options.ts',
     './run-resume-claim.ts',
