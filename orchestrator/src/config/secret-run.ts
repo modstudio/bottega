@@ -7,9 +7,9 @@ import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 export const SECRET_RUN_WORKING_FORM =
   'orch config secret run --name <KEY> [--name <KEY> ...] -- <argv...>'
 
-export type SecretRunInvocation = { names: string[]; argv: string[] }
+type SecretRunInvocation = { names: string[]; argv: string[] }
 
-export type ChildEnvironment =
+type ChildEnvironment =
   | { ok: true; env: Record<string, string | undefined> }
   | { ok: false; unresolved: string[] }
 

@@ -212,6 +212,8 @@ export function register(program: Command): void {
   secret
     .command('run')
     .description('run a command with named secrets resolved')
+    // The child's own -h and --help belong to the child.
+    .helpOption(false)
     .allowUnknownOption()
     .allowExcessArguments()
     .passThroughOptions()
