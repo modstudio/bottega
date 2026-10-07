@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
 
-const row = (datname: string, applicationName: string) => ({
-  datname,
-  applicationName,
-  backendStart: '2026-10-07T12:00:00.000Z',
-  state: 'active',
-})
+const row = (datname: string, applicationName: string) => ({ datname, applicationName })
 
 describe('tree database connection classification', () => {
   test('accepts the owner tag and orch-admin', () => {

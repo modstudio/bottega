@@ -48,27 +48,19 @@ test('samples only matching built-in postgres allocation activity as orch-admin'
     {
       datname: 'stopal_orch_1',
       application_name: 'orch-tree-orch.run=1',
-      backend_start: '2026-10-07T12:00:00.000Z',
-      state: 'active',
     },
     {
       datname: 'other_1',
       application_name: 'psql',
-      backend_start: '2026-10-07T12:00:00.000Z',
-      state: 'idle',
     },
     // A background process: no database, no application name.
     {
       datname: null,
       application_name: null,
-      backend_start: '2026-10-07T12:00:00.000Z',
-      state: null,
     },
     {
       datname: 'stopal_orch_2',
       application_name: null,
-      backend_start: '2026-10-07T12:00:00.000Z',
-      state: 'idle',
     },
   ]
   const result = observeRecipeDatabaseConnections(
@@ -91,14 +83,10 @@ test('samples only matching built-in postgres allocation activity as orch-admin'
         {
           datname: 'stopal_orch_1',
           applicationName: 'orch-tree-orch.run=1',
-          backendStart: '2026-10-07T12:00:00.000Z',
-          state: 'active',
         },
         {
           datname: 'stopal_orch_2',
           applicationName: '',
-          backendStart: '2026-10-07T12:00:00.000Z',
-          state: 'idle',
         },
       ],
     },

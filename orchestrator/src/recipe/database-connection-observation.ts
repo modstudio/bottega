@@ -15,8 +15,6 @@ const RECIPE_DATABASE_CONNECTION_OBSERVATION_TIMEOUT_MS = 5_000
 type RecipeDatabaseConnectionRow = {
   datname: string
   applicationName: string
-  backendStart: string
-  state: string | null
 }
 
 type RecipeDatabaseConnectionObservation = {
@@ -41,9 +39,7 @@ const activityCommand: DatabaseCommand = {
     '--command',
     `SELECT json_build_object(
        'datname', datname,
-       'application_name', application_name,
-       'backend_start', backend_start,
-       'state', state
+       'application_name', application_name
      )::text FROM pg_stat_activity`,
   ],
 }
@@ -65,19 +61,9 @@ function parseRows(stdout: Uint8Array): RecipeDatabaseConnectionRow[] | null {
         .filter((row) => row.datname !== null)
         .map((row) => {
           const applicationName = row.application_name ?? ''
-          if (
-            typeof row.datname !== 'string' ||
-            typeof applicationName !== 'string' ||
-            typeof row.backend_start !== 'string' ||
-            (typeof row.state !== 'string' && row.state !== null)
-          )
+          if (typeof row.datname !== 'string' || typeof applicationName !== 'string')
             throw new Error('invalid activity row')
-          return {
-            datname: row.datname,
-            applicationName,
-            backendStart: row.backend_start,
-            state: row.state,
-          }
+          return { datname: row.datname, applicationName }
         })
     )
   } catch {

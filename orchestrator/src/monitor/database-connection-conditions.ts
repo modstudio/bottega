@@ -21,8 +21,6 @@ const SAMPLE_LIMIT =
 type SampledDatabaseConnection = {
   datname: string
   applicationName: string
-  backendStart: string
-  state: string | null
 }
 
 function offense(applicationName: string, ownerLabel: string): Offense | null {
