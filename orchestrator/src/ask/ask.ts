@@ -60,6 +60,7 @@ import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
+import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
 import { validateWorkerNoteInput, type WorkerNoteInput, type WorkerNoteRun } from './worker-note.ts'
@@ -787,5 +788,6 @@ export async function serveAsk(): Promise<void> {
   const token = process.env.ORCH_RUN_TOKEN ?? ''
   serveStdio(() => createAskMcpServer(runId, token), {
     transport: observeAskTransport(new StdioServerTransport(), runId),
+    onerror: writeAskServerFailure,
   })
 }
