@@ -20,11 +20,13 @@
   --btn-ink: #fff;
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.04);
 }
-.site-page,
-.site-frame > .strip,
-.site-frame > header.nav,
-.site-frame > footer,
-.site-frame > .mobile-menu {
+:where(
+  .site-page,
+  .site-frame > .strip,
+  .site-frame > header.nav,
+  .site-frame > footer,
+  .site-frame > .mobile-menu
+) {
   background: var(--ground);
   color: var(--ink);
   font-family: "Hedvig Letters Sans", system-ui, -apple-system, Arial, sans-serif;
@@ -57,47 +59,60 @@
     --btn-ink: #0b0b0b;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
-  .site-page,
-  .site-frame > .strip,
-  .site-frame > header.nav,
-  .site-frame > footer,
-  .site-frame > .mobile-menu {
+  :where(
+    .site-page,
+    .site-frame > .strip,
+    .site-frame > header.nav,
+    .site-frame > footer,
+    .site-frame > .mobile-menu
+  ) {
     color-scheme: dark;
   }
 }
-.site-page *,
-.site-frame > .strip *,
-.site-frame > header.nav *,
-.site-frame > footer *,
-.site-frame > .mobile-menu * {
+:where(
+    .site-page,
+    .site-frame > .strip,
+    .site-frame > header.nav,
+    .site-frame > footer,
+    .site-frame > .mobile-menu
+  )
+  * {
   box-sizing: border-box;
 }
-.site-page [hidden],
-.site-frame > header.nav [hidden],
+:where(.site-page, .site-frame > header.nav) [hidden],
 .site-frame > .mobile-menu[hidden] {
   display: none !important;
 }
-.site-page ::selection,
-.site-frame > .strip ::selection,
-.site-frame > header.nav ::selection,
-.site-frame > footer ::selection,
-.site-frame > .mobile-menu ::selection {
+:where(
+    .site-page,
+    .site-frame > .strip,
+    .site-frame > header.nav,
+    .site-frame > footer,
+    .site-frame > .mobile-menu
+  )
+  ::selection {
   background: var(--ink);
   color: var(--paper);
 }
-.site-page a,
-.site-frame > .strip a,
-.site-frame > header.nav a,
-.site-frame > footer a,
-.site-frame > .mobile-menu a {
+:where(
+    .site-page,
+    .site-frame > .strip,
+    .site-frame > header.nav,
+    .site-frame > footer,
+    .site-frame > .mobile-menu
+  )
+  a {
   color: inherit;
   text-decoration: none;
 }
-.site-page :focus-visible,
-.site-frame > .strip :focus-visible,
-.site-frame > header.nav :focus-visible,
-.site-frame > footer :focus-visible,
-.site-frame > .mobile-menu :focus-visible {
+:where(
+    .site-page,
+    .site-frame > .strip,
+    .site-frame > header.nav,
+    .site-frame > footer,
+    .site-frame > .mobile-menu
+  )
+  :focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
 }
@@ -1347,6 +1362,7 @@
 .site-frame .fly-card .foot {
   border-top: 1px solid var(--line);
   padding: 13px 15px;
+  display: block;
 }
 .site-frame .fly-card .foot b {
   display: block;
