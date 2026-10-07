@@ -198,6 +198,7 @@ function allocatedDatabaseUrl(
   allocation: Allocation,
   allocatedName: string,
   projectRoot: string,
+  treeLabel: string,
 ): { ok: true; value: string } | { ok: false; detail: string } {
   const connection = {
     key: allocation.provision!.connection.key,
@@ -206,7 +207,15 @@ function allocatedDatabaseUrl(
   const resolved = readConnectionValue(projectRoot, connection)
   if (!resolved.ok) return { ok: false, detail: `database "${key}" ${resolved.detail}` }
   try {
-    return { ok: true, value: connectionUrlForAllocatedDatabase(resolved.value, allocatedName) }
+    return {
+      ok: true,
+      value: connectionUrlForAllocatedDatabase(
+        resolved.value,
+        allocatedName,
+        allocation.engine,
+        treeLabel,
+      ),
+    }
   } catch (error) {
     return {
       ok: false,
@@ -219,6 +228,7 @@ export function databaseUrlSecrets(
   recipe: TrackedRecipe,
   allocations: Record<string, string>,
   projectRoot: string,
+  treeLabel: string,
 ): { ok: true; secrets: Record<string, string> } | { ok: false; result: StepResult } {
   const secrets: Record<string, string> = {}
   for (const envFile of recipe.env ?? []) {
@@ -232,6 +242,7 @@ export function databaseUrlSecrets(
         target.allocation,
         target.allocatedName,
         projectRoot,
+        treeLabel,
       )
       if (!resolved.ok) return { ok: false, result: envFileFailure(envFile.path, resolved.detail) }
       secrets[placeholder] = resolved.value

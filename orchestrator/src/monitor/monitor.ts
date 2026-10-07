@@ -19,12 +19,14 @@ import {
   projects,
   resolvedWorktreeTool,
 } from '../project/projects.ts'
+import { observeRecipeDatabaseConnections } from '../recipe/database-connection-observation.ts'
 import { observeRecipeDatabases } from '../recipe/database-inventory.ts'
 import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
 import {
   classifiedDockerResources,
   dockerNetworkInventory,
   dockerRunResources,
+  orchRunLabel,
 } from '../resources/docker-resources.ts'
 import { gitLocks } from '../resources/git-locks.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
@@ -32,6 +34,7 @@ import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
 import { branchInventoryDecision } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import {
@@ -102,11 +105,34 @@ function recipeDatabaseObservations(
       )
       .all(project.id) as { allocation_key: string; state: string }[]
   ).map((claim) => ({ allocationKey: claim.allocation_key, state: claim.state }))
+  const connectionInventory = observeRecipeDatabaseConnections({
+    project: project.name,
+    projectRoot: project.path,
+    recipePath,
+  })
+  const owners = (
+    database
+      .query(
+        `SELECT allocation_key,root_run_id FROM resource_claim
+         WHERE project_id=? AND kind='database' AND state IN ('claimed','retained')`,
+      )
+      .all(project.id) as { allocation_key: string; root_run_id: number }[]
+  )
+    .filter((claim) => claim.allocation_key.startsWith('postgres:'))
+    .map((claim) => ({
+      database: claim.allocation_key.slice('postgres:'.length),
+      ownerLabel: orchRunLabel(claim.root_run_id),
+    }))
   return {
-    conditions: inventory.observations.flatMap((namespace) =>
-      orphanRecipeDatabaseConditions(namespace, claims),
-    ),
-    errors: inventory.errors,
+    conditions: [
+      ...inventory.observations.flatMap((namespace) =>
+        orphanRecipeDatabaseConditions(namespace, claims),
+      ),
+      ...connectionInventory.observations.flatMap((observation) =>
+        treeDatabaseConnectionConditions({ ...observation, owners }),
+      ),
+    ],
+    errors: [...inventory.errors, ...connectionInventory.errors],
   }
 }
 

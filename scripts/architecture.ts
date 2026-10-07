@@ -8,9 +8,11 @@ import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
+import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
+import { recipeModules } from './architecture-recipe-modules.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { releaseModules } from './architecture-release.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
@@ -88,12 +90,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
   ]),
   ...docModules,
-  module('orchestrator/src/doc/doc-owner.ts', [
-    '../record/record-attribution.ts',
-    '../record/record-auth.ts',
-    '../record/machine-identity.ts',
-    '../record/record-write-authority.ts',
-  ]),
+  ...metricModules,
   module('orchestrator/src/doc/local-doc-write.ts', [
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
@@ -257,16 +254,7 @@ export const modules: ArchitectureModule[] = [
     '../mcp/mcp-tool-list.ts',
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
-  module('orchestrator/src/recipe/env-file.ts', []),
-  module('orchestrator/src/recipe/database-allocation-matcher.ts', []),
-  module('orchestrator/src/recipe/database-inventory.ts', [
-    './database-allocation-matcher.ts',
-    './database-connection.ts',
-    './database-provision.ts',
-    './database-provision-plan.ts',
-    './recipe-loader.ts',
-    './recipe-schema.ts',
-  ]),
+  ...recipeModules,
   module('orchestrator/src/hook-tree/hook-tree.ts', ['../run/synthetic-lifecycle-job.ts']),
   module('orchestrator/src/landing-tree/landing-tree.ts', [
     '../run/synthetic-lifecycle-job.ts',

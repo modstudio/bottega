@@ -110,7 +110,7 @@ It never reports emptiness as a finding. "No rows", "no task", "nothing to do" a
 
 # The test gate
 
-One in-process `bun test` over `orchestrator/src`, with the test preload, under `gate-load.ts`: at most `GATE_CONCURRENCY_LIMIT` running gates, waiting while loadavg is at or above ncpu or free RAM is under `FREE_MEM_FLOOR_BYTES`. Timing ratchet only moves down. A unit test file above `SPAWN_LIMIT` Bun spawn or spawnSync calls fails `scripts/check-test-spawns.ts`. No size classes, shards, subprocess test leg, or retry path.
+One in-process `bun test` over `orchestrator/src`, with the test preload, under `gate-load.ts`: at most `GATE_CONCURRENCY_LIMIT` running gates, waiting while loadavg is at or above ncpu or RAM is low (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`). Timing ratchet only moves down. A unit test file above `SPAWN_LIMIT` Bun spawn or spawnSync calls fails `scripts/check-test-spawns.ts`. No size classes, shards, subprocess test leg, or retry path.
 
 # Prompts and replies age out
 
