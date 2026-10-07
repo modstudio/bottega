@@ -288,6 +288,9 @@ realPostgres('RLS proof against real Postgres', () => {
   registerPublicDocProofs({
     publicSpaceId: SPACE_A,
     privateSpaceId: SPACE_B,
+    publicProjectId: PROJECT_A,
+    otherProjectId: PROJECT_A2,
+    privateProjectId: PROJECT_B,
     ownerUserId: USER_A,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
     psql,

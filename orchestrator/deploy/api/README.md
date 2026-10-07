@@ -40,12 +40,17 @@ spaces, memberships, and invitations. Put its connection URL in the
 `RECORD_AUTH_DATABASE_URL` Fly secret shown above. Application data continues to use
 `record_actor` through `ORCH_RECORD_URL`.
 
-After migrating, designate the one public document space as the PostgreSQL migration owner. The
-migrations ship no designation row:
+After migrating, designate a public document project as the PostgreSQL migration owner. The
+migrations ship no designation row. A space-only designation does not exist; each designation
+names one project in its space:
 
 ```sql
-INSERT INTO public_doc_space (space_id)
-SELECT id FROM space WHERE slug = '<public-space-slug>';
+INSERT INTO public_doc_space (space_id, project_id)
+SELECT space.id, project.id
+FROM space
+JOIN project ON project.space_id = space.id
+WHERE space.slug = '<public-space-slug>'
+  AND project.name = '<public-project-name>';
 ```
 
 For browser clients, set `RECORD_API_ALLOWED_ORIGINS` to a comma-separated list of exact

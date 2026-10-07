@@ -9,6 +9,7 @@ import {
   integer,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -133,6 +134,7 @@ export const doc = pgTable.withRLS(
         AND EXISTS (
           SELECT 1 FROM public_doc_space public_space
           WHERE public_space.space_id = ${table.spaceId}
+            AND public_space.project_id = ${table.projectId}
         )`,
     }),
     ...tenantPolicies('doc', table.spaceId),
@@ -140,11 +142,26 @@ export const doc = pgTable.withRLS(
   ],
 )
 
-export const publicDocSpace = pgTable('public_doc_space', {
-  spaceId: uuid('space_id')
-    .primaryKey()
-    .references(() => space.id),
-})
+export const publicDocSpace = pgTable(
+  'public_doc_space',
+  {
+    spaceId: uuid('space_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.projectId] }),
+    foreignKey({
+      columns: [table.spaceId],
+      foreignColumns: [space.id],
+      name: 'public_doc_space_space_id_space_id_fkey',
+    }),
+    foreignKey({
+      columns: [table.spaceId, table.projectId],
+      foreignColumns: [project.spaceId, project.id],
+      name: 'public_doc_space_space_id_project_id_project_space_id_id_fk',
+    }),
+  ],
+)
 
 export const docRevision = pgTable.withRLS(
   'doc_revision',
