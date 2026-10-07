@@ -93,6 +93,7 @@ async function drawMermaid(source: string, dark: boolean): Promise<string> {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
+    suppressErrorRendering: true,
     theme: 'base',
     darkMode: dark,
     fontFamily: cssToken('--family-mono'),
@@ -103,6 +104,7 @@ async function drawMermaid(source: string, dark: boolean): Promise<string> {
     state: { useMaxWidth: false },
     er: { useMaxWidth: false },
   })
+  await mermaid.parse(source)
   const id = `docmmd${mermaidSeq++}`
   const { svg } = await mermaid.render(id, source)
   return svg
@@ -112,13 +114,27 @@ function cssToken(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+/** Mermaid rejects oklch; resolve the token through a canvas to sRGB. */
+function cssColor(name: string): string {
+  const value = cssToken(name)
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return value
+  ctx.fillStyle = value
+  ctx.fillRect(0, 0, 1, 1)
+  const pixel = ctx.getImageData(0, 0, 1, 1).data
+  return `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`
+}
+
 function mermaidTokens() {
-  const page = cssToken('--surface-page')
-  const raised = cssToken('--surface-raised')
-  const sunken = cssToken('--surface-sunken')
-  const text = cssToken('--text-primary')
-  const secondary = cssToken('--text-secondary')
-  const border = cssToken('--border-default')
+  const page = cssColor('--surface-page')
+  const raised = cssColor('--surface-raised')
+  const sunken = cssColor('--surface-sunken')
+  const text = cssColor('--text-primary')
+  const secondary = cssColor('--text-secondary')
+  const border = cssColor('--border-default')
   return {
     background: page,
     primaryColor: raised,
