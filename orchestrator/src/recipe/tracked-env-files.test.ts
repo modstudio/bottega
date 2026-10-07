@@ -34,7 +34,7 @@ function writeEnv(
   project: string,
   allocations: Record<string, string>,
 ) {
-  const urls = databaseUrlSecrets(recipe, allocations, project)
+  const urls = databaseUrlSecrets(recipe, allocations, project, 'orch.run=1')
   if (!urls.ok) return urls.result
   return writeTrackedEnvFiles(
     recipe,
@@ -75,7 +75,51 @@ describe('tracked recipe database URL env placeholders', () => {
     const allocations = { app: 'tree_app_4' }
     expect(writeEnv(recipe, tree, project, allocations)).toBeNull()
     expect(readFileSync(join(tree, '.env'), 'utf8')).toBe(
-      'DATABASE_URL=postgres://admin:super-secret@db.local:5432/tree_app_4?sslmode=require\n',
+      'DATABASE_URL=postgres://admin:super-secret@db.local:5432/tree_app_4?sslmode=require&application_name=orch-tree-orch.run%3D1\n',
+    )
+  })
+
+  test('replaces an existing application name while preserving other parameters', () => {
+    const { project, tree } = temporaryTree()
+    writeFileSync(
+      join(project, '.env'),
+      'DATABASE_URL=postgres://admin:secret@db.local/base?application_name=old&sslmode=require\n',
+    )
+    const recipe = recipeSchema.parse({
+      ...provisioned,
+      env: [{ path: '.env', mode: 'replace', contents: 'DATABASE_URL={db.app.url}\n' }],
+    })
+    expect(writeEnv(recipe, tree, project, { app: 'tree_app_4' })).toBeNull()
+    const url = new URL(
+      readFileSync(join(tree, '.env'), 'utf8').trim().slice('DATABASE_URL='.length),
+    )
+    expect(url.searchParams.get('application_name')).toBe('orch-tree-orch.run=1')
+    expect(url.searchParams.get('sslmode')).toBe('require')
+    expect([...url.searchParams.keys()].filter((key) => key === 'application_name')).toHaveLength(1)
+  })
+
+  test('leaves non-postgres connection parameters unchanged', () => {
+    const { project, tree } = temporaryTree()
+    writeFileSync(
+      join(project, '.env'),
+      'DATABASE_URL=mysql://admin:secret@db.local/base?application_name=existing&charset=utf8\n',
+    )
+    const recipe = recipeSchema.parse({
+      allocate: {
+        databases: {
+          app: {
+            engine: 'mysql',
+            name: 'app_{index}',
+            provision: { from: 'base', connection: { key: 'DATABASE_URL' } },
+          },
+        },
+      },
+      create: [],
+      env: [{ path: '.env', mode: 'replace', contents: 'DATABASE_URL={db.app.url}\n' }],
+    })
+    expect(writeEnv(recipe, tree, project, { app: 'tree_app_4' })).toBeNull()
+    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe(
+      'DATABASE_URL=mysql://admin:secret@db.local/tree_app_4?application_name=existing&charset=utf8\n',
     )
   })
 

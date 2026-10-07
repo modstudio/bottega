@@ -72,6 +72,7 @@ describe('database provision adapter', () => {
     ])
     expect(calls.flatMap((call) => call.argv).join(' ')).not.toContain('super-secret')
     expect(calls[0]!.env.PGPASSWORD).toBe('super-secret')
+    expect(calls[0]!.env.PGAPPNAME).toBe('orch-admin')
   })
 
   test('reuses an exact existing name without issuing create', () => {

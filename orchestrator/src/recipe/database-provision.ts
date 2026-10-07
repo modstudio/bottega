@@ -2,7 +2,11 @@
 /** Reads one declared connection at use time and executes pure database plans without exposing secrets. */
 import { lstatSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { parseConnectionUrl, readConnectionValue } from './database-connection.ts'
+import {
+  ADMIN_APPLICATION_NAME,
+  parseConnectionUrl,
+  readConnectionValue,
+} from './database-connection.ts'
 import {
   type DatabaseCommand,
   type DatabaseCommandPlan,
@@ -69,6 +73,7 @@ function clientConnection(engine: DatabaseCommandPlan['engine'], value: string):
         PGPORT: url.port || '5432',
         PGUSER: decode(url.username),
         PGPASSWORD: decode(url.password),
+        PGAPPNAME: ADMIN_APPLICATION_NAME,
         ...(url.searchParams.get('sslmode') ? { PGSSLMODE: url.searchParams.get('sslmode')! } : {}),
       },
       arguments: [],

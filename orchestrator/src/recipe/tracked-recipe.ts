@@ -741,6 +741,7 @@ export function createTrackedRecipe(
     prepared.recipe,
     prepared.snapshot.allocations?.databases ?? {},
     input.repoRoot,
+    context.vars.label!,
   )
   if (!urls.ok) {
     failTrackedCreation({
