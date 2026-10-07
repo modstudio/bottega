@@ -76,3 +76,21 @@ nothing.
 Replace a rule deliberately: bring the evidence and replacement together,
 name the rule being overruled and record the ruling. This openness matters
 because quietly obeying a lesser rule leaves no failure for review to detect.
+
+## Everything Bottega writes has a declared shape
+
+Every surface Bottega writes to has one declared shape: task titles and
+descriptions, documents, commit messages, pull request text, recorded
+decisions, notes and command output. The shape is the same in every project
+and every tracker, so a reader who has seen one knows where to look in the
+next.
+
+A shape is enforced where the text is written, by the verb or tool that writes
+it. Guidance alone is not a shape.
+
+A title or summary states the point and nothing else. Detail goes where it is
+kept, in a task document or a doc-store record, never run on in the text a
+person scans.
+
+A surface without a declared shape is a defect: name it and give it one rather
+than writing to it freely.
