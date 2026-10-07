@@ -810,6 +810,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         audience: z.enum(DOC_AUDIENCES).optional(),
         parentRecordId: z.string().uuid().nullable().optional(),
         position: z.number().int().optional(),
+        featured: z.boolean().optional(),
         projectName: z.string().nullable().optional(),
         reason: z.string().trim().min(1),
         author: z.string().trim().min(1),

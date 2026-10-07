@@ -49,6 +49,8 @@ describe('record public docs', () => {
       slug: 'guide',
       title: 'Guide',
       body: 'Read me',
+      summary: 'Read me',
+      featured: false,
       parentId: null,
       position: 2,
       updatedAt: '2026-10-06T18:00:00.000Z',

@@ -7,6 +7,7 @@ import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
 import { chooserProject, projectSubjects, searchSubject } from './filters.ts'
+import { DocsHome } from './home.tsx'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 import { docsSource } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
@@ -85,13 +86,30 @@ export function DocsPage() {
   )
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
 
+  if (source === 'public' && !selected) {
+    return (
+      <DocsHome
+        items={catalog.items}
+        results={results.items}
+        query={searchQuery}
+        onQuery={setSearchQuery}
+        onSelect={open}
+        loading={catalog.isPending}
+        error={catalog.error?.message ?? results.error?.message ?? null}
+      />
+    )
+  }
+
   return (
     <>
       <DocsView
         items={catalog.items}
         selectedId={selected?.id ?? null}
         audience={audience}
-        onAudience={setAudience}
+        onAudience={(next) => {
+          if (source === 'public' && selected) void navigate({ to: '/docs' })
+          setAudience(next)
+        }}
         project={project}
         onProject={setProject}
         signedIn={signedIn}

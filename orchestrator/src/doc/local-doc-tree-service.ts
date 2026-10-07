@@ -13,6 +13,7 @@ type TreeWriteInput = {
   audience?: DocAudience
   parentSlug?: string | null
   position?: number
+  featured?: boolean
   title?: string
   body?: string
   delivery?: string
@@ -23,6 +24,7 @@ export type LocalDocTreeFields = {
   parentId: number | null
   parentSlug: string | null
   position: number
+  featured: boolean
 }
 
 function treeDoc(
@@ -91,6 +93,7 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
     parentId: parent?.id ?? null,
     parentSlug,
     position: input.position ?? prior?.position ?? 0,
+    featured: input.featured ?? prior?.featured ?? false,
   }
 }
 

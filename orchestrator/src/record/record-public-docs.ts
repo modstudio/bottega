@@ -1,7 +1,7 @@
 // concern: record-public-docs
 /** Owns public-role document reads and hosted document search. Must not know HTTP or sessions. */
 import { SQL } from 'bun'
-import type { DocAudience } from '../../../shared/docs.ts'
+import { type DocAudience, docSummary } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
 const DOC_SEARCH_RESULT_LIMIT = 20
@@ -18,6 +18,8 @@ export type PublicRecordDoc = {
   updatedAt: string
   scope: string
   subject: string | null
+  summary?: string
+  featured?: boolean
 }
 
 export type PublicRecordDocTreeItem = Omit<PublicRecordDoc, 'body'>
@@ -55,6 +57,8 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
     updatedAt: iso(row.updated_at),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
+    summary: docSummary(String(row.body)),
+    featured: row.featured == null ? false : Boolean(row.featured),
   }
 }
 
@@ -97,12 +101,12 @@ export async function listPublicRecordDocs(input: {
 }): Promise<PublicRecordDocTreeItem[]> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, parent_id, position, updated_at, scope, subject
+      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject
       FROM doc
       ORDER BY position, title, id
     `
     return rows.map((row: Record<string, unknown>) => {
-      const { body: _body, ...item } = publicRecordDocRow({ ...row, body: '' })
+      const { body: _body, ...item } = publicRecordDocRow(row)
       return item
     })
   })
@@ -114,7 +118,7 @@ export async function getPublicRecordDoc(input: {
 }): Promise<PublicRecordDoc | null> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, parent_id, position, updated_at, scope, subject
+      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject
       FROM doc
       WHERE id=${input.id}::uuid
     `

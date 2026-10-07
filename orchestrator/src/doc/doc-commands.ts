@@ -246,13 +246,17 @@ function setTreeOptions(flags: DocFlags): {
   audience: ReturnType<typeof docAudience>
   parentSlug: string | null | undefined
   position: number | undefined
+  featured: boolean | undefined
 } {
   const { has, flag } = flags
   const audience = docAudience(flag('audience'))
   if (has('parent') && has('no-parent')) throw new Error('use --parent or --no-parent, not both')
   const parentSlug = has('no-parent') ? null : has('parent') ? flag('parent') : undefined
   if (has('parent') && !parentSlug?.trim()) throw new Error('--parent requires a slug')
-  return { audience, parentSlug, position: docPosition(flag('position')) }
+  if (has('featured') && has('no-featured'))
+    throw new Error('use --featured or --no-featured, not both')
+  const featured = has('featured') ? true : has('no-featured') ? false : undefined
+  return { audience, parentSlug, position: docPosition(flag('position')), featured }
 }
 
 async function handleSetDocCommand(

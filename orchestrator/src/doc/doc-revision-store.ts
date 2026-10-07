@@ -18,6 +18,7 @@ type RevisionDoc = {
   audience: DocAudience
   parent_id: number | null
   position: number
+  featured: boolean
 }
 
 export function docWriteIdentity(context: { author?: string; reason: string }): {
@@ -77,8 +78,8 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audience, parent_id, position, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audience, parent_id, position, featured, author, reason, session_id, at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
@@ -94,6 +95,7 @@ export function insertLocalRevision(
       doc.audience,
       doc.parent_id,
       doc.position,
+      doc.featured,
       identity.author,
       identity.reason,
       identity.session,

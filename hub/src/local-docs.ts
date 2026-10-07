@@ -1,3 +1,4 @@
+import { docSummary } from '../../shared/docs.ts'
 import { DocSchema, DocTreeItemSchema } from './doc-contract.ts'
 import { type DocRow, docGet, docList } from './orch.ts'
 
@@ -23,6 +24,8 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     subject: row.subject,
     audience: row.audience,
     delivery: row.delivery,
+    summary: docSummary(row.body),
+    featured: row.featured ?? false,
   }
   return includeBody ? DocSchema.parse({ ...item, body: row.body }) : DocTreeItemSchema.parse(item)
 }

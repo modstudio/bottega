@@ -128,6 +128,7 @@ export function registerDocTools(server: McpServer): void {
         audience: z.enum(DOC_AUDIENCES).optional(),
         parent: z.string().trim().min(1).nullable().optional(),
         position: z.number().int().optional(),
+        featured: z.boolean().optional(),
         force_inject: z
           .string()
           .trim()
@@ -155,6 +156,7 @@ export function registerDocTools(server: McpServer): void {
       audience,
       parent,
       position,
+      featured,
       force_inject,
       reason,
       author,
@@ -175,6 +177,7 @@ export function registerDocTools(server: McpServer): void {
           audience,
           parentSlug: parent,
           position,
+          featured,
           forceInject: force_inject,
           reason,
           author,

@@ -42,6 +42,7 @@ type SetInput = Address & {
   audience: DocAudience
   parentId: number | null
   position: number
+  featured?: boolean
   expectedRevision?: string
   requestedOp?: Extract<DocRevisionOp, 'import'>
   identity: WriteIdentity
@@ -63,7 +64,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -73,6 +74,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           input.recordId,
           existing.id,
@@ -80,8 +82,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -95,6 +97,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           at,
           input.recordId,
@@ -172,6 +175,7 @@ type RestoreInput = Address & {
   audience: DocAudience
   parentId: number | null
   position: number
+  featured?: boolean
   expectedRevision?: string
   identity: WriteIdentity
 }
@@ -200,7 +204,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -210,6 +214,7 @@ export function commitDocRestore(
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           input.recordId,
           existing.id,
@@ -217,8 +222,8 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -232,6 +237,7 @@ export function commitDocRestore(
           input.audience,
           input.parentId,
           input.position,
+          input.featured ?? false,
           at,
           at,
           input.recordId,

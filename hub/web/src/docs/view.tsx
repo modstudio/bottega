@@ -313,6 +313,7 @@ export function DocsView({
     <div
       className={classes(
         'flex flex-col bg-surface-sunken',
+        framed ? 'site-docs-chrome' : '',
         framed ? 'min-h-dvh' : 'min-h-[calc(100dvh-var(--topbar-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >

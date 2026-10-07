@@ -165,6 +165,7 @@ export async function upsertRecordDoc(
     audience?: DocAudience
     parentRecordId?: string | null
     position?: number
+    featured?: boolean
     projectName?: string | null
     reason: string
     author: string
@@ -184,7 +185,7 @@ export async function upsertRecordDoc(
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, audience, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, audience, featured, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -271,12 +272,14 @@ export async function upsertRecordDoc(
     )
     const position =
       input.position ?? (existing[0]?.position == null ? 0 : Number(existing[0].position))
+    const featured =
+      input.featured ?? (existing[0]?.featured == null ? false : Boolean(existing[0].featured))
     const op: DocRevisionOp = input.op ?? (existing[0] ? 'set' : 'create')
     if (existing[0]) {
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audience=${audience}, parent_id=${parentId}::uuid, position=${position},
+            audience=${audience}, featured=${featured}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -284,10 +287,10 @@ export async function upsertRecordDoc(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, parent_id, position, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${audience}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${audience}, ${featured}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
@@ -308,6 +311,7 @@ export async function upsertRecordDoc(
       audience,
       parentId,
       position,
+      featured,
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
@@ -335,6 +339,7 @@ async function insertRevision(
     audience: DocAudience
     parentId: string | null
     position: number
+    featured?: boolean
     author: string
     reason: string
     sessionId: string | null
@@ -354,12 +359,12 @@ async function insertRevision(
   if (!existing[0]) {
     await tx`
       INSERT INTO doc_revision (
-        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audience, parent_id, position,
+        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audience, featured, parent_id, position,
         author, reason, session_id, at
       ) VALUES (
         ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
         ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-        ${input.delivery}, ${input.audience}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
+        ${input.delivery}, ${input.audience}, ${input.featured ?? false}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
       )
     `
   }
@@ -763,6 +768,7 @@ export async function restoreRecordDoc(
     const audience = String(revision.audience) as DocAudience
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
     const position = Number(revision.position)
+    const featured = revision.featured == null ? false : Boolean(revision.featured)
     assertWrite(
       await recordTreeWriteRefusal(tx, {
         spaceId: input.spaceId,
@@ -794,7 +800,7 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audience=${audience}, parent_id=${parentId}::uuid, position=${position},
+          audience=${audience}, featured=${featured}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -814,6 +820,7 @@ export async function restoreRecordDoc(
       audience,
       parentId,
       position,
+      featured,
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
@@ -884,7 +891,7 @@ async function writeImportedDoc(
     await tx`
       UPDATE doc
       SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
-          audience=${doc.audience}, parent_id=${doc.parentId}::uuid, position=${doc.position},
+          audience=${doc.audience}, featured=${doc.featured}, parent_id=${doc.parentId}::uuid, position=${doc.position},
           owner_user_id=${doc.owner ?? null}::uuid, project_id=${projectId}::uuid,
           created_at=${doc.createdAt}::timestamptz,
           updated_at=${doc.updatedAt}::timestamptz,
@@ -895,11 +902,11 @@ async function writeImportedDoc(
   }
   await tx`
     INSERT INTO doc (
-      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, parent_id, position, project_id,
+      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, parent_id, position, project_id,
       created_at, updated_at, deleted_at
     ) VALUES (
       ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.owner ?? null}::uuid, ${doc.slug},
-      ${doc.title}, ${doc.body}, ${doc.delivery}, ${doc.audience}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
+      ${doc.title}, ${doc.body}, ${doc.delivery}, ${doc.audience}, ${doc.featured}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
       ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
     )
   `
@@ -994,6 +1001,7 @@ export async function importRecordDoc(
           audience: revision.audience,
           parentId: revision.parentId,
           position: revision.position,
+          featured: revision.featured,
           author: revision.author,
           reason: revision.reason,
           sessionId: revision.sessionId ?? null,

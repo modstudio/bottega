@@ -13,6 +13,8 @@ export type DocsTreeItem = {
   subject: string | null
   audience: DocsAudience
   delivery?: DocsDelivery
+  summary?: string
+  featured?: boolean
   /** Set when the adapter says this document belongs to a project. */
   projectName?: string
 }

@@ -155,6 +155,7 @@ function assertInjectSize(input: {
         body: input.body,
         delivery: 'inject',
         audience: 'technical',
+        featured: false,
         parent_id: null,
         parent_slug: null,
         position: 0,
@@ -254,6 +255,7 @@ type DocWriteInput = {
   audience?: DocAudience
   parentSlug?: string | null
   position?: number
+  featured?: boolean
 } & DocWriteContext
 
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
@@ -404,6 +406,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
           parent_slug: tree.parentSlug,
         }),
         position: tree.position,
+        featured: tree.featured,
         projectName,
         reason: identity.reason,
         author: identity.author,
@@ -439,6 +442,7 @@ export async function setDoc(
     audience?: DocAudience
     parentSlug?: string | null
     position?: number
+    featured?: boolean
   } & DocWriteContext,
 ): Promise<Doc> {
   assertWorkerDocStoreWriteAllowed('setDoc')
@@ -515,6 +519,7 @@ export async function removeDoc(
           audience: doc.audience,
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
+          featured: doc.featured,
           reason: identity.reason,
           author: identity.author,
           id: undefined,
@@ -599,6 +604,7 @@ export async function consumeDoc(
           audience: doc.audience,
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
+          featured: doc.featured,
           reason: identity.reason,
           author: identity.author,
           expectedRevision: context.expectedRevision,

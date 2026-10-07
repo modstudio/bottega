@@ -568,6 +568,7 @@ export type DocRow = {
   parent_id: number | null
   parent_slug: string | null
   position: number
+  featured?: boolean
   revision: string | null
   created_at: string
   updated_at: string
@@ -585,6 +586,7 @@ const DocRowSchema = z.object({
   parent_id: z.number().nullable(),
   parent_slug: z.string().nullable(),
   position: z.number().int(),
+  featured: z.boolean().default(false),
   revision: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),

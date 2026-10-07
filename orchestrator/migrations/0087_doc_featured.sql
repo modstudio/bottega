@@ -1,0 +1,3 @@
+ALTER TABLE doc ADD COLUMN featured INTEGER NOT NULL DEFAULT 0 CHECK (featured IN (0,1));
+
+ALTER TABLE doc_revision ADD COLUMN featured INTEGER NOT NULL DEFAULT 0 CHECK (featured IN (0,1));

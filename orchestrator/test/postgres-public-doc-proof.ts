@@ -34,22 +34,22 @@ export function registerPublicDocProofs(input: {
         VALUES ('${publicSpaceId}', '${publicProjectId}');
       INSERT INTO doc (
         id, space_id, scope, subject, owner_user_id, slug, title, body, delivery,
-        audience, project_id, created_at, updated_at, deleted_at
+        audience, featured, project_id, created_at, updated_at, deleted_at
       ) VALUES
         ('${PUBLIC_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'public-guide', 'Public guide', 'public searchable body', 'demand', 'user', '${publicProjectId}', now(), now(), NULL),
+         'public-guide', 'Public guide', 'public searchable body', 'demand', 'user', true, '${publicProjectId}', now(), now(), NULL),
         ('${TECHNICAL_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', 'technical', '${publicProjectId}', now(), now(), NULL),
+         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', 'technical', false, '${publicProjectId}', now(), now(), NULL),
         ('${OWNED_DOC}', '${publicSpaceId}', 'canon', NULL, '${input.ownerUserId}',
-         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', 'user', '${publicProjectId}', now(), now(), NULL),
+         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', 'user', false, '${publicProjectId}', now(), now(), NULL),
         ('${DELETED_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', 'user', '${publicProjectId}', now(), now(), now()),
+         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', 'user', false, '${publicProjectId}', now(), now(), now()),
         ('${PRIVATE_SPACE_DOC}', '${privateSpaceId}', 'global', NULL, NULL,
-         'private-guide', 'Private guide', 'hidden private body', 'demand', 'user', '${privateProjectId}', now(), now(), NULL),
+         'private-guide', 'Private guide', 'hidden private body', 'demand', 'user', false, '${privateProjectId}', now(), now(), NULL),
         ('${OTHER_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', 'user', '${otherProjectId}', now(), now(), NULL),
+         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', 'user', false, '${otherProjectId}', now(), now(), NULL),
         ('${NO_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'no-project-guide', 'No project guide', 'hidden no project body', 'demand', 'user', NULL, now(), now(), NULL);
+         'no-project-guide', 'No project guide', 'hidden no project body', 'demand', 'user', false, NULL, now(), now(), NULL);
     `)
   })
 
@@ -57,6 +57,12 @@ export function registerPublicDocProofs(input: {
     const result = asPublic('SELECT id FROM doc ORDER BY id; COMMIT;')
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout).toBe(PUBLIC_DOC)
+  })
+
+  test('record public can read featured on a public document', () => {
+    const result = asPublic(`SELECT featured FROM doc WHERE id='${PUBLIC_DOC}'; COMMIT;`)
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toBe('t')
   })
 
   test('record service refuses attaching another project address to the public project', async () => {

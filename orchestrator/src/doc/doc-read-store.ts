@@ -15,6 +15,7 @@ export type Doc = {
   body: string
   delivery: 'inject' | 'demand'
   audience: DocAudience
+  featured: boolean
   parent_id: number | null
   parent_slug: string | null
   position: number
@@ -31,6 +32,7 @@ export type DocMetadata = Pick<
   | 'slug'
   | 'title'
   | 'audience'
+  | 'featured'
   | 'parent_id'
   | 'parent_slug'
   | 'position'
@@ -61,6 +63,7 @@ export type DocRevision = {
   body: string
   delivery: 'inject' | 'demand'
   audience: DocAudience
+  featured: boolean
   parent_id: number | null
   position: number
   author: string
@@ -92,7 +95,7 @@ function docTreeSelect(database: Database): { columns: string; join: string; pos
       }
     : {
         columns:
-          "d.*, 'technical' AS audience, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
+          "d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
         join: '',
         position: '0+0',
       }
@@ -214,7 +217,7 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
     : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
   return db()
     .query(
-      `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+      `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
     )
     .all(...values) as DocMetadata[]

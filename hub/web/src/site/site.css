@@ -623,6 +623,110 @@
   display: block;
   margin-bottom: 11px;
 }
+.site-frame .site-docs-chrome {
+  --surface-sunken: var(--ground);
+}
+.site-page.docs-home {
+  background: var(--ground);
+  min-height: 70dvh;
+}
+.site-page .doc-hero {
+  text-align: center;
+  padding-block: 84px 0;
+}
+.site-page .doc-hero h1 {
+  font-family: "Hedvig Letters Serif", Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  font-size: clamp(38px, 5.4vw, 62px);
+  letter-spacing: -0.02em;
+  margin: 14px 0 0;
+  line-height: 1.04;
+}
+.site-page .doc-hero p {
+  margin: 16px auto 0;
+  max-width: 46ch;
+  color: var(--muted);
+}
+.site-page .docs-home-search {
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  display: flex;
+  margin: 28px auto 0;
+  max-width: 46ch;
+  padding: 0 14px;
+}
+.site-page .docs-home-search input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  flex: 1;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+  padding: 14px 0;
+}
+.site-page .docs-home-content {
+  padding-block: 64px;
+}
+.site-page .docs-home-eyebrow {
+  display: block;
+  margin-bottom: 18px;
+}
+.site-page .docs-home-topics {
+  margin-top: 72px;
+}
+.site-page .docs-home-topics > .docs-home-eyebrow {
+  margin-bottom: 22px;
+}
+.site-page .docs-home button {
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.site-page .docs-home .cell {
+  border: 0;
+}
+.site-page .topics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 36px;
+}
+.site-page .topics h4 {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  font-weight: 400;
+}
+.site-page .topics h4 button,
+.site-page .topics li button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.site-page .topics ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.site-page .topics li button {
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.site-page .topics button:hover {
+  color: var(--ink);
+}
+@media (max-width: 720px) {
+  .site-page .topics {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
 .site-page .steps {
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(0, 11fr);

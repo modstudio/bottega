@@ -1,6 +1,6 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
-import type { DocAudience } from '../../../shared/docs.ts'
+import { type DocAudience, docSummary } from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 
 export type RecordDoc = {
@@ -17,6 +17,8 @@ export type RecordDoc = {
   audience: DocAudience
   parentId: string | null
   position: number
+  featured?: boolean
+  summary?: string
   projectName: string | null
   createdAt: string
   updatedAt: string
@@ -37,6 +39,7 @@ export type RecordDocRevision = {
   audience: DocAudience
   parentId: string | null
   position: number
+  featured?: boolean
   author: string
   reason: string
   sessionId: string | null
@@ -57,6 +60,7 @@ export type RecordDocImportInput = {
     audience?: DocAudience
     parentId?: string | null
     position?: number
+    featured?: boolean
     projectName?: string | null
     createdAt: string
     updatedAt: string
@@ -74,6 +78,7 @@ export type RecordDocImportInput = {
     audience?: DocAudience
     parentId?: string | null
     position?: number
+    featured?: boolean
     author: string
     reason: string
     sessionId?: string | null
@@ -82,17 +87,25 @@ export type RecordDocImportInput = {
 }
 
 export type NormalizedRecordDocImport = {
-  doc: Omit<RecordDocImportInput['doc'], 'id' | 'audience' | 'parentId' | 'position'> & {
+  doc: Omit<
+    RecordDocImportInput['doc'],
+    'id' | 'audience' | 'parentId' | 'position' | 'featured'
+  > & {
     id: string
     audience: DocAudience
     parentId: string | null
     position: number
+    featured: boolean
   }
   revisions: Array<
-    Omit<RecordDocImportInput['revisions'][number], 'audience' | 'parentId' | 'position'> & {
+    Omit<
+      RecordDocImportInput['revisions'][number],
+      'audience' | 'parentId' | 'position' | 'featured'
+    > & {
       audience: DocAudience
       parentId: string | null
       position: number
+      featured: boolean
     }
   >
 }
@@ -115,12 +128,14 @@ export function normalizeRecordDocImport(
       audience: input.doc.audience ?? 'technical',
       parentId: input.doc.parentId ?? null,
       position: input.doc.position ?? 0,
+      featured: input.doc.featured ?? false,
     },
     revisions: input.revisions.map((revision) => ({
       ...revision,
       audience: revision.audience ?? 'technical',
       parentId: revision.parentId ?? null,
       position: revision.position ?? 0,
+      featured: revision.featured ?? false,
     })),
   }
 }
@@ -171,6 +186,8 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     audience: String(row.audience) as DocAudience,
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
+    featured: row.featured == null ? false : Boolean(row.featured),
+    summary: docSummary(String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
     createdAt: recordDocIso(row.created_at)!,
     updatedAt: recordDocIso(row.updated_at)!,
@@ -193,6 +210,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     audience: String(row.audience) as DocAudience,
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
+    featured: row.featured == null ? false : Boolean(row.featured),
     author: String(row.author),
     reason: String(row.reason),
     sessionId: row.session_id == null ? null : String(row.session_id),
