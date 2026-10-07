@@ -69,6 +69,7 @@ function clientConnection(engine: DatabaseCommandPlan['engine'], value: string):
         PGPORT: url.port || '5432',
         PGUSER: decode(url.username),
         PGPASSWORD: decode(url.password),
+        PGAPPNAME: 'orch-admin',
         ...(url.searchParams.get('sslmode') ? { PGSSLMODE: url.searchParams.get('sslmode')! } : {}),
       },
       arguments: [],

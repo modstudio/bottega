@@ -43,6 +43,7 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
+    '../recipe/database-connection-observation.ts',
     '../recipe/database-inventory.ts',
     '../reclaim/reclaim.ts',
     '../sandbox/grok-trust.ts',
@@ -51,6 +52,11 @@ export const monitorModules: MonitorModule[] = [
     '../review/review-vocabulary.ts',
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
+    './database-connection-conditions.ts',
+  ]),
+  module('orchestrator/src/monitor/database-connection-conditions.ts', [
+    '../recipe/database-connection-observation.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-branches.ts', []),
   module('orchestrator/src/monitor/monitor-harness-load.ts', [

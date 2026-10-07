@@ -34,8 +34,14 @@ export function parseConnectionUrl(value: string): URL {
   }
 }
 
-export function connectionUrlForAllocatedDatabase(value: string, databaseName: string): string {
+export function connectionUrlForAllocatedDatabase(
+  value: string,
+  databaseName: string,
+  engine: string,
+  treeLabel: string,
+): string {
   const url = parseConnectionUrl(value)
   url.pathname = `/${encodeURIComponent(databaseName)}`
+  if (engine === 'postgres') url.searchParams.set('application_name', `orch-tree-${treeLabel}`)
   return url.href
 }
