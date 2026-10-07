@@ -788,7 +788,7 @@ export async function run(opts: {
     const home = await prepareWorkerHomeLaunch({
       agent: a,
       harness: harnessName,
-      sandboxProfile: Boolean(sandboxSelection.profile),
+      sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
       runId: claim.id,
       runToken,
