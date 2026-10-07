@@ -220,4 +220,13 @@ describe('review tier classification', () => {
       }),
     ).toMatchObject({ tier: 0, risk: 0, size: 0 })
   })
+
+  test('orchestrator source under src/doc is product and counts toward size', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: 'orchestrator/src/doc/docs.ts', insertions: 25, deletions: 0 }],
+    })
+    expect(actual).toMatchObject({ risk: 2, size: 1, tier: 2 })
+    expect(actual.reasons.join('\n')).toContain('orchestrator source')
+    expect(actual.reasons.join('\n')).toContain('25 product lines')
+  })
 })
