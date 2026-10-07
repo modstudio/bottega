@@ -1,7 +1,7 @@
 /* Document body: serif headings, sans paragraphs, mono figures, matching the docs page scale. */
 .markdown,
 .doc-measure {
-  max-width: 68ch;
+  max-width: 40rem;
 }
 .markdown h1,
 .markdown h2,
