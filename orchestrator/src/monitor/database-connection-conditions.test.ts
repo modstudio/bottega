@@ -36,11 +36,11 @@ describe('tree database connection classification', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'cross-tree-database-connection',
-          detail: expect.stringContaining('orch-tree-orch.run=2 (1)'),
+          detail: expect.stringContaining('"orch-tree-orch.run=2" (1)'),
         }),
         expect.objectContaining({
           kind: 'untagged-tree-database-connection',
-          detail: expect.stringContaining('(empty) (1), psql (1)'),
+          detail: expect.stringContaining('(empty) (1), "psql" (1)'),
         }),
       ]),
     )
@@ -64,6 +64,31 @@ describe('tree database connection classification', () => {
       action: 'report only',
     })
     expect(conditions[0]!.detail).toContain('has 2 untagged-tree-database-connection sample row(s)')
-    expect(conditions[0]!.detail).toContain('psql (2)')
+    expect(conditions[0]!.detail).toContain('"psql" (2)')
+  })
+
+  test('a client-chosen name never reaches the report as a secret or as free text', () => {
+    const secretShaped = 'password=fixture-not-a-real-secret'
+    const [condition] = treeDatabaseConnectionConditions({
+      project: 'stopal',
+      allocationKey: 'app',
+      owners: [{ database: 'stopal_orch_1', ownerLabel: 'orch.run=1' }],
+      rows: [row('stopal_orch_1', secretShaped), row('stopal_orch_1', 'ok"; report only')],
+    })
+    expect(condition!.detail).not.toContain(secretShaped)
+    expect(condition!.detail).toContain('(withheld: secret-shaped) (1)')
+    expect(condition!.detail).toContain('"ok\\"; report only" (1)')
+  })
+
+  test('reports a bounded number of distinct names and counts the rest', () => {
+    const [condition] = treeDatabaseConnectionConditions({
+      project: 'stopal',
+      allocationKey: 'app',
+      owners: [{ database: 'stopal_orch_1', ownerLabel: 'orch.run=1' }],
+      rows: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => row('stopal_orch_1', name)),
+    })
+    expect(condition!.detail).toContain('has 7 untagged-tree-database-connection sample row(s)')
+    expect(condition!.detail).toContain('"e" (1), and 2 more')
+    expect(condition!.detail).not.toContain('"f"')
   })
 })

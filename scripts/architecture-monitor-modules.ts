@@ -55,6 +55,7 @@ export const monitorModules: MonitorModule[] = [
     './database-connection-conditions.ts',
   ]),
   module('orchestrator/src/monitor/database-connection-conditions.ts', [
+    '../../../shared/secret-shaped.ts',
     '../recipe/database-connection.ts',
     './monitor-types.ts',
   ]),

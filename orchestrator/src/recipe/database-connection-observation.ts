@@ -41,10 +41,10 @@ const activityCommand: DatabaseCommand = {
     '--command',
     `SELECT json_build_object(
        'datname', datname,
-       'application_name', coalesce(application_name, ''),
+       'application_name', application_name,
        'backend_start', backend_start,
        'state', state
-     )::text FROM pg_stat_activity WHERE datname IS NOT NULL`,
+     )::text FROM pg_stat_activity`,
   ],
 }
 

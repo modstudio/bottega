@@ -1,6 +1,7 @@
 // concern: tree database connection classification
 /** Classifies sampled database sessions from plain values without observing a server or clock. */
 
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   ADMIN_APPLICATION_NAME,
   isTreeApplicationName,
@@ -8,7 +9,7 @@ import {
 } from '../recipe/database-connection.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
-export type TreeDatabaseOwner = { database: string; ownerLabel: string }
+type TreeDatabaseOwner = { database: string; ownerLabel: string }
 
 type OffenseKind = 'cross-tree-database-connection' | 'untagged-tree-database-connection'
 
@@ -35,11 +36,21 @@ function offense(applicationName: string, ownerLabel: string): Offense | null {
     : { kind: 'untagged-tree-database-connection', applicationName }
 }
 
+const MAX_REPORTED_APPLICATION_NAMES = 5
+
+/** A client chooses its own application name, so the text is untrusted. */
+function reportedName(name: string): string {
+  if (!name) return '(empty)'
+  return containsSecretShaped(name) ? '(withheld: secret-shaped)' : JSON.stringify(name)
+}
+
 function applicationSummary(applications: Map<string, number>): string {
-  return [...applications.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, count]) => `${name || '(empty)'} (${count})`)
-    .join(', ')
+  const entries = [...applications.entries()].sort(([left], [right]) => left.localeCompare(right))
+  const shown = entries
+    .slice(0, MAX_REPORTED_APPLICATION_NAMES)
+    .map(([name, count]) => `${reportedName(name)} (${count})`)
+  const omitted = entries.length - shown.length
+  return omitted > 0 ? `${shown.join(', ')}, and ${omitted} more` : shown.join(', ')
 }
 
 /** Return one report-only condition for each offending database and offense kind. */
