@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Kbd } from '@/ui/kbd/kbd'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { SearchDialog } from './search.tsx'
@@ -56,10 +56,6 @@ export function DocsHome({
     window.addEventListener('keydown', openFromShortcut)
     return () => window.removeEventListener('keydown', openFromShortcut)
   }, [])
-  const openSearch = (event: FormEvent) => {
-    event.preventDefault()
-    setSearchOpen(true)
-  }
   return (
     <main className="site-page docs-home">
       <div className="wrap doc-hero">
@@ -69,16 +65,10 @@ export function DocsHome({
           Install {PLATFORM_NAME}, dispatch your first run, and connect the projects you already
           have.
         </p>
-        <form className="docs-home-search" onSubmit={openSearch}>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => onQuery(event.target.value)}
-            placeholder="Search titles and text"
-            aria-label="Search titles and text"
-          />
+        <button className="docs-home-search" type="button" onClick={() => setSearchOpen(true)}>
+          <span>Search titles and text</span>
           <Kbd>/</Kbd>
-        </form>
+        </button>
       </div>
       {!loading ? (
         <section className="docs-home-content">
