@@ -755,11 +755,9 @@ type UnreadableResume = {
 }
 export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
-function resumeTimestampMs(written: string | undefined, createdAt: string): number {
-  if (written) {
-    const parsed = Date.parse(written)
-    if (!Number.isNaN(parsed)) return parsed
-  }
+function resumeTimestampMs(updatedAt: string, createdAt: string): number {
+  const updated = Date.parse(updatedAt)
+  if (!Number.isNaN(updated)) return updated
   const fallback = Date.parse(createdAt)
   return Number.isNaN(fallback) ? 0 : fallback
 }
@@ -784,7 +782,7 @@ export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
       continue
     }
     if (fm.status !== 'open') continue
-    const at = resumeTimestampMs(fm.written, doc.created_at)
+    const at = resumeTimestampMs(doc.updated_at, doc.created_at)
     open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
   }
   open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
