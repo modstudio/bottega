@@ -188,8 +188,10 @@ export function HomePage() {
           ['/docs', `Install ${PLATFORM_NAME}`],
           ['/docs', 'Read the docs'],
         ]}
-      />
-      <p className="micro mono install-command">{installCommand}</p>
+        eyebrow="Get started"
+      >
+        <p className="micro mono install-command">{installCommand}</p>
+      </Cta>
     </main>
   )
 }

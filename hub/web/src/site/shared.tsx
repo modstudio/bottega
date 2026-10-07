@@ -125,14 +125,19 @@ export function Cta({
   title,
   copy,
   actions,
+  eyebrow,
+  children,
 }: {
   title: React.ReactNode
   copy?: string
   actions?: [string, string][]
+  eyebrow?: string
+  children?: React.ReactNode
 }) {
   return (
     <div className="wrap">
       <div className="cta">
+        {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
         <h2>{title}</h2>
         {copy ? <p>{copy}</p> : null}
         <div className="hero-cta">
@@ -142,6 +147,7 @@ export function Cta({
             </Btn>
           ))}
         </div>
+        {children}
       </div>
     </div>
   )

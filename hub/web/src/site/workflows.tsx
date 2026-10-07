@@ -67,6 +67,12 @@ const composition = [
   'Modes select how far to go — plan only, review only, ship and promote.',
   'A step that needs a capability the project lacks is not silently skipped.',
 ]
+const surface = [
+  'No pasted checklists that drift from the real process.',
+  'Change the workflow once; every project and agent follows the new version.',
+  'Docs are cited by source, so a prompt names where to look rather than carrying a stale copy.',
+  'Swap the harness and the lifecycle is unchanged.',
+]
 export function WorkflowsPage() {
   return (
     <main className="site-page">
@@ -215,9 +221,14 @@ export function WorkflowsPage() {
                 <b>get_workflow_step</b>({'{ slug, project, n }'}){`\n\n`}
                 <span className="c">{"// the project's own knowledge"}</span>
                 {`\n`}
-                <b>list_docs</b>({'{ scope }'}){`\n`}
+                <b>list_docs</b>({'{ scope }'}){'     '}
+                <span className="c">global · stack · project</span>
+                {`\n`}
                 <b>get_doc</b>({'{ subject }'}){`\n`}
-                <b>project_brief</b>()
+                <b>project_brief</b>(){`\n\n`}
+                <span className="c">{'  the agent fetches its own context'}</span>
+                {`\n`}
+                <span className="c">{'  instead of being handed a copy'}</span>
               </pre>
             </Panel>
             <div>
@@ -230,6 +241,14 @@ export function WorkflowsPage() {
                   evidence floor — already composed for the project it is working in.
                 </p>
               </div>
+              <ul className="checks">
+                {surface.map((item) => (
+                  <li key={item}>
+                    <Check />
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
