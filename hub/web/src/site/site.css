@@ -37,8 +37,13 @@
   color-scheme: light;
 }
 /* The footer's top margin shows the frame, so a marketing frame carries the ground itself. */
-.site-frame:has(> .site-page) {
+.site-frame:has(> .site-page),
+.site-frame:has(> .site-docs-chrome) {
   background: var(--ground);
+}
+/* The sticky header's height, for what sticks beneath it. */
+.site-frame {
+  --site-nav-h: 3.9375rem;
 }
 @media (prefers-color-scheme: dark) {
   .site-frame {

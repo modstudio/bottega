@@ -165,7 +165,7 @@ function DocsRail({
   return (
     <nav
       aria-label="Documents"
-      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--topbar-h)-3.5rem)] lg:border-r lg:border-b-0"
+      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-(--docs-top) lg:max-h-[calc(100dvh-var(--docs-top))] lg:self-start lg:border-b-0"
     >
       <button
         type="button"
@@ -322,8 +322,8 @@ export function DocsView({
         'flex flex-col',
         // The public page sits on the site's ground; inside the app every surface is the page's own.
         framed
-          ? 'site-docs-chrome min-h-dvh bg-surface-sunken'
-          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page md:-mt-6 -mx-4 -mb-8 md:-mx-8',
+          ? 'site-docs-chrome min-h-dvh bg-surface-sunken [--docs-top:var(--site-nav-h)]'
+          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page [--docs-top:var(--topbar-h)] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >
       {framed ? null : (
