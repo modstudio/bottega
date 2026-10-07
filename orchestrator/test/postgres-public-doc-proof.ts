@@ -12,15 +12,14 @@ const OTHER_PROJECT_DOC = '01990000-0000-7000-8000-00000000030f'
 const NO_PROJECT_DOC = '01990000-0000-7000-8000-000000000310'
 
 export function registerPublicDocProofs(input: {
-  publicSpaceId: string
-  privateSpaceId: string
-  publicProjectId: string
-  otherProjectId: string
-  privateProjectId: string
+  spaces: readonly [publicSpaceId: string, privateSpaceId: string]
+  projects: readonly [publicProjectId: string, otherProjectId: string, privateProjectId: string]
   ownerUserId: string
   admin(statement: string): string
   psql(user: string, password: string, statement: string): PsqlResult
 }): void {
+  const [publicSpaceId, privateSpaceId] = input.spaces
+  const [publicProjectId, otherProjectId, privateProjectId] = input.projects
   const asPublic = (statement: string) =>
     input.psql(
       RECORD_ACTOR_ROLE,
@@ -31,24 +30,24 @@ export function registerPublicDocProofs(input: {
   beforeAll(() => {
     input.admin(`
       INSERT INTO public_doc_space (space_id, project_id)
-        VALUES ('${input.publicSpaceId}', '${input.publicProjectId}');
+        VALUES ('${publicSpaceId}', '${publicProjectId}');
       INSERT INTO doc (
         id, space_id, scope, subject, owner_user_id, slug, title, body, delivery,
         audience, project_id, created_at, updated_at, deleted_at
       ) VALUES
-        ('${PUBLIC_DOC}', '${input.publicSpaceId}', 'global', NULL, NULL,
-         'public-guide', 'Public guide', 'public searchable body', 'demand', 'user', '${input.publicProjectId}', now(), now(), NULL),
-        ('${TECHNICAL_DOC}', '${input.publicSpaceId}', 'global', NULL, NULL,
-         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', 'technical', '${input.publicProjectId}', now(), now(), NULL),
-        ('${OWNED_DOC}', '${input.publicSpaceId}', 'canon', NULL, '${input.ownerUserId}',
-         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', 'user', '${input.publicProjectId}', now(), now(), NULL),
-        ('${DELETED_DOC}', '${input.publicSpaceId}', 'global', NULL, NULL,
-         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', 'user', '${input.publicProjectId}', now(), now(), now()),
-        ('${PRIVATE_SPACE_DOC}', '${input.privateSpaceId}', 'global', NULL, NULL,
-         'private-guide', 'Private guide', 'hidden private body', 'demand', 'user', '${input.privateProjectId}', now(), now(), NULL),
-        ('${OTHER_PROJECT_DOC}', '${input.publicSpaceId}', 'global', NULL, NULL,
-         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', 'user', '${input.otherProjectId}', now(), now(), NULL),
-        ('${NO_PROJECT_DOC}', '${input.publicSpaceId}', 'global', NULL, NULL,
+        ('${PUBLIC_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
+         'public-guide', 'Public guide', 'public searchable body', 'demand', 'user', '${publicProjectId}', now(), now(), NULL),
+        ('${TECHNICAL_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
+         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', 'technical', '${publicProjectId}', now(), now(), NULL),
+        ('${OWNED_DOC}', '${publicSpaceId}', 'canon', NULL, '${input.ownerUserId}',
+         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', 'user', '${publicProjectId}', now(), now(), NULL),
+        ('${DELETED_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
+         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', 'user', '${publicProjectId}', now(), now(), now()),
+        ('${PRIVATE_SPACE_DOC}', '${privateSpaceId}', 'global', NULL, NULL,
+         'private-guide', 'Private guide', 'hidden private body', 'demand', 'user', '${privateProjectId}', now(), now(), NULL),
+        ('${OTHER_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
+         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', 'user', '${otherProjectId}', now(), now(), NULL),
+        ('${NO_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
          'no-project-guide', 'No project guide', 'hidden no project body', 'demand', 'user', NULL, now(), now(), NULL);
     `)
   })
@@ -89,7 +88,7 @@ export function registerPublicDocProofs(input: {
     expect(docWrite.stderr).toContain('permission denied for table doc')
 
     const designationWrite = asPublic(
-      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${input.privateSpaceId}', '${input.privateProjectId}'); ROLLBACK;`,
+      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${privateSpaceId}', '${privateProjectId}'); ROLLBACK;`,
     )
     expect(designationWrite.code).not.toBe(0)
     expect(designationWrite.stderr).toContain('permission denied for table public_doc_space')
@@ -99,7 +98,7 @@ export function registerPublicDocProofs(input: {
     const result = input.psql(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      `SET app.space_id='${input.privateSpaceId}'; SELECT id FROM doc WHERE id='${PUBLIC_DOC}';`,
+      `SET app.space_id='${privateSpaceId}'; SELECT id FROM doc WHERE id='${PUBLIC_DOC}';`,
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout).toBe('')
@@ -109,15 +108,15 @@ export function registerPublicDocProofs(input: {
     const read = input.psql(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      `SELECT space_id || '|' || project_id FROM public_doc_space WHERE space_id='${input.publicSpaceId}';`,
+      `SELECT space_id || '|' || project_id FROM public_doc_space WHERE space_id='${publicSpaceId}';`,
     )
     expect(read.code, read.stderr).toBe(0)
-    expect(read.stdout).toBe(`${input.publicSpaceId}|${input.publicProjectId}`)
+    expect(read.stdout).toBe(`${publicSpaceId}|${publicProjectId}`)
 
     const write = input.psql(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${input.privateSpaceId}', '${input.privateProjectId}');`,
+      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${privateSpaceId}', '${privateProjectId}');`,
     )
     expect(write.code).not.toBe(0)
     expect(write.stderr).toContain('permission denied for table public_doc_space')

@@ -286,11 +286,8 @@ realPostgres('RLS proof against real Postgres', () => {
   })
   registerBoardApiProofs({ actorUrl: actorUrl!, spaceA: SPACE_A, userA: USER_A, succeeds })
   registerPublicDocProofs({
-    publicSpaceId: SPACE_A,
-    privateSpaceId: SPACE_B,
-    publicProjectId: PROJECT_A,
-    otherProjectId: PROJECT_A2,
-    privateProjectId: PROJECT_B,
+    spaces: [SPACE_A, SPACE_B],
+    projects: [PROJECT_A, PROJECT_A2, PROJECT_B],
     ownerUserId: USER_A,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
     psql,
