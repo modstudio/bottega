@@ -8,14 +8,14 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(__file__))
-from importlib.machinery import SourceFileLoader
-
-interrupt = SourceFileLoader("board_interrupt", os.path.join(os.path.dirname(__file__), "board-interrupt.py")).load_module()
+from board_hook_common import pending, store_path
 
 
 def observation_count(session: str, notice_id: str) -> int | None:
-    root = os.path.join(os.environ.get("TMPDIR") or tempfile.gettempdir(), "orch-board-ack-guard")
+    root = os.path.join(
+        os.environ.get("TMPDIR") or tempfile.gettempdir(),
+        "orch-board-ack-guard",
+    )
     key = f"{session}:{notice_id}"
     path = os.path.join(root, hashlib.sha256(key.encode()).hexdigest())
     try:
@@ -37,9 +37,9 @@ def main() -> int:
             return 0
         payload = json.load(sys.stdin)
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
-        if not isinstance(session, str) or not session or not os.path.exists(interrupt.store_path()):
+        if not isinstance(session, str) or not session or not os.path.exists(store_path()):
             return 0
-        notices = interrupt.pending(session, True)
+        notices = pending(session, True)
         if not notices:
             return 0
         limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
@@ -49,12 +49,18 @@ def main() -> int:
         blocking = [item for item, count in zip(notices, counts) if count <= limit]
         exhausted = [item for item, count in zip(notices, counts) if count > limit]
         if blocking:
-            value = {"decision": "block", "reason": "\n\n".join(item["text"] for item in blocking)}
+            value = {
+                "decision": "block",
+                "reason": "\n\n".join(item["text"] for item in blocking),
+            }
             if exhausted:
                 value["systemMessage"] = "\n\n".join(item["text"] for item in exhausted)
             sys.stdout.write(json.dumps(value) + "\n")
         else:
-            sys.stdout.write(json.dumps({"systemMessage": "\n\n".join(item["text"] for item in exhausted)}) + "\n")
+            value = {
+                "systemMessage": "\n\n".join(item["text"] for item in exhausted)
+            }
+            sys.stdout.write(json.dumps(value) + "\n")
     except Exception:
         pass
     return 0

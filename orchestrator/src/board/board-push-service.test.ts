@@ -1,6 +1,15 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { db } from '../database/db.ts'
@@ -31,12 +40,29 @@ function createHookFixture(commandOutput: string, sleep = false) {
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run('board_hosted_refresh_at', new Date().toISOString())
   const command = join(root, 'orch')
+  const invocationLog = join(root, 'invocations')
   writeFileSync(
     command,
-    sleep ? '#!/bin/sh\nsleep 2\n' : `#!/bin/sh\nprintf '%s\\n' '${commandOutput}'\n`,
+    sleep
+      ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nsleep 2\n`
+      : `#!/bin/sh\nprintf x >> '${invocationLog}'\nprintf '%s\\n' '${commandOutput}'\n`,
   )
   chmodSync(command, 0o700)
-  return { root, database, databasePath, command }
+  return { root, database, databasePath, command, invocationLog }
+}
+
+function invocationCount(fixture: ReturnType<typeof createHookFixture>) {
+  try {
+    return readFileSync(fixture.invocationLog, 'utf8').length
+  } catch {
+    return 0
+  }
+}
+
+function addCandidate(fixture: ReturnType<typeof createHookFixture>, id: number) {
+  fixture.database
+    .query("INSERT INTO board_message VALUES (?,'notice',1,NULL,?,NULL)")
+    .run(id, new Date(Date.now() + 60_000).toISOString())
 }
 
 function runHook(
@@ -51,6 +77,7 @@ function runHook(
     stderr: 'pipe',
     env: {
       ...process.env,
+      ORCH_RUN_ID: '',
       ORCH_DB: fixture.databasePath,
       ORCH_BOARD_BIN: fixture.command,
       TMPDIR: fixture.root,
@@ -177,9 +204,7 @@ test('PostToolUse is silent for workers, malformed input, missing stores, and th
 
 test('PostToolUse injects pending text and fails open on command timeout', () => {
   const item = createHookFixture(hookOutput)
-  item.database
-    .query("INSERT INTO board_message VALUES (1,'notice',1,NULL,?,NULL)")
-    .run(new Date(Date.now() + 60_000).toISOString())
+  addCandidate(item, 1)
   const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
   expect(result.exitCode).toBe(0)
   expect(JSON.parse(result.stdout.toString()).hookSpecificOutput).toEqual({
@@ -188,12 +213,66 @@ test('PostToolUse injects pending text and fails open on command timeout', () =>
   })
 
   const slow = createHookFixture(hookOutput, true)
-  slow.database
-    .query("INSERT INTO board_message VALUES (1,'notice',1,NULL,?,NULL)")
-    .run(new Date(Date.now() + 60_000).toISOString())
+  addCandidate(slow, 1)
   const timed = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), slow)
   expect(timed.exitCode).toBe(0)
   expect(timed.stdout.toString()).toBe('')
+})
+
+test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
+  const item = createHookFixture('{"notices":[]}')
+  addCandidate(item, 1)
+  const payload = JSON.stringify({ session_id: 'reader' })
+  runHook(interruptHook, payload, item)
+  runHook(interruptHook, payload, item)
+  expect(invocationCount(item)).toBe(1)
+
+  addCandidate(item, 2)
+  runHook(interruptHook, payload, item)
+  expect(invocationCount(item)).toBe(2)
+})
+
+test('PostToolUse rechecks candidates after the reminder interval', () => {
+  const item = createHookFixture('{"notices":[]}')
+  addCandidate(item, 1)
+  const payload = JSON.stringify({ session_id: 'reader' })
+  runHook(interruptHook, payload, item)
+  const markerRoot = join(item.root, 'orch-board-interrupt')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  const value = JSON.parse(readFileSync(marker, 'utf8'))
+  writeFileSync(marker, JSON.stringify({ ...value, ran_at: 0 }))
+
+  runHook(interruptHook, payload, item)
+  expect(invocationCount(item)).toBe(2)
+})
+
+test('PostToolUse refreshes a stale hosted cache at most once per refresh interval', () => {
+  const item = createHookFixture('{"notices":[]}')
+  item.database
+    .query("UPDATE schema_meta SET value='2000-01-01T00:00:00.000Z' WHERE key=?")
+    .run('board_hosted_refresh_at')
+  const payload = JSON.stringify({ session_id: 'reader' })
+  runHook(interruptHook, payload, item)
+  runHook(interruptHook, payload, item)
+  expect(invocationCount(item)).toBe(1)
+})
+
+test('PostToolUse runs and returns correct output when its marker is unreadable', () => {
+  const item = createHookFixture(hookOutput)
+  addCandidate(item, 1)
+  const marker = join(
+    item.root,
+    'orch-board-interrupt',
+    createHash('sha256').update('reader').digest('hex'),
+  )
+  mkdirSync(marker, { recursive: true })
+
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  expect(result.exitCode).toBe(0)
+  expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext).toBe(
+    JSON.parse(hookOutput).notices[0].text,
+  )
+  expect(invocationCount(item)).toBe(1)
 })
 
 test('Stop blocks three times and allows the fourth with a system message', () => {
