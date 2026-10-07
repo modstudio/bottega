@@ -24,6 +24,12 @@
   margin: 1rem 0 0;
   text-wrap: balance;
 }
+/* A title that reads as a sentence is set smaller so it stays a heading, not a paragraph. */
+.doc-title[data-long] {
+  font-size: 1.875rem;
+  letter-spacing: -0.016em;
+  line-height: 1.14;
+}
 .markdown h2 {
   font-size: 1.5rem;
   letter-spacing: -0.014em;

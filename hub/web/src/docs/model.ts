@@ -28,7 +28,9 @@ export function docsViewModel(
   const groups = project === 'all' ? groupRootsBySubject(tree) : null
   const selected = visible.find((item) => item.id === selectedId) ?? null
   const path = selected ? treePath(tree, selected.id) : []
+  const roots = groups ? groups.flatMap((group) => group.children) : tree
   return {
+    first: roots[0] ?? null,
     userCount: inAudience(forProject, 'user').length,
     technicalCount: inAudience(forProject, 'technical').length,
     inView: forAudience.length,
@@ -38,9 +40,7 @@ export function docsViewModel(
     groups,
     selected,
     crumbs: selected ? breadcrumb(selected, path.slice(0, -1)) : [],
-    around: selected
-      ? neighbors(groups ? groups.flatMap((group) => group.children) : tree, selected.id)
-      : { previous: null, next: null },
+    around: selected ? neighbors(roots, selected.id) : { previous: null, next: null },
     headings: doc ? secondLevelHeadings(doc.body) : [],
     subjects: projectSubjects(items),
     active: activeFilterCount(stale),

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMatch, useNavigate } from '@tanstack/react-router'
 import { History, Pencil, Plus } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isHostedMode } from '@/lib/hub-mode'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
@@ -68,17 +68,22 @@ export function DocsPage() {
     searchSubject(project, catalog.items),
   )
 
-  function open(item: DocsTreeItem) {
-    void navigate({
-      to: '/docs/$scope/$subject/$slug',
-      params: {
-        scope: item.scope,
-        subject: item.subject ?? '_',
-        slug: item.slug,
-      },
-      search: source === 'local' ? {} : { id: item.id },
-    })
-  }
+  const open = useCallback(
+    (item: DocsTreeItem, replace = false) => {
+      void navigate({
+        to: '/docs/$scope/$subject/$slug',
+        params: {
+          scope: item.scope,
+          subject: item.subject ?? '_',
+          slug: item.slug,
+        },
+        search: source === 'local' ? {} : { id: item.id },
+        replace,
+      })
+    },
+    [navigate, source],
+  )
+  const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
 
   return (
     <>
@@ -93,7 +98,9 @@ export function DocsPage() {
         showProjectChooser={signedIn}
         doc={reading.document}
         onSelect={open}
+        onOpenFirst={openFirst}
         onLeaveTree={() => void navigate({ to: '/docs' })}
+        ready={!catalog.isPending && emptyChooserSet && (!hosted || whoami.isFetched)}
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}
         searchResults={results.items}
