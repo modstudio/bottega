@@ -134,12 +134,21 @@
 }
 .markdown th,
 .markdown td {
-  padding: 0.2em 0.5em;
+  padding: 0.625rem 0.75rem;
   border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.55;
   text-align: left;
+  vertical-align: top;
 }
 .markdown th {
+  color: var(--text-primary);
   font-weight: 600;
+}
+.markdown td code,
+.markdown th code {
+  white-space: nowrap;
 }
 .markdown img {
   max-width: 100%;
