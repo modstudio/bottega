@@ -1,57 +1,10 @@
-import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { Link } from '@tanstack/react-router'
 
-export function RunShowcase() {
-  return (
-    <div className="site-showcase">
-      <div className="site-window">
-        <div className="site-window-bar">{PLATFORM_SLUG} — orch board</div>
-        <div className="site-window-body">
-          <h2>Runs</h2>
-          <table className="site-table">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Job</th>
-                <th>Agent</th>
-                <th>Task</th>
-                <th>State</th>
-                <th>Fidelity</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>r-4f19</td>
-                <td>implement</td>
-                <td>codex</td>
-                <td>ATL-412 webhook retries</td>
-                <td>running</td>
-                <td>—</td>
-              </tr>
-              <tr>
-                <td>r-4f17</td>
-                <td>implement</td>
-                <td>qwen3-32b · local</td>
-                <td>HBR-208 tenant cache</td>
-                <td>asking</td>
-                <td>—</td>
-              </tr>
-              <tr>
-                <td>r-4f12</td>
-                <td>review · lens</td>
-                <td>claude</td>
-                <td>MER-117 duplicate records</td>
-                <td>accepted</td>
-                <td>4 / 4</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>
-            <strong>r-4f17 stopped and asked.</strong> “The spec says retry on a 5xx. Two existing
-            callers also retry on a 429. Do I change them too, or scope the retry to the new path?”
-            — waiting on your ruling, nothing guessed.
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
+const rows = [
+  ['r-4f19', 'implement', 'codex', 'ATL-412 webhook retries', 'running', '—', 'run'],
+  ['r-4f17', 'implement', 'qwen3-32b · local', 'HBR-208 tenant cache', 'asking', '—', 'ask'],
+  ['r-4f12', 'review · lens', 'claude', 'MER-117 duplicate records', 'accepted', '4 / 4', 'ok'],
+  ['r-4f08', 'fix', 'grok', 'HBR-205 audit pagination', 'accepted', '3 / 4', 'ok'],
+  ['r-4f02', 'summarize', 'llama3.1-8b · local', 'MER-114 export throttling', 'voided', '—', 'void'],
+]
+export function RunShowcase() { return <div className="showcase"><div className="showcase-in"><div className="app"><div className="app-bar"><div className="lights" aria-hidden="true"><i /><i /><i /></div><span className="path mono">bottega — orch board</span></div><div className="app-body"><aside className="app-side"><b>Orchestration</b><Link to="/product/orchestration" className="on">Board</Link><Link to="/product/orchestration">Runs</Link><Link to="/product/orchestration">Inbox <span>2</span></Link><Link to="/product/workers">Routing</Link><b>Workspace</b><Link to="/product/board">Tasks</Link><Link to="/product/board">Docs</Link><Link to="/product/board">Workflows</Link><Link to="/product/board">Notes</Link></aside><div className="app-main"><div className="app-h"><h3>Runs</h3><span>4 live · 2 waiting on a ruling · 11 scored today</span></div><div className="runs-scroll"><table className="runs"><thead><tr><th>Run</th><th>Job</th><th>Agent</th><th>Task</th><th>State</th><th>Fidelity</th></tr></thead><tbody>{rows.map(([run, job, agent, task, state, score, tone]) => <tr key={run}><td className="k">{run}</td><td>{job}</td><td>{agent}</td><td>{task}</td><td><span className={`tag ${tone}`}><i />{state}</span></td><td className="score">{score}</td></tr>)}</tbody></table></div><div className="app-note"><span className="q">ask ↑</span><p><b>r-4f17 stopped and asked.</b> “The spec says retry on a 5xx. Two existing callers also retry on a 429. Do I change them too, or scope the retry to the new path?” — waiting on your ruling, nothing guessed.</p></div></div></div></div></div></div> }
