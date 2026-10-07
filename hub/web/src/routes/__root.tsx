@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
+  HeadContent,
   Link,
   type LinkProps,
   Outlet,
@@ -14,10 +15,12 @@ import {
   isHostedMode,
   isHostedPath,
   isHostedSignInFramePath,
+  isMarketingPath,
   navForMode,
 } from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { useWindowState } from '@/lib/window'
+import { SiteFrame } from '@/site/chrome'
 import { queryClient, trpc } from '@/trpc/client'
 import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
 import { UserMenu } from '@/ui/shell/user-menu'
@@ -52,7 +55,7 @@ export function HostedSignInFrame({ children }: { children: React.ReactNode }) {
 
 /** Rail-free frame for hosted pages that stay reachable signed out, such as docs. */
 export function HostedPublicFrame({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-dvh bg-surface-page text-text-primary">{children}</main>
+  return <div className="min-h-dvh bg-surface-page text-text-primary">{children}</div>
 }
 
 function identityForMode(hosted: boolean, email: string | null) {
@@ -96,28 +99,49 @@ export const Route = createRootRoute({
     if (!isHostedMode()) return
     if (!isHostedPath(location.pathname)) throw redirect({ to: '/runs' })
   },
-  component: function Shell() {
-    const hosted = isHostedMode()
-    const pathname = useRouterState({ select: (state) => state.location.pathname })
-    const whoami = useQuery({
-      ...trpc.record.whoami.queryOptions(),
-      enabled: hosted && !isHostedSignInFramePath(pathname),
-      retry: false,
-    })
-    const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
-    if (hosted && isHostedSignInFramePath(pathname)) {
-      return (
-        <HostedSignInFrame>
-          <Outlet />
-        </HostedSignInFrame>
-      )
-    }
-    if (hosted && isDocsPath(pathname) && !signedIn) {
-      return <HostedPublicFrame>{whoami.isPending ? null : <Outlet />}</HostedPublicFrame>
-    }
-    return <AppLayout hosted={hosted} pathname={pathname} />
-  },
+  component: RootShell,
 })
+
+function RootShell() {
+  return (
+    <>
+      <HeadContent />
+      <ShellContent />
+    </>
+  )
+}
+
+function ShellContent() {
+  const hosted = isHostedMode()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const whoami = useQuery({
+    ...trpc.record.whoami.queryOptions(),
+    enabled: hosted && !isHostedSignInFramePath(pathname),
+    retry: false,
+  })
+  const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
+  if (hosted && isHostedSignInFramePath(pathname)) {
+    return (
+      <HostedSignInFrame>
+        <Outlet />
+      </HostedSignInFrame>
+    )
+  }
+  if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
+    // Wait for the first answer only. A later refetch of a failed, dataless request reports
+    // pending again; unmounting the page for it would remount the observer that refetches.
+    if (!whoami.isFetched) return null
+    if (pathname === '/' && signedIn) return <AppLayout hosted pathname={pathname} />
+    return (
+      <HostedPublicFrame>
+        <SiteFrame identity={signedIn ? 'signed-in' : 'signed-out'}>
+          <Outlet />
+        </SiteFrame>
+      </HostedPublicFrame>
+    )
+  }
+  return <AppLayout hosted={hosted} pathname={pathname} />
+}
 
 function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {
   const { counts } = useWindowState()

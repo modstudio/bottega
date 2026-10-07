@@ -36,6 +36,13 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpendRouteImport } from './routes/spend'
 import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitation.$id'
 import { Route as MessagesIdRouteImport } from './routes/messages.$id'
+import { Route as ProductBoardRouteImport } from './routes/product.board'
+import { Route as ProductContextRouteImport } from './routes/product.context'
+import { Route as ProductDocStoreRouteImport } from './routes/product.doc-store'
+import { Route as ProductOrchestrationRouteImport } from './routes/product.orchestration'
+import { Route as ProductReviewRouteImport } from './routes/product.review'
+import { Route as ProductWorkersRouteImport } from './routes/product.workers'
+import { Route as ProductWorkflowsRouteImport } from './routes/product.workflows'
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
@@ -181,6 +188,41 @@ const MessagesIdRoute = MessagesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => MessagesRoute,
 } as any)
+const ProductBoardRoute = ProductBoardRouteImport.update({
+  id: '/product/board',
+  path: '/product/board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductContextRoute = ProductContextRouteImport.update({
+  id: '/product/context',
+  path: '/product/context',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductDocStoreRoute = ProductDocStoreRouteImport.update({
+  id: '/product/doc-store',
+  path: '/product/doc-store',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductOrchestrationRoute = ProductOrchestrationRouteImport.update({
+  id: '/product/orchestration',
+  path: '/product/orchestration',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductReviewRoute = ProductReviewRouteImport.update({
+  id: '/product/review',
+  path: '/product/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductWorkersRoute = ProductWorkersRouteImport.update({
+  id: '/product/workers',
+  path: '/product/workers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductWorkflowsRoute = ProductWorkflowsRouteImport.update({
+  id: '/product/workflows',
+  path: '/product/workflows',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsNameRoute = ProjectsNameRouteImport.update({
   id: '/$name',
   path: '/$name',
@@ -255,6 +297,13 @@ export interface FileRoutesByFullPath {
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/messages/$id': typeof MessagesIdRoute
+  '/product/board': typeof ProductBoardRoute
+  '/product/context': typeof ProductContextRoute
+  '/product/doc-store': typeof ProductDocStoreRoute
+  '/product/orchestration': typeof ProductOrchestrationRoute
+  '/product/review': typeof ProductReviewRoute
+  '/product/workers': typeof ProductWorkersRoute
+  '/product/workflows': typeof ProductWorkflowsRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -293,6 +342,13 @@ export interface FileRoutesByTo {
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/messages/$id': typeof MessagesIdRoute
+  '/product/board': typeof ProductBoardRoute
+  '/product/context': typeof ProductContextRoute
+  '/product/doc-store': typeof ProductDocStoreRoute
+  '/product/orchestration': typeof ProductOrchestrationRoute
+  '/product/review': typeof ProductReviewRoute
+  '/product/workers': typeof ProductWorkersRoute
+  '/product/workflows': typeof ProductWorkflowsRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -332,6 +388,13 @@ export interface FileRoutesById {
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/messages/$id': typeof MessagesIdRoute
+  '/product/board': typeof ProductBoardRoute
+  '/product/context': typeof ProductContextRoute
+  '/product/doc-store': typeof ProductDocStoreRoute
+  '/product/orchestration': typeof ProductOrchestrationRoute
+  '/product/review': typeof ProductReviewRoute
+  '/product/workers': typeof ProductWorkersRoute
+  '/product/workflows': typeof ProductWorkflowsRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
@@ -372,6 +435,13 @@ export interface FileRouteTypes {
     | '/spend'
     | '/accept-invitation/$id'
     | '/messages/$id'
+    | '/product/board'
+    | '/product/context'
+    | '/product/doc-store'
+    | '/product/orchestration'
+    | '/product/review'
+    | '/product/workers'
+    | '/product/workflows'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -410,6 +480,13 @@ export interface FileRouteTypes {
     | '/spend'
     | '/accept-invitation/$id'
     | '/messages/$id'
+    | '/product/board'
+    | '/product/context'
+    | '/product/doc-store'
+    | '/product/orchestration'
+    | '/product/review'
+    | '/product/workers'
+    | '/product/workflows'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -448,6 +525,13 @@ export interface FileRouteTypes {
     | '/spend'
     | '/accept-invitation/$id'
     | '/messages/$id'
+    | '/product/board'
+    | '/product/context'
+    | '/product/doc-store'
+    | '/product/orchestration'
+    | '/product/review'
+    | '/product/workers'
+    | '/product/workflows'
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
@@ -486,6 +570,13 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
   AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
+  ProductBoardRoute: typeof ProductBoardRoute
+  ProductContextRoute: typeof ProductContextRoute
+  ProductDocStoreRoute: typeof ProductDocStoreRoute
+  ProductOrchestrationRoute: typeof ProductOrchestrationRoute
+  ProductReviewRoute: typeof ProductReviewRoute
+  ProductWorkersRoute: typeof ProductWorkersRoute
+  ProductWorkflowsRoute: typeof ProductWorkflowsRoute
   InboxKindIdRoute: typeof InboxKindIdRoute
   UnsubscribeSpaceIdTokenRoute: typeof UnsubscribeSpaceIdTokenRoute
 }
@@ -681,6 +772,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MessagesIdRouteImport
       parentRoute: typeof MessagesRoute
     }
+    '/product/board': {
+      id: '/product/board'
+      path: '/product/board'
+      fullPath: '/product/board'
+      preLoaderRoute: typeof ProductBoardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/context': {
+      id: '/product/context'
+      path: '/product/context'
+      fullPath: '/product/context'
+      preLoaderRoute: typeof ProductContextRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/doc-store': {
+      id: '/product/doc-store'
+      path: '/product/doc-store'
+      fullPath: '/product/doc-store'
+      preLoaderRoute: typeof ProductDocStoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/orchestration': {
+      id: '/product/orchestration'
+      path: '/product/orchestration'
+      fullPath: '/product/orchestration'
+      preLoaderRoute: typeof ProductOrchestrationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/review': {
+      id: '/product/review'
+      path: '/product/review'
+      fullPath: '/product/review'
+      preLoaderRoute: typeof ProductReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/workers': {
+      id: '/product/workers'
+      path: '/product/workers'
+      fullPath: '/product/workers'
+      preLoaderRoute: typeof ProductWorkersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/workflows': {
+      id: '/product/workflows'
+      path: '/product/workflows'
+      fullPath: '/product/workflows'
+      preLoaderRoute: typeof ProductWorkflowsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$name': {
       id: '/projects/$name'
       path: '/$name'
@@ -860,6 +1000,13 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
   AcceptInvitationIdRoute: AcceptInvitationIdRoute,
+  ProductBoardRoute: ProductBoardRoute,
+  ProductContextRoute: ProductContextRoute,
+  ProductDocStoreRoute: ProductDocStoreRoute,
+  ProductOrchestrationRoute: ProductOrchestrationRoute,
+  ProductReviewRoute: ProductReviewRoute,
+  ProductWorkersRoute: ProductWorkersRoute,
+  ProductWorkflowsRoute: ProductWorkflowsRoute,
   InboxKindIdRoute: InboxKindIdRoute,
   UnsubscribeSpaceIdTokenRoute: UnsubscribeSpaceIdTokenRoute,
 }

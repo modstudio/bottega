@@ -7,6 +7,7 @@ const sizes = {
   sm: 'w-[min(24rem,calc(100vw-2rem))]',
   md: 'w-[min(32rem,calc(100vw-2rem))]',
   lg: 'w-[min(40rem,calc(100vw-2rem))]',
+  full: 'h-dvh w-screen max-w-none',
 } as const
 
 /**

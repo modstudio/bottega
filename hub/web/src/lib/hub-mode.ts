@@ -163,8 +163,14 @@ export function isDocsPath(pathname: string) {
   return path === '/docs' || path.startsWith('/docs/')
 }
 
+export function isMarketingPath(pathname: string) {
+  const path = normalizedPath(pathname)
+  return path === '/' || path.startsWith('/product/')
+}
+
 export function isHostedPath(pathname: string) {
   const path = normalizedPath(pathname)
+  if (isMarketingPath(path)) return true
   if (
     path === '/sign-in' ||
     path === '/forgot-password' ||
