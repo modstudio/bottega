@@ -101,6 +101,54 @@ function runHook(
   })
 }
 
+function runHookRepeated(
+  path: string,
+  payload: string,
+  fixture: ReturnType<typeof createHookFixture>,
+  times: number,
+  pendingValues: Array<Array<{ id: string; text: string }>> | null = null,
+) {
+  const runner = [
+    'import contextlib, importlib.util, io, json, os, sys',
+    'sys.path.insert(0, os.path.dirname(sys.argv[1]))',
+    'spec = importlib.util.spec_from_file_location("board_hook_test", sys.argv[1])',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
+    'pending_values = json.loads(sys.argv[4])',
+    'if pending_values is not None:',
+    '    pending_iterator = iter(pending_values)',
+    '    module.pending = lambda session: next(pending_iterator)',
+    'results = []',
+    'for _ in range(int(sys.argv[3])):',
+    '    output = io.StringIO()',
+    '    sys.stdin = io.StringIO(sys.argv[2])',
+    '    with contextlib.redirect_stdout(output): module.main()',
+    '    results.append(output.getvalue())',
+    'print(json.dumps(results))',
+  ].join('\n')
+  const result = Bun.spawnSync(
+    ['python3', '-c', runner, path, payload, String(times), JSON.stringify(pendingValues)],
+    {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: {
+      ...process.env,
+      ORCH_RUN_ID: '',
+      ORCH_DB: fixture.databasePath,
+      ORCH_BOARD_BIN: fixture.command,
+      BOARD_PUSH_REFRESH_SECONDS: '60',
+      BOARD_PUSH_REMIND_SECONDS: '300',
+      BOARD_PUSH_RETRY_SECONDS: '15',
+      BOARD_ACK_STOP_BLOCKS: '3',
+      BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
+      ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
+    },
+    },
+  )
+  expect(result.exitCode).toBe(0)
+  return JSON.parse(result.stdout.toString()) as string[]
+}
+
 const hookOutput = JSON.stringify({
   notices: [
     { id: '7', text: 'Posted by: operator\nTitle: T\nBody: B\nDeadline: D\norch board ack 7' },
@@ -265,8 +313,7 @@ test('PostToolUse checks an unaddressed candidate only once until a new id arriv
   const item = createHookFixture('{"notices":[]}')
   addCandidate(item, 1)
   const payload = JSON.stringify({ session_id: 'reader' })
-  runHook(interruptHook, payload, item)
-  runHook(interruptHook, payload, item)
+  runHookRepeated(interruptHook, payload, item, 2)
   expect(invocationCount(item)).toBe(1)
 
   addCandidate(item, 2)
@@ -278,8 +325,9 @@ test('PostToolUse injects once and again only after the reminder interval', () =
   const item = createHookFixture(hookOutput)
   addCandidate(item, 1)
   const payload = JSON.stringify({ session_id: 'reader' })
-  expect(runHook(interruptHook, payload, item).stdout.toString()).not.toBe('')
-  expect(runHook(interruptHook, payload, item).stdout.toString()).toBe('')
+  const initial = runHookRepeated(interruptHook, payload, item, 2)
+  expect(initial[0]).not.toBe('')
+  expect(initial[1]).toBe('')
   const markerRoot = join(item.root, 'board-hook-state', 'interrupt')
   const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
   const value = JSON.parse(readFileSync(marker, 'utf8'))
@@ -293,8 +341,7 @@ test('PostToolUse throttles a failed slow path until the retry interval', () => 
   const item = createHookFixture(hookOutput, true)
   addCandidate(item, 1)
   const payload = JSON.stringify({ session_id: 'reader' })
-  runHook(interruptHook, payload, item)
-  runHook(interruptHook, payload, item)
+  runHookRepeated(interruptHook, payload, item, 2)
   expect(invocationCount(item)).toBe(1)
 
   const markerRoot = join(item.root, 'board-hook-state', 'interrupt')
@@ -312,31 +359,11 @@ test('PostToolUse refreshes a stale hosted cache at most once per refresh interv
     .query("UPDATE schema_meta SET value='2000-01-01T00:00:00.000Z' WHERE key=?")
     .run('board_hosted_refresh_at')
   const payload = JSON.stringify({ session_id: 'reader' })
-  runHook(interruptHook, payload, item)
-  runHook(interruptHook, payload, item)
+  runHookRepeated(interruptHook, payload, item, 2)
   expect(invocationCount(item)).toBe(1)
 })
 
-test('PostToolUse runs and returns correct output when its marker is unreadable', () => {
-  const item = createHookFixture(hookOutput)
-  addCandidate(item, 1)
-  const marker = join(
-    item.root,
-    'board-hook-state',
-    'interrupt',
-    createHash('sha256').update('reader').digest('hex'),
-  )
-  mkdirSync(marker, { recursive: true })
-
-  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
-  expect(result.exitCode).toBe(0)
-  expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext).toBe(
-    JSON.parse(hookOutput).notices[0].text,
-  )
-  expect(invocationCount(item)).toBe(1)
-})
-
-test('PostToolUse does not follow a marker symlink', () => {
+test('PostToolUse runs correctly without following an unreadable marker symlink', () => {
   const item = createHookFixture(hookOutput)
   addCandidate(item, 1)
   const root = join(item.root, 'board-hook-state', 'interrupt')
@@ -354,10 +381,8 @@ test('PostToolUse does not follow a marker symlink', () => {
 
 test('Stop blocks three times and allows the fourth with a system message', () => {
   const item = createHookFixture(hookOutput)
-  const values = Array.from({ length: 4 }, () =>
-    JSON.parse(
-      runHook(guardHook, JSON.stringify({ session_id: 'reader' }), item).stdout.toString(),
-    ),
+  const values = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 4).map(
+    (value) => JSON.parse(value),
   )
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
   expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
@@ -369,25 +394,19 @@ test('Stop blocks three times and allows the fourth with a system message', () =
 test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {
   const item = createHookFixture(hookOutput)
   const payload = JSON.stringify({ session_id: 'reader' })
-  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
-  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
-  setCommandOutput(
-    item,
-    JSON.stringify({
-      notices: [
-        ...JSON.parse(hookOutput).notices,
-        { id: '8', text: 'second notice' },
-        { id: '9', text: 'third notice' },
-      ],
-    }),
-  )
-  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
-  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBeUndefined()
-
-  setCommandOutput(item, '{"notices":[]}')
-  expect(runHook(guardHook, payload, item).stdout.toString()).toBe('')
-  setCommandOutput(item, hookOutput)
-  expect(JSON.parse(runHook(guardHook, payload, item).stdout.toString()).decision).toBe('block')
+  const more = JSON.stringify({
+    notices: [
+      ...JSON.parse(hookOutput).notices,
+      { id: '8', text: 'second notice' },
+      { id: '9', text: 'third notice' },
+    ],
+  })
+  setCommandOutputs(item, [hookOutput, hookOutput, more, more, '{"notices":[]}', hookOutput])
+  const values = runHookRepeated(guardHook, payload, item, 6)
+  expect(values.slice(0, 3).every((value) => JSON.parse(value).decision === 'block')).toBe(true)
+  expect(JSON.parse(values[3]!).decision).toBeUndefined()
+  expect(values[4]).toBe('')
+  expect(JSON.parse(values[5]!).decision).toBe('block')
 })
 
 test('Stop treats an unreadable counter as zero and does not follow its symlink', () => {
