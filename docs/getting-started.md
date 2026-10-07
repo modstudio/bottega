@@ -27,7 +27,7 @@ The installer downloads one verified binary for your platform into
 `~/.local/bin` and links `orch` and `hub` to it. It prints the line to add when
 that directory is not on your `PATH`.
 
-Until the first release is published, build the binary from a checkout instead:
+To work from a checkout instead, build the binary for your platform:
 
     bun install
     bun run release:binary -- v0.0.0 ./out darwin-arm64
