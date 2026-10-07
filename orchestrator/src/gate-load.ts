@@ -94,6 +94,11 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
         `held ${held.delayedMs}ms for host load ` +
           `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`,
       )
+      if (held.exhausted) {
+        console.error(
+          'admitted over the load threshold after the maximum hold; a per-test timeout in this run is suspect, rerun before treating it as a failure',
+        )
+      }
     }
   }
   const unregister = registerGatePid(process.pid, gatePidDir(env))
@@ -106,7 +111,7 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
 
 export async function holdForGateCapacity(
   opts: GateHoldOpts = {},
-): Promise<{ delayedMs: number; held: boolean; load: HostLoad }> {
+): Promise<{ delayedMs: number; held: boolean; exhausted: boolean; load: HostLoad }> {
   const measure = opts.measure ?? measureHostLoad
   const sleep =
     opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
@@ -116,14 +121,16 @@ export async function holdForGateCapacity(
   const started = now()
   let delayedMs = 0
   let load = measure()
-  if (!shouldHoldShard(load, opts.limit)) return { delayedMs: 0, held: false, load }
-  while (now() - started + delayedMs < maxMs) {
-    await sleep(pollMs)
-    delayedMs += pollMs
+  if (!shouldHoldShard(load, opts.limit)) {
+    return { delayedMs: 0, held: false, exhausted: false, load }
+  }
+  while (delayedMs < maxMs) {
+    await sleep(Math.min(pollMs, maxMs - delayedMs))
+    delayedMs = now() - started
     load = measure()
     if (!shouldHoldShard(load, opts.limit)) {
-      return { delayedMs, held: true, load }
+      return { delayedMs, held: true, exhausted: false, load }
     }
   }
-  return { delayedMs, held: true, load }
+  return { delayedMs, held: true, exhausted: true, load }
 }
