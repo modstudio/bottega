@@ -36,6 +36,10 @@
   text-rendering: optimizeLegibility;
   color-scheme: light;
 }
+/* The footer's top margin shows the frame, so a marketing frame carries the ground itself. */
+.site-frame:has(> .site-page) {
+  background: var(--ground);
+}
 @media (prefers-color-scheme: dark) {
   .site-frame {
     --paper: #0f0f0e;
