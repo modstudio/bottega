@@ -148,6 +148,7 @@ function startGateExecution(
     await stop(GATE_CLOSE_REASON)
     await completion
   })
+  let finishedAt: string | null = null
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
     const scratchPath = join(scratchDir, `gate-${request.id}.log`)
@@ -222,7 +223,7 @@ function startGateExecution(
     } finally {
       closeSync(fd)
     }
-    const finishedAt = nowIso()
+    finishedAt = nowIso()
     db()
       .query(
         `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
@@ -240,8 +241,9 @@ function startGateExecution(
         command,
         request.id,
       )
-    onFinish?.({ executionId: request.id, at: finishedAt })
-  })().finally(unregister)
+  })()
+    .finally(() => onFinish?.({ executionId: request.id, at: finishedAt ?? nowIso() }))
+    .finally(unregister)
   return { completion, cancel: (reason) => stop(reason) }
 }
 

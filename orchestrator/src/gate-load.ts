@@ -62,6 +62,7 @@ function measureHostLoad(env: NodeJS.ProcessEnv = process.env, selfPid = process
 }
 
 export type GateHoldCondition = 'gates' | 'load' | 'memory'
+const GATE_HOLD_CONDITION_ORDER: GateHoldCondition[] = ['gates', 'load', 'memory']
 
 export function gateHoldConditions(
   load: HostLoad,
@@ -104,12 +105,12 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
     }
     const held = await holdForGateCapacity({ ...opts, measure: asRunner })
     if (held.held) {
-      const heldOn = gateHoldConditions(held.load, opts.limit).join('+') || 'none'
       console.error(
         `held ${held.delayedMs}ms for host load ` +
           `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu} ` +
           `free_mb=${Math.floor(held.load.freeMem / MEBIBYTE_BYTES)} ` +
-          `floor_mb=${Math.floor(FREE_MEM_FLOOR_BYTES / MEBIBYTE_BYTES)} held_on=${heldOn})`,
+          `floor_mb=${Math.floor(FREE_MEM_FLOOR_BYTES / MEBIBYTE_BYTES)} ` +
+          `held_on=${held.heldOn.join('+')})`,
       )
       if (held.exhausted) {
         console.error(
@@ -126,9 +127,13 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
   }
 }
 
-export async function holdForGateCapacity(
-  opts: GateHoldOpts = {},
-): Promise<{ delayedMs: number; held: boolean; exhausted: boolean; load: HostLoad }> {
+export async function holdForGateCapacity(opts: GateHoldOpts = {}): Promise<{
+  delayedMs: number
+  held: boolean
+  exhausted: boolean
+  load: HostLoad
+  heldOn: GateHoldCondition[]
+}> {
   const measure = opts.measure ?? measureHostLoad
   const sleep =
     opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
@@ -138,16 +143,21 @@ export async function holdForGateCapacity(
   const started = now()
   let delayedMs = 0
   let load = measure()
-  if (!shouldHoldShard(load, opts.limit)) {
-    return { delayedMs: 0, held: false, exhausted: false, load }
+  const seenConditions = new Set(gateHoldConditions(load, opts.limit))
+  const heldOn = () =>
+    GATE_HOLD_CONDITION_ORDER.filter((condition) => seenConditions.has(condition))
+  if (seenConditions.size === 0) {
+    return { delayedMs: 0, held: false, exhausted: false, load, heldOn: [] }
   }
   while (delayedMs < maxMs) {
     await sleep(Math.min(pollMs, maxMs - delayedMs))
     delayedMs = now() - started
     load = measure()
-    if (!shouldHoldShard(load, opts.limit)) {
-      return { delayedMs, held: true, exhausted: false, load }
+    const conditions = gateHoldConditions(load, opts.limit)
+    for (const condition of conditions) seenConditions.add(condition)
+    if (conditions.length === 0) {
+      return { delayedMs, held: true, exhausted: false, load, heldOn: heldOn() }
     }
   }
-  return { delayedMs, held: true, exhausted: true, load }
+  return { delayedMs, held: true, exhausted: true, load, heldOn: heldOn() }
 }

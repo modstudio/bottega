@@ -873,6 +873,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
     failureKind = proc ? 'other' : 'harness'
   }
+  rearmWallDeadline = () => {}
+  clearTimeout(timer ?? undefined)
+  timer = null
   await closeWorkerGateBroker(gateBroker)
   await closeWorkerNoteBroker(noteBroker)
 

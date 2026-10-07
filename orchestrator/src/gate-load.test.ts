@@ -41,6 +41,7 @@ describe('gate load hold', () => {
       held: true,
       exhausted: true,
       load: idle({ gates: 3 }),
+      heldOn: ['gates'],
     })
   })
 
@@ -60,6 +61,7 @@ describe('gate load hold', () => {
       held: true,
       exhausted: false,
       load: idle({ gates: 1 }),
+      heldOn: ['gates'],
     })
   })
 
@@ -75,6 +77,7 @@ describe('gate load hold', () => {
       held: false,
       exhausted: false,
       load: idle({ gates: GATE_CONCURRENCY_LIMIT }),
+      heldOn: [],
     })
   })
 
@@ -94,6 +97,7 @@ describe('gate load hold', () => {
     expect(sleeps).toEqual([25, 25, 20])
     expect(result.delayedMs).toBe(115)
     expect(result.exhausted).toBe(true)
+    expect(result.heldOn).toEqual(['gates'])
   })
 
   test('CPU and memory floors hold even with one gate', () => {
@@ -116,22 +120,55 @@ describe('gate load hold', () => {
   test('withGateSlot holds then runs', async () => {
     let n = 0
     const sleeps: number[] = []
-    const result = await withGateSlot(async () => 'ok', {
-      env: { ...process.env, CI: undefined },
-      // The measure reports OTHER runners; withGateSlot adds this one.
-      measure: () => {
-        n++
-        return n === 1 ? idle({ gates: 2 }) : idle({ gates: 1 })
-      },
-      sleep: async (ms) => {
-        sleeps.push(ms)
-      },
-      pollMs: 25,
-      maxMs: 1_000,
-    })
+    const lines: string[] = []
+    const error = spyOn(console, 'error').mockImplementation((line) => lines.push(String(line)))
+    let result = ''
+    try {
+      result = await withGateSlot(async () => 'ok', {
+        env: { ...process.env, CI: undefined },
+        // The measure reports OTHER runners; withGateSlot adds this one.
+        measure: () => {
+          n++
+          return n === 1 ? idle({ gates: 2 }) : idle({ gates: 1 })
+        },
+        sleep: async (ms) => {
+          sleeps.push(ms)
+        },
+        pollMs: 25,
+        maxMs: 1_000,
+      })
+    } finally {
+      error.mockRestore()
+    }
     expect(result).toBe('ok')
     expect(sleeps.length).toBeGreaterThan(0)
     expect(n).toBe(2)
+    expect(lines[0]).toContain('held_on=gates')
+  })
+
+  test('withGateSlot reports every condition seen while the hold changes', async () => {
+    let clock = 0
+    const lines: string[] = []
+    const error = spyOn(console, 'error').mockImplementation((line) => lines.push(String(line)))
+    try {
+      await withGateSlot(async () => 'ok', {
+        env: { ...process.env, CI: undefined },
+        measure: () => {
+          if (clock === 0) return idle({ gates: 2 })
+          if (clock === 25) return idle({ gates: 1, freeMem: 64 * 1024 * 1024 })
+          return idle({ gates: 1 })
+        },
+        sleep: async (ms) => {
+          clock += ms
+        },
+        now: () => clock,
+        pollMs: 25,
+        maxMs: 100,
+      })
+    } finally {
+      error.mockRestore()
+    }
+    expect(lines[0]).toContain('held_on=gates+memory')
   })
 
   test('withGateSlot preserves the held line and warns after exhaustion', async () => {
