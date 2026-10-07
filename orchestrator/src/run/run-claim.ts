@@ -71,8 +71,10 @@ import {
   type runFilePaths,
   runScratchDir,
   writeDispatchState,
+  writeGeneratedSchema,
 } from './run-artifacts.ts'
 import {
+  claimedRunBranch,
   decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
@@ -140,6 +142,7 @@ export type ClaimInput = {
   timeoutMs: number
   forbidsRepo: boolean
   reviewTarget: { branch: string; commit: string; base: string } | null
+  implicitReviewBranch: string | null
   coverageBase: string | null
   readOnlyBase: string | null
   deferredCwdMcpPreflight: boolean
@@ -206,6 +209,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     timeoutMs,
     forbidsRepo,
     reviewTarget,
+    implicitReviewBranch,
     coverageBase,
     readOnlyBase,
     deferredCwdMcpPreflight,
@@ -214,6 +218,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     replySchemaName,
     carriedQuestionIds,
   } = input
+  const recordedBranch = (worktreeBranch: string | null) =>
+    claimedRunBranch(reviewTarget?.branch ?? null, implicitReviewBranch, worktreeBranch)
   const resume = resumeFacts(
     opts.resume?.kind ?? null,
     opts.reserveId ?? 0,
@@ -240,14 +246,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * is a deliberate act by someone who wants a different contract, and silently
    * overriding it would make the flag a lie.
    */
-  const originalSchemaPath =
-    generatedSchema && !opts.schemaPath
-      ? (() => {
-          const p = join(runsDir, `${stamp}.schema.json`)
-          writeFileSync(p, JSON.stringify(generatedSchema, null, 2))
-          return p
-        })()
-      : opts.schemaPath
+  const originalSchemaPath = writeGeneratedSchema(runsDir, stamp, generatedSchema, opts.schemaPath)
   const textReplyContract = !opts.schemaPath && generatedSchema === TEXT_REPLY_SCHEMA
   // Codex's --output-schema is OpenAI strict structured output. Its copy is
   // normalized beside the prompt; the caller's file remains byte-for-byte
@@ -623,7 +622,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               .run(
                 created.path,
                 created.path,
-                reviewTarget?.branch ?? (created.branch || null),
+                recordedBranch(created.branch),
                 created.mintedBranch ?? null,
                 coverageBase ?? created.base,
                 created.source ?? null,
@@ -810,7 +809,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           .run(
             inheritedWorktree.path,
             inheritedWorktree.path,
-            reviewTarget?.branch ?? (inheritedWorktree.branch || null),
+            recordedBranch(inheritedWorktree.branch),
             inheritedWorktree.mintedBranch ?? null,
             coverageBase ?? inheritedWorktree.base,
             inheritedWorktree.source ?? null,

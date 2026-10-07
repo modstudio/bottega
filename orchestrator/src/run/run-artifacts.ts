@@ -64,6 +64,18 @@ export function runFilePaths(
   }
 }
 
+export function writeGeneratedSchema(
+  runsDir: string,
+  stamp: string,
+  generatedSchema: unknown,
+  callerSchemaPath: string | undefined,
+): string | undefined {
+  if (!generatedSchema || callerSchemaPath) return callerSchemaPath
+  const path = join(runsDir, `${stamp}.schema.json`)
+  writeFileSync(path, JSON.stringify(generatedSchema, null, 2))
+  return path
+}
+
 /** Opportunistic, on the way past: cheap, and no cron has to remember. */
 export function pruneRuns(dir: string): void {
   const cutoff = Date.now() - KEEP_RUN_FILES_DAYS * 86_400_000

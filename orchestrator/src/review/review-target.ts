@@ -125,7 +125,7 @@ export function measureImplicitReviewTarget(
 }
 
 /** Coverage base for a findings job dispatched without --review. Null if unmeasurable. */
-export function implicitReviewCoverageBase(cwd: string): string | null {
+function implicitReviewCoverageBase(cwd: string): string | null {
   const trunk = projectAt(cwd)?.settings.trunk?.trim()
   if (!trunk) return null
   try {
@@ -134,6 +134,22 @@ export function implicitReviewCoverageBase(cwd: string): string | null {
   } catch {
     return null
   }
+}
+
+/** Branch claim for a findings job dispatched without --review. */
+export function implicitReviewBranch(cwd: string): string | null {
+  const branch = branchOf(cwd)
+  const trunk = projectAt(cwd)?.settings.trunk?.trim()
+  return branch && branch !== trunk ? branch : null
+}
+
+export function implicitReviewClaim(
+  cwd: string,
+  hasExplicitTarget: boolean,
+  findings: boolean,
+): { branch: string | null; coverageBase: string | null } {
+  if (hasExplicitTarget || !findings) return { branch: null, coverageBase: null }
+  return { branch: implicitReviewBranch(cwd), coverageBase: implicitReviewCoverageBase(cwd) }
 }
 
 export function resolveReviewTarget(

@@ -1,11 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  claimedRunBranch,
   decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
+
+test('claim branch selection records implicit, explicit, and ordinary worktree branches', () => {
+  expect(claimedRunBranch(null, 'DEV-1147-implicit', null)).toBe('DEV-1147-implicit')
+  expect(claimedRunBranch('DEV-1147-explicit', null, null)).toBe('DEV-1147-explicit')
+  expect(claimedRunBranch(null, null, 'DEV-1147-writer')).toBe('DEV-1147-writer')
+})
 
 const defaultFacts = {
   hasResolvedTaskWorktree: false,

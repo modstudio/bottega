@@ -66,7 +66,7 @@ import {
 } from '../review/review-calibration.ts'
 import {
   attributedLaunchKey,
-  implicitReviewCoverageBase,
+  implicitReviewClaim,
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
@@ -340,9 +340,10 @@ export async function run(opts: {
   const reviewTarget =
     opts.resolvedReviewTarget ??
     resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry)
-  const implicitCoverageBase =
-    !reviewTarget && requestedJob.findings ? implicitReviewCoverageBase(callerCwd) : null
-  const coverageBase = reviewTarget?.base ?? implicitCoverageBase
+  const explicitReview = reviewTarget !== null
+  const findings = Boolean(requestedJob.findings)
+  const implicitReview = implicitReviewClaim(callerCwd, explicitReview, findings)
+  const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
@@ -517,7 +518,7 @@ export async function run(opts: {
     reviewTarget,
     readsRepo: repoJob,
     checkoutCommit: readOnlyBase,
-    coverageBase: implicitCoverageBase,
+    coverageBase: implicitReview.coverageBase,
     lens: opts.lens,
     repo: opts.repo ?? repoOf(callerCwd),
   })
@@ -720,6 +721,7 @@ export async function run(opts: {
     timeoutMs: boundMs,
     forbidsRepo,
     reviewTarget,
+    implicitReviewBranch: implicitReview.branch,
     coverageBase,
     readOnlyBase,
     deferredCwdMcpPreflight,

@@ -19,6 +19,14 @@ export type ClaimTreePlanRuling =
   | { mode: 'create' }
   | { mode: 'caller' }
 
+export function claimedRunBranch(
+  reviewTargetBranch: string | null,
+  implicitReviewBranch: string | null,
+  worktreeBranch: string | null,
+): string | null {
+  return reviewTargetBranch ?? implicitReviewBranch ?? worktreeBranch
+}
+
 /** Decide the claimed run's working-tree mode before performing any effects. */
 export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRuling {
   if (facts.hasResolvedTaskWorktree) return { mode: 'attach' }
