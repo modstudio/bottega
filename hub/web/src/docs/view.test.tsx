@@ -73,7 +73,9 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         body: '## Open a task\n\nEvery piece of work carries a key.\n',
       }}
       onSelect={() => {}}
+      onOpenFirst={() => {}}
       onLeaveTree={() => {}}
+      ready
       searchQuery=""
       onSearchQuery={() => {}}
       searchResults={[]}
@@ -164,7 +166,7 @@ test('the pane is empty when the selected document is not in the visible tree', 
     selectedId: '3',
     doc: { ...items[3]!, body: '## Hidden heading\n' },
   })
-  expect(html).toContain('Select a document.')
+  expect(html).toContain('No document to show.')
   expect(html).not.toContain('Principles')
   expect(html).not.toContain('Hidden heading')
   expect(html).not.toContain('On this page')
