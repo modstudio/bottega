@@ -187,7 +187,7 @@
 .markdown img {
   max-width: 100%;
 }
-/* The rule under the docs tabs runs the full width of the window, past the centred block. */
+/* The rule under the docs tabs runs the full width of the window, past the centered block. */
 .docs-chrome-rule::after {
   content: "";
   position: absolute;

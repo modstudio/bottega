@@ -431,6 +431,38 @@ describe('record push-docs command', () => {
     expect(stored?.record_id).toBeString()
   })
 
+  test('a featured document and its revision keep the flag in the import', async () => {
+    const id = insertDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'guide',
+      title: 'Guide',
+      body: 'current',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    const revision = insertRevision({
+      docId: id,
+      scope: 'machine',
+      subject: null,
+      slug: 'guide',
+      op: 'create',
+      title: 'Guide',
+      body: 'current',
+      delivery: 'demand',
+      reason: 'create guide',
+      at: OLD,
+    })
+    db().query('UPDATE doc SET featured=1 WHERE id=?').run(id)
+    db().query('UPDATE doc_revision SET featured=1 WHERE id=?').run(revision)
+    const { client, imports } = capturingClient()
+    installRecordApiClient(client)
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+    expect(imports[0]?.doc.featured).toBe(true)
+    expect(imports[0]?.revisions[0]?.featured).toBe(true)
+  })
+
   test('comparison detects body, delivery, and deleted_at mismatches', async () => {
     const liveId = insertDoc({
       scope: 'machine',

@@ -22,6 +22,72 @@ function updatedLabel(value: string) {
   }).format(date)
 }
 
+function ReadingTop({
+  crumbs,
+  wide,
+  onWide,
+}: {
+  crumbs: readonly BreadcrumbPart[]
+  wide: boolean
+  onWide: (wide: boolean) => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
+        {crumbs.map((crumb, index) => (
+          <span key={crumb.key} className="contents">
+            {index > 0 ? <span>/</span> : null}
+            <span>{crumb.label}</span>
+          </span>
+        ))}
+      </div>
+      {/* For an article of wide tables: the pane takes the room of the facts column too. */}
+      <div className="-mt-1.5 hidden shrink-0 lg:block">
+        <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
+          {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          {wide ? 'Reading width' : 'Wide'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ReadingAround({
+  around,
+  onSelect,
+}: {
+  around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
+  onSelect: (item: DocsTreeItem) => void
+}) {
+  const { previous, next } = around
+  return (
+    <div className="doc-measure mt-14 flex justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
+      {previous ? (
+        <button
+          type="button"
+          className="text-left hover:text-text-primary"
+          onClick={() => onSelect(previous)}
+        >
+          ← {previous.title}
+        </button>
+      ) : (
+        <span />
+      )}
+      {next ? (
+        <button
+          type="button"
+          className="text-right hover:text-text-primary"
+          onClick={() => onSelect(next)}
+        >
+          {next.title} →
+        </button>
+      ) : (
+        <span />
+      )}
+    </div>
+  )
+}
+
 export function DocsReading({
   doc,
   crumbs,
@@ -57,23 +123,7 @@ export function DocsReading({
       ) : null}
       {doc ? (
         <>
-          <div className="flex items-start justify-between gap-4">
-            <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
-              {crumbs.map((crumb, index) => (
-                <span key={crumb.key} className="contents">
-                  {index > 0 ? <span>/</span> : null}
-                  <span>{crumb.label}</span>
-                </span>
-              ))}
-            </div>
-            {/* For an article of wide tables: the pane takes the room of the facts column too. */}
-            <div className="-mt-1.5 hidden shrink-0 lg:block">
-              <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
-                {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-                {wide ? 'Reading width' : 'Wide'}
-              </Button>
-            </div>
-          </div>
+          <ReadingTop crumbs={crumbs} wide={wide} onWide={onWide} />
           <h1 className="doc-title" data-long={shown.title.length > LONG_TITLE ? '' : undefined}>
             {shown.title}
           </h1>
@@ -84,30 +134,7 @@ export function DocsReading({
           <div className="mt-6">
             <Markdown content={readingBody(doc.body)} />
           </div>
-          <div className="doc-measure mt-14 flex justify-between gap-4 border-border-default border-t pt-4 text-md text-text-muted">
-            {around.previous ? (
-              <button
-                type="button"
-                className="text-left hover:text-text-primary"
-                onClick={() => onSelect(around.previous!)}
-              >
-                ← {around.previous.title}
-              </button>
-            ) : (
-              <span />
-            )}
-            {around.next ? (
-              <button
-                type="button"
-                className="text-right hover:text-text-primary"
-                onClick={() => onSelect(around.next!)}
-              >
-                {around.next.title} →
-              </button>
-            ) : (
-              <span />
-            )}
-          </div>
+          <ReadingAround around={around} onSelect={onSelect} />
         </>
       ) : pending ? null : (
         <p className="text-md text-text-muted">No document to show.</p>
