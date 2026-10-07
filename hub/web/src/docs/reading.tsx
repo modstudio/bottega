@@ -73,7 +73,7 @@ function ReadingTop({
         titleGone ? 'border-border-default' : 'border-transparent',
       )}
     >
-      <div className={classes(eyebrow, 'flex min-w-0 flex-wrap items-baseline gap-2')}>
+      <div className={classes(eyebrow, 'flex min-w-0 items-baseline gap-2 whitespace-nowrap')}>
         {crumbs.map((crumb, index) => (
           <span key={crumb.key} className="contents">
             {index > 0 ? <span>/</span> : null}
@@ -83,7 +83,7 @@ function ReadingTop({
         {titleGone ? (
           <>
             <span>/</span>
-            <span className="truncate font-sans text-md text-text-primary normal-case tracking-normal">
+            <span className="min-w-0 truncate font-sans text-md text-text-primary normal-case tracking-normal">
               {title}
             </span>
           </>
