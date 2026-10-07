@@ -121,7 +121,7 @@ export function DocsFacts({
                   href={`#${heading.id}`}
                   className="text-md text-text-muted hover:text-text-primary"
                 >
-                  {heading.title}
+                  {heading.title.replace(/[`*]/g, '')}
                 </a>
               </li>
             ))}
