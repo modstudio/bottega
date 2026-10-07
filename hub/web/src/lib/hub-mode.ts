@@ -259,3 +259,12 @@ export function recordApiUrl() {
   const value = import.meta.env.VITE_RECORD_API_URL
   return typeof value === 'string' && value ? value.replace(/\/$/, '') : ''
 }
+
+/**
+ * Whether an unauthorised answer should send the visitor to sign in. The public pages are for
+ * signed-out visitors: there it is the expected signal that nobody is signed in.
+ */
+export function unauthorizedLeadsToSignIn(pathname: string, origin: HostedOrigin['kind']) {
+  if (origin === 'public') return false
+  return !(isHostedSignInFramePath(pathname) || isDocsPath(pathname) || isMarketingPath(pathname))
+}

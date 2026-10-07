@@ -7,6 +7,7 @@ import {
   isMarketingPath,
   navForMode,
   sameLocationOn,
+  unauthorizedLeadsToSignIn,
 } from './hub-mode.ts'
 
 test('hosted origin is public, app, or unconfigured', () => {
@@ -138,4 +139,14 @@ test('a move to another origin stays on that origin whatever the path looks like
     expect(new URL(href).origin).toBe(app)
     expect(href.endsWith('?x=1#frag')).toBe(true)
   }
+})
+
+test('an unauthorised answer leads to sign-in only from the signed-in app', () => {
+  for (const path of ['/', '/product/board', '/docs', '/docs/project/x/y', '/sign-in']) {
+    expect(unauthorizedLeadsToSignIn(path, 'app')).toBe(false)
+    expect(unauthorizedLeadsToSignIn(path, 'unconfigured')).toBe(false)
+  }
+  expect(unauthorizedLeadsToSignIn('/flight', 'app')).toBe(true)
+  expect(unauthorizedLeadsToSignIn('/flight', 'unconfigured')).toBe(true)
+  expect(unauthorizedLeadsToSignIn('/flight', 'public')).toBe(false)
 })
