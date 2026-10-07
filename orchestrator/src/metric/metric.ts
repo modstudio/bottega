@@ -181,25 +181,6 @@ async function claudeTokensByDay(since: string) {
   return days
 }
 
-/** Distinct task keys committed per day, as the denominator for shipped work. */
-/**
- * What kind of file a change touched.
- *
- * Categorized rather than filtered, because the mix is itself information: a
- * day of docs and config is not a day of product code, and knowing that is
- * worth more than a single number pretending they are the same.
- *
- * Generated output has to be separated whatever else happens. Measured over
- * fourteen days across the four repos it was **81.5% of all line churn** -
- * drizzle rewrites a 25-50k line schema snapshot on every migration, so adding
- * one column reads as a 23,000-line day. Counted, the lens measures the ORM's
- * verbosity rather than anything anyone did.
- *
- * Tests are their own category rather than dropped. They distort a line count
- * badly - one 16,884-line integration test was the largest single file in
- * one project's window - but they are real work, and scoring them at zero would make
- * writing them look free.
- */
 type DayActivity = {
   tasks: Set<string>
   commits: number

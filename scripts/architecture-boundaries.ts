@@ -19,8 +19,6 @@ import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 
-export { metricModules } from './architecture-metric-modules.ts'
-
 const landing = '../landing-tree/landing-tree.ts'
 
 const normalizeTarget = (file: string, target: string) =>

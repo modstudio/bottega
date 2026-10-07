@@ -1,12 +1,13 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { boardModules } from './architecture-board-modules.ts'
-import { importBoundaries, metricModules } from './architecture-boundaries.ts'
+import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
+import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
@@ -87,12 +88,6 @@ export const modules: ArchitectureModule[] = [
   ]),
   ...docModules,
   ...metricModules,
-  module('orchestrator/src/doc/doc-owner.ts', [
-    '../record/record-attribution.ts',
-    '../record/record-auth.ts',
-    '../record/machine-identity.ts',
-    '../record/record-write-authority.ts',
-  ]),
   module('orchestrator/src/doc/local-doc-write.ts', [
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
