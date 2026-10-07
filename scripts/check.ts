@@ -134,6 +134,13 @@ const legs: Leg[] = [
     ],
   },
   {
+    name: 'hub/deploy/site',
+    commands: [
+      { cwd: `${root}hub/deploy/site`, argv: ['bun', 'run', 'typecheck'] },
+      { cwd: `${root}hub/deploy/site`, argv: ['bun', 'run', 'test'] },
+    ],
+  },
+  {
     name: 'retrieval',
     commands: [
       { cwd: `${root}retrieval`, argv: ['bun', 'run', 'typecheck'] },

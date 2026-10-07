@@ -8,8 +8,10 @@ import {
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SiteHeader } from './chrome.tsx'
 
-async function renderHeader(identity: 'signed-in' | 'signed-out') {
-  const root = createRootRoute({ component: () => <SiteHeader identity={identity} /> })
+async function renderHeader(identity: 'signed-in' | 'signed-out', appSignInHref?: string) {
+  const root = createRootRoute({
+    component: () => <SiteHeader identity={identity} appSignInHref={appSignInHref} />,
+  })
   const router = createRouter({
     routeTree: root,
     history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -23,6 +25,14 @@ test('site header offers sign in to signed-out visitors', async () => {
   expect(html).toContain('href="/sign-in"')
   expect(html).toContain('Sign in')
   expect(html).not.toContain('Open app')
+})
+
+test('public-site sign in and open-app actions use full app navigations', async () => {
+  const appSignIn = 'https://app.example.test/sign-in'
+  const signedOut = await renderHeader('signed-out', appSignIn)
+  expect(signedOut).toContain(`<a href="${appSignIn}">Sign in</a>`)
+  const signedIn = await renderHeader('signed-in', appSignIn)
+  expect(signedIn).toContain(`<a href="${appSignIn}">Open app</a>`)
 })
 
 test('site header offers the app to signed-in visitors', async () => {

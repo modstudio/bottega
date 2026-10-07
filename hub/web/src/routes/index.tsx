@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { TaskView } from '@/components/work-view'
-import { isHostedMode } from '@/lib/hub-mode'
+import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
 import { HomePage } from '@/site/home'
 import { siteHead } from '@/site/route'
 import { trpc } from '@/trpc/client'
@@ -15,7 +15,11 @@ function HostedIndex() {
   return signedIn ? <TaskView name="flight" /> : <HomePage />
 }
 
+function HostedRoot() {
+  return hostedOrigin().kind === 'public' ? <HomePage /> : <HostedIndex />
+}
+
 export const Route = createFileRoute('/')({
   head: () => (isHostedMode() ? siteHead() : {}),
-  component: () => (isHostedMode() ? <HostedIndex /> : <TaskView name="flight" />),
+  component: () => (isHostedMode() ? <HostedRoot /> : <TaskView name="flight" />),
 })

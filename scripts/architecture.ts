@@ -63,6 +63,8 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('hub/deploy/site/src/decision.ts', []),
+  module('hub/deploy/site/src/worker.ts', ['./decision.ts', 'shared/brand.ts']),
   ...boardModules,
   ...releaseModules,
   ...retrievalModules,

@@ -2,10 +2,10 @@
 
 Run these commands from the repository root. Create the app directly; do not use `fly launch --no-deploy`.
 
-The image is built from the repository root. `VITE_HUB_MODE` and `VITE_RECORD_API_URL` are
-build arguments baked into the web bundle. `HUB_RECORD_API_URL` and
-`HUB_RECORD_DATABASE_URL` are runtime secrets the server uses for the record API and its
-hosted report procedures. The SES secrets are present because Send test
+The image is built from the repository root. `VITE_HUB_MODE`, `VITE_RECORD_API_URL`,
+`VITE_PUBLIC_SITE_ORIGIN`, and `VITE_APP_ORIGIN` are build arguments baked into the web
+bundle. `HUB_RECORD_API_URL` and `HUB_RECORD_DATABASE_URL` are runtime secrets the server
+uses for the record API and its hosted report procedures. The SES secrets are present because Send test
 (`sendReportSubscriptionTest`) mails from the web app.
 
 ```sh

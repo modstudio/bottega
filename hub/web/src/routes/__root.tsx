@@ -8,9 +8,11 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
 import {
+  hostedOrigin,
   isDocsPath,
   isHostedMode,
   isHostedPath,
@@ -97,6 +99,11 @@ export function RailFooterIdentity({
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     if (!isHostedMode()) return
+    const origin = hostedOrigin()
+    if (origin.kind === 'public' && !isPublicSitePath(location.pathname)) {
+      navigateToOrigin(origin.appOrigin)
+      return
+    }
     if (!isHostedPath(location.pathname)) throw redirect({ to: '/runs' })
   },
   component: RootShell,
@@ -113,19 +120,38 @@ function RootShell() {
 
 function ShellContent() {
   const hosted = isHostedMode()
+  const origin = hostedOrigin()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const whoami = useQuery({
     ...trpc.record.whoami.queryOptions(),
-    enabled: hosted && !isHostedSignInFramePath(pathname),
+    enabled: identityQueryEnabled(hosted, pathname, origin.kind),
     retry: false,
   })
   const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
+  if (origin.kind === 'public') {
+    if (!isPublicSitePath(pathname)) return null
+    return (
+      <HostedPublicFrame>
+        <SiteFrame identity="signed-out" appSignInHref={`${origin.appOrigin}/sign-in`}>
+          <Outlet />
+        </SiteFrame>
+      </HostedPublicFrame>
+    )
+  }
   if (hosted && isHostedSignInFramePath(pathname)) {
     return (
       <HostedSignInFrame>
         <Outlet />
       </HostedSignInFrame>
     )
+  }
+  if (
+    origin.kind === 'app' &&
+    (isMarketingPath(pathname) || isDocsPath(pathname)) &&
+    whoami.isFetched &&
+    !signedIn
+  ) {
+    return <OriginNavigation origin={origin.publicOrigin} />
   }
   if (hosted && (isMarketingPath(pathname) || (isDocsPath(pathname) && !signedIn))) {
     // Wait for the first answer only. A later refetch of a failed, dataless request reports
@@ -141,6 +167,29 @@ function ShellContent() {
     )
   }
   return <AppLayout hosted={hosted} pathname={pathname} />
+}
+
+type OriginKind = ReturnType<typeof hostedOrigin>['kind']
+
+export function identityQueryEnabled(hosted: boolean, pathname: string, origin: OriginKind) {
+  return hosted && origin !== 'public' && !isHostedSignInFramePath(pathname)
+}
+
+function isPublicSitePath(pathname: string) {
+  return isMarketingPath(pathname) || isDocsPath(pathname)
+}
+
+function navigateToOrigin(origin: string) {
+  const target = new URL(
+    `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    origin,
+  )
+  window.location.assign(target.href)
+}
+
+function OriginNavigation({ origin }: { origin: string }) {
+  useEffect(() => navigateToOrigin(origin), [origin])
+  return null
 }
 
 function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {

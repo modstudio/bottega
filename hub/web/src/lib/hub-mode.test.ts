@@ -1,11 +1,36 @@
 import { expect, test } from 'bun:test'
 import {
+  hostedOrigin,
   isDocsPath,
   isHostedPath,
   isHostedSignInFramePath,
   isMarketingPath,
   navForMode,
 } from './hub-mode.ts'
+
+test('hosted origin is public, app, or unconfigured', () => {
+  const configured = {
+    publicOrigin: 'https://public.example.test/',
+    appOrigin: 'https://app.example.test/',
+  }
+  expect(hostedOrigin('https://public.example.test', configured)).toEqual({
+    kind: 'public',
+    publicOrigin: 'https://public.example.test',
+    appOrigin: 'https://app.example.test',
+  })
+  expect(hostedOrigin('https://app.example.test', configured)).toEqual({
+    kind: 'app',
+    publicOrigin: 'https://public.example.test',
+    appOrigin: 'https://app.example.test',
+  })
+  expect(hostedOrigin('http://localhost:5173', configured).kind).toBe('app')
+  expect(hostedOrigin('https://public.example.test', { ...configured, publicOrigin: '' })).toEqual({
+    kind: 'unconfigured',
+  })
+  expect(hostedOrigin('https://public.example.test', { ...configured, appOrigin: '' })).toEqual({
+    kind: 'unconfigured',
+  })
+})
 
 const destinations = (mode: 'hosted' | 'local') =>
   navForMode(mode).flatMap((section) =>

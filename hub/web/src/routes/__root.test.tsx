@@ -1,8 +1,21 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostedPublicFrame, HostedSignInFrame, RailFooterIdentity } from '@/routes/__root'
+import {
+  HostedPublicFrame,
+  HostedSignInFrame,
+  identityQueryEnabled,
+  RailFooterIdentity,
+} from '@/routes/__root'
 import { spaceMenuItems } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+
+test('the public origin never enables the root identity query', () => {
+  expect(identityQueryEnabled(true, '/', 'public')).toBe(false)
+  expect(identityQueryEnabled(true, '/docs', 'public')).toBe(false)
+  expect(identityQueryEnabled(true, '/product/board', 'public')).toBe(false)
+  expect(identityQueryEnabled(true, '/', 'app')).toBe(true)
+  expect(identityQueryEnabled(true, '/', 'unconfigured')).toBe(true)
+})
 
 test('hosted sign-in renders without application navigation or a rail footer', () => {
   const html = renderToStaticMarkup(

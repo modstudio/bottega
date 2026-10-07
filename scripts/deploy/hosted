@@ -43,4 +43,6 @@ fi
 
 exec fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
   --build-arg VITE_HUB_MODE=hosted \
-  --build-arg VITE_RECORD_API_URL=https://api.bottega.run
+  --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
+  --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \
+  --build-arg VITE_APP_ORIGIN=https://app.bottega.run

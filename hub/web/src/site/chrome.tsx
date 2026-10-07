@@ -33,7 +33,13 @@ const Brand = ({ onClick }: { onClick?: () => void }) => (
 )
 type MenuKey = 'orchestration' | 'workspace'
 
-export function SiteHeader({ identity }: { identity: SiteIdentity }) {
+export function SiteHeader({
+  identity,
+  appSignInHref,
+}: {
+  identity: SiteIdentity
+  appSignInHref?: string
+}) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [openKey, setOpenKey] = useState<MenuKey | null>(null)
   const [mobile, setMobile] = useState(false)
@@ -133,9 +139,13 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
             </Link>
             <span className="nav-sep" aria-hidden="true" />
             <a href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>GitHub</a>
-            <Link to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
-              {identity === 'signed-in' ? 'Open app' : 'Sign in'}
-            </Link>
+            {appSignInHref ? (
+              <a href={appSignInHref}>{identity === 'signed-in' ? 'Open app' : 'Sign in'}</a>
+            ) : (
+              <Link to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
+                {identity === 'signed-in' ? 'Open app' : 'Sign in'}
+              </Link>
+            )}
             <Link className="btn sm site-install" to="/docs">
               Install
             </Link>
@@ -292,9 +302,15 @@ export function SiteHeader({ identity }: { identity: SiteIdentity }) {
           <a className="mm-link" href={`https://github.com/modstudio/${PLATFORM_SLUG}`}>
             GitHub
           </a>
-          <Link className="mm-link" to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
-            {identity === 'signed-in' ? 'Open app' : 'Sign in'}
-          </Link>
+          {appSignInHref ? (
+            <a className="mm-link" href={appSignInHref}>
+              {identity === 'signed-in' ? 'Open app' : 'Sign in'}
+            </a>
+          ) : (
+            <Link className="mm-link" to={identity === 'signed-in' ? '/flight' : '/sign-in'}>
+              {identity === 'signed-in' ? 'Open app' : 'Sign in'}
+            </Link>
+          )}
           <Link className="mm-link" to="/docs">
             Install {PLATFORM_NAME}
           </Link>
@@ -463,14 +479,16 @@ function SiteFooter() {
 }
 export function SiteFrame({
   identity,
+  appSignInHref,
   children,
 }: {
   identity: SiteIdentity
+  appSignInHref?: string
   children: React.ReactNode
 }) {
   return (
     <div className="site-frame">
-      <SiteHeader identity={identity} />
+      <SiteHeader identity={identity} appSignInHref={appSignInHref} />
       {children}
       <SiteFooter />
     </div>

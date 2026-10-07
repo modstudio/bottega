@@ -27,6 +27,36 @@ export function isHostedMode() {
   return import.meta.env.VITE_HUB_MODE === 'hosted'
 }
 
+export type HostedOrigin =
+  | { kind: 'unconfigured' }
+  | { kind: 'public'; publicOrigin: string; appOrigin: string }
+  | { kind: 'app'; publicOrigin: string; appOrigin: string }
+
+function normalizedOrigin(value: unknown) {
+  if (typeof value !== 'string' || !value) return ''
+  try {
+    return new URL(value).origin
+  } catch {
+    return ''
+  }
+}
+
+/** Classify this page only when both halves of the hosted origin split are configured. */
+export function hostedOrigin(
+  currentOrigin = typeof window === 'undefined' ? '' : window.location.origin,
+  configured = {
+    publicOrigin: import.meta.env.VITE_PUBLIC_SITE_ORIGIN,
+    appOrigin: import.meta.env.VITE_APP_ORIGIN,
+  },
+): HostedOrigin {
+  const publicOrigin = normalizedOrigin(configured.publicOrigin)
+  const appOrigin = normalizedOrigin(configured.appOrigin)
+  if (!publicOrigin || !appOrigin) return { kind: 'unconfigured' }
+  return currentOrigin === publicOrigin
+    ? { kind: 'public', publicOrigin, appOrigin }
+    : { kind: 'app', publicOrigin, appOrigin }
+}
+
 type Counted = 'flight' | 'done' | 'runs' | 'inbox'
 type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted }
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
