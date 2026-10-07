@@ -107,7 +107,7 @@ const GATE_HOLD_CONDITION_ORDER: GateHoldCondition[] = ['gates', 'load', 'memory
 export function gateHoldConditions(
   load: HostLoad,
   limit = GATE_CONCURRENCY_LIMIT,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform,
 ): GateHoldCondition[] {
   const conditions: GateHoldCondition[] = []
   if (load.gates > limit) conditions.push('gates')
@@ -120,8 +120,12 @@ export function gateHoldConditions(
   return conditions
 }
 
-export function shouldHoldShard(load: HostLoad, limit = GATE_CONCURRENCY_LIMIT): boolean {
-  return gateHoldConditions(load, limit).length > 0
+export function shouldHoldShard(
+  load: HostLoad,
+  limit = GATE_CONCURRENCY_LIMIT,
+  platform: NodeJS.Platform,
+): boolean {
+  return gateHoldConditions(load, limit, platform).length > 0
 }
 
 type GateHoldOpts = {
@@ -150,7 +154,7 @@ export async function withGateSlot<T>(run: () => Promise<T>, opts: GateHoldOpts 
       const load = measure()
       return { ...load, gates: load.gates + 1 }
     }
-    const held = await holdForGateCapacity({ ...opts, measure: asRunner })
+    const held = await holdForGateCapacity({ ...opts, measure: asRunner, platform })
     if (held.held) {
       console.error(
         `held ${held.delayedMs}ms for host load ` +
@@ -182,13 +186,13 @@ export async function holdForGateCapacity(opts: GateHoldOpts = {}): Promise<{
   load: HostLoad
   heldOn: GateHoldCondition[]
 }> {
-  const measure = opts.measure ?? measureHostLoad
+  const platform = opts.platform ?? process.platform
+  const measure = opts.measure ?? (() => measureHostLoad(process.env, process.pid, platform))
   const sleep =
     opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const now = opts.now ?? Date.now
   const pollMs = opts.pollMs ?? GATE_HOLD_POLL_MS
   const maxMs = opts.maxMs ?? GATE_HOLD_MAX_MS
-  const platform = opts.platform ?? process.platform
   const started = now()
   let delayedMs = 0
   let load = measure()

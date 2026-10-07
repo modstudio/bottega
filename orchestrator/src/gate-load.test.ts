@@ -30,6 +30,7 @@ describe('gate load hold', () => {
   test('persistent overload waits the full maximum and reports exhaustion', async () => {
     let clock = 0
     const result = await holdForGateCapacity({
+      platform: 'linux',
       measure: () => idle({ gates: 3 }),
       sleep: async (ms) => {
         clock += ms
@@ -50,6 +51,7 @@ describe('gate load hold', () => {
   test('capacity freeing mid-hold reports the elapsed wait without exhaustion', async () => {
     let clock = 0
     const result = await holdForGateCapacity({
+      platform: 'linux',
       measure: () => (clock < 50 ? idle({ gates: 3 }) : idle({ gates: 1 })),
       sleep: async (ms) => {
         clock += ms
@@ -69,6 +71,7 @@ describe('gate load hold', () => {
 
   test('two concurrent gates need no hold and report no exhaustion', async () => {
     const result = await holdForGateCapacity({
+      platform: 'linux',
       measure: () => idle({ gates: GATE_CONCURRENCY_LIMIT }),
       sleep: async () => {
         throw new Error('must not sleep under the limit')
@@ -87,6 +90,7 @@ describe('gate load hold', () => {
     let clock = 0
     const sleeps: number[] = []
     const result = await holdForGateCapacity({
+      platform: 'linux',
       measure: () => idle({ gates: 3 }),
       sleep: async (ms) => {
         sleeps.push(ms)
@@ -103,12 +107,12 @@ describe('gate load hold', () => {
   })
 
   test('CPU and memory floors hold even with one gate', () => {
-    expect(shouldHoldShard(idle({ gates: 1, loadavg: 8, ncpu: 8 }))).toBe(true)
+    expect(shouldHoldShard(idle({ gates: 1, loadavg: 8, ncpu: 8 }), undefined, 'linux')).toBe(true)
     expect(
       gateHoldConditions(idle({ gates: 1, freeMem: 512 * 1024 * 1024 }), undefined, 'linux'),
     ).toEqual(['memory'])
-    expect(shouldHoldShard(idle({ gates: 2 }))).toBe(false)
-    expect(shouldHoldShard(idle({ gates: 3 }))).toBe(true)
+    expect(shouldHoldShard(idle({ gates: 2 }), undefined, 'linux')).toBe(false)
+    expect(shouldHoldShard(idle({ gates: 3 }), undefined, 'linux')).toBe(true)
   })
 
   test('hold conditions name each threshold alone and in combination', () => {
@@ -154,6 +158,18 @@ describe('gate load hold', () => {
     }
   })
 
+  test('boolean and named hold decisions agree on each platform', () => {
+    const cases: [NodeJS.Platform, HostLoad][] = [
+      ['darwin', idle({ freeMem: 64 * 1024 * 1024, pressure: 'normal' })],
+      ['linux', idle({ freeMem: 64 * 1024 * 1024, pressure: 'normal' })],
+    ]
+    for (const [platform, load] of cases) {
+      expect(shouldHoldShard(load, undefined, platform)).toBe(
+        gateHoldConditions(load, undefined, platform).length > 0,
+      )
+    }
+  })
+
   test('withGateSlot holds then runs', async () => {
     let n = 0
     const sleeps: number[] = []
@@ -162,6 +178,7 @@ describe('gate load hold', () => {
     let result = ''
     try {
       result = await withGateSlot(async () => 'ok', {
+        platform: 'linux',
         env: { ...process.env, CI: undefined },
         // The measure reports OTHER runners; withGateSlot adds this one.
         measure: () => {
@@ -243,6 +260,7 @@ describe('gate load hold', () => {
 
   test('withGateSlot does not hold for host load under CI', async () => {
     const result = await withGateSlot(async () => 'ok', {
+      platform: 'linux',
       env: { ...process.env, CI: '1' },
       measure: () => idle({ gates: 3, loadavg: 8, ncpu: 8 }),
       sleep: async () => {
