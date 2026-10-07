@@ -9,11 +9,6 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
-  module('orchestrator/src/ask/ask-configuration.ts', [
-    'node:fs',
-    'node:path',
-    '../../../shared/self-spawn.ts',
-  ]),
   module('orchestrator/src/ask/ask-failure.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
@@ -132,7 +127,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-live.ts', [
     '../agent/agents.ts',
     '../ask/ask.ts',
-    '../ask/ask-configuration.ts',
     '../ask/ask-lifecycle.ts',
     '../ask/worker-note-broker.ts',
     '../board/board-delivery.ts',

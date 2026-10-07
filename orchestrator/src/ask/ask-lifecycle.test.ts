@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import type { RunLogEvent } from '../events.ts'
-import { summarizeAskServer } from './ask-lifecycle.ts'
+import type { Transport } from '@modelcontextprotocol/server'
+import { addRun } from '../../test/fixtures/store.ts'
+import { type RunLogEvent, readEventLog, runEventsPath } from '../events.ts'
+import { observeAskTransport, summarizeAskServer } from './ask-lifecycle.ts'
 
 const expected: RunLogEvent = {
   ts: 't1',
@@ -37,4 +39,30 @@ describe('ask server summary', () => {
       failure: 'database setup failed',
     })
   })
+})
+
+test('does not record tools/list when sending its reply fails', async () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const transport = {
+    onclose: undefined,
+    onerror: undefined,
+    onmessage: undefined,
+    async start() {},
+    async send() {
+      throw new Error('connection closed')
+    },
+    async close() {},
+  } as Transport
+  const observed = observeAskTransport(transport, run)
+  await observed.start()
+  transport.onmessage?.({ jsonrpc: '2.0', id: 7, method: 'tools/list' })
+
+  await expect(
+    observed.send({
+      jsonrpc: '2.0',
+      id: 7,
+      result: { tools: [{ name: 'ask_orchestrator' }] },
+    }),
+  ).rejects.toThrow('connection closed')
+  expect(readEventLog(runEventsPath(run))).toEqual([])
 })

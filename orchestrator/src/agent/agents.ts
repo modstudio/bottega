@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { grokAskCommandFromEnvironment } from '../ask/ask-configuration.ts'
+import { join } from 'node:path'
 import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
+import { grokAskCommandFromConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 import type { Caps } from './capabilities.ts'
 import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
@@ -14,6 +15,12 @@ import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
  * legible when someone comes looking for it.
  */
 const CODEX_EXEC_SANDBOX = 'danger-full-access'
+
+function grokAskCommandFromEnvironment(environment: Record<string, string>): string[] {
+  const home = environment.GROK_HOME
+  if (!home) throw new Error('Grok turn has no configured MCP home')
+  return grokAskCommandFromConfig(readFileSync(join(home, 'config.toml'), 'utf8'))
+}
 /**
  * Policy and capabilities for a vendor. How it is spawned lives on
  * `AgentTransport` (`cli` by default; `acp` is selectable for paid read-only jobs).

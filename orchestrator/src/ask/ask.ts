@@ -491,9 +491,13 @@ export function createAskMcpServer(
   const authorized = (): boolean => authenticatedWorkerRun(runId, token)
   const pendingGateResults = new Set<number>()
   const lifecycle = dependencies.lifecycle ?? askLifecycle(runId)
-  const toolNames = ['suggest_board_post']
+  const toolNames: string[] = []
 
   const server = new McpServer({ name: 'orch-ask', version: '1' })
+  const registerTool = ((...args: unknown[]) => {
+    if (typeof args[0] === 'string') toolNames.push(args[0])
+    return Reflect.apply(server.registerTool, server, args)
+  }) as typeof server.registerTool
   const text = (value: string, isError?: true) => ({
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError } : {}),
@@ -511,10 +515,9 @@ export function createAskMcpServer(
   // the worker to ask again rather than decide the matter itself.
   const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
 
-  registerAskBoardTools({ server, runId, authorized, unauthorized, text })
+  toolNames.push(...registerAskBoardTools({ server, runId, authorized, unauthorized, text }))
 
-  toolNames.push('ask_orchestrator')
-  server.registerTool(
+  registerTool(
     'ask_orchestrator',
     {
       description:
@@ -565,8 +568,7 @@ export function createAskMcpServer(
   // A no-gate writer sees the tool and receives the explicit no-op message.
   // Readers and inline jobs do not receive an execution surface at all.
   if (gateToolAvailable(runId, token)) {
-    toolNames.push('run_gate')
-    server.registerTool(
+    registerTool(
       'run_gate',
       {
         description:
@@ -589,8 +591,7 @@ export function createAskMcpServer(
   }
 
   if (gateResultToolAvailable(runId, token)) {
-    toolNames.push('gate_result')
-    server.registerTool(
+    registerTool(
       'gate_result',
       {
         description:
@@ -608,8 +609,7 @@ export function createAskMcpServer(
     )
   }
 
-  toolNames.push('note')
-  server.registerTool(
+  registerTool(
     'note',
     {
       description:
@@ -648,8 +648,7 @@ export function createAskMcpServer(
     },
   )
 
-  toolNames.push('message_orchestrator')
-  server.registerTool(
+  registerTool(
     'message_orchestrator',
     {
       description:
@@ -671,8 +670,7 @@ export function createAskMcpServer(
     },
   )
 
-  toolNames.push('check_orchestrator_messages')
-  server.registerTool(
+  registerTool(
     'check_orchestrator_messages',
     {
       description:

@@ -419,15 +419,50 @@ export async function resetSandbox(): Promise<void> {
 }
 
 /** Remove any user-registered orch-ask table and its subtables. */
+const ORCH_ASK_TOML_TABLE = 'mcp_servers.orch-ask'
+
+function tomlTableName(line: string): string | null {
+  return /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)?.[1] ?? null
+}
+
+function isOrchAskTable(name: string): boolean {
+  return name === ORCH_ASK_TOML_TABLE || name.startsWith(`${ORCH_ASK_TOML_TABLE}.`)
+}
+
 export function withoutRegisteredOrchAskServer(config: string): string {
   const kept: string[] = []
   let inAskTable = false
   for (const line of config.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g) ?? []) {
-    const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)
-    if (header) inAskTable = /^mcp_servers\.orch-ask(\.|$)/.test(header[1]!)
+    const table = tomlTableName(line)
+    if (table) inAskTable = isOrchAskTable(table)
     if (!inAskTable) kept.push(line)
   }
   return kept.join('')
+}
+
+/** Read the argv from the same Grok table that the run-home writer owns. */
+export function grokAskCommandFromConfig(config: string): string[] {
+  const lines = config.split(/\r?\n/)
+  const start = lines.findIndex((line) => tomlTableName(line) === ORCH_ASK_TOML_TABLE)
+  if (start < 0) throw new Error('Grok config has no mcp_servers.orch-ask table')
+  const following = lines.slice(start + 1)
+  const end = following.findIndex((line) => tomlTableName(line) !== null)
+  const section = end < 0 ? following : following.slice(0, end)
+  const value = (key: string): unknown => {
+    const match = section.find((line) => new RegExp(`^\\s*${key}\\s*=`).test(line))
+    if (!match) return undefined
+    return JSON.parse(match.slice(match.indexOf('=') + 1).trim())
+  }
+  const command = value('command')
+  const args = value('args') ?? []
+  if (
+    typeof command !== 'string' ||
+    !Array.isArray(args) ||
+    args.some((arg) => typeof arg !== 'string')
+  ) {
+    throw new Error('Grok orch-ask command or args are malformed')
+  }
+  return [command, ...args]
 }
 
 /**

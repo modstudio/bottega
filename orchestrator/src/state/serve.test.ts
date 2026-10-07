@@ -52,12 +52,12 @@ describe('run detail', () => {
       started: 'not_recorded',
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    appendRunEvent(
-      id,
-      { ts: 't1', type: 'ask_expected', transport: 'srt', command: ['orch', 'ask-proxy'] },
-      undefined,
-      { notWorkerActivity: true },
-    )
+    appendRunEvent(id, {
+      ts: 't1',
+      type: 'ask_expected',
+      transport: 'srt',
+      command: ['orch', 'ask-proxy'],
+    })
     expect(runDetail(id)!.ask_server).toMatchObject({
       expected: 'seen',
       started: 'not_seen',

@@ -1,5 +1,5 @@
 // concern: ask-server startup failure artifact
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const ASK_SERVER_FAILURE_FILE = 'ask-server-failure.txt'
@@ -12,6 +12,7 @@ export function writeAskServerFailure(error: unknown, scratchDir = process.env.O
   if (!scratchDir) return
   const line = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, ' ')
   try {
+    mkdirSync(scratchDir, { recursive: true })
     writeFileSync(askServerFailurePath(scratchDir), `${line}\n`)
   } catch {
     // Evidence is best effort and must not replace the command's original failure.

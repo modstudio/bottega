@@ -8,6 +8,7 @@ import {
   createEventLog,
   eventsFromVendorLine,
   idleLabel,
+  peekRun,
   runEventsPath,
 } from './events.ts'
 import type { NormalizedEvent } from './transport/transport.ts'
@@ -66,9 +67,7 @@ describe('vendor event log', () => {
   test('non-worker activity appends without moving the activity clock', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET last_event_at=? WHERE id=?').run('worker-time', id)
-    appendRunEvent(id, { ts: 'server-time', type: 'ask_initialized' }, runEventsPath(id), {
-      notWorkerActivity: true,
-    })
+    appendRunEvent(id, { ts: 'server-time', type: 'ask_initialized' }, runEventsPath(id))
     expect(
       (db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as { last_event_at: string })
         .last_event_at,
@@ -78,6 +77,37 @@ describe('vendor event log', () => {
       (db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as { last_event_at: string })
         .last_event_at,
     ).toBe('next-worker-time')
+  })
+
+  test('peek does not treat ask lifecycle events as worker activity', () => {
+    const startedAt = '2026-09-07T00:00:00.000Z'
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running', startedAt })
+    appendRunEvent(id, {
+      ts: '2026-09-07T00:01:00.000Z',
+      type: 'ask_expected',
+      transport: 'host',
+      command: ['orch', 'ask-server'],
+    })
+    appendRunEvent(id, {
+      ts: '2026-09-07T00:02:00.000Z',
+      type: 'ask_started',
+      tools: ['ask_orchestrator'],
+    })
+    appendRunEvent(id, { ts: '2026-09-07T00:03:00.000Z', type: 'ask_initialized' })
+    appendRunEvent(id, {
+      ts: '2026-09-07T00:04:00.000Z',
+      type: 'ask_listed',
+      tools: ['ask_orchestrator'],
+    })
+
+    const peek = peekRun(id, { now: Date.parse('2026-09-07T00:10:00.000Z') })
+    expect(peek).toMatchObject({
+      seconds_since_last_event: 600,
+      event_count: 4,
+      last_event_at: null,
+      idle: 'idle 10m',
+    })
+    expect(peek.events).toHaveLength(4)
   })
 
   test('coalesces assistant chunks and records tool results without bodies', () => {

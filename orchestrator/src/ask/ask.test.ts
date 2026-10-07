@@ -50,33 +50,41 @@ afterEach(() => {
 })
 
 describe('the live ask channel always answers', () => {
-  test('reports registered tools for writers, readers, and unauthenticated runs', () => {
+  test('reports the tools actually registered for writers, readers, and unauthenticated runs', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     db().query('UPDATE run SET run_token=? WHERE id=?').run('writer-token', writer)
-    const toolsFor = (runId: number, token = '') => {
-      let names: string[] = []
-      createAskMcpServer(runId, token, undefined, {
+    const toolsFor = async (runId: number, token = '') => {
+      let reported: string[] = []
+      const server = createAskMcpServer(runId, token, undefined, {
         fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
         lifecycle: {
           started: (tools) => {
-            names = tools
+            reported = tools
           },
           initialized: () => {},
         },
       })
-      return names.sort()
+      const client = new Client({ name: 'orch-ask-tools-test', version: '1.0.0' })
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      await server.connect(serverTransport)
+      await client.connect(clientTransport)
+      try {
+        const listed = await client.listTools()
+        return { reported: reported.sort(), listed: listed.tools.map((tool) => tool.name).sort() }
+      } finally {
+        await client.close()
+        await server.close()
+      }
     }
-    const base = [
-      'ask_orchestrator',
-      'check_orchestrator_messages',
-      'message_orchestrator',
-      'note',
-      'suggest_board_post',
-    ]
-    expect(toolsFor(writer, 'writer-token')).toEqual([...base, 'run_gate'].sort())
-    expect(toolsFor(reader)).toEqual([...base, 'gate_result'].sort())
-    expect(toolsFor(writer, 'not-the-run-token')).toEqual(base.sort())
+    for (const [runId, token] of [
+      [writer, 'writer-token'],
+      [reader, ''],
+      [writer, 'not-the-run-token'],
+    ] as const) {
+      const tools = await toolsFor(runId, token)
+      expect(tools.reported).toEqual(tools.listed)
+    }
   })
 
   test('reports a completed initialize through the SDK hook', async () => {

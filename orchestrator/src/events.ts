@@ -125,7 +125,6 @@ export function appendRunEvent(
   runId: number,
   event: RunLogEvent,
   path = runEventsPath(runId),
-  options: { notWorkerActivity?: boolean } = {},
 ): void {
   // Best-effort, like touchLastEventAt: the live log observes the vendor
   // stream and must never fail the run or reach its outcome (review 349).
@@ -135,7 +134,11 @@ export function appendRunEvent(
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
-  if (!options.notWorkerActivity) touchLastEventAt(runId, event.ts)
+  if (isWorkerActivity(event)) touchLastEventAt(runId, event.ts)
+}
+
+function isWorkerActivity(event: RunLogEvent): boolean {
+  return !['ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(event.type)
 }
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
@@ -543,8 +546,10 @@ export function peekRun(
   const now = opts.now ?? Date.now()
   const started = Date.parse(row.started_at)
   const events = readEventLog(runEventsPath(id, opts.runsDir))
-  const lastTs = events.at(-1)?.ts ?? row.last_event_at
-  const lastAt = lastTs ? Date.parse(lastTs) : Date.parse(row.last_event_at || row.started_at)
+  const lastWorkerTs = events.findLast(isWorkerActivity)?.ts ?? row.last_event_at
+  const lastAt = lastWorkerTs
+    ? Date.parse(lastWorkerTs)
+    : Date.parse(row.last_event_at || row.started_at)
   const limit = opts.events ?? DEFAULT_PEEK_EVENTS
   const locations = events.flatMap((event) =>
     event.type === 'tool_call' ? (event.locations ?? []).map((item) => item.path) : [],
@@ -564,8 +569,8 @@ export function peekRun(
     files: worktreeFiles(row.worktree, locations),
     commits: worktreeCommits(row.worktree, row.base_commit),
     vendor_tokens: usage?.type === 'usage' ? usage.tokens : row.vendor_tokens,
-    last_event_at: row.last_event_at ?? lastTs ?? null,
-    idle: idleLabel(row.last_event_at ?? lastTs, row.started_at, now),
+    last_event_at: row.last_event_at ?? lastWorkerTs ?? null,
+    idle: idleLabel(row.last_event_at ?? lastWorkerTs, row.started_at, now),
   }
 }
 

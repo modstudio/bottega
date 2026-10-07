@@ -8,8 +8,7 @@ export type AskLifecycle = {
 }
 
 export function askLifecycle(runId: number): AskLifecycle {
-  const append = (event: RunLogEvent) =>
-    appendRunEvent(runId, event, undefined, { notWorkerActivity: true })
+  const append = (event: RunLogEvent) => appendRunEvent(runId, event)
   return {
     started: (tools) => append({ ts: new Date().toISOString(), type: 'ask_started', tools }),
     initialized: () => append({ ts: new Date().toISOString(), type: 'ask_initialized' }),
@@ -21,12 +20,12 @@ export function recordAskExpected(
   transport: 'host' | 'srt',
   command: string[],
 ): void {
-  appendRunEvent(
-    runId,
-    { ts: new Date().toISOString(), type: 'ask_expected', transport, command },
-    undefined,
-    { notWorkerActivity: true },
-  )
+  appendRunEvent(runId, {
+    ts: new Date().toISOString(),
+    type: 'ask_expected',
+    transport,
+    command,
+  })
 }
 
 function listedTools(message: JSONRPCMessage): string[] | null {
@@ -70,18 +69,18 @@ export function observeAskTransport(transport: Transport, runId: number): Transp
       await transport.start()
     },
     async send(message: JSONRPCMessage, options?: TransportSendOptions) {
-      if ('id' in message && message.id !== undefined && pendingLists.delete(message.id)) {
-        const tools = listedTools(message)
-        if (tools) {
-          appendRunEvent(
-            runId,
-            { ts: new Date().toISOString(), type: 'ask_listed', tools },
-            undefined,
-            { notWorkerActivity: true },
-          )
-        }
-      }
+      const tools =
+        'id' in message && message.id !== undefined && pendingLists.delete(message.id)
+          ? listedTools(message)
+          : null
       await transport.send(message, options)
+      if (tools) {
+        appendRunEvent(runId, {
+          ts: new Date().toISOString(),
+          type: 'ask_listed',
+          tools,
+        })
+      }
     },
     close: () => transport.close(),
     setProtocolVersion: transport.setProtocolVersion?.bind(transport),
