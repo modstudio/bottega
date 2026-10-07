@@ -27,11 +27,14 @@ const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
 function getDoc(input: Address): Doc | null {
-  return db()
+  const row = db()
     .query(
       `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
-    .get(input.scope, input.subject, input.owner, input.slug) as Doc | null
+    .get(input.scope, input.subject, input.owner, input.slug) as
+    | (Doc & { featured: boolean | number })
+    | null
+  return row ? { ...row, featured: Boolean(row.featured) } : null
 }
 
 type SetInput = Address & {

@@ -83,9 +83,9 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
     'record-doc-mapping-boundary',
     'orchestrator/src/record/record-doc-mapping.ts',
-    [],
+    ['../../../shared/docs.ts'],
     'Keep hosted document row mapping independent of SQL and transports.',
-    ['../../../shared/docs.ts', '../doc/doc-write-allowed.ts'],
+    ['../doc/doc-write-allowed.ts'],
   ),
 ]
 

@@ -430,21 +430,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   })
 }
 
-export async function setDoc(
-  input: {
-    scope: string
-    subject: string | null
-    owner?: string | null
-    slug: string
-    title: string
-    body: string
-    delivery?: 'inject' | 'demand'
-    audience?: DocAudience
-    parentSlug?: string | null
-    position?: number
-    featured?: boolean
-  } & DocWriteContext,
-): Promise<Doc> {
+export async function setDoc(input: DocWriteInput): Promise<Doc> {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
@@ -884,9 +870,10 @@ export function listDocRevisions(
 }
 
 export function getDocRevision(id: number, owner: string | null = null): DocRevision | null {
-  return db()
-    .query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?')
-    .get(id, owner) as DocRevision | null
+  const row = db().query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?').get(id, owner) as
+    | (DocRevision & { featured: boolean | number })
+    | null
+  return row ? { ...row, featured: Boolean(row.featured) } : null
 }
 
 export async function restoreDoc(

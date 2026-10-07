@@ -10,7 +10,11 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes } from './record-api-access.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
-import { recordCanonImportSchema, recordDocImportSchema } from './record-api-doc-schemas.ts'
+import {
+  recordCanonImportSchema,
+  recordDocImportSchema,
+  recordDocUpsertSchema,
+} from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
@@ -229,17 +233,7 @@ const filterSchema = z.string().min(1).optional()
 const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
 const cursorSchema = z.object({ at: isoSchema, id: z.string().uuid() })
-const deliverySchema = z.enum(['inject', 'demand'])
 const snapshotKindSchema = z.enum(SNAPSHOT_KINDS)
-const revisionOpSchema = z.enum([
-  'create',
-  'set',
-  'consume',
-  'delete',
-  'restore',
-  'import',
-  'backfill',
-])
 const configScopeSchema = z.enum(CONFIG_SCOPES)
 const expectedVersionSchema = z.number().int().positive()
 const base64urlSchema = z
@@ -798,30 +792,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.put('/v1/docs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
-    const body = z
-      .object({
-        scope: z.string().min(1),
-        subject: z.string().nullable(),
-        owner: z.string().uuid().nullable().optional(),
-        slug: z.string().min(1),
-        title: z.string(),
-        body: z.string(),
-        delivery: deliverySchema,
-        audience: z.enum(DOC_AUDIENCES).optional(),
-        parentRecordId: z.string().uuid().nullable().optional(),
-        position: z.number().int().optional(),
-        featured: z.boolean().optional(),
-        projectName: z.string().nullable().optional(),
-        reason: z.string().trim().min(1),
-        author: z.string().trim().min(1),
-        forceInject: z.string().min(1).optional(),
-        op: revisionOpSchema.optional(),
-        at: isoSchema.optional(),
-        id: z.string().uuid().optional(),
-        revisionId: z.string().uuid().optional(),
-        expectedRevision: z.string().uuid().optional(),
-      })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
       return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))

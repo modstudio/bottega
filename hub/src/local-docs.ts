@@ -25,7 +25,7 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     audience: row.audience,
     delivery: row.delivery,
     summary: docSummary(row.body),
-    featured: row.featured ?? false,
+    featured: Boolean(row.featured),
   }
   return includeBody ? DocSchema.parse({ ...item, body: row.body }) : DocTreeItemSchema.parse(item)
 }

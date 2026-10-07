@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { Kbd } from '@/ui/kbd/kbd'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { SearchDialog } from './search.tsx'
 import { buildDocTree } from './tree.ts'
 import type { DocsSearchMatch, DocsTreeItem } from './types.ts'
@@ -64,7 +65,10 @@ export function DocsHome({
       <div className="wrap doc-hero">
         <span className="eyebrow">Documentation</span>
         <h1>How can we help?</h1>
-        <p>Install Bottega, dispatch your first run, and connect the projects you already have.</p>
+        <p>
+          Install {PLATFORM_NAME}, dispatch your first run, and connect the projects you already
+          have.
+        </p>
         <form className="docs-home-search" onSubmit={openSearch}>
           <input
             type="search"

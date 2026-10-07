@@ -61,6 +61,8 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
+    summary: '',
+    featured: false,
     projectName: 'atlas',
   })
   expect(mapDoc({ ...mapped, body: '# Hi' }).body).toBe('# Hi')
