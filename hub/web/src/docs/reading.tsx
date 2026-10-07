@@ -1,5 +1,7 @@
+import { Maximize2, Minimize2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Markdown } from '@/components/markdown'
+import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
@@ -28,8 +30,12 @@ export function DocsReading({
   localActions,
   error,
   pending,
+  wide,
+  onWide,
 }: {
   doc: DocsDoc | null
+  wide: boolean
+  onWide: (wide: boolean) => void
   /** A document is chosen and on its way, so the pane stays quiet rather than saying there is none. */
   pending: boolean
   crumbs: readonly BreadcrumbPart[]
@@ -40,7 +46,10 @@ export function DocsReading({
 }) {
   const shown = doc ? paneTitle(doc.title, doc.body) : { title: '', lede: null }
   return (
-    <main className="min-w-0 bg-surface-page px-6 py-8 md:px-11 md:py-9">
+    <main
+      className="min-w-0 bg-surface-page px-6 py-8 md:px-11 md:py-9"
+      data-doc-wide={wide ? '' : undefined}
+    >
       {error ? (
         <p data-tone="error" className="text-status-text">
           {error}
@@ -48,7 +57,7 @@ export function DocsReading({
       ) : null}
       {doc ? (
         <>
-          {crumbs.length ? (
+          <div className="flex items-start justify-between gap-4">
             <div className={classes(eyebrow, 'flex flex-wrap gap-2')}>
               {crumbs.map((crumb, index) => (
                 <span key={crumb.key} className="contents">
@@ -57,7 +66,14 @@ export function DocsReading({
                 </span>
               ))}
             </div>
-          ) : null}
+            {/* For an article of wide tables: the pane takes the room of the facts column too. */}
+            <div className="-mt-1.5 hidden shrink-0 lg:block">
+              <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
+                {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {wide ? 'Reading width' : 'Wide'}
+              </Button>
+            </div>
+          </div>
           <h1 className="doc-title" data-long={shown.title.length > LONG_TITLE ? '' : undefined}>
             {shown.title}
           </h1>

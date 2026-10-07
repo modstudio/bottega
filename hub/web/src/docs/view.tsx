@@ -252,6 +252,7 @@ export function DocsView({
   const [searchOpen, setSearchOpen] = useState(false)
   const [chosen, setChosen] = useState<FilterSelection>(EMPTY_FILTERS)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const [wide, setWide] = useState(false)
   const openedId = useRef<string | null>(null)
   const model = docsViewModel(items, audience, project, chosen, selectedId, doc)
   useEffect(() => {
@@ -361,7 +362,14 @@ export function DocsView({
         active={model.active}
         createAction={framed ? createAction : null}
       />
-      <div className="mx-auto grid min-h-0 w-full max-w-(--docs-width) flex-1 grid-cols-1 lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]">
+      <div
+        className={classes(
+          'mx-auto grid min-h-0 w-full flex-1 grid-cols-1',
+          wide
+            ? 'lg:grid-cols-[16.75rem_minmax(0,1fr)]'
+            : 'max-w-(--docs-width) lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]',
+        )}
+      >
         <DocsRail
           tree={model.tree}
           groups={model.groups}
@@ -383,13 +391,17 @@ export function DocsView({
         <DocsReading
           doc={visible}
           pending={!visible && (Boolean(model.selected) || !ready)}
+          wide={wide}
+          onWide={setWide}
           crumbs={model.crumbs}
           around={model.around}
           onSelect={onSelect}
           localActions={localActions}
           error={error}
         />
-        <DocsFacts doc={visible} headings={visible ? model.headings : []} signedIn={signedIn} />
+        {wide ? null : (
+          <DocsFacts doc={visible} headings={visible ? model.headings : []} signedIn={signedIn} />
+        )}
       </div>
       <SearchDialog
         open={searchOpen}

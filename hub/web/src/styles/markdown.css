@@ -128,18 +128,37 @@
   border-top: 1px solid var(--border-default);
 }
 /* A table wider than the measure scrolls inside it instead of running under the next column. */
-.markdown table {
-  display: block;
-  width: max-content;
+.markdown .doc-table {
+  margin: 0.75rem 0 0;
+}
+.markdown .doc-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+.markdown .doc-table-scroll {
   max-width: 100%;
   overflow-x: auto;
-  margin: 0.75rem 0 0;
+}
+.markdown table {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 .markdown td,
 .markdown th {
   min-width: 7rem;
   max-width: 24rem;
+}
+/* Opened at the window's width: no measure, and the table's own scroll only if it still needs one. */
+.markdown.doc-table-full {
+  max-width: none;
+  max-height: calc(100dvh - 10rem);
+  overflow: auto;
+}
+.markdown.doc-table-full td,
+.markdown.doc-table-full th {
+  max-width: 36rem;
 }
 .markdown th,
 .markdown td {
@@ -155,8 +174,14 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+/* A command in a cell breaks only where it must, and each broken piece keeps its own box. */
 .markdown td code,
 .markdown th code {
+  overflow-wrap: anywhere;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.markdown td:first-child code {
   white-space: nowrap;
 }
 .markdown img {
@@ -171,4 +196,15 @@
   background: var(--border-default);
   box-shadow: 0 0 0 100vmax var(--border-default);
   clip-path: inset(0 -100vmax);
+}
+/* Wide view: the article gives up its measure so its tables can use the pane. */
+[data-doc-wide] .markdown,
+[data-doc-wide] .doc-measure {
+  max-width: none;
+}
+[data-doc-wide] .markdown > p,
+[data-doc-wide] .markdown > ul,
+[data-doc-wide] .markdown > ol,
+[data-doc-wide] .markdown > blockquote {
+  max-width: 40rem;
 }
