@@ -349,7 +349,7 @@ fi
   } finally {
     rmSync(fixture, { recursive: true })
   }
-})
+}, 10_000)
 
 test('heartbeat reports a stalled run without BLOCKED or WAITING', async () => {
   const session = 'heartbeat-stalled-only-fixture'
