@@ -195,13 +195,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )
@@ -242,7 +242,10 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
     ordered.push(group)
   }
   for (const group of groups) visit(group)
-  return ordered
+  return [
+    ...ordered.filter((group) => group.payload.doc.status !== 'superseded'),
+    ...ordered.filter((group) => group.payload.doc.status === 'superseded'),
+  ]
 }
 
 function payloadWithImportedParentIds(
@@ -271,7 +274,7 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, replacement_slug, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
@@ -297,6 +300,14 @@ async function compareLiveDocs(
     }
     if (hosted.delivery !== doc.delivery) {
       mismatches.push(`${label}: delivery ${doc.delivery} != ${String(hosted.delivery)}`)
+    }
+    if (hosted.status !== doc.status) {
+      mismatches.push(`${label}: status ${doc.status} != ${String(hosted.status)}`)
+    }
+    if ((hosted.replacementSlug ?? null) !== doc.replacement_slug) {
+      mismatches.push(
+        `${label}: replacement ${doc.replacement_slug ?? 'null'} != ${String(hosted.replacementSlug ?? null)}`,
+      )
     }
     if (hosted.deletedAt != null) {
       mismatches.push(`${label}: deleted_at ${String(hosted.deletedAt)}`)

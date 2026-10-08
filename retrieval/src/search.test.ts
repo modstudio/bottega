@@ -1,8 +1,11 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Chunk, DocIdentity } from './corpus/chunks.ts'
+import { type Chunk, chunkDocument, type DocIdentity } from './corpus/chunks.ts'
+import { indexedRows, openIndexDatabase } from './index-store.ts'
 import { search } from './search.ts'
 
 const chunk = (id: string, text = id): Chunk => ({
@@ -161,6 +164,79 @@ test('drafts are indexed but absent by default and returned when requested', asy
       includeDrafts: true,
     })
     expect(withDrafts.results.map((result) => result.status).sort()).toEqual(['current', 'draft'])
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('a pre-status index is readable as current and a refresh repairs draft status', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-legacy-status-test-'))
+  const databasePath = join(directory, 'retrieval.db')
+  const draft = { ...chunk('legacy-draft', 'draft answer'), docStatus: 'draft' as const }
+  const document = chunkDocument(draft)
+  const contentHash = createHash('sha256').update(document).digest('hex')
+  const vector = new Uint8Array(new Float32Array([1, ...Array(1_023).fill(0)]).buffer)
+  const legacy = new Database(databasePath, { create: true })
+  legacy.exec(`
+    CREATE TABLE document_vector (
+      chunk_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, model TEXT NOT NULL,
+      dimension INTEGER NOT NULL, instruction_version TEXT NOT NULL,
+      corpus_key TEXT NOT NULL DEFAULT 'docs', project TEXT, repository_path TEXT,
+      start_line INTEGER, end_line INTEGER, scope TEXT NOT NULL, subject TEXT,
+      slug TEXT NOT NULL, title TEXT NOT NULL, heading_path TEXT NOT NULL,
+      text TEXT NOT NULL, document TEXT NOT NULL, vector BLOB NOT NULL
+    )
+  `)
+  legacy
+    .query(
+      `INSERT INTO document_vector
+       (chunk_id, content_hash, model, dimension, instruction_version, scope, subject, slug,
+        title, heading_path, text, document, vector)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      draft.id,
+      contentHash,
+      'Qwen/Qwen3-Embedding-0.6B',
+      1_024,
+      'doc-search-v1',
+      'project',
+      'p',
+      'doc',
+      'Doc',
+      '[]',
+      draft.text,
+      document,
+      vector,
+    )
+  legacy.close()
+  const clients = {
+    embed: async (_url: string, input: string[]) =>
+      input.map(() => [1, ...Array.from<number>({ length: 1_023 }).fill(0)]),
+    rerank: async (_url: string, _query: string, documents: string[]) =>
+      documents.map((_document, index) => documents.length - index),
+  }
+  try {
+    const before = openIndexDatabase(databasePath)
+    expect(indexedRows(before)[0]?.status).toBe('current')
+    before.close()
+
+    const refreshed = await search('answer', 5, {
+      databasePath,
+      loadChunks: async () => [draft],
+      clients,
+    })
+    expect(refreshed.refresh.embedded).toBe(1)
+    expect(refreshed.results).toEqual([])
+
+    const withDrafts = await search('answer', 5, {
+      databasePath,
+      loadChunks: async () => [draft],
+      clients,
+      includeDrafts: true,
+    })
+    expect(withDrafts.refresh.unchanged).toBe(1)
+    expect(withDrafts.results[0]?.status).toBe('draft')
   } finally {
     rmSync(directory, { recursive: true })
   }

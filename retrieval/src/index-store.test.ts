@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { INSTRUCTION_VERSION } from './contract.ts'
 import type { Chunk } from './corpus/chunks.ts'
 import {
   applyCodeCacheRefresh,
@@ -116,13 +117,13 @@ test('stale deletes and upserts lose when another handle changes only the instru
         chunkId: 'changed',
         text: 'seed',
         contentHash: 'seed-hash',
-        instructionVersion: 'doc-search-v1',
+        instructionVersion: INSTRUCTION_VERSION,
       },
       {
         chunkId: 'removed',
         text: 'seed removed',
         contentHash: 'removed-hash',
-        instructionVersion: 'doc-search-v1',
+        instructionVersion: INSTRUCTION_VERSION,
       },
     ])
   } finally {

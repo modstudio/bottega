@@ -257,17 +257,18 @@ type DocWriteInput = {
   replacementSlug?: string | null
 } & DocWriteContext
 
+const currentCanon = { scope: 'canon', status: 'current' } as const
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
     global,
-    project: target ? listDocs({ scope: 'canon', subject: target.name }) : [],
+    project: target ? listDocs({ ...currentCanon, subject: target.name }) : [],
   }))
   return decideUserCanonImport({ current, next, surroundings }).findings
 }
 
 function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }): void {
-  const global = listDocs({ scope: 'canon', subject: null })
-  const user = listDocs({ scope: 'canon', subject: null, owner: input.owner })
+  const global = listDocs({ ...currentCanon, subject: null })
+  const user = listDocs({ ...currentCanon, subject: null, owner: input.owner })
   const changedRows = input.canonSet ?? [
     ...user.filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
@@ -283,8 +284,8 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
     return
   }
   const project = input.subject ? projectByName(input.subject)! : null
-  const global = listDocs({ scope: 'canon', subject: null })
-  const projectRows = input.subject ? listDocs({ scope: 'canon', subject: input.subject }) : []
+  const global = listDocs({ ...currentCanon, subject: null })
+  const projectRows = input.subject ? listDocs({ ...currentCanon, subject: input.subject }) : []
   const changedRows = input.canonSet ?? [
     ...(project ? projectRows : global).filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
@@ -305,7 +306,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
         next,
       })
     }
-    const targetProjectRows = listDocs({ scope: 'canon', subject: target.name })
+    const targetProjectRows = listDocs({ ...currentCanon, subject: target.name })
     const targetCurrent = composeCanonRows(global, [], targetProjectRows).map(({ slug, body }) => ({
       slug,
       body,

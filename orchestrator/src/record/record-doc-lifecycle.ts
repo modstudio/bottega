@@ -1,6 +1,6 @@
 import type { SQL } from 'bun'
 import type { DocStatus } from '../../../shared/docs.ts'
-import { documentLifecycleDecision } from '../doc/doc-status.ts'
+import { documentLifecycleDecision, resolvedReplacementSlug } from '../doc/doc-status.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
 
 type LifecycleAddress = {
@@ -28,10 +28,7 @@ export async function recordDocumentLifecycle(
   prior?: { status?: unknown; replacement_slug?: unknown },
 ) {
   const priorReplacement = prior?.replacement_slug == null ? null : String(prior.replacement_slug)
-  const replacementToCheck =
-    input.replacementSlug ??
-    (input.status === undefined || input.status === 'superseded' ? priorReplacement : null)
-  const decision = documentLifecycleDecision({
+  const lifecycle = {
     scope: input.scope,
     subject: input.subject,
     slug: input.slug,
@@ -39,7 +36,11 @@ export async function recordDocumentLifecycle(
     requestedReplacementSlug: input.replacementSlug,
     priorStatus: prior?.status == null ? undefined : (String(prior.status) as DocStatus),
     priorReplacementSlug: priorReplacement,
-    replacementExists: await replacementExists(tx, input, replacementToCheck),
+  }
+  const replacementSlug = resolvedReplacementSlug(lifecycle)
+  const decision = documentLifecycleDecision({
+    ...lifecycle,
+    replacementExists: await replacementExists(tx, input, replacementSlug),
   })
   if (decision.refusal !== null) throw new RecordDocError(decision.refusal)
   return decision

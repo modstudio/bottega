@@ -16,7 +16,9 @@ export type DocumentLifecycleDecision =
   | { status: DocStatus; replacementSlug: string | null; refusal: null }
   | { status: null; replacementSlug: null; refusal: string }
 
-function resolvedReplacementSlug(input: DocumentLifecycleWrite): string | null {
+export function resolvedReplacementSlug(
+  input: Omit<DocumentLifecycleWrite, 'replacementExists'>,
+): string | null {
   if (input.scope === 'resume') return null
   if (input.requestedReplacementSlug !== undefined) return input.requestedReplacementSlug
   if (input.requestedStatus !== undefined && input.requestedStatus !== 'superseded') return null

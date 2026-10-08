@@ -1,7 +1,7 @@
 import type { DocStatus } from '../../../shared/docs.ts'
 import type { Doc } from './doc-read-store.ts'
 import { getDocStore } from './doc-read-store.ts'
-import { documentLifecycleDecision } from './doc-status.ts'
+import { documentLifecycleDecision, resolvedReplacementSlug } from './doc-status.ts'
 
 export function localDocumentLifecycle(
   input: {
@@ -14,10 +14,7 @@ export function localDocumentLifecycle(
   },
   prior: Doc | null,
 ) {
-  const replacementToCheck =
-    input.replacementSlug ??
-    (input.status === undefined || input.status === 'superseded' ? prior?.replacement_slug : null)
-  const decision = documentLifecycleDecision({
+  const lifecycle = {
     scope: input.scope,
     subject: input.subject,
     slug: input.slug,
@@ -25,9 +22,13 @@ export function localDocumentLifecycle(
     requestedReplacementSlug: input.replacementSlug,
     priorStatus: prior?.status,
     priorReplacementSlug: prior?.replacement_slug,
+  }
+  const replacementSlug = resolvedReplacementSlug(lifecycle)
+  const decision = documentLifecycleDecision({
+    ...lifecycle,
     replacementExists:
-      replacementToCheck == null ||
-      Boolean(getDocStore(input.scope, input.subject, replacementToCheck, input.owner ?? null)),
+      replacementSlug == null ||
+      Boolean(getDocStore(input.scope, input.subject, replacementSlug, input.owner ?? null)),
   })
   if (decision.refusal !== null) throw new Error(decision.refusal)
   return decision

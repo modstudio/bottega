@@ -86,18 +86,24 @@ async function importSubjectFiles(
   subjectDirectory: string,
   write: (doc: ImportedDoc) => Promise<void>,
 ): Promise<number> {
-  let count = 0
   const subject = subjectDirectory === '_' ? null : subjectDirectory
+  const documents: ImportedDoc[] = []
   for (const file of readdirSync(join(dir, scope, subjectDirectory), { withFileTypes: true })) {
     if (!file.isFile() || !file.name.endsWith('.md')) continue
-    await write({
+    documents.push({
       scope,
       subject,
       slug: file.name.slice(0, -3),
       ...importedDoc(join(dir, scope, subjectDirectory, file.name), file.name),
       delivery: importedDocDelivery(scope),
     })
-    count++
   }
-  return count
+  const ordered = [
+    ...documents.filter((document) => document.status !== 'superseded'),
+    ...documents.filter((document) => document.status === 'superseded'),
+  ]
+  for (const document of ordered) {
+    await write(document)
+  }
+  return documents.length
 }
