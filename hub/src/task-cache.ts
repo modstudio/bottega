@@ -29,15 +29,23 @@ function reconcileParentRecordIds(conn: Database) {
   }
 }
 
-function localId(conn: Database, table: string, recordId: string, legacy: number | null) {
+function localId(
+  conn: Database,
+  table: string,
+  recordId: string,
+  legacy: number | null,
+  taskRecordId: string | null,
+) {
   const byRecord = conn
     .query<{ id: number }, [string]>(`SELECT id FROM ${table} WHERE record_id=?`)
     .get(recordId)
   if (byRecord) return byRecord.id
-  if (legacy !== null) {
+  if (legacy !== null && taskRecordId !== null) {
     const byLegacy = conn
-      .query<{ id: number }, [number]>(`SELECT id FROM ${table} WHERE id=?`)
-      .get(legacy)
+      .query<{ id: number }, [number, string]>(
+        `SELECT id FROM ${table} WHERE id=? AND record_id IS NULL AND task_record_id=?`,
+      )
+      .get(legacy, taskRecordId)
     if (byLegacy) return byLegacy.id
   }
   return null
@@ -82,8 +90,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
 }
 
 function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
-  const id = localId(conn, 'task_comment', row.id, row.legacy_local_id)
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const id = localId(conn, 'task_comment', row.id, row.legacy_local_id, taskRecordId)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_comment WHERE id=?`).run(id)
   } else if (id) {
@@ -102,8 +110,8 @@ function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
 }
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
-  const id = localId(conn, 'task_document', row.id, row.legacy_local_id)
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const id = localId(conn, 'task_document', row.id, row.legacy_local_id, taskRecordId)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_document WHERE id=?`).run(id)
   } else if (id) {
@@ -143,8 +151,8 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
 }
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
-  const id = localId(conn, 'task_status_event', row.id, row.legacy_local_id)
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const id = localId(conn, 'task_status_event', row.id, row.legacy_local_id, taskRecordId)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_status_event WHERE id=?`).run(id)
   } else if (id) {
