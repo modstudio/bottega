@@ -152,6 +152,7 @@ const gatheredReport = (project = 'workshop'): GatheredReport => {
     { key: 'DEV-788', title: 'Keep small totals plain', closed: false, agentTokens: 999 },
   ].map((item) => ({
     ...item,
+    unmatched: false,
     project,
     status: item.closed ? 'done' : 'active',
     engaged: '1h 0m',
@@ -162,6 +163,7 @@ const gatheredReport = (project = 'workshop'): GatheredReport => {
     to: '2026-09-18T13:00:00.000Z',
     hours: 24,
     items,
+    unmatched: 0,
     taskMs: 4 * 3_600_000,
     engagedMs: 3_600_000,
     projects: [
@@ -172,6 +174,7 @@ const gatheredReport = (project = 'workshop'): GatheredReport => {
         engagedMs: 3_600_000,
         shipped: 1,
         moving: 3,
+        unmatched: 0,
         agentTokens: items.reduce((sum, item) => sum + item.agentTokens, 0),
         items,
         untasked: null,
