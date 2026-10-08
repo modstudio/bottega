@@ -129,7 +129,7 @@ test('hosted reports keep unmatched task keys separate and union each key', () =
   expect(gathered.items.every((item) => item.unmatched)).toBeTrue()
   expect(gathered.items.every((item) => item.title === null && item.status === null)).toBeTrue()
   expect(gathered.items.map((item) => item.engagedMs)).toEqual(keys.map(() => 5_400_000))
-  expect(gathered).toMatchObject({ taskMs: 21_600_000, unmatched: 4 })
+  expect(gathered).toMatchObject({ taskMs: 21_600_000 })
   expect(gathered.projects[0]).toMatchObject({
     taskMs: 21_600_000,
     shipped: 0,
@@ -175,7 +175,7 @@ test('hosted reports count matched, unmatched and untasked work independently', 
     period,
   )
 
-  expect(gathered).toMatchObject({ taskMs: 7_200_000, engagedMs: 7_200_000, unmatched: 1 })
+  expect(gathered).toMatchObject({ taskMs: 7_200_000, engagedMs: 7_200_000 })
   expect(gathered.projects[0]).toMatchObject({
     taskMs: 7_200_000,
     engagedMs: 7_200_000,

@@ -163,7 +163,6 @@ const gatheredReport = (project = 'workshop'): GatheredReport => {
     to: '2026-09-18T13:00:00.000Z',
     hours: 24,
     items,
-    unmatched: 0,
     taskMs: 4 * 3_600_000,
     engagedMs: 3_600_000,
     projects: [

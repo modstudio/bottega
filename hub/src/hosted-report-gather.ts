@@ -114,7 +114,6 @@ export function gatherHostedReport(
     to: period.to,
     hours: (new Date(period.to).getTime() - new Date(period.from).getTime()) / 3_600_000,
     items,
-    unmatched: items.filter((item) => item.unmatched).length,
     taskMs: items.filter((item) => item.key).reduce((sum, item) => sum + item.engagedMs, 0),
     engagedMs: engagedMs(usable.map((row) => span(row, period))),
     projects,
