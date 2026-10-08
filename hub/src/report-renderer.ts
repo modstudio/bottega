@@ -44,6 +44,8 @@ export type ReportPresentation = {
   measures: Measures
 }
 
+export type ReportSliceOptions = { details?: boolean; summary?: boolean }
+
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
@@ -101,7 +103,7 @@ export function renderHtml(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
-  options: { details?: boolean; summary?: boolean } = {},
+  options: ReportSliceOptions = {},
 ) {
   const day = new Date(g.to).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -361,7 +363,7 @@ export function renderText(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
-  options: { details?: boolean; summary?: boolean } = {},
+  options: ReportSliceOptions = {},
 ) {
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.

@@ -112,8 +112,8 @@ export function selectedProjectsScopeName(projects: { project_name: string | nul
   )
 }
 
-export function selectedProjectsHaveSections(projects: { space_id: string | null }[]) {
-  return new Set(projects.map((project) => project.space_id).filter((id) => id !== null)).size > 1
+export function selectedProjectsHaveSections(spaceCount: number) {
+  return spaceCount > 1
 }
 
 function loadedScopeName(
@@ -282,21 +282,21 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       ])
       const sectionGroups = projectsBySpace(validProjects)
       const sections =
-        loaded.scope_kind === 'projects' && selectedProjectsHaveSections(validProjects)
+        loaded.scope_kind === 'projects' && selectedProjectsHaveSections(sectionGroups.size)
           ? await Promise.all(
               [...sectionGroups.values()].map(async (projects) => {
                 const sectionScope = {
                   kind: 'projects' as const,
                   projectIds: projects.map((row) => row.project_id),
                 }
-                const [sectionMeasures, sectionReport] = await Promise.all([
-                  hostedMeasures(databaseUrl, recipientIdentity, period, sectionScope),
-                  hostedGatherReport(databaseUrl, recipientIdentity, period, sectionScope),
-                ])
                 return {
                   name: projects[0]!.space_name!,
-                  measures: sectionMeasures,
-                  report: sectionReport,
+                  report: await hostedGatherReport(
+                    databaseUrl,
+                    recipientIdentity,
+                    period,
+                    sectionScope,
+                  ),
                 }
               }),
             )

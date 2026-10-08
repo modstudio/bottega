@@ -489,8 +489,8 @@ describe('hosted report delivery', () => {
         scope: { kind: 'projects', projectIds: ['a', 'b'] },
         scopeName: 'starship, stopal',
         sections: [
-          { name: 'Alpha space', measures: measures(), report: gatheredReport('starship') },
-          { name: 'Beta space', measures: measures(), report: gatheredReport('stopal') },
+          { name: 'Alpha space', report: gatheredReport('starship') },
+          { name: 'Beta space', report: gatheredReport('stopal') },
         ],
       }),
     )
@@ -516,7 +516,8 @@ describe('hosted report delivery', () => {
       { project_name: 'starship', space_id: 'alpha' },
       { project_name: 'stopal', space_id: 'alpha' },
     ]
-    expect(selectedProjectsHaveSections(projects)).toBe(false)
+    expect(selectedProjectsHaveSections(1)).toBe(false)
+    expect(selectedProjectsHaveSections(2)).toBe(true)
     const rendered = renderReport(
       candidate('one-space'),
       duePeriod(candidate('one-space'), now)!,

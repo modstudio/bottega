@@ -2,7 +2,12 @@
 /** Plans, renders, and delivers one idempotent pass of hosted report subscriptions. */
 
 import type { MeasureScope, Measures, MeasureWindow } from './measures.ts'
-import { type GatheredReport, renderHtml, renderText } from './report-renderer.ts'
+import {
+  type GatheredReport,
+  type ReportSliceOptions,
+  renderHtml,
+  renderText,
+} from './report-renderer.ts'
 
 export type DeliveryCandidate = {
   subscriptionId: string
@@ -31,7 +36,7 @@ export type DeliverySubscription = {
   scopeName: string
   measures: Measures
   report: GatheredReport
-  sections?: { name: string; measures: Measures; report: GatheredReport }[]
+  sections?: { name: string; report: GatheredReport }[]
   exclusions?: string[]
   unavailableReason?: string
 }
@@ -213,40 +218,25 @@ export function renderReport(
     windowLine: `Window: ${localWindow(period, candidate.zone)}`,
     measures: subscription.measures,
   }
+  const combinedOptions: ReportSliceOptions = { details: !subscription.sections?.length }
+  const sectionOptions: ReportSliceOptions = { summary: false }
   const base = {
     subject: `Report: ${subscription.scopeName}`,
-    text: renderText(subscription.report, new Map(), presentation, {
-      details: !subscription.sections?.length,
-    }),
-    html: renderHtml(subscription.report, new Map(), presentation, {
-      details: !subscription.sections?.length,
-    }),
+    text: renderText(subscription.report, new Map(), presentation, combinedOptions),
+    html: renderHtml(subscription.report, new Map(), presentation, combinedOptions),
   }
   if (!subscription.sections?.length) return base
   const sectionText = subscription.sections.map(
     (section) =>
-      `${section.name}\n${renderText(
-        section.report,
-        new Map(),
-        {
-          ...presentation,
-          scopeName: section.name,
-          measures: section.measures,
-        },
-        { summary: false },
-      )}`,
+      `${section.name}\n${renderText(section.report, new Map(), undefined, sectionOptions)}`,
   )
   const sectionHtml = subscription.sections.map(
     (section) =>
       `<h2 style="font-family:sans-serif;font-size:18px">${escapeHtml(section.name)}</h2>${renderHtml(
         section.report,
         new Map(),
-        {
-          ...presentation,
-          scopeName: section.name,
-          measures: section.measures,
-        },
-        { summary: false },
+        undefined,
+        sectionOptions,
       )
         .replace(/^.*?<body[^>]*>/s, '')
         .replace(/<\/body>.*$/s, '')}`,
