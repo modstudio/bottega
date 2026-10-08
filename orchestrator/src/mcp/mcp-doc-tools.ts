@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
-import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
+import type { SelectedCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
   consumeDoc,
   getDoc,
@@ -46,7 +46,16 @@ async function withMcpDocWriteRemedy<T>(write: () => Promise<T>): Promise<T> {
   }
 }
 
-export function registerDocTools(server: McpServer): void {
+type CanonTreeSelector = (input: {
+  scope: string
+  subject: string | null
+  cwd?: string
+}) => SelectedCanonWriteTree | undefined
+
+export function registerDocTools(
+  server: McpServer,
+  ports: { selectCanonWriteTree: CanonTreeSelector },
+): void {
   server.registerTool(
     'list_docs',
     {
@@ -187,7 +196,7 @@ export function registerDocTools(server: McpServer): void {
     }) => {
       const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
-      const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
+      const canonTree = ports.selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
       const doc = await withMcpDocWriteRemedy(() =>
         setDoc({
           scope,
@@ -213,7 +222,14 @@ export function registerDocTools(server: McpServer): void {
       const root = repoRootForDoc(doc, canonTree?.root)
       return text({
         ...doc,
-        warnings: root ? checkDoc(body, { repoRoot: root }) : [],
+        warnings: root
+          ? checkDoc(body, {
+              repoRoot: root,
+              ...(canonTree?.root === root && canonTree.facts
+                ? { trackedFiles: new Set(canonTree.facts.trackedPaths) }
+                : {}),
+            })
+          : [],
         tree: canonTree?.root,
       })
     },
@@ -269,7 +285,7 @@ export function registerDocTools(server: McpServer): void {
     async ({ scope, subject, slug, reason, author, expected_revision, cwd }) => {
       const refusal = decideMcpDocWrite('remove_doc', scope)
       if (refusal) throw new Error(refusal)
-      const canonTree = selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
+      const canonTree = ports.selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
         removeDoc(scope, subject ?? null, slug, {
           reason,

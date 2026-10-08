@@ -1,19 +1,28 @@
 import { expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
-import { gitToplevel } from '../../../shared/git.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
-import { upsertProject } from '../project/projects.ts'
+import { getDoc } from '../doc/docs.ts'
+import { projectByName, upsertProject } from '../project/projects.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
 
 const project = 'mcp-canon-write'
 const slug = '.agents/rules/mcp-canon-write.md'
 const initialBody = '---\ndescription: MCP canon write fixture\n---\n\n# Initial rule\n'
-const selectedTree = gitToplevel(process.cwd())!
+const selectedTree = '/fixture/canon-tree'
+const canonFacts = {
+  trackedPaths: [slug, 'orchestrator/src/mcp/supplied.ts'],
+  packageScripts: [],
+  sourceTexts: [],
+}
+
+function smallCanonTree() {
+  return { project: projectByName(project)!, root: selectedTree, facts: canonFacts }
+}
 
 async function withDocClient(run: (client: Client) => Promise<void>): Promise<void> {
   const server = new McpServer({ name: 'orch-doc-test', version: '1.0.0' })
-  registerDocTools(server)
+  registerDocTools(server, { selectCanonWriteTree: smallCanonTree })
   const client = new Client({ name: 'orch-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -27,7 +36,7 @@ async function withDocClient(run: (client: Client) => Promise<void>): Promise<vo
 }
 
 async function canonFixture() {
-  upsertProject({ name: project, path: process.cwd(), canon: true, settings: {} })
+  upsertProject({ name: project, path: selectedTree, canon: true, settings: {} })
   return setDoc({
     scope: 'canon',
     subject: project,
@@ -35,12 +44,13 @@ async function canonFixture() {
     title: 'MCP canon write',
     body: initialBody,
     allowCanonBootstrap: true,
+    canonTree: smallCanonTree(),
   })
 }
 
-test('set_doc passes the expected revision and selected canon tree to setDoc', async () => {
+test('set_doc stores the next revision against the selected canon tree', async () => {
   const current = await canonFixture()
-  const body = `${initialBody}\nThe current rule applies.\n`
+  const body = `${initialBody}\nThe current rule cites \`orchestrator/src/mcp/supplied.ts\`.\n`
 
   await withDocClient(async (client) => {
     const result = await client.callTool({
@@ -58,10 +68,15 @@ test('set_doc passes the expected revision and selected canon tree to setDoc', a
     })
 
     expect(result.isError).not.toBe(true)
-    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toMatchObject({
+    const written = JSON.parse((result.content as { text: string }[])[0]!.text) as {
+      revision: string
+    }
+    expect(written).toMatchObject({
       body,
       tree: selectedTree,
     })
+    expect(written.revision).not.toBe(current.revision)
+    expect(getDoc('canon', project, slug)).toMatchObject({ body, revision: written.revision })
   })
 })
 
@@ -116,7 +131,7 @@ test('set_doc reports a stale canon revision with the MCP remedy', async () => {
   })
 })
 
-test('remove_doc passes the expected revision and selected canon tree to removeDoc', async () => {
+test('remove_doc removes at the expected revision against the selected canon tree', async () => {
   const current = await canonFixture()
 
   await withDocClient(async (client) => {

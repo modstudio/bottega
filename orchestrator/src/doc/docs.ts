@@ -319,7 +319,10 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
           targetProjectRows,
         ).map(({ slug, body }) => ({ slug, body }))
     const root = input.canonTree?.project.name === target.name ? input.canonTree.root : target.path
-    const collected = collectCanonLintInput(root)
+    const collected =
+      input.canonTree?.project.name === target.name && input.canonTree.facts
+        ? input.canonTree.facts
+        : collectCanonLintInput(root)
     return refuseCanonWrite({
       current: targetCurrent,
       next: targetNext,

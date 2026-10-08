@@ -7,7 +7,7 @@ import {
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
-import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
+import type { CanonFinding, CanonLintInput, CanonSourceText } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
@@ -30,7 +30,11 @@ export type DocRevisionOp =
   | 'backfill'
 
 export type CanonRow = { slug: string; body: string }
-export type CanonWriteTree = { project: { name: string }; root: string }
+export type CanonWriteTree = {
+  project: { name: string }
+  root: string
+  facts?: Pick<CanonLintInput, 'trackedPaths' | 'packageScripts' | 'sourceTexts'>
+}
 export { composeCanonRows }
 
 export type GlobalCanonWriteTarget = {

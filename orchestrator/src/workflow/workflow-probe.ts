@@ -27,6 +27,17 @@ type ProbeRunResult = {
   secretFound?: boolean
   signal?: NodeJS.Signals | null
 }
+
+export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'>
+
+/** Retains a bounded tail while remembering secrets that have already rolled out of it. */
+export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): WorkflowOutput {
+  const candidate = current.output + chunk
+  return {
+    output: boundedGateOutputTail(candidate, GATE_OUTPUT_TAIL_BYTES),
+    secretFound: current.secretFound === true || containsSecretShaped(candidate),
+  }
+}
 export type ProbeRunner = (input: {
   command: string[]
   cwd: string
@@ -139,13 +150,10 @@ async function streamingRunner(
       env: input.env,
       stdio: [input.stdin, 'pipe', 'pipe'],
     })
-    let output = ''
-    let secretFound = false
+    let streamed: WorkflowOutput = { output: '', secretFound: false }
     const record = (chunk: Buffer | string) => {
       const text = Buffer.isBuffer(chunk) ? chunk.toString() : chunk
-      const candidate = output + text
-      secretFound ||= containsSecretShaped(candidate)
-      output = boundedGateOutputTail(candidate, GATE_OUTPUT_TAIL_BYTES)
+      streamed = appendWorkflowOutput(streamed, text)
       input.write(text)
     }
     child.stdout?.on('data', record)
@@ -153,9 +161,7 @@ async function streamingRunner(
     child.once('error', (error) =>
       reject(new Error(`command could not be started: ${error.message}`, { cause: error })),
     )
-    child.once('close', (code, signal) =>
-      resolve({ exitCode: code ?? -1, output, secretFound, signal }),
-    )
+    child.once('close', (code, signal) => resolve({ exitCode: code ?? -1, ...streamed, signal }))
   })
 }
 

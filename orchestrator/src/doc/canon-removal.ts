@@ -26,7 +26,9 @@ function removalRefusalForView(input: {
     project && input.selectedTree?.project.name === project.name
       ? input.selectedTree.root
       : project?.path
-  const tree = root ? collectCanonLintInput(root) : undefined
+  const selectedTree = input.selectedTree
+  const suppliedFacts = selectedTree && selectedTree.root === root ? selectedTree.facts : undefined
+  const tree = suppliedFacts ? suppliedFacts : root ? collectCanonLintInput(root) : undefined
   return canonRemovalRefusal(
     decideCanonRemoval({
       current: input.current,
