@@ -2,6 +2,7 @@
 /** Runs a project's registered gate as an architect invocation and records the finished row. */
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
+import { gitToplevel } from '../../../shared/git.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
@@ -41,6 +42,8 @@ export type ArchitectGateGitState = (cwd: string) => {
   headCommit: string
   porcelainPaths: readonly string[]
 }
+
+type ArchitectGateTopLevel = (cwd: string) => string | null
 
 export type ArchitectGateRecord = { id: number; exitCode: number }
 
@@ -111,6 +114,7 @@ export async function runArchitectGate(input: {
   d?: Database
   runner?: ArchitectGateRunner
   gitState?: ArchitectGateGitState
+  topLevel?: ArchitectGateTopLevel
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   if (process.env.ORCH_DEPTH !== undefined)
@@ -129,6 +133,12 @@ export async function runArchitectGate(input: {
       `orch gate run: project ${project.name} has no registered gate; set settings.gate`,
     )
   }
+  const checkoutTopLevel = (input.topLevel ?? gitToplevel)(cwd)
+  if (!checkoutTopLevel) {
+    throw new Error(
+      `orch gate run: could not resolve the checkout top level for ${cwd}; run orch gate run from inside the checkout to gate`,
+    )
+  }
   ensureMainStackStarted({
     projectId: project.id,
     projectName: project.name,
@@ -137,13 +147,14 @@ export async function runArchitectGate(input: {
     consumer: 'gate',
     database: input.d,
   })
-  const command = resolveGateCommand(gate, project.path)
+  const command = resolveGateCommand(gate, checkoutTopLevel)
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const observe = input.gitState ?? observeGitState
-  const before = gateHeadCommit(cwd, observe)
-  const ran = await (input.runner ?? defaultRunner)({ command, cwd, write })
+  const before = gateHeadCommit(checkoutTopLevel, observe)
+  const ran = await (input.runner ?? defaultRunner)({ command, cwd: checkoutTopLevel, write })
   // A gate that rewrites the tree while it runs tested something other than HEAD.
-  const commit = before !== null && gateHeadCommit(cwd, observe) === before ? before : null
+  const commit =
+    before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
   const tail = boundedGateOutputTail(
     containsSecretShaped(ran.output) ? GATE_OUTPUT_WITHHELD : ran.output,
     GATE_OUTPUT_TAIL_BYTES,
@@ -167,7 +178,7 @@ export async function runArchitectGate(input: {
         command,
         commit,
         caller,
-        cwd,
+        checkoutTopLevel,
       )
     if (!row) throw new Error('gate_execution row was not inserted')
     return { id: row.id, exitCode: ran.exitCode }

@@ -29,6 +29,7 @@ export const gateModules: GateModule[] = [
   module('orchestrator/src/gate/gate-run.ts', [
     'bun:sqlite',
     'node:child_process',
+    '../../../shared/git.ts',
     '../../../shared/secret-shaped.ts',
     '../caller-classification.ts',
     '../database/db.ts',
