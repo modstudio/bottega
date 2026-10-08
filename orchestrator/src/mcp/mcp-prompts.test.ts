@@ -231,7 +231,11 @@ describe('workflow prompts on the wire', () => {
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
-      settings: { gate: 'true', docs: { protocol: 'orch-docs' } },
+      settings: {
+        gate: 'true',
+        docs: { protocol: 'orch-docs' },
+        tracker: { protocol: 'hub' },
+      },
     })
     const client = await connected()
     const result = await client.getPrompt({

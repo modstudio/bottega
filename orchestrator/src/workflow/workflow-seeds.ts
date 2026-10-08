@@ -256,12 +256,19 @@ function catalogueBody(workflow: string, step: string, legacyBody: string): stri
     .replace('origin/main', 'origin/{{trunk}}')
     .replace('--base main', '--base {{trunk}}')
 }
+function catalogueNeeds(workflow: string, step: string, runsGate: boolean): string[] {
+  return [
+    ...(runsGate ? ['gate'] : []),
+    ...(usesTrunk(workflow, step) ? ['trunk'] : []),
+    ...(workflow === 'fix-defect' && step === 'diagnose' ? ['tracker'] : []),
+    ...(catalogueSlug(workflow, step) === 'close' ? ['tracker'] : []),
+  ]
+}
 function catalogueDefinition() {
   const steps: SeedCatalogueStep[] = []
   for (const seed of seeds) {
     for (const legacy of seed.definition.steps) {
       const runsGate = legacy.gate !== null
-      const runsOnTrunk = usesTrunk(seed.slug, legacy.slug)
       steps.push({
         slug: catalogueSlug(seed.slug, legacy.slug),
         title: legacy.title,
@@ -273,12 +280,7 @@ function catalogueDefinition() {
           : {}),
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
-        needs: [
-          ...(runsGate ? ['gate'] : []),
-          ...(runsOnTrunk ? ['trunk'] : []),
-          ...(seed.slug === 'fix-defect' && legacy.slug === 'diagnose' ? ['tracker'] : []),
-          ...(catalogueSlug(seed.slug, legacy.slug) === 'close' ? ['tracker'] : []),
-        ],
+        needs: catalogueNeeds(seed.slug, legacy.slug, runsGate),
       })
     }
   }
