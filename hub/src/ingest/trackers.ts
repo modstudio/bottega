@@ -474,26 +474,9 @@ async function mirrorTrackerSnapshot(
       ? []
       : [trackerTaskMirrorRow(task, observation.taskRecordId, observation.taskKey, observation.at)],
   )
-  const mirroredEvents = observations.flatMap(({ task, observation }) =>
-    observation.taskRecordId !== null && observation.event
-      ? [
-          trackerStatusEventMirrorRow(
-            task,
-            observation.event,
-            observation.taskRecordId,
-            observation.at,
-          ),
-        ]
-      : [],
-  )
   try {
     for (let index = 0; index < mirroredTasks.length; index += 500) {
       const result = await mirror.mirrorTasks(mirroredTasks.slice(index, index + 500))
-      if (result === 'refused')
-        throw new Error(mirror.refusedReason?.() ?? 'project destination was refused')
-    }
-    for (let index = 0; index < mirroredEvents.length; index += 500) {
-      const result = await mirror.mirrorStatusEvents(mirroredEvents.slice(index, index + 500))
       if (result === 'refused')
         throw new Error(mirror.refusedReason?.() ?? 'project destination was refused')
     }
@@ -542,15 +525,20 @@ export async function mirrorPendingTrackerStatusEvents(
       )
   }
   const expiredIds = new Set(expired.map((entry) => entry.eventRecordId))
-  const pending = projectPending.filter((entry) => !expiredIds.has(entry.eventRecordId))
+  const pending = projectPending
+    .filter((entry) => !expiredIds.has(entry.eventRecordId))
+    .sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
   if (!pending.length) return null
   try {
-    const result = await mirror.mirrorStatusEvents(pending.map(pendingStatusEventMirrorRow))
-    if (result === 'mirrored')
-      removePendingTrackerStatusEvents(new Set(pending.map((entry) => entry.eventRecordId)))
-    return result === 'refused'
-      ? new Error(mirror.refusedReason?.() ?? 'project destination was refused')
-      : null
+    for (let index = 0; index < pending.length; index += 500) {
+      const slice = pending.slice(index, index + 500)
+      const result = await mirror.mirrorStatusEvents(slice.map(pendingStatusEventMirrorRow))
+      if (result === 'refused')
+        return new Error(mirror.refusedReason?.() ?? 'project destination was refused')
+      if (result !== 'mirrored') return null
+      removePendingTrackerStatusEvents(new Set(slice.map((entry) => entry.eventRecordId)))
+    }
+    return null
   } catch (error) {
     return error as Error
   }
@@ -603,7 +591,7 @@ export function writeTrackerCache(
   const observations: TrackerCacheObservation[] = []
   writeTransaction((conn) => {
     for (const task of tasks) {
-      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at) })
+      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at, true) })
     }
   })
   return observations
