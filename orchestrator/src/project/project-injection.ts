@@ -137,9 +137,7 @@ function resolvedReviewStages(
   const waiting = tracker.reviewStages?.waiting ?? reviewStates[0]
   const active = tracker.reviewStages?.active ?? reviewStates[0]
   const stage = (state: string | undefined): ResolvedReviewStage =>
-    state
-      ? { state, floor: 'tracker-transition' }
-      : { state: 'none', floor: 'recorded-artifact' }
+    state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
   return { waitingReview: stage(waiting), inReview: stage(active) }
 }
 

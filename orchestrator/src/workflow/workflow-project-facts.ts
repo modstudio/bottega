@@ -4,8 +4,8 @@
 import {
   composeIndexSources,
   type InjectionSource,
-  resolveDeclaredFacts,
   type ResolvedReviewStage,
+  resolveDeclaredFacts,
   type WorkflowFactSource,
 } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
