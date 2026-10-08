@@ -322,11 +322,7 @@ describe('workflow render check', () => {
   for (const [label, field, changedStep] of [
     ['floor', 'floor', { floor: ['{{tracker.server}}'] }],
     ['expectedStatus', 'expectedStatus', { expectedStatus: '{{tracker.server}}' }],
-    [
-      'expectedStatus list',
-      'expectedStatus',
-      { expectedStatus: ['review', '{{tracker.server}}'] },
-    ],
+    ['expectedStatus list', 'expectedStatus', { expectedStatus: ['review', '{{tracker.server}}'] }],
   ] as const) {
     test(`both promotion guards refuse an unrenderable ${label}`, () => {
       const catalogueDatabase = database()
