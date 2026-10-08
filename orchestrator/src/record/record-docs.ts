@@ -4,9 +4,9 @@ import { SQL } from 'bun'
 import { DOC_AUDIENCES, type DocAudience, type DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { nonCurrentCanonCollisionRefusal, planCanonImport } from '../canon/canon-import-policy.ts'
+import { planCanonImport } from '../canon/canon-import-policy.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
-import { documentLifecycleDecision } from '../doc/doc-status.ts'
+import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import {
   canonFindingsRefusal,
   consumeDocBody,
@@ -22,6 +22,10 @@ import {
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
+import {
+  recordDocumentLifecycle,
+  validateImportedDocumentLifecycles,
+} from './record-doc-lifecycle.ts'
 import {
   newerHostedImportRefusal,
   normalizeRecordDocImport,
@@ -279,33 +283,7 @@ export async function upsertRecordDoc(
       input.position ?? (existing[0]?.position == null ? 0 : Number(existing[0].position))
     const featured =
       input.featured ?? (existing[0]?.featured == null ? false : Boolean(existing[0].featured))
-    const replacementToCheck =
-      input.replacementSlug ??
-      (input.status === undefined || input.status === 'superseded'
-        ? existing[0]?.replacement_slug == null
-          ? null
-          : String(existing[0].replacement_slug)
-        : null)
-    const replacementExists =
-      replacementToCheck == null ||
-      Boolean(
-        (
-          await tx`SELECT id FROM doc WHERE space_id=${input.spaceId}::uuid AND scope=${input.scope} AND COALESCE(subject, '')=${input.subject ?? ''} AND COALESCE(owner_user_id::text, '')=${input.owner ?? ''} AND slug=${replacementToCheck} AND deleted_at IS NULL`
-        )[0],
-      )
-    const lifecycle = documentLifecycleDecision({
-      scope: input.scope,
-      subject: input.subject,
-      slug: input.slug,
-      requestedStatus: input.status,
-      requestedReplacementSlug: input.replacementSlug,
-      priorStatus:
-        existing[0]?.status == null ? undefined : (String(existing[0].status) as DocStatus),
-      priorReplacementSlug:
-        existing[0]?.replacement_slug == null ? null : String(existing[0].replacement_slug),
-      replacementExists,
-    })
-    if (lifecycle.refusal !== null) throw new RecordDocError(lifecycle.refusal)
+    const lifecycle = await recordDocumentLifecycle(tx, input, existing[0])
     const { status, replacementSlug } = lifecycle
     const op: DocRevisionOp = input.op ?? (existing[0] ? 'set' : 'create')
     if (existing[0]) {
@@ -987,29 +965,10 @@ export async function importRecordDoc(
       doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
     )
     const id = existing ? String(existing.id) : doc.id
-    const importedLifecycle = async (status: DocStatus, replacementSlug: string | null) => {
-      const replacementExists =
-        replacementSlug == null ||
-        Boolean(
-          (
-            await tx`SELECT id FROM doc WHERE space_id=${input.spaceId}::uuid AND scope=${doc.scope} AND COALESCE(subject, '')=${doc.subject ?? ''} AND COALESCE(owner_user_id::text, '')=${doc.owner ?? ''} AND slug=${replacementSlug} AND deleted_at IS NULL`
-          )[0],
-        )
-      const decision = documentLifecycleDecision({
-        scope: doc.scope,
-        subject: doc.subject,
-        slug: doc.slug,
-        requestedStatus: status,
-        requestedReplacementSlug: replacementSlug,
-        replacementExists,
-      })
-      assertWrite(decision.refusal)
-      return decision
-    }
-    await importedLifecycle(doc.status, doc.replacementSlug)
-    for (const revision of revisions) {
-      await importedLifecycle(revision.status, revision.replacementSlug)
-    }
+    await validateImportedDocumentLifecycles(tx, { ...doc, spaceId: input.spaceId }, [
+      { status: doc.status, replacementSlug: doc.replacementSlug },
+      ...revisions.map(({ status, replacementSlug }) => ({ status, replacementSlug })),
+    ])
     assertWrite(
       await recordTreeWriteRefusal(tx, {
         spaceId: input.spaceId,

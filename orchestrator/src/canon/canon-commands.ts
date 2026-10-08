@@ -7,6 +7,7 @@ import type { Finding } from '../../../shared/ratchet.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
+import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import {
@@ -33,7 +34,7 @@ import {
   mainCheckoutHydrationRefusal,
   planHydration,
 } from './canon-hydrate.ts'
-import { nonCurrentCanonCollisionRefusal, planCanonImport } from './canon-import-policy.ts'
+import { planCanonImport } from './canon-import-policy.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'

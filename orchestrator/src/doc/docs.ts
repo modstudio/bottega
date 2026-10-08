@@ -27,7 +27,6 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
@@ -42,8 +41,9 @@ import {
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
-import { documentLifecycleDecision } from './doc-status.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
+import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
+import { localDocumentLifecycle } from './local-doc-status.ts'
 import {
   assertLocalDocRemovalAllowed,
   localDocTreeFields,
@@ -64,11 +64,6 @@ import {
 export type { Doc, DocRevision, DocRevisionMetadata }
 export type DocListFilters = StoreDocListFilters
 export type DocMetadata = StoreDocMetadata
-
-function assertWorkerDocStoreWriteAllowed(operation: string): void {
-  const refusal = workerStoreWriteRefusal('document', operation, process.env)
-  if (refusal) throw new Error(refusal)
-}
 
 import {
   assertLocalRevisionWrite,
@@ -377,22 +372,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const tree = localDocTreeFields(input, prior)
-  const replacementToCheck =
-    input.replacementSlug ??
-    (input.status === undefined || input.status === 'superseded' ? prior?.replacement_slug : null)
-  const lifecycle = documentLifecycleDecision({
-    scope: input.scope,
-    subject: input.subject,
-    slug: input.slug,
-    requestedStatus: input.status,
-    requestedReplacementSlug: input.replacementSlug,
-    priorStatus: prior?.status,
-    priorReplacementSlug: prior?.replacement_slug,
-    replacementExists:
-      replacementToCheck == null ||
-      Boolean(getDoc(input.scope, input.subject, replacementToCheck, input.owner ?? null)),
-  })
-  if (lifecycle.refusal !== null) throw new Error(lifecycle.refusal)
+  const lifecycle = localDocumentLifecycle(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)

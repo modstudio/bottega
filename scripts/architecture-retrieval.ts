@@ -16,6 +16,7 @@ export const retrievalModules: RetrievalModule[] = [
     'node:fs/promises',
     'node:path',
     'bun',
+    '../../../shared/orch-contract.ts',
     '../../../shared/self-spawn.ts',
   ]),
   module('retrieval/src/contract.ts', []),

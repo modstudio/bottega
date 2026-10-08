@@ -2,11 +2,11 @@
 /** Mirrors one hosted canon import transaction into one local transaction. */
 
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { nonCurrentCanonCollisionRefusal } from '../canon/canon-import-policy.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { type RecordCanonImportResult, recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
+import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import {

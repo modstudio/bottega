@@ -3,10 +3,11 @@
 import type { Finding } from '../../../shared/ratchet.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
+import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
-import { nonCurrentCanonCollisionRefusal, planCanonImport } from './canon-import-policy.ts'
+import { planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlans,

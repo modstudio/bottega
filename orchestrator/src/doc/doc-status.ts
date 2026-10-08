@@ -16,6 +16,13 @@ export type DocumentLifecycleDecision =
   | { status: DocStatus; replacementSlug: string | null; refusal: null }
   | { status: null; replacementSlug: null; refusal: string }
 
+function resolvedReplacementSlug(input: DocumentLifecycleWrite): string | null {
+  if (input.scope === 'resume') return null
+  if (input.requestedReplacementSlug !== undefined) return input.requestedReplacementSlug
+  if (input.requestedStatus !== undefined && input.requestedStatus !== 'superseded') return null
+  return input.priorReplacementSlug ?? null
+}
+
 export function documentLifecycleDecision(
   input: DocumentLifecycleWrite,
 ): DocumentLifecycleDecision {
@@ -30,14 +37,7 @@ export function documentLifecycleDecision(
       refusal: `unknown doc status "${status}"; valid statuses: ${DOC_STATUSES.join(', ')}`,
     }
   }
-  const replacementSlug =
-    input.scope === 'resume'
-      ? null
-      : input.requestedReplacementSlug !== undefined
-        ? input.requestedReplacementSlug
-        : input.requestedStatus !== undefined && input.requestedStatus !== 'superseded'
-          ? null
-          : (input.priorReplacementSlug ?? null)
+  const replacementSlug = resolvedReplacementSlug(input)
   if (status !== 'superseded' && replacementSlug !== null) {
     return {
       status: null,

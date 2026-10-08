@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
-import { DOC_STATUSES, type DocStatus } from '../../../shared/docs.ts'
+import { type DocSearchOutput, DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 export type Chunk = {
@@ -17,6 +17,8 @@ export type Chunk = {
   headingPath?: string[]
   docStatus?: DocStatus
 }
+
+type DocStatus = DocSearchOutput['results'][number]['status']
 
 export type DocIdentity = { kind: 'doc'; scope: string; subject: string | null; slug: string }
 type CorpusIdentity = { kind: 'code'; path: string } | DocIdentity
@@ -212,7 +214,7 @@ function isDocRow(value: unknown): value is DocRow {
     typeof row.title === 'string' &&
     typeof row.body === 'string' &&
     (typeof row.revision === 'string' || row.revision === null) &&
-    DOC_STATUSES.includes(row.status as DocStatus)
+    DocSearchOutputSchema.shape.results.element.shape.status.safeParse(row.status).success
   )
 }
 

@@ -11,6 +11,7 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/canon-import-collision.ts', []),
   module('orchestrator/src/doc/doc-files.ts', [
     'node:fs',
     'node:path',
@@ -19,6 +20,12 @@ export const docModules: DocModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-status.ts', ['../../../shared/docs.ts']),
+  module('orchestrator/src/doc/doc-write-guard.ts', ['../worker-store-write.ts']),
+  module('orchestrator/src/doc/local-doc-status.ts', [
+    '../../../shared/docs.ts',
+    './doc-read-store.ts',
+    './doc-status.ts',
+  ]),
   module('orchestrator/src/doc/doc-tree-rules.ts', ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-subjects.ts', [
     '../../../shared/docs.ts',
