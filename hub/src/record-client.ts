@@ -525,7 +525,7 @@ export function createRecordClient(options: RecordClientOptions) {
           body: JSON.stringify({}),
         },
       ),
-    docs: (input: RecordDocListInput = {}, destinationSpaceId?: string) =>
+    docs: (input: RecordDocListInput = {}) =>
       request(
         options,
         query('/v1/docs', {
@@ -539,7 +539,6 @@ export function createRecordClient(options: RecordClientOptions) {
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
         }),
         docsSchema,
-        destinationSpaceId ? { headers: { 'x-record-space': destinationSpaceId } } : undefined,
       ),
     doc: (id: string) => request(options, `/v1/docs/${encodeURIComponent(id)}`, docSchema),
     docSearch: (input: {
@@ -562,13 +561,8 @@ export function createRecordClient(options: RecordClientOptions) {
         }),
         DocSearchSchema,
       ),
-    docRevisions: (id: string, destinationSpaceId?: string) =>
-      request(
-        options,
-        `/v1/docs/${encodeURIComponent(id)}/revisions`,
-        docRevisionsSchema,
-        destinationSpaceId ? { headers: { 'x-record-space': destinationSpaceId } } : undefined,
-      ),
+    docRevisions: (id: string) =>
+      request(options, `/v1/docs/${encodeURIComponent(id)}/revisions`, docRevisionsSchema),
     putDoc: (input: {
       scope: string
       subject: string | null
@@ -625,23 +619,17 @@ export function createRecordClient(options: RecordClientOptions) {
           body: JSON.stringify({ ...input, environment: 'default' }),
         },
       ),
-    settingsPermission: (
-      input: {
-        target: { kind: 'user' } | { kind: 'project'; project: string }
-        list: 'allow' | 'ask' | 'deny'
-        rule: string
-        operation: 'add' | 'remove'
-        reason: string
-        expectedRevision: string
-      },
-      destinationSpaceId?: string,
-    ) =>
+    settingsPermission: (input: {
+      target: { kind: 'user' } | { kind: 'project'; project: string }
+      list: 'allow' | 'ask' | 'deny'
+      rule: string
+      operation: 'add' | 'remove'
+      reason: string
+      expectedRevision: string
+    }) =>
       request(options, '/v1/settings/permission', settingsPermissionResultSchema, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
-        },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
   }

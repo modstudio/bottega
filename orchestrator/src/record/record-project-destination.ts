@@ -21,6 +21,10 @@ export function declaredRecordSpace(
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+export function effectiveProjectSpace(declared: string | null, activeSpaceId: string): string {
+  return declared ?? activeSpaceId
+}
+
 /** Resolve a register declaration to a stable id, preserving active-space fallback. */
 export function projectRecordDestination(
   project: string,
@@ -28,7 +32,7 @@ export function projectRecordDestination(
   activeSpaceId: string,
   memberships: readonly RecordSpaceMembership[],
 ): ProjectRecordDestination {
-  if (!declaredSpace) return { project, spaceId: activeSpaceId }
+  if (!declaredSpace) return { project, spaceId: effectiveProjectSpace(null, activeSpaceId) }
   const membership = recordSpaceMembership(declaredSpace, memberships)
   return membership
     ? { project, spaceId: membership.spaceId }

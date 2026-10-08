@@ -16,8 +16,9 @@ import { blockedByRetiredParentRows } from './outbox-dependency.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
+import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
-import { effectiveProjectSpace, refuseOwnerConnection } from './record-sync.ts'
+import { refuseOwnerConnection } from './record-sync.ts'
 
 type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
 export type RecordDoctorCheck = {

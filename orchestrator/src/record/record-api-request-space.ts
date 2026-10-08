@@ -13,11 +13,11 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 
-export type RecordRequestSpaceDecision =
+type RecordRequestSpaceDecision =
   | { allowed: true; spaceId: string }
   | { allowed: false; requestedSpace: string }
 
-export function recordRequestSpaceDecision(
+function recordRequestSpaceDecision(
   requestedSpace: string,
   memberships: readonly RecordSpaceMembership[],
 ): RecordRequestSpaceDecision {
