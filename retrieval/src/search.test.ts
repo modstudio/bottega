@@ -172,8 +172,9 @@ test('drafts are indexed but absent by default and returned when requested', asy
 test('a pre-status index is readable as current and a refresh repairs draft status', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'retrieval-legacy-status-test-'))
   const databasePath = join(directory, 'retrieval.db')
-  const draft = { ...chunk('legacy-draft', 'draft answer'), docStatus: 'draft' as const }
-  const document = chunkDocument(draft)
+  const { docStatus: _legacyStatus, ...legacyChunk } = chunk('legacy-draft', 'draft answer')
+  const draft = { ...legacyChunk, docStatus: 'draft' as const }
+  const document = chunkDocument(legacyChunk)
   const contentHash = createHash('sha256').update(document).digest('hex')
   const vector = new Uint8Array(new Float32Array([1, ...Array(1_023).fill(0)]).buffer)
   const legacy = new Database(databasePath, { create: true })
@@ -199,7 +200,7 @@ test('a pre-status index is readable as current and a refresh repairs draft stat
       contentHash,
       'Qwen/Qwen3-Embedding-0.6B',
       1_024,
-      'doc-search-v1',
+      'doc-search-v2',
       'project',
       'p',
       'doc',
@@ -220,6 +221,14 @@ test('a pre-status index is readable as current and a refresh repairs draft stat
     const before = openIndexDatabase(databasePath)
     expect(indexedRows(before)[0]?.status).toBe('current')
     before.close()
+
+    const legacySearch = await search('answer', 5, {
+      databasePath,
+      loadChunks: async () => [legacyChunk],
+      clients,
+    })
+    expect(legacySearch.refresh.unchanged).toBe(1)
+    expect(legacySearch.results[0]?.status).toBe('current')
 
     const refreshed = await search('answer', 5, {
       databasePath,
