@@ -20,6 +20,8 @@ export const DOC_SCOPES = [
 export type DocScope = (typeof DOC_SCOPES)[number]
 export const DOC_AUDIENCES = ['user', 'technical'] as const
 export type DocAudience = (typeof DOC_AUDIENCES)[number]
+export const DOC_STATUSES = ['draft', 'current', 'superseded', 'archived'] as const
+export type DocStatus = (typeof DOC_STATUSES)[number]
 export const DOC_SUMMARY_MAX_LENGTH = 160
 
 /** Derive the short catalogue copy from the first prose paragraph in a markdown body. */

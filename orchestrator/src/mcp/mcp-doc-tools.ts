@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES } from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_STATUSES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
@@ -11,6 +11,7 @@ import {
   listDocRevisions,
   removeDoc,
   setDoc,
+  setDocStatus,
   signedInDocOwner,
 } from '../doc/docs.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
@@ -68,9 +69,20 @@ export function registerDocTools(server: McpServer): void {
           .describe('Order by updated_at; omit for scope, subject, slug order.'),
         user: z.boolean().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
+        status: z.enum(DOC_STATUSES).optional(),
       }),
     },
-    async ({ scope, subject, scopes, match, body_match, updated_at_order, user, audience }) => {
+    async ({
+      scope,
+      subject,
+      scopes,
+      match,
+      body_match,
+      updated_at_order,
+      user,
+      audience,
+      status,
+    }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       const owner = user ? await signedInDocOwner() : null
       return text(
@@ -83,6 +95,7 @@ export function registerDocTools(server: McpServer): void {
           updatedAtOrder: updated_at_order,
           owner,
           audience,
+          status,
         }),
       )
     },
@@ -129,6 +142,8 @@ export function registerDocTools(server: McpServer): void {
         parent: z.string().trim().min(1).nullable().optional(),
         position: z.number().int().optional(),
         featured: z.boolean().optional(),
+        status: z.enum(DOC_STATUSES).optional(),
+        replacement: z.string().trim().min(1).nullable().optional(),
         force_inject: z
           .string()
           .trim()
@@ -157,6 +172,8 @@ export function registerDocTools(server: McpServer): void {
       parent,
       position,
       featured,
+      status,
+      replacement,
       force_inject,
       reason,
       author,
@@ -178,6 +195,8 @@ export function registerDocTools(server: McpServer): void {
           parentSlug: parent,
           position,
           featured,
+          status,
+          replacementSlug: replacement,
           forceInject: force_inject,
           reason,
           author,
@@ -191,6 +210,36 @@ export function registerDocTools(server: McpServer): void {
         warnings: root ? checkDoc(body, { repoRoot: root }) : [],
         tree: canonTree?.root,
       })
+    },
+  )
+
+  server.registerTool(
+    'set_doc_status',
+    {
+      description: 'Change an existing document status without rewriting its body.',
+      inputSchema: z.object({
+        scope: z.string(),
+        subject: z.string().nullable().optional(),
+        slug: z.string(),
+        status: z.enum(DOC_STATUSES),
+        replacement: z.string().trim().min(1).nullable().optional(),
+        reason: z.string().trim().min(1),
+        author: z.string().trim().min(1).optional(),
+        expected_revision: z.string().trim().min(1).optional(),
+      }),
+    },
+    async ({ scope, subject, slug, status, replacement, reason, author, expected_revision }) => {
+      const refusal = decideMcpDocWrite('set_doc', scope)
+      if (refusal) throw new Error(refusal)
+      return text(
+        await withMcpDocWriteRemedy(() =>
+          setDocStatus(scope, subject ?? null, slug, status, replacement, {
+            reason,
+            author,
+            expectedRevision: expected_revision,
+          }),
+        ),
+      )
     },
   )
 

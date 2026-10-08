@@ -213,7 +213,14 @@ function isDocRow(value: unknown): value is DocRow {
 
 export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
   const child = Bun.spawn(
-    [...bottegaEntryArgv('orch', resolve(repositoryRoot, 'bin/orch')), 'doc', 'list', '--json'],
+    [
+      ...bottegaEntryArgv('orch', resolve(repositoryRoot, 'bin/orch')),
+      'doc',
+      'list',
+      '--status',
+      'current',
+      '--json',
+    ],
     {
       cwd: repositoryRoot,
       stdout: 'pipe',

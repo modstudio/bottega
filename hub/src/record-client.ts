@@ -220,6 +220,8 @@ const docSchema = DocSchema.extend({
   audience: z.enum(DOC_AUDIENCES).default('technical'),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
+  status: z.enum(['draft', 'current', 'superseded', 'archived']).default('current'),
+  replacementSlug: z.string().nullable().default(null),
   summary: z.string().default(''),
   featured: z.boolean().default(false),
   projectName: z.string().nullable(),
@@ -258,6 +260,8 @@ const docRevisionSchema = z.object({
   audience: z.enum(DOC_AUDIENCES).default('technical'),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
+  status: z.enum(['draft', 'current', 'superseded', 'archived']).default('current'),
+  replacementSlug: z.string().nullable().default(null),
   author: z.string(),
   reason: z.string(),
   sessionId: z.string().nullable(),
@@ -270,6 +274,7 @@ type RecordDocListInput = {
   scope?: string
   subject?: string
   audience?: 'user' | 'technical'
+  status?: 'draft' | 'current' | 'superseded' | 'archived'
   limit?: number
   cursor?: string
   acrossReadableSpaces?: boolean
@@ -518,6 +523,7 @@ export function createRecordClient(options: RecordClientOptions) {
           scope: input.scope,
           subject: input.subject,
           audience: input.audience,
+          status: input.status,
           limit: input.limit,
           cursor: input.cursor,
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,

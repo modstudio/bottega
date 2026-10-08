@@ -16,25 +16,30 @@ beforeEach(() => {
   repositoryPath = cloneRepository(process.env, 'canon-pack-project-')
 })
 
-function putCanon(subject: string | null, slug: string, body: string): void {
+function putCanon(
+  subject: string | null,
+  slug: string,
+  body: string,
+  status: 'draft' | 'current' = 'current',
+): void {
   const projectId = subject
     ? (db().query('SELECT id FROM project WHERE name=?').get(subject) as { id: number }).id
     : null
   const id = (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
-         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', ?, ?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, status, created_at, updated_at)
+         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', ?, ?, ?) RETURNING id`,
       )
-      .get(subject, projectId, slug, slug, body, AT, AT) as { id: number }
+      .get(subject, projectId, slug, slug, body, status, AT, AT) as { id: number }
   ).id
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, at)
-       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', 'test', 'test write', ?)`,
+       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, status, author, reason, at)
+       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', ?, 'test', 'test write', ?)`,
     )
-    .run(id, subject, projectId, slug, slug, body, AT)
+    .run(id, subject, projectId, slug, slug, body, status, AT)
 }
 
 function operatorPack(cwd: string): string {
@@ -46,6 +51,15 @@ async function putOperator(body: string): Promise<void> {
 }
 
 describe('worker pack canon', () => {
+  test('draft canon is absent from a compiled pack', () => {
+    upsertProject({ name: 'pack-draft-canon', path: repositoryPath, settings: { trunk: 'main' } })
+    putCanon('pack-draft-canon', 'AGENTS.md', 'CURRENT-CANON-UNIQUE\n')
+    putCanon('pack-draft-canon', '.agents/rules/draft.md', 'DRAFT-CANON-UNIQUE\n', 'draft')
+    const markdown = compilePack({ job: 'understand', cwd: repositoryPath }).markdown
+    expect(markdown).toContain('CURRENT-CANON-UNIQUE')
+    expect(markdown).not.toContain('DRAFT-CANON-UNIQUE')
+  })
+
   test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, () => {
     const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
     upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })

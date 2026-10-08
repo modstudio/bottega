@@ -22,8 +22,10 @@ import { z } from 'zod'
 import {
   DOC_AUDIENCES,
   DOC_SCOPES,
+  DOC_STATUSES,
   type DocAudience,
   type DocScope,
+  type DocStatus,
   type FilingDocScope,
 } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
@@ -569,6 +571,8 @@ export type DocRow = {
   parent_slug: string | null
   position: number
   featured?: boolean
+  status?: DocStatus
+  replacement_slug?: string | null
   revision: string | null
   created_at: string
   updated_at: string
@@ -587,6 +591,8 @@ const DocRowSchema = z.object({
   parent_slug: z.string().nullable(),
   position: z.number().int(),
   featured: z.boolean().default(false),
+  status: z.enum(DOC_STATUSES).default('current'),
+  replacement_slug: z.string().nullable().default(null),
   revision: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -867,6 +873,7 @@ export type DocListFilters = {
   scope?: string
   subject?: string | null
   audience?: 'user' | 'technical'
+  status?: DocStatus
   match?: string
   bodyMatch?: string
 }
@@ -880,6 +887,8 @@ export type DocSetInput = {
   reason: string
   delivery?: 'inject' | 'demand'
   audience?: 'user' | 'technical'
+  status?: DocStatus
+  replacementSlug?: string | null
   parentSlug?: string | null
   position?: number
   expectedRevision?: string
@@ -892,6 +901,8 @@ export type DocRevisionMetadata = {
   reason: string
   at: string
   bytes: number
+  status?: DocStatus
+  replacement_slug?: string | null
 }
 
 export type DocArgvInput = {
@@ -903,6 +914,8 @@ export type DocArgvInput = {
   reason?: string
   delivery?: 'inject' | 'demand'
   audience?: 'user' | 'technical'
+  status?: DocStatus
+  replacementSlug?: string | null
   match?: string
   bodyMatch?: string
   parentSlug?: string | null
@@ -928,6 +941,8 @@ function docSetFlags(input: DocArgvInput): string[] {
   return [
     ...(input.delivery ? ['--delivery', input.delivery] : []),
     ...(input.audience ? ['--audience', input.audience] : []),
+    ...(input.status ? ['--status', input.status] : []),
+    ...(input.replacementSlug ? ['--replacement', input.replacementSlug] : []),
     ...(input.parentSlug === null
       ? ['--no-parent']
       : input.parentSlug
@@ -946,6 +961,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         'list',
         ...docAddressFlags(input),
         ...(input.audience ? ['--audience', input.audience] : []),
+        ...(input.status ? ['--status', input.status] : []),
         ...(input.match !== undefined ? ['--match', input.match] : []),
         ...(input.bodyMatch !== undefined ? ['--body-match', input.bodyMatch] : []),
         '--json',

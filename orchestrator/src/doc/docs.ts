@@ -15,8 +15,10 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
+  DOC_STATUSES,
   type DocAudience,
   type DocScope,
+  type DocStatus,
 } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -156,6 +158,8 @@ function assertInjectSize(input: {
         delivery: 'inject',
         audience: 'technical',
         featured: false,
+        status: 'current',
+        replacement_slug: null,
         parent_id: null,
         parent_slug: null,
         position: 0,
@@ -256,7 +260,51 @@ type DocWriteInput = {
   parentSlug?: string | null
   position?: number
   featured?: boolean
+  status?: DocStatus
+  replacementSlug?: string | null
 } & DocWriteContext
+
+function docLifecycle(
+  input: Pick<DocWriteInput, 'scope' | 'subject' | 'owner' | 'slug' | 'status' | 'replacementSlug'>,
+  prior: Doc | null,
+) {
+  const status = input.scope === 'resume' ? 'current' : (input.status ?? prior?.status ?? 'current')
+  if (!DOC_STATUSES.includes(status)) {
+    throw new Error(`unknown doc status "${status}"; valid statuses: ${DOC_STATUSES.join(', ')}`)
+  }
+  const replacementSlug =
+    input.scope === 'resume'
+      ? null
+      : input.replacementSlug !== undefined
+        ? input.replacementSlug
+        : input.status !== undefined && input.status !== 'superseded'
+          ? null
+          : (prior?.replacement_slug ?? null)
+  const address = `--scope ${input.scope}${input.subject ? ` --subject ${input.subject}` : ''}`
+  if (status !== 'superseded' && replacementSlug !== null) {
+    throw new Error(
+      `replacement is permitted only for superseded documents; cleared by: orch doc status ${input.slug} ${address} --status ${status} --reason TEXT`,
+    )
+  }
+  if (status === 'superseded') {
+    if (!replacementSlug) {
+      throw new Error(
+        `superseded document requires a replacement slug; cleared by: orch doc status ${input.slug} ${address} --status superseded --replacement SLUG --reason TEXT`,
+      )
+    }
+    if (replacementSlug === input.slug) {
+      throw new Error(
+        'document cannot replace itself; cleared by: name another document with --replacement',
+      )
+    }
+    if (!getDoc(input.scope, input.subject, replacementSlug, input.owner ?? null)) {
+      throw new Error(
+        `replacement document "${replacementSlug}" does not exist in the same scope and subject; cleared by: orch doc set ${replacementSlug} ${address} --title TITLE --reason TEXT`,
+      )
+    }
+  }
+  return { status, replacementSlug }
+}
 
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
@@ -373,6 +421,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const tree = localDocTreeFields(input, prior)
+  const lifecycle = docLifecycle(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
@@ -385,6 +434,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         projectId: projectName ? projectByName(input.subject!)!.id : null,
         delivery,
         ...tree,
+        ...lifecycle,
         requestedOp,
         identity,
       }),
@@ -407,6 +457,8 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         }),
         position: tree.position,
         featured: tree.featured,
+        status: lifecycle.status,
+        replacementSlug: lifecycle.replacementSlug,
         projectName,
         reason: identity.reason,
         author: identity.author,
@@ -421,6 +473,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         projectId: projectName ? projectByName(input.subject!)!.id : null,
         delivery,
         ...tree,
+        ...lifecycle,
         requestedOp,
         identity,
         recordId: hosted.id,
@@ -450,6 +503,35 @@ export async function setDoc(input: DocWriteInput): Promise<Doc> {
     }
   }
   return setDocWithOp(input)
+}
+
+export async function setDocStatus(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  status: DocStatus,
+  replacementSlug: string | null | undefined,
+  context: DocWriteContext,
+  owner: string | null = null,
+): Promise<Doc> {
+  const current = getDoc(scope, subject, slug, owner)
+  if (!current) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
+  return setDoc({
+    scope,
+    subject,
+    owner,
+    slug,
+    title: current.title,
+    body: current.body,
+    delivery: current.delivery,
+    audience: current.audience,
+    parentSlug: current.parent_slug,
+    position: current.position,
+    featured: current.featured,
+    status,
+    replacementSlug,
+    ...context,
+  })
 }
 
 export async function importDoc(
@@ -625,9 +707,9 @@ export type InjectedDoc = Doc & { revision_id: number }
 export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
   const project = projectAt(input.cwd)
   const docs = [
-    ...listDocs({ scope: 'global', subject: null }),
-    ...listDocs({ scope: 'job', subject: input.job }),
-    ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
+    ...listDocs({ scope: 'global', subject: null, status: 'current' }),
+    ...listDocs({ scope: 'job', subject: input.job, status: 'current' }),
+    ...(project ? listDocs({ scope: 'project', subject: project.name, status: 'current' }) : []),
   ].filter((doc) => doc.delivery === 'inject')
   const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
   return docs.map((doc) => {
@@ -796,15 +878,20 @@ export function exportDocs(dir: string): number {
     mkdirSync(target, { recursive: true })
     writeFileSync(
       join(target, `${doc.slug}.md`),
-      `---\ntitle: ${JSON.stringify(doc.title)}\n---\n\n${doc.body}`,
+      `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
     )
   }
   return docs.length
 }
 
-function importedDoc(path: string, fileName: string): { title: string; body: string } {
+function importedDoc(
+  path: string,
+  fileName: string,
+): { title: string; status?: DocStatus; replacementSlug?: string | null; body: string } {
   const raw = readFileSync(path, 'utf8')
-  const match = raw.match(/^---\r?\ntitle:\s*(.+)\r?\n---\r?\n(?:\r?\n)?([\s\S]*)$/)
+  const match = raw.match(
+    /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\nreplacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
+  )
   if (!match) throw new Error(`${fileName}: expected YAML frontmatter with a title`)
   let title: unknown
   try {
@@ -813,7 +900,19 @@ function importedDoc(path: string, fileName: string): { title: string; body: str
     throw new Error(`${fileName}: title must be a YAML double-quoted string`)
   }
   if (typeof title !== 'string') throw new Error(`${fileName}: title must be a string`)
-  return { title, body: match[2]! }
+  const status = match[2] === undefined ? undefined : JSON.parse(match[2])
+  const replacementSlug = match[3] === undefined ? undefined : JSON.parse(match[3])
+  if (status !== undefined && !DOC_STATUSES.includes(status)) {
+    throw new Error(`${fileName}: status must be ${DOC_STATUSES.join(', ')}`)
+  }
+  if (
+    replacementSlug !== undefined &&
+    replacementSlug !== null &&
+    typeof replacementSlug !== 'string'
+  ) {
+    throw new Error(`${fileName}: replacement must be a string or null`)
+  }
+  return { title, status, replacementSlug, body: match[4]! }
 }
 
 export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
@@ -966,6 +1065,8 @@ export async function restoreDoc(
         body: revision.body,
         delivery: revision.delivery,
         ...tree,
+        status: revision.status,
+        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
       }),
@@ -1006,6 +1107,8 @@ export async function restoreDoc(
           }),
           position: revision.position,
           featured: revision.featured,
+          status: revision.status,
+          replacementSlug: revision.replacement_slug,
           projectName,
           reason: identity.reason,
           author: identity.author,
@@ -1030,6 +1133,8 @@ export async function restoreDoc(
         body: revision.body,
         delivery: revision.delivery,
         ...tree,
+        status: revision.status,
+        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
         recordId: hosted.id,
@@ -1044,8 +1149,18 @@ export function diffDocRevisions(a: number, b: number, owner: string | null = nu
   const right = getDocRevision(b, owner)
   if (!left) throw new Error(`no doc revision ${a}`)
   if (!right) throw new Error(`no doc revision ${b}`)
-  const x = left.body.split('\n')
-  const y = right.body.split('\n')
+  const x = [
+    `status: ${left.status}`,
+    `replacement: ${left.replacement_slug ?? '-'}`,
+    '',
+    ...left.body.split('\n'),
+  ]
+  const y = [
+    `status: ${right.status}`,
+    `replacement: ${right.replacement_slug ?? '-'}`,
+    '',
+    ...right.body.split('\n'),
+  ]
   const lengths = Array.from({ length: x.length + 1 }, () =>
     new Array<number>(y.length + 1).fill(0),
   )

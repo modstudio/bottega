@@ -66,6 +66,7 @@ export async function searchLocalDocs(
     scope: input.scope,
     subject: input.subject,
     audience: input.audience,
+    status: 'current',
     match: query,
     bodyMatch: query,
   })

@@ -141,7 +141,7 @@ export async function searchPublicRecordDocs(input: {
                ts_rank(d.search_vector, q.value) AS rank
         FROM doc d
         CROSS JOIN search_query q
-        WHERE d.search_vector @@ q.value
+        WHERE d.status = 'current' AND d.search_vector @@ q.value
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
@@ -179,6 +179,7 @@ export async function searchRecordDocs(
             OR (${input.subject === null}::boolean AND d.subject IS NULL)
             OR d.subject=${input.subject ?? null}
           )
+          AND d.status = 'current'
           AND d.search_vector @@ q.value
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}

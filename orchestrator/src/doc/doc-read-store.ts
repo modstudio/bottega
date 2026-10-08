@@ -1,6 +1,13 @@
 /** Owns local document list queries. Must not know hosted transport, canon files, or CLI. */
 import type { Database } from 'bun:sqlite'
-import { DOC_AUDIENCES, DOC_SCOPES, type DocAudience, type DocScope } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_SCOPES,
+  DOC_STATUSES,
+  type DocAudience,
+  type DocScope,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
 import type { DocRevisionOp } from './doc-write-allowed.ts'
 
@@ -16,6 +23,8 @@ export type Doc = {
   delivery: 'inject' | 'demand'
   audience: DocAudience
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
   parent_id: number | null
   parent_slug: string | null
   position: number
@@ -33,6 +42,8 @@ export type DocMetadata = Pick<
   | 'title'
   | 'audience'
   | 'featured'
+  | 'status'
+  | 'replacement_slug'
   | 'parent_id'
   | 'parent_slug'
   | 'position'
@@ -48,6 +59,7 @@ export type DocListFilters = {
   updatedAtOrder?: 'asc' | 'desc'
   owner?: string | null
   audience?: string
+  status?: string
 }
 
 export type DocRevision = {
@@ -64,6 +76,8 @@ export type DocRevision = {
   delivery: 'inject' | 'demand'
   audience: DocAudience
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
   parent_id: number | null
   position: number
   author: string
@@ -120,6 +134,12 @@ function validAudience(audience: string): asserts audience is DocAudience {
   }
 }
 
+function validStatus(status: string): asserts status is DocStatus {
+  if (!DOC_STATUSES.includes(status as DocStatus)) {
+    throw new Error(`unknown doc status "${status}"; valid statuses: ${DOC_STATUSES.join(', ')}`)
+  }
+}
+
 function addressFilters(filters: {
   scope?: string
   subject?: string | null
@@ -166,6 +186,7 @@ export function listDocsStore(
     subject?: string | null
     owner?: string | null
     audience?: string
+    status?: string
   } = {},
   database: Database = db(),
 ): Doc[] {
@@ -177,6 +198,11 @@ export function listDocsStore(
       where.push('d.audience = ?')
       values.push(filters.audience)
     } else if (filters.audience === 'user') where.push('0')
+  }
+  if (filters.status !== undefined) {
+    validStatus(filters.status)
+    where.push('d.status = ?')
+    values.push(filters.status)
   }
   return (
     database
@@ -200,6 +226,11 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
     validAudience(filters.audience)
     where.push('d.audience = ?')
     values.push(filters.audience)
+  }
+  if (filters.status !== undefined) {
+    validStatus(filters.status)
+    where.push('d.status = ?')
+    values.push(filters.status)
   }
   if (filters.scopes !== undefined) {
     if (filters.scopes.length === 0) where.push('0')
@@ -226,7 +257,7 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
   return (
     db()
       .query(
-        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.status, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
       )
       .all(...values) as Array<DocMetadata & { featured: boolean | number }>

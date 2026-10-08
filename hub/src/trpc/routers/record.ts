@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES } from '../../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_STATUSES } from '../../../../shared/docs.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import {
   createHostedReportSubscription,
@@ -253,6 +253,7 @@ export const recordRouter = t.router({
         scope: filter,
         subject: filter,
         audience: z.enum(DOC_AUDIENCES).optional(),
+        status: z.enum(DOC_STATUSES).optional(),
         limit,
         cursor: z.string().optional(),
         acrossReadableSpaces: z.boolean().optional(),

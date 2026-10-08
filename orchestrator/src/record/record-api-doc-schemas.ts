@@ -1,7 +1,7 @@
 // concern: record-doc-api-schemas
 /** Validates hosted document import payloads at the HTTP edge. */
 import { z } from 'zod'
-import { DOC_AUDIENCES } from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_STATUSES } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
 
 const isoSchema = z.string().datetime({ offset: true })
@@ -21,6 +21,8 @@ const recordDocTreeFieldShape = {
   parentRecordId: z.string().uuid().nullable().optional(),
   position: z.number().int().optional(),
   featured: z.boolean().optional(),
+  status: z.enum(DOC_STATUSES).optional(),
+  replacementSlug: z.string().min(1).nullable().optional(),
 }
 
 export const recordDocUpsertSchema = z.object({
@@ -58,6 +60,8 @@ export const recordDocImportSchema = z.object({
     parentId: z.string().uuid().nullable().optional().default(null),
     position: z.number().int().optional().default(0),
     featured: z.boolean().optional().default(false),
+    status: z.enum(DOC_STATUSES).optional().default('current'),
+    replacementSlug: z.string().min(1).nullable().optional().default(null),
     projectName: z.string().nullable().optional(),
     createdAt: isoSchema,
     updatedAt: isoSchema,
@@ -77,6 +81,8 @@ export const recordDocImportSchema = z.object({
       parentId: z.string().uuid().nullable().optional().default(null),
       position: z.number().int().optional().default(0),
       featured: z.boolean().optional().default(false),
+      status: z.enum(DOC_STATUSES).optional().default('current'),
+      replacementSlug: z.string().min(1).nullable().optional().default(null),
       author: z.string().trim().min(1),
       reason: z.string().trim().min(1),
       sessionId: z.string().nullable().optional(),

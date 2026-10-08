@@ -1,7 +1,7 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
 
-import type { DocAudience } from '../../../shared/docs.ts'
+import type { DocAudience, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -24,6 +24,8 @@ type LocalDoc = {
   parent_id: number | null
   position: number
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
   project_id: number | null
   created_at: string
   updated_at: string
@@ -45,6 +47,8 @@ type LocalRevision = {
   parent_id: number | null
   position: number
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
   author: string
   reason: string
   session_id: string | null
@@ -96,6 +100,8 @@ function asRevision(
     parentId: row.parent_id == null ? null : (recordIds.get(row.parent_id) ?? null),
     position: row.position,
     featured: Boolean(row.featured),
+    status: row.status,
+    replacementSlug: row.replacement_slug,
     author: row.author,
     reason: row.reason,
     sessionId: row.session_id,
@@ -130,6 +136,8 @@ function groupFromLive(
         parentId: doc.parent_id == null ? null : (recordIds.get(doc.parent_id) ?? null),
         position: doc.position,
         featured: Boolean(doc.featured),
+        status: doc.status,
+        replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
         updatedAt: doc.updated_at,

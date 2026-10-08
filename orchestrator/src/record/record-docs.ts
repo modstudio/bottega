@@ -1,7 +1,12 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { DOC_AUDIENCES, type DocAudience } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_STATUSES,
+  type DocAudience,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -62,6 +67,7 @@ export type RecordDocListInput = {
   scope?: string
   subject?: string | null
   audience?: DocAudience
+  status?: DocStatus
   updatedSince?: string
   limit: number
   cursor: RecordCursor | null
@@ -104,6 +110,7 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
       WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
         AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
         AND (${input.audience ?? null}::text IS NULL OR d.audience=${input.audience ?? null})
+        AND (${input.status ?? null}::text IS NULL OR d.status=${input.status ?? null})
         AND (
           ${input.subject === undefined}::boolean
           OR (${input.subject === null}::boolean AND d.subject IS NULL)
@@ -166,6 +173,8 @@ export async function upsertRecordDoc(
     parentRecordId?: string | null
     position?: number
     featured?: boolean
+    status?: DocStatus
+    replacementSlug?: string | null
     projectName?: string | null
     reason: string
     author: string
@@ -185,7 +194,7 @@ export async function upsertRecordDoc(
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, audience, featured, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, audience, featured, status, replacement_slug, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -274,12 +283,49 @@ export async function upsertRecordDoc(
       input.position ?? (existing[0]?.position == null ? 0 : Number(existing[0].position))
     const featured =
       input.featured ?? (existing[0]?.featured == null ? false : Boolean(existing[0].featured))
+    const status =
+      input.scope === 'resume'
+        ? 'current'
+        : ((input.status ??
+            (existing[0]?.status == null ? 'current' : String(existing[0].status))) as DocStatus)
+    if (!DOC_STATUSES.includes(status)) throw new RecordDocError(`unknown doc status "${status}"`)
+    const replacementSlug =
+      input.scope === 'resume'
+        ? null
+        : input.replacementSlug !== undefined
+          ? input.replacementSlug
+          : input.status !== undefined && input.status !== 'superseded'
+            ? null
+            : existing[0]?.replacement_slug == null
+              ? null
+              : String(existing[0].replacement_slug)
+    if (status !== 'superseded' && replacementSlug !== null) {
+      throw new RecordDocError(
+        'replacement is permitted only for superseded documents; cleared by: retry the write without replacementSlug',
+      )
+    }
+    if (status === 'superseded') {
+      if (!replacementSlug)
+        throw new RecordDocError(
+          'superseded document requires a replacement slug; cleared by: retry with replacementSlug',
+        )
+      if (replacementSlug === input.slug)
+        throw new RecordDocError(
+          'document cannot replace itself; cleared by: name another document as replacement',
+        )
+      const replacements =
+        await tx`SELECT id FROM doc WHERE space_id=${input.spaceId}::uuid AND scope=${input.scope} AND COALESCE(subject, '')=${input.subject ?? ''} AND COALESCE(owner_user_id::text, '')=${input.owner ?? ''} AND slug=${replacementSlug} AND deleted_at IS NULL`
+      if (!replacements[0])
+        throw new RecordDocError(
+          `replacement document "${replacementSlug}" does not exist in the same scope and subject; cleared by: create that document, then retry the write`,
+        )
+    }
     const op: DocRevisionOp = input.op ?? (existing[0] ? 'set' : 'create')
     if (existing[0]) {
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audience=${audience}, featured=${featured}, parent_id=${parentId}::uuid, position=${position},
+            audience=${audience}, featured=${featured}, status=${status}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -287,10 +333,10 @@ export async function upsertRecordDoc(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, parent_id, position, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${audience}, ${featured}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${audience}, ${featured}, ${status}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
@@ -312,6 +358,8 @@ export async function upsertRecordDoc(
       parentId,
       position,
       featured,
+      status,
+      replacementSlug,
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
@@ -340,6 +388,8 @@ async function insertRevision(
     parentId: string | null
     position: number
     featured?: boolean
+    status?: DocStatus
+    replacementSlug?: string | null
     author: string
     reason: string
     sessionId: string | null
@@ -359,12 +409,12 @@ async function insertRevision(
   if (!existing[0]) {
     await tx`
       INSERT INTO doc_revision (
-        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audience, featured, parent_id, position,
+        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position,
         author, reason, session_id, at
       ) VALUES (
         ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
         ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-        ${input.delivery}, ${input.audience}, ${input.featured ?? false}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
+        ${input.delivery}, ${input.audience}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
       )
     `
   }
@@ -456,6 +506,8 @@ async function writeCanonRows(
       audience: 'technical',
       parentId: null,
       position: 0,
+      status: prior?.status == null ? 'current' : (String(prior.status) as DocStatus),
+      replacementSlug: prior?.replacement_slug == null ? null : String(prior.replacement_slug),
       author: input.author,
       reason: input.reason,
       sessionId: null,
@@ -510,6 +562,8 @@ async function deleteMissingCanonRows(
       audience: 'technical',
       parentId: null,
       position: 0,
+      status: prior.status == null ? 'current' : (String(prior.status) as DocStatus),
+      replacementSlug: prior.replacement_slug == null ? null : String(prior.replacement_slug),
       author: input.author,
       reason: input.reason,
       sessionId: null,
@@ -646,6 +700,8 @@ export async function deleteRecordDoc(
       audience: String(doc.audience) as DocAudience,
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
+      status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
+      replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
@@ -700,6 +756,8 @@ export async function consumeRecordDoc(
       audience: String(doc.audience) as DocAudience,
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
+      status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
+      replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
@@ -769,6 +827,9 @@ export async function restoreRecordDoc(
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
     const position = Number(revision.position)
     const featured = revision.featured == null ? false : Boolean(revision.featured)
+    const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
+    const replacementSlug =
+      revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
       await recordTreeWriteRefusal(tx, {
         spaceId: input.spaceId,
@@ -800,7 +861,7 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audience=${audience}, featured=${featured}, parent_id=${parentId}::uuid, position=${position},
+          audience=${audience}, featured=${featured}, status=${status}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -821,6 +882,8 @@ export async function restoreRecordDoc(
       parentId,
       position,
       featured,
+      status,
+      replacementSlug,
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
@@ -891,7 +954,7 @@ async function writeImportedDoc(
     await tx`
       UPDATE doc
       SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
-          audience=${doc.audience}, featured=${doc.featured}, parent_id=${doc.parentId}::uuid, position=${doc.position},
+          audience=${doc.audience}, featured=${doc.featured}, status=${doc.status}, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
           owner_user_id=${doc.owner ?? null}::uuid, project_id=${projectId}::uuid,
           created_at=${doc.createdAt}::timestamptz,
           updated_at=${doc.updatedAt}::timestamptz,
@@ -902,11 +965,11 @@ async function writeImportedDoc(
   }
   await tx`
     INSERT INTO doc (
-      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, parent_id, position, project_id,
+      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, project_id,
       created_at, updated_at, deleted_at
     ) VALUES (
       ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.owner ?? null}::uuid, ${doc.slug},
-      ${doc.title}, ${doc.body}, ${doc.delivery}, ${doc.audience}, ${doc.featured}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
+      ${doc.title}, ${doc.body}, ${doc.delivery}, ${doc.audience}, ${doc.featured}, ${doc.status}, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
       ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
     )
   `
@@ -1002,6 +1065,8 @@ export async function importRecordDoc(
           parentId: revision.parentId,
           position: revision.position,
           featured: revision.featured,
+          status: revision.status,
+          replacementSlug: revision.replacementSlug,
           author: revision.author,
           reason: revision.reason,
           sessionId: revision.sessionId ?? null,

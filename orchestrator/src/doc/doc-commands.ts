@@ -4,7 +4,12 @@
  * database writes beyond docs, runs, routing, transports, or the CLI.
  */
 import { readFileSync } from 'node:fs'
-import { DOC_AUDIENCES, type DocAudience } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_STATUSES,
+  type DocAudience,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
@@ -24,6 +29,7 @@ import {
   removeDoc,
   restoreDoc,
   setDoc,
+  setDocStatus,
   signedInDocOwner,
   storedDocsHaveRepositoryReferences,
   validateDocAddressFilter,
@@ -89,6 +95,12 @@ function docAudience(value: string | undefined): DocAudience | undefined {
   if (value === undefined) return undefined
   if (DOC_AUDIENCES.includes(value as DocAudience)) return value as DocAudience
   throw new Error(`--audience must be ${DOC_AUDIENCES.join(' or ')}`)
+}
+
+function docStatus(value: string | undefined): DocStatus | undefined {
+  if (value === undefined) return undefined
+  if (DOC_STATUSES.includes(value as DocStatus)) return value as DocStatus
+  throw new Error(`--status must be ${DOC_STATUSES.join(' or ')}`)
 }
 
 function docPosition(value: string | undefined): number | undefined {
@@ -210,6 +222,7 @@ function handledReadDocCommand(
       ...(has('subject') || has('user') ? { subject: address.subject } : {}),
       owner: address.owner,
       audience: flags.flag('audience'),
+      status: flags.flag('status'),
     }
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
@@ -217,12 +230,12 @@ function handledReadDocCommand(
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(
-        'scope    subject          slug                     title                    delivery  bytes  updated',
+        'scope    subject          slug                     title                    status      delivery  bytes  updated',
       )
       for (const d of rows) {
         presentation.log(
           `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-            `${d.title.padEnd(24)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
+            `${d.title.padEnd(24)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
         )
       }
     }
@@ -237,7 +250,7 @@ function handledReadDocCommand(
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
-      `audience: ${doc.audience}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `status: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudience: ${doc.audience}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
 }
@@ -247,6 +260,8 @@ function setTreeOptions(flags: DocFlags): {
   parentSlug: string | null | undefined
   position: number | undefined
   featured: boolean | undefined
+  status: DocStatus | undefined
+  replacementSlug: string | null | undefined
 } {
   const { has, flag } = flags
   const audience = docAudience(flag('audience'))
@@ -256,7 +271,17 @@ function setTreeOptions(flags: DocFlags): {
   if (has('featured') && has('no-featured'))
     throw new Error('use --featured or --no-featured, not both')
   const featured = has('featured') ? true : has('no-featured') ? false : undefined
-  return { audience, parentSlug, position: docPosition(flag('position')), featured }
+  const replacementSlug = has('replacement') ? flag('replacement') : undefined
+  if (has('replacement') && !replacementSlug?.trim())
+    throw new Error('--replacement requires a slug')
+  return {
+    audience,
+    parentSlug,
+    position: docPosition(flag('position')),
+    featured,
+    status: docStatus(flag('status')),
+    replacementSlug,
+  }
 }
 
 async function handleSetDocCommand(
@@ -327,6 +352,35 @@ export async function docCommand(
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
+  if (sub === 'status') {
+    const slug = argv[2]
+    const status = docStatus(flag('status'))
+    const reason = flag('reason')
+    if (!slug || !scope || !status || !reason?.trim()) {
+      throw new Error(
+        'orch doc status <slug> --scope S [--subject X] --status STATUS [--replacement SLUG] --reason TEXT [--expect REVISION]',
+      )
+    }
+    const result = await setDocStatus(
+      scope,
+      subject,
+      slug,
+      status,
+      flag('replacement'),
+      {
+        reason,
+        author: flag('author'),
+        expectedRevision: flag('expect'),
+      },
+      owner,
+    )
+    if (has('json')) presentation.log(JSON.stringify(result))
+    else
+      presentation.log(
+        `set status ${result.scope}/${result.subject ?? '_'}/${result.slug} ${result.status}`,
+      )
+    return
+  }
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)
@@ -419,7 +473,7 @@ export async function docCommand(
       else
         for (const revision of revisions) {
           presentation.log(
-            `${revision.id}  ${revision.op.padEnd(8)} ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
+            `${revision.id}  ${revision.op.padEnd(8)} ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
       return

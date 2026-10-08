@@ -4,7 +4,7 @@
  * Knows the local document and revision stores; must not know hosted transport, write gates, or CLI.
  */
 
-import type { DocAudience } from '../../../shared/docs.ts'
+import type { DocAudience, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import type { Doc } from './doc-read-store.ts'
@@ -46,6 +46,8 @@ type SetInput = Address & {
   parentId: number | null
   position: number
   featured?: boolean
+  status?: DocStatus
+  replacementSlug?: string | null
   expectedRevision?: string
   requestedOp?: Extract<DocRevisionOp, 'import'>
   identity: WriteIdentity
@@ -67,7 +69,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -78,6 +80,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.parentId,
           input.position,
           input.featured ?? false,
+          input.status ?? 'current',
+          input.replacementSlug ?? null,
           at,
           input.recordId,
           existing.id,
@@ -85,8 +89,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, status, replacement_slug, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -101,6 +105,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.parentId,
           input.position,
           input.featured ?? false,
+          input.status ?? 'current',
+          input.replacementSlug ?? null,
           at,
           at,
           input.recordId,
@@ -179,6 +185,8 @@ type RestoreInput = Address & {
   parentId: number | null
   position: number
   featured?: boolean
+  status?: DocStatus
+  replacementSlug?: string | null
   expectedRevision?: string
   identity: WriteIdentity
 }
@@ -207,7 +215,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -218,6 +226,8 @@ export function commitDocRestore(
           input.parentId,
           input.position,
           input.featured ?? false,
+          input.status ?? 'current',
+          input.replacementSlug ?? null,
           at,
           input.recordId,
           existing.id,
@@ -225,8 +235,8 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, status, replacement_slug, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -241,6 +251,8 @@ export function commitDocRestore(
           input.parentId,
           input.position,
           input.featured ?? false,
+          input.status ?? 'current',
+          input.replacementSlug ?? null,
           at,
           at,
           input.recordId,
