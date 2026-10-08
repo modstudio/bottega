@@ -26,7 +26,7 @@ export type ProjectWriteDecision =
       reason: string
     }
 
-export type ProjectWriteFacts = {
+type ProjectWriteFacts = {
   hostedUrl: string | null | undefined
   remoteTracker: boolean
   belongsToHostedSpace: boolean
@@ -102,7 +102,7 @@ function refusalReason(
 }
 
 /** Per-project write authority from the hosted URL, install binding, and the project register. */
-export function projectWriteDecision(facts: ProjectWriteFacts): ProjectWriteDecision {
+function projectWriteDecision(facts: ProjectWriteFacts): ProjectWriteDecision {
   if (hostedWriteMode(facts.hostedUrl) === 'hosted-configured') return { mode: 'hosted-configured' }
   if (facts.remoteTracker || facts.belongsToHostedSpace) {
     return {

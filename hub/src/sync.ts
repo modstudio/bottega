@@ -3,12 +3,37 @@ import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
-import { hostedSignedInUserId } from './task-client.ts'
+import { projects } from './projects.ts'
+import {
+  assertTargetSpaceIntervalEvidence,
+  hostedSignedInUserId,
+  hostedTaskIdentity,
+} from './task-client.ts'
+import {
+  partitionProjectRows,
+  type RegisteredTaskSpace,
+  type TaskDestinationIdentity,
+} from './task-project-space.ts'
 
 const TEST_REFUSAL =
   'hub evidence sync refuses a real hosted URL unless a stub is injected in tests'
 type SyncFetch = (input: string, init?: RequestInit) => Promise<Response>
-type LedgerRow = { local_key: string; content_hash: string }
+type LedgerRow = {
+  local_key: string
+  content_hash: string
+  destination_space_id: string | null
+}
+type DiffLedgerRow = Pick<LedgerRow, 'local_key' | 'content_hash'>
+type IntervalEntry = { key: string; row: IntervalEvidence }
+type RoutedIntervalEntry = IntervalEntry & { project_name: string | null }
+type IntervalDelivery = {
+  key: string
+  hash: string
+  row: IntervalEvidence
+  destinationSpaceId: string
+  acknowledgedSpaceId: string | null
+}
+type IntervalSyncIssue = { project: string | null; reason: string }
 
 /** Resolve attribution now; callers persist the result and never infer it during push. */
 export async function signedInRecordUserId(
@@ -33,7 +58,7 @@ export function contentHash(value: unknown): string {
 
 export function diffRows<T>(
   rows: Array<{ key: string; row: T }>,
-  ledger: LedgerRow[],
+  ledger: DiffLedgerRow[],
   allowDeletes = true,
 ): SyncTablePlan<T> {
   const known = new Map(ledger.map((entry) => [entry.local_key, entry.content_hash]))
@@ -86,9 +111,44 @@ function localDays() {
 function ledger(table: string): LedgerRow[] {
   return db()
     .query<LedgerRow, [string]>(
-      `SELECT local_key, content_hash FROM record_ledger WHERE table_name=? ORDER BY local_key`,
+      `SELECT local_key, content_hash, destination_space_id
+         FROM record_ledger WHERE table_name=? ORDER BY local_key`,
     )
     .all(table)
+}
+
+function intervalDeliveries(
+  rows: IntervalEntry[],
+  acknowledgements: LedgerRow[],
+  registered: readonly RegisteredTaskSpace[],
+  identity: TaskDestinationIdentity,
+) {
+  const known = new Map(acknowledgements.map((row) => [row.local_key, row]))
+  const deliveries: IntervalDelivery[] = []
+  const partitioned = partitionProjectRows<RoutedIntervalEntry>(
+    rows.map((entry) => ({ ...entry, project_name: entry.row.project_name })),
+    registered,
+    identity,
+  )
+  for (const [destinationSpaceId, destinationRows] of partitioned.destinations) {
+    for (const entry of destinationRows) {
+      const hash = contentHash(entry.row)
+      const old = known.get(entry.key)
+      if (old?.destination_space_id === destinationSpaceId && old.content_hash === hash) continue
+      deliveries.push({
+        key: entry.key,
+        row: entry.row,
+        hash,
+        destinationSpaceId,
+        acknowledgedSpaceId: old?.destination_space_id ?? null,
+      })
+    }
+  }
+  const refused = [...partitioned.refusals].map(([project, refusal]) => ({
+    project,
+    reason: refusal.reason,
+  }))
+  return { deliveries, refused }
 }
 
 async function request(
@@ -98,12 +158,14 @@ async function request(
   path: string,
   method: string,
   body: unknown,
+  recordSpace?: string,
 ) {
   const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}${path}`, {
     method,
     headers: {
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
+      ...(recordSpace ? { 'x-record-space': recordSpace } : {}),
     },
     body: JSON.stringify(body),
   })
@@ -135,12 +197,121 @@ function commitLedger<T>(table: string, plan: SyncTablePlan<T>) {
   })
 }
 
+function acknowledgeIntervals(rows: IntervalDelivery[]) {
+  if (!rows.length) return
+  const syncedAt = nowIso()
+  writeTransaction((conn) => {
+    const put = conn.query(
+      `INSERT INTO record_ledger
+         (table_name, local_key, content_hash, synced_at, destination_space_id)
+       VALUES ('interval',?,?,?,?) ON CONFLICT(table_name, local_key) DO UPDATE SET
+       content_hash=excluded.content_hash, synced_at=excluded.synced_at,
+       destination_space_id=excluded.destination_space_id`,
+    )
+    for (const row of rows) put.run(row.key, row.hash, syncedAt, row.destinationSpaceId)
+  })
+}
+
+function forgetIntervals(keys: string[]) {
+  if (!keys.length) return
+  writeTransaction((conn) => {
+    const remove = conn.query(
+      `DELETE FROM record_ledger WHERE table_name='interval' AND local_key=?`,
+    )
+    for (const key of keys) remove.run(key)
+  })
+}
+
+function intervalKeyValue(key: string): IntervalKey {
+  const values = JSON.parse(key) as [string, string, string]
+  return { source: values[0], ref: values[1], start_at: values[2] }
+}
+
+function groupedBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
+  const result = new Map<string, T[]>()
+  for (const row of rows) result.set(key(row), [...(result.get(key(row)) ?? []), row])
+  return result
+}
+
+type DeliveryRequest = { fetch: SyncFetch; baseUrl: string; token: string }
+
+async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: DeliveryRequest) {
+  const issues: IntervalSyncIssue[] = []
+  for (const [destinationSpaceId, destinationRows] of groupedBy(
+    rows,
+    (row) => row.destinationSpaceId,
+  )) {
+    try {
+      for (const group of batches(destinationRows)) {
+        await request(
+          requestOptions.fetch,
+          requestOptions.baseUrl,
+          requestOptions.token,
+          '/v1/evidence/intervals',
+          'PUT',
+          { rows: group.map((row) => row.row) },
+          destinationSpaceId,
+        )
+        const movedRows = group.filter(
+          (row) =>
+            row.acknowledgedSpaceId !== null && row.acknowledgedSpaceId !== row.destinationSpaceId,
+        )
+        for (const [oldSpaceId, moved] of groupedBy(movedRows, (row) => row.acknowledgedSpaceId!))
+          await request(
+            requestOptions.fetch,
+            requestOptions.baseUrl,
+            requestOptions.token,
+            '/v1/evidence/intervals',
+            'DELETE',
+            { keys: moved.map((row) => intervalKeyValue(row.key)) },
+            oldSpaceId,
+          )
+        acknowledgeIntervals(group)
+      }
+    } catch (error) {
+      for (const project of new Set(destinationRows.map((row) => row.row.project_name)))
+        issues.push({ project, reason: `delivery-failed: ${(error as Error).message}` })
+    }
+  }
+  return issues
+}
+
+async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: DeliveryRequest) {
+  const issues: IntervalSyncIssue[] = []
+  for (const [destinationSpaceId, destinationRows] of groupedBy(
+    rows,
+    (row) => row.destination_space_id!,
+  )) {
+    try {
+      for (const group of batches(destinationRows)) {
+        await request(
+          requestOptions.fetch,
+          requestOptions.baseUrl,
+          requestOptions.token,
+          '/v1/evidence/intervals',
+          'DELETE',
+          { keys: group.map((row) => intervalKeyValue(row.local_key)) },
+          destinationSpaceId,
+        )
+        forgetIntervals(group.map((row) => row.local_key))
+      }
+    } catch (error) {
+      issues.push({
+        project: null,
+        reason: `delete-failed for ${destinationSpaceId}: ${(error as Error).message}`,
+      })
+    }
+  }
+  return issues
+}
+
 export type SyncResult = {
   interval: {
     changed: number
     deleted: number
     deleteSkipped: boolean
     local: number
+    issues: IntervalSyncIssue[]
   }
   day: {
     changed: number
@@ -151,16 +322,26 @@ export type SyncResult = {
 }
 
 export async function syncEvidence(
-  options: { dryRun?: boolean; baseUrl?: string; token?: string | null; fetch?: SyncFetch } = {},
+  options: {
+    dryRun?: boolean
+    baseUrl?: string
+    token?: string | null
+    fetch?: SyncFetch
+    registeredProjects?: readonly RegisteredTaskSpace[]
+  } = {},
 ): Promise<SyncResult> {
-  const interval = diffRows(localIntervals(), ledger('interval'))
+  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
+  const intervalRows = localIntervals()
+  const intervalLedger = ledger('interval')
   const day = diffRows(localDays(), ledger('day'), false)
   const result: SyncResult = {
     interval: {
-      changed: interval.changed.length,
-      deleted: interval.deleted.length,
-      deleteSkipped: interval.deleteSkipped,
-      local: interval.localCount,
+      changed: 0,
+      deleted: 0,
+      deleteSkipped: false,
+      local: intervalRows.length,
+      issues: [],
     },
     day: {
       changed: day.changed.length,
@@ -169,29 +350,49 @@ export async function syncEvidence(
       local: day.localCount,
     },
   }
-  if (options.dryRun) return result
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (!baseUrl) return result
-  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const token = options.token ?? readRecordSessionToken()
   if (!token) throw new Error('record session is absent; run `orch record sign-in`')
   const fetchImpl = options.fetch ?? fetch
-  for (const group of batches(interval.changed.map((entry) => entry.row)))
-    await request(fetchImpl, baseUrl, token, '/v1/evidence/intervals', 'PUT', {
-      rows: group,
+  const requestOptions = { baseUrl, token, fetch: fetchImpl }
+  const identity = await hostedTaskIdentity(requestOptions)
+  assertTargetSpaceIntervalEvidence(identity)
+  const interval = intervalDeliveries(
+    intervalRows,
+    intervalLedger,
+    options.registeredProjects ?? projects(),
+    identity,
+  )
+  const currentKeys = new Set(intervalRows.map((row) => row.key))
+  const deleteSkipped = intervalRows.length === 0 && intervalLedger.length > 0
+  const vanished = deleteSkipped
+    ? []
+    : intervalLedger.filter((row) => !currentKeys.has(row.local_key))
+  const vanishedWithDestination = vanished.filter(
+    (row): row is LedgerRow & { destination_space_id: string } => row.destination_space_id !== null,
+  )
+  const vanishedWithoutDestination = vanished.filter((row) => row.destination_space_id === null)
+  result.interval.changed = interval.deliveries.length
+  result.interval.deleted = vanishedWithDestination.length
+  result.interval.deleteSkipped = deleteSkipped
+  result.interval.issues.push(...interval.refused)
+  if (vanishedWithoutDestination.length > 0)
+    result.interval.issues.push({
+      project: null,
+      reason: `${vanishedWithoutDestination.length} vanished interval acknowledgement${
+        vanishedWithoutDestination.length === 1 ? '' : 's'
+      } had an unknown hosted destination; the hosted row${
+        vanishedWithoutDestination.length === 1 ? ' was' : 's were'
+      } left in place`,
     })
-  for (const group of batches(
-    interval.deleted.map((key) => {
-      const values = JSON.parse(key) as [string, string, string]
-      return {
-        source: values[0],
-        ref: values[1],
-        start_at: values[2],
-      } satisfies IntervalKey
-    }),
-  ))
-    await request(fetchImpl, baseUrl, token, '/v1/evidence/intervals', 'DELETE', { keys: group })
-  commitLedger('interval', interval)
+  if (options.dryRun) return result
+
+  const deliveryRequest = { fetch: fetchImpl, baseUrl, token }
+  forgetIntervals(vanishedWithoutDestination.map((row) => row.local_key))
+  result.interval.issues.push(
+    ...(await deliverIntervalChanges(interval.deliveries, deliveryRequest)),
+    ...(await deleteVanishedIntervals(vanishedWithDestination, deliveryRequest)),
+  )
   for (const group of batches(day.changed.map((entry) => entry.row)))
     await request(fetchImpl, baseUrl, token, '/v1/evidence/days', 'PUT', {
       rows: group,
@@ -208,4 +409,6 @@ export function printSyncResult(result: SyncResult) {
     )
     if (row.deleteSkipped) console.log(`${table.padEnd(9)} deletes skipped: local table is empty`)
   }
+  for (const issue of result.interval.issues)
+    console.log(`interval  ${issue.project ?? '(no project)'}: ${issue.reason}`)
 }

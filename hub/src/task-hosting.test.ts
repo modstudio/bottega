@@ -2,13 +2,13 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import {
-  assertMirrorExpectedSpace,
   confirmCount,
   createHostedTaskInTransaction,
   mirrorCollisionDecision,
 } from './hosted-tasks.ts'
+import { taskRequestSpaceDecision } from './record-space-request.ts'
 import { createTask } from './task.ts'
-import { taskApi, taskRequestSpaceDecision } from './task-api.ts'
+import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
 import {
   hostedCloseTask,
@@ -199,26 +199,30 @@ describe('hosted-only task safety', () => {
     ).rejects.toThrow("project 'present' has no key prefix")
   })
 
-  test('mirror expected-space checks name both spaces and accept older clients', () => {
-    expect(() => assertMirrorExpectedSpace(undefined, 'space-b')).not.toThrow()
-    expect(() => assertMirrorExpectedSpace('space-b', 'space-b')).not.toThrow()
-    expect(() => assertMirrorExpectedSpace('space-a', 'space-b')).toThrow(
-      'mirror expected space space-a, actual space space-b; re-run after the active space settles',
-    )
-  })
-
-  test('a mismatched mirror request reaches no write service', async () => {
+  test('a non-member mirror target and injected spaceIds reach no write service', async () => {
     let writes = 0
     const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks/mirror', {
         method: 'PUT',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-        body: JSON.stringify({ tasks: [], expectedSpaceId: 'space-a' }),
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-z',
+        },
+        body: JSON.stringify({
+          tasks: [],
+          targetSpaceId: 'space-a',
+          spaceIds: ['space-z'],
+        }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
         fetch: async () =>
-          Response.json({ user: { id: 'user-1' }, activeSpaceId: 'space-b', memberships: [] }),
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
         mirror: async () => {
           writes++
           return { upserted: 0, adoptions: [] }
@@ -226,12 +230,90 @@ describe('hosted-only task safety', () => {
       },
     )
 
-    expect(response?.status).toBe(409)
+    expect(response?.status).toBe(403)
     expect(await response?.json()).toEqual({
-      error:
-        'mirror expected space space-a, actual space space-b; re-run after the active space settles',
+      error: "record space 'space-z' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
     })
     expect(writes).toBe(0)
+  })
+
+  test('a member mirror target derives its tenant principal without body-supplied spaceIds', async () => {
+    const principals: Array<{
+      userId: string
+      spaceId: string
+      spaceIds?: readonly string[]
+      memberships?: Array<{ spaceId: string; slug: string }>
+    }> = []
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/mirror', {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-b',
+        },
+        body: JSON.stringify({ tasks: [], targetSpaceId: 'space-a', spaceIds: ['space-z'] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [
+              { space_id: 'space-a', slug: 'active' },
+              { space_id: 'space-b', slug: 'other' },
+            ],
+          }),
+        mirror: async (_url, identity) => {
+          principals.push(identity)
+          return { upserted: 0, adoptions: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(principals).toEqual([
+      {
+        userId: 'user-1',
+        spaceId: 'space-b',
+        spaceIds: ['space-a', 'space-b'],
+        memberships: [
+          { spaceId: 'space-a', slug: 'active' },
+          { spaceId: 'space-b', slug: 'other' },
+        ],
+      },
+    ])
+  })
+
+  test('a non-member counts target returns its refusal as HTTP 403', async () => {
+    let reads = 0
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/counts', {
+        headers: { authorization: 'Bearer test', 'x-record-space': 'space-z' },
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
+        counts: async () => {
+          reads++
+          return { task: [], task_comment: [], task_document: [], task_status_event: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(403)
+    expect(await response?.json()).toEqual({
+      error: "record space 'space-z' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+    })
+    expect(reads).toBe(0)
   })
 
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
@@ -482,6 +564,7 @@ describe('hosted-only task safety', () => {
         { spaceId: 'space-a', slug: 'workshop' },
         { spaceId: 'space-b', slug: 'stopal' },
       ],
+      capabilities: { targetSpaceTaskMirror: true, targetSpaceIntervalEvidence: true },
     })
   })
 
