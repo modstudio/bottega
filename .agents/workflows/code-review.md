@@ -24,9 +24,7 @@ modes:
     title: Apply accepted findings
     steps:
       - scope
-      - review-lenses
-      - triage-findings
-      - apply-findings
+      - sequence: review
       - run-gate
 ---
 Review a branch with independent lenses sized by its review tier, refute every finding before accepting it, and either report the triaged review without changing anything or apply the accepted findings and gate the result.
