@@ -102,7 +102,12 @@ test('task push persists ids only after each successful batch and retries an unp
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({
+        userId: 'user-a',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { targetSpaceTaskMirror: true },
+      })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
         targetSpaceId?: string
@@ -181,6 +186,23 @@ test('task push persists ids only after each successful batch and retries an unp
   ).toBe(holderId)
 })
 
+test('task push refuses an older server before its first mirror write', async () => {
+  let writes = 0
+  const fetch = async (input: string) => {
+    if (new URL(input).pathname === '/v1/tasks/identity')
+      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+    writes++
+    return Response.json({ upserted: 0, adoptions: [] })
+  }
+
+  await expect(
+    pushTasks({ baseUrl: 'https://hub.example.test', token: 'test', fetch }),
+  ).rejects.toThrow(
+    'hosted hub does not advertise target-space task mirror support; deploy the hub server at or after the target-space task mirror change',
+  )
+  expect(writes).toBe(0)
+})
+
 test('task push adopts a hosted holder id and uses it on the next push', async () => {
   const at = '2026-09-24T12:00:00.000Z'
   writeTransaction((conn) => {
@@ -209,7 +231,12 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({
+        userId: 'user-a',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { targetSpaceTaskMirror: true },
+      })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
         statusEvents?: Array<{
@@ -284,7 +311,12 @@ test('task push persists a task adoption and cascades its child identity', async
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({
+        userId: 'user-a',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { targetSpaceTaskMirror: true },
+      })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as { tasks?: Array<{ key: string }> }
       const task = body.tasks?.[0]

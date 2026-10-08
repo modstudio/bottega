@@ -18,6 +18,17 @@ export type HostedTaskIdentity = {
   userId: string
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
+  capabilities?: { targetSpaceTaskMirror?: boolean }
+}
+
+const TARGET_SPACE_MIRROR_REMEDY =
+  'deploy the hub server at or after the target-space task mirror change'
+
+export function assertTargetSpaceTaskMirror(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.targetSpaceTaskMirror !== true)
+    throw new Error(
+      `hosted hub does not advertise target-space task mirror support; ${TARGET_SPACE_MIRROR_REMEDY}`,
+    )
 }
 
 function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
@@ -290,6 +301,12 @@ export async function hostedTaskIdentity(
     userId: value.userId as string,
     activeSpaceId: value.activeSpaceId as string,
     memberships: value.memberships as RecordSpaceMembership[],
+    capabilities: {
+      targetSpaceTaskMirror:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).targetSpaceTaskMirror === true,
+    },
   }
 }
 

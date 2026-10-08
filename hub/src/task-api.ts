@@ -16,7 +16,7 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
-import { principalForMemberSpace } from './member-space-principal.ts'
+import { MemberSpaceRefusal, principalForMemberSpace } from './member-space-principal.ts'
 
 const TEST_REFUSAL =
   'hub task API refuses real identity and database clients unless stubs are injected in tests'
@@ -323,6 +323,9 @@ export async function taskApi(
     if (response) return response
     return new Response('not found', { status: 404 })
   } catch (error) {
-    return json({ error: (error as Error).message }, 409)
+    return json(
+      { error: (error as Error).message },
+      error instanceof MemberSpaceRefusal ? 403 : 409,
+    )
   }
 }

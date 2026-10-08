@@ -234,7 +234,7 @@ describe('hosted-only task safety', () => {
       },
     )
 
-    expect(response?.status).toBe(409)
+    expect(response?.status).toBe(403)
     expect(await response?.json()).toEqual({
       error: "target space space-z is not one of the authenticated user's memberships",
     })
@@ -275,6 +275,34 @@ describe('hosted-only task safety', () => {
         spaceIds: ['space-a', 'space-b'],
       },
     ])
+  })
+
+  test('a non-member counts target returns its refusal as HTTP 403', async () => {
+    let reads = 0
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/counts?spaceId=space-z', {
+        headers: { authorization: 'Bearer test' },
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
+        counts: async () => {
+          reads++
+          return { task: [], task_comment: [], task_document: [], task_status_event: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(403)
+    expect(await response?.json()).toEqual({
+      error: "target space space-z is not one of the authenticated user's memberships",
+    })
+    expect(reads).toBe(0)
   })
 
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
@@ -525,6 +553,7 @@ describe('hosted-only task safety', () => {
         { spaceId: 'space-a', slug: 'workshop' },
         { spaceId: 'space-b', slug: 'stopal' },
       ],
+      capabilities: { targetSpaceTaskMirror: true },
     })
   })
 

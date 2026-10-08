@@ -6,6 +6,7 @@ import { projects } from './projects.ts'
 import type { TaskRow } from './task.ts'
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import {
+  assertTargetSpaceTaskMirror,
   hostedMirrorTasks,
   hostedTaskCounts,
   hostedTaskIdentity,
@@ -199,6 +200,7 @@ export async function pushTasks(options: Options = {}) {
   }))
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(requestOptions)
+  assertTargetSpaceTaskMirror(identity)
   rememberHostedInstall(identity.activeSpaceId)
   const plan = planTaskPush({ tasks, comments, documents, statusEvents }, projects(), identity)
   const assignedRecordIds = plan.destinations.reduce(
