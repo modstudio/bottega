@@ -4,6 +4,7 @@ import {
   type ReleaseSettings,
   resolveDeclaredFacts,
   resolveInjection,
+  type SignalsSettings,
 } from './project-injection.ts'
 import { type Project, validateProjectSettings } from './projects.ts'
 
@@ -25,6 +26,10 @@ const docs: DocsSettings = {
   protocol: 'array-mcp',
 }
 
+const signals: SignalsSettings = {
+  sources: [{ name: 'errors', list: 'error_list', get: 'error_get' }],
+}
+
 describe('project workflow injection', () => {
   test('valid release and docs settings pass while unknown keys are refused', () => {
     expect(validateProjectSettings({ release, docs, gate: 'bun run check' })).toEqual([])
@@ -34,6 +39,34 @@ describe('project workflow injection', () => {
         release: { ...release, unexpected: true },
       } as Parameters<typeof validateProjectSettings>[0]),
     ).toEqual([expect.stringContaining('release: Unrecognized key')])
+  })
+
+  test('validates signal source names and list actions while accepting an empty declaration', () => {
+    expect(validateProjectSettings({ signals })).toEqual([])
+    expect(validateProjectSettings({ signals: { sources: [] } })).toEqual([])
+    expect(
+      validateProjectSettings({
+        signals: { sources: [{ list: 'error_list' }] },
+      } as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('signals.sources.0.name')])
+    expect(
+      validateProjectSettings({
+        signals: { sources: [{ name: 'errors' }] },
+      } as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('signals.sources.0.list')])
+  })
+
+  test('validates stored signal facts again when a workflow reads them', () => {
+    expect(() =>
+      resolveInjection(
+        {
+          name: 'fixture',
+          stack: 'node',
+          settings: { signals: { sources: [{ name: 'errors' }] } as SignalsSettings },
+        },
+        ['signals'],
+      ),
+    ).toThrow('list')
   })
 
   test('validates a rung live command as a non-empty string', () => {
@@ -146,6 +179,7 @@ describe('project workflow injection', () => {
         worktree: { branch: '{key}-orch-{id}' },
         release,
         docs,
+        signals,
       },
     }
 
@@ -155,6 +189,7 @@ describe('project workflow injection', () => {
       'worktree',
       'release',
       'docs',
+      'signals',
       'stack',
     ])
     const typedRelease: ReleaseSettings = resolved.release
@@ -186,6 +221,7 @@ describe('project workflow injection', () => {
         read: ['doc_search', 'doc_get', 'doc_list'],
         write: ['doc_create', 'doc_update'],
       },
+      signals,
       stack: 'node',
     })
   })
@@ -467,9 +503,10 @@ describe('project workflow injection', () => {
       settings: {},
     }
 
-    expect(() => resolveInjection(project, ['docs', 'stack'])).toThrow(
+    expect(() => resolveInjection(project, ['docs', 'signals', 'stack'])).toThrow(
       'project fixture is missing workflow injection facts:\n' +
         `- docs; set with: orch project set fixture --settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'\n` +
+        `- signals; set with: orch project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'\n` +
         '- stack; set with: orch project set fixture --stack <stack>',
     )
   })

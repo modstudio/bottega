@@ -6,7 +6,7 @@ import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
-import type { DocsSettings, ReleaseSettings } from './project-injection.ts'
+import type { DocsSettings, ReleaseSettings, SignalsSettings } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
 
@@ -154,6 +154,8 @@ export type ProjectSettings = {
   release?: ReleaseSettings
   /** Where shared workflows read and write this project's docs and canon. */
   docs?: DocsSettings
+  /** Where shared workflows list and read this project's open signals. */
+  signals?: SignalsSettings
   /**
    * Whether dispatch refuses tracked modifications in this project's main
    * checkout. Default ON: absent and true both enforce it. A project opts out

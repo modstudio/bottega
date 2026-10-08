@@ -14,6 +14,9 @@ import {
 } from '../../../shared/trackers.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
+const nonEmptyString = z.string().refine((value) => value.trim().length > 0, {
+  message: 'must be a non-empty string',
+})
 
 const releaseSchema = strictObject({
   rungs: z.array(
@@ -36,6 +39,16 @@ const docsSchema = z.discriminatedUnion('protocol', [
   strictObject({ protocol: z.literal('array-mcp') }),
 ])
 
+const signalsSchema = strictObject({
+  sources: z.array(
+    strictObject({
+      name: nonEmptyString,
+      list: nonEmptyString,
+      get: z.string().optional(),
+    }),
+  ),
+})
+
 const gateSchema = z.string().trim().min(1)
 const trunkSchema = z.string().trim().min(1)
 // The shared shape keeps protocol open so hub can read any stored row; the
@@ -51,6 +64,7 @@ const trackerSchema = strictObject({
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
+export type SignalsSettings = z.infer<typeof signalsSchema>
 type ResolvedDocs = DocsSettings & {
   server?: string
   read: string[]
@@ -181,6 +195,7 @@ type InjectionSettings = {
   worktree?: unknown
   release?: ReleaseSettings
   docs?: DocsSettings
+  signals?: SignalsSettings
   mainStack?: { consumers: string[]; requiredServices?: string[] }
 }
 
@@ -197,6 +212,7 @@ const injectionSources = [
   'worktree',
   'release',
   'docs',
+  'signals',
   'stack',
   'mainStack',
 ] as const
@@ -211,6 +227,7 @@ type InjectionValues<Project extends InjectableProject> = {
   worktree: NonNullable<Project['settings']['worktree']>
   release: NonNullable<Project['settings']['release']>
   docs: ResolvedDocs
+  signals: NonNullable<Project['settings']['signals']>
   stack: NonNullable<Project['stack']>
   mainStack: { requiredServices: string[]; requiredServicesText: string }
 }
@@ -227,6 +244,7 @@ const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
   worktree: `--settings '{"worktree":{}}'`,
   release: `--settings '{"release":{"rungs":[],"mergeMethod":"<merge-method>","requiredChecks":[]}}'`,
   docs: `--settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'`,
+  signals: `--settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
   mainStack: `--settings '{"mainStack":{"consumers":[],"requiredServices":[]}}'`,
 }
 
@@ -290,6 +308,8 @@ export function resolveInjection<
           ...docsAdapters[docs.protocol],
         },
       })
+    } else if (source === 'signals') {
+      Object.assign(resolved, { signals: signalsSchema.parse(value) })
     } else if (source === 'mainStack') {
       const requiredServices = (value as InjectionSettings['mainStack'])?.requiredServices ?? []
       Object.assign(resolved, {
@@ -323,7 +343,7 @@ export function resolveDeclaredFacts<Project extends InjectableProject>(
 
 type ValidatedInjectionSettings = Pick<
   InjectionSettings,
-  'tracker' | 'trunk' | 'release' | 'docs' | 'gate'
+  'tracker' | 'trunk' | 'release' | 'docs' | 'signals' | 'gate'
 >
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
@@ -333,6 +353,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['tracker', trackerSchema],
     ['release', releaseSchema],
     ['docs', docsSchema],
+    ['signals', signalsSchema],
     ['gate', gateSchema],
     ['trunk', trunkSchema],
   ] as const) {
