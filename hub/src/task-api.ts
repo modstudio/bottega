@@ -77,6 +77,7 @@ const call = <T>(stub: T | undefined, real: T): T => {
 }
 
 function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolean {
+  if (method === 'GET' && pathname === '/v1/tasks') return true
   if (method === 'PUT' && pathname === '/v1/tasks/mirror') return true
   if (method === 'GET' && pathname === '/v1/tasks/counts') return true
   if (method === 'POST' && pathname === '/v1/tasks') return true

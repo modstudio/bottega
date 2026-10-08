@@ -1,8 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { hostedTaskChanges, type TaskFetch } from './task-client.ts'
+import { projects } from './projects.ts'
+import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
+import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
 
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
@@ -27,18 +29,11 @@ function reconcileParentRecordIds(conn: Database) {
   }
 }
 
-function localId(conn: Database, table: string, recordId: string, legacy: number | null) {
+function localId(conn: Database, table: string, recordId: string) {
   const byRecord = conn
     .query<{ id: number }, [string]>(`SELECT id FROM ${table} WHERE record_id=?`)
     .get(recordId)
-  if (byRecord) return byRecord.id
-  if (legacy !== null) {
-    const byLegacy = conn
-      .query<{ id: number }, [number]>(`SELECT id FROM ${table} WHERE id=?`)
-      .get(legacy)
-    if (byLegacy) return byLegacy.id
-  }
-  return null
+  return byRecord?.id ?? null
 }
 
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
@@ -80,8 +75,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
 }
 
 function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
-  const id = localId(conn, 'task_comment', row.id, row.legacy_local_id)
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const id = localId(conn, 'task_comment', row.id)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_comment WHERE id=?`).run(id)
   } else if (id) {
@@ -100,8 +95,8 @@ function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
 }
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
-  const id = localId(conn, 'task_document', row.id, row.legacy_local_id)
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const id = localId(conn, 'task_document', row.id)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_document WHERE id=?`).run(id)
   } else if (id) {
@@ -141,8 +136,8 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
 }
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
-  const id = localId(conn, 'task_status_event', row.id, row.legacy_local_id)
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const id = localId(conn, 'task_status_event', row.id)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_status_event WHERE id=?`).run(id)
   } else if (id) {
@@ -160,7 +155,11 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
   }
 }
 
-export function applyHostedTaskChanges(changes: HostedChanges) {
+export function applyHostedTaskChanges(
+  changes: HostedChanges,
+  cursorKey = CURSOR_KEY,
+  clearLegacyCursor = false,
+) {
   writeTransaction((conn) => {
     changes.tasks.forEach((row) => {
       applyHostedTask(conn, row)
@@ -179,23 +178,69 @@ export function applyHostedTaskChanges(changes: HostedChanges) {
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       )
-      .run(CURSOR_KEY, changes.cursor)
+      .run(cursorKey, changes.cursor)
+    if (clearLegacyCursor) conn.query(`DELETE FROM setting WHERE key=?`).run(CURSOR_KEY)
   })
 }
 
-export async function pullHostedTasks(
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+function pullSpaces(
+  registered: readonly RegisteredTaskSpace[],
+  identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
 ) {
-  const cursor =
-    db().query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`).get(CURSOR_KEY)
-      ?.value ?? null
-  const changes = await hostedTaskChanges(cursor, options)
-  applyHostedTaskChanges(changes)
+  const spaces = new Set([identity.activeSpaceId])
+  for (const project of registered) {
+    const destination = taskProjectDestination(project.name, registered, identity)
+    if ('destinationSpaceId' in destination) spaces.add(destination.destinationSpaceId)
+  }
+  return [...spaces]
+}
+
+const cursorKeyFor = (spaceId: string) => `${CURSOR_KEY}.${spaceId}`
+
+function pullCursor(spaceId: string, activeSpaceId: string) {
+  const cursor = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+    .get(cursorKeyFor(spaceId))?.value
+  if (cursor !== undefined) return { cursor, fromLegacy: false }
+  if (spaceId !== activeSpaceId) return { cursor: null, fromLegacy: false }
+  const legacy = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+    .get(CURSOR_KEY)?.value
+  return { cursor: legacy ?? null, fromLegacy: legacy !== undefined }
+}
+
+export async function pullHostedTasks(
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    registeredProjects?: readonly RegisteredTaskSpace[]
+  } = {},
+) {
+  const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
+  const identity = await hostedTaskIdentity(requestOptions)
+  const spaces = pullSpaces(options.registeredProjects ?? projects(), identity)
+  const totals = { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
+  let activeCursor = ''
+  const failures: string[] = []
+  for (const spaceId of spaces) {
+    const cursorKey = cursorKeyFor(spaceId)
+    const { cursor, fromLegacy } = pullCursor(spaceId, identity.activeSpaceId)
+    try {
+      const changes = await hostedTaskChanges(cursor, { ...requestOptions, recordSpace: spaceId })
+      applyHostedTaskChanges(changes, cursorKey, fromLegacy)
+      totals.tasks += changes.tasks.length
+      totals.comments += changes.comments.length
+      totals.documents += changes.documents.length
+      totals.statusEvents += changes.statusEvents.length
+      if (spaceId === identity.activeSpaceId) activeCursor = changes.cursor
+    } catch (cause) {
+      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+  if (failures.length) throw new Error(`hosted task pulls failed: ${failures.join('; ')}`)
   return {
-    tasks: changes.tasks.length,
-    comments: changes.comments.length,
-    documents: changes.documents.length,
-    statusEvents: changes.statusEvents.length,
-    cursor: changes.cursor,
+    ...totals,
+    cursor: activeCursor,
   }
 }
