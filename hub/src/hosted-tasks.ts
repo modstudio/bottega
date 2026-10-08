@@ -393,7 +393,6 @@ export async function softDeleteHostedDocuments(
 
 type MirrorBody = {
   tasks: HostedTask[]
-  targetSpaceId?: string
   comments?: HostedComment[]
   documents?: HostedDocument[]
   statusEvents?: HostedStatusEvent[]

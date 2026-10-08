@@ -85,8 +85,8 @@ async function deliverDestination(
     for (let index = 0; index < rows.length; index += 500) {
       const batch = rows.slice(index, index + 500)
       const response = await hostedMirrorTasks(
-        { tasks: name === 'tasks' ? batch : [], [name]: batch, targetSpaceId: destination.spaceId },
-        requestOptions,
+        { tasks: name === 'tasks' ? batch : [], [name]: batch },
+        { ...requestOptions, recordSpace: destination.spaceId },
       )
       persistMirrorBatch(name as keyof PushCollections, batch, response.adoptions ?? [])
     }
@@ -94,9 +94,8 @@ async function deliverDestination(
     {
       tasks: [],
       raiseSequences: sequenceRaises(destination.rows.tasks),
-      targetSpaceId: destination.spaceId,
     },
-    requestOptions,
+    { ...requestOptions, recordSpace: destination.spaceId },
   )
 }
 

@@ -109,7 +109,6 @@ test('task push persists ids only after each successful batch and retries an unp
       })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
-        targetSpaceId?: string
         statusEvents?: Array<{
           id: string
           legacy_local_id: number
@@ -118,7 +117,7 @@ test('task push persists ids only after each successful batch and retries an unp
           task_record_id?: string
         }>
       }
-      expect(body.targetSpaceId).toBe('space-a')
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-a')
       const events = body.statusEvents ?? []
       if (!events.length) return Response.json({ upserted: 0, adoptions: [] })
       statusBatch++
@@ -142,7 +141,10 @@ test('task push persists ids only after each successful batch and retries an unp
         ],
       })
     }
-    if (path === '/v1/tasks/counts') return Response.json({})
+    if (path === '/v1/tasks/counts') {
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-a')
+      return Response.json({})
+    }
     return Response.json({ error: 'unexpected request' }, { status: 500 })
   }
   const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch: stub }

@@ -1,7 +1,10 @@
-import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
+import {
+  parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
+} from '../../shared/record-space-membership.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
 import { deleteIntervals, upsertDays, upsertIntervals } from './hosted-evidence.ts'
-import { MemberSpaceRefusal, principalForMemberSpace } from './member-space-principal.ts'
+import { taskRequestSpaceDecision } from './record-space-request.ts'
 
 const TEST_REFUSAL =
   'hub evidence API refuses real identity and database clients unless stubs are injected in tests'
@@ -13,7 +16,12 @@ type Dependencies = {
   removeIntervals?: typeof deleteIntervals
 }
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
-type Tenant = { userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  memberships: RecordSpaceMembership[]
+}
 
 async function identity(
   request: Request,
@@ -34,6 +42,7 @@ async function identity(
         userId: user.id,
         spaceId: body.activeSpaceId,
         spaceIds: memberships.map((membership) => membership.spaceId),
+        memberships,
       }
     : null
 }
@@ -52,17 +61,11 @@ async function putIntervalBatch(
 ) {
   const rows = batch(body, 'rows')
   if (!rows) return Response.json({ error: 'rows must contain at most 500 items' }, { status: 400 })
-  const target = principalForMemberSpace(
-    who,
-    typeof (body as Record<string, unknown>)?.targetSpaceId === 'string'
-      ? ((body as Record<string, unknown>).targetSpaceId as string)
-      : undefined,
-  )
   if (process.env.NODE_ENV === 'test' && !dependencies.putIntervals) throw new Error(TEST_REFUSAL)
   return Response.json(
     await (dependencies.putIntervals ?? upsertIntervals)(
       config.recordDatabaseUrl,
-      target,
+      who,
       rows as IntervalEvidence[],
     ),
   )
@@ -89,18 +92,12 @@ async function deleteIntervalBatch(
 ) {
   const keys = batch(body, 'keys')
   if (!keys) return Response.json({ error: 'keys must contain at most 500 items' }, { status: 400 })
-  const target = principalForMemberSpace(
-    who,
-    typeof (body as Record<string, unknown>)?.targetSpaceId === 'string'
-      ? ((body as Record<string, unknown>).targetSpaceId as string)
-      : undefined,
-  )
   if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervals)
     throw new Error(TEST_REFUSAL)
   return Response.json(
     await (dependencies.removeIntervals ?? deleteIntervals)(
       config.recordDatabaseUrl,
-      target,
+      who,
       keys as IntervalKey[],
     ),
   )
@@ -125,19 +122,33 @@ export async function evidenceApi(
       { error: 'authorization and an active space are required' },
       { status: 401 },
     )
+  const intervalRoute =
+    url.pathname === '/v1/evidence/intervals' &&
+    (request.method === 'PUT' || request.method === 'DELETE')
+  const decision = taskRequestSpaceDecision(
+    intervalRoute ? request.headers.get('x-record-space') : null,
+    who.spaceId,
+    who.memberships,
+  )
+  if (!decision.allowed)
+    return Response.json(
+      {
+        error: `record space '${decision.requestedSpace}' is not among the caller's memberships`,
+        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+      },
+      { status: 403 },
+    )
+  const tenant = { ...who, spaceId: decision.spaceId }
   const body = await request.json().catch(() => null)
   try {
     if (request.method === 'PUT' && url.pathname === '/v1/evidence/intervals')
-      return await putIntervalBatch(body, config, who, dependencies)
+      return await putIntervalBatch(body, config, tenant, dependencies)
     if (request.method === 'PUT' && url.pathname === '/v1/evidence/days')
-      return await putDayBatch(body, config, who, dependencies)
+      return await putDayBatch(body, config, tenant, dependencies)
     if (request.method === 'DELETE' && url.pathname === '/v1/evidence/intervals')
-      return await deleteIntervalBatch(body, config, who, dependencies)
+      return await deleteIntervalBatch(body, config, tenant, dependencies)
     return new Response('not found', { status: 404 })
   } catch (error) {
-    return Response.json(
-      { error: (error as Error).message },
-      { status: error instanceof MemberSpaceRefusal ? 403 : 409 },
-    )
+    return Response.json({ error: (error as Error).message }, { status: 409 })
   }
 }

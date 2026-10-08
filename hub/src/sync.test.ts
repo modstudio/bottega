@@ -71,15 +71,16 @@ function insertInterval(row: IntervalEvidence) {
 const keyOf = (row: IntervalEvidence) => JSON.stringify([row.source, row.ref, row.start_at])
 
 function syncFetch(
-  writes: Array<{ method: string; body: Record<string, unknown> }>,
+  writes: Array<{ method: string; recordSpace: string | null; body: Record<string, unknown> }>,
   options: { capability?: boolean; failSpace?: string } = {},
 ) {
   return async (url: string, init?: RequestInit) => {
     if (url.endsWith('/v1/tasks/identity'))
       return Response.json(identity(options.capability !== false))
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-    writes.push({ method: init?.method ?? 'GET', body })
-    if (body.targetSpaceId === options.failSpace)
+    const recordSpace = new Headers(init?.headers).get('x-record-space')
+    writes.push({ method: init?.method ?? 'GET', recordSpace, body })
+    if (recordSpace === options.failSpace)
       return Response.json({ error: 'destination unavailable' }, { status: 503 })
     return Response.json({ ok: true })
   }
@@ -182,7 +183,11 @@ describe('evidence sync planning', () => {
   test('groups project intervals by registered destination, not the third active space', async () => {
     insertInterval(interval('1', 'one'))
     insertInterval(interval('2', 'two'))
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
 
     await syncEvidence({
       baseUrl: 'https://hub.example.test',
@@ -192,20 +197,24 @@ describe('evidence sync planning', () => {
     })
 
     expect(writes).toHaveLength(2)
-    expect(writes.map((write) => write.body.targetSpaceId).sort()).toEqual(['space-a', 'space-b'])
-    expect(writes.some((write) => write.body.targetSpaceId === 'space-active')).toBe(false)
+    expect(writes.map((write) => write.recordSpace).sort()).toEqual(['space-a', 'space-b'])
+    expect(writes.some((write) => write.recordSpace === 'space-active')).toBe(false)
   })
 
   test('sends a projectless interval to the active space', async () => {
     insertInterval(interval('1', null))
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
       fetch: syncFetch(writes),
       registeredProjects: registered,
     })
-    expect(writes.map((write) => write.body.targetSpaceId)).toEqual(['space-active'])
+    expect(writes.map((write) => write.recordSpace)).toEqual(['space-active'])
   })
 
   test('reports a refused project without acknowledging it while delivering another', async () => {
@@ -213,7 +222,11 @@ describe('evidence sync planning', () => {
     const delivered = interval('2', 'one')
     insertInterval(refused)
     insertInterval(delivered)
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     const result = await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
@@ -237,7 +250,11 @@ describe('evidence sync planning', () => {
     const delivered = interval('2', 'one')
     insertInterval(refused)
     insertInterval(delivered)
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     const ran: string[] = []
 
     const results = await hostedCollectLegs(undefined, {
@@ -255,7 +272,7 @@ describe('evidence sync planning', () => {
       reports: async () => {},
     })
 
-    expect(writes.map((write) => write.body.targetSpaceId)).toEqual(['space-a'])
+    expect(writes.map((write) => write.recordSpace)).toEqual(['space-a'])
     expect(ran).toEqual(['following leg'])
     expect(results).toEqual([
       {
@@ -287,7 +304,11 @@ describe('evidence sync planning', () => {
         )
         .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z'),
     )
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
@@ -316,14 +337,18 @@ describe('evidence sync planning', () => {
         )
         .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z', 'space-a'),
     )
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
       fetch: syncFetch(writes),
       registeredProjects: registered,
     })
-    expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
+    expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
       ['PUT', 'space-b'],
       ['DELETE', 'space-a'],
     ])
@@ -348,7 +373,11 @@ describe('evidence sync planning', () => {
         )
         .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z', 'space-a'),
     )
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     const result = await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
@@ -379,14 +408,18 @@ describe('evidence sync planning', () => {
       put.run(keyOf(current), contentHash(current), '2026-10-01T00:00:00.000Z', 'space-a')
       put.run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', 'space-b')
     })
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
       fetch: syncFetch(writes),
       registeredProjects: registered,
     })
-    expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
+    expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
       ['DELETE', 'space-b'],
     ])
     expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 1 })
@@ -403,7 +436,11 @@ describe('evidence sync planning', () => {
         )
         .run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', 'space-b'),
     )
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
 
     const result = await syncEvidence({
       baseUrl: 'https://hub.example.test',
@@ -431,7 +468,11 @@ describe('evidence sync planning', () => {
       put.run(keyOf(current), contentHash(current), '2026-10-01T00:00:00.000Z', 'space-a')
       put.run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', null)
     })
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
 
     const result = await syncEvidence({
       baseUrl: 'https://hub.example.test',
@@ -460,7 +501,11 @@ describe('evidence sync planning', () => {
 
   test('refuses a server without interval target-space support before any write', async () => {
     insertInterval(interval('1', 'one'))
-    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
     await expect(
       syncEvidence({
         baseUrl: 'https://hub.example.test',
@@ -500,8 +545,12 @@ describe('evidence API', () => {
     const response = await evidenceApi(
       new Request('https://hub.example.test/v1/evidence/intervals', {
         method: 'PUT',
-        headers: { authorization: 'Bearer fixture', 'content-type': 'application/json' },
-        body: JSON.stringify({ targetSpaceId: 'space-other', rows: [] }),
+        headers: {
+          authorization: 'Bearer fixture',
+          'content-type': 'application/json',
+          'x-record-space': 'space-other',
+        },
+        body: JSON.stringify({ targetSpaceId: 'space-active', rows: [] }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
       {
@@ -519,9 +568,41 @@ describe('evidence API', () => {
     )
     expect(response?.status).toBe(403)
     expect(await response?.json()).toEqual({
-      error: "target space space-other is not one of the authenticated user's memberships",
+      error: "record space 'space-other' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
     })
     expect(wrote).toBe(false)
+  })
+
+  test('the days route ignores a requested record space and stays in the active space', async () => {
+    let boundSpace = ''
+    const response = await evidenceApi(
+      new Request('https://hub.example.test/v1/evidence/days', {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer fixture',
+          'content-type': 'application/json',
+          'x-record-space': 'not-a-member',
+        },
+        body: JSON.stringify({ rows: [] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-active',
+            memberships: [{ space_id: 'space-active', slug: 'active' }],
+          }),
+        putDays: async (_url, tenant) => {
+          boundSpace = tenant.spaceId
+          return { upserted: 0 }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(boundSpace).toBe('space-active')
   })
 
   test('refuses a route without authorization before touching identity or storage', async () => {

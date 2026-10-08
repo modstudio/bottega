@@ -158,12 +158,14 @@ async function request(
   path: string,
   method: string,
   body: unknown,
+  recordSpace?: string,
 ) {
   const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}${path}`, {
     method,
     headers: {
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
+      ...(recordSpace ? { 'x-record-space': recordSpace } : {}),
     },
     body: JSON.stringify(body),
   })
@@ -247,10 +249,8 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
           requestOptions.token,
           '/v1/evidence/intervals',
           'PUT',
-          {
-            targetSpaceId: destinationSpaceId,
-            rows: group.map((row) => row.row),
-          },
+          { rows: group.map((row) => row.row) },
+          destinationSpaceId,
         )
         const movedRows = group.filter(
           (row) =>
@@ -263,10 +263,8 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
             requestOptions.token,
             '/v1/evidence/intervals',
             'DELETE',
-            {
-              targetSpaceId: oldSpaceId,
-              keys: moved.map((row) => intervalKeyValue(row.key)),
-            },
+            { keys: moved.map((row) => intervalKeyValue(row.key)) },
+            oldSpaceId,
           )
         acknowledgeIntervals(group)
       }
@@ -292,10 +290,8 @@ async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: Delive
           requestOptions.token,
           '/v1/evidence/intervals',
           'DELETE',
-          {
-            targetSpaceId: destinationSpaceId,
-            keys: group.map((row) => intervalKeyValue(row.local_key)),
-          },
+          { keys: group.map((row) => intervalKeyValue(row.local_key)) },
+          destinationSpaceId,
         )
         forgetIntervals(group.map((row) => row.local_key))
       }

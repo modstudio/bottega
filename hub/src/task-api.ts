@@ -1,7 +1,6 @@
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
-  recordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
@@ -16,7 +15,7 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
-import { MemberSpaceRefusal, principalForMemberSpace } from './member-space-principal.ts'
+import { taskRequestSpaceDecision } from './record-space-request.ts'
 
 const TEST_REFUSAL =
   'hub task API refuses real identity and database clients unless stubs are injected in tests'
@@ -36,23 +35,6 @@ type Dependencies = {
   deleteTasks?: typeof softDeleteHostedTasks
   mirror?: typeof mirrorHostedTasks
   counts?: typeof hostedTaskCounts
-}
-
-export type TaskRequestSpaceDecision =
-  | { allowed: true; spaceId: string }
-  | { allowed: false; requestedSpace: string }
-
-/** Decide the tenant for a route that honors the requested record space. */
-export function taskRequestSpaceDecision(
-  requestedSpace: string | null,
-  activeSpaceId: string,
-  memberships: readonly RecordSpaceMembership[],
-): TaskRequestSpaceDecision {
-  if (requestedSpace === null) return { allowed: true, spaceId: activeSpaceId }
-  const membership = recordSpaceMembership(requestedSpace, memberships)
-  return membership
-    ? { allowed: true, spaceId: membership.spaceId }
-    : { allowed: false, requestedSpace }
 }
 
 async function identity(
@@ -95,13 +77,11 @@ const call = <T>(stub: T | undefined, real: T): T => {
 }
 
 function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolean {
+  if (method === 'PUT' && pathname === '/v1/tasks/mirror') return true
+  if (method === 'GET' && pathname === '/v1/tasks/counts') return true
   if (method === 'POST' && pathname === '/v1/tasks') return true
   if (method === 'GET')
-    return (
-      /^\/v1\/tasks\/[^/]+$/.test(pathname) &&
-      pathname !== '/v1/tasks/counts' &&
-      pathname !== '/v1/tasks/identity'
-    )
+    return /^\/v1\/tasks\/[^/]+$/.test(pathname) && pathname !== '/v1/tasks/identity'
   if (method === 'PATCH')
     return (
       /^\/v1\/tasks\/[^/]+$/.test(pathname) ||
@@ -145,8 +125,7 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
       }),
     )
   if (request.method === 'GET' && url.pathname === '/v1/tasks/counts') {
-    const target = principalForMemberSpace(who, url.searchParams.get('spaceId') ?? undefined)
-    return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, target))
+    return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, who))
   }
   if (request.method !== 'GET' || !keyMatch) return null
   const value = await call(dependencies.get, getHostedTask)(
@@ -189,14 +168,10 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
     return value ? json(value) : json({ error: 'task not found' }, 404)
   }
   if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
-  const target = principalForMemberSpace(
-    who,
-    typeof body?.targetSpaceId === 'string' ? body.targetSpaceId : undefined,
-  )
   return json(
     await call(dependencies.mirror, mirrorHostedTasks)(
       config.recordDatabaseUrl,
-      target,
+      who,
       body as Parameters<typeof mirrorHostedTasks>[2],
     ),
   )
@@ -300,7 +275,12 @@ export async function taskApi(
       403,
     )
   if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
-    return json({ userId: who.userId, activeSpaceId: who.spaceId, memberships: who.memberships })
+    return json({
+      userId: who.userId,
+      activeSpaceId: who.spaceId,
+      memberships: who.memberships,
+      capabilities: { targetSpaceTaskMirror: true, targetSpaceIntervalEvidence: true },
+    })
   const body = request.method === 'GET' ? null : await bodyOf(request)
   try {
     const context: RouteContext = {
@@ -323,9 +303,6 @@ export async function taskApi(
     if (response) return response
     return new Response('not found', { status: 404 })
   } catch (error) {
-    return json(
-      { error: (error as Error).message },
-      error instanceof MemberSpaceRefusal ? 403 : 409,
-    )
+    return json({ error: (error as Error).message }, 409)
   }
 }

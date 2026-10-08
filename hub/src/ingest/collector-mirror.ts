@@ -180,7 +180,7 @@ export async function createCollectorMirrorPass(
         refusals,
         'tasks',
         async (spaceId, selected) => {
-          const response = await hostedMirrorTasks({ tasks: selected, targetSpaceId: spaceId })
+          const response = await hostedMirrorTasks({ tasks: selected }, { recordSpace: spaceId })
           const adoptions: MirrorAdoption[] = response.adoptions ?? []
           persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
         },
@@ -195,7 +195,7 @@ export async function createCollectorMirrorPass(
         refusals,
         'statusEvents',
         async (spaceId, selected) => {
-          await hostedMirrorTasks({ tasks: [], statusEvents: selected, targetSpaceId: spaceId })
+          await hostedMirrorTasks({ tasks: [], statusEvents: selected }, { recordSpace: spaceId })
         },
       )
       return resultAfterDelivery(delivered, refusals)

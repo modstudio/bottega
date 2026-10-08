@@ -111,15 +111,17 @@ mock.module('../task-client.ts', () => ({
     }
   },
   hostedSignedInUserId: async () => 'user-active',
-  hostedMirrorTasks: async (body: {
-    tasks: Array<{ id: string; key: string }>
-    statusEvents?: Array<{ task_key: string; project_name: string }>
-    targetSpaceId?: string
-  }) => {
-    if (!body.targetSpaceId) throw new Error('missing target space')
-    if (refuseMirror || refusedTargetSpace === body.targetSpaceId)
+  hostedMirrorTasks: async (
+    body: {
+      tasks: Array<{ id: string; key: string }>
+      statusEvents?: Array<{ task_key: string; project_name: string }>
+    },
+    options?: { recordSpace?: string | null },
+  ) => {
+    if (!options?.recordSpace) throw new Error('missing target space')
+    if (refuseMirror || refusedTargetSpace === options.recordSpace)
       throw new Error('simulated hosted refusal')
-    mirroredTargets.push(body.targetSpaceId)
+    mirroredTargets.push(options.recordSpace)
     for (const task of body.tasks ?? []) {
       const ids = mirrored.get(task.key) ?? []
       ids.push(task.id)

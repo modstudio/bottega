@@ -332,8 +332,8 @@ export async function hostedSignedInUserId(
 }
 export const hostedTaskCounts = (targetSpaceId: string, options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(
-    `/v1/tasks/counts?${new URLSearchParams({ spaceId: targetSpaceId })}`,
+    '/v1/tasks/counts',
     'GET',
     undefined,
-    options,
+    { ...options, recordSpace: targetSpaceId },
   )

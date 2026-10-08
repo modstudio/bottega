@@ -2,13 +2,13 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import {
-  assertMirrorExpectedSpace,
   confirmCount,
   createHostedTaskInTransaction,
   mirrorCollisionDecision,
 } from './hosted-tasks.ts'
+import { taskRequestSpaceDecision } from './record-space-request.ts'
 import { createTask } from './task.ts'
-import { taskApi, taskRequestSpaceDecision } from './task-api.ts'
+import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
 import {
   hostedCloseTask,
@@ -199,23 +199,19 @@ describe('hosted-only task safety', () => {
     ).rejects.toThrow("project 'present' has no key prefix")
   })
 
-  test('mirror expected-space checks name both spaces and accept older clients', () => {
-    expect(() => assertMirrorExpectedSpace(undefined, 'space-b')).not.toThrow()
-    expect(() => assertMirrorExpectedSpace('space-b', 'space-b')).not.toThrow()
-    expect(() => assertMirrorExpectedSpace('space-a', 'space-b')).toThrow(
-      'mirror expected space space-a, actual space space-b; re-run after the active space settles',
-    )
-  })
-
   test('a non-member mirror target and injected spaceIds reach no write service', async () => {
     let writes = 0
     const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks/mirror', {
         method: 'PUT',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-z',
+        },
         body: JSON.stringify({
           tasks: [],
-          targetSpaceId: 'space-z',
+          targetSpaceId: 'space-a',
           spaceIds: ['space-z'],
         }),
       }),
@@ -236,18 +232,28 @@ describe('hosted-only task safety', () => {
 
     expect(response?.status).toBe(403)
     expect(await response?.json()).toEqual({
-      error: "target space space-z is not one of the authenticated user's memberships",
+      error: "record space 'space-z' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
     })
     expect(writes).toBe(0)
   })
 
   test('a member mirror target derives its tenant principal without body-supplied spaceIds', async () => {
-    const principals: Array<{ userId: string; spaceId: string; spaceIds?: readonly string[] }> = []
+    const principals: Array<{
+      userId: string
+      spaceId: string
+      spaceIds?: readonly string[]
+      memberships?: Array<{ spaceId: string; slug: string }>
+    }> = []
     const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks/mirror', {
         method: 'PUT',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-        body: JSON.stringify({ tasks: [], targetSpaceId: 'space-b', spaceIds: ['space-z'] }),
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-b',
+        },
+        body: JSON.stringify({ tasks: [], targetSpaceId: 'space-a', spaceIds: ['space-z'] }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
@@ -273,6 +279,10 @@ describe('hosted-only task safety', () => {
         userId: 'user-1',
         spaceId: 'space-b',
         spaceIds: ['space-a', 'space-b'],
+        memberships: [
+          { spaceId: 'space-a', slug: 'active' },
+          { spaceId: 'space-b', slug: 'other' },
+        ],
       },
     ])
   })
@@ -280,8 +290,8 @@ describe('hosted-only task safety', () => {
   test('a non-member counts target returns its refusal as HTTP 403', async () => {
     let reads = 0
     const response = await taskApi(
-      new Request('https://hub.example.test/v1/tasks/counts?spaceId=space-z', {
-        headers: { authorization: 'Bearer test' },
+      new Request('https://hub.example.test/v1/tasks/counts', {
+        headers: { authorization: 'Bearer test', 'x-record-space': 'space-z' },
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
@@ -300,7 +310,8 @@ describe('hosted-only task safety', () => {
 
     expect(response?.status).toBe(403)
     expect(await response?.json()).toEqual({
-      error: "target space space-z is not one of the authenticated user's memberships",
+      error: "record space 'space-z' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
     })
     expect(reads).toBe(0)
   })
