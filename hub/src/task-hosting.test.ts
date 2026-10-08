@@ -553,7 +553,7 @@ describe('hosted-only task safety', () => {
         { spaceId: 'space-a', slug: 'workshop' },
         { spaceId: 'space-b', slug: 'stopal' },
       ],
-      capabilities: { targetSpaceTaskMirror: true },
+      capabilities: { targetSpaceTaskMirror: true, targetSpaceIntervalEvidence: true },
     })
   })
 

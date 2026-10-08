@@ -2,9 +2,92 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { evidenceApi } from './evidence-api.ts'
+import type { IntervalEvidence } from './hosted-evidence.ts'
 import { batches, contentHash, diffRows, signedInRecordUserId, syncEvidence } from './sync.ts'
 
 beforeEach(resetFixtureStore)
+
+const identity = (capability = true) => ({
+  userId: 'user-1',
+  activeSpaceId: 'space-active',
+  memberships: [
+    { spaceId: 'space-active', slug: 'active' },
+    { spaceId: 'space-a', slug: 'alpha' },
+    { spaceId: 'space-b', slug: 'beta' },
+  ],
+  capabilities: capability ? { targetSpaceIntervalEvidence: true } : {},
+})
+
+function interval(ref: string, project: string | null): IntervalEvidence {
+  return {
+    task_key: null,
+    project_name: project,
+    source: 'orch',
+    agent: null,
+    job: null,
+    start_at: `2026-10-08T00:00:0${ref}.000Z`,
+    end_at: `2026-10-08T00:00:0${ref}.000Z`,
+    claude_tokens: 0,
+    vendor_tokens: 0,
+    vendor_cost_usd: null,
+    ref: `orch:${ref}`,
+    via: null,
+    open: 0,
+    session_id: null,
+    user_id: null,
+  }
+}
+
+function insertInterval(row: IntervalEvidence) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO interval
+          (task_key,project,source,agent,job,start_at,end_at,claude_tokens,vendor_tokens,
+           vendor_cost_usd,ref,via,open,session_id,user_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        row.task_key,
+        row.project_name,
+        row.source,
+        row.agent,
+        row.job,
+        row.start_at,
+        row.end_at,
+        row.claude_tokens,
+        row.vendor_tokens,
+        row.vendor_cost_usd,
+        row.ref,
+        row.via,
+        row.open,
+        row.session_id,
+        row.user_id,
+      )
+  })
+}
+
+const keyOf = (row: IntervalEvidence) => JSON.stringify([row.source, row.ref, row.start_at])
+
+function syncFetch(
+  writes: Array<{ method: string; body: Record<string, unknown> }>,
+  options: { capability?: boolean; failSpace?: string } = {},
+) {
+  return async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/v1/tasks/identity'))
+      return Response.json(identity(options.capability !== false))
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    writes.push({ method: init?.method ?? 'GET', body })
+    if (body.targetSpaceId === options.failSpace)
+      return Response.json({ error: 'destination unavailable' }, { status: 503 })
+    return Response.json({ ok: true })
+  }
+}
+
+const registered = [
+  { name: 'one', settings: { space: 'alpha' } },
+  { name: 'two', settings: { space: 'beta' } },
+]
 
 describe('evidence sync planning', () => {
   test('captures the signed-in record user and keeps an absent session null', async () => {
@@ -95,6 +178,186 @@ describe('evidence sync planning', () => {
     ).toEqual([500, 500, 1])
   })
 
+  test('groups project intervals by registered destination, not the third active space', async () => {
+    insertInterval(interval('1', 'one'))
+    insertInterval(interval('2', 'two'))
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+
+    expect(writes).toHaveLength(2)
+    expect(writes.map((write) => write.body.targetSpaceId).sort()).toEqual(['space-a', 'space-b'])
+    expect(writes.some((write) => write.body.targetSpaceId === 'space-active')).toBe(false)
+  })
+
+  test('sends a projectless interval to the active space', async () => {
+    insertInterval(interval('1', null))
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => write.body.targetSpaceId)).toEqual(['space-active'])
+  })
+
+  test('reports a refused project without acknowledging it while delivering another', async () => {
+    const refused = interval('1', 'missing')
+    const delivered = interval('2', 'one')
+    insertInterval(refused)
+    insertInterval(delivered)
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const result = await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+
+    expect(result.interval.issues).toEqual([{ project: 'missing', reason: 'unregistered-project' }])
+    expect(writes).toHaveLength(1)
+    expect(
+      db()
+        .query<{ local_key: string }, []>(
+          `SELECT local_key FROM record_ledger WHERE table_name='interval'`,
+        )
+        .all(),
+    ).toEqual([{ local_key: keyOf(delivered) }])
+  })
+
+  test('resends a legacy acknowledgement with no destination', async () => {
+    const row = interval('1', 'one')
+    insertInterval(row)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger (table_name,local_key,content_hash,synced_at)
+           VALUES ('interval',?,?,?)`,
+        )
+        .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z'),
+    )
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => write.method)).toEqual(['PUT'])
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-a' })
+  })
+
+  test('moves an acknowledgement only after sending new and deleting old', async () => {
+    const row = interval('1', 'two')
+    insertInterval(row)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger
+             (table_name,local_key,content_hash,synced_at,destination_space_id)
+           VALUES ('interval',?,?,?,?)`,
+        )
+        .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z', 'space-a'),
+    )
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
+      ['PUT', 'space-b'],
+      ['DELETE', 'space-a'],
+    ])
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-b' })
+  })
+
+  test('a failed new-destination send preserves the old acknowledgement', async () => {
+    const row = interval('1', 'two')
+    insertInterval(row)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger
+             (table_name,local_key,content_hash,synced_at,destination_space_id)
+           VALUES ('interval',?,?,?,?)`,
+        )
+        .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z', 'space-a'),
+    )
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const result = await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes, { failSpace: 'space-b' }),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => write.method)).toEqual(['PUT'])
+    expect(result.interval.issues[0]?.reason).toContain('delivery-failed')
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-a' })
+  })
+
+  test('deletes a vanished row from its acknowledged destination', async () => {
+    const vanished = interval('2', 'two')
+    writeTransaction((conn) => {
+      const put = conn.query(
+        `INSERT INTO record_ledger
+           (table_name,local_key,content_hash,synced_at,destination_space_id)
+         VALUES ('interval',?,?,?,?)`,
+      )
+      put.run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', 'space-b')
+    })
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
+      ['DELETE', 'space-b'],
+    ])
+    expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 0 })
+  })
+
+  test('refuses a server without interval target-space support before any write', async () => {
+    insertInterval(interval('1', 'one'))
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    await expect(
+      syncEvidence({
+        baseUrl: 'https://hub.example.test',
+        token: 'session',
+        fetch: syncFetch(writes, { capability: false }),
+        registeredProjects: registered,
+      }),
+    ).rejects.toThrow('does not advertise target-space interval evidence support')
+    expect(writes).toEqual([])
+  })
+
   test('an HTML success response does not advance the evidence ledger', async () => {
     writeTransaction((conn) => {
       conn
@@ -112,12 +375,41 @@ describe('evidence sync planning', () => {
             headers: { 'content-type': 'text/html' },
           }),
       }),
-    ).rejects.toThrow('hosted evidence refused the response from https://hub.example.test/')
+    ).rejects.toThrow('hosted hub refused the response from https://hub.example.test/')
     expect(db().query('SELECT * FROM record_ledger').all()).toEqual([])
   })
 })
 
 describe('evidence API', () => {
+  test('a non-member interval target returns 403 before the write service', async () => {
+    let wrote = false
+    const response = await evidenceApi(
+      new Request('https://hub.example.test/v1/evidence/intervals', {
+        method: 'PUT',
+        headers: { authorization: 'Bearer fixture', 'content-type': 'application/json' },
+        body: JSON.stringify({ targetSpaceId: 'space-other', rows: [] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-active',
+            memberships: [{ space_id: 'space-active', slug: 'active' }],
+          }),
+        putIntervals: async () => {
+          wrote = true
+          return { upserted: 0 }
+        },
+      },
+    )
+    expect(response?.status).toBe(403)
+    expect(await response?.json()).toEqual({
+      error: "target space space-other is not one of the authenticated user's memberships",
+    })
+    expect(wrote).toBe(false)
+  })
+
   test('refuses a route without authorization before touching identity or storage', async () => {
     let fetched = false
     const response = await evidenceApi(

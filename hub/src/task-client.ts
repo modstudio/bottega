@@ -18,7 +18,7 @@ export type HostedTaskIdentity = {
   userId: string
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
-  capabilities?: { targetSpaceTaskMirror?: boolean }
+  capabilities?: { targetSpaceTaskMirror?: boolean; targetSpaceIntervalEvidence?: boolean }
 }
 
 const TARGET_SPACE_MIRROR_REMEDY =
@@ -28,6 +28,16 @@ export function assertTargetSpaceTaskMirror(identity: HostedTaskIdentity) {
   if (identity.capabilities?.targetSpaceTaskMirror !== true)
     throw new Error(
       `hosted hub does not advertise target-space task mirror support; ${TARGET_SPACE_MIRROR_REMEDY}`,
+    )
+}
+
+const TARGET_SPACE_INTERVAL_REMEDY =
+  'deploy the hub server at or after the target-space interval evidence change'
+
+export function assertTargetSpaceIntervalEvidence(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.targetSpaceIntervalEvidence !== true)
+    throw new Error(
+      `hosted hub does not advertise target-space interval evidence support; ${TARGET_SPACE_INTERVAL_REMEDY}`,
     )
 }
 
@@ -306,6 +316,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).targetSpaceTaskMirror === true,
+      targetSpaceIntervalEvidence:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).targetSpaceIntervalEvidence === true,
     },
   }
 }

@@ -1,5 +1,7 @@
+import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
 import { deleteIntervals, upsertDays, upsertIntervals } from './hosted-evidence.ts'
+import { MemberSpaceRefusal, principalForMemberSpace } from './member-space-principal.ts'
 
 const TEST_REFUSAL =
   'hub evidence API refuses real identity and database clients unless stubs are injected in tests'
@@ -11,7 +13,7 @@ type Dependencies = {
   removeIntervals?: typeof deleteIntervals
 }
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
-type Tenant = { userId: string; spaceId: string }
+type Tenant = { userId: string; spaceId: string; spaceIds: string[] }
 
 async function identity(
   request: Request,
@@ -26,8 +28,13 @@ async function identity(
   if (!response.ok) return null
   const body = (await response.json().catch(() => null)) as Record<string, unknown> | null
   const user = body?.user as Record<string, unknown> | undefined
+  const memberships = parseRecordSpaceMemberships(body?.memberships)
   return typeof user?.id === 'string' && typeof body?.activeSpaceId === 'string'
-    ? { userId: user.id, spaceId: body.activeSpaceId }
+    ? {
+        userId: user.id,
+        spaceId: body.activeSpaceId,
+        spaceIds: memberships.map((membership) => membership.spaceId),
+      }
     : null
 }
 
@@ -45,11 +52,17 @@ async function putIntervalBatch(
 ) {
   const rows = batch(body, 'rows')
   if (!rows) return Response.json({ error: 'rows must contain at most 500 items' }, { status: 400 })
+  const target = principalForMemberSpace(
+    who,
+    typeof (body as Record<string, unknown>)?.targetSpaceId === 'string'
+      ? ((body as Record<string, unknown>).targetSpaceId as string)
+      : undefined,
+  )
   if (process.env.NODE_ENV === 'test' && !dependencies.putIntervals) throw new Error(TEST_REFUSAL)
   return Response.json(
     await (dependencies.putIntervals ?? upsertIntervals)(
       config.recordDatabaseUrl,
-      who,
+      target,
       rows as IntervalEvidence[],
     ),
   )
@@ -76,12 +89,18 @@ async function deleteIntervalBatch(
 ) {
   const keys = batch(body, 'keys')
   if (!keys) return Response.json({ error: 'keys must contain at most 500 items' }, { status: 400 })
+  const target = principalForMemberSpace(
+    who,
+    typeof (body as Record<string, unknown>)?.targetSpaceId === 'string'
+      ? ((body as Record<string, unknown>).targetSpaceId as string)
+      : undefined,
+  )
   if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervals)
     throw new Error(TEST_REFUSAL)
   return Response.json(
     await (dependencies.removeIntervals ?? deleteIntervals)(
       config.recordDatabaseUrl,
-      who,
+      target,
       keys as IntervalKey[],
     ),
   )
@@ -107,11 +126,18 @@ export async function evidenceApi(
       { status: 401 },
     )
   const body = await request.json().catch(() => null)
-  if (request.method === 'PUT' && url.pathname === '/v1/evidence/intervals')
-    return putIntervalBatch(body, config, who, dependencies)
-  if (request.method === 'PUT' && url.pathname === '/v1/evidence/days')
-    return putDayBatch(body, config, who, dependencies)
-  if (request.method === 'DELETE' && url.pathname === '/v1/evidence/intervals')
-    return deleteIntervalBatch(body, config, who, dependencies)
-  return new Response('not found', { status: 404 })
+  try {
+    if (request.method === 'PUT' && url.pathname === '/v1/evidence/intervals')
+      return await putIntervalBatch(body, config, who, dependencies)
+    if (request.method === 'PUT' && url.pathname === '/v1/evidence/days')
+      return await putDayBatch(body, config, who, dependencies)
+    if (request.method === 'DELETE' && url.pathname === '/v1/evidence/intervals')
+      return await deleteIntervalBatch(body, config, who, dependencies)
+    return new Response('not found', { status: 404 })
+  } catch (error) {
+    return Response.json(
+      { error: (error as Error).message },
+      { status: error instanceof MemberSpaceRefusal ? 403 : 409 },
+    )
+  }
 }
