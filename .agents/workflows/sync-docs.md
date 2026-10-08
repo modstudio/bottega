@@ -16,9 +16,7 @@ modes:
     title: Sync documentation
     default: true
     steps:
-      - docs-gather
-      - docs-deviations
-      - docs-apply
+      - sequence: sync
       - run-gate
 ---
 Make the task documentation, canon, and knowledge base describe the change that was actually built. Find every deviation, record a disposition for each one, apply the rulings through the project's registered adapters, and verify the result with the project gate.
