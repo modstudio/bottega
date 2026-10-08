@@ -52,6 +52,7 @@ mock.module('../mcp.ts', () => ({
     url: `https://${prefix.toLowerCase()}.example.test`,
     token: 'tracker-token',
   }),
+  failureDetail: (error: unknown) => String(error),
   Mcp: class {
     private url: string
     constructor(url: string) {
@@ -80,15 +81,20 @@ mock.module('../mcp.ts', () => ({
 }))
 
 let refuseMirror = false
+let refuseTaskMirror = false
+let refuseStatusEventMirror = false
+let refuseStatusEventMirrorCall: number | null = null
 let refuseIdentity = false
 let supportsTargetSpace = true
 let refusedTargetSpace: string | null = null
 const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started' }
 const trackerTaskOverrides: Record<string, Array<Record<string, unknown>> | undefined> = {}
 const mirrored = new Map<string, string[]>()
-const mirroredEvents: Array<{ task_key: string; project_name: string }> = []
+const mirroredEvents: Array<{ task_key: string; project_name: string; at?: string }> = []
+const statusEventMirrorBatchSizes: number[] = []
 const mirroredTargets: string[] = []
 mock.module('../task-client.ts', () => ({
+  assertTargetSpaceIntervalEvidence: () => {},
   assertTargetSpaceTaskMirror: (identity: {
     capabilities?: { targetSpaceTaskMirror?: boolean }
   }) => {
@@ -97,6 +103,19 @@ mock.module('../task-client.ts', () => ({
         'hosted hub does not advertise target-space task mirror support; deploy the hub server at or after the target-space task mirror change',
       )
   },
+  hostedCloseTask: async () => null,
+  hostedCommentTask: async () => null,
+  hostedCreateDocument: async () => null,
+  hostedCreateOperatorWaitingEmail: async () => null,
+  hostedCreateTask: async () => null,
+  hostedDeleteDocument: async () => null,
+  hostedDeleteTasks: async () => null,
+  hostedListTasks: async () => [],
+  hostedPatchDocument: async () => null,
+  hostedPatchTask: async () => null,
+  hostedTaskChanges: async () => null,
+  hostedTaskCounts: async () => null,
+  hostedTaskPresence: async () => null,
   hostedTaskIdentity: async () => {
     if (refuseIdentity) throw new Error('simulated identity refusal')
     return {
@@ -119,7 +138,18 @@ mock.module('../task-client.ts', () => ({
     options?: { recordSpace?: string | null },
   ) => {
     if (!options?.recordSpace) throw new Error('missing target space')
-    if (refuseMirror || refusedTargetSpace === options.recordSpace)
+    const statusEventCount = body.statusEvents?.length ?? 0
+    if (body.tasks.length + statusEventCount > 500)
+      throw new Error('mirror accepts at most 500 rows')
+    if (statusEventCount > 0) statusEventMirrorBatchSizes.push(statusEventCount)
+    if (
+      refuseMirror ||
+      (refuseTaskMirror && body.tasks.length > 0) ||
+      (refuseStatusEventMirror && statusEventCount > 0) ||
+      (statusEventCount > 0 &&
+        refuseStatusEventMirrorCall === statusEventMirrorBatchSizes.length) ||
+      refusedTargetSpace === options.recordSpace
+    )
       throw new Error('simulated hosted refusal')
     mirroredTargets.push(options.recordSpace)
     for (const task of body.tasks ?? []) {
@@ -162,8 +192,12 @@ beforeEach(() => {
   })
   mirrored.clear()
   mirroredEvents.length = 0
+  statusEventMirrorBatchSizes.length = 0
   mirroredTargets.length = 0
   refuseMirror = false
+  refuseTaskMirror = false
+  refuseStatusEventMirror = false
+  refuseStatusEventMirrorCall = null
   refuseIdentity = false
   supportsTargetSpace = true
   refusedTargetSpace = null
@@ -290,6 +324,59 @@ test('tracker status events follow their task project destinations', async () =>
     { project: 'stopal', count: 1 },
   ])
   expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha', 'stopal'])
+})
+
+test('a refused collected transition is delivered by a later unchanged collection pass', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+  refuseStatusEventMirror = true
+
+  const refused = await ingestTrackers()
+
+  expect(refused.find((result) => result.project === 'alpha')?.error).toBe(
+    'hosted mirror skipped: alpha: delivery-failed: simulated hosted refusal',
+  )
+  expect(mirroredEvents).toEqual([])
+  expect(pendingTrackerStatusEvents()).toEqual([
+    expect.objectContaining({ project: 'alpha', key: 'ALP-1' }),
+  ])
+
+  refuseStatusEventMirror = false
+  const recovered = await ingestTrackers()
+
+  expect(recovered.every((result) => result.changed === 0)).toBeTrue()
+  expect(mirroredEvents.map((event) => event.task_key)).toEqual(['ALP-1'])
+  expect(pendingTrackerStatusEvents()).toEqual([])
+})
+
+test('a delivered collected transition is sent exactly once across two passes', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+
+  await ingestTrackers()
+  await ingestTrackers()
+
+  expect(mirroredEvents.filter((event) => event.task_key === 'ALP-1')).toHaveLength(1)
+  expect(pendingTrackerStatusEvents()).toEqual([])
+})
+
+test('a failed task mirror leaves its collected transition queued', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+  refuseTaskMirror = true
+
+  const failed = await ingestTrackers()
+
+  expect(failed.find((result) => result.project === 'alpha')?.error).toBe(
+    'hosted mirror skipped: alpha: delivery-failed: simulated hosted refusal',
+  )
+  expect(mirroredEvents).toEqual([])
+  expect(pendingTrackerStatusEvents().map((event) => event.key)).toEqual(['ALP-1'])
+
+  refuseTaskMirror = false
+  await ingestTrackers()
+  expect(mirroredEvents.map((event) => event.task_key)).toEqual(['ALP-1'])
+  expect(pendingTrackerStatusEvents()).toEqual([])
 })
 
 test('a fresh transition is mirrored exactly once by the following collect', async () => {
@@ -448,6 +535,47 @@ test('failed destination status events remain pending while delivered events are
   expect(pendingTrackerStatusEvents().map((entry) => entry.project)).toEqual(['stopal'])
   expect(mirroredEvents.map((entry) => entry.project_name)).toEqual(['alpha'])
   errors.mockRestore()
+})
+
+test('pending status events are mirrored oldest first in delivered slices of 500', async () => {
+  const task = (category: 'active' | 'done') => ({
+    externalId: 'tracker-alp-batched',
+    key: 'ALP-500',
+    project: 'alpha' as const,
+    title: 'Batched task',
+    status: category,
+    category,
+    updatedAt: null,
+    assignee: null,
+  })
+  observeTrackerTask(task('active'), '2026-10-01T00:00:00.000Z')
+  for (let index = 1; index <= 501; index += 1) {
+    const at = new Date(Date.UTC(2026, 9, 1, 0, 0, 0, 502 - index)).toISOString()
+    observeTrackerTask(task(index % 2 === 0 ? 'active' : 'done'), at, true)
+  }
+  const mirror = await createCollectorMirrorPass('tracker')
+
+  expect(await mirrorPendingTrackerStatusEvents(mirror, 'alpha', Date.UTC(2026, 9, 2))).toBeNull()
+  expect(statusEventMirrorBatchSizes).toEqual([500, 1])
+  expect(mirroredEvents).toHaveLength(501)
+  expect(mirroredEvents[0]?.at).toBe('2026-10-01T00:00:00.001Z')
+  expect(mirroredEvents[500]?.at).toBe('2026-10-01T00:00:00.501Z')
+  expect(pendingTrackerStatusEvents()).toEqual([])
+
+  mirroredEvents.length = 0
+  statusEventMirrorBatchSizes.length = 0
+  for (let index = 502; index <= 1002; index += 1) {
+    const at = new Date(Date.UTC(2026, 9, 1, 0, 0, 0, 1504 - index)).toISOString()
+    observeTrackerTask(task(index % 2 === 0 ? 'active' : 'done'), at, true)
+  }
+  refuseStatusEventMirrorCall = 2
+
+  expect(
+    (await mirrorPendingTrackerStatusEvents(mirror, 'alpha', Date.UTC(2026, 9, 2)))?.message,
+  ).toContain('simulated hosted refusal')
+  expect(statusEventMirrorBatchSizes).toEqual([500, 1])
+  expect(mirroredEvents).toHaveLength(500)
+  expect(pendingTrackerStatusEvents()).toHaveLength(1)
 })
 
 test('a server without target-space support refuses the collector before its first write', async () => {
