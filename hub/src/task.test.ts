@@ -132,6 +132,23 @@ const branchClassification = (
 })
 
 describe('local task tracker', () => {
+  test('a project without a declared space sends no record-space header', async () => {
+    let recordSpace: string | null = 'not-called'
+    await createTask(
+      { project: 'beta', title: `No space ${crypto.randomUUID()}` },
+      {
+        hosted: {
+          ...hosted,
+          fetch: async (input, init) => {
+            recordSpace = new Headers(init?.headers).get('x-record-space')
+            return hosted.fetch(input, init)
+          },
+        },
+      },
+    )
+    expect(recordSpace).toBeNull()
+  })
+
   test('a hub-protocol project still mints through hub', async () => {
     const task = await createTask(
       { project: 'workshop', title: `Hub-owned ${crypto.randomUUID()}` },

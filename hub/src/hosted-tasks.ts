@@ -201,8 +201,13 @@ export async function createHostedTaskInTransaction(
       SELECT id,key_prefixes FROM project WHERE space_id=${identity.spaceId}::uuid
         AND name=${input.project}`,
   )[0]
+  if (!project)
+    throw new Error(
+      `project '${input.project}' is absent from record space ${identity.spaceId}. ` +
+        `Run \`orch record space move-project\` or declare the project's space in the register.`,
+    )
   const prefix = project?.key_prefixes[0]
-  if (!project || !prefix) throw new Error(`project '${input.project}' has no key prefix`)
+  if (!prefix) throw new Error(`project '${input.project}' has no key prefix`)
   const pattern = `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-([0-9]+)$`
   const highest = rows<{ highest: string | null }>(
     await tx`
