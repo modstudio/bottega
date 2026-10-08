@@ -22,6 +22,32 @@ export function docsVisibleByStatus(
   )
 }
 
+/** The selected catalogue row when the page controls still include it. */
+export function docsSelectionInView(
+  items: readonly DocsTreeItem[],
+  audience: DocsAudience,
+  project: string | 'all',
+  chosen: FilterSelection,
+  selectedId: string,
+): DocsTreeItem | null {
+  const forAudience = inAudience(inProject(items, project), audience)
+  const filters = clearStaleFilters(forAudience, chosen)
+  return applyFilters(forAudience, filters).find((item) => item.id === selectedId) ?? null
+}
+
+/** A replacement is linkable only when its address identifies one catalogue row. */
+export function resolveDocsReplacement(
+  doc: DocsDoc | null,
+  items: readonly DocsTreeItem[],
+): DocsTreeItem | null {
+  if (doc?.status !== 'superseded' || !doc.replacementSlug) return null
+  const matches = items.filter(
+    (item) =>
+      item.scope === doc.scope && item.subject === doc.subject && item.slug === doc.replacementSlug,
+  )
+  return matches.length === 1 ? matches[0]! : null
+}
+
 export function docsViewModel(
   items: readonly DocsTreeItem[],
   audience: DocsAudience,

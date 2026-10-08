@@ -79,11 +79,16 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       showDrafts={false}
       onShowDrafts={() => {}}
       canShowDrafts
-      source="local"
       doc={{
         ...items[1]!,
         body: '## Open a task\n\nEvery piece of work carries a key.\n',
       }}
+      replacement={null}
+      locationFor={(item) => ({
+        to: '/docs/$scope/$subject/$slug',
+        params: { scope: item.scope, subject: item.subject ?? '_', slug: item.slug },
+        search: {},
+      })}
       onSelect={() => {}}
       onOpenFirst={() => {}}
       onLeaveTree={() => {}}

@@ -6,10 +6,10 @@ import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
-import { docsLocation } from './location.ts'
+import type { DocsLocation } from './location.ts'
 import { DocStatusBadge } from './status-badge.tsx'
 import type { BreadcrumbPart } from './tree.ts'
-import type { DocsDoc, DocsSource, DocsTreeItem } from './types.ts'
+import type { DocsDoc, DocsTreeItem } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -147,23 +147,14 @@ function ReadingAround({
 
 function DocLifecycle({
   doc,
-  items,
-  source,
+  replacement,
+  locationFor,
 }: {
   doc: DocsDoc
-  items: readonly DocsTreeItem[]
-  source: DocsSource
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
 }) {
   if (doc.status === 'current') return null
-  const replacements = doc.replacementSlug
-    ? items.filter(
-        (item) =>
-          item.scope === doc.scope &&
-          item.subject === doc.subject &&
-          item.slug === doc.replacementSlug,
-      )
-    : []
-  const replacement = replacements.length === 1 ? replacements[0] : undefined
   return (
     <div className="doc-measure mt-3 flex flex-wrap items-center gap-2 text-md text-text-muted">
       <DocStatusBadge status={doc.status} />
@@ -171,7 +162,7 @@ function DocLifecycle({
         <span>
           Replaced by{' '}
           {replacement ? (
-            <Link {...docsLocation(replacement, source)} className="text-link hover:underline">
+            <Link {...locationFor(replacement)} className="text-link hover:underline">
               {replacement.title}
             </Link>
           ) : (
@@ -188,8 +179,8 @@ export function DocsReading({
   crumbs,
   around,
   onSelect,
-  items,
-  source,
+  replacement,
+  locationFor,
   localActions,
   error,
   pending,
@@ -204,8 +195,8 @@ export function DocsReading({
   crumbs: readonly BreadcrumbPart[]
   around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
   onSelect: (item: DocsTreeItem) => void
-  items: readonly DocsTreeItem[]
-  source: DocsSource
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
   localActions?: ReactNode
   error?: string | null
 }) {
@@ -238,7 +229,7 @@ export function DocsReading({
           >
             {shown.title}
           </h1>
-          <DocLifecycle doc={doc} items={items} source={source} />
+          <DocLifecycle doc={doc} replacement={replacement} locationFor={locationFor} />
           {shown.lede ? (
             <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
           ) : null}

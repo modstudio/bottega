@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
 import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import { EMPTY_FILTERS } from './filters.ts'
-import { docsViewModel, docsVisibleByStatus } from './model.ts'
+import {
+  docsSelectionInView,
+  docsViewModel,
+  docsVisibleByStatus,
+  resolveDocsReplacement,
+} from './model.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
@@ -46,6 +51,38 @@ test('tree visibility includes drafts only when asked and never includes retired
     'current',
     'draft',
   ])
+})
+
+test('an addressed document survives controls it matches and leaves controls it does not', () => {
+  const archived = item({
+    id: 'old',
+    title: 'Old guide',
+    status: 'archived',
+    scope: 'project',
+    delivery: 'demand',
+  })
+  const otherScope = item({ id: 'canon', title: 'Canon guide', scope: 'canon' })
+  const catalogue = [...items, archived, otherScope]
+  expect(
+    docsSelectionInView(catalogue, 'user', 'atlas', { scope: 'project', delivery: null }, 'old'),
+  ).toBe(archived)
+  expect(
+    docsSelectionInView(catalogue, 'user', 'atlas', { scope: 'canon', delivery: null }, 'old'),
+  ).toBeNull()
+})
+
+test('replacement resolution requires one row at the same document address', () => {
+  const retired = {
+    ...item({ id: 'old', title: 'Old guide', status: 'superseded' }),
+    replacementSlug: 'new-guide',
+    body: 'Old body',
+  }
+  const replacement = item({ id: 'new', slug: 'new-guide', title: 'New guide' })
+  expect(resolveDocsReplacement(retired, [replacement])).toBe(replacement)
+  expect(
+    resolveDocsReplacement(retired, [replacement, { ...replacement, id: 'duplicate' }]),
+  ).toBeNull()
+  expect(resolveDocsReplacement(retired, [{ ...replacement, subject: 'other' }])).toBeNull()
 })
 
 test('the breadcrumb is Docs, subject and ancestors, not the document title', () => {

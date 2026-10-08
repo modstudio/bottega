@@ -9,7 +9,7 @@ import { CreateDocDialog } from './create-dialog.tsx'
 import { chooserProject, projectSubjects, searchSubject } from './filters.ts'
 import { DocsHome } from './home.tsx'
 import { docsLocation } from './location.ts'
-import { docsVisibleByStatus } from './model.ts'
+import { docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 import { docsSource } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
@@ -37,11 +37,12 @@ export function DocsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showDrafts, setShowDrafts] = useState(false)
   const catalog = useDocsTree(source)
-  const items = useMemo(
-    () => docsVisibleByStatus(catalog.items, source !== 'public' && showDrafts),
-    [catalog.items, showDrafts, source],
+  const includeDrafts = source !== 'public' && showDrafts
+  const navigationItems = useMemo(
+    () => docsVisibleByStatus(catalog.items, includeDrafts),
+    [catalog.items, includeDrafts],
   )
-  const subjects = useMemo(() => projectSubjects(items), [items])
+  const subjects = useMemo(() => projectSubjects(navigationItems), [navigationItems])
   const selected = useMemo(() => {
     if (!params) return null
     const subject = params.subject === '_' ? null : params.subject
@@ -71,12 +72,16 @@ export function DocsPage() {
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected)
+  const replacement = useMemo(
+    () => resolveDocsReplacement(reading.document, catalog.items),
+    [reading.document, catalog.items],
+  )
   const results = useDocsSearch(
     source,
     searchQuery,
     audience,
-    searchSubject(project, items),
-    source !== 'public' && showDrafts,
+    searchSubject(project, navigationItems),
+    includeDrafts,
   )
 
   const open = useCallback(
@@ -89,6 +94,7 @@ export function DocsPage() {
     [navigate, source],
   )
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
+  const locationFor = useCallback((item: DocsTreeItem) => docsLocation(item, source), [source])
 
   if (source === 'public' && identityResolved && !selected) {
     return (
@@ -118,11 +124,12 @@ export function DocsPage() {
         onProject={setProject}
         signedIn={signedIn}
         showProjectChooser={signedIn}
-        showDrafts={showDrafts}
+        showDrafts={includeDrafts}
         onShowDrafts={setShowDrafts}
         canShowDrafts={source !== 'public'}
-        source={source}
         doc={reading.document}
+        replacement={replacement}
+        locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
         onLeaveTree={() => void navigate({ to: '/docs' })}

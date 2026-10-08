@@ -9,7 +9,8 @@ import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import { FilterPanel } from './filter-panel.tsx'
 import { EMPTY_FILTERS, type FilterSelection, type OfferedFilter } from './filters.ts'
-import { docsViewModel, docsVisibleByStatus } from './model.ts'
+import type { DocsLocation } from './location.ts'
+import { docsSelectionInView, docsViewModel, docsVisibleByStatus } from './model.ts'
 import { DocsFacts, DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
@@ -18,7 +19,6 @@ import type {
   DocsAudience,
   DocsDoc,
   DocsSearchMatch,
-  DocsSource,
   DocsTreeGroup,
   DocsTreeItem,
   TreeNode,
@@ -40,8 +40,9 @@ export type DocsViewProps = {
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
-  source: DocsSource
   doc: DocsDoc | null
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
   onSelect: (item: DocsTreeItem) => void
   /** Opens a document the reader did not pick, replacing the current history entry. */
   onOpenFirst: (item: DocsTreeItem) => void
@@ -270,8 +271,9 @@ export function DocsView({
   showDrafts,
   onShowDrafts,
   canShowDrafts,
-  source,
   doc,
+  replacement,
+  locationFor,
   onSelect,
   onOpenFirst,
   onLeaveTree,
@@ -353,6 +355,8 @@ export function DocsView({
     nextFilters: FilterSelection,
   ) => {
     if (!selectedId) return
+    const selected = docsSelectionInView(items, nextAudience, nextProject, nextFilters, selectedId)
+    if (selected) return
     const next = docsViewModel(
       navigationItems,
       nextAudience,
@@ -361,7 +365,6 @@ export function DocsView({
       selectedId,
       doc,
     )
-    if (next.selected) return
     if (next.first) onOpenFirst(next.first)
     else onLeaveTree()
   }
@@ -448,8 +451,8 @@ export function DocsView({
           crumbs={readingCrumbs}
           around={readingAround}
           onSelect={onSelect}
-          items={items}
-          source={source}
+          replacement={replacement}
+          locationFor={locationFor}
           localActions={localActions}
           error={error}
         />
