@@ -6,7 +6,6 @@ import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 
 export type HostedSend = {
   id: string
-  legacy_local_id: number | null
   at: string
   window: string
   recipients: string
@@ -333,7 +332,7 @@ export async function listHostedSends(
     const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
     const limit = Math.max(1, Math.min(filters.limit ?? 500, 1000))
     const sends = rows<HostedSend & { recipient_details_json: string }>(
-      await tx`SELECT id,legacy_local_id,at,"window",recipients,projects,items,status,error,test,
+      await tx`SELECT id,at,"window",recipients,projects,items,status,error,test,
       created_at,machine,subscription_id,period_start,period_end,
       COALESCE((SELECT json_agg(json_build_object('user_id',r.user_id,'name',r.name,'email',r.email)
         ORDER BY r.created_at,r.id) FROM hub_send_recipient r WHERE r.send_id=hub_send.id),'[]')::text
@@ -358,7 +357,7 @@ export async function listHostedSends(
 export async function appendHostedSend(
   url: string,
   identity: TaskIdentity,
-  input: Omit<HostedSend, 'id' | 'legacy_local_id' | 'created_at'>,
+  input: Omit<HostedSend, 'id' | 'created_at'>,
 ) {
   return tenant(url, identity, async (tx) => {
     return rows<HostedSend>(
@@ -367,7 +366,7 @@ export async function appendHostedSend(
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.at}::timestamptz,
       ${input.window},${input.recipients},${input.projects},${input.items},${input.status},
       ${input.error},${input.test},now(),${input.machine})
-      RETURNING id,legacy_local_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
+      RETURNING id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
       subscription_id,period_start,period_end`,
     )[0]!
   })
@@ -379,15 +378,24 @@ export async function mirrorHostedReports(
   input: { sends?: HostedSend[] },
 ) {
   return tenant(url, identity, async (tx) => {
+    const writes: unknown[][] = []
     for (const row of input.sends ?? [])
-      await tx`INSERT INTO hub_send
+      writes.push(
+        rows<{ id: string }>(
+          await tx`INSERT INTO hub_send
       (id,legacy_local_id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine)
-      VALUES (${row.id}::uuid,${row.legacy_local_id},${identity.spaceId}::uuid,${row.at}::timestamptz,
+      VALUES (${row.id}::uuid,${null},${identity.spaceId}::uuid,${row.at}::timestamptz,
       ${row.window},${row.recipients},${row.projects},${row.items},${row.status},${row.error},
       ${row.test},${row.created_at}::timestamptz,${row.machine})
-      ON CONFLICT(space_id,legacy_local_id) DO NOTHING`
-    return { upserted: input.sends?.length ?? 0 }
+      ON CONFLICT(id) DO NOTHING RETURNING id`,
+        ),
+      )
+    return { upserted: countMirrorWrites(writes) }
   })
+}
+
+export function countMirrorWrites(results: readonly (readonly unknown[])[]) {
+  return results.reduce((total, result) => total + result.length, 0)
 }
 
 export async function hostedReportCounts(url: string, identity: TaskIdentity) {

@@ -37,3 +37,35 @@ test('hosted note and report pulls refuse HTML and preserve their cursors', asyn
     { key: 'collect.hosted-sends.cursor', value: 'report-before' },
   ])
 })
+
+test('hosted send pull matches only by record id', async () => {
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO send(record_id,at,window,recipients,projects,items,status,error,test)
+        VALUES ('01990000-0000-7000-8000-000000000301','2026-10-08T12:00:00.000Z','day','[]','[]',1,'sent',NULL,0)`)
+      .run()
+  })
+  const fetch = async () =>
+    Response.json({
+      sends: [
+        {
+          id: '01990000-0000-7000-8000-000000000302',
+          at: '2026-10-08T12:00:00.000Z',
+          window: 'day',
+          recipients: '[]',
+          projects: '[]',
+          items: 1,
+          status: 'sent',
+          error: null,
+          test: 0,
+          created_at: '2026-10-08T12:00:00.000Z',
+          machine: 'other',
+        },
+      ],
+      cursor: '2026-10-08T12:00:00.000Z',
+    })
+
+  await pullHostedReports({ baseUrl: 'https://hub.example.test', token: 'session', fetch })
+
+  expect(db().query<{ count: number }, []>('SELECT count(*) count FROM send').get()?.count).toBe(2)
+})

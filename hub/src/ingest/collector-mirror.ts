@@ -1,9 +1,4 @@
-import {
-  type HostedStatusEvent,
-  type HostedTask,
-  isTaskMirrorAdoption,
-  type MirrorAdoption,
-} from '../hosted-tasks.ts'
+import type { HostedStatusEvent, HostedTask, MirrorAdoption } from '../hosted-tasks.ts'
 import { rememberHostedInstall } from '../install-binding.ts'
 import { projects } from '../projects.ts'
 import { persistTaskAdoptions } from '../task-adoption.ts'
@@ -182,7 +177,7 @@ export async function createCollectorMirrorPass(
         async (spaceId, selected) => {
           const response = await hostedMirrorTasks({ tasks: selected }, { recordSpace: spaceId })
           const adoptions: MirrorAdoption[] = response.adoptions ?? []
-          persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
+          persistTaskAdoptions(adoptions)
         },
       )
       return resultAfterDelivery(delivered, refusals)

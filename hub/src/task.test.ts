@@ -71,7 +71,6 @@ const hosted = {
     if (url.pathname.endsWith('/comments'))
       return Response.json({
         id: Bun.randomUUIDv7(),
-        legacy_local_id: null,
         task_key: key,
         project_name: 'workshop',
         body: body.body,
@@ -82,7 +81,6 @@ const hosted = {
     if (url.pathname.endsWith('/documents'))
       return Response.json({
         id: Bun.randomUUIDv7(),
-        legacy_local_id: null,
         task_key: key,
         project_name: 'workshop',
         role: body.role ?? null,
@@ -252,7 +250,6 @@ describe('local task tracker', () => {
             requests.push({ method: init?.method, pathname: url.pathname })
             return Response.json({
               id: recordId,
-              legacy_local_id: Number(inserted.lastInsertRowid),
               task_key: 'DEV-884',
               project_name: 'workshop',
               role: null,
@@ -499,7 +496,6 @@ describe('declared project space task writes', () => {
         const at = new Date().toISOString()
         return Response.json({
           id: document.record_id,
-          legacy_local_id: null,
           task_key: document.task_key,
           project_name: 'gamma',
           role: body.role ?? document.role,

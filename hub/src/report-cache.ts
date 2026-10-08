@@ -26,15 +26,6 @@ function cacheHostedSend(conn: Database, row: HostedSend) {
       )
     return
   }
-  if (row.legacy_local_id) {
-    const legacy = conn
-      .query<{ id: number }, [number]>('SELECT id FROM send WHERE id=?')
-      .get(row.legacy_local_id)
-    if (legacy) {
-      conn.query('UPDATE send SET record_id=? WHERE id=?').run(row.id, legacy.id)
-      return
-    }
-  }
   conn
     .query(`INSERT INTO send(record_id,at,window,recipients,projects,items,status,error,test)
     VALUES (?,?,?,?,?,?,?,?,?)`)

@@ -81,110 +81,27 @@ test('task push groups projects and children by destination and reports refusals
   ])
 })
 
-test('task push persists ids only after each successful batch and retries an unpersisted batch', async () => {
+test('task push refuses a child without a record id before any request', async () => {
   const at = '2026-09-24T12:00:00.000Z'
   writeTransaction((conn) => {
     conn
       .query(`INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
         VALUES ('01990000-0000-7000-8000-000000000001','LOC-885','workshop','Push ids','open','open','local',?,?)`)
       .run(at, at)
-    const insert = conn.query(
-      `INSERT INTO task_status_event(task_key,task_record_id,at,from_status,to_status)
-       VALUES ('LOC-885','01990000-0000-7000-8000-000000000001',?,NULL,'open')`,
-    )
-    for (let index = 0; index < 501; index++)
-      insert.run(new Date(Date.parse(at) + index).toISOString())
+    conn
+      .query(`INSERT INTO task_status_event(task_key,task_record_id,at,from_status,to_status)
+       VALUES ('LOC-885','01990000-0000-7000-8000-000000000001',?,NULL,'open')`)
+      .run(at)
   })
-  const holderId = '01990000-0000-7000-8000-000000000099'
-  let statusBatch = 0
-  let failSecondBatch = true
-  const stub = async (input: string, init?: RequestInit) => {
-    const path = new URL(input).pathname
-    if (path === '/v1/tasks/identity')
-      return Response.json({
-        userId: 'user-a',
-        activeSpaceId: 'space-a',
-        memberships: [],
-        capabilities: { targetSpaceTaskMirror: true },
-      })
-    if (path === '/v1/tasks/mirror') {
-      const body = JSON.parse(String(init?.body)) as {
-        statusEvents?: Array<{
-          id: string
-          legacy_local_id: number
-          newly_assigned: boolean
-          task_id: string | null
-          task_record_id?: string
-        }>
-      }
-      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-a')
-      const events = body.statusEvents ?? []
-      if (!events.length) return Response.json({ upserted: 0, adoptions: [] })
-      statusBatch++
-      if (failSecondBatch && statusBatch === 2)
-        return Response.json({ error: 'simulated second batch failure' }, { status: 409 })
-      const last = events.find((event) => event.legacy_local_id === 501)
-      if (!last) return Response.json({ upserted: events.length, adoptions: [] })
-      if (!last.newly_assigned)
-        return Response.json(
-          { error: 'existing holder refused a persisted fresh id' },
-          { status: 409 },
-        )
-      return Response.json({
-        upserted: events.length,
-        adoptions: [
-          {
-            table: 'task_status_event',
-            legacy_local_id: last.legacy_local_id,
-            id: holderId,
-          },
-        ],
-      })
-    }
-    if (path === '/v1/tasks/counts') {
-      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-a')
-      return Response.json({})
-    }
-    return Response.json({ error: 'unexpected request' }, { status: 500 })
+  let requests = 0
+  const fetch = async () => {
+    requests++
+    return Response.json({})
   }
-  const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch: stub }
-
-  const dryRun = await pushTasks({ ...options, dryRun: true })
-  expect(dryRun.assignedRecordIds).toBe(501)
-  expect(
-    db()
-      .query<{ count: number }, []>(
-        `SELECT count(*) count FROM task_status_event WHERE record_id IS NOT NULL`,
-      )
-      .get()?.count,
-  ).toBe(0)
-
-  const refused = await pushTasks(options)
-  expect(refused.skipped[0]?.reason).toContain('simulated second batch failure')
-  expect(
-    db()
-      .query<{ count: number }, []>(
-        `SELECT count(*) count FROM task_status_event WHERE record_id IS NOT NULL`,
-      )
-      .get()?.count,
-  ).toBe(500)
-
-  failSecondBatch = false
-  statusBatch = 0
-  await pushTasks(options)
-
-  expect(
-    db()
-      .query<{ count: number }, []>(
-        `SELECT count(*) count FROM task_status_event WHERE record_id IS NOT NULL`,
-      )
-      .get()?.count,
-  ).toBe(501)
-  expect(
-    db()
-      .query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event WHERE id=501`)
-      .get()?.record_id,
-  ).toBe(holderId)
+  await expect(pushTasks({ fetch })).rejects.toThrow(
+    'task_status_event local row 1 has no record id',
+  )
+  expect(requests).toBe(0)
 })
 
 test('task push refuses an older server before its first mirror write', async () => {
@@ -204,7 +121,7 @@ test('task push refuses an older server before its first mirror write', async ()
   expect(writes).toBe(0)
 })
 
-test('task push adopts a hosted holder id and uses it on the next push', async () => {
+test('task push sends a child record id without legacy identity fields', async () => {
   const at = '2026-09-24T12:00:00.000Z'
   writeTransaction((conn) => {
     conn
@@ -215,20 +132,12 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
       .run(at, at)
     conn
       .query(
-        `INSERT INTO task_status_event(task_key,task_record_id,at,from_status,to_status)
-        VALUES ('LOC-886','01990000-0000-7000-8000-000000000001',?,NULL,'open')`,
+        `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
+        VALUES ('01990000-0000-7000-8000-000000000002','LOC-886','01990000-0000-7000-8000-000000000001',?,NULL,'open')`,
       )
       .run(at)
   })
-  const holderId = '01990000-0000-7000-8000-000000000099'
-  const sentEvents: Array<{
-    id: string
-    legacy_local_id: number
-    newly_assigned: boolean
-    task_id: string | null
-    task_record_id?: string
-  }> = []
-  let adopted = false
+  const sentEvents: Array<Record<string, unknown>> = []
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
@@ -240,30 +149,11 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
       })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
-        statusEvents?: Array<{
-          id: string
-          legacy_local_id: number
-          newly_assigned: boolean
-          task_id: string | null
-          task_record_id?: string
-        }>
+        statusEvents?: Array<Record<string, unknown>>
       }
       const event = body.statusEvents?.[0]
       if (!event) return Response.json({ upserted: 0, adoptions: [] })
       sentEvents.push(event)
-      if (!adopted) {
-        adopted = true
-        return Response.json({
-          upserted: 1,
-          adoptions: [
-            {
-              table: 'task_status_event',
-              legacy_local_id: event.legacy_local_id,
-              id: holderId,
-            },
-          ],
-        })
-      }
       return Response.json({ upserted: 1, adoptions: [] })
     }
     if (path === '/v1/tasks/counts') return Response.json({})
@@ -276,19 +166,14 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
   }
 
   await pushTasks(options)
-  expect(
-    db().query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event`).get()
-      ?.record_id,
-  ).toBe(holderId)
-  await pushTasks(options)
-
-  expect(sentEvents).toHaveLength(2)
+  expect(sentEvents).toHaveLength(1)
   expect(sentEvents[0]).toMatchObject({
-    newly_assigned: true,
+    id: '01990000-0000-7000-8000-000000000002',
     task_id: '01990000-0000-7000-8000-000000000001',
   })
   expect(sentEvents[0]).not.toHaveProperty('task_record_id')
-  expect(sentEvents[1]).toMatchObject({ id: holderId, newly_assigned: false })
+  expect(sentEvents[0]).not.toHaveProperty('legacy_local_id')
+  expect(sentEvents[0]).not.toHaveProperty('newly_assigned')
 })
 
 test('task push persists a task adoption and cascades its child identity', async () => {
@@ -304,8 +189,8 @@ test('task push persists a task adoption and cascades its child identity', async
       .run(incomingId, at, at)
     conn
       .query(
-        `INSERT INTO task_comment(task_key,task_record_id,body,created_at)
-         VALUES ('LOC-887',?,'child',?)`,
+        `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+         VALUES ('01990000-0000-7000-8000-000000000003','LOC-887',?,'child',?)`,
       )
       .run(incomingId, at)
   })

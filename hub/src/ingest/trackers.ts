@@ -452,7 +452,6 @@ function trackerStatusEventMirrorRow(
 ): HostedStatusEvent {
   return {
     id: event.recordId,
-    legacy_local_id: null,
     task_key: task.key,
     task_id: taskRecordId,
     project_name: task.project,
