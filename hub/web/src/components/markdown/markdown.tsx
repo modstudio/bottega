@@ -12,7 +12,7 @@ const HIGHLIGHT_OPTIONS: { detect: boolean; plainText: string[] } = {
   plainText: ['mermaid'],
 }
 
-function DocTable({ children }: { children: ReactNode }) {
+function DocTable({ children }: { children?: ReactNode }) {
   return (
     <DocOverflow expandLabel="Expand table" title="Table">
       <table>{children}</table>
@@ -140,7 +140,7 @@ export function Markdown({ content }: { content: string }) {
             const id = headings[heading++]?.id
             return <h2 id={id}>{children}</h2>
           },
-          table: ({ children }) => <DocTable>{children}</DocTable>,
+          table: DocTable,
           pre: Pre,
           div: DocCallout,
         }}
