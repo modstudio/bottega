@@ -292,6 +292,19 @@ function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCan
   }
 }
 
+async function writeHostedFillCandidate(
+  snapshot: Project,
+  candidate: FillCandidate,
+): Promise<void> {
+  if (!candidate.project) return
+  const destination = await hostedProjectDestination(
+    candidate.project.name,
+    candidate.project.settings,
+  )
+  await refuseHostedProjectSpaceChange(snapshot, candidate.project.settings, destination)
+  await writeHostedProject(candidate.project, destination?.destinationSpaceId)
+}
+
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
 export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
   let candidate: Project | null = null
@@ -301,14 +314,7 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
     const checked = fillCandidate(snapshot, input)
     const branchCheck = checked.project ? registerBranchCheck(checked.project) : null
     try {
-      if (checked.project) {
-        const destination = await hostedProjectDestination(
-          checked.project.name,
-          checked.project.settings,
-        )
-        await refuseHostedProjectSpaceChange(snapshot, checked.project.settings, destination)
-        await writeHostedProject(checked.project, destination?.destinationSpaceId)
-      }
+      await writeHostedFillCandidate(snapshot, checked)
       writeTransaction(() => {
         const current = projectByName(input.name)
         if (!current) throw new Error(`no project "${input.name}"`)

@@ -753,6 +753,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../doc/doc-write-allowed.ts',
       '../project/projects.ts',
       './record-project-destination.ts',
+      './record-project-destination-client.ts',
     ],
     'Enforce the record-push-docs concern boundary.',
   ),

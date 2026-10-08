@@ -459,6 +459,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination.ts',
+    '../record/record-project-destination-client.ts',
     '../record/record-write-authority.ts',
     './project-settings.ts',
   ]),
