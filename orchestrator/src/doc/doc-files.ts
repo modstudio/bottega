@@ -2,8 +2,8 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOC_SCOPES, DOC_STATUSES, type DocScope, type DocStatus } from '../../../shared/docs.ts'
-import { importedDocDelivery } from './doc-write-allowed.ts'
 import type { Doc } from './doc-read-store.ts'
+import { importedDocDelivery } from './doc-write-allowed.ts'
 
 type ImportedDoc = {
   scope: DocScope
@@ -13,7 +13,7 @@ type ImportedDoc = {
   status?: DocStatus
   replacementSlug?: string | null
   body: string
-  delivery: 'inject' | 'demand'
+  delivery?: 'inject' | 'demand'
 }
 
 export function exportDocFiles(dir: string, docs: Doc[]): number {
@@ -28,7 +28,10 @@ export function exportDocFiles(dir: string, docs: Doc[]): number {
   return docs.length
 }
 
-function importedDoc(path: string, fileName: string): Omit<ImportedDoc, 'scope' | 'subject' | 'slug' | 'delivery'> {
+function importedDoc(
+  path: string,
+  fileName: string,
+): Omit<ImportedDoc, 'scope' | 'subject' | 'slug' | 'delivery'> {
   const raw = readFileSync(path, 'utf8')
   const match = raw.match(
     /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\nreplacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
@@ -46,7 +49,11 @@ function importedDoc(path: string, fileName: string): Omit<ImportedDoc, 'scope' 
   if (status !== undefined && !DOC_STATUSES.includes(status)) {
     throw new Error(`${fileName}: status must be ${DOC_STATUSES.join(', ')}`)
   }
-  if (replacementSlug !== undefined && replacementSlug !== null && typeof replacementSlug !== 'string') {
+  if (
+    replacementSlug !== undefined &&
+    replacementSlug !== null &&
+    typeof replacementSlug !== 'string'
+  ) {
     throw new Error(`${fileName}: replacement must be a string or null`)
   }
   return { title, status, replacementSlug, body: match[4]! }
@@ -60,24 +67,37 @@ export async function importDocFiles(
   for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
     if (!scopeEntry.isDirectory()) continue
     if (!DOC_SCOPES.includes(scopeEntry.name as DocScope)) {
-      throw new Error(`unknown doc scope "${scopeEntry.name}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
+      throw new Error(
+        `unknown doc scope "${scopeEntry.name}"; valid scopes: ${DOC_SCOPES.join(', ')}`,
+      )
     }
     const scope = scopeEntry.name as DocScope
     for (const subjectEntry of readdirSync(join(dir, scope), { withFileTypes: true })) {
       if (!subjectEntry.isDirectory()) continue
-      const subject = subjectEntry.name === '_' ? null : subjectEntry.name
-      for (const file of readdirSync(join(dir, scope, subjectEntry.name), { withFileTypes: true })) {
-        if (!file.isFile() || !file.name.endsWith('.md')) continue
-        await write({
-          scope,
-          subject,
-          slug: file.name.slice(0, -3),
-          ...importedDoc(join(dir, scope, subjectEntry.name, file.name), file.name),
-          delivery: importedDocDelivery(scope),
-        })
-        count++
-      }
+      count += await importSubjectFiles(dir, scope, subjectEntry.name, write)
     }
+  }
+  return count
+}
+
+async function importSubjectFiles(
+  dir: string,
+  scope: DocScope,
+  subjectDirectory: string,
+  write: (doc: ImportedDoc) => Promise<void>,
+): Promise<number> {
+  let count = 0
+  const subject = subjectDirectory === '_' ? null : subjectDirectory
+  for (const file of readdirSync(join(dir, scope, subjectDirectory), { withFileTypes: true })) {
+    if (!file.isFile() || !file.name.endsWith('.md')) continue
+    await write({
+      scope,
+      subject,
+      slug: file.name.slice(0, -3),
+      ...importedDoc(join(dir, scope, subjectDirectory, file.name), file.name),
+      delivery: importedDocDelivery(scope),
+    })
+    count++
   }
   return count
 }

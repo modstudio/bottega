@@ -11,6 +11,14 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-files.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/docs.ts',
+    './doc-read-store.ts',
+    './doc-write-allowed.ts',
+  ]),
+  module('orchestrator/src/doc/doc-status.ts', ['../../../shared/docs.ts', './doc-read-store.ts']),
   module('orchestrator/src/doc/doc-tree-rules.ts', ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-subjects.ts', [
     '../../../shared/docs.ts',

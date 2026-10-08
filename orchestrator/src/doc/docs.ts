@@ -9,13 +9,10 @@
  * recovery. Canon docs are the source for the global and
  * project hydrated instruction tree and enter worker packs through the canon path.
  */
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
-  DOC_STATUSES,
   type DocAudience,
   type DocScope,
   type DocStatus,
@@ -32,6 +29,7 @@ import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
+import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
@@ -44,7 +42,7 @@ import {
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
-import { docLifecycle } from './doc-status.ts'
+import { docLifecycle, statusDocWriteInput } from './doc-status.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import {
   assertLocalDocRemovalAllowed,
@@ -84,7 +82,6 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
-  importedDocDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
@@ -477,22 +474,7 @@ export async function setDocStatus(
 ): Promise<Doc> {
   const current = getDoc(scope, subject, slug, owner)
   if (!current) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
-  return setDoc({
-    scope,
-    subject,
-    owner,
-    slug,
-    title: current.title,
-    body: current.body,
-    delivery: current.delivery,
-    audience: current.audience,
-    parentSlug: current.parent_slug,
-    position: current.position,
-    featured: current.featured,
-    status,
-    replacementSlug,
-    ...context,
-  })
+  return setDoc({ ...statusDocWriteInput(current, status, replacementSlug), ...context })
 }
 
 export async function importDoc(
@@ -833,83 +815,23 @@ export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
 }
 
 export function exportDocs(dir: string): number {
-  const docs = listDocs()
-  for (const doc of docs) {
-    const target = join(dir, doc.scope, doc.subject ?? '_')
-    mkdirSync(target, { recursive: true })
-    writeFileSync(
-      join(target, `${doc.slug}.md`),
-      `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
-    )
-  }
-  return docs.length
-}
-
-function importedDoc(
-  path: string,
-  fileName: string,
-): { title: string; status?: DocStatus; replacementSlug?: string | null; body: string } {
-  const raw = readFileSync(path, 'utf8')
-  const match = raw.match(
-    /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\nreplacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
-  )
-  if (!match) throw new Error(`${fileName}: expected YAML frontmatter with a title`)
-  let title: unknown
-  try {
-    title = JSON.parse(match[1]!)
-  } catch {
-    throw new Error(`${fileName}: title must be a YAML double-quoted string`)
-  }
-  if (typeof title !== 'string') throw new Error(`${fileName}: title must be a string`)
-  const status = match[2] === undefined ? undefined : JSON.parse(match[2])
-  const replacementSlug = match[3] === undefined ? undefined : JSON.parse(match[3])
-  if (status !== undefined && !DOC_STATUSES.includes(status)) {
-    throw new Error(`${fileName}: status must be ${DOC_STATUSES.join(', ')}`)
-  }
-  if (
-    replacementSlug !== undefined &&
-    replacementSlug !== null &&
-    typeof replacementSlug !== 'string'
-  ) {
-    throw new Error(`${fileName}: replacement must be a string or null`)
-  }
-  return { title, status, replacementSlug, body: match[4]! }
+  return exportDocFiles(dir, listDocs())
 }
 
 export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
   assertWorkerDocStoreWriteAllowed('importDocs')
   writableDb()
   docWriteIdentity(context)
-  let count = 0
-  for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
-    if (!scopeEntry.isDirectory()) continue
-    validScope(scopeEntry.name)
-    const scope = scopeEntry.name
-    for (const subjectEntry of readdirSync(join(dir, scope), { withFileTypes: true })) {
-      if (!subjectEntry.isDirectory()) continue
-      const subject = subjectEntry.name === '_' ? null : subjectEntry.name
-      for (const file of readdirSync(join(dir, scope, subjectEntry.name), {
-        withFileTypes: true,
-      })) {
-        if (!file.isFile() || !file.name.endsWith('.md')) continue
-        const parsed = importedDoc(join(dir, scope, subjectEntry.name, file.name), file.name)
-        await setDocWithOp(
-          {
-            scope,
-            subject,
-            slug: file.name.slice(0, -3),
-            ...parsed,
-            delivery: importedDocDelivery(scope),
-            ...context,
-            expectedRevision: getDoc(scope, subject, file.name.slice(0, -3))?.revision ?? undefined,
-          },
-          'import',
-        )
-        count++
-      }
-    }
-  }
-  return count
+  return importDocFiles(dir, async (doc) => {
+    await setDocWithOp(
+      {
+        ...doc,
+        ...context,
+        expectedRevision: getDoc(doc.scope, doc.subject, doc.slug)?.revision ?? undefined,
+      },
+      'import',
+    )
+  })
 }
 
 export function listDocRevisions(

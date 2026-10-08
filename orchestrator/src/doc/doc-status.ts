@@ -52,3 +52,25 @@ export function docLifecycle(
   }
   return { status, replacementSlug }
 }
+
+export function statusDocWriteInput(
+  current: Doc,
+  status: DocStatus,
+  replacementSlug: string | null | undefined,
+) {
+  return {
+    scope: current.scope,
+    subject: current.subject,
+    owner: current.owner,
+    slug: current.slug,
+    title: current.title,
+    body: current.body,
+    delivery: current.delivery,
+    audience: current.audience,
+    parentSlug: current.parent_slug,
+    position: current.position,
+    featured: current.featured,
+    status,
+    replacementSlug,
+  }
+}

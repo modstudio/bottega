@@ -291,6 +291,7 @@ async function handleSetDocCommand(
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null; owner: string | null },
 ): Promise<boolean> {
+  if (sub === 'status') return handleStatusDocCommand(sub, argv, flags, presentation, address)
   if (sub !== 'set') return false
   const { has, flag } = flags
   const slug = argv[2]
@@ -389,8 +390,6 @@ export async function docCommand(
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
-  if (await handleStatusDocCommand(sub, argv, flags, presentation, { scope, subject, owner }))
-    return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)

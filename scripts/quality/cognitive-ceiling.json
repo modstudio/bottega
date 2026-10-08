@@ -255,13 +255,6 @@
     "key": "orchestrator/src/doc/doc-commands.ts\u0000docCommand"
   },
   {
-    "file": "orchestrator/src/doc/docs.ts",
-    "function": "importDocs",
-    "line": 808,
-    "score": 18,
-    "key": "orchestrator/src/doc/docs.ts\u0000importDocs"
-  },
-  {
     "file": "orchestrator/src/events.ts",
     "function": "observe#2",
     "line": 124,
