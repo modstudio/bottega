@@ -86,7 +86,7 @@ const publishCursorWorkflow = (slug: string, modes: WorkflowDefinition['modes'])
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {
   registerFixtureProject('mode-less-step')
-  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'complete')!
+  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'verify')!
   const draft = setWorkflow(
     'mode-less-step',
     {
@@ -440,7 +440,9 @@ test('workflow probe JSON adds exitCode and outputTail only for a failure', asyn
 test('next resolves an omitted mode to the composed cursor default', async () => {
   const slug = 'cursor-default-next'
   const project = 'cursor-default-next-project'
-  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'complete')!
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
@@ -470,7 +472,9 @@ test('next resolves an omitted mode to the composed cursor default', async () =>
 test('cursor command without a default mode names the available modes', async () => {
   const slug = 'cursor-no-default'
   const project = 'cursor-no-default-project'
-  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'complete')!
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', entry: 'Prepare a report?', steps: [step.slug] },
@@ -490,7 +494,9 @@ test('cursor command without a default mode names the available modes', async ()
 test('next preserves an explicit mode', async () => {
   const slug = 'cursor-explicit-next'
   const project = 'cursor-explicit-next-project'
-  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'complete')!
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
@@ -526,8 +532,8 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
   const key = 'DEV-937-pinned'
   const catalogue = productionStepCatalogue().definition.steps
   const steps = [
-    catalogue.find(({ slug }) => slug === 'complete')!.slug,
-    catalogue.find(({ slug }) => slug === 'score')!.slug,
+    catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
+    catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
   ]
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [
@@ -562,9 +568,11 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
   await command('abandon', '--reason', 'operator stopped')
 
   expect(lines.join('\n')).toMatch(
-    new RegExp(`workflow ${slug} is awaiting ruling question \\d+ at step 2 score`),
+    new RegExp(`workflow ${slug} is awaiting ruling question \\d+ at step 2 fix-defect-triage`),
   )
-  expect(lines.join('\n')).toContain(`Workflow ${slug} for ${key} was abandoned at step 2 score`)
+  expect(lines.join('\n')).toContain(
+    `Workflow ${slug} for ${key} was abandoned at step 2 fix-defect-triage`,
+  )
 })
 
 test('every CLI cursor verb routes by handle, including handle-only abandon', async () => {
@@ -572,8 +580,8 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
   const project = 'cursor-handle-verbs-project'
   const catalogue = productionStepCatalogue().definition.steps
   const steps = [
-    catalogue.find(({ slug }) => slug === 'complete')!.slug,
-    catalogue.find(({ slug }) => slug === 'score')!.slug,
+    catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
+    catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
   ]
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
@@ -623,7 +631,9 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
   const slug = 'cursor-ambiguous-mode'
   const project = 'cursor-ambiguous-mode-project'
   const key = 'DEV-937-ambiguous'
-  const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'complete')!
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },

@@ -115,7 +115,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       `INSERT INTO workflow_cursor
         (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
          args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,session_id)
-       VALUES ('fixture','ship','default','DEV-943','',1,1,'{"key":"DEV-943"}',0,'rebase',
+       VALUES ('fixture','fixture-workflow','default','DEV-943','',1,1,'{"key":"DEV-943"}',0,'rebase',
                'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25','session-1') RETURNING id`,
     )
     .get() as { id: number }
@@ -157,7 +157,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
       answer_command:
-        'orch workflow rule ship --project fixture --mode default --arg key=DEV-943 --ruling "<ruling>" --from-operator',
+        'orch workflow rule fixture-workflow --project fixture --mode default --arg key=DEV-943 --ruling "<ruling>" --from-operator',
     },
   ])
 })
@@ -175,7 +175,7 @@ test('notification claims return each waiting episode once', () => {
       `INSERT INTO workflow_cursor
         (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
          args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
-       VALUES ('fixture','ship','default','DEV-943','',1,1,'{}',0,'rebase','awaiting-ruling',
+       VALUES ('fixture','fixture-workflow','default','DEV-943','',1,1,'{}',0,'rebase','awaiting-ruling',
                '[]','Workflow?',1,'2026-09-25','2026-09-25') RETURNING id`,
     )
     .get() as { id: number }

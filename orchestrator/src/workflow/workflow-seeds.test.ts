@@ -143,13 +143,18 @@ describe('workflow projection and seeds', () => {
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
     const catalogue = productionStepCatalogue(d)
-    expect(catalogue.reason).toBe('seed r5')
+    expect(catalogue.reason).toBe('seed r6')
     expect(validateStepCatalogue(catalogue.definition)).toEqual([])
-    expect(listWorkflows(d).filter((w) => ['ship', 'fix-defect'].includes(w.slug)).length).toBe(2)
-    for (const [slug, revision] of [
-      ['ship', 4],
-      ['fix-defect', 4],
-    ] as const) {
+    expect(catalogue.definition.steps.map(({ slug }) => slug)).toEqual([
+      'diagnose',
+      'fix-defect-fix',
+      'verify',
+      'blast-radius',
+      'fix-defect-triage',
+      'ship',
+    ])
+    expect(listWorkflows(d).map(({ slug }) => slug)).toEqual(['fix-defect'])
+    for (const [slug, revision] of [['fix-defect', 5]] as const) {
       const version = showWorkflow(slug, 1, d)
       expect(version.status).toBe('production')
       expect(version.author).toBe('seed')
@@ -172,37 +177,27 @@ describe('workflow projection and seeds', () => {
         },
       ])
       expect(validateWorkflowDefinition(version.definition)).toEqual([])
-      if (slug === 'ship')
-        expect(version.definition.arguments.find(({ name }) => name === 'worktree')).toMatchObject({
-          rebind: true,
-        })
+      expect(version.definition.modes[0]?.steps.at(-1)).toBe('ship')
+      expect(catalogue.definition.steps.find(({ slug }) => slug === 'ship')?.body).toContain(
+        '`ship-task` workflow',
+      )
     }
   })
-  test('catalogue seed revision advances an existing store to the trunk-aware steps', () => {
+  test('catalogue seed revision advances an existing seed store to the ship-task wording', () => {
     const d = database(),
       catalogue = productionStepCatalogue(d),
       legacy = {
         steps: catalogue.definition.steps.map((step) => {
-          if (step.slug === 'rebase')
-            return {
-              ...step,
-              body: step.body.replace('origin/{{trunk}}', 'origin/main'),
-              needs: step.needs.filter((need) => need !== 'trunk'),
-            }
-          if (step.slug === 'pr')
-            return {
-              ...step,
-              body: step.body.replace('--base {{trunk}}', '--base main'),
-              needs: step.needs.filter((need) => need !== 'trunk'),
-            }
+          if (step.slug === 'ship')
+            return { ...step, body: step.body.replace('`ship-task`', '`ship`') }
           return step
         }),
       }
     d.query(
-      "UPDATE step_catalogue_version SET definition=?,reason='seed r1' WHERE catalogue_id=? AND n=1",
+      "UPDATE step_catalogue_version SET definition=?,reason='seed r5' WHERE catalogue_id=? AND n=1",
     ).run(JSON.stringify(legacy), catalogue.owner_id)
     d.query(
-      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
+      "UPDATE step_catalogue_event SET reason='seed r5' WHERE catalogue_id=? AND author='seed'",
     ).run(catalogue.owner_id)
 
     seedWorkflows(d)
@@ -210,12 +205,10 @@ describe('workflow projection and seeds', () => {
     expect(showStepCatalogue(1, d).status).toBe('retired')
     const advanced = showStepCatalogue(2, d)
     expect(advanced.status).toBe('production')
-    expect(advanced.reason).toBe('seed r5')
-    for (const slug of ['rebase', 'pr']) {
-      const step = advanced.definition.steps.find((item) => item.slug === slug)!
-      expect(step.needs).toContain('trunk')
-      expect(step.body).toContain('{{trunk}}')
-    }
+    expect(advanced.reason).toBe('seed r6')
+    expect(advanced.definition.steps.find(({ slug }) => slug === 'ship')?.body).toContain(
+      '`ship-task` workflow',
+    )
   })
   test('forking a legacy catalogue maps old vocabulary before refusing its missing stage', () => {
     const d = database()
@@ -237,7 +230,7 @@ describe('workflow projection and seeds', () => {
     } catch (error) {
       message = error instanceof Error ? error.message : String(error)
     }
-    expect(message).toContain('step "rebase" has invalid or missing stage "undefined"')
+    expect(message).toContain('step "diagnose" has invalid or missing stage "undefined"')
     expect(message).not.toContain('human-ruling')
     expect(message).not.toContain('manual')
   })
@@ -246,18 +239,7 @@ describe('workflow projection and seeds', () => {
       catalogue = productionStepCatalogue(d),
       legacy = {
         steps: catalogue.definition.steps.map((step) => {
-          if (step.slug === 'rebase')
-            return {
-              ...step,
-              body: step.body.replace('origin/{{trunk}}', 'origin/main'),
-              needs: step.needs.filter((need) => need !== 'trunk'),
-            }
-          if (step.slug === 'pr')
-            return {
-              ...step,
-              body: step.body.replace('--base {{trunk}}', '--base main'),
-              needs: step.needs.filter((need) => need !== 'trunk'),
-            }
+          if (step.slug === 'ship') return { ...step, body: 'Operator-authored ship step.' }
           return step
         }),
       }
@@ -310,17 +292,12 @@ describe('workflow projection and seeds', () => {
         .get(catalogue.owner_id),
     ).toEqual({ count: beforeEvents })
   })
-  test('legacy seed revisions upgrade both live shapes', () => {
+  test('the remaining legacy seed revision upgrades its live shape', () => {
     const d = database()
-    makeLegacy(d, 'ship', 2, 'operator')
     makeLegacy(d, 'fix-defect', 1)
     seedWorkflows(d)
-    expect(showWorkflow('ship', 3, d).status).toBe('production')
     expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
-    for (const [slug, prior, next, revision] of [
-      ['ship', 2, 3, 4],
-      ['fix-defect', 1, 2, 4],
-    ] as const) {
+    for (const [slug, prior, next, revision] of [['fix-defect', 1, 2, 5]] as const) {
       expect(showWorkflow(slug, prior, d).status).toBe('retired')
       expect(showWorkflow(slug, next, d).reason).toBe(`seed r${revision}`)
       expect(
@@ -379,39 +356,39 @@ describe('workflow projection and seeds', () => {
     expect(d.query("SELECT id FROM workflow WHERE slug='fix-defect'").get()).toEqual({ id })
     expect(workflowVersions('fix-defect', d).map(({ n }) => n)).toEqual([1, 2, 3])
     expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
-    expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r4')
+    expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r5')
     expect(
       listWorkflows(d).filter(({ slug }) => slug === 'fix-defect' || slug === 'filed-issue'),
     ).toHaveLength(1)
   })
   test('revision seeding is idempotent', () => {
     const d = database()
-    makeLegacy(d, 'ship', 1)
+    makeLegacy(d, 'fix-defect', 1)
     seedWorkflows(d)
     seedWorkflows(d)
-    expect(workflowVersions('ship', d).map((version) => version.n)).toEqual([1, 2])
+    expect(workflowVersions('fix-defect', d).map((version) => version.n)).toEqual([1, 2])
     expect(stepCatalogueVersions(d).map((version) => version.n)).toEqual([1])
   })
   test('seed revision replaces but retains an operator production version', () => {
     const d = database()
-    makeLegacy(d, 'ship', 2, 'architect')
+    makeLegacy(d, 'fix-defect', 2, 'architect')
     seedWorkflows(d)
-    expect(showWorkflow('ship', 2, d).status).toBe('retired')
-    expect(showWorkflow('ship', 2, d).author).toBe('architect')
-    expect(showWorkflow('ship', 3, d).status).toBe('production')
-    expect(showWorkflow('ship', 3, d).author).toBe('seed')
+    expect(showWorkflow('fix-defect', 2, d).status).toBe('retired')
+    expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
+    expect(showWorkflow('fix-defect', 3, d).status).toBe('production')
+    expect(showWorkflow('fix-defect', 3, d).author).toBe('seed')
   })
   test('a workflow with no production version upgrades without a retire event', () => {
     const d = database()
-    makeLegacy(d, 'ship', 1)
+    makeLegacy(d, 'fix-defect', 1)
     d.query(
       "UPDATE workflow_version SET status='retired',retired_at=? WHERE status='production'",
     ).run(new Date().toISOString())
-    const before = events(d, 'ship').length
+    const before = events(d, 'fix-defect').length
     seedWorkflows(d)
-    expect(showWorkflow('ship', 2, d).status).toBe('production')
+    expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
     expect(
-      events(d, 'ship')
+      events(d, 'fix-defect')
         .slice(before)
         .map(({ event }) => event),
     ).toEqual(['set', 'promote'])

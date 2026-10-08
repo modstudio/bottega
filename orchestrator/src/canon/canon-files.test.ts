@@ -9,7 +9,7 @@ let root: string | null = null
 test('workflow and skill agent content is outside the canon pack', () => {
   expect(
     [
-      '.agents/workflows/ship.md',
+      '.agents/workflows/fixture-workflow.md',
       '.agents/workflow-steps/verify.md',
       '.agents/skills/cleanup/SKILL.md',
     ].map(isCanonPath),

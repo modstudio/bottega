@@ -3,12 +3,6 @@
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import {
-  REVIEW_COVERAGE,
-  REVIEW_LIMITS,
-  REVIEW_OVERLAP,
-  REVIEW_REPRODUCED,
-} from '../review/review-vocabulary.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import { type FloorKind, validateStepCatalogue } from './step-catalogue.ts'
 import { expandWorkflowSteps } from './workflow-step-sequences.ts'
@@ -17,109 +11,8 @@ const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 
 const seeds = [
   {
-    slug: 'ship',
-    revision: 4,
-    definition: {
-      title: 'Ship a task',
-      description:
-        'Rebase, independently review, triage, fix, merge by pull request, and close a task.',
-      arguments: [
-        { name: 'key', required: true, description: 'The task key.' },
-        { name: 'branch', required: true, description: 'The branch to ship.' },
-        {
-          name: 'worktree',
-          required: true,
-          rebind: true,
-          description: "The branch's worktree path.",
-        },
-      ],
-      modes: [
-        {
-          slug: 'default',
-          title: 'Ship',
-          default: true,
-          steps: ['rebase', 'lens', 'score', 'triage', 'complete', 'fix', 'pr', 'merge', 'close'],
-        },
-      ],
-      steps: [
-        {
-          slug: 'rebase',
-          title: 'Rebase and verify',
-          job: null,
-          autonomy: 'auto',
-          gate: 'bun run check',
-          body: 'In `{{worktree}}`, run `git fetch origin` and `git rebase origin/main`, run `bun install` in the repository root, then run `bun run check` in the foreground. If the gate fails only because a ceiling baseline tightened, commit the rewritten `scripts/quality/*.json` and re-run.',
-        },
-        {
-          slug: 'lens',
-          title: 'Run independent review lenses',
-          job: 'review-lens',
-          autonomy: 'auto',
-          gate: null,
-          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Dispatch each named lens against the branch. Always run correctness. Also run migration-safety when the change touches `orchestrator/src/database/db.ts` or `orchestrator/migrations/`. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --review {{branch}} --key {{key}} --lens correctness "Review {{key}}: the change on {{branch}} against its task."`\n\nRepeat with the same prompt and --lens migration-safety or --lens craft when those apply.',
-        },
-        {
-          slug: 'score',
-          title: 'Score the lenses',
-          job: null,
-          autonomy: 'auto',
-          gate: null,
-          body: `Read every lens result and run \`orch score <run-id> <delivery> <quality> --reproduced <${REVIEW_REPRODUCED.join('|')}> --coverage <${REVIEW_COVERAGE.join('|')}> --limits <${REVIEW_LIMITS.join('|')}> --overlap <${REVIEW_OVERLAP.join('|')}> --note "..."\` honestly for each. Grading records the lens on the review; there is no separate record step.`,
-        },
-        {
-          slug: 'triage',
-          title: 'Triage every finding',
-          job: null,
-          autonomy: 'ask',
-          gate: null,
-          body: 'The architect must mark every finding accepted, modified, rejected, or skipped with `orch review triage <review-id> <finding> <disposition>`.',
-        },
-        {
-          slug: 'complete',
-          title: 'Complete the review',
-          job: null,
-          autonomy: 'auto',
-          gate: null,
-          body: 'After every finding is triaged, run `orch review complete <review-id>`.',
-        },
-        {
-          slug: 'fix',
-          title: 'Fix accepted findings',
-          job: 'implement',
-          autonomy: 'ask',
-          gate: null,
-          body: 'Only if findings were accepted or modified, run `orch continue <original-run-id> "Fix the accepted review findings."`. Then loop back to `lens`, because the tree changed.',
-        },
-        {
-          slug: 'pr',
-          title: 'Open the pull request',
-          job: null,
-          autonomy: 'ask',
-          gate: null,
-          body: 'Push the branch with `git -C {{worktree}} push -u origin {{branch}}`, then open a pull request with `gh pr create --base main --head {{branch}} --title "{{key}} <summary>" --body-file <file>`; the body states what changed, why, and the gate result.',
-        },
-        {
-          slug: 'merge',
-          title: 'Merge and pull',
-          job: null,
-          autonomy: 'ask',
-          gate: null,
-          body: 'Merge on GitHub with `gh pr merge <number> --squash --delete-branch`. Then, in the main checkout, run `git pull --ff-only`, and run `orch migrate` and `hub migrate` when the change carries a migration.',
-        },
-        {
-          slug: 'close',
-          title: 'Close the task',
-          job: null,
-          autonomy: 'auto',
-          gate: null,
-          body: 'Remove the worktree and delete the local branch, then run `hub task comment {{key}} "Shipped in #<number>."` and `hub task close {{key}}`.',
-        },
-      ],
-    },
-  },
-  {
     slug: 'fix-defect',
-    revision: 4,
+    revision: 5,
     definition: {
       title: 'Fix one reported defect',
       description: "A projection of the 'orch fix-defect' command's coordinator for inspection.",
@@ -179,7 +72,7 @@ const seeds = [
           job: null,
           autonomy: 'ask',
           gate: null,
-          body: 'Ship the fix through the `ship` workflow: gate, pull request, merge.',
+          body: 'Ship the fix through the `ship-task` workflow: gate, pull request, merge.',
         },
       ],
     },
@@ -187,17 +80,6 @@ const seeds = [
 ]
 
 const floors: Record<string, Record<string, FloorKind[]>> = {
-  ship: {
-    rebase: ['command-exit'],
-    lens: ['recorded-artifact'],
-    score: ['recorded-artifact'],
-    triage: ['ruling'],
-    complete: ['recorded-artifact'],
-    fix: ['command-exit', 'recorded-artifact'],
-    pr: ['command-exit', 'recorded-artifact'],
-    merge: ['command-exit', 'recorded-artifact'],
-    close: ['tracker-transition'],
-  },
   'fix-defect': {
     diagnose: ['recorded-artifact'],
     fix: ['recorded-artifact'],
@@ -226,17 +108,6 @@ type SeedCatalogueStep = {
   needs: string[]
 }
 const stages: Record<string, Record<string, SeedCatalogueStep['stage']>> = {
-  ship: {
-    rebase: 'ship',
-    lens: 'review',
-    score: 'review',
-    triage: 'review',
-    complete: 'review',
-    fix: 'review',
-    pr: 'ship',
-    merge: 'ship',
-    close: 'ship',
-  },
   'fix-defect': {
     diagnose: 'plan',
     fix: 'implement',
@@ -246,23 +117,15 @@ const stages: Record<string, Record<string, SeedCatalogueStep['stage']>> = {
     ship: 'ship',
   },
 }
-const usesTrunk = (workflow: string, step: string) =>
-  workflow === 'ship' && (step === 'rebase' || step === 'pr')
 function catalogueBody(workflow: string, step: string, legacyBody: string): string {
   if (workflow === 'fix-defect' && step === 'verify')
     return 'Reproduce the original condition before and after the fix, then run `{{gate}}`.'
-  if (!usesTrunk(workflow, step)) return legacyBody.replaceAll('bun run check', '{{gate}}')
-  return legacyBody
-    .replaceAll('bun run check', '{{gate}}')
-    .replace('origin/main', 'origin/{{trunk}}')
-    .replace('--base main', '--base {{trunk}}')
+  return legacyBody.replaceAll('bun run check', '{{gate}}')
 }
 function catalogueNeeds(workflow: string, step: string, runsGate: boolean): string[] {
   return [
     ...(runsGate ? ['gate'] : []),
-    ...(usesTrunk(workflow, step) ? ['trunk'] : []),
     ...(workflow === 'fix-defect' && step === 'diagnose' ? ['tracker'] : []),
-    ...(catalogueSlug(workflow, step) === 'close' ? ['tracker'] : []),
   ]
 }
 function catalogueDefinition() {
@@ -276,9 +139,6 @@ function catalogueDefinition() {
         body: catalogueBody(seed.slug, legacy.slug, legacy.body),
         stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
-        ...(catalogueSlug(seed.slug, legacy.slug) === 'close'
-          ? { expectedStatus: '{{tracker.states.done}}', requirePullRequest: true }
-          : {}),
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
         needs: catalogueNeeds(seed.slug, legacy.slug, runsGate),
@@ -329,7 +189,7 @@ function workflowDefinition(seed: LegacySeed) {
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
-    revision = 5,
+    revision = 6,
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {

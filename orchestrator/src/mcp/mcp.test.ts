@@ -25,8 +25,8 @@ describe('orch MCP', () => {
         (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
          workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES ('fixture','ship','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
-               0,'rebase','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
+       VALUES ('fixture','fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
+               0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
       .run()
     const server = createDocsMcpServer()
@@ -38,7 +38,7 @@ describe('orch MCP', () => {
       const awaited = await client.callTool({
         name: 'await_workflow_ruling',
         arguments: {
-          slug: 'ship',
+          slug: 'fix-defect',
           project: 'fixture',
           mode: 'default',
           args: { key: 'DEV-1069' },
@@ -51,7 +51,7 @@ describe('orch MCP', () => {
       const ruled = await client.callTool({
         name: 'rule_workflow',
         arguments: {
-          slug: 'ship',
+          slug: 'fix-defect',
           project: 'fixture',
           mode: 'default',
           args: { key: 'DEV-1069' },
@@ -151,14 +151,19 @@ describe('orch MCP', () => {
       for (const request of [
         {
           name: 'compose_workflow',
-          arguments: { slug: 'ship', project, mode: 'default', autonomy: 'ship-to=production' },
+          arguments: {
+            slug: 'fix-defect',
+            project,
+            mode: 'default',
+            autonomy: 'ship-to=production',
+          },
         },
         {
           name: 'get_workflow_step',
           arguments: {
-            slug: 'ship',
+            slug: 'fix-defect',
             project,
-            step: 'rebase',
+            step: 'diagnose',
             mode: 'default',
             autonomy: 'release=promote',
           },
@@ -272,7 +277,7 @@ describe('orch MCP', () => {
         (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
          workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES (?,'ship','default',?,'',NULL,1,1,?,0,'rebase','running','[]',NULL,
+       VALUES (?,'fix-defect','default',?,'',NULL,1,1,?,0,'diagnose','running','[]',NULL,
                3,'2026-10-01','2026-10-01','note-only') RETURNING id`,
     )
     const first = insert.get(project, 'DEV-1082-MCP-A', JSON.stringify(args('DEV-1082-MCP-A'))) as {
@@ -299,11 +304,11 @@ describe('orch MCP', () => {
       return (result.content as { text: string }[])[0]!.text
     }
     try {
-      const common = { slug: 'ship', project, mode: 'default' }
+      const common = { slug: 'fix-defect', project, mode: 'default' }
       expect(
         await call('get_workflow_step', {
           ...common,
-          step: 'rebase',
+          step: 'diagnose',
           args: args('DEV-1082-MCP-A'),
           cursor: first.id,
         }),

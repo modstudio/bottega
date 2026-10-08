@@ -329,7 +329,7 @@ test('workflow question migration preserves run questions and backfills an await
           (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
            workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('fixture','ship','default','DEV-964','','owner',1,1,'{}',0,'build',
+         VALUES ('fixture','fixture-workflow','default','DEV-964','','owner',1,1,'{}',0,'build',
                  'awaiting-ruling','[]','Workflow question?',1,'2026-09-20','2026-09-21')
          RETURNING id`,
       )

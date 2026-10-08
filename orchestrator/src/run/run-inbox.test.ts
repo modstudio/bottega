@@ -166,7 +166,7 @@ test('inbox lists workflow questions with their identity and answer command', as
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('fixture','ship','default','DEV-1069','','orch-test-session',1,1,
+     VALUES ('fixture','fixture-workflow','default','DEV-1069','','orch-test-session',1,1,
              '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
              '2026-10-01','2026-10-01','floors')`,
     )
@@ -180,22 +180,22 @@ test('inbox lists workflow questions with their identity and answer command', as
     .get()!
 
   const shown = await inbox({ all: true })
-  expect(shown).toContain('workflow ship · fixture · mode default · step 3 fix')
+  expect(shown).toContain('workflow fixture-workflow · fixture · mode default · step 3 fix')
   expect(shown).toContain(
-    'orch workflow rule ship --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"',
+    'orch workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"',
   )
   expect(shown).not.toContain('--from-operator')
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
     expect.objectContaining({
       kind: 'workflow',
       question_id: inserted.id,
-      workflow: 'ship',
+      workflow: 'fixture-workflow',
       project: 'fixture',
       mode: 'default',
       step: { n: 3, slug: 'fix' },
       can_answer: true,
       answer_command:
-        'orch workflow rule ship --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"',
+        'orch workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"',
       ownership_notice: null,
     }),
   )
@@ -207,7 +207,7 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('fixture','ship','default','DEV-1069','','foreign-session',1,1,
+     VALUES ('fixture','fixture-workflow','default','DEV-1069','','foreign-session',1,1,
              '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
              '2026-10-01','2026-10-01','floors')`,
     )

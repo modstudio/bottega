@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
   listWorkflows,
   retireWorkflow,
@@ -23,6 +24,7 @@ const database = () => {
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   seedWorkflows(d)
+  installWorkflowStoreFixture(d)
   return d
 }
 
@@ -45,9 +47,9 @@ describe('versioned lifecycle retirement', () => {
 
   test('retires a production version without clearing its promotion time', () => {
     const d = database()
-    const production = showWorkflow('ship', undefined, d)
+    const production = showWorkflow('flow', undefined, d)
 
-    const retired = retireWorkflow('ship', production.n, 'withdraw production', 'architect', d)
+    const retired = retireWorkflow('flow', production.n, 'withdraw production', 'architect', d)
 
     expect(retired).toMatchObject({
       status: 'retired',

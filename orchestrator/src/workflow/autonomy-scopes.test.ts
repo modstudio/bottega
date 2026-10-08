@@ -281,7 +281,7 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
        catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES ('fixture','ship','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
+     VALUES ('fixture','flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
   insert.run(
     'older',
