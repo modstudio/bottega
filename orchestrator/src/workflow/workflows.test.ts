@@ -669,7 +669,11 @@ describe('workflow versions and project composition', () => {
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         docs: { protocol: 'orch-docs' },
-        tracker: { kind: 'workspace', protocol: 'workspace-mcp' },
+        tracker: {
+          kind: 'workspace',
+          protocol: 'workspace-mcp',
+          states: { completed: 'done' },
+        },
       }),
       'fixture',
     )
@@ -779,7 +783,7 @@ describe('workflow versions and project composition', () => {
       d,
     )
     expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow(
-      'workflow ship, mode default, step lens, placeholder unknown',
+      'workflow ship, mode default, step lens, field body, placeholder unknown',
     )
   })
   test('an unresolved declared argument placeholder names the late-argument remedy', () => {

@@ -7,13 +7,20 @@ import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from
 import type { CatalogueStep, StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import { resolveWorkflowProjectFacts, stepNeedsCloseState } from './workflow-project-facts.ts'
-import { resolveWorkflowTemplate, workflowTemplatePlaceholders } from './workflow-template.ts'
+import {
+  resolveWorkflowStepTemplate,
+  resolveWorkflowTemplate,
+  type WorkflowStepTemplateField,
+  workflowStepTemplates,
+  workflowTemplatePlaceholders,
+} from './workflow-template.ts'
 
 export type WorkflowPlaceholderFailure = {
   project: string
   workflow: string
   mode: string
   step: string
+  field: WorkflowStepTemplateField
   placeholder: string
 }
 
@@ -47,21 +54,25 @@ function unresolvedStepPlaceholders(
   project: string,
   workflowSlug: string,
   mode: string,
-  step: { slug: string; body: string },
+  step: CatalogueStep,
   values: Record<string, unknown>,
   context: { argumentNames: ReadonlySet<string>; project: string; key?: string },
 ): WorkflowPlaceholderFailure[] {
-  return workflowTemplatePlaceholders(step.body).flatMap((placeholder) => {
-    try {
-      resolveWorkflowTemplate(`{{${placeholder}}}`, values, context)
-      return []
-    } catch {
-      return [{ project, workflow: workflowSlug, mode, step: step.slug, placeholder }]
-    }
-  })
+  return workflowStepTemplates(step).flatMap(({ field, template }) =>
+    workflowTemplatePlaceholders(template).flatMap((placeholder) => {
+      try {
+        resolveWorkflowStepTemplate(step.slug, field, `{{${placeholder}}}`, (value) =>
+          resolveWorkflowTemplate(value, values, context),
+        )
+        return []
+      } catch {
+        return [{ project, workflow: workflowSlug, mode, step: step.slug, field, placeholder }]
+      }
+    }),
+  )
 }
 
-/** Purely report every step-body placeholder that the supplied project facts cannot render. */
+/** Purely report every step-field placeholder that the supplied project facts cannot render. */
 export function unresolvedWorkflowStepPlaceholders(
   workflowSlug: string,
   workflow: WorkflowDefinition,
@@ -235,7 +246,7 @@ export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): str
   return [
     ...result.failures.map(
       (failure) =>
-        `${failure.project}  ${failure.workflow}  ${failure.mode}  ${failure.step}  ${failure.placeholder}`,
+        `${failure.project}  ${failure.workflow}  ${failure.mode}  ${failure.step}  ${failure.field}  ${failure.placeholder}`,
     ),
     ...result.unresolvedProjects.map(
       (failure) =>
@@ -251,7 +262,7 @@ export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): str
 export function renderCheckRefusal(result: WorkflowRenderCheckResult): string | null {
   const lines = result.failures.map(
     (failure) =>
-      `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
+      `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, field ${failure.field}, placeholder ${failure.placeholder}`,
   )
   if (!lines.length) return null
   return [

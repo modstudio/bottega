@@ -19,7 +19,6 @@ import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-ch
 
 export type {
   CatalogueStep,
-  FloorEntry,
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
 export type { FloorKind }
