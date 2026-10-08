@@ -7,7 +7,14 @@ export type CatalogueSequence = {
   steps: string[]
 }
 
-export type WorkflowStepReference = string | { sequence: string }
+export type WorkflowModeStep = string | { sequence: string }
+
+export type WorkflowStepInspection = {
+  expanded: string[]
+  missingSequences: string[]
+  missingSteps: string[]
+  duplicateSteps: string[]
+}
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -17,24 +24,53 @@ export function isSequenceReference(value: unknown): value is { sequence: string
   return object(value) && Object.keys(value).length === 1 && typeof value.sequence === 'string'
 }
 
-export function expandWorkflowSteps(
-  entries: readonly WorkflowStepReference[],
+function expandEntries(
+  entries: readonly WorkflowModeStep[],
   sequences: readonly CatalogueSequence[],
-): string[] {
+): { expanded: string[]; missingSequences: string[] } {
   const bySlug = new Map(sequences.map((sequence) => [sequence.slug, sequence.steps]))
-  return entries.flatMap((entry) => {
-    if (typeof entry === 'string') return [entry]
-    const steps = bySlug.get(entry.sequence)
-    if (!steps) {
-      throw new Error(
-        `sequence "${entry.sequence}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
-      )
+  const expanded: string[] = []
+  const missingSequences: string[] = []
+  for (const entry of entries) {
+    if (typeof entry === 'string') expanded.push(entry)
+    else {
+      const steps = bySlug.get(entry.sequence)
+      if (steps) expanded.push(...steps)
+      else missingSequences.push(entry.sequence)
     }
-    return steps
-  })
+  }
+  return { expanded, missingSequences: [...new Set(missingSequences)] }
 }
 
-export function workflowStepReferenceError(value: unknown): string | null {
+export function expandWorkflowSteps(
+  entries: readonly WorkflowModeStep[],
+  sequences: readonly CatalogueSequence[],
+): string[] {
+  const { expanded, missingSequences } = expandEntries(entries, sequences)
+  if (missingSequences.length)
+    throw new Error(
+      `sequence "${missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
+    )
+  return expanded
+}
+
+export function inspectWorkflowSteps(
+  entries: readonly WorkflowModeStep[],
+  sequences: readonly CatalogueSequence[],
+  stepSlugs: ReadonlySet<string>,
+): WorkflowStepInspection {
+  const { expanded, missingSequences } = expandEntries(entries, sequences)
+  return {
+    expanded,
+    missingSequences,
+    missingSteps: [...new Set(expanded.filter((step) => !stepSlugs.has(step)))],
+    duplicateSteps: [
+      ...new Set(expanded.filter((step, index) => expanded.indexOf(step) !== index)),
+    ],
+  }
+}
+
+export function workflowModeStepError(value: unknown): string | null {
   if (typeof value === 'string' || isSequenceReference(value)) return null
   return `step entry ${JSON.stringify(value)} must be a step slug or exactly {"sequence":"<slug>"}; edit the workflow mode to use one of those forms`
 }

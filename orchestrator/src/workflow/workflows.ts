@@ -28,9 +28,10 @@ import { type FloorKind, isFloorKind } from './workflow-floor.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowSteps,
+  inspectWorkflowSteps,
   isSequenceReference,
-  type WorkflowStepReference,
-  workflowStepReferenceError,
+  type WorkflowModeStep,
+  workflowModeStepError,
 } from './workflow-step-sequences.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string; rebind?: boolean }
@@ -40,7 +41,7 @@ type WorkflowMode = {
   default?: boolean
   entry?: string
   requires?: string[]
-  steps: WorkflowStepReference[]
+  steps: WorkflowModeStep[]
 }
 export type WorkflowDefinition = {
   title: string
@@ -141,28 +142,22 @@ function workflowModeReferenceErrors(
     return [`mode "${slug}" must contain at least one step`]
   if (!catalogue) return []
   const entries = mode.steps.filter(
-    (entry): entry is WorkflowStepReference =>
-      typeof entry === 'string' || isSequenceReference(entry),
+    (entry): entry is WorkflowModeStep => typeof entry === 'string' || isSequenceReference(entry),
   )
-  let expanded: string[]
-  try {
-    expanded = expandWorkflowSteps(entries, catalogue.sequences ?? [])
-  } catch (error) {
-    return [`mode "${slug}" ${error instanceof Error ? error.message : String(error)}`]
-  }
   const stepNames = new Set(catalogue.steps.map((step) => step.slug))
-  const missing = expanded.flatMap((ref) =>
-    stepNames.has(ref)
-      ? []
-      : [
-          `mode "${slug}" references missing step "${ref}"; add and promote that catalogue step, or edit the workflow mode`,
-        ],
+  const inspection = inspectWorkflowSteps(entries, catalogue.sequences ?? [], stepNames)
+  if (inspection.missingSequences.length)
+    return [
+      `mode "${slug}" sequence "${inspection.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
+    ]
+  const missing = inspection.missingSteps.map(
+    (ref) =>
+      `mode "${slug}" references missing step "${ref}"; add and promote that catalogue step, or edit the workflow mode`,
   )
-  const duplicates = expanded.filter((ref, index) => expanded.indexOf(ref) !== index)
-  return duplicates.length
+  return inspection.duplicateSteps.length
     ? [
         ...missing,
-        `mode "${slug}" expands to duplicate step ${[...new Set(duplicates)].map((ref) => `"${ref}"`).join(', ')}; edit its step and sequence references so each step appears once`,
+        `mode "${slug}" expands to duplicate step ${inspection.duplicateSteps.map((ref) => `"${ref}"`).join(', ')}; edit its step and sequence references so each step appears once`,
       ]
     : missing
 }
@@ -202,7 +197,7 @@ export function validateWorkflowDefinition(
     if (!Array.isArray(mode.steps)) errors.push(`mode "${text(mode.slug)}" steps must be an array`)
     else
       for (const entry of mode.steps) {
-        const error = workflowStepReferenceError(entry)
+        const error = workflowModeStepError(entry)
         if (error) errors.push(`mode "${text(mode.slug)}" ${error}`)
       }
   }
@@ -271,17 +266,13 @@ function catalogueReferenceRefusal(
   for (const mode of definition.modes.filter(
     (mode) => selectedMode === undefined || mode.slug === selectedMode,
   )) {
-    let expanded: string[]
-    try {
-      expanded = expandWorkflowSteps(mode.steps, catalogue.sequences ?? [])
-    } catch (error) {
-      return `workflow "${workflowSlug}" mode "${mode.slug}" ${error instanceof Error ? error.message : String(error)}`
-    }
-    const duplicates = expanded.filter((step, index) => expanded.indexOf(step) !== index)
-    if (duplicates.length)
-      return `workflow "${workflowSlug}" mode "${mode.slug}" expands to duplicate step ${[...new Set(duplicates)].map((step) => `"${step}"`).join(', ')}; edit its step and sequence references so each step appears once`
-    const absent = [...new Set(expanded.filter((step) => !catalogueSlugs.has(step)))]
-    if (absent.length) missing.push({ slug: mode.slug, steps: absent })
+    const inspection = inspectWorkflowSteps(mode.steps, catalogue.sequences ?? [], catalogueSlugs)
+    if (inspection.missingSequences.length)
+      return `workflow "${workflowSlug}" mode "${mode.slug}" sequence "${inspection.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`
+    if (inspection.duplicateSteps.length)
+      return `workflow "${workflowSlug}" mode "${mode.slug}" expands to duplicate step ${inspection.duplicateSteps.map((step) => `"${step}"`).join(', ')}; edit its step and sequence references so each step appears once`
+    if (inspection.missingSteps.length)
+      missing.push({ slug: mode.slug, steps: inspection.missingSteps })
   }
   if (!missing.length) return null
   return [

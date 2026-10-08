@@ -46,7 +46,11 @@ import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
+import {
+  importWorkflowTree,
+  productionWorkflowTree,
+  type WorkflowTreeImportResult,
+} from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -584,6 +588,17 @@ function hydrateCommand(argv: string[], presentation: Presentation): void {
   presentation.log(`hydrated ${count} paths`)
 }
 
+export function workflowImportLines(result: WorkflowTreeImportResult): string[] {
+  return [
+    ...result.steps.map((slug) => `drafted step ${slug}`),
+    ...result.sequences.map((slug) => `drafted sequence ${slug}`),
+    ...result.workflows.map((slug) => `drafted workflow ${slug}`),
+    ...(result.steps.length || result.sequences.length || result.workflows.length
+      ? []
+      : ['no changes']),
+  ]
+}
+
 function importCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
   const root = workflowRoot(argv)
   const result = importWorkflowTree(
@@ -591,14 +606,7 @@ function importCommand(argv: string[], print: (value: unknown, line?: string) =>
     flagValue(argv, 'reason'),
     flagValue(argv, 'author'),
   )
-  print(
-    result,
-    [
-      ...result.steps.map((slug) => `drafted step ${slug}`),
-      ...result.workflows.map((slug) => `drafted workflow ${slug}`),
-      ...(result.steps.length || result.workflows.length ? [] : ['no changes']),
-    ].join('\n'),
-  )
+  print(result, workflowImportLines(result).join('\n'))
 }
 
 function workflowArgs(argv: string[]): Record<string, string> {

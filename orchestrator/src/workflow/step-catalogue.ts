@@ -15,9 +15,9 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 import {
   type CatalogueSequence,
-  expandWorkflowSteps,
+  inspectWorkflowSteps,
   validateCatalogueSequences,
-  type WorkflowStepReference,
+  type WorkflowModeStep,
 } from './workflow-step-sequences.ts'
 
 export type { FloorKind }
@@ -332,33 +332,31 @@ export const retireStepCatalogue = (
 export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
 
 type ProductionWorkflowDefinition = {
-  modes?: { slug?: string; steps?: WorkflowStepReference[] }[]
+  modes?: { slug?: string; steps?: WorkflowModeStep[] }[]
   steps?: unknown[]
 }
 
 function catalogueModePromotionErrors(
   workflowSlug: string,
-  mode: { slug?: string; steps?: WorkflowStepReference[] },
+  mode: { slug?: string; steps?: WorkflowModeStep[] },
   available: ReadonlySet<string>,
   currentSequences: readonly CatalogueSequence[],
   proposedSequences: readonly CatalogueSequence[],
 ): string[] {
   const entries = mode.steps ?? []
-  const priorSteps = expandWorkflowSteps(entries, currentSequences)
-  const absent = [...new Set(priorSteps)].filter((slug) => !available.has(slug))
-  const errors = absent.length ? [`${workflowSlug}: ${absent.join(', ')}`] : []
-  try {
-    const expanded = expandWorkflowSteps(entries, proposedSequences)
-    const duplicates = expanded.filter((slug, index) => expanded.indexOf(slug) !== index)
-    if (duplicates.length)
-      errors.push(
-        `${workflowSlug} mode ${mode.slug ?? ''}: duplicate steps ${[...new Set(duplicates)].join(', ')}`,
-      )
-  } catch (error) {
+  const current = inspectWorkflowSteps(entries, currentSequences, available)
+  const errors = current.missingSteps.length
+    ? [`${workflowSlug}: ${current.missingSteps.join(', ')}`]
+    : []
+  const proposed = inspectWorkflowSteps(entries, proposedSequences, available)
+  if (proposed.missingSequences.length)
     errors.push(
-      `${workflowSlug} mode ${mode.slug ?? ''}: ${error instanceof Error ? error.message : String(error)}`,
+      `${workflowSlug} mode ${mode.slug ?? ''}: sequence "${proposed.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
     )
-  }
+  else if (proposed.duplicateSteps.length)
+    errors.push(
+      `${workflowSlug} mode ${mode.slug ?? ''}: duplicate steps ${proposed.duplicateSteps.join(', ')}`,
+    )
   return errors
 }
 
