@@ -321,9 +321,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       userId: identity.user.id,
       spaceId: destinationSpaceId ?? identity.activeSpaceId,
       spaceIds:
-        destinationSpaceId || identity.activeSpaceId === identity.personalSpaceId
-          ? memberships
-          : [identity.activeSpaceId],
+        destinationSpaceId != null
+          ? [destinationSpaceId]
+          : identity.activeSpaceId === identity.personalSpaceId
+            ? memberships
+            : [identity.activeSpaceId],
     }
   }
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })

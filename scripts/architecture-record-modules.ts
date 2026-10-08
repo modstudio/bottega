@@ -16,12 +16,18 @@ export const recordModules: RecordModule[] = [
     'hono',
     '../../../shared/record-space-membership.ts',
     './record-auth.ts',
+    './record-project-destination.ts',
   ]),
   module('orchestrator/src/record/record-project-destination.ts', [
     '../../../shared/record-space-membership.ts',
     '../project/project-settings.ts',
+  ]),
+  module('orchestrator/src/record/record-project-destination-client.ts', [
+    '../../../shared/record-space-membership.ts',
+    '../project/project-settings.ts',
     './record-api-client.ts',
     './record-auth.ts',
+    './record-project-destination.ts',
   ]),
   module('orchestrator/src/record/record-doc-lifecycle.ts', [
     'bun',

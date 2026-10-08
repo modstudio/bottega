@@ -1,9 +1,9 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
-import { projectByName } from '../project/projects.ts'
+import { projectRowByName } from '../project/projects.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
 type HostedDocClient = Pick<
@@ -30,7 +30,7 @@ export async function hostedDocClient(
     ? {
         destinationSpaceId: await requireProjectRecordDestination(
           projectName,
-          projectByName(projectName)?.settings,
+          projectRowByName(projectName)?.settings,
           client,
         ),
       }

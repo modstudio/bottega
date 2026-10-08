@@ -2,13 +2,10 @@
 /** Resolves a registered project's hosted-record destination without consulting hosted state. */
 
 import {
-  parseRecordSpaceMemberships,
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
-import type { RecordApiClient } from './record-api-client.ts'
-import type { RecordIdentity } from './record-auth.ts'
 
 export type ProjectRecordDestination =
   | { project: string; spaceId: string }
@@ -39,32 +36,15 @@ export function projectRecordDestination(
     : { project, declaredSpace, refused: 'declared-space-not-member' }
 }
 
-export function projectDestinationFromIdentity(
-  project: string,
-  settings: ProjectSettings | StoredProjectSettings | undefined,
-  identity: RecordIdentity,
-): ProjectRecordDestination {
-  if (!identity.activeSpaceId) {
-    throw new Error('record session has no active space; run `orch record space switch <slug>`')
-  }
-  return projectRecordDestination(
-    project,
-    declaredRecordSpace(settings),
-    identity.activeSpaceId,
-    parseRecordSpaceMemberships(identity.memberships),
-  )
+export function noActiveRecordSpaceRefusal(): string {
+  return 'record session has no active space; run `orch record space switch <slug>`'
 }
 
-export async function requireProjectRecordDestination(
-  project: string,
-  settings: ProjectSettings | StoredProjectSettings | undefined,
-  client: RecordApiClient,
-): Promise<string> {
-  const decision = projectDestinationFromIdentity(project, settings, await client.whoami())
-  if ('refused' in decision) {
-    throw new Error(
-      `project ${project} declares record space ${decision.declaredSpace}, but the signed-in user is not a member; join it first with an invitation, then retry`,
-    )
-  }
-  return decision.spaceId
+export function recordSpaceMembershipRefusal(space: string): string {
+  return (
+    `the signed-in user is not a member of record space ${space}; ` +
+    `an invitation from a member of that space is needed; list invitations with ` +
+    '`orch record space invitations`, then accept one with ' +
+    '`orch record space accept <invitation-id>`'
+  )
 }

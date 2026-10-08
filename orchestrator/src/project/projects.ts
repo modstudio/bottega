@@ -177,7 +177,7 @@ export function projects(opts?: { retired?: boolean }, database: Database = db()
   return (database.query(sql).all() as Parameters<typeof parse>[0][]).map(parse)
 }
 
-function projectRowByName(name: string, d = db()): Project | null {
+export function projectRowByName(name: string, d = db()): Project | null {
   const r = d.query('SELECT * FROM project WHERE name = ?').get(name) as
     | Parameters<typeof parse>[0]
     | null
@@ -272,16 +272,22 @@ function projectSettingsForStorage(
   }
 }
 
-export async function writeHostedProject(p: {
-  name: string
-  previousName?: string
-  path: string
-  stack?: string | null
-  canon?: boolean
-  settings?: ProjectSettings
-  retiredAt?: string | null
-}): Promise<void> {
-  await writeProjectToHostedRecord({ ...p, settings: projectSettingsForStorage(p.settings) })
+export async function writeHostedProject(
+  p: {
+    name: string
+    previousName?: string
+    path: string
+    stack?: string | null
+    canon?: boolean
+    settings?: ProjectSettings
+    retiredAt?: string | null
+  },
+  destinationSpaceId?: string,
+): Promise<void> {
+  await writeProjectToHostedRecord(
+    { ...p, settings: projectSettingsForStorage(p.settings) },
+    destinationSpaceId,
+  )
 }
 
 export async function pushProjects(): Promise<string[]> {

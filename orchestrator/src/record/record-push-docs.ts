@@ -5,14 +5,15 @@ import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import { projectByName } from '../project/projects.ts'
+import { projectRowByName } from '../project/projects.ts'
 import type {
   RecordApiClient,
   RecordDocImportInput,
   RecordRequestDestination,
 } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
-import { requireProjectRecordDestination } from './record-project-destination.ts'
+import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
+import { requireProjectRecordDestination } from './record-project-destination-client.ts'
 
 type Presentation = { log(value: string): void }
 
@@ -399,14 +400,14 @@ export async function pushDocsCommand(
   writableDb()
   const client = recordApiClient()
   const identity = await client.whoami()
-  if (!identity.activeSpaceId) throw new Error('record session has no active space')
+  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   const destinations = new Map<string | null, RecordRequestDestination>([
     [null, { destinationSpaceId: identity.activeSpaceId }],
   ])
   const destinationFor = async (projectName: string | null) => {
     const cached = destinations.get(projectName)
     if (cached) return cached
-    const project = projectName ? projectByName(projectName) : null
+    const project = projectName ? projectRowByName(projectName) : null
     if (!project) throw new Error(`no project "${projectName}"`)
     const destination = {
       destinationSpaceId: await requireProjectRecordDestination(

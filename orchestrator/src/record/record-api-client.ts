@@ -230,7 +230,9 @@ export type RecordApiClient = {
     },
     destination?: RecordRequestDestination,
   ): Promise<{ name: string }>
-  listProjects(destination?: RecordRequestDestination): Promise<Array<{ name: string }>>
+  listProjects(
+    destination?: RecordRequestDestination,
+  ): Promise<Array<{ name: string; spaceId: string }>>
   retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
   putScore(runId: string, input: VerdictInput): Promise<void>
   voidRun(runId: string, input: { reason: string }): Promise<void>

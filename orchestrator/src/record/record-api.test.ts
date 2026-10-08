@@ -149,7 +149,7 @@ describe('record API', () => {
         })
       ).status,
     ).toBe(200)
-    expect(calls[0]).toEqual({ spaceId: 'space-b', spaceIds: ['space-a', 'space-b'] })
+    expect(calls[0]).toEqual({ spaceId: 'space-b', spaceIds: ['space-b'] })
     expect(
       (
         await app.request('/v1/docs', {
@@ -160,6 +160,36 @@ describe('record API', () => {
       ).status,
     ).toBe(200)
     expect(calls[1]).toEqual({ spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] })
+  })
+
+  test('a destination header cannot read a document or revision from another membership', async () => {
+    const session = {
+      ...identity,
+      memberships: [
+        ...identity.memberships,
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'team-b',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    }
+    const visibleInSpaceA = (input: { spaceIds: string[] }) => input.spaceIds.includes('space-a')
+    const app = appWith(session, {
+      readDoc: async (input: { spaceIds: string[] }) =>
+        visibleInSpaceA(input) ? { id, title: 'Space A doc' } : null,
+      listDocRevisions: async (input: { spaceIds: string[] }) =>
+        visibleInSpaceA(input) ? [{ id, docId: id }] : null,
+    })
+
+    for (const path of [`/v1/docs/${id}`, `/v1/docs/${id}/revisions`]) {
+      expect((await app.request(path, { headers: { 'x-record-space': 'team-b' } })).status).toBe(
+        404,
+      )
+      expect((await app.request(path)).status).toBe(200)
+    }
   })
 
   test('a non-member project destination returns 403 before the service', async () => {

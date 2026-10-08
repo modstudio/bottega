@@ -356,6 +356,38 @@ async function proveRequestedProjectSpace(
   activeSpaceId: string,
   destinationSpaceId: string,
 ): Promise<void> {
+  const activeProjectName = `active-project-${newRecordId()}`
+  const activeProject = await fetch(`${origin}/v1/projects`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      name: activeProjectName,
+      path: `/tmp/${activeProjectName}`,
+      stack: null,
+      canon: false,
+      settings: {},
+      retiredAt: null,
+    }),
+  })
+  expect(activeProject.status).toBe(200)
+  const activeDocument = await fetch(`${origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'project',
+      subject: activeProjectName,
+      slug: 'active-only',
+      title: 'Active only',
+      body: 'must not cross a destination header',
+      delivery: 'demand',
+      projectName: activeProjectName,
+      reason: 'prove destination read isolation',
+      author: 'proof',
+    }),
+  })
+  expect(activeDocument.status).toBe(200)
+  const activeDocumentId = String(((await activeDocument.json()) as { id: string }).id)
+
   const projectName = `routed-project-${newRecordId()}`
   const destinationHeaders = { ...headers, 'x-record-space': destinationSpaceId }
   const project = await fetch(`${origin}/v1/projects`, {
@@ -387,6 +419,16 @@ async function proveRequestedProjectSpace(
     }),
   })
   expect(document.status).toBe(200)
+  expect(
+    (await fetch(`${origin}/v1/docs/${activeDocumentId}`, { headers: destinationHeaders })).status,
+  ).toBe(404)
+  expect(
+    (
+      await fetch(`${origin}/v1/docs/${activeDocumentId}/revisions`, {
+        headers: destinationHeaders,
+      })
+    ).status,
+  ).toBe(404)
   expect(
     succeeds(
       'postgres',

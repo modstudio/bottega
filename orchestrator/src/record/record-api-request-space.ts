@@ -8,6 +8,7 @@ import {
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordSpaceMembershipRefusal } from './record-project-destination.ts'
 
 type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
@@ -41,7 +42,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
       return context.json(
         {
           error: `signed-in user is not a member of record space ${decision.requestedSpace}`,
-          remedy: 'join that space with an invitation, then retry',
+          remedy: recordSpaceMembershipRefusal(decision.requestedSpace),
         },
         403,
       )
