@@ -50,6 +50,7 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
   await runArchitectGate({
     cwd: repositoryPath,
     d,
+    topLevel: () => repositoryPath,
     gitState: () => ({ headCommit, porcelainPaths: ran ? [' M formatted.ts'] : [] }),
     write: () => {},
     runner: () => {
@@ -72,6 +73,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
   const result = await runArchitectGate({
     cwd: repositoryPath,
     d,
+    topLevel: () => repositoryPath,
     gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
     write: (chunk) => chunks.push(chunk),
     runner: ({ write }) => {
@@ -113,6 +115,7 @@ test('bounds the recorded tail', async () => {
   await runArchitectGate({
     cwd: repositoryPath,
     d,
+    topLevel: () => repositoryPath,
     gitState: cleanGitState,
     write: () => {},
     runner: () => ({
@@ -133,6 +136,7 @@ test('withholds secret-shaped output', async () => {
   await runArchitectGate({
     cwd: repositoryPath,
     d,
+    topLevel: () => repositoryPath,
     gitState: cleanGitState,
     write: () => {},
     runner: () => ({
@@ -147,6 +151,60 @@ test('withholds secret-shaped output', async () => {
     (d.query('SELECT output_tail FROM gate_execution').get() as { output_tail: string })
       .output_tail,
   ).toBe('[withheld: secret-shaped content]')
+})
+
+test('runs and records a relative gate from the caller checkout top level', async () => {
+  const d = database()
+  d.query('UPDATE project SET settings=?').run(JSON.stringify({ gate: 'scripts/gate --plain' }))
+  const checkoutTopLevel = `${repositoryPath}/.claude/worktrees/X`
+  const cwd = `${checkoutTopLevel}/orchestrator/src`
+  const expectedCommand = `'${checkoutTopLevel}/scripts/gate' --plain`
+  const invocations: Array<{ command: string; cwd: string }> = []
+
+  await runArchitectGate({
+    cwd,
+    d,
+    topLevel: () => checkoutTopLevel,
+    gitState: cleanGitState,
+    write: () => {},
+    runner: ({ command, cwd: runnerCwd }) => {
+      invocations.push({ command, cwd: runnerCwd })
+      return {
+        exitCode: 0,
+        output: '',
+        startedAt: '2026-09-01T00:00:00.000Z',
+        finishedAt: '2026-09-01T00:00:01.000Z',
+        elapsedMs: 1000,
+      }
+    },
+  })
+
+  expect(invocations).toEqual([{ command: expectedCommand, cwd: checkoutTopLevel }])
+  expect(d.query('SELECT cwd,resolved_command FROM gate_execution').get()).toEqual({
+    cwd: checkoutTopLevel,
+    resolved_command: expectedCommand,
+  })
+})
+
+test('refuses when the caller checkout top level cannot be resolved', async () => {
+  const d = database()
+  const cwd = `${repositoryPath}/.claude/worktrees/X`
+  expect(
+    runArchitectGate({
+      cwd,
+      d,
+      topLevel: () => null,
+      gitState: () => {
+        throw new Error('should not observe git state')
+      },
+      runner: () => {
+        throw new Error('should not run')
+      },
+    }),
+  ).rejects.toThrow(
+    `could not resolve the checkout top level for ${cwd}; run orch gate run from inside the checkout to gate`,
+  )
+  expect(d.query('SELECT COUNT(*) AS count FROM gate_execution').get()).toEqual({ count: 0 })
 })
 
 test('refuses a project without a registered gate', async () => {
