@@ -1,5 +1,5 @@
-import { isValidElement, type ReactNode, useCallback, useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { isValidElement, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { secondLevelHeadings } from '@/docs/headings'
 import { Callout } from '@/ui/callout/callout'
@@ -120,6 +120,10 @@ export function Markdown({ content }: { content: string }) {
   const [highlightNeeded, setHighlightNeeded] = useState(false)
   const requestHighlight = useCallback(() => setHighlightNeeded(true), [])
   const highlight = useHighlight(highlightNeeded)
+  const Pre = useMemo<NonNullable<Components['pre']>>(
+    () => (props) => <DocPre {...props} onHighlightNeeded={requestHighlight} />,
+    [requestHighlight],
+  )
   let heading = 0
   return (
     <div className="markdown">
@@ -137,7 +141,7 @@ export function Markdown({ content }: { content: string }) {
             return <h2 id={id}>{children}</h2>
           },
           table: ({ children }) => <DocTable>{children}</DocTable>,
-          pre: (props) => <DocPre {...props} onHighlightNeeded={requestHighlight} />,
+          pre: Pre,
           div: DocCallout,
         }}
       >
