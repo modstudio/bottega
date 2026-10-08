@@ -44,6 +44,8 @@ export type ReportPresentation = {
   measures: Measures
 }
 
+export type ReportSliceOptions = { details?: boolean; summary?: boolean }
+
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
@@ -101,7 +103,7 @@ export function renderHtml(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
-  options: { details?: boolean } = {},
+  options: ReportSliceOptions = {},
 ) {
   const day = new Date(g.to).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -260,7 +262,10 @@ export function renderHtml(
   <table role="presentation" class="card" cellpadding="0" cellspacing="0" border="0" width="100%"
          style="max-width:640px;background:#ffffff;padding:26px 22px 30px">
 
-    <tr><td style="font-family:${SANS};font-weight:600;font-size:19px;line-height:1.3;color:${INK}">${esc(day)}</td></tr>
+    ${
+      options.summary === false
+        ? ''
+        : `<tr><td style="font-family:${SANS};font-weight:600;font-size:19px;line-height:1.3;color:${INK}">${esc(day)}</td></tr>
     <tr><td style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.5;color:${FAINT};padding-top:3px">
       the last ${g.hours} hours across ${g.projects.length}
       project${g.projects.length === 1 ? '' : 's'}</td></tr>
@@ -272,7 +277,8 @@ export function renderHtml(
       </table>
     </td></tr>
 
-    ${measureLines.length ? `<tr><td style="padding:18px 0 0"><div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;color:${FAINT};padding-bottom:4px">measures</div>${measureLines.map((line) => `<div style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.6;color:${MUTED}">${esc(line)}</div>`).join('')}</td></tr>` : ''}
+    ${measureLines.length ? `<tr><td style="padding:18px 0 0"><div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;color:${FAINT};padding-bottom:4px">measures</div>${measureLines.map((line) => `<div style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.6;color:${MUTED}">${esc(line)}</div>`).join('')}</td></tr>` : ''}`
+    }
 
     ${
       options.details === false
@@ -291,13 +297,17 @@ export function renderHtml(
 
     ${options.details === false ? '' : g.projects.map(group).join('')}
 
-    <tr><td style="padding:26px 0 0;border-top:1px solid ${RULE}">
+    ${
+      options.summary === false
+        ? ''
+        : `<tr><td style="padding:26px 0 0;border-top:1px solid ${RULE}">
       <div style="font-family:${SANS};font-weight:400;font-size:11px;line-height:1.6;color:${FAINT}">
         TASK HOURS adds the time charged to the tasks listed here. ENGAGED is one
         wall-clock union of those tasks and each project's work carrying no ticket,
         counting simultaneous work once. Untasked work appears only in ENGAGED, while
         parallel task hours overlap there.</div>
-    </td></tr>
+    </td></tr>`
+    }
   </table>
   </td></tr></table></div></body></html>`
 }
@@ -353,7 +363,7 @@ export function renderText(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
-  options: { details?: boolean } = {},
+  options: ReportSliceOptions = {},
 ) {
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.
@@ -366,10 +376,16 @@ export function renderText(
   const tasks = g.items.filter((i) => i.key)
   const shipped = tasks.filter((i) => i.closed).length
   return [
-    `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
-      `${shipped} done · ${tasks.length - shipped} in progress`,
-    `the last ${g.hours} hours across ${g.projects.length} projects`,
-    ...(presentation ? [presentation.windowLine, '', ...reportMeasureLines(presentation)] : []),
+    ...(options.summary === false
+      ? []
+      : [
+          `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
+            `${shipped} done · ${tasks.length - shipped} in progress`,
+          `the last ${g.hours} hours across ${g.projects.length} projects`,
+          ...(presentation
+            ? [presentation.windowLine, '', ...reportMeasureLines(presentation)]
+            : []),
+        ]),
     ...(options.details === false
       ? []
       : [
