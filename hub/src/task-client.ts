@@ -72,7 +72,12 @@ async function request<T>(
   path: string,
   method: string,
   body?: unknown,
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    recordSpace?: string | null
+  } = {},
 ): Promise<T> {
   const { response, value } = await responseObject(path, method, body, options)
   if (!response.ok)
