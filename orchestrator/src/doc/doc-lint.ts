@@ -21,8 +21,8 @@ export type LintableDoc = {
   referenceProjects?: DocReferenceProject[]
 }
 
-export type DocLintRule = 'history' | 'issue' | 'numeral' | 'date'
-export type DocLintLevel = 'error' | 'warning'
+type DocLintRule = 'history' | 'issue' | 'numeral' | 'date'
+type DocLintLevel = 'error' | 'warning'
 export type DocLintProfile = {
   rules: Readonly<Partial<Record<DocLintRule, DocLintLevel>>>
   ambiguousHistory: DocLintLevel
@@ -39,11 +39,6 @@ export function docLintProfile(kind: DocKind): DocLintProfile {
     },
     ambiguousHistory: 'warning',
   }
-}
-
-/** Selects the prose lint profile without store or environment access. */
-export function docLintRules(kind: DocKind): readonly DocLintRule[] {
-  return Object.keys(docLintProfile(kind).rules) as DocLintRule[]
 }
 
 export type DocReferenceProject = {

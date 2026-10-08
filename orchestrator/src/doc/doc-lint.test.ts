@@ -4,7 +4,6 @@ import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
   docLintProfile,
-  docLintRules,
   introducedDocFindings,
   lintDoc,
 } from './doc-lint.ts'
@@ -36,8 +35,6 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
 
 describe('stored document lint', () => {
   test('kind selects the prose rule set', () => {
-    expect(docLintRules('working')).toEqual(['history', 'issue', 'numeral', 'date'])
-    expect(docLintRules('article')).toEqual(['history', 'issue', 'date'])
     expect(docLintProfile('working')).toEqual({
       rules: { history: 'error', issue: 'error', numeral: 'error', date: 'error' },
       ambiguousHistory: 'warning',

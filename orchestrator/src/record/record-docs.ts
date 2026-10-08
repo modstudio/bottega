@@ -68,6 +68,29 @@ export type RecordCanonImportResult = {
 
 type Tenant = { url: string } & TenantPrincipal
 type RecordCursor = { at: string; id: string }
+type StoredDocRow = Record<string, unknown>
+
+function storedDocKind(input: { kind?: DocKind }, existing?: StoredDocRow): DocKind {
+  return input.kind ?? (existing?.kind == null ? 'working' : (String(existing.kind) as DocKind))
+}
+
+function storedDocAudience(
+  input: { audience?: DocAudience },
+  existing?: StoredDocRow,
+): DocAudience {
+  return (
+    input.audience ??
+    (existing?.audience == null ? 'technical' : (String(existing.audience) as DocAudience))
+  )
+}
+
+function storedDocParentId(
+  input: { parentRecordId?: string | null },
+  existing?: StoredDocRow,
+): string | null {
+  if (input.parentRecordId !== undefined) return input.parentRecordId
+  return existing?.parent_id == null ? null : String(existing.parent_id)
+}
 
 export type RecordDocListInput = {
   scope?: string
@@ -240,8 +263,7 @@ export async function upsertRecordDoc(
         ...facts,
       }),
     )
-    const kind =
-      input.kind ?? (existing[0]?.kind == null ? 'working' : (String(existing[0].kind) as DocKind))
+    const kind = storedDocKind(input, existing[0])
     assertWrite(
       recordDocLintRefusal(
         { ...input, kind },
@@ -263,19 +285,12 @@ export async function upsertRecordDoc(
     )
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
-    const audience =
-      input.audience ??
-      ((existing[0]?.audience == null ? 'technical' : String(existing[0].audience)) as DocAudience)
+    const audience = storedDocAudience(input, existing[0])
     if (!DOC_AUDIENCES.includes(audience))
       throw new RecordDocError(
         `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
       )
-    const parentId =
-      input.parentRecordId === undefined
-        ? existing[0]?.parent_id == null
-          ? null
-          : String(existing[0].parent_id)
-        : input.parentRecordId
+    const parentId = storedDocParentId(input, existing[0])
     assertWrite(
       await recordTreeWriteRefusal(tx, {
         spaceId: input.spaceId,

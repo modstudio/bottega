@@ -246,6 +246,21 @@ export function listDocsStore(
 }
 
 export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[] {
+  const { where, values } = metadataFilters(filters)
+  const order = filters.updatedAtOrder
+    ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
+    : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
+  return (
+    db()
+      .query(
+        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+       FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
+      )
+      .all(...values) as Array<DocMetadata & { featured: boolean | number }>
+  ).map(docRow)
+}
+
+function metadataFilters(filters: DocListFilters): { where: string[]; values: string[] } {
   if (filters.scopes !== undefined) {
     for (const scope of filters.scopes) validScope(scope)
   }
@@ -287,15 +302,5 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
     where.push('instr(lower(d.body), lower(?)) > 0')
     values.push(filters.bodyMatch)
   }
-  const order = filters.updatedAtOrder
-    ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
-    : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
-  return (
-    db()
-      .query(
-        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
-       FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
-      )
-      .all(...values) as Array<DocMetadata & { featured: boolean | number }>
-  ).map(docRow)
+  return { where, values }
 }

@@ -321,7 +321,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'local-doc-revisions-boundary',
     'orchestrator/src/doc/doc-revision-store.ts',
-    ['../../../shared/docs.ts', '../database/db.ts', './doc-write-allowed.ts'],
+    [
+      '../../../shared/docs.ts',
+      '../database/db.ts',
+      './doc-read-store.ts',
+      './doc-subjects.ts',
+      './doc-write-allowed.ts',
+    ],
     'Keep local revision ordering and compare-and-set facts independent of hosted transport and CLI.',
   ),
   boundary(
