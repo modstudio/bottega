@@ -48,11 +48,29 @@ describe('stored document lint', () => {
         expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
       ])
     }
-    expect(lintDoc(doc('It used to work and is used to compute totals.', { kind }))).toEqual([
-      expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
-      expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
-    ])
   })
+
+  test.each(['working', 'article'] as const)(
+    '%s keeps certain history errors when the line also says used to',
+    (kind) => {
+      expect(lintDoc(doc('The page was called Totals and used to show prices.', { kind }))).toEqual([
+        expect.objectContaining({
+          rule: 'doc/history',
+          level: 'error',
+          message: expect.stringContaining('was (?:called|named)'),
+        }),
+      ])
+    },
+  )
+
+  test.each(['working', 'article'] as const)(
+    '%s reports one warning for two used-to occurrences on a line',
+    (kind) => {
+      expect(lintDoc(doc('It used to work and is used to compute totals.', { kind }))).toEqual([
+        expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
+      ])
+    },
+  )
 
   test.each(['working', 'article'] as const)('%s warns for ambiguous history prose', (kind) => {
     for (const body of [

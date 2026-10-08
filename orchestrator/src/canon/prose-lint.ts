@@ -44,37 +44,20 @@ export const DEFAULT_COMMENT_HISTORY_PHRASES = [
 const CERTAIN_HISTORY_PATTERNS = [/\bwas (?:called|named)\b/i, /\brenamed\b/i]
 
 const AMBIGUOUS_HISTORY_PATTERNS = [
-  /\bused to\b/gi,
+  /\bused to\b/i,
   /\bno longer\b/i,
   /\bpreviously\b/i,
   /\bformerly\b/i,
   /\b(?:that|this|it) (?:has )?changed\b/i,
 ]
 
-function historyPatterns(
+function historyPattern(
   line: string,
-): Array<{ pattern: RegExp; certainty: 'certain' | 'ambiguous'; index: number }> {
-  const usedTo = AMBIGUOUS_HISTORY_PATTERNS[0]!
-  const usedToMatches = [...line.matchAll(usedTo)].map((match) => ({
-    pattern: usedTo,
-    certainty: 'ambiguous' as const,
-    index: match.index,
-  }))
-  if (usedToMatches.length) return usedToMatches
-
-  for (const pattern of [...CERTAIN_HISTORY_PATTERNS, ...AMBIGUOUS_HISTORY_PATTERNS.slice(1)]) {
-    const match = pattern.exec(line)
-    if (match) {
-      return [
-        {
-          pattern,
-          certainty: CERTAIN_HISTORY_PATTERNS.includes(pattern) ? 'certain' : 'ambiguous',
-          index: match.index,
-        },
-      ]
-    }
-  }
-  return []
+): { pattern: RegExp; certainty: 'certain' | 'ambiguous' } | undefined {
+  const certain = CERTAIN_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
+  if (certain) return { pattern: certain, certainty: 'certain' }
+  const ambiguous = AMBIGUOUS_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
+  return ambiguous ? { pattern: ambiguous, certainty: 'ambiguous' } : undefined
 }
 
 const ISSUE_PATTERNS = [
@@ -126,7 +109,8 @@ export function lintProse(text: string): ProseFinding[] {
   const findings: ProseFinding[] = []
   for (const { text: line, line: lineNumber } of proseLines(text)) {
     const withoutInlineCode = line.replace(/(`+)[^`]*?\1/g, '')
-    for (const matchedHistoryPattern of historyPatterns(withoutInlineCode)) {
+    const matchedHistoryPattern = historyPattern(withoutInlineCode)
+    if (matchedHistoryPattern) {
       findings.push({
         line: lineNumber,
         rule: 'history',
