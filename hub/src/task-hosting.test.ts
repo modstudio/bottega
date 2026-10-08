@@ -318,12 +318,15 @@ describe('hosted-only task safety', () => {
 
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
     const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
-    expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })
+    expect(mirrorCollisionDecision(incoming, null, { sameRow: 'update' })).toEqual({
+      action: 'insert',
+    })
     expect(
-      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, false, {
-        id: 'id-2',
-        spaceId: 'space-a',
-        naturalKey: 'task DEV-1',
+      mirrorCollisionDecision(incoming, null, {
+        sameRow: 'update',
+        naturalKey: {
+          holder: { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+        },
       }),
     ).toEqual({
       action: 'refuse',
@@ -331,121 +334,87 @@ describe('hosted-only task safety', () => {
         "refusing to mirror task DEV-1 with id id-1: task DEV-1 in space space-a already belongs to id id-2; restore this local row's record id to id-2, change the task key in that space, or ask the hosted-space operator to resolve the task key collision",
     })
     expect(
-      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, true, {
-        id: 'id-2',
-        spaceId: 'space-a',
-        naturalKey: 'task DEV-1',
+      mirrorCollisionDecision(incoming, null, {
+        sameRow: 'update',
+        naturalKey: {
+          holder: { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+          mayAdopt: true,
+        },
       }),
     ).toEqual({ action: 'adopt', id: 'id-2' })
     expect(
-      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, true, {
-        id: 'id-2',
-        spaceId: 'space-b',
-        naturalKey: 'task DEV-1',
+      mirrorCollisionDecision(incoming, null, {
+        sameRow: 'update',
+        naturalKey: {
+          holder: { id: 'id-2', spaceId: 'space-b', naturalKey: 'task DEV-1' },
+          mayAdopt: true,
+        },
       }),
     ).toMatchObject({ action: 'refuse' })
-    expect(
-      mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
-        null,
-        'update',
-        'id',
-        { id: 'id-2', spaceId: 'space-a', legacyLocalId: 760 },
-      ),
-    ).toEqual({
-      action: 'refuse',
-      reason:
-        "refusing to mirror comment 760 with id id-1: legacy local id 760 in space space-a already belongs to id id-2; restore this local row's record id to id-2, or ask the hosted-space operator to resolve the local id collision",
-    })
-    expect(
-      mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
-        null,
-        'update',
-        'id',
-        { id: 'id-2', spaceId: 'space-a', legacyLocalId: 760 },
-        true,
-      ),
-    ).toEqual({ action: 'adopt', id: 'id-2' })
-    expect(
-      mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'document 760' },
-        null,
-        'update',
-        'id',
-        { id: 'id-2', spaceId: 'space-b', legacyLocalId: 760 },
-        true,
-      ),
-    ).toEqual({
-      action: 'refuse',
-      reason:
-        "refusing to mirror document 760 with id id-1: legacy local id 760 in space space-b already belongs to id id-2; restore this local row's record id to id-2, or ask the hosted-space operator to resolve the local id collision",
-    })
-    expect(mirrorCollisionDecision(incoming, incoming, 'update')).toEqual({
+    expect(mirrorCollisionDecision(incoming, incoming, { sameRow: 'update' })).toEqual({
       action: 'update-same-row',
     })
-    expect(mirrorCollisionDecision(incoming, incoming, 'idempotent')).toEqual({
+    expect(mirrorCollisionDecision(incoming, incoming, { sameRow: 'idempotent' })).toEqual({
       action: 'idempotent-duplicate',
     })
     expect(
       mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment with no local id' },
-        'update',
-        'id',
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'incoming comment' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'existing comment' },
+        { sameRow: 'update' },
       ),
     ).toEqual({ action: 'update-same-row' })
     expect(
       mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'status event 42' },
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'status event with no local id' },
-        'idempotent',
-        'id',
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'incoming status event' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'existing status event' },
+        { sameRow: 'idempotent' },
       ),
     ).toEqual({ action: 'idempotent-duplicate' })
     expect(
       mirrorCollisionDecision(
         { id: 'pushed-id', spaceId: 'space-a', naturalKey: 'status event DEV-1/open/at' },
         null,
-        'idempotent',
-        'status-event',
-        null,
-        false,
         {
-          id: 'collector-id',
-          spaceId: 'space-a',
-          naturalKey: 'status event DEV-1/open/at',
+          sameRow: 'idempotent',
+          naturalKey: {
+            holder: {
+              id: 'collector-id',
+              spaceId: 'space-a',
+              naturalKey: 'status event DEV-1/open/at',
+            },
+          },
         },
       ),
-    ).toEqual({ action: 'adopt', id: 'collector-id' })
+    ).toMatchObject({ action: 'refuse' })
     expect(
       mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-b', naturalKey: 'document 12' },
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'document with no local id' },
-        'update',
-        'id',
+        { id: 'id-1', spaceId: 'space-b', naturalKey: 'incoming document' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'existing document' },
+        { sameRow: 'update' },
       ),
     ).toEqual({
       action: 'refuse',
       reason:
-        "refusing to mirror document 12: id id-1 already belongs to document with no local id in space space-a; restore this local row's record id to the id for document 12, or ask the hosted-space operator to resolve the id collision",
+        "refusing to mirror incoming document: id id-1 already belongs to existing document in space space-a; restore this local row's record id to the id for incoming document, or ask the hosted-space operator to resolve the id collision",
     })
     expect(
       mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-a', naturalKey: 'task OPS-12' },
-        'update',
+        { sameRow: 'update' },
       ),
     ).toEqual({ action: 'update-same-row' })
     expect(
       mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-a', naturalKey: 'task OPS-12' },
-        'update',
-        'natural-key',
-        null,
-        false,
-        { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+        {
+          sameRow: 'update',
+          naturalKey: {
+            holder: { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+          },
+        },
       ),
     ).toEqual({
       action: 'refuse',
@@ -456,7 +425,7 @@ describe('hosted-only task safety', () => {
       mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-b', naturalKey: 'task OPS-12' },
-        'update',
+        { sameRow: 'update' },
       ),
     ).toEqual({
       action: 'refuse',
@@ -763,7 +732,6 @@ describe('hosted-only task safety', () => {
       comments: [
         {
           id: '01990000-0000-7000-8000-000000000103',
-          legacy_local_id: null,
           task_key: 'DEV-990',
           project_name: 'workshop',
           body: 'pulled',
@@ -776,7 +744,6 @@ describe('hosted-only task safety', () => {
       documents: [
         {
           id: '01990000-0000-7000-8000-000000000102',
-          legacy_local_id: null,
           task_key: 'DEV-990',
           project_name: 'workshop',
           role: null,
@@ -853,6 +820,62 @@ describe('hosted-only task safety', () => {
         )
         .get(id),
     ).toEqual({ key: 'DEV-981', title: 'renamed' })
+  })
+
+  test('cache pull stores child rows by record id and updates only a matching id', () => {
+    const at = '2026-10-08T12:00:00.000Z'
+    const taskId = '01990000-0000-7000-8000-000000000190'
+    const firstId = '01990000-0000-7000-8000-000000000191'
+    const secondId = '01990000-0000-7000-8000-000000000192'
+    writeTransaction((conn) => {
+      conn
+        .query(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+          VALUES (?,'DEV-982','workshop','local',?,?)`)
+        .run(taskId, at, at)
+      conn
+        .query(`INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+          VALUES (?,'DEV-982',?,'old',?)`)
+        .run(firstId, taskId, at)
+    })
+
+    applyHostedTaskChanges({
+      tasks: [],
+      comments: [
+        {
+          id: firstId,
+          task_key: 'DEV-982',
+          project_name: 'workshop',
+          body: 'updated',
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+        {
+          id: secondId,
+          task_key: 'DEV-982',
+          project_name: 'workshop',
+          body: 'second',
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+      ],
+      documents: [],
+      statusEvents: [],
+      cursor: at,
+    })
+
+    expect(
+      db()
+        .query<{ record_id: string; body: string }, []>(
+          `SELECT record_id,body FROM task_comment ORDER BY record_id`,
+        )
+        .all()
+        .filter((row) => row.record_id === firstId || row.record_id === secondId),
+    ).toEqual([
+      { record_id: firstId, body: 'updated' },
+      { record_id: secondId, body: 'second' },
+    ])
   })
 
   test('cache pull reconciles a child applied before its parent', () => {

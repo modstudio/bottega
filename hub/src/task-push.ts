@@ -1,6 +1,6 @@
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, writeTransaction } from './db.ts'
-import { isTaskMirrorAdoption, type MirrorAdoption } from './hosted-tasks.ts'
+import type { MirrorAdoption } from './hosted-tasks.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import { projects } from './projects.ts'
 import type { TaskRow } from './task.ts'
@@ -30,11 +30,8 @@ type ChildRow = {
 }
 type MirroredChild = {
   id: string
-  record_id: string | null
   task_key: string
   task_id: string | null
-  legacy_local_id: number
-  newly_assigned: boolean
   project_name: string
   deleted_at: null
   [key: string]: unknown
@@ -104,20 +101,13 @@ function persistMirrorBatch(
   rows: Array<Record<string, unknown>>,
   adoptions: MirrorAdoption[],
 ) {
-  const taskAdoptions = adoptions.filter(isTaskMirrorAdoption)
-  const childAdoptions = adoptions.filter(
-    (adoption): adoption is Exclude<MirrorAdoption, { table: 'task' }> =>
-      !isTaskMirrorAdoption(adoption),
-  )
   const newlyAssigned = rows.filter((row) => row.newly_assigned === true)
   if (!newlyAssigned.length && !adoptions.length) return
   writeTransaction((conn) => {
-    persistTaskAdoptionsOn(conn, taskAdoptions)
+    persistTaskAdoptionsOn(conn, adoptions)
     if (name === 'tasks') {
       const update = conn.query(`UPDATE task SET record_id=? WHERE record_id=?`)
-      const adopted = new Set(
-        taskAdoptions.map((adoption) => `${adoption.project}\0${adoption.key}`),
-      )
+      const adopted = new Set(adoptions.map((adoption) => `${adoption.project}\0${adoption.key}`))
       for (const row of newlyAssigned) {
         const id = row.id as string
         const key = row.key as string
@@ -126,20 +116,15 @@ function persistMirrorBatch(
         const previousRecordId = resolveTask(conn, key, project)
         update.run(id, previousRecordId)
       }
-    } else {
-      const table = {
-        comments: 'task_comment',
-        documents: 'task_document',
-        statusEvents: 'task_status_event',
-      }[name]
-      const update = conn.query(`UPDATE ${table} SET record_id=? WHERE id=? AND record_id IS NULL`)
-      for (const row of newlyAssigned) update.run(row.id as string, row.legacy_local_id as number)
     }
-    for (const adoption of childAdoptions)
-      conn
-        .query(`UPDATE ${adoption.table} SET record_id=? WHERE id=?`)
-        .run(adoption.id, adoption.legacy_local_id)
   })
+}
+
+function requiredChildRecordId(table: string, row: ChildRow) {
+  if (row.record_id) return row.record_id
+  throw new Error(
+    `${table} local row ${row.id} has no record id; migrate the Hub store before pushing`,
+  )
 }
 
 export async function pushTasks(options: Options = {}) {
@@ -174,11 +159,8 @@ export async function pushTasks(options: Options = {}) {
       const { task_record_id: taskId, ...hosted } = row
       return {
         ...hosted,
-        id: row.record_id ?? newRecordId(),
-        record_id: row.record_id,
+        id: requiredChildRecordId(table, row),
         task_id: taskId,
-        legacy_local_id: row.id,
-        newly_assigned: row.record_id === null,
         project_name:
           (taskId ? taskByRecordId.get(taskId) : undefined)?.project_name ??
           taskByKey.get(row.task_key)?.project_name ??

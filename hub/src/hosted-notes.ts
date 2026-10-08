@@ -124,17 +124,18 @@ export function noteMirrorCollision(
           naturalKey: `note ${existingById.number}`,
         }
       : null,
-    'update',
-    'natural-key',
-    null,
-    false,
-    existingByNumber
-      ? {
-          id: existingByNumber.id,
-          spaceId: existingByNumber.spaceId,
-          naturalKey: `note ${incoming.number}`,
-        }
-      : null,
+    {
+      sameRow: 'update',
+      naturalKey: {
+        holder: existingByNumber
+          ? {
+              id: existingByNumber.id,
+              spaceId: existingByNumber.spaceId,
+              naturalKey: `note ${incoming.number}`,
+            }
+          : null,
+      },
+    },
   )
 }
 

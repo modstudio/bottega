@@ -1,5 +1,4 @@
 import { hostname } from 'node:os'
-import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from './db.ts'
 import {
   hostedMirrorReports,
@@ -12,8 +11,7 @@ export async function pushReports(options: ReportClientOptions & { dryRun?: bool
     .query<Record<string, unknown>, []>('SELECT * FROM send ORDER BY id')
     .all()
     .map((row) => ({
-      id: (row.record_id as string | null) ?? newRecordId(),
-      legacy_local_id: row.id as number,
+      id: requiredSendRecordId(row),
       at: row.at as string,
       window: row.window as string,
       recipients: row.recipients as string,
@@ -32,4 +30,11 @@ export async function pushReports(options: ReportClientOptions & { dryRun?: bool
     await hostedMirrorReports({ sends: sends.slice(index, index + 500) }, requestOptions)
   const hosted = await hostedReportCounts(requestOptions)
   return { local, hosted, match: JSON.stringify(local) === JSON.stringify(hosted) }
+}
+
+function requiredSendRecordId(row: Record<string, unknown>) {
+  if (typeof row.record_id === 'string' && row.record_id) return row.record_id
+  throw new Error(
+    `send local row ${String(row.id)} has no record id; migrate the Hub store before pushing`,
+  )
 }
