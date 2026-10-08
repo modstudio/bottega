@@ -147,7 +147,14 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       voids: 0,
     }),
     ...overrides,
-    whoami: overrides.whoami ?? unused,
+    whoami:
+      overrides.whoami ??
+      (async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: newRecordId(),
+        personalSpaceId: newRecordId(),
+        memberships: [],
+      })),
   }
   return { client, imports }
 }

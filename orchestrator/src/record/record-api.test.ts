@@ -135,7 +135,7 @@ describe('record API', () => {
       title: 'Guide',
       body: 'Body',
       delivery: 'demand',
-      audience: 'operator',
+      audience: 'technical',
       position: 0,
       reason: 'test',
       author: 'tester',
