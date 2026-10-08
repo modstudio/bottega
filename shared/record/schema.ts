@@ -185,6 +185,7 @@ export const project = pgTable.withRLS(
     secretPaths: text('secret_paths').array(),
     mcpProbeTool: text('mcp_probe_tool'),
     docs: jsonb(),
+    signals: jsonb(),
     release: jsonb(),
     states: jsonb(),
     tracker: jsonb(),

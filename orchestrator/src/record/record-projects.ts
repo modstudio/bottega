@@ -104,7 +104,7 @@ export async function upsertHostedProjectRow(
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, docs, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, docs, signals, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
@@ -113,6 +113,7 @@ export async function upsertHostedProjectRow(
       ${columns.mcpServer}, ${postgresTextArray(tx, columns.workerMcpServers)},
       ${postgresTextArray(tx, columns.secretPaths)}, ${columns.mcpProbeTool},
       (${columns.docs}::jsonb #>> '{}')::jsonb,
+      (${columns.signals}::jsonb #>> '{}')::jsonb,
       (${columns.release}::jsonb #>> '{}')::jsonb,
       (${columns.states}::jsonb #>> '{}')::jsonb,
       (${columns.tracker}::jsonb #>> '{}')::jsonb,
@@ -138,6 +139,7 @@ export async function upsertHostedProjectRow(
       secret_paths = EXCLUDED.secret_paths,
       mcp_probe_tool = EXCLUDED.mcp_probe_tool,
       docs = EXCLUDED.docs,
+      signals = EXCLUDED.signals,
       release = EXCLUDED.release,
       states = EXCLUDED.states,
       tracker = EXCLUDED.tracker,
