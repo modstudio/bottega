@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { gatherHostedReport, type HostedReportRow } from './hosted-report-gather.ts'
-import { projectItemPresentation, renderHtml, renderText } from './report-renderer.ts'
+import {
+  projectDisplayNames,
+  projectItemPresentation,
+  renderHtml,
+  renderText,
+} from './report-renderer.ts'
 
 const period = {
   from: '2026-09-17T13:00:00.000Z',
@@ -86,18 +91,58 @@ test('hosted reports group and close equal labels by task id', () => {
   ])
 })
 
-test('hosted reports keep same-named projects in different spaces distinct', () => {
+test('hosted reports label duplicate project names with their spaces in both report parts', () => {
   const gathered = gatherHostedReport(
     [
-      row({ task_id: 'task-a', space_id: 'space-a', project_id: 'project-a' }),
-      row({ task_id: 'task-b', space_id: 'space-b', project_id: 'project-b' }),
+      row({
+        task_id: 'task-a',
+        space_id: 'space-a',
+        space_name: 'Alpha space',
+        project_id: 'project-a',
+      }),
+      row({
+        task_id: 'task-b',
+        task_key: 'DEV-786',
+        space_id: 'space-b',
+        space_name: 'Beta space',
+        project_id: 'project-b',
+      }),
+      row({
+        task_id: 'task-c',
+        task_key: 'DEV-787',
+        project_name: 'distinct',
+        task_project: 'distinct',
+        space_id: 'space-b',
+        space_name: 'Beta space',
+        project_id: 'project-c',
+      }),
     ],
     new Set(),
     period,
   )
 
-  expect(gathered.projects).toHaveLength(2)
-  expect(gathered.projects.map((project) => project.project)).toEqual(['workshop', 'workshop'])
+  expect(gathered.projects).toHaveLength(3)
+  expect(gathered.projects.map((project) => project.spaceName)).toEqual([
+    'Alpha space',
+    'Beta space',
+    'Beta space',
+  ])
+  expect(projectDisplayNames(gathered.projects)).toEqual([
+    'workshop (Alpha space)',
+    'workshop (Beta space)',
+    'distinct',
+  ])
+  const text = renderText(gathered, new Map())
+  const html = renderHtml(gathered, new Map())
+  expect(text).toContain('workshop (Alpha space)')
+  expect(text).toContain('WORKSHOP (ALPHA SPACE)')
+  expect(text).toContain('workshop (Beta space)')
+  expect(text).toContain('WORKSHOP (BETA SPACE)')
+  expect(text).not.toContain('distinct (Beta space)')
+  expect(html.match(/workshop \(Alpha space\)/g)).toHaveLength(2)
+  expect(html.match(/workshop \(Beta space\)/g)).toHaveLength(2)
+  expect(html.match(/>distinct</g)).toHaveLength(2)
+  expect(html).not.toContain('distinct (Beta space)')
 })
 
 test('hosted reports keep unmatched task keys separate and union each key', () => {

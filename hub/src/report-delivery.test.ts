@@ -10,7 +10,6 @@ import {
 } from './report-delivery.ts'
 import {
   projectIsAvailable,
-  selectedProjectsHaveSections,
   selectedProjectsScopeName,
   sesReportMailClient,
 } from './report-delivery-hosted.ts'
@@ -179,6 +178,25 @@ const gatheredReport = (project = 'workshop'): GatheredReport => {
         untasked: null,
       },
     ],
+  }
+}
+
+const gatheredProjectsReport = (
+  projects: { name: string; spaceName?: string }[],
+): GatheredReport => {
+  const gathered = projects.map(({ name, spaceName }) => {
+    const report = gatheredReport(name)
+    return {
+      ...report,
+      projects: report.projects.map((project) => ({ ...project, spaceName })),
+    }
+  })
+  return {
+    ...gathered[0]!,
+    items: gathered.flatMap((report) => report.items),
+    taskMs: gathered.reduce((sum, report) => sum + report.taskMs, 0),
+    engagedMs: gathered.reduce((sum, report) => sum + report.engagedMs, 0),
+    projects: gathered.flatMap((report) => report.projects),
   }
 }
 
@@ -481,45 +499,45 @@ describe('hosted report delivery', () => {
     expect(rendered.text.toLowerCase()).not.toMatch(/ranking|composite|lines per|spent|worked/)
   })
 
-  test('multi-space projects report renders one summary and detail-only space sections', () => {
+  test('distinct project names render byte for byte like the same-space layout', () => {
     const value = candidate('projects')
     const projectPeriod = duePeriod(value, now)!
-    const rendered = renderReport(
+    const crossSpace = renderReport(
       value,
       projectPeriod,
       subscription({
         scope: { kind: 'projects', projectIds: ['a', 'b'] },
         scopeName: 'starship, stopal',
-        sections: [
-          { name: 'Alpha space', report: gatheredReport('starship') },
-          { name: 'Beta space', report: gatheredReport('stopal') },
-        ],
+        report: gatheredProjectsReport([
+          { name: 'starship', spaceName: 'Alpha space' },
+          { name: 'stopal', spaceName: 'Beta space' },
+        ]),
       }),
     )
-    expect(rendered.subject).toBe('Report: starship, stopal')
-    expect(rendered.text.indexOf('4.0h of task work')).toBeLessThan(
-      rendered.text.indexOf('Alpha space'),
+    const sameSpace = renderReport(
+      value,
+      projectPeriod,
+      subscription({
+        scope: { kind: 'projects', projectIds: ['a', 'b'] },
+        scopeName: 'starship, stopal',
+        report: gatheredProjectsReport([{ name: 'starship' }, { name: 'stopal' }]),
+      }),
     )
-    expect(rendered.text.indexOf('Alpha space')).toBeLessThan(rendered.text.indexOf('Beta space'))
-    expect(rendered.text).toContain('starship')
-    expect(rendered.text).toContain('stopal')
-    expect(rendered.html).toContain('Alpha space')
-    expect(rendered.html).toContain('Beta space')
-    expect(rendered.html).toContain('starship')
-    expect(rendered.html).toContain('stopal')
-    expect(rendered.text.match(/of task work in .* engaged/g)).toHaveLength(1)
-    expect(rendered.text.match(/^Window:/gm)).toHaveLength(1)
-    expect(rendered.html.match(/>measures</g)).toHaveLength(1)
-    expect(rendered.html.match(/TASK HOURS adds/g)).toHaveLength(1)
+    expect(crossSpace).toEqual(sameSpace)
+    expect(crossSpace.subject).toBe('Report: starship, stopal')
+    expect(crossSpace.text.match(/^BY PROJECT/gm)).toHaveLength(1)
+    expect(crossSpace.text.match(/starship/gi)).toHaveLength(2)
+    expect(crossSpace.text.match(/stopal/gi)).toHaveLength(2)
+    expect(crossSpace.html.match(/>by project</g)).toHaveLength(1)
+    expect(crossSpace.html.match(/starship/g)).toHaveLength(2)
+    expect(crossSpace.html.match(/stopal/g)).toHaveLength(2)
   })
 
-  test('one-space project selection has no sections or space heading and names its projects', () => {
+  test('one-space project selection names its projects', () => {
     const projects = [
       { project_name: 'starship', space_id: 'alpha' },
       { project_name: 'stopal', space_id: 'alpha' },
     ]
-    expect(selectedProjectsHaveSections(1)).toBe(false)
-    expect(selectedProjectsHaveSections(2)).toBe(true)
     const rendered = renderReport(
       candidate('one-space'),
       duePeriod(candidate('one-space'), now)!,

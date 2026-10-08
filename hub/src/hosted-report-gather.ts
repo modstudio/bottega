@@ -15,6 +15,7 @@ const rows = <T>(value: unknown) => value as T[]
 
 export type HostedReportRow = {
   space_id: string
+  space_name?: string | null
   task_id: string | null
   task_key: string | null
   project_name: string | null
@@ -94,6 +95,7 @@ export function gatherHostedReport(
       const untasked = mine.map(({ item }) => item).find((item) => !item.key) ?? null
       return {
         project,
+        spaceName: mine[0]!.rows[0]?.space_name ?? undefined,
         color: mine.find(({ rows }) => rows[0]?.project_color)?.rows[0]?.project_color ?? null,
         taskMs: tasks.reduce((sum, item) => sum + item.engagedMs, 0),
         engagedMs: engagedMs(
@@ -139,13 +141,14 @@ export async function hostedGatherReport(
     const projectIds = scope.kind === 'projects' ? scope.projectIds : null
     const reportRows = rows<RawReportRow>(
       await tx`
-      SELECT i.space_id,t.id AS task_id,i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
+      SELECT i.space_id,s.name AS space_name,t.id AS task_id,i.task_key,i.project_name,i.start_at,i.end_at,i.open,i.vendor_tokens,
         p.id AS project_id,
         t.project AS task_project,t.title AS task_title,t.status AS task_status,p.color AS project_color
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
       LEFT JOIN project p ON p.space_id=i.space_id
         AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
+      JOIN space s ON s.id=i.space_id
       WHERE i.start_at < ${period.to}::timestamptz AND i.end_at >= ${period.from}::timestamptz
         AND (${project}::text IS NULL OR COALESCE(t.project,i.project_name)=${project})
         AND (${person}::uuid IS NULL OR i.user_id=${person}::uuid)

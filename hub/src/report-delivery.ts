@@ -2,12 +2,7 @@
 /** Plans, renders, and delivers one idempotent pass of hosted report subscriptions. */
 
 import type { MeasureScope, Measures, MeasureWindow } from './measures.ts'
-import {
-  type GatheredReport,
-  type ReportSliceOptions,
-  renderHtml,
-  renderText,
-} from './report-renderer.ts'
+import { type GatheredReport, renderHtml, renderText } from './report-renderer.ts'
 
 export type DeliveryCandidate = {
   subscriptionId: string
@@ -36,15 +31,12 @@ export type DeliverySubscription = {
   scopeName: string
   measures: Measures
   report: GatheredReport
-  sections?: { name: string; report: GatheredReport }[]
   exclusions?: string[]
   unavailableReason?: string
 }
 
 export type RenderedReport = { subject: string; text: string; html: string }
 export type DeliveryStatus = 'skipped' | 'failed'
-const escapeHtml = (value: string) =>
-  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 
 export type DeliveryRepository = {
   discover(): Promise<DeliveryCandidate[]>
@@ -218,33 +210,10 @@ export function renderReport(
     windowLine: `Window: ${localWindow(period, candidate.zone)}`,
     measures: subscription.measures,
   }
-  const combinedOptions: ReportSliceOptions = { details: !subscription.sections?.length }
-  const sectionOptions: ReportSliceOptions = { summary: false }
-  const base = {
-    subject: `Report: ${subscription.scopeName}`,
-    text: renderText(subscription.report, new Map(), presentation, combinedOptions),
-    html: renderHtml(subscription.report, new Map(), presentation, combinedOptions),
-  }
-  if (!subscription.sections?.length) return base
-  const sectionText = subscription.sections.map(
-    (section) =>
-      `${section.name}\n${renderText(section.report, new Map(), undefined, sectionOptions)}`,
-  )
-  const sectionHtml = subscription.sections.map(
-    (section) =>
-      `<h2 style="font-family:sans-serif;font-size:18px">${escapeHtml(section.name)}</h2>${renderHtml(
-        section.report,
-        new Map(),
-        undefined,
-        sectionOptions,
-      )
-        .replace(/^.*?<body[^>]*>/s, '')
-        .replace(/<\/body>.*$/s, '')}`,
-  )
   return {
-    ...base,
-    text: `${base.text}\n\n${sectionText.join('\n\n')}`,
-    html: base.html.replace('</body>', `${sectionHtml.join('')} </body>`),
+    subject: `Report: ${subscription.scopeName}`,
+    text: renderText(subscription.report, new Map(), presentation),
+    html: renderHtml(subscription.report, new Map(), presentation),
   }
 }
 
