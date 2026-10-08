@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
@@ -5,6 +6,8 @@ import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
+import type { DocsLocation } from './location.ts'
+import { DocStatusBadge } from './status-badge.tsx'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
@@ -142,11 +145,42 @@ function ReadingAround({
   )
 }
 
+function DocLifecycle({
+  doc,
+  replacement,
+  locationFor,
+}: {
+  doc: DocsDoc
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
+}) {
+  if (doc.status === 'current') return null
+  return (
+    <div className="doc-measure mt-3 flex flex-wrap items-center gap-2 text-md text-text-muted">
+      <DocStatusBadge status={doc.status} />
+      {doc.status === 'superseded' && doc.replacementSlug ? (
+        <span>
+          Replaced by{' '}
+          {replacement ? (
+            <Link {...locationFor(replacement)} className="text-link hover:underline">
+              {replacement.title}
+            </Link>
+          ) : (
+            doc.replacementSlug
+          )}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export function DocsReading({
   doc,
   crumbs,
   around,
   onSelect,
+  replacement,
+  locationFor,
   localActions,
   error,
   pending,
@@ -161,6 +195,8 @@ export function DocsReading({
   crumbs: readonly BreadcrumbPart[]
   around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
   onSelect: (item: DocsTreeItem) => void
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
   localActions?: ReactNode
   error?: string | null
 }) {
@@ -193,6 +229,7 @@ export function DocsReading({
           >
             {shown.title}
           </h1>
+          <DocLifecycle doc={doc} replacement={replacement} locationFor={locationFor} />
           {shown.lede ? (
             <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
           ) : null}

@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { classes } from '@/ui/text/classes'
+import { DocStatusBadge } from './status-badge.tsx'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -56,13 +57,14 @@ function TreeRow({
           onClick={() => onSelect(item)}
           title={node.title}
           className={classes(
-            'min-w-0 flex-1 truncate rounded-sm px-2 py-1 text-left',
+            'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left',
             current
               ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
               : 'text-text-secondary hover:bg-control-hover',
           )}
         >
-          {node.title}
+          <span className="min-w-0 flex-1 truncate">{node.title}</span>
+          <DocStatusBadge status={node.status} />
         </button>
       </div>
       {children.length && open ? (

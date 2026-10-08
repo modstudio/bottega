@@ -1,3 +1,5 @@
+import type { DocStatus } from '../../../../shared/docs.ts'
+
 export type DocsAudience = 'user' | 'technical'
 type DocsDelivery = 'inject' | 'demand'
 
@@ -12,6 +14,8 @@ export type DocsTreeItem = {
   scope: string
   subject: string | null
   audience: DocsAudience
+  status: DocStatus
+  replacementSlug: string | null
   delivery?: DocsDelivery
   summary?: string
   featured?: boolean
@@ -25,6 +29,7 @@ export type DocsSearchMatch = {
   id: string
   slug: string
   title: string
+  status: DocStatus
   snippet: string
   spaceName?: string
   matchPosition: number | null

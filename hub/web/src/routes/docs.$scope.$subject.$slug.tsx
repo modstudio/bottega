@@ -10,6 +10,7 @@ import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Select } from '@/ui/listbox/select'
 import { Sheet } from '@/ui/sheet/sheet'
+import { DocStatusBadge } from '../docs/status-badge.tsx'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
 type DocSearch = { edit?: boolean; history?: boolean; id?: string }
@@ -298,8 +299,11 @@ function DocPage() {
               key={revision.id}
               className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border-default py-2 text-xs"
             >
-              <span>
-                #{revision.id} {revision.op}
+              <span className="flex items-center gap-2">
+                <span>
+                  #{revision.id} {revision.op}
+                </span>
+                <DocStatusBadge status={revision.status} />
               </span>
               <span>{revision.author}</span>
               <span>{revision.reason}</span>
