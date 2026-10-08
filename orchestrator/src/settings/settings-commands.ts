@@ -1,9 +1,11 @@
 // concern: settings-commands
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 
+import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { summarizeSettings } from '../../../shared/settings-summary.ts'
+import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
@@ -33,6 +35,7 @@ import {
   userSettingsPath,
 } from './settings-files.ts'
 import { adoptionCandidates, lintSettings, type SettingsTarget } from './settings-lint.ts'
+import { withMachineProductHooks } from './settings-machine-hooks.ts'
 import { editSettingsPermission, type SettingsPermissionOperation } from './settings-permission.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import {
@@ -272,7 +275,9 @@ function effectiveStoredSettings(
   if (!body) return emptyOwned()
   const hosted = parseStoreOwned(body)
   if (target.kind === 'project') return hosted
-  return mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
+  const merged = mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
+  return withMachineProductHooks(merged, assetPath(), resolveOrchestratorDatabase(process.env))
+    .settings
 }
 
 function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSettings) {

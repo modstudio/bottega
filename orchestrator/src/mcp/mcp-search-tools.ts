@@ -23,10 +23,11 @@ export function registerSearchTools(server: McpServer): void {
         k: z.number().int().positive().optional(),
         scope: z.string().trim().min(1).optional(),
         subject: z.string().trim().min(1).optional(),
+        includeDrafts: z.boolean().optional(),
       }),
     },
-    async ({ query, k, scope, subject }) => {
-      const filter = { scope, subject }
+    async ({ query, k, scope, subject, includeDrafts }) => {
+      const filter = { scope, subject, includeDrafts }
       validateDocAddressFilter(filter)
       return text(await searchDocs(query, k ?? 5, filter))
     },

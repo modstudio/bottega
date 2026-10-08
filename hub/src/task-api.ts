@@ -5,7 +5,6 @@ import {
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
   addHostedComment,
-  assertMirrorExpectedSpace,
   createHostedDocument,
   createHostedTask,
   getHostedTask,
@@ -16,6 +15,7 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
+import { taskRequestSpaceDecision } from './record-space-request.ts'
 
 const TEST_REFUSAL =
   'hub task API refuses real identity and database clients unless stubs are injected in tests'
@@ -37,7 +37,12 @@ type Dependencies = {
   counts?: typeof hostedTaskCounts
 }
 
-async function identity(request: Request, base: string, fetchImpl: typeof fetch) {
+async function identity(
+  request: Request,
+  base: string,
+  fetchImpl: typeof fetch,
+  honorRequestedSpace: boolean,
+) {
   const authorization = request.headers.get('authorization')
   if (!authorization) return null
   const response = await fetchImpl(`${base.replace(/\/$/, '')}/v1/whoami`, {
@@ -47,14 +52,19 @@ async function identity(request: Request, base: string, fetchImpl: typeof fetch)
   const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
   const user = value?.user as Record<string, unknown> | undefined
   const memberships = parseRecordSpaceMemberships(value?.memberships)
-  return typeof user?.id === 'string' && typeof value?.activeSpaceId === 'string'
-    ? {
-        userId: user.id,
-        spaceId: value.activeSpaceId,
-        spaceIds: memberships.map((row) => row.spaceId),
-        memberships,
-      }
-    : null
+  if (typeof user?.id !== 'string' || typeof value?.activeSpaceId !== 'string') return null
+  const decision = taskRequestSpaceDecision(
+    honorRequestedSpace ? request.headers.get('x-record-space') : null,
+    value.activeSpaceId,
+    memberships,
+  )
+  if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
+  return {
+    userId: user.id,
+    spaceId: decision.spaceId,
+    spaceIds: memberships.map((row) => row.spaceId),
+    memberships,
+  }
 }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status })
@@ -64,6 +74,22 @@ const bodyOf = (request: Request) =>
 const call = <T>(stub: T | undefined, real: T): T => {
   if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
   return stub ?? real
+}
+
+function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolean {
+  if (method === 'PUT' && pathname === '/v1/tasks/mirror') return true
+  if (method === 'GET' && pathname === '/v1/tasks/counts') return true
+  if (method === 'POST' && pathname === '/v1/tasks') return true
+  if (method === 'GET')
+    return /^\/v1\/tasks\/[^/]+$/.test(pathname) && pathname !== '/v1/tasks/identity'
+  if (method === 'PATCH')
+    return (
+      /^\/v1\/tasks\/[^/]+$/.test(pathname) ||
+      /^\/v1\/tasks\/[^/]+\/documents\/[^/]+$/.test(pathname)
+    )
+  if (method === 'DELETE') return /^\/v1\/tasks\/[^/]+\/documents\/[^/]+$/.test(pathname)
+  if (method !== 'POST') return false
+  return /^\/v1\/tasks\/[^/]+\/(?:comments|documents|close)$/.test(pathname)
 }
 
 type RouteContext = {
@@ -98,8 +124,9 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )
-  if (request.method === 'GET' && url.pathname === '/v1/tasks/counts')
+  if (request.method === 'GET' && url.pathname === '/v1/tasks/counts') {
     return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, who))
+  }
   if (request.method !== 'GET' || !keyMatch) return null
   const value = await call(dependencies.get, getHostedTask)(
     config.recordDatabaseUrl,
@@ -141,10 +168,6 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
     return value ? json(value) : json({ error: 'task not found' }, 404)
   }
   if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
-  assertMirrorExpectedSpace(
-    typeof body?.expectedSpaceId === 'string' ? body.expectedSpaceId : undefined,
-    who.spaceId,
-  )
   return json(
     await call(dependencies.mirror, mirrorHostedTasks)(
       config.recordDatabaseUrl,
@@ -230,19 +253,34 @@ export async function taskApi(
   const url = new URL(request.url)
   if (!url.pathname.startsWith('/v1/tasks')) return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
-  const who = await identity(
-    request,
-    config.recordApiUrl,
-    (dependencies.fetch ?? fetch) as typeof fetch,
-  )
-  if (!who) return json({ error: 'authorization and an active space are required' }, 401)
-  if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
-    return json({ userId: who.userId, activeSpaceId: who.spaceId, memberships: who.memberships })
   const keyMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
   const commentMatch = /^\/v1\/tasks\/([^/]+)\/comments$/.exec(url.pathname)
   const documentsMatch = /^\/v1\/tasks\/([^/]+)\/documents$/.exec(url.pathname)
   const documentMatch = /^\/v1\/tasks\/([^/]+)\/documents\/([^/]+)$/.exec(url.pathname)
   const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
+  const honorRequestedSpace = taskRouteHonorsRequestedSpace(request.method, url.pathname)
+  const who = await identity(
+    request,
+    config.recordApiUrl,
+    (dependencies.fetch ?? fetch) as typeof fetch,
+    honorRequestedSpace,
+  )
+  if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if ('refusedSpace' in who)
+    return json(
+      {
+        error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
+        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+      },
+      403,
+    )
+  if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
+    return json({
+      userId: who.userId,
+      activeSpaceId: who.spaceId,
+      memberships: who.memberships,
+      capabilities: { targetSpaceTaskMirror: true, targetSpaceIntervalEvidence: true },
+    })
   const body = request.method === 'GET' ? null : await bodyOf(request)
   try {
     const context: RouteContext = {

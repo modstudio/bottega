@@ -7,8 +7,8 @@ import { composeCanonRows } from './canon-hydrate.ts'
 
 export function storedRepositoryCanonRows(project: string, database: Database = db()) {
   return composeCanonRows(
-    listDocsStore({ scope: 'canon', subject: null }, database),
+    listDocsStore({ scope: 'canon', subject: null, status: 'current' }, database),
     [],
-    listDocsStore({ scope: 'canon', subject: project }, database),
+    listDocsStore({ scope: 'canon', subject: project, status: 'current' }, database),
   )
 }

@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_SCOPES } from '../../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_SCOPES, DOC_STATUSES } from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
 import { localDocRead, localDocsTree } from '../../local-docs.ts'
 import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
@@ -20,6 +20,7 @@ export const docRouter = t.router({
           scope: scope.optional(),
           subject: z.string().nullable().optional(),
           audience: z.enum(DOC_AUDIENCES).optional(),
+          status: z.enum(DOC_STATUSES).optional(),
         })
         .optional(),
     )
@@ -34,6 +35,7 @@ export const docRouter = t.router({
           scope: scope.optional(),
           subject: z.string().nullable().optional(),
           audience: z.enum(DOC_AUDIENCES).optional(),
+          status: z.enum(DOC_STATUSES).optional(),
         })
         .optional(),
     )
@@ -48,6 +50,7 @@ export const docRouter = t.router({
         scope: scope.optional(),
         subject: z.string().nullable().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
+        includeDrafts: z.boolean().optional(),
       }),
     )
     .query(({ input }) => fromOrch(() => localDocSearch(input))),
@@ -62,6 +65,8 @@ export const docRouter = t.router({
         reason: z.string().trim().min(1, 'Reason is required'),
         delivery: z.enum(['inject', 'demand']).optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
+        status: z.enum(DOC_STATUSES).optional(),
+        replacementSlug: z.string().nullable().optional(),
         parentSlug: z.string().nullable().optional(),
         position: z.number().int().optional(),
         expectedRevision,

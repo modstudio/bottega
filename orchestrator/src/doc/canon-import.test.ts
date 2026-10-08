@@ -5,7 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { importCanon } from './canon-import.ts'
-import { listDocs } from './docs.ts'
+import { getDoc, listDocs } from './docs.ts'
 
 const owner = '01990000-0000-7000-8000-000000000091'
 
@@ -48,6 +48,36 @@ test('a hosted batch failure leaves every local user canon row unchanged', async
     [first, second].sort((left, right) => left.slug.localeCompare(right.slug)),
   )
   delete process.env.ORCH_RECORD_API_URL
+})
+
+test('canon import leaves non-current rows alone and refuses imported-path collisions', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  const slug = '.agents/rules/draft.md'
+  await setDoc({
+    scope: 'canon',
+    subject: null,
+    owner,
+    slug,
+    title: slug,
+    body: '---\ndescription: Draft\nalways: true\n---\n\nDraft rule.\n',
+    status: 'draft',
+    allowCanonBootstrap: true,
+  })
+
+  await importCanon({
+    address: { kind: 'user', owner },
+    reason: 'import current rows only',
+    rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Current entry.' }],
+  })
+  expect(getDoc('canon', null, slug, owner)?.status).toBe('draft')
+
+  await expect(
+    importCanon({
+      address: { kind: 'user', owner },
+      reason: 'collide with draft',
+      rows: [{ slug, title: slug, body: 'Imported body.' }],
+    }),
+  ).rejects.toThrow(/is draft and collides.*orch doc status.*--status current.*orch doc rm/s)
 })
 
 describe.each([

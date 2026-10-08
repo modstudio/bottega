@@ -351,7 +351,7 @@ describe('fresh tracker task read', () => {
     expect(pendingTrackerStatusEvents()).toEqual([])
   })
 
-  test('a not-applicable pending event is removed without a hosted write', async () => {
+  test('a not-applicable pending event remains queued without a hosted write', async () => {
     observeTrackerTask({ ...task, status: 'Open', category: 'open' })
     observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
     const mirror = {
@@ -361,7 +361,23 @@ describe('fresh tracker task read', () => {
     } satisfies CollectorMirrorPass
 
     expect(await mirrorPendingTrackerStatusEvents(mirror, 'fixture')).toBeNull()
-    expect(pendingTrackerStatusEvents()).toEqual([])
+    expect(pendingTrackerStatusEvents()).toHaveLength(1)
+  })
+
+  test('a refused pending event reports the project reason and remains queued', async () => {
+    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
+    observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
+    const mirror = {
+      mirrorTasks: async () => 'refused' as const,
+      mirrorStatusEvents: async () => 'refused' as const,
+      refusedReason: () => 'fixture: declared-space-not-member',
+      reportSkipped: () => {},
+    } satisfies CollectorMirrorPass
+
+    expect((await mirrorPendingTrackerStatusEvents(mirror, 'fixture'))?.message).toBe(
+      'fixture: declared-space-not-member',
+    )
+    expect(pendingTrackerStatusEvents()).toHaveLength(1)
   })
 
   test('an unreadable pending event is kept, then dropped after the retention window', async () => {

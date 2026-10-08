@@ -52,7 +52,7 @@ console.log(
       stack: null,
       canon: true,
       repository: true,
-      settings: { keyPrefixes: ['GAM'] },
+      settings: { keyPrefixes: ['GAM'], space: 'declared-gamma-space' },
     },
     {
       id: 4,

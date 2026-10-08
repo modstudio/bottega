@@ -1,12 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
-import {
-  composeIndexSources,
-  type InjectionSource,
-  resolveDeclaredFacts,
-  unresolvedTrackerActionPlaceholder,
-  type WorkflowFactSource,
-} from '../project/project-injection.ts'
+import { projects } from '../project/projects.ts'
 import {
   type AutonomyPreset,
   type AutonomyResolution,
@@ -15,59 +9,40 @@ import {
   catalogueStepsForAutonomy,
   resolveAutonomy,
 } from './autonomy.ts'
-import { decideShipToReach } from './ship-to-reach.ts'
 import {
   compatibleCatalogueStep,
-  type FloorEntry,
   productionStepCatalogue,
   type StepCatalogueDefinition,
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
-import { type FloorKind, isFloorKind } from './workflow-floor.ts'
+import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
+import {
+  resolveWorkflowProjectFacts,
+  stepNeedsCloseState,
+  workflowCompositionFactExtras,
+} from './workflow-project-facts.ts'
+import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowSteps,
   inspectWorkflowSteps,
   isSequenceReference,
-  type WorkflowModeStep,
   workflowModeStepError,
 } from './workflow-step-sequences.ts'
+import {
+  resolveWorkflowStepExpectedStatus,
+  resolveWorkflowStepFloors,
+  resolveWorkflowStepTemplates,
+  resolveWorkflowTemplate,
+} from './workflow-template.ts'
 
-type WorkflowArgument = { name: string; required: boolean; description: string; rebind?: boolean }
-type WorkflowMode = {
-  slug: string
-  title: string
-  default?: boolean
-  entry?: string
-  requires?: string[]
-  steps: WorkflowModeStep[]
-}
-export type WorkflowDefinition = {
-  title: string
-  description: string
-  defaultPreset?: AutonomyPreset
-  arguments: WorkflowArgument[]
-  modes: WorkflowMode[]
-  // Steps are shared on purpose: a catalogue change reaches every workflow
-  // that uses the step. The catalogue is therefore versioned, and compose
-  // reports the exact catalogue version alongside the workflow version.
-}
+export type { WorkflowDefinition } from './workflow-definition.ts'
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
-
-function resolveWorkflowTemplate(template: string, values: Record<string, unknown>): string {
-  return template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
-    let value: unknown = values
-    for (const part of path.split('.')) value = object(value) ? value[part] : undefined
-    if (value === undefined || value === null || typeof value === 'object')
-      throw new Error(`unresolved workflow placeholder "${path}"`)
-    return String(value)
-  })
-}
 const WORKFLOW_PROMPT_ARGUMENT_NAMES = new Set(['mode', 'project', 'autonomy'])
 const workflowPromptArgumentNameErrors = (name: unknown): string[] =>
   typeof name === 'string' && WORKFLOW_PROMPT_ARGUMENT_NAMES.has(name)
@@ -428,6 +403,16 @@ export function promoteWorkflow(
     const catalogue = productionStepCatalogue(database).definition,
       refusal = catalogueReferenceRefusal(slug, definition, catalogue)
     if (refusal) throw new Error(refusal)
+    const workflows = productionWorkflows(database).filter((workflow) => workflow.slug !== slug)
+    workflows.push({ slug, definition })
+    const renderRefusal = renderCheckRefusal(
+      checkWorkflowRendering(
+        workflows,
+        productionStepCatalogue(database).definition,
+        projects(undefined, database),
+      ),
+    )
+    if (renderRefusal) throw new Error(renderRefusal)
   })
 }
 export function retireWorkflow(
@@ -462,84 +447,6 @@ type WorkflowNeeds = {
   arguments?: { name: string; description: string }[]
 }
 type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
-const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
-  needs.filter(
-    (source): source is InjectionSource => source !== 'ship-to' && source !== 'workflow-text',
-  )
-
-function shipToFact(
-  project: { name: string; settings: { release?: { rungs: { name: string }[] } } },
-  needs: readonly WorkflowFactSource[],
-  needsCloseState: boolean,
-  args: Record<string, string>,
-  autonomy: AutonomyResolution,
-  projectFacts: Record<string, unknown>,
-) {
-  if (!needs.includes('ship-to')) return {}
-  if (autonomy.shipTo.complete === false)
-    throw new Error(
-      `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>`,
-    )
-  const decision = decideShipToReach(
-    autonomy.shipTo.value,
-    project.settings.release?.rungs.map(({ name }) => name) ?? [],
-    args.depth,
-  )
-  if (!decision.allowed) throw new Error(decision.refusal)
-  const tracker = needsCloseState
-    ? (projectFacts.tracker as { states: Partial<Record<'review' | 'done', string>> })
-    : undefined
-  return {
-    shipTo: {
-      level: autonomy.shipTo.value,
-      scope: autonomy.shipTo.scope,
-      mayMerge: decision.mayMerge ? 'yes' : 'no',
-      reach: decision.reach,
-      remaining: decision.remaining,
-      reachText: decision.reach.join(', ') || 'none',
-      remainingText: decision.remaining.join(', ') || 'none',
-      ...closeShipToFact(project.name, decision.remaining.length, tracker),
-    },
-  }
-}
-
-function closeShipToFact(
-  projectName: string,
-  remaining: number,
-  tracker: { states: Partial<Record<'review' | 'done', string>> } | undefined,
-) {
-  if (!tracker) return {}
-  const closeAction = !remaining ? 'done' : tracker.states.review ? 'review' : 'ask'
-  if (closeAction === 'done' && !tracker.states.done)
-    throw new Error(
-      `project ${projectName} tracker is missing workflow state "done"; set it with: orch project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
-    )
-  return {
-    closeAction,
-    closeFloor: closeAction === 'ask' ? 'ruling' : 'tracker-transition',
-    closeState:
-      closeAction === 'done'
-        ? tracker.states.done
-        : closeAction === 'review'
-          ? tracker.states.review
-          : 'none',
-  }
-}
-
-function resolveStepFloors(
-  step: { slug: string; floor: FloorEntry[] },
-  resolve: (template: string) => string,
-): FloorKind[] {
-  return step.floor.map((entry) => {
-    if (isFloorKind(entry)) return entry
-    const value = resolve(entry)
-    if (!isFloorKind(value))
-      throw new Error(
-        `step "${step.slug}" floor placeholder "${entry}" resolved to invalid floor kind "${value}"`,
-      )
-    return value
-  })
-}
 
 const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
   version === undefined
@@ -632,23 +539,14 @@ export function composeWorkflow(
       slug,
     )
   const allNeeds = selected.flatMap((step) => step.needs)
-  const { resolved, facts: projectFacts } = resolveDeclaredFacts(
+  const { resolved, facts } = resolveWorkflowProjectFacts(
     project,
-    projectInjectionNeeds(allNeeds),
+    allNeeds,
+    selected.some((step) => stepNeedsCloseState(step.needs)),
     args,
-    composeIndexSources,
+    effectiveAutonomy,
+    workflowCompositionFactExtras,
   )
-  const facts = {
-    ...projectFacts,
-    ...shipToFact(
-      project,
-      allNeeds,
-      selected.some((step) => step.needs.includes('ship-to') && step.needs.includes('tracker')),
-      args,
-      effectiveAutonomy,
-      projectFacts,
-    ),
-  }
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   return {
     workflow: {
@@ -665,6 +563,7 @@ export function composeWorkflow(
     arguments: args,
     steps:
       selected.map((step, index) => {
+        const resolve = (template: string) => resolveWorkflowTemplate(template, values)
         return {
           n: index + 1,
           slug: step.slug,
@@ -673,11 +572,9 @@ export function composeWorkflow(
           stage: step.stage,
           autonomy: step.autonomy,
           resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
-          floor: resolveStepFloors(step, (template) => resolveWorkflowTemplate(template, values)),
+          floor: resolveWorkflowStepFloors(step, resolve),
           deferrable: step.deferrable ?? [],
-          expectedStatus: step.expectedStatus
-            ? resolveWorkflowTemplate(step.expectedStatus, values)
-            : undefined,
+          expectedStatus: resolveWorkflowStepExpectedStatus(step, resolve),
           requirePullRequest: Boolean(step.requirePullRequest),
           operatorRuling: Boolean(step.operatorRuling),
           commandEvidence: step.commandEvidence,
@@ -763,40 +660,21 @@ export function getWorkflowStep(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
-  const { facts: projectFacts } = resolveDeclaredFacts(
+  const { facts } = resolveWorkflowProjectFacts(
     project,
-    projectInjectionNeeds(step.needs),
+    step.needs,
+    stepNeedsCloseState(step.needs),
     args,
+    effectiveAutonomy,
   )
-  const facts = {
-    ...projectFacts,
-    ...shipToFact(
-      project,
-      step.needs,
-      step.needs.includes('ship-to') && step.needs.includes('tracker'),
-      args,
-      effectiveAutonomy,
-      projectFacts,
-    ),
-  }
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   const resolve = (template: string) =>
-    template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
-      let value: unknown = values
-      for (const part of path.split('.')) value = object(value) ? value[part] : undefined
-      if (value === undefined || value === null || typeof value === 'object') {
-        const remedy = definition.arguments.some((argument) => argument.name === path)
-          ? `; pass --arg ${path}=<value> on this step or next call`
-          : ''
-        throw new Error(`unresolved workflow placeholder "${path}"${remedy}`)
-      }
-      if (path.startsWith('tracker.actions.') && typeof value === 'string') {
-        const reason = unresolvedTrackerActionPlaceholder(value, project.name, args.key)
-        if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
-      }
-      return String(value)
+    resolveWorkflowTemplate(template, values, {
+      argumentNames: new Set(definition.arguments.map(({ name }) => name)),
+      project: project.name,
+      key: args.key,
     })
-  const body = resolve(step.body)
+  const templates = resolveWorkflowStepTemplates(step, resolve)
   const successor = ({ steps }: { steps: string[] }) => {
     const index = steps.indexOf(stepSlug)
     if (index === steps.length - 1) return null
@@ -812,8 +690,8 @@ export function getWorkflowStep(
       : undefined
   return {
     ...step,
-    floor: resolveStepFloors(step, resolve),
-    expectedStatus: step.expectedStatus ? resolve(step.expectedStatus) : undefined,
+    floor: templates.floor,
+    expectedStatus: templates.expectedStatus,
     commandEvidence: step.commandEvidence,
     resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
     workflow: slug,
@@ -822,7 +700,7 @@ export function getWorkflowStep(
     project: projectName,
     mode: selectedMode?.mode.slug,
     facts,
-    body,
+    body: templates.body,
     next,
   }
 }

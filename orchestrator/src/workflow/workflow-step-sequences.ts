@@ -1,13 +1,8 @@
 // concern: workflows
 /** Owns named workflow-step sequences and their flat expansion. */
 
-export type CatalogueSequence = {
-  slug: string
-  title: string
-  steps: string[]
-}
-
-export type WorkflowModeStep = string | { sequence: string }
+import type { CatalogueSequence } from './step-catalogue-definition.ts'
+import type { WorkflowModeStep } from './workflow-definition.ts'
 
 export type WorkflowStepInspection = {
   expanded: string[]

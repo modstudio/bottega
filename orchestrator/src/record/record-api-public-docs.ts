@@ -102,6 +102,10 @@ export function registerSignedDocSearchRoute<E extends Env>(
           .enum(['true', 'false'])
           .optional()
           .transform((value) => value === 'true'),
+        includeDrafts: z
+          .enum(['true', 'false'])
+          .optional()
+          .transform((value) => value === 'true'),
       })
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc search query' }, 400)
@@ -111,6 +115,7 @@ export function registerSignedDocSearchRoute<E extends Env>(
       subject: query.data.subject === undefined ? undefined : query.data.subject || null,
       audience: query.data.audience,
       acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
+      includeDrafts: Boolean(query.data.includeDrafts),
     }
     return context.json({ items: await deps.searchDocs({ ...tenant, ...input }) })
   })

@@ -77,6 +77,11 @@ const baselineFresh = () => {
 }
 
 type ApplicationObject = { type: 'table' | 'index' | 'view' | 'trigger'; name: string }
+const LATEST_MIGRATIONS = [
+  '0014_install_binding',
+  '0015_question_delivery_retired',
+  '0016_interval_ledger_destination',
+]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
   d
@@ -158,7 +163,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '39ced81922507b55c8f66f7abd45362eca98748b324493682e12f3dbdc85fc24',
+      'bcd058e56e09084a756cbe9d126062fabe850bc7cb6cf22e98546a77907fd72f',
     )
     d.close()
   })
@@ -199,8 +204,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
-      '0014_install_binding',
-      '0015_question_delivery_retired',
+      ...LATEST_MIGRATIONS,
     ])
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(
@@ -214,10 +218,7 @@ describe('hub migration journal', () => {
     unbound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
       VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01'),
              ('mcp-id','MCP-1','workshop','mcp','2026-01-01','2026-01-01')`)
-    expect(applyMigrations(unbound)).toEqual([
-      '0014_install_binding',
-      '0015_question_delivery_retired',
-    ])
+    expect(applyMigrations(unbound)).toEqual([...LATEST_MIGRATIONS])
     expect(
       unbound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
     ).toBeNull()
@@ -227,10 +228,7 @@ describe('hub migration journal', () => {
     bound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
       VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01')`)
     bound.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
-    expect(applyMigrations(bound)).toEqual([
-      '0014_install_binding',
-      '0015_question_delivery_retired',
-    ])
+    expect(applyMigrations(bound)).toEqual([...LATEST_MIGRATIONS])
     expect(
       bound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
     ).toEqual({ bound: 1 })
@@ -529,7 +527,7 @@ describe('hub migration journal', () => {
   test('every migration backfill is idempotent when the current journal is applied again', () => {
     const d = migratedThrough(13)
     d.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
-    expect(applyMigrations(d)).toEqual(['0014_install_binding', '0015_question_delivery_retired'])
+    expect(applyMigrations(d)).toEqual([...LATEST_MIGRATIONS])
     const migrated = d.serialize()
     expect(applyMigrations(d)).toEqual([])
     expect(d.serialize()).toEqual(migrated)
@@ -556,8 +554,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
-      '0014_install_binding',
-      '0015_question_delivery_retired',
+      ...LATEST_MIGRATIONS,
     ])
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
@@ -668,11 +665,7 @@ describe('hub migration journal', () => {
        VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
     ).run()
 
-    expect(applyMigrations(d)).toEqual([
-      '0013_workflow_questions',
-      '0014_install_binding',
-      '0015_question_delivery_retired',
-    ])
+    expect(applyMigrations(d)).toEqual(['0013_workflow_questions', ...LATEST_MIGRATIONS])
     expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
       {
         question_id: 40,
@@ -720,8 +713,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
-      '0014_install_binding',
-      '0015_question_delivery_retired',
+      ...LATEST_MIGRATIONS,
     ])
     expect(
       d
@@ -837,8 +829,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
-      '0014_install_binding',
-      '0015_question_delivery_retired',
+      ...LATEST_MIGRATIONS,
     ])
     const after = Date.now()
     const minted = d
@@ -909,8 +900,7 @@ describe('hub migration journal', () => {
       '0011_operator_waiting_email',
       '0012_question_overturn',
       '0013_workflow_questions',
-      '0014_install_binding',
-      '0015_question_delivery_retired',
+      ...LATEST_MIGRATIONS,
     ])
     expect(
       d

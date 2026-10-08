@@ -24,6 +24,7 @@ export async function search(
     loadChunks?: (repositoryRoot: string) => Promise<Chunk[]>
     scope?: string
     subject?: string
+    includeDrafts?: boolean
   } = {},
 ): Promise<DocSearchOutput> {
   const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
@@ -72,7 +73,9 @@ export async function search(
               row.dimension === currentContract.dimension &&
               row.instructionVersion === currentContract.instructionVersion &&
               (options.scope === undefined || row.scope === options.scope) &&
-              (options.subject === undefined || row.subject === options.subject),
+              (options.subject === undefined || row.subject === options.subject) &&
+              (row.status === 'current' ||
+                (options.includeDrafts === true && row.status === 'draft')),
           )
           .map((row) => ({ ...row, id: row.chunkId })),
     },
@@ -81,6 +84,7 @@ export async function search(
       subject: row.subject,
       slug: row.slug,
       title: row.title,
+      status: row.status === 'draft' ? 'draft' : 'current',
       headingPath: JSON.parse(row.headingPath) as string[],
       ...boundedSnippet(row.text),
       ...scores,

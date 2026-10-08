@@ -17,7 +17,7 @@ import { endpointsFromEnvironment, probeEndpointStatuses } from './services/endp
 
 function usage(): never {
   throw new Error(
-    'usage: bun retrieval/src/search-cli.ts "<query>" [--k N] [--json] [--scope S] [--subject X] [--code --project <path>]',
+    'usage: bun retrieval/src/search-cli.ts "<query>" [--k N] [--json] [--scope S] [--subject X] [--include-drafts] [--code --project <path>]',
   )
 }
 
@@ -71,6 +71,7 @@ export function parseSearchArguments(argv: string[]): {
   projectPath?: string
   scope?: string
   subject?: string
+  includeDrafts: boolean
 } {
   let query: string | undefined
   let k = 5
@@ -79,9 +80,11 @@ export function parseSearchArguments(argv: string[]): {
   let projectPath: string | undefined
   let scope: string | undefined
   let subject: string | undefined
+  let includeDrafts = false
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--json') json = true
+    else if (argument === '--include-drafts') includeDrafts = true
     else if (argument === '--code') code = true
     else if (argument === '--project') {
       projectPath = argv[++index]
@@ -102,12 +105,13 @@ export function parseSearchArguments(argv: string[]): {
   if (!query) usage()
   if (code && !projectPath) usage()
   if (!code && projectPath) usage()
-  if (code && (scope || subject)) usage()
+  if (code && (scope || subject || includeDrafts)) usage()
   return {
     query,
     k,
     json,
     code,
+    includeDrafts,
     ...(projectPath ? { projectPath } : {}),
     ...(scope ? { scope } : {}),
     ...(subject ? { subject } : {}),
@@ -144,12 +148,13 @@ export async function main(argv: string[]): Promise<void> {
     if (statuses.some((status) => !status.reachable)) process.exitCode = 1
     return
   }
-  const { query, k, json, code, projectPath, scope, subject } = parseSearchArguments(argv)
+  const { query, k, json, code, projectPath, scope, subject, includeDrafts } =
+    parseSearchArguments(argv)
   const output = code
     ? CodeSearchOutputSchema.parse(
         await searchCode(await registeredCodeProject(projectPath!), query, k),
       )
-    : DocSearchOutputSchema.parse(await search(query, k, { scope, subject }))
+    : DocSearchOutputSchema.parse(await search(query, k, { scope, subject, includeDrafts }))
   if (json) {
     console.log(JSON.stringify(output))
     return
@@ -163,7 +168,7 @@ export async function main(argv: string[]): Promise<void> {
       continue
     }
     console.log(
-      `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,
+      `${result.scope}/${result.subject ?? '_'}/${result.slug} [${result.status}] · ${result.headingPath.join(' > ') || result.title}`,
     )
     console.log(`  ${result.snippet}${result.truncated ? '…' : ''}`)
     console.log(`  embedding ${result.embeddingScore} · rerank ${result.rerankScore}`)

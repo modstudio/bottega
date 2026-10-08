@@ -1,7 +1,7 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
 
-import type { DocAudience } from '../../../shared/docs.ts'
+import type { DocAudience, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -24,6 +24,8 @@ type LocalDoc = {
   parent_id: number | null
   position: number
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
   project_id: number | null
   created_at: string
   updated_at: string
@@ -45,6 +47,8 @@ type LocalRevision = {
   parent_id: number | null
   position: number
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
   author: string
   reason: string
   session_id: string | null
@@ -67,6 +71,15 @@ function bodyHash(body: string): string {
 
 function address(scope: string, subject: string | null, slug: string): string {
   return `${scope}/${subject ?? ''}/${slug}`
+}
+
+function lifecycleAddress(input: {
+  scope: string
+  subject: string | null
+  owner?: string | null
+  slug: string
+}): string {
+  return `${input.scope}\0${input.subject ?? ''}\0${input.owner ?? ''}\0${input.slug}`
 }
 
 function projectNames(local: ReturnType<typeof db>): Map<number, string> {
@@ -96,6 +109,8 @@ function asRevision(
     parentId: row.parent_id == null ? null : (recordIds.get(row.parent_id) ?? null),
     position: row.position,
     featured: Boolean(row.featured),
+    status: row.status,
+    replacementSlug: row.replacement_slug,
     author: row.author,
     reason: row.reason,
     sessionId: row.session_id,
@@ -130,6 +145,8 @@ function groupFromLive(
         parentId: doc.parent_id == null ? null : (recordIds.get(doc.parent_id) ?? null),
         position: doc.position,
         featured: Boolean(doc.featured),
+        status: doc.status,
+        replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
         updatedAt: doc.updated_at,
@@ -187,13 +204,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )
@@ -220,6 +237,11 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
     groups.push(groupFromDeleted(list, names, recordIds))
   }
   const byLocalId = new Map(groups.map((group) => [group.sourceDocId, group]))
+  const liveByAddress = new Map(
+    groups
+      .filter((group) => group.localDocId !== null)
+      .map((group) => [lifecycleAddress(group.payload.doc), group]),
+  )
   const ordered: ImportGroup[] = []
   const visited = new Set<number>()
   const visit = (group: ImportGroup): void => {
@@ -230,6 +252,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
     if (parent) {
       const parentGroup = byLocalId.get(parent)
       if (parentGroup) visit(parentGroup)
+    }
+    const replacement = group.payload.doc.replacementSlug
+    if (group.localDocId !== null && group.payload.doc.status === 'superseded' && replacement) {
+      const replacementGroup = liveByAddress.get(
+        lifecycleAddress({ ...group.payload.doc, slug: replacement }),
+      )
+      if (replacementGroup) visit(replacementGroup)
     }
     ordered.push(group)
   }
@@ -263,7 +292,7 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, replacement_slug, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
@@ -281,18 +310,36 @@ async function compareLiveDocs(
       mismatches.push(`${label}: hosted row is absent`)
       continue
     }
-    const hostedBody = typeof hosted.body === 'string' ? hosted.body : ''
-    const localHash = bodyHash(doc.body)
-    const hostedHash = bodyHash(hostedBody)
-    if (localHash !== hostedHash) {
-      mismatches.push(`${label}: body hash ${localHash} != ${hostedHash}`)
-    }
-    if (hosted.delivery !== doc.delivery) {
-      mismatches.push(`${label}: delivery ${doc.delivery} != ${String(hosted.delivery)}`)
-    }
-    if (hosted.deletedAt != null) {
-      mismatches.push(`${label}: deleted_at ${String(hosted.deletedAt)}`)
-    }
+    mismatches.push(...liveDocMismatches(label, doc, hosted))
+  }
+  return mismatches
+}
+
+function liveDocMismatches(
+  label: string,
+  doc: LocalDoc,
+  hosted: Record<string, unknown>,
+): string[] {
+  const mismatches: string[] = []
+  const hostedBody = typeof hosted.body === 'string' ? hosted.body : ''
+  const localHash = bodyHash(doc.body)
+  const hostedHash = bodyHash(hostedBody)
+  if (localHash !== hostedHash) {
+    mismatches.push(`${label}: body hash ${localHash} != ${hostedHash}`)
+  }
+  if (hosted.delivery !== doc.delivery) {
+    mismatches.push(`${label}: delivery ${doc.delivery} != ${String(hosted.delivery)}`)
+  }
+  if (hosted.status !== doc.status) {
+    mismatches.push(`${label}: status ${doc.status} != ${String(hosted.status)}`)
+  }
+  if ((hosted.replacementSlug ?? null) !== doc.replacement_slug) {
+    mismatches.push(
+      `${label}: replacement ${doc.replacement_slug ?? 'null'} != ${String(hosted.replacementSlug ?? null)}`,
+    )
+  }
+  if (hosted.deletedAt != null) {
+    mismatches.push(`${label}: deleted_at ${String(hosted.deletedAt)}`)
   }
   return mismatches
 }

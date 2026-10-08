@@ -12,6 +12,31 @@ const replace = (rows: Row[], slug: string, body: string): Row[] => [
 ]
 const bodies = <T extends Row>(rows: T[]) => rows.map(({ slug, body }) => ({ slug, body }))
 
+async function liveCurrentCanonRows(
+  tx: SQL,
+  spaceId: string,
+  address: { subject: string | null; owner: string | null },
+): Promise<Row[]> {
+  const rows = address.owner
+    ? await tx`
+        SELECT slug, body FROM doc
+        WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL
+          AND owner_user_id=${address.owner}::uuid AND deleted_at IS NULL AND status='current'
+      `
+    : address.subject
+      ? await tx`
+          SELECT slug, body FROM doc
+          WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${address.subject}
+            AND owner_user_id IS NULL AND deleted_at IS NULL AND status='current'
+        `
+      : await tx`
+          SELECT slug, body FROM doc
+          WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL
+            AND owner_user_id IS NULL AND deleted_at IS NULL AND status='current'
+        `
+  return asRows(rows)
+}
+
 function compose(
   global: Row[],
   user: Row[],
@@ -47,14 +72,9 @@ async function userWriteRefusal(
   const names = await managedCanonProjectNames(tx, spaceId)
   const targetNames = names.length ? names : [null]
   for (const name of targetNames) {
-    const rows = name
-      ? await tx`
-          SELECT slug, body FROM doc
-          WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${name}
-            AND owner_user_id IS NULL AND deleted_at IS NULL
-        `
+    const project = name
+      ? await liveCurrentCanonRows(tx, spaceId, { subject: name, owner: null })
       : []
-    const project = asRows(rows)
     const current = composeRefusal(() => compose(global, user, project, owner, name))
     if (current.refusal) return current.refusal
     const next = composeRefusal(() => compose(global, changed, project, owner, name))
@@ -85,26 +105,14 @@ export async function recordCanonImportSurroundings(
   tx: SQL,
   input: { spaceId: string; address: { kind: 'user' } | { kind: 'project'; subject: string } },
 ): Promise<Array<{ global: Row[]; project: Row[] }>> {
-  const global = asRows(
-    await tx`
-      SELECT slug, body FROM doc
-      WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject IS NULL
-        AND owner_user_id IS NULL AND deleted_at IS NULL
-    `,
-  )
+  const global = await liveCurrentCanonRows(tx, input.spaceId, { subject: null, owner: null })
   if (input.address.kind === 'project') return [{ global, project: [] }]
   const names = await managedCanonProjectNames(tx, input.spaceId)
   const targets = names.length ? names : [null]
   const surroundings: Array<{ global: Row[]; project: Row[] }> = []
   for (const name of targets) {
     const project = name
-      ? asRows(
-          await tx`
-            SELECT slug, body FROM doc
-            WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject=${name}
-              AND owner_user_id IS NULL AND deleted_at IS NULL
-          `,
-        )
+      ? await liveCurrentCanonRows(tx, input.spaceId, { subject: name, owner: null })
       : []
     surroundings.push({ global, project })
   }
@@ -129,28 +137,10 @@ export async function canonFacts(
       canonRefusal: null,
     }
   }
-  const globalRows = asRows(
-    await tx`
-    SELECT slug, body FROM doc
-    WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL AND owner_user_id IS NULL AND deleted_at IS NULL
-  `,
-  )
-  const userRows = owner
-    ? asRows(
-        await tx`
-        SELECT slug, body, owner_user_id FROM doc
-        WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject IS NULL
-          AND owner_user_id=${owner}::uuid AND deleted_at IS NULL
-      `,
-      )
-    : []
+  const globalRows = await liveCurrentCanonRows(tx, spaceId, { subject: null, owner: null })
+  const userRows = owner ? await liveCurrentCanonRows(tx, spaceId, { subject: null, owner }) : []
   const projectRows = subject
-    ? asRows(
-        await tx`
-        SELECT slug, body FROM doc
-        WHERE space_id=${spaceId}::uuid AND scope='canon' AND subject=${subject} AND deleted_at IS NULL
-      `,
-      )
+    ? await liveCurrentCanonRows(tx, spaceId, { subject, owner: null })
     : []
   const changed = replace(owner ? userRows : subject ? projectRows : globalRows, slug, body)
   const current = composeRefusal(() => compose(globalRows, userRows, projectRows, owner, subject))

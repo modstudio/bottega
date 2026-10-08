@@ -1,7 +1,7 @@
 // concern: local-doc-revisions
 /** Owns local revision ordering and compare-and-set facts. Must not know hosted transport or CLI. */
 
-import type { DocAudience } from '../../../shared/docs.ts'
+import type { DocAudience, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
 import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
 
@@ -19,6 +19,8 @@ type RevisionDoc = {
   parent_id: number | null
   position: number
   featured: boolean
+  status: DocStatus
+  replacement_slug: string | null
 }
 
 export function docWriteIdentity(context: { author?: string; reason: string }): {
@@ -78,8 +80,8 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audience, parent_id, position, featured, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audience, parent_id, position, featured, status, replacement_slug, author, reason, session_id, at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
@@ -96,6 +98,8 @@ export function insertLocalRevision(
       doc.parent_id,
       doc.position,
       doc.featured,
+      doc.status,
+      doc.replacement_slug,
       identity.author,
       identity.reason,
       identity.session,

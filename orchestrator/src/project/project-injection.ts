@@ -173,6 +173,29 @@ function commandFor(project: InjectableProject, source: InjectionSource): string
     : `orch project set ${project.name} ${settingCommands[source]}`
 }
 
+export type MissingWorkflowInjectionFact = {
+  source: InjectionSource
+  remedy: string
+}
+
+export class MissingWorkflowInjectionFactsError extends Error {
+  readonly missing: MissingWorkflowInjectionFact[]
+
+  constructor(project: InjectableProject, sources: InjectionSource[]) {
+    const missing = sources.map((source) => ({
+      source,
+      remedy: `${source}; set with: ${commandFor(project, source)}`,
+    }))
+    super(
+      `project ${project.name} is missing workflow injection facts:\n${missing
+        .map(({ remedy }) => `- ${remedy}`)
+        .join('\n')}`,
+    )
+    this.name = 'MissingWorkflowInjectionFactsError'
+    this.missing = missing
+  }
+}
+
 /** Resolve all requested register facts together, or refuse without returning a partial result. */
 export function resolveInjection<
   Project extends InjectableProject,
@@ -187,11 +210,7 @@ export function resolveInjection<
     return source !== 'mainStack' && (value === undefined || value === null)
   })
   if (missing.length) {
-    throw new Error(
-      `project ${project.name} is missing workflow injection facts:\n${missing
-        .map((source) => `- ${source}; set with: ${commandFor(project, source)}`)
-        .join('\n')}`,
-    )
+    throw new MissingWorkflowInjectionFactsError(project, missing)
   }
 
   const resolved: Partial<InjectionValues<Project>> = {}

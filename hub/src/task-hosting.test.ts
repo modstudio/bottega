@@ -1,13 +1,24 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { assertMirrorExpectedSpace, confirmCount, mirrorCollisionDecision } from './hosted-tasks.ts'
+import {
+  confirmCount,
+  createHostedTaskInTransaction,
+  mirrorCollisionDecision,
+} from './hosted-tasks.ts'
+import { taskRequestSpaceDecision } from './record-space-request.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
 import {
+  hostedCloseTask,
+  hostedCommentTask,
+  hostedCreateDocument,
   hostedCreateTask,
+  hostedDeleteDocument,
   hostedDeleteTasks,
+  hostedPatchDocument,
+  hostedPatchTask,
   hostedTaskIdentity,
   hostedTaskPresence,
 } from './task-client.ts'
@@ -16,26 +27,202 @@ import { closeThenPrune } from './task-close.ts'
 beforeAll(resetFixtureStore)
 
 describe('hosted-only task safety', () => {
-  test('mirror expected-space checks name both spaces and accept older clients', () => {
-    expect(() => assertMirrorExpectedSpace(undefined, 'space-b')).not.toThrow()
-    expect(() => assertMirrorExpectedSpace('space-b', 'space-b')).not.toThrow()
-    expect(() => assertMirrorExpectedSpace('space-a', 'space-b')).toThrow(
-      'mirror expected space space-a, actual space space-b; re-run after the active space settles',
-    )
+  test('the task request space decision binds only a caller membership', () => {
+    const memberships = [
+      { spaceId: 'space-a', slug: 'active' },
+      { spaceId: 'space-b', slug: 'declared' },
+    ]
+    expect(taskRequestSpaceDecision(null, 'space-a', memberships)).toEqual({
+      allowed: true,
+      spaceId: 'space-a',
+    })
+    expect(taskRequestSpaceDecision('declared', 'space-a', memberships)).toEqual({
+      allowed: true,
+      spaceId: 'space-b',
+    })
+    expect(taskRequestSpaceDecision('missing', 'space-a', memberships)).toEqual({
+      allowed: false,
+      requestedSpace: 'missing',
+    })
+    expect(taskRequestSpaceDecision('', 'space-a', memberships)).toEqual({
+      allowed: false,
+      requestedSpace: '',
+    })
   })
 
-  test('a mismatched mirror request reaches no write service', async () => {
-    let writes = 0
+  test('task writes bind a requested member space and keep membership scope unchanged', async () => {
+    let received: Record<string, unknown> | null = null
     const response = await taskApi(
-      new Request('https://hub.example.test/v1/tasks/mirror', {
-        method: 'PUT',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-        body: JSON.stringify({ tasks: [], expectedSpaceId: 'space-a' }),
+      new Request('https://hub.example.test/v1/tasks', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'declared',
+        },
+        body: JSON.stringify({ project: 'workshop', title: 'Bound write' }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
         fetch: async () =>
-          Response.json({ user: { id: 'user-1' }, activeSpaceId: 'space-b', memberships: [] }),
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [
+              { space_id: 'space-a', slug: 'active' },
+              { space_id: 'space-b', slug: 'declared' },
+            ],
+          }),
+        create: async (_url, identity) => {
+          received = identity as unknown as Record<string, unknown>
+          return { id: 'task-1' } as never
+        },
+      },
+    )
+
+    expect(response?.status).toBe(201)
+    expect(received).toMatchObject({
+      userId: 'user-1',
+      spaceId: 'space-b',
+      spaceIds: ['space-a', 'space-b'],
+      memberships: [
+        { spaceId: 'space-a', slug: 'active' },
+        { spaceId: 'space-b', slug: 'declared' },
+      ],
+    })
+  })
+
+  test('task writes refuse a non-member or empty requested space before calling the writer', async () => {
+    for (const requested of ['missing', '']) {
+      let writes = 0
+      const response = await taskApi(
+        new Request('https://hub.example.test/v1/tasks', {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer test',
+            'content-type': 'application/json',
+            'x-record-space': requested,
+          },
+          body: JSON.stringify({ project: 'workshop', title: 'Refused write' }),
+        }),
+        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+        {
+          fetch: async () =>
+            Response.json({
+              user: { id: 'user-1' },
+              activeSpaceId: 'space-a',
+              memberships: [{ space_id: 'space-a', slug: 'active' }],
+            }),
+          create: async () => {
+            writes++
+            return { id: 'task-1' } as never
+          },
+        },
+      )
+
+      expect(response?.status).toBe(403)
+      expect(await response?.json()).toEqual({
+        error: `record space '${requested}' is not among the caller's memberships`,
+        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+      })
+      expect(writes).toBe(0)
+    }
+  })
+
+  test('a task write without a requested space keeps the active space', async () => {
+    let boundSpace = ''
+    await taskApi(
+      new Request('https://hub.example.test/v1/tasks', {
+        method: 'POST',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ project: 'workshop', title: 'Active write' }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
+        create: async (_url, identity) => {
+          boundSpace = identity.spaceId
+          return { id: 'task-1' } as never
+        },
+      },
+    )
+    expect(boundSpace).toBe('space-a')
+  })
+
+  test('a requested space is ignored by list routes', async () => {
+    let boundSpace = ''
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks', {
+        headers: { authorization: 'Bearer test', 'x-record-space': 'not-a-member' },
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
+        list: async (_url, identity) => {
+          boundSpace = identity.spaceId
+          return { tasks: [], comments: [], documents: [], statusEvents: [], cursor: '' }
+        },
+      },
+    )
+    expect(response?.status).toBe(200)
+    expect(boundSpace).toBe('space-a')
+  })
+
+  test('task creation distinguishes an absent project from a project without a prefix', async () => {
+    const identity = { userId: 'user-1', spaceId: 'space-b' }
+    const transaction = (rows: unknown[]) =>
+      (async () => rows) as unknown as Parameters<typeof createHostedTaskInTransaction>[0]
+    await expect(
+      createHostedTaskInTransaction(transaction([]), identity, {
+        project: 'missing',
+        title: 'Missing',
+      }),
+    ).rejects.toThrow(
+      "project 'missing' is absent from record space space-b. Run `orch record space move-project` or declare the project's space in the register.",
+    )
+    await expect(
+      createHostedTaskInTransaction(
+        transaction([{ id: 'project-1', key_prefixes: [] }]),
+        identity,
+        { project: 'present', title: 'No prefix' },
+      ),
+    ).rejects.toThrow("project 'present' has no key prefix")
+  })
+
+  test('a non-member mirror target and injected spaceIds reach no write service', async () => {
+    let writes = 0
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/mirror', {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-z',
+        },
+        body: JSON.stringify({
+          tasks: [],
+          targetSpaceId: 'space-a',
+          spaceIds: ['space-z'],
+        }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
         mirror: async () => {
           writes++
           return { upserted: 0, adoptions: [] }
@@ -43,12 +230,90 @@ describe('hosted-only task safety', () => {
       },
     )
 
-    expect(response?.status).toBe(409)
+    expect(response?.status).toBe(403)
     expect(await response?.json()).toEqual({
-      error:
-        'mirror expected space space-a, actual space space-b; re-run after the active space settles',
+      error: "record space 'space-z' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
     })
     expect(writes).toBe(0)
+  })
+
+  test('a member mirror target derives its tenant principal without body-supplied spaceIds', async () => {
+    const principals: Array<{
+      userId: string
+      spaceId: string
+      spaceIds?: readonly string[]
+      memberships?: Array<{ spaceId: string; slug: string }>
+    }> = []
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/mirror', {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-b',
+        },
+        body: JSON.stringify({ tasks: [], targetSpaceId: 'space-a', spaceIds: ['space-z'] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [
+              { space_id: 'space-a', slug: 'active' },
+              { space_id: 'space-b', slug: 'other' },
+            ],
+          }),
+        mirror: async (_url, identity) => {
+          principals.push(identity)
+          return { upserted: 0, adoptions: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(principals).toEqual([
+      {
+        userId: 'user-1',
+        spaceId: 'space-b',
+        spaceIds: ['space-a', 'space-b'],
+        memberships: [
+          { spaceId: 'space-a', slug: 'active' },
+          { spaceId: 'space-b', slug: 'other' },
+        ],
+      },
+    ])
+  })
+
+  test('a non-member counts target returns its refusal as HTTP 403', async () => {
+    let reads = 0
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/counts', {
+        headers: { authorization: 'Bearer test', 'x-record-space': 'space-z' },
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
+        counts: async () => {
+          reads++
+          return { task: [], task_comment: [], task_document: [], task_status_event: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(403)
+    expect(await response?.json()).toEqual({
+      error: "record space 'space-z' is not among the caller's memberships",
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+    })
+    expect(reads).toBe(0)
   })
 
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
@@ -299,6 +564,7 @@ describe('hosted-only task safety', () => {
         { spaceId: 'space-a', slug: 'workshop' },
         { spaceId: 'space-b', slug: 'stopal' },
       ],
+      capabilities: { targetSpaceTaskMirror: true, targetSpaceIntervalEvidence: true },
     })
   })
 
@@ -383,6 +649,51 @@ describe('hosted-only task safety', () => {
         method: 'DELETE',
         body: { ids: ['task-1'], confirmation: 1 },
       },
+    ])
+  })
+
+  test('every task write client sends a requested record space and omits an absent one', async () => {
+    const requests: Array<{ path: string; method: string; space: string | null }> = []
+    const fetch = async (input: string, init?: RequestInit) => {
+      requests.push({
+        path: new URL(input).pathname,
+        method: init?.method ?? 'GET',
+        space: new Headers(init?.headers).get('x-record-space'),
+      })
+      return Response.json({})
+    }
+    const options = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch,
+      recordSpace: 'declared-space',
+    }
+    await hostedCreateTask({}, options)
+    await hostedPatchTask('DEV-1', {}, options)
+    await hostedCloseTask('DEV-1', options)
+    await hostedCommentTask('DEV-1', 'comment', options)
+    await hostedCreateDocument('DEV-1', {}, options)
+    await hostedPatchDocument('DEV-1', 'document-1', {}, options)
+    await hostedDeleteDocument('DEV-1', 'document-1', options)
+    await hostedCreateTask({}, { ...options, recordSpace: null })
+
+    expect(requests).toEqual([
+      { path: '/v1/tasks', method: 'POST', space: 'declared-space' },
+      { path: '/v1/tasks/DEV-1', method: 'PATCH', space: 'declared-space' },
+      { path: '/v1/tasks/DEV-1/close', method: 'POST', space: 'declared-space' },
+      { path: '/v1/tasks/DEV-1/comments', method: 'POST', space: 'declared-space' },
+      { path: '/v1/tasks/DEV-1/documents', method: 'POST', space: 'declared-space' },
+      {
+        path: '/v1/tasks/DEV-1/documents/document-1',
+        method: 'PATCH',
+        space: 'declared-space',
+      },
+      {
+        path: '/v1/tasks/DEV-1/documents/document-1',
+        method: 'DELETE',
+        space: 'declared-space',
+      },
+      { path: '/v1/tasks', method: 'POST', space: null },
     ])
   })
 

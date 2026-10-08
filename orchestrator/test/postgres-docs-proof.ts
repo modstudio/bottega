@@ -3,7 +3,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
-import { succeeds } from './fixtures/postgres-rls.ts'
+import { psql, succeeds } from './fixtures/postgres-rls.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -187,6 +187,118 @@ async function proveCanonImports(origin: string, headers: Record<string, string>
   await proveCanonImportAddress(origin, headers, { kind: 'user' })
 }
 
+async function proveDocumentStatus(
+  origin: string,
+  headers: Record<string, string>,
+  spaceId: string,
+): Promise<void> {
+  const projectId = newRecordId()
+  const projectName = `doc-status-proof-${projectId}`
+  succeeds(
+    'postgres',
+    'postgres',
+    `
+      INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+      VALUES ('${projectId}','${spaceId}','${projectName}',ARRAY['STATUS'],now());
+      INSERT INTO public_doc_space (space_id,project_id)
+      VALUES ('${spaceId}','${projectId}');
+    `,
+  )
+
+  const body = 'public lifecycle searchable proof'
+  const put = async (slug: string, status: string, replacementSlug: string | null = null) => {
+    const response = await fetch(`${origin}/v1/docs`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        scope: 'project',
+        subject: projectName,
+        slug,
+        title: slug === 'lifecycle' ? 'Lifecycle proof' : 'Replacement proof',
+        body: slug === 'lifecycle' ? body : 'replacement destination',
+        delivery: 'demand',
+        audience: 'user',
+        status,
+        replacementSlug,
+        projectName,
+        reason: `prove ${status} document visibility`,
+        author: 'proof',
+      }),
+    })
+    expect(response.status).toBe(200)
+    return (await response.json()) as { id: string }
+  }
+  await put('replacement', 'current')
+  const created = await put('lifecycle', 'current')
+
+  const publicContains = async (path: string) => {
+    const response = await fetch(`${origin}${path}`)
+    expect(response.status).toBe(200)
+    return ((await response.json()) as { items: { id: string }[] }).items.some(
+      (doc) => doc.id === created.id,
+    )
+  }
+  const signedContains = async (path: string) => {
+    const response = await fetch(`${origin}${path}`, { headers })
+    expect(response.status).toBe(200)
+    return ((await response.json()) as { items: { id: string }[] }).items.some(
+      (doc) => doc.id === created.id,
+    )
+  }
+  const expectPublicVisibility = async (visible: boolean) => {
+    expect(await publicContains('/public/v1/docs')).toBe(visible)
+    const detail = await fetch(`${origin}/public/v1/docs/${created.id}`)
+    expect(detail.status).toBe(visible ? 200 : 404)
+    expect(await publicContains('/public/v1/docs/search?q=lifecycle+searchable')).toBe(visible)
+  }
+  const expectSignedVisibility = async (status: string) => {
+    expect(
+      await signedContains(
+        `/v1/docs?scope=project&subject=${encodeURIComponent(projectName)}&status=${status}`,
+      ),
+    ).toBe(true)
+    const detail = await fetch(`${origin}/v1/docs/${created.id}`, { headers })
+    expect(detail.status).toBe(200)
+    expect((await detail.json()) as { status: string }).toMatchObject({ status })
+  }
+
+  await expectPublicVisibility(true)
+  await expectSignedVisibility('current')
+  await put('lifecycle', 'draft')
+  await expectPublicVisibility(false)
+  await expectSignedVisibility('draft')
+  expect(await signedContains(`/v1/docs/search?q=lifecycle+searchable`)).toBe(false)
+  expect(await signedContains(`/v1/docs/search?q=lifecycle+searchable&includeDrafts=true`)).toBe(
+    true,
+  )
+
+  await put('lifecycle', 'superseded', 'replacement')
+  await expectPublicVisibility(false)
+  await expectSignedVisibility('superseded')
+  await put('lifecycle', 'archived')
+  await expectPublicVisibility(false)
+  await expectSignedVisibility('archived')
+  await put('lifecycle', 'current')
+  await expectPublicVisibility(true)
+  await expectSignedVisibility('current')
+
+  for (const [table, invalidPair] of [
+    ['doc', "status='superseded', replacement_slug=NULL"],
+    ['doc', "status='current', replacement_slug='replacement'"],
+    ['doc_revision', "status='superseded', replacement_slug=NULL"],
+    ['doc_revision', "status='current', replacement_slug='replacement'"],
+  ] as const) {
+    const idColumn = table === 'doc' ? 'id' : 'doc_id'
+    const result = psql(
+      'postgres',
+      'postgres',
+      `UPDATE ${table} SET ${invalidPair} WHERE ${idColumn}='${created.id}';`,
+    )
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain(`${table}_replacement_check`)
+  }
+}
+
 async function proveCachePull(
   origin: string,
   token: string,
@@ -292,6 +404,7 @@ export async function proveHostedDocs(input: {
   const created = (await put.json()) as { id: string; revisionId: string }
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
+  await proveDocumentStatus(input.origin, headers, memberSpaceId)
   const updated = await fetch(`${input.origin}/v1/docs`, {
     method: 'PUT',
     headers,

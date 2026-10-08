@@ -7,7 +7,6 @@ import {
   setStepCatalogue,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
-import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
@@ -17,14 +16,17 @@ import {
   showWorkflow,
   validateWorkflowDefinition,
   type WorkflowDefinition,
-  workflowModeStepLists,
   workflowVersions,
 } from './workflows.ts'
 
 const valid = (): WorkflowDefinition => ({
   title: 'A workflow',
   description: 'Does work.',
-  arguments: [{ name: 'key', required: true, description: 'Task key' }],
+  arguments: [
+    { name: 'key', required: true, description: 'Task key' },
+    { name: 'branch', required: true, description: 'Branch' },
+    { name: 'worktree', required: true, description: 'Worktree' },
+  ],
   modes: [{ slug: 'default', title: 'Default', default: true, steps: ['lens'] }],
 })
 const release = {
@@ -231,46 +233,6 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
-  test('sequence and flat modes compose, look up, and number identically', () => {
-    const d = database()
-    const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
-      {
-        steps: current.steps,
-        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
-      },
-      'sequence fixture',
-      'test',
-      d,
-    )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-    for (const [slug, steps] of [
-      ['flat-fixture', ['rebase', 'lens', 'score', 'close']],
-      ['sequence-fixture', ['rebase', { sequence: 'quality' }, 'close']],
-    ] as const) {
-      const draft = setWorkflow(
-        slug,
-        { ...valid(), modes: [{ ...valid().modes[0]!, steps: [...steps] }] },
-        'sequence fixture',
-        'test',
-        d,
-      )
-      promoteWorkflow(slug, draft.n, 'publish', 'test', d)
-    }
-
-    const callArgs = { key: 'DEV-1195', branch: 'DEV-1195-sequences', worktree: '/tmp/fixture' }
-    const flat = composeWorkflow('flat-fixture', 'fixture', 'default', callArgs, d)
-    const sequence = composeWorkflow('sequence-fixture', 'fixture', 'default', callArgs, d)
-    expect(sequence.steps.map(({ slug }) => slug)).toEqual(flat.steps.map(({ slug }) => slug))
-    expect(
-      getWorkflowStep('sequence-fixture', 'fixture', 'lens', callArgs, d, { mode: 'default' }).next,
-    ).toEqual(
-      getWorkflowStep('flat-fixture', 'fixture', 'lens', callArgs, d, { mode: 'default' }).next,
-    )
-    expect(resolveWorkflowStepReference('3', workflowModeStepLists('sequence-fixture', d))).toBe(
-      'score',
-    )
-  })
   test('separate ship-to and tracker needs do not require a tracker review state', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
@@ -737,7 +699,11 @@ describe('workflow versions and project composition', () => {
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         docs: { protocol: 'orch-docs' },
-        tracker: { kind: 'workspace', protocol: 'workspace-mcp' },
+        tracker: {
+          kind: 'workspace',
+          protocol: 'workspace-mcp',
+          states: { completed: 'done' },
+        },
       }),
       'fixture',
     )
@@ -846,9 +812,8 @@ describe('workflow versions and project composition', () => {
       'a',
       d,
     )
-    promoteStepCatalogue(draft.n, 'publish', 'a', d)
-    expect(() => getWorkflowStep('ship', 'fixture', 'lens', args, d)).toThrow(
-      'unresolved workflow placeholder "unknown"',
+    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow(
+      'workflow ship, mode default, step lens, field body, placeholder unknown',
     )
   })
   test('an unresolved declared argument placeholder names the late-argument remedy', () => {

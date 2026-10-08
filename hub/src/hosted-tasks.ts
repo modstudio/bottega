@@ -201,8 +201,13 @@ export async function createHostedTaskInTransaction(
       SELECT id,key_prefixes FROM project WHERE space_id=${identity.spaceId}::uuid
         AND name=${input.project}`,
   )[0]
+  if (!project)
+    throw new Error(
+      `project '${input.project}' is absent from record space ${identity.spaceId}. ` +
+        `Run \`orch record space move-project\` or declare the project's space in the register.`,
+    )
   const prefix = project?.key_prefixes[0]
-  if (!project || !prefix) throw new Error(`project '${input.project}' has no key prefix`)
+  if (!prefix) throw new Error(`project '${input.project}' has no key prefix`)
   const pattern = `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-([0-9]+)$`
   const highest = rows<{ highest: string | null }>(
     await tx`
@@ -388,35 +393,10 @@ export async function softDeleteHostedDocuments(
 
 type MirrorBody = {
   tasks: HostedTask[]
-  expectedSpaceId?: string
   comments?: HostedComment[]
   documents?: HostedDocument[]
   statusEvents?: HostedStatusEvent[]
   raiseSequences?: Array<{ project: string; prefix: string; next: number }>
-}
-
-class MirrorExpectedSpaceMismatchError extends Error {
-  override name = 'MirrorExpectedSpaceMismatchError'
-}
-
-/** Refuse a mirror selected for a different active space before opening a transaction. */
-export function assertMirrorExpectedSpace(
-  expectedSpaceId: string | undefined,
-  actualSpaceId: string,
-) {
-  if (expectedSpaceId === undefined || expectedSpaceId === actualSpaceId) return
-  throw new MirrorExpectedSpaceMismatchError(
-    `mirror expected space ${expectedSpaceId}, actual space ${actualSpaceId}; re-run after the active space settles`,
-  )
-}
-
-export function isMirrorExpectedSpaceMismatch(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  return (
-    message.includes('mirror expected space ') &&
-    message.includes('actual space ') &&
-    message.includes('re-run after the active space settles')
-  )
 }
 
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
@@ -913,7 +893,6 @@ async function mirrorHostedTaskBody(
 }
 
 export async function mirrorHostedTasks(url: string, identity: TaskIdentity, body: MirrorBody) {
-  assertMirrorExpectedSpace(body.expectedSpaceId, identity.spaceId)
   const total =
     body.tasks.length +
     (body.comments?.length ?? 0) +

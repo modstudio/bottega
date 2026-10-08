@@ -488,10 +488,15 @@ async function mirrorTrackerSnapshot(
   )
   try {
     for (let index = 0; index < mirroredTasks.length; index += 500) {
-      await mirror.mirrorTasks(mirroredTasks.slice(index, index + 500))
+      const result = await mirror.mirrorTasks(mirroredTasks.slice(index, index + 500))
+      if (result === 'refused')
+        throw new Error(mirror.refusedReason?.() ?? 'project destination was refused')
     }
-    for (let index = 0; index < mirroredEvents.length; index += 500)
-      await mirror.mirrorStatusEvents(mirroredEvents.slice(index, index + 500))
+    for (let index = 0; index < mirroredEvents.length; index += 500) {
+      const result = await mirror.mirrorStatusEvents(mirroredEvents.slice(index, index + 500))
+      if (result === 'refused')
+        throw new Error(mirror.refusedReason?.() ?? 'project destination was refused')
+    }
     return null
   } catch (error) {
     return error as Error
@@ -541,9 +546,11 @@ export async function mirrorPendingTrackerStatusEvents(
   if (!pending.length) return null
   try {
     const result = await mirror.mirrorStatusEvents(pending.map(pendingStatusEventMirrorRow))
-    if (result !== 'unreadable')
+    if (result === 'mirrored')
       removePendingTrackerStatusEvents(new Set(pending.map((entry) => entry.eventRecordId)))
-    return null
+    return result === 'refused'
+      ? new Error(mirror.refusedReason?.() ?? 'project destination was refused')
+      : null
   } catch (error) {
     return error as Error
   }

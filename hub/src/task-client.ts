@@ -18,6 +18,27 @@ export type HostedTaskIdentity = {
   userId: string
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
+  capabilities?: { targetSpaceTaskMirror?: boolean; targetSpaceIntervalEvidence?: boolean }
+}
+
+const TARGET_SPACE_MIRROR_REMEDY =
+  'deploy the hub server at or after the target-space task mirror change'
+
+export function assertTargetSpaceTaskMirror(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.targetSpaceTaskMirror !== true)
+    throw new Error(
+      `hosted hub does not advertise target-space task mirror support; ${TARGET_SPACE_MIRROR_REMEDY}`,
+    )
+}
+
+const TARGET_SPACE_INTERVAL_REMEDY =
+  'deploy the hub server at or after the target-space interval evidence change'
+
+export function assertTargetSpaceIntervalEvidence(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.targetSpaceIntervalEvidence !== true)
+    throw new Error(
+      `hosted hub does not advertise target-space interval evidence support; ${TARGET_SPACE_INTERVAL_REMEDY}`,
+    )
 }
 
 function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
@@ -30,7 +51,12 @@ async function responseObject(
   path: string,
   method: string,
   body?: unknown,
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    recordSpace?: string | null
+  } = {},
 ): Promise<{ response: Response; value: Record<string, unknown> }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -46,6 +72,7 @@ async function responseObject(
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
+        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
@@ -66,7 +93,12 @@ async function request<T>(
   path: string,
   method: string,
   body?: unknown,
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    recordSpace?: string | null
+  } = {},
 ): Promise<T> {
   const { response, value } = await responseObject(path, method, body, options)
   if (!response.ok)
@@ -279,6 +311,16 @@ export async function hostedTaskIdentity(
     userId: value.userId as string,
     activeSpaceId: value.activeSpaceId as string,
     memberships: value.memberships as RecordSpaceMembership[],
+    capabilities: {
+      targetSpaceTaskMirror:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).targetSpaceTaskMirror === true,
+      targetSpaceIntervalEvidence:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).targetSpaceIntervalEvidence === true,
+    },
   }
 }
 
@@ -288,10 +330,10 @@ export async function hostedSignedInUserId(
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
 }
-export const hostedTaskCounts = (options?: Parameters<typeof request>[3]) =>
+export const hostedTaskCounts = (targetSpaceId: string, options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(
     '/v1/tasks/counts',
     'GET',
     undefined,
-    options,
+    { ...options, recordSpace: targetSpaceId },
   )

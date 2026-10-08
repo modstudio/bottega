@@ -4,12 +4,12 @@ import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
+  type CatalogueSequence,
   type CatalogueStep,
   importStepCatalogue,
   productionStepCatalogue,
   validateStepCatalogue,
 } from './step-catalogue.ts'
-import type { CatalogueSequence } from './workflow-step-sequences.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { importWorkflow, productionWorkflows, validateWorkflowDefinition } from './workflows.ts'
 

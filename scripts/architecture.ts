@@ -648,7 +648,10 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
     './landing-tree.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-step-sequences.ts', []),
+  module('orchestrator/src/workflow/workflow-step-sequences.ts', [
+    './step-catalogue-definition.ts',
+    './workflow-definition.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-tree.ts', [
     './step-catalogue.ts',
     './workflow-step-sequences.ts',

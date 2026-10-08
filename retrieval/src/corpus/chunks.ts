@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
+import { type DocSearchOutput, DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 export type Chunk = {
@@ -14,7 +15,10 @@ export type Chunk = {
   text: string
   docTitle?: string
   headingPath?: string[]
+  docStatus?: DocStatus
 }
+
+type DocStatus = DocSearchOutput['results'][number]['status']
 
 export type DocIdentity = { kind: 'doc'; scope: string; subject: string | null; slug: string }
 type CorpusIdentity = { kind: 'code'; path: string } | DocIdentity
@@ -25,6 +29,7 @@ export type DocRow = {
   slug: string
   title: string
   body: string
+  status: DocStatus
   revision?: string | null
 }
 
@@ -193,6 +198,7 @@ export function chunkDoc(doc: DocRow): Chunk[] {
       endLine: startLine + text.split('\n').length - 1,
       text,
       docTitle: doc.title,
+      docStatus: doc.status,
       headingPath: section.headings.map((heading) => heading.replace(/^#{1,6}\s+/, '')),
     }))
   })
@@ -207,7 +213,8 @@ function isDocRow(value: unknown): value is DocRow {
     typeof row.slug === 'string' &&
     typeof row.title === 'string' &&
     typeof row.body === 'string' &&
-    (typeof row.revision === 'string' || row.revision === null)
+    (typeof row.revision === 'string' || row.revision === null) &&
+    DocSearchOutputSchema.shape.results.element.shape.status.safeParse(row.status).success
   )
 }
 
@@ -242,7 +249,9 @@ export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
   if (!Array.isArray(rows) || !rows.every(isDocRow)) {
     throw new Error('doc corpus export did not contain valid document rows')
   }
-  return rows.filter((doc) => doc.scope !== 'resume')
+  return rows.filter(
+    (doc) => doc.scope !== 'resume' && (doc.status === 'current' || doc.status === 'draft'),
+  )
 }
 
 export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
@@ -281,7 +290,8 @@ export async function loadCorpus(repositoryRoot: string): Promise<Chunk[]> {
 }
 
 export function chunkDocument(chunk: Chunk): string {
-  return `${chunk.path}:${chunk.startLine}\n${chunk.text}`
+  const status = chunk.docStatus ? `\nstatus: ${chunk.docStatus}` : ''
+  return `${chunk.path}:${chunk.startLine}${status}\n${chunk.text}`
 }
 
 export type TokenCount = { count: number; maxModelLength: number }

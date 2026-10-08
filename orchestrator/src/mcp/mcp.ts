@@ -720,7 +720,9 @@ export function createDocsMcpServer(): McpServer {
     async ({ name }) => {
       const project = projectByName(name)
       if (!project) throw new Error(`unknown project "${name}"`)
-      const markdown = docsMarkdown(listDocs({ scope: 'project', subject: name }))
+      const markdown = docsMarkdown(
+        listDocs({ scope: 'project', subject: name, status: 'current' }),
+      )
       return text(`${JSON.stringify(project)}${markdown ? `\n\n${markdown}` : ''}`)
     },
   )

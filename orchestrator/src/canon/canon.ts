@@ -327,8 +327,8 @@ function packedCanonMarkdown(projectName: string | null): {
   contextIndexBytes: number
 } {
   if (!projectName) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
-  const globalRows = listDocs({ scope: 'canon', subject: null })
-  const projectRows = listDocs({ scope: 'canon', subject: projectName })
+  const globalRows = listDocs({ scope: 'canon', subject: null, status: 'current' })
+  const projectRows = listDocs({ scope: 'canon', subject: projectName, status: 'current' })
   const rows = composeCanonRows(globalRows, [], projectRows)
   if (!rows.length) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
   const classified = rows.map((row) => ({

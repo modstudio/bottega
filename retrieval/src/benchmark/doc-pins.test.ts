@@ -16,6 +16,7 @@ const doc = (body: string): DocRow => ({
   subject: 'sample',
   slug: 'guide',
   title: 'Guide',
+  status: 'current',
   body,
   revision: 'revision-7',
 })

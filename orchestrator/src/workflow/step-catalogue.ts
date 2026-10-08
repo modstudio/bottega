@@ -4,44 +4,27 @@ import type { Database } from 'bun:sqlite'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { type WorkflowFactSource, workflowFactSources } from '../project/project-injection.ts'
-import {
-  type AutonomyStage,
-  type AutonomyValue,
-  autonomyStages,
-  autonomyValues,
-} from './autonomy.ts'
+import { workflowFactSources } from '../project/project-injection.ts'
+import { projects } from '../project/projects.ts'
+import { type AutonomyValue, autonomyStages, autonomyValues } from './autonomy.ts'
+import type {
+  CatalogueSequence,
+  CatalogueStep,
+  FloorEntry,
+  StepCatalogueDefinition,
+} from './step-catalogue-definition.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
-import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
-import {
-  type CatalogueSequence,
-  inspectWorkflowSteps,
-  validateCatalogueSequences,
-  type WorkflowModeStep,
-} from './workflow-step-sequences.ts'
+import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
+import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
+import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { inspectWorkflowSteps, validateCatalogueSequences } from './workflow-step-sequences.ts'
 
+export type {
+  CatalogueSequence,
+  CatalogueStep,
+  StepCatalogueDefinition,
+} from './step-catalogue-definition.ts'
 export type { FloorKind }
-export type FloorEntry = FloorKind | `{{${string}}}`
-export type CatalogueStep = {
-  slug: string
-  title: string
-  body: string
-  floor: FloorEntry[]
-  deferrable?: FloorKind[]
-  expectedStatus?: string
-  requirePullRequest?: boolean
-  operatorRuling?: boolean
-  commandEvidence?: CommandEvidence
-  job: string | null
-  /** Optional only when reading a stored catalogue created before stages existed. */
-  stage?: AutonomyStage
-  autonomy: AutonomyValue
-  needs: WorkflowFactSource[]
-}
-export type StepCatalogueDefinition = {
-  steps: CatalogueStep[]
-  sequences?: CatalogueSequence[]
-}
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -390,10 +373,18 @@ export function promoteStepCatalogue(
       )
       .all() as { slug: string; definition: string }[]
     const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
+    const workflows = rows.map((row) => ({
+      slug: row.slug,
+      definition: JSON.parse(row.definition) as WorkflowDefinition,
+    }))
     if (missing.length)
       throw new Error(
         `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
       )
+    const refusal = renderCheckRefusal(
+      checkWorkflowRendering(workflows, definition, projects(undefined, database)),
+    )
+    if (refusal) throw new Error(refusal)
   })
 }
 

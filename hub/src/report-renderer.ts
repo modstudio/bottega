@@ -5,6 +5,7 @@ import type { Measures } from './measures.ts'
 
 export type Item = {
   key: string | null
+  unmatched: boolean
   projectId?: string | null
   spaceId?: string
   project: string
@@ -32,6 +33,7 @@ export type GatheredReport = {
     engagedMs: number
     shipped: number
     moving: number
+    unmatched: number
     agentTokens: number
     items: Item[]
     untasked: Item | null
@@ -42,6 +44,25 @@ export type ReportPresentation = {
   scopeName: string
   windowLine: string
   measures: Measures
+}
+
+export type ReportSliceOptions = { details?: boolean; summary?: boolean }
+
+const isMatchedTask = (item: Item) => Boolean(item.key) && !item.unmatched
+const matchedTasks = (items: Item[]) => items.filter(isMatchedTask)
+
+export function projectItemPresentation(items: Item[]) {
+  const done = items.filter((item) => isMatchedTask(item) && item.closed)
+  const open = items.filter((item) => isMatchedTask(item) && !item.closed)
+  const unmatched = items.filter((item) => item.unmatched)
+  const displayItems = [...done, ...open, ...unmatched].map((item) => ({
+    item,
+    label: item.unmatched ? `${item.key} — not in the task record` : item.title || item.key || '',
+  }))
+  const unmatchedNotice = unmatched.length
+    ? `${unmatched.length} ${unmatched.length === 1 ? 'task was' : 'tasks were'} not found in the task record: ${unmatched.map((item) => item.key).join(', ')}`
+    : null
+  return { done, open, unmatched, displayItems, unmatchedNotice }
 }
 
 const esc = (s: string) =>
@@ -101,7 +122,7 @@ export function renderHtml(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
-  options: { details?: boolean } = {},
+  options: ReportSliceOptions = {},
 ) {
   const day = new Date(g.to).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -109,7 +130,7 @@ export function renderHtml(
     day: 'numeric',
     timeZone: 'America/New_York',
   })
-  const tasks = g.items.filter((i) => i.key)
+  const tasks = matchedTasks(g.items)
   const shipped = tasks.filter((i) => i.closed).length
   const moving = tasks.length - shipped
   const measureLines = presentation ? reportMeasureLines(presentation) : []
@@ -177,11 +198,11 @@ export function renderHtml(
     )
     .join('')
 
-  const task = (i: Item) => {
+  const task = (i: Item, label: string) => {
     const s = sentences.get(i.key!)
     return `
     <tr><td style="padding:11px 0;border-top:1px solid ${RULE}">
-      <div class="ttl" style="font-family:${SANS};font-weight:600;font-size:16px;line-height:1.35;color:${INK};letter-spacing:-.005em">${esc(i.title || i.key || '')}</div>
+      <div class="ttl" style="font-family:${SANS};font-weight:600;font-size:16px;line-height:1.35;color:${INK};letter-spacing:-.005em">${esc(label)}</div>
       ${s ? `<div style="font-family:${SANS};font-weight:400;font-size:14px;line-height:1.6;color:${MUTED};padding-top:5px">${esc(s)}</div>` : ''}
       <div style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.4;color:${FAINT};padding-top:5px">
         ${esc(i.key ?? '')} &middot; ${esc(i.engaged)} engaged
@@ -198,8 +219,7 @@ export function renderHtml(
     </td></tr>`
 
   const group = (p: (typeof g.projects)[number]) => {
-    const done = p.items.filter((i) => i.closed)
-    const open = p.items.filter((i) => !i.closed)
+    const { displayItems, unmatchedNotice } = projectItemPresentation(p.items)
     return `
     <tr><td style="padding:26px 0 2px">
       <span style="display:inline-block;width:4px;height:14px;background:${p.color ?? MUTED};
@@ -208,9 +228,14 @@ export function renderHtml(
       <span class="gstat" style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.5;color:${FAINT};padding-left:9px">
         ${hours1(p.taskMs)}h of task work in ${hours1(p.engagedMs)}h
         &middot; ${p.shipped} done &middot; ${p.moving} open</span>
-    </td></tr>
+    </td></tr>${
+      unmatchedNotice
+        ? `
+    <tr><td style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.5;color:${MUTED};padding:3px 0 2px">${esc(unmatchedNotice)}</td></tr>`
+        : ''
+    }
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-      ${[...done, ...open].map(task).join('')}
+      ${displayItems.map(({ item, label }) => task(item, label)).join('')}
       ${p.untasked ? untasked(p.untasked) : ''}
     </table></td></tr>`
   }
@@ -260,7 +285,10 @@ export function renderHtml(
   <table role="presentation" class="card" cellpadding="0" cellspacing="0" border="0" width="100%"
          style="max-width:640px;background:#ffffff;padding:26px 22px 30px">
 
-    <tr><td style="font-family:${SANS};font-weight:600;font-size:19px;line-height:1.3;color:${INK}">${esc(day)}</td></tr>
+    ${
+      options.summary === false
+        ? ''
+        : `<tr><td style="font-family:${SANS};font-weight:600;font-size:19px;line-height:1.3;color:${INK}">${esc(day)}</td></tr>
     <tr><td style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.5;color:${FAINT};padding-top:3px">
       the last ${g.hours} hours across ${g.projects.length}
       project${g.projects.length === 1 ? '' : 's'}</td></tr>
@@ -272,7 +300,8 @@ export function renderHtml(
       </table>
     </td></tr>
 
-    ${measureLines.length ? `<tr><td style="padding:18px 0 0"><div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;color:${FAINT};padding-bottom:4px">measures</div>${measureLines.map((line) => `<div style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.6;color:${MUTED}">${esc(line)}</div>`).join('')}</td></tr>` : ''}
+    ${measureLines.length ? `<tr><td style="padding:18px 0 0"><div style="font-family:${SANS};font-weight:600;font-size:10px;line-height:1.4;letter-spacing:.1em;text-transform:uppercase;color:${FAINT};padding-bottom:4px">measures</div>${measureLines.map((line) => `<div style="font-family:${SANS};font-weight:400;font-size:13px;line-height:1.6;color:${MUTED}">${esc(line)}</div>`).join('')}</td></tr>` : ''}`
+    }
 
     ${
       options.details === false
@@ -291,13 +320,17 @@ export function renderHtml(
 
     ${options.details === false ? '' : g.projects.map(group).join('')}
 
-    <tr><td style="padding:26px 0 0;border-top:1px solid ${RULE}">
+    ${
+      options.summary === false
+        ? ''
+        : `<tr><td style="padding:26px 0 0;border-top:1px solid ${RULE}">
       <div style="font-family:${SANS};font-weight:400;font-size:11px;line-height:1.6;color:${FAINT}">
         TASK HOURS adds the time charged to the tasks listed here. ENGAGED is one
         wall-clock union of those tasks and each project's work carrying no ticket,
         counting simultaneous work once. Untasked work appears only in ENGAGED, while
         parallel task hours overlap there.</div>
-    </td></tr>
+    </td></tr>`
+    }
   </table>
   </td></tr></table></div></body></html>`
 }
@@ -353,23 +386,29 @@ export function renderText(
   g: GatheredReport,
   sentences: Map<string, string>,
   presentation?: ReportPresentation,
-  options: { details?: boolean } = {},
+  options: ReportSliceOptions = {},
 ) {
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.
-  const line = (i: Item) =>
+  const line = (i: Item, label: string) =>
     [
-      `  ${i.closed ? '+' : ' '} ${i.title || i.key}`,
+      `  ${i.closed ? '+' : ' '} ${label}`,
       ...(sentences.get(i.key!) ? [`      ${sentences.get(i.key!)}`] : []),
       `      ${i.key} · ${i.engaged} engaged · ${compactTokens(i.agentTokens)} agent tokens`,
     ].join('\n')
-  const tasks = g.items.filter((i) => i.key)
+  const tasks = matchedTasks(g.items)
   const shipped = tasks.filter((i) => i.closed).length
   return [
-    `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
-      `${shipped} done · ${tasks.length - shipped} in progress`,
-    `the last ${g.hours} hours across ${g.projects.length} projects`,
-    ...(presentation ? [presentation.windowLine, '', ...reportMeasureLines(presentation)] : []),
+    ...(options.summary === false
+      ? []
+      : [
+          `${hours1(g.taskMs)}h of task work in ${hours1(g.engagedMs)}h engaged · ` +
+            `${shipped} done · ${tasks.length - shipped} in progress`,
+          `the last ${g.hours} hours across ${g.projects.length} projects`,
+          ...(presentation
+            ? [presentation.windowLine, '', ...reportMeasureLines(presentation)]
+            : []),
+        ]),
     ...(options.details === false
       ? []
       : [
@@ -385,14 +424,18 @@ export function renderText(
               ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
               `  ${String(p.shipped).padStart(2)} done  ${String(p.moving).padStart(2)} open`,
           ),
-          ...g.projects.flatMap((p) => [
-            '',
-            p.project.toUpperCase(),
-            ...[...p.items.filter((i) => i.closed), ...p.items.filter((i) => !i.closed)].map(line),
-            ...(p.untasked
-              ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`]
-              : []),
-          ]),
+          ...g.projects.flatMap((p) => {
+            const { displayItems, unmatchedNotice } = projectItemPresentation(p.items)
+            return [
+              '',
+              p.project.toUpperCase(),
+              ...(unmatchedNotice ? [unmatchedNotice] : []),
+              ...displayItems.map(({ item, label }) => line(item, label)),
+              ...(p.untasked
+                ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`]
+                : []),
+            ]
+          }),
         ]),
   ].join('\n')
 }

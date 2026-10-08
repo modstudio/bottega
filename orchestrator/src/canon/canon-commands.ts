@@ -7,6 +7,7 @@ import type { Finding } from '../../../shared/ratchet.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
+import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import {
@@ -155,7 +156,7 @@ function projectCanonImportPlan(
   if (renderedRows.length === 0) {
     throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
   }
-  const global = listDocs({ scope: 'canon', subject: null })
+  const global = listDocs({ scope: 'canon', subject: null, status: 'current' })
   const globalBySlug = new Map(global.map((row) => [row.slug, row]))
   for (const row of renderedRows) {
     const globalRow = globalBySlug.get(row.slug)
@@ -166,7 +167,14 @@ function projectCanonImportPlan(
     }
   }
   const rows = renderedRows.filter((row) => !globalBySlug.has(row.slug))
-  const projectRows = listDocs({ scope: 'canon', subject: project.name })
+  const allProjectRows = listDocs({ scope: 'canon', subject: project.name })
+  const collision = nonCurrentCanonCollisionRefusal({
+    rows: allProjectRows,
+    desiredSlugs: rows.map((row) => row.slug),
+    address: { kind: 'project', subject: project.name },
+  })
+  if (collision) throw new Error(collision)
+  const projectRows = allProjectRows.filter((row) => row.status === 'current')
   const plan = planCanonImport({
     address: { kind: 'project' },
     current: projectRows.map(({ slug, body }) => ({ slug, body })),

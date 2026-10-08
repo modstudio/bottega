@@ -25,6 +25,8 @@ const canonDoc: RecordDoc = {
   position: 0,
   summary: 'Use concise prose.',
   featured: false,
+  status: 'current',
+  replacementSlug: null,
   projectName: null,
   createdAt: at,
   updatedAt: at,

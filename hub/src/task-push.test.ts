@@ -1,11 +1,12 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { pushTasks, selectTaskPushRows } from './task-push.ts'
+import { pushTasks } from './task-push.ts'
+import { planTaskPush } from './task-push-plan.ts'
 
 beforeEach(resetFixtureStore)
 
-test('task push selects active-space projects and reports every skipped project and reason', () => {
+test('task push groups projects and children by destination and reports refusals', () => {
   const task = (key: string, project_name: string) => ({
     key,
     project: project_name,
@@ -26,7 +27,7 @@ test('task push selects active-space projects and reports every skipped project 
     documents: [child('LOST-1', 'unknown-space')],
     statusEvents: [child('SLUG-1', 'by-slug')],
   }
-  const result = selectTaskPushRows(
+  const result = planTaskPush(
     input,
     [
       { name: 'defaulted', settings: {} },
@@ -36,7 +37,6 @@ test('task push selects active-space projects and reports every skipped project 
       { name: 'unknown-space', settings: { space: 'missing' } },
     ],
     {
-      userId: 'user-a',
       activeSpaceId: 'space-a',
       memberships: [
         { spaceId: 'space-a', slug: 'active' },
@@ -45,20 +45,26 @@ test('task push selects active-space projects and reports every skipped project 
     },
   )
 
-  expect(result.rows.tasks.map((row) => row.key)).toEqual(['DEF-1', 'SLUG-1', 'ID-1'])
-  expect(result.rows.statusEvents).toHaveLength(1)
-  expect(result.skipped).toEqual([
+  expect(
+    result.destinations.map((destination) => ({
+      spaceId: destination.spaceId,
+      tasks: destination.rows.tasks.map((row) => row.key),
+      comments: destination.rows.comments.map((row) => row.task_key),
+      statusEvents: destination.rows.statusEvents.map((row) => row.task_key),
+    })),
+  ).toEqual([
     {
-      project: 'other',
-      reason: 'different-space',
-      tasks: 1,
-      comments: 1,
-      documents: 0,
-      statusEvents: 0,
+      spaceId: 'space-a',
+      tasks: ['DEF-1', 'SLUG-1', 'ID-1'],
+      comments: [],
+      statusEvents: ['SLUG-1'],
     },
+    { spaceId: 'space-b', tasks: ['OTHER-1'], comments: ['OTHER-1'], statusEvents: [] },
+  ])
+  expect(result.refused).toEqual([
     {
       project: 'unknown-space',
-      reason: 'unmapped',
+      reason: 'declared-space-not-member',
       tasks: 1,
       comments: 0,
       documents: 1,
@@ -66,7 +72,7 @@ test('task push selects active-space projects and reports every skipped project 
     },
     {
       project: 'unregistered',
-      reason: 'unmapped',
+      reason: 'unregistered-project',
       tasks: 1,
       comments: 0,
       documents: 0,
@@ -95,10 +101,14 @@ test('task push persists ids only after each successful batch and retries an unp
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({
+        userId: 'user-a',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { targetSpaceTaskMirror: true },
+      })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
-        expectedSpaceId?: string
         statusEvents?: Array<{
           id: string
           legacy_local_id: number
@@ -107,7 +117,7 @@ test('task push persists ids only after each successful batch and retries an unp
           task_record_id?: string
         }>
       }
-      expect(body.expectedSpaceId).toBe('space-a')
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-a')
       const events = body.statusEvents ?? []
       if (!events.length) return Response.json({ upserted: 0, adoptions: [] })
       statusBatch++
@@ -131,7 +141,10 @@ test('task push persists ids only after each successful batch and retries an unp
         ],
       })
     }
-    if (path === '/v1/tasks/counts') return Response.json({})
+    if (path === '/v1/tasks/counts') {
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-a')
+      return Response.json({})
+    }
     return Response.json({ error: 'unexpected request' }, { status: 500 })
   }
   const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch: stub }
@@ -146,7 +159,8 @@ test('task push persists ids only after each successful batch and retries an unp
       .get()?.count,
   ).toBe(0)
 
-  await expect(pushTasks(options)).rejects.toThrow('simulated second batch failure')
+  const refused = await pushTasks(options)
+  expect(refused.skipped[0]?.reason).toContain('simulated second batch failure')
   expect(
     db()
       .query<{ count: number }, []>(
@@ -171,6 +185,23 @@ test('task push persists ids only after each successful batch and retries an unp
       .query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event WHERE id=501`)
       .get()?.record_id,
   ).toBe(holderId)
+})
+
+test('task push refuses an older server before its first mirror write', async () => {
+  let writes = 0
+  const fetch = async (input: string) => {
+    if (new URL(input).pathname === '/v1/tasks/identity')
+      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+    writes++
+    return Response.json({ upserted: 0, adoptions: [] })
+  }
+
+  await expect(
+    pushTasks({ baseUrl: 'https://hub.example.test', token: 'test', fetch }),
+  ).rejects.toThrow(
+    'hosted hub does not advertise target-space task mirror support; deploy the hub server at or after the target-space task mirror change',
+  )
+  expect(writes).toBe(0)
 })
 
 test('task push adopts a hosted holder id and uses it on the next push', async () => {
@@ -201,7 +232,12 @@ test('task push adopts a hosted holder id and uses it on the next push', async (
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({
+        userId: 'user-a',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { targetSpaceTaskMirror: true },
+      })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as {
         statusEvents?: Array<{
@@ -276,7 +312,12 @@ test('task push persists a task adoption and cascades its child identity', async
   const stub = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
     if (path === '/v1/tasks/identity')
-      return Response.json({ userId: 'user-a', activeSpaceId: 'space-a', memberships: [] })
+      return Response.json({
+        userId: 'user-a',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { targetSpaceTaskMirror: true },
+      })
     if (path === '/v1/tasks/mirror') {
       const body = JSON.parse(String(init?.body)) as { tasks?: Array<{ key: string }> }
       const task = body.tasks?.[0]

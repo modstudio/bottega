@@ -132,6 +132,23 @@ const branchClassification = (
 })
 
 describe('local task tracker', () => {
+  test('a project without a declared space sends no record-space header', async () => {
+    let recordSpace: string | null = 'not-called'
+    await createTask(
+      { project: 'beta', title: `No space ${crypto.randomUUID()}` },
+      {
+        hosted: {
+          ...hosted,
+          fetch: async (input, init) => {
+            recordSpace = new Headers(init?.headers).get('x-record-space')
+            return hosted.fetch(input, init)
+          },
+        },
+      },
+    )
+    expect(recordSpace).toBeNull()
+  })
+
   test('a hub-protocol project still mints through hub', async () => {
     const task = await createTask(
       { project: 'workshop', title: `Hub-owned ${crypto.randomUUID()}` },
@@ -389,6 +406,183 @@ describe('local task tracker', () => {
     })
     expect(showTask('SAME-77', { recordId }).comments.map((row) => row.body)).toEqual([
       'alpha comment',
+    ])
+  })
+})
+
+describe('declared project space task writes', () => {
+  beforeEach(resetFixtureStore)
+
+  test('every canonical write sends the space declared by the project register', async () => {
+    const requests: Array<{ method: string; pathname: string; space: string | null }> = []
+    const fetch = async (input: string, init?: RequestInit) => {
+      const url = new URL(input)
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      requests.push({
+        method,
+        pathname: url.pathname,
+        space: new Headers(init?.headers).get('x-record-space'),
+      })
+
+      const taskMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
+      if (method === 'PATCH' && taskMatch) {
+        const current = showTask(decodeURIComponent(taskMatch[1]!)).task
+        const at = new Date().toISOString()
+        return Response.json({
+          id: current.record_id,
+          key: current.key,
+          project: current.project,
+          project_name: current.project,
+          title: body.title ?? current.title,
+          status: body.status ?? current.status,
+          status_category: body.status_category ?? current.status_category,
+          parent_key: body.parent_key ?? current.parent_key,
+          body: body.body ?? current.body,
+          assignee: body.assignee ?? current.assignee,
+          opened_at: current.opened_at,
+          closed_at: current.closed_at,
+          source: current.source,
+          first_seen: current.first_seen,
+          last_seen: at,
+          created_at: current.first_seen,
+          updated_at: at,
+          deleted_at: null,
+        })
+      }
+
+      const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
+      if (method === 'POST' && closeMatch) {
+        const current = showTask(decodeURIComponent(closeMatch[1]!)).task
+        const at = new Date().toISOString()
+        return Response.json({
+          id: current.record_id,
+          key: current.key,
+          project: current.project,
+          project_name: current.project,
+          title: current.title,
+          status: 'done',
+          status_category: 'done',
+          parent_key: current.parent_key,
+          body: current.body,
+          assignee: current.assignee,
+          opened_at: current.opened_at,
+          closed_at: at,
+          source: current.source,
+          first_seen: current.first_seen,
+          last_seen: at,
+          created_at: current.first_seen,
+          updated_at: at,
+          deleted_at: null,
+        })
+      }
+
+      const documentMatch = /^\/v1\/tasks\/([^/]+)\/documents\/([^/]+)$/.exec(url.pathname)
+      if (method === 'PATCH' && documentMatch) {
+        const document = db()
+          .query<
+            {
+              record_id: string
+              task_key: string
+              title: string
+              body: string
+              role: string | null
+              version: string
+              created_at: string
+            },
+            [string]
+          >(
+            `SELECT record_id,task_key,title,body,role,version,created_at
+             FROM task_document WHERE record_id = ?`,
+          )
+          .get(decodeURIComponent(documentMatch[2]!))!
+        const at = new Date().toISOString()
+        return Response.json({
+          id: document.record_id,
+          legacy_local_id: null,
+          task_key: document.task_key,
+          project_name: 'gamma',
+          role: body.role ?? document.role,
+          title: body.title ?? document.title,
+          body: body.body ?? document.body,
+          version: body.version,
+          created_at: document.created_at,
+          updated_at: at,
+          deleted_at: null,
+        })
+      }
+      if (method === 'DELETE' && documentMatch) return Response.json({ deleted: 1 })
+      return hosted.fetch(input, init)
+    }
+    const options = { hosted: { ...hosted, fetch } }
+    const title = `Declared space ${crypto.randomUUID()}`
+
+    const created = await createTask({ project: 'gamma', title }, options)
+    await createTask(
+      { project: 'gamma', title },
+      { ...options, allowDuplicateReason: 'intentional duplicate' },
+    )
+    await setTask(created.key, {}, { title: 'Renamed in declared space' }, options)
+    await closeTask(
+      created.key,
+      {},
+      { ...options, classify: async () => branchClassification(created.key) },
+    )
+    await commentTask(created.key, {}, 'declared space comment', options)
+    const document = await createTaskDocument(
+      { task: created.key, title: 'Declared space notes', body: 'first body' },
+      {},
+      options,
+    )
+    await updateTaskDocument(
+      document.id,
+      { body: 'second body', expectedVersion: document.version },
+      options,
+    )
+    await deleteTaskDocument(document.id, options)
+
+    expect(requests).toEqual([
+      { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
+      { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
+      {
+        method: 'POST',
+        pathname: expect.stringMatching(/^\/v1\/tasks\/GAM-\d+\/comments$/),
+        space: 'declared-gamma-space',
+      },
+      {
+        method: 'PATCH',
+        pathname: `/v1/tasks/${created.key}`,
+        space: 'declared-gamma-space',
+      },
+      {
+        method: 'POST',
+        pathname: `/v1/tasks/${created.key}/close`,
+        space: 'declared-gamma-space',
+      },
+      {
+        method: 'POST',
+        pathname: `/v1/tasks/${created.key}/comments`,
+        space: 'declared-gamma-space',
+      },
+      {
+        method: 'POST',
+        pathname: `/v1/tasks/${created.key}/documents`,
+        space: 'declared-gamma-space',
+      },
+      {
+        method: 'PATCH',
+        pathname: expect.stringMatching(
+          new RegExp(`^/v1/tasks/${created.key}/documents/[0-9a-f-]+$`),
+        ),
+        space: 'declared-gamma-space',
+      },
+      {
+        method: 'DELETE',
+        pathname: expect.stringMatching(
+          new RegExp(`^/v1/tasks/${created.key}/documents/[0-9a-f-]+$`),
+        ),
+        space: 'declared-gamma-space',
+      },
     ])
   })
 })

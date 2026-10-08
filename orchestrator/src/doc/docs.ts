@@ -9,14 +9,13 @@
  * recovery. Canon docs are the source for the global and
  * project hydrated instruction tree and enter worker packs through the canon path.
  */
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
   type DocAudience,
   type DocScope,
+  type DocStatus,
 } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -28,8 +27,8 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
+import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
 import { lintStoredDoc } from './doc-lint-adapter.ts'
 import {
@@ -43,6 +42,8 @@ import {
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
+import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
+import { localDocumentLifecycle } from './local-doc-status.ts'
 import {
   assertLocalDocRemovalAllowed,
   localDocTreeFields,
@@ -64,11 +65,6 @@ export type { Doc, DocRevision, DocRevisionMetadata }
 export type DocListFilters = StoreDocListFilters
 export type DocMetadata = StoreDocMetadata
 
-function assertWorkerDocStoreWriteAllowed(operation: string): void {
-  const refusal = workerStoreWriteRefusal('document', operation, process.env)
-  if (refusal) throw new Error(refusal)
-}
-
 import {
   assertLocalRevisionWrite,
   currentDocRevision,
@@ -81,7 +77,6 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
-  importedDocDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
@@ -156,6 +151,8 @@ function assertInjectSize(input: {
         delivery: 'inject',
         audience: 'technical',
         featured: false,
+        status: 'current',
+        replacement_slug: null,
         parent_id: null,
         parent_slug: null,
         position: 0,
@@ -256,19 +253,22 @@ type DocWriteInput = {
   parentSlug?: string | null
   position?: number
   featured?: boolean
+  status?: DocStatus
+  replacementSlug?: string | null
 } & DocWriteContext
 
+const currentCanon = { scope: 'canon', status: 'current' } as const
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
     global,
-    project: target ? listDocs({ scope: 'canon', subject: target.name }) : [],
+    project: target ? listDocs({ ...currentCanon, subject: target.name }) : [],
   }))
   return decideUserCanonImport({ current, next, surroundings }).findings
 }
 
 function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }): void {
-  const global = listDocs({ scope: 'canon', subject: null })
-  const user = listDocs({ scope: 'canon', subject: null, owner: input.owner })
+  const global = listDocs({ ...currentCanon, subject: null })
+  const user = listDocs({ ...currentCanon, subject: null, owner: input.owner })
   const changedRows = input.canonSet ?? [
     ...user.filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
@@ -284,8 +284,8 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
     return
   }
   const project = input.subject ? projectByName(input.subject)! : null
-  const global = listDocs({ scope: 'canon', subject: null })
-  const projectRows = input.subject ? listDocs({ scope: 'canon', subject: input.subject }) : []
+  const global = listDocs({ ...currentCanon, subject: null })
+  const projectRows = input.subject ? listDocs({ ...currentCanon, subject: input.subject }) : []
   const changedRows = input.canonSet ?? [
     ...(project ? projectRows : global).filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
@@ -306,7 +306,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
         next,
       })
     }
-    const targetProjectRows = listDocs({ scope: 'canon', subject: target.name })
+    const targetProjectRows = listDocs({ ...currentCanon, subject: target.name })
     const targetCurrent = composeCanonRows(global, [], targetProjectRows).map(({ slug, body }) => ({
       slug,
       body,
@@ -373,6 +373,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const tree = localDocTreeFields(input, prior)
+  const lifecycle = localDocumentLifecycle(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
@@ -385,6 +386,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         projectId: projectName ? projectByName(input.subject!)!.id : null,
         delivery,
         ...tree,
+        ...lifecycle,
         requestedOp,
         identity,
       }),
@@ -407,6 +409,8 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         }),
         position: tree.position,
         featured: tree.featured,
+        status: lifecycle.status,
+        replacementSlug: lifecycle.replacementSlug,
         projectName,
         reason: identity.reason,
         author: identity.author,
@@ -421,6 +425,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         projectId: projectName ? projectByName(input.subject!)!.id : null,
         delivery,
         ...tree,
+        ...lifecycle,
         requestedOp,
         identity,
         recordId: hosted.id,
@@ -450,6 +455,35 @@ export async function setDoc(input: DocWriteInput): Promise<Doc> {
     }
   }
   return setDocWithOp(input)
+}
+
+export async function setDocStatus(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  status: DocStatus,
+  replacementSlug: string | null | undefined,
+  context: DocWriteContext,
+  owner: string | null = null,
+): Promise<Doc> {
+  const current = getDoc(scope, subject, slug, owner)
+  if (!current) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
+  return setDoc({
+    scope: current.scope,
+    subject: current.subject,
+    owner: current.owner,
+    slug: current.slug,
+    title: current.title,
+    body: current.body,
+    delivery: current.delivery,
+    audience: current.audience,
+    parentSlug: current.parent_slug,
+    position: current.position,
+    featured: current.featured,
+    status,
+    replacementSlug,
+    ...context,
+  })
 }
 
 export async function importDoc(
@@ -625,9 +659,9 @@ export type InjectedDoc = Doc & { revision_id: number }
 export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
   const project = projectAt(input.cwd)
   const docs = [
-    ...listDocs({ scope: 'global', subject: null }),
-    ...listDocs({ scope: 'job', subject: input.job }),
-    ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
+    ...listDocs({ scope: 'global', subject: null, status: 'current' }),
+    ...listDocs({ scope: 'job', subject: input.job, status: 'current' }),
+    ...(project ? listDocs({ scope: 'project', subject: project.name, status: 'current' }) : []),
   ].filter((doc) => doc.delivery === 'inject')
   const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
   return docs.map((doc) => {
@@ -790,66 +824,23 @@ export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
 }
 
 export function exportDocs(dir: string): number {
-  const docs = listDocs()
-  for (const doc of docs) {
-    const target = join(dir, doc.scope, doc.subject ?? '_')
-    mkdirSync(target, { recursive: true })
-    writeFileSync(
-      join(target, `${doc.slug}.md`),
-      `---\ntitle: ${JSON.stringify(doc.title)}\n---\n\n${doc.body}`,
-    )
-  }
-  return docs.length
-}
-
-function importedDoc(path: string, fileName: string): { title: string; body: string } {
-  const raw = readFileSync(path, 'utf8')
-  const match = raw.match(/^---\r?\ntitle:\s*(.+)\r?\n---\r?\n(?:\r?\n)?([\s\S]*)$/)
-  if (!match) throw new Error(`${fileName}: expected YAML frontmatter with a title`)
-  let title: unknown
-  try {
-    title = JSON.parse(match[1]!)
-  } catch {
-    throw new Error(`${fileName}: title must be a YAML double-quoted string`)
-  }
-  if (typeof title !== 'string') throw new Error(`${fileName}: title must be a string`)
-  return { title, body: match[2]! }
+  return exportDocFiles(dir, listDocs())
 }
 
 export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
   assertWorkerDocStoreWriteAllowed('importDocs')
   writableDb()
   docWriteIdentity(context)
-  let count = 0
-  for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
-    if (!scopeEntry.isDirectory()) continue
-    validScope(scopeEntry.name)
-    const scope = scopeEntry.name
-    for (const subjectEntry of readdirSync(join(dir, scope), { withFileTypes: true })) {
-      if (!subjectEntry.isDirectory()) continue
-      const subject = subjectEntry.name === '_' ? null : subjectEntry.name
-      for (const file of readdirSync(join(dir, scope, subjectEntry.name), {
-        withFileTypes: true,
-      })) {
-        if (!file.isFile() || !file.name.endsWith('.md')) continue
-        const parsed = importedDoc(join(dir, scope, subjectEntry.name, file.name), file.name)
-        await setDocWithOp(
-          {
-            scope,
-            subject,
-            slug: file.name.slice(0, -3),
-            ...parsed,
-            delivery: importedDocDelivery(scope),
-            ...context,
-            expectedRevision: getDoc(scope, subject, file.name.slice(0, -3))?.revision ?? undefined,
-          },
-          'import',
-        )
-        count++
-      }
-    }
-  }
-  return count
+  return importDocFiles(dir, async (doc) => {
+    await setDocWithOp(
+      {
+        ...doc,
+        ...context,
+        expectedRevision: getDoc(doc.scope, doc.subject, doc.slug)?.revision ?? undefined,
+      },
+      'import',
+    )
+  })
 }
 
 export function listDocRevisions(
@@ -861,7 +852,8 @@ export function listDocRevisions(
   validateHistoricDocAddress(scope, slug)
   return db()
     .query(
-      `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
+      `SELECT id, op, author, reason, at, status, replacement_slug, record_id,
+              length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
     .all(scope, subject, owner, slug) as DocRevisionMetadata[]
@@ -966,6 +958,8 @@ export async function restoreDoc(
         body: revision.body,
         delivery: revision.delivery,
         ...tree,
+        status: revision.status,
+        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
       }),
@@ -1006,6 +1000,8 @@ export async function restoreDoc(
           }),
           position: revision.position,
           featured: revision.featured,
+          status: revision.status,
+          replacementSlug: revision.replacement_slug,
           projectName,
           reason: identity.reason,
           author: identity.author,
@@ -1030,6 +1026,8 @@ export async function restoreDoc(
         body: revision.body,
         delivery: revision.delivery,
         ...tree,
+        status: revision.status,
+        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
         recordId: hosted.id,
@@ -1044,8 +1042,18 @@ export function diffDocRevisions(a: number, b: number, owner: string | null = nu
   const right = getDocRevision(b, owner)
   if (!left) throw new Error(`no doc revision ${a}`)
   if (!right) throw new Error(`no doc revision ${b}`)
-  const x = left.body.split('\n')
-  const y = right.body.split('\n')
+  const x = [
+    `status: ${left.status}`,
+    `replacement: ${left.replacement_slug ?? '-'}`,
+    '',
+    ...left.body.split('\n'),
+  ]
+  const y = [
+    `status: ${right.status}`,
+    `replacement: ${right.replacement_slug ?? '-'}`,
+    '',
+    ...right.body.split('\n'),
+  ]
   const lengths = Array.from({ length: x.length + 1 }, () =>
     new Array<number>(y.length + 1).fill(0),
   )
