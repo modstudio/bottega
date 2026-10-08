@@ -549,6 +549,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     async upsertProject(input) {
       return { name: input.name }
     },
+    async listProjects() {
+      return []
+    },
     async retireProject(name) {
       return { name }
     },

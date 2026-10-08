@@ -107,6 +107,88 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API', () => {
+  test('a document destination binds a member space while no header keeps the active space', async () => {
+    const calls: Array<{ spaceId: string; spaceIds: string[] }> = []
+    const session = {
+      ...identity,
+      memberships: [
+        ...identity.memberships,
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'team-b',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    }
+    const app = appWith(session, {
+      upsertDoc: async (input: { spaceId: string; spaceIds: string[] }) => {
+        calls.push({ spaceId: input.spaceId, spaceIds: input.spaceIds })
+        return { id, revisionId: id }
+      },
+    })
+    const body = JSON.stringify({
+      scope: 'project',
+      subject: 'known',
+      slug: 'guide',
+      title: 'Guide',
+      body: 'Body',
+      delivery: 'demand',
+      audience: 'operator',
+      position: 0,
+      reason: 'test',
+      author: 'tester',
+    })
+    expect(
+      (
+        await app.request('/v1/docs', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'x-record-space': 'team-b' },
+          body,
+        })
+      ).status,
+    ).toBe(200)
+    expect(calls[0]).toEqual({ spaceId: 'space-b', spaceIds: ['space-a', 'space-b'] })
+    expect(
+      (
+        await app.request('/v1/docs', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(200)
+    expect(calls[1]).toEqual({ spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] })
+  })
+
+  test('a non-member project destination returns 403 before the service', async () => {
+    let calls = 0
+    const app = appWith(identity, {
+      upsertProject: async () => {
+        calls += 1
+        return { name: 'known' }
+      },
+    })
+    const response = await app.request('/v1/projects', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-record-space': 'outside' },
+      body: JSON.stringify({
+        name: 'known',
+        path: '/repo/known',
+        stack: null,
+        canon: false,
+        settings: {},
+        retiredAt: null,
+      }),
+    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      error: 'signed-in user is not a member of record space outside',
+    })
+    expect(calls).toBe(0)
+  })
+
   test('registers public docs outside session middleware and signed search inside it', async () => {
     const app = appWith(null)
     const publicResponse = await app.request('/public/v1/docs', {

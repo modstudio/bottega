@@ -8,6 +8,7 @@ import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import {
   applyLocalProjectRename,
   assertProjectRename,
@@ -457,6 +458,7 @@ async function setProjectCommand(
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
+  await refuseHostedProjectSpaceChange(project, candidate.settings)
   await persistSetProject(name, nextName, previousTrunk, candidate)
   if (flags.has('json')) {
     presentation.log(JSON.stringify(projectByName(nextName)))

@@ -17,6 +17,7 @@ import {
 } from './record-api-doc-schemas.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
+import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -68,7 +69,9 @@ import { RecordVerdictError } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
-type ApiEnvironment = { Variables: { identity: RecordIdentity } }
+type ApiEnvironment = {
+  Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+}
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = {
   recordUrl: string
@@ -268,7 +271,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const options = {
       origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
       credentials: true,
-      allowHeaders: ['Authorization', 'Content-Type'],
+      allowHeaders: ['Authorization', 'Content-Type', 'X-Record-Space'],
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     }
     app.use('/v1/*', cors(options))
@@ -293,6 +296,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     return context.json(context.get('identity'))
   })
+  registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z
       .object({ spaceId: idSchema })
@@ -311,12 +315,13 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const identity = context.get('identity') as RecordIdentity
     if (!identity.activeSpaceId) return null
     const memberships = identity.memberships.map((row) => String(row.space_id))
+    const destinationSpaceId = context.get('destinationSpaceId')
     return {
       url: deps.recordUrl,
       userId: identity.user.id,
-      spaceId: identity.activeSpaceId,
+      spaceId: destinationSpaceId ?? identity.activeSpaceId,
       spaceIds:
-        identity.activeSpaceId === identity.personalSpaceId
+        destinationSpaceId || identity.activeSpaceId === identity.personalSpaceId
           ? memberships
           : [identity.activeSpaceId],
     }

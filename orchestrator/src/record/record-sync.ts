@@ -28,7 +28,6 @@ import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
-  recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
@@ -49,6 +48,7 @@ import {
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { projectRecordDestination } from './record-project-destination.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
@@ -114,10 +114,6 @@ function declaredProjectSpace(
   return typeof settings.space === 'string' && settings.space.trim() ? settings.space : null
 }
 
-export function effectiveProjectSpace(declared: string | null, activeSpaceId: string): string {
-  return declared ?? activeSpaceId
-}
-
 function projectPrincipal(
   projectName: string | null,
   fallback: RecordPrincipal,
@@ -127,17 +123,17 @@ function projectPrincipal(
 ): RecordPrincipal {
   if (!projectName) return fallback
   const declared = declaredProjectSpace(local, projectName, overrides)
-  const effectiveSpace = effectiveProjectSpace(declared, fallback.spaceId)
-  if (effectiveSpace === fallback.spaceId) return fallback
-  const membership = recordSpaceMembership(effectiveSpace, memberships)
-  if (!membership) {
+  const destination = projectRecordDestination(projectName, declared, fallback.spaceId, memberships)
+  if ('refused' in destination) {
     throw new OutboxRowError(
       `project ${projectName} declares record space ${declared}, but the signed-in user is not a member; join it first with an invitation, then retry`,
       'declared-space',
       projectName,
     )
   }
-  return { userId: fallback.userId, spaceId: membership.spaceId }
+  return destination.spaceId === fallback.spaceId
+    ? fallback
+    : { userId: fallback.userId, spaceId: destination.spaceId }
 }
 
 function cachedProjectPrincipal(

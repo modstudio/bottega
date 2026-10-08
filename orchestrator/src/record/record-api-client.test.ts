@@ -92,6 +92,49 @@ describe('record API client test safety', () => {
     }
   })
 
+  test('destination-aware project and id-addressed document calls send x-record-space', async () => {
+    const session = memoryRecordSession()
+    session.setToken('destination-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const calls: Headers[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(new Headers(init?.headers))
+      return Response.json({ id: newRecordId(), revisionId: newRecordId(), name: 'known' })
+    }) as typeof fetch
+    try {
+      const client = recordApiClient()
+      const destination = { destinationSpaceId: 'stable-space-id' }
+      await client.upsertProject(
+        {
+          name: 'known',
+          path: '/repo/known',
+          stack: null,
+          canon: false,
+          settings: {},
+          retiredAt: null,
+        },
+        destination,
+      )
+      await client.deleteDoc(newRecordId(), { reason: 'test', author: 'tester' }, destination)
+      expect(calls.map((headers) => headers.get('x-record-space'))).toEqual([
+        'stable-space-id',
+        'stable-space-id',
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
   test('board methods use the ruled paths and map a non-success body', async () => {
     const session = memoryRecordSession()
     session.setToken('board-token')

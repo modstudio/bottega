@@ -6,6 +6,7 @@ import {
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../../../shared/autonomy.ts'
+import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { type StoredSettings, summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
@@ -13,12 +14,14 @@ import {
   SHIP_TO_VALUES,
   STORED_SHIP_TO_CONFIG_ALIAS,
 } from '../../../../shared/ship-to.ts'
+import { projects } from '../../projects.ts'
 import {
   createRecordClient,
   type RecordClient,
   type RecordConfigEntry,
   type RecordDoc,
 } from '../../record-client.ts'
+import { taskProjectDestination } from '../../task-project-space.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -47,19 +50,28 @@ function defaultClient(context: Context): RecordClient {
   })
 }
 
-async function allDocs(client: RecordClient, input: { scope: string; subject?: string }) {
+async function allDocs(
+  client: RecordClient,
+  input: { scope: string; subject?: string },
+  destinationSpaceId?: string,
+) {
   const rows: RecordDoc[] = []
   let cursor: string | undefined
   do {
-    const page = await client.docs({ ...input, limit: 100, cursor })
+    const query = { ...input, limit: 100, cursor }
+    const page = destinationSpaceId
+      ? await client.docs(query, destinationSpaceId)
+      : await client.docs(query)
     rows.push(...page.items)
     cursor = page.nextCursor ?? undefined
   } while (cursor)
   return rows
 }
 
-async function currentRevision(client: RecordClient, id: string) {
-  const revisions = await client.docRevisions(id)
+async function currentRevision(client: RecordClient, id: string, destinationSpaceId?: string) {
+  const revisions = destinationSpaceId
+    ? await client.docRevisions(id, destinationSpaceId)
+    : await client.docRevisions(id)
   return revisions.items[0]?.id ?? null
 }
 
@@ -192,21 +204,37 @@ function parseStoredSettings(body: string): StoredSettings {
 async function settingsRow(
   client: RecordClient,
   address: z.infer<typeof target>,
-): Promise<RecordDoc> {
+): Promise<{ row: RecordDoc; destinationSpaceId?: string }> {
   const subject = 'user' in address ? '' : address.project
-  const [{ user }, rows] = await Promise.all([
-    client.whoami(),
-    allDocs(client, { scope: 'settings', subject }),
-  ])
+  const identity = await client.whoami()
+  let destinationSpaceId: string | undefined
+  if ('project' in address) {
+    if (!identity.activeSpaceId)
+      throw new TRPCError({ code: 'CONFLICT', message: 'record session has no active space' })
+    const destination = taskProjectDestination(address.project, projects(), {
+      activeSpaceId: identity.activeSpaceId,
+      memberships: parseRecordSpaceMemberships(identity.memberships),
+    })
+    if ('refused' in destination) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: `signed-in user is not a member of the declared record space for project ${address.project}`,
+      })
+    }
+    destinationSpaceId = destination.destinationSpaceId
+  }
+  const rows = await allDocs(client, { scope: 'settings', subject }, destinationSpaceId)
   const row = rows.find((candidate) =>
     'user' in address
-      ? candidate.subject === null && candidate.owner === user.id && candidate.slug === 'settings'
+      ? candidate.subject === null &&
+        candidate.owner === identity.user.id &&
+        candidate.slug === 'settings'
       : candidate.subject === address.project &&
         candidate.owner === null &&
         candidate.slug === 'settings',
   )
   if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'settings doc not found' })
-  return row
+  return { row, destinationSpaceId }
 }
 
 export function createHostedContextRouter(clientFor: ClientFactory = defaultClient) {
@@ -367,7 +395,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
     settings: t.router({
       get: t.procedure.input(target).query(async ({ ctx, input }) => {
         const client = clientFor(ctx)
-        const row = await settingsRow(client, input)
+        const { row, destinationSpaceId } = await settingsRow(client, input)
         return {
           mode: 'hosted' as const,
           target:
@@ -375,7 +403,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
               ? { kind: 'user' as const }
               : { kind: 'project' as const, name: input.project },
           file: { path: null, exists: null },
-          revision: await currentRevision(client, row.id),
+          revision: await currentRevision(client, row.id, destinationSpaceId),
           settings: summarizeSettings(parseStoredSettings(row.body)),
           drift: null,
           findings: null,
@@ -392,15 +420,20 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             expectedRevision: z.string().uuid(),
           }),
         )
-        .mutation(({ ctx, input }) =>
-          clientFor(ctx).settingsPermission({
+        .mutation(async ({ ctx, input }) => {
+          const client = clientFor(ctx)
+          const { destinationSpaceId } = await settingsRow(client, input.target)
+          const write = {
             ...input,
             target:
               'user' in input.target
                 ? { kind: 'user' as const }
                 : { kind: 'project' as const, project: input.target.project },
-          }),
-        ),
+          }
+          return destinationSpaceId
+            ? client.settingsPermission(write, destinationSpaceId)
+            : client.settingsPermission(write)
+        }),
     }),
   })
 }
