@@ -292,26 +292,36 @@ async function compareLiveDocs(
       mismatches.push(`${label}: hosted row is absent`)
       continue
     }
-    const hostedBody = typeof hosted.body === 'string' ? hosted.body : ''
-    const localHash = bodyHash(doc.body)
-    const hostedHash = bodyHash(hostedBody)
-    if (localHash !== hostedHash) {
-      mismatches.push(`${label}: body hash ${localHash} != ${hostedHash}`)
-    }
-    if (hosted.delivery !== doc.delivery) {
-      mismatches.push(`${label}: delivery ${doc.delivery} != ${String(hosted.delivery)}`)
-    }
-    if (hosted.status !== doc.status) {
-      mismatches.push(`${label}: status ${doc.status} != ${String(hosted.status)}`)
-    }
-    if ((hosted.replacementSlug ?? null) !== doc.replacement_slug) {
-      mismatches.push(
-        `${label}: replacement ${doc.replacement_slug ?? 'null'} != ${String(hosted.replacementSlug ?? null)}`,
-      )
-    }
-    if (hosted.deletedAt != null) {
-      mismatches.push(`${label}: deleted_at ${String(hosted.deletedAt)}`)
-    }
+    mismatches.push(...liveDocMismatches(label, doc, hosted))
+  }
+  return mismatches
+}
+
+function liveDocMismatches(
+  label: string,
+  doc: LocalDoc,
+  hosted: Record<string, unknown>,
+): string[] {
+  const mismatches: string[] = []
+  const hostedBody = typeof hosted.body === 'string' ? hosted.body : ''
+  const localHash = bodyHash(doc.body)
+  const hostedHash = bodyHash(hostedBody)
+  if (localHash !== hostedHash) {
+    mismatches.push(`${label}: body hash ${localHash} != ${hostedHash}`)
+  }
+  if (hosted.delivery !== doc.delivery) {
+    mismatches.push(`${label}: delivery ${doc.delivery} != ${String(hosted.delivery)}`)
+  }
+  if (hosted.status !== doc.status) {
+    mismatches.push(`${label}: status ${doc.status} != ${String(hosted.status)}`)
+  }
+  if ((hosted.replacementSlug ?? null) !== doc.replacement_slug) {
+    mismatches.push(
+      `${label}: replacement ${doc.replacement_slug ?? 'null'} != ${String(hosted.replacementSlug ?? null)}`,
+    )
+  }
+  if (hosted.deletedAt != null) {
+    mismatches.push(`${label}: deleted_at ${String(hosted.deletedAt)}`)
   }
   return mismatches
 }
