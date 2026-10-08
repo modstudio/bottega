@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { gatherHostedReport, type HostedReportRow } from './hosted-report-gather.ts'
-import { renderHtml, renderText } from './report-renderer.ts'
+import { projectItemPresentation, renderHtml, renderText } from './report-renderer.ts'
 
 const period = {
   from: '2026-09-17T13:00:00.000Z',
@@ -184,4 +184,13 @@ test('hosted reports count matched, unmatched and untasked work independently', 
     unmatched: 1,
     untasked: { key: null, engagedMs: 3_600_000 },
   })
+  const presentation = projectItemPresentation(gathered.projects[0]!.items)
+  expect(presentation.done.map((item) => item.key)).toEqual(['DEV-785'])
+  expect(presentation.open).toEqual([])
+  expect(presentation.unmatched.map((item) => item.key)).toEqual(['DEV-404'])
+  expect(presentation.displayItems.map(({ label }) => label)).toEqual([
+    'Restore the formatted report',
+    'DEV-404 — not in the task record',
+  ])
+  expect(presentation.unmatchedNotice).toBe('1 task was not found in the task record: DEV-404')
 })
