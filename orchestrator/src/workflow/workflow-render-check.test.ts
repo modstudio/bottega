@@ -319,11 +319,16 @@ describe('workflow render check', () => {
     ).toThrow("fix the step body or the project's register entry")
   })
 
-  for (const [field, changedStep] of [
-    ['floor', { floor: ['{{tracker.server}}'] }],
-    ['expectedStatus', { expectedStatus: '{{tracker.server}}' }],
+  for (const [label, field, changedStep] of [
+    ['floor', 'floor', { floor: ['{{tracker.server}}'] }],
+    ['expectedStatus', 'expectedStatus', { expectedStatus: '{{tracker.server}}' }],
+    [
+      'expectedStatus list',
+      'expectedStatus',
+      { expectedStatus: ['review', '{{tracker.server}}'] },
+    ],
   ] as const) {
-    test(`both promotion guards refuse an unrenderable ${field}`, () => {
+    test(`both promotion guards refuse an unrenderable ${label}`, () => {
       const catalogueDatabase = database()
       const current = productionStepCatalogue(catalogueDatabase).definition
       const safeCatalogue = setStepCatalogue(

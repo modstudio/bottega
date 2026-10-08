@@ -11,7 +11,13 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
-import { getWorkflowStep, productionWorkflows, promoteWorkflow, showWorkflow } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  productionWorkflows,
+  promoteWorkflow,
+  showWorkflow,
+} from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -23,6 +29,30 @@ const database = () => {
 
 const renderedTree = (d: Database) =>
   planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
+
+const importAndPromoteCurrentTree = (d: Database) => {
+  const root = fileURLToPath(new URL('../../..', import.meta.url))
+  const imported = importWorkflowTree(
+    parseWorkflowTree(collectWorkflowTree(root)),
+    'compose current tree fixture',
+    'test',
+    d,
+  )
+  if (imported.steps.length || imported.sequences.length) {
+    const catalogue = d
+      .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
+      .get() as { n: number }
+    promoteStepCatalogue(catalogue.n, 'compose current tree fixture', 'test', d)
+  }
+  for (const slug of imported.workflows) {
+    const workflow = d
+      .query(
+        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
+      )
+      .get(slug) as { n: number }
+    promoteWorkflow(slug, workflow.n, 'compose current tree fixture', 'test', d)
+  }
+}
 
 describe('importWorkflowTree', () => {
   test('the current workflow tree round-trips through import and hydrate', () => {
@@ -141,6 +171,41 @@ describe('importWorkflowTree', () => {
       }
       expect(step.body).not.toContain('{{')
     }
+  })
+
+  test('a single review state resolves both new steps in ship-task and code-review', () => {
+    const d = database()
+    importAndPromoteCurrentTree(d)
+    d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+      'fixture',
+      '/fixture',
+      'bun',
+      JSON.stringify({
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { started: 'active', checking: 'review', completed: 'done' },
+        },
+        docs: { protocol: 'orch-docs' },
+        gate: 'bun run check',
+        trunk: 'main',
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+      }),
+    )
+    const args = { key: 'DEV-1178', branch: 'DEV-1178-test', worktree: '/fixture' }
+    const ship = composeWorkflow('ship-task', 'fixture', 'merge', args, d)
+    const review = composeWorkflow('code-review', 'fixture', 'report', args, d)
+    const waiting = ship.steps.find(({ slug }) => slug === 'waiting-for-review')!
+    const inReview = review.steps[0]!
+
+    expect(waiting).toMatchObject({
+      floor: ['tracker-transition'],
+      expectedStatus: ['checking', 'checking'],
+    })
+    expect(inReview).toMatchObject({
+      slug: 'in-review',
+      floor: ['tracker-transition'],
+      expectedStatus: 'checking',
+    })
   })
 
   test('one invalid floor refuses the entire import without writing a draft', () => {

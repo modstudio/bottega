@@ -115,7 +115,11 @@ export function unresolvedTrackerActionPlaceholder(
   return null
 }
 
-function resolvedReviewStages(projectName: string, tracker: TrackerSettings, protocol: TrackerProtocol) {
+function resolvedReviewStages(
+  projectName: string,
+  tracker: TrackerSettings,
+  protocol: TrackerProtocol,
+) {
   const reviewStates = Object.entries(tracker.states ?? {}).flatMap(([raw, category]) =>
     category === 'review' ? [raw] : [],
   )

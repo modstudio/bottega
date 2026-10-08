@@ -125,7 +125,7 @@ function record(value: unknown, path: string): Record<string, unknown> {
 const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
   frontMatter.expectedStatus === undefined
     ? {}
-    : { expectedStatus: frontMatter.expectedStatus as string }
+    : { expectedStatus: frontMatter.expectedStatus as CatalogueStep['expectedStatus'] }
 
 const stepBooleanOptionsFrom = (frontMatter: Record<string, unknown>) => ({
   ...(frontMatter.requirePullRequest === undefined

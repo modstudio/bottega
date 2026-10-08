@@ -162,29 +162,37 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
 export function catalogueFloors(
   kinds: readonly string[],
   deferrable: readonly string[] = [],
-  expectedStatus = DEFAULT_EXPECTED_STATUS,
+  expectedStatus: string | readonly string[] = DEFAULT_EXPECTED_STATUS,
   requirePullRequest = false,
   operatorRuling = false,
   commandEvidence?: CommandEvidence,
 ): Floor[] {
-  return kinds.map((kind) => {
+  return kinds.flatMap((kind) => {
     if (!isFloorKind(kind)) throw new Error(`unknown floor kind "${kind}"`)
-    return {
+    const statuses =
+      kind === 'tracker-transition' && Array.isArray(expectedStatus)
+        ? expectedStatus
+        : [
+            Array.isArray(expectedStatus)
+              ? (expectedStatus[0] ?? DEFAULT_EXPECTED_STATUS)
+              : expectedStatus,
+          ]
+    return statuses.map((status) => ({
       kind,
       deferrable: deferrable.includes(kind),
       expectedExitCode: DEFAULT_EXPECTED_EXIT_CODE,
-      expectedStatus,
+      expectedStatus: status,
       requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
       operatorRuling: kind === 'ruling' && operatorRuling,
       ...(kind === 'command-exit' && commandEvidence ? { commandEvidence } : {}),
-    }
+    }))
   })
 }
 
 export function catalogueFloorsFor(step: {
   floor: readonly string[]
   deferrable?: readonly string[]
-  expectedStatus?: string
+  expectedStatus?: string | readonly string[]
   requirePullRequest?: boolean
   operatorRuling?: boolean
   commandEvidence?: CommandEvidence
@@ -250,9 +258,10 @@ function expectedTrackerCategory(
 }
 
 function categoryHasSeveralStates(category: string, states: TrackerStates): boolean {
-  return Object.values(states).filter(
-    (mapped) => (mapped === 'backlog' ? 'open' : mapped) === category,
-  ).length > 1
+  return (
+    Object.values(states).filter((mapped) => (mapped === 'backlog' ? 'open' : mapped) === category)
+      .length > 1
+  )
 }
 
 function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
@@ -265,8 +274,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   )
   if (
     !task ||
-    (task.status !== floor.expectedStatus &&
-      requiresExactStatus) ||
+    (task.status !== floor.expectedStatus && requiresExactStatus) ||
     (!requiresExactStatus &&
       task.status !== floor.expectedStatus &&
       task.statusCategory !== floor.expectedStatus &&

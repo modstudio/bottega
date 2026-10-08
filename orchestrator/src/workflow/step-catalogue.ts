@@ -217,11 +217,16 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   validateCommandEvidence(item, floor, errors)
-  if (
-    item.expectedStatus !== undefined &&
-    (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
-  )
-    errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
+  if (item.expectedStatus !== undefined) {
+    const statuses = Array.isArray(item.expectedStatus)
+      ? item.expectedStatus
+      : [item.expectedStatus]
+    if (
+      statuses.length === 0 ||
+      statuses.some((status) => typeof status !== 'string' || !status.trim())
+    )
+      errors.push(`step "${slug}" expectedStatus must be a non-empty string or string list`)
+  }
 }
 
 function validateCommandEvidence(

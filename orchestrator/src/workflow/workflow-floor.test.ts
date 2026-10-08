@@ -394,6 +394,62 @@ test.each([
   },
 )
 
+test('tracker-transition requires the exact raw state only for a multi-state category', () => {
+  const severalReviewStates = {
+    waiting: 'review',
+    reviewing: 'review',
+  } as const
+  const oneReviewState = { reviewing: 'review' } as const
+  const evidence = (trackerStates: typeof severalReviewStates | typeof oneReviewState) => ({
+    task: {
+      key: 'DEV-1178',
+      status: 'reviewing',
+      statusCategory: 'review',
+      mergedPullRequest: false,
+      trackerStates,
+    },
+  })
+
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'waiting', requirePullRequest: false }],
+      evidence: evidence(severalReviewStates),
+    }).action,
+  ).toBe('refuse')
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'reviewing', requirePullRequest: false }],
+      evidence: evidence(severalReviewStates),
+    }).action,
+  ).toBe('allow')
+  expect(
+    decide({
+      floors: [{ ...tracker, expectedStatus: 'reviewing', requirePullRequest: false }],
+      evidence: {
+        task: { ...evidence(oneReviewState).task, status: 'Review', trackerStates: oneReviewState },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a waiting floor accepts in-review while an in-review floor rejects waiting', () => {
+  const trackerStates = { waiting: 'review', reviewing: 'review' } as const
+  const task = (status: string): ValidatedEvidence => ({
+    task: {
+      key: 'DEV-1178',
+      status,
+      statusCategory: 'review',
+      mergedPullRequest: false,
+      trackerStates,
+    },
+  })
+  const waitingFloors = catalogueFloors(['tracker-transition'], [], ['waiting', 'reviewing'])
+  const inReviewFloors = catalogueFloors(['tracker-transition'], [], 'reviewing')
+
+  expect(decide({ floors: waitingFloors, evidence: task('reviewing') }).action).toBe('allow')
+  expect(decide({ floors: inReviewFloors, evidence: task('waiting') }).action).toBe('refuse')
+})
+
 test.each([
   [
     'a mapped tracker word',

@@ -174,6 +174,8 @@ describe('project workflow injection', () => {
           document: 'task_addDocument',
         },
         states: {},
+        waitingReview: { state: 'none', floor: 'recorded-artifact' },
+        inReview: { state: 'none', floor: 'recorded-artifact' },
       },
       gate: 'bun run check',
       worktree: { branch: '{key}-orch-{id}' },
@@ -278,6 +280,8 @@ describe('project workflow injection', () => {
       ['tracker'],
     ).tracker
     expect(mapped.states).toEqual({ active: 'started', review: 'checking', done: 'completed' })
+    expect(mapped.waitingReview).toEqual({ state: 'checking', floor: 'tracker-transition' })
+    expect(mapped.inReview).toEqual({ state: 'checking', floor: 'tracker-transition' })
 
     const incomplete = resolveInjection(
       {
@@ -290,6 +294,8 @@ describe('project workflow injection', () => {
       ['tracker'],
     ).tracker
     expect(incomplete.states).toEqual({ done: 'completed' })
+    expect(incomplete.waitingReview).toEqual({ state: 'none', floor: 'recorded-artifact' })
+    expect(incomplete.inReview).toEqual({ state: 'none', floor: 'recorded-artifact' })
 
     const hub = resolveInjection(
       {
@@ -301,7 +307,78 @@ describe('project workflow injection', () => {
       { key: 'DEV-661' },
     ).tracker
     expect(hub.states).toEqual({ active: 'active', review: 'review', done: 'done' })
+    expect(hub.waitingReview).toEqual({ state: 'review', floor: 'tracker-transition' })
+    expect(hub.inReview).toEqual({ state: 'review', floor: 'tracker-transition' })
     expect(hub.actions.get).toBe('hub task show DEV-661')
+  })
+
+  test('validates each review stage selection at the register edge', () => {
+    const problems = (reviewStages: { waiting: string; active: string }) =>
+      validateProjectSettings({
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { queued: 'open', waiting: 'review', reviewing: 'review' },
+          reviewStages,
+        },
+      }).join('\n')
+
+    expect(problems({ waiting: 'missing', active: 'reviewing' })).toContain(
+      'tracker.reviewStages.waiting: value "missing" is not a key of tracker.states',
+    )
+    expect(problems({ waiting: 'queued', active: 'reviewing' })).toContain(
+      'tracker.reviewStages.waiting: value "queued" maps to "open", not "review"',
+    )
+    expect(problems({ waiting: 'waiting', active: 'missing' })).toContain(
+      'tracker.reviewStages.active: value "missing" is not a key of tracker.states',
+    )
+    expect(problems({ waiting: 'waiting', active: 'queued' })).toContain(
+      'tracker.reviewStages.active: value "queued" maps to "open", not "review"',
+    )
+    expect(problems({ waiting: 'waiting', active: 'waiting' })).toContain(
+      'tracker.reviewStages.active: value "waiting" must differ from reviewStages.waiting',
+    )
+    expect(problems({ waiting: 'waiting', active: 'reviewing' })).toBe('')
+    expect(problems({ waiting: 'missing', active: 'reviewing' })).toContain(
+      `orch project set <name> --settings`,
+    )
+  })
+
+  test('resolves selected review stages and refuses an ambiguous unselected map', () => {
+    const selected = resolveInjection(
+      {
+        name: 'fixture',
+        stack: 'node',
+        settings: {
+          tracker: {
+            protocol: 'workspace-mcp',
+            states: { waiting: 'review', reviewing: 'review' },
+            reviewStages: { waiting: 'waiting', active: 'reviewing' },
+          },
+        },
+      },
+      ['tracker'],
+    ).tracker
+    expect(selected.states.review).toBe('reviewing')
+    expect(selected.waitingReview).toEqual({ state: 'waiting', floor: 'tracker-transition' })
+    expect(selected.inReview).toEqual({ state: 'reviewing', floor: 'tracker-transition' })
+
+    expect(() =>
+      resolveInjection(
+        {
+          name: 'fixture',
+          stack: 'node',
+          settings: {
+            tracker: {
+              protocol: 'workspace-mcp',
+              states: { waiting: 'review', reviewing: 'review' },
+            },
+          },
+        },
+        ['tracker'],
+      ),
+    ).toThrow(
+      'project fixture tracker has several review states (waiting, reviewing) but no reviewStages selection; set it with: orch project set fixture --settings',
+    )
   })
 
   test('leaves placeholders unsubstituted for hostile project and key values', () => {

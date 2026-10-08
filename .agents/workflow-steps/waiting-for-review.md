@@ -3,7 +3,9 @@ title: Mark the task waiting for review
 stage: ship
 floor:
   - "{{tracker.waitingReview.floor}}"
-expectedStatus: "{{tracker.waitingReview.state}}"
+expectedStatus:
+  - "{{tracker.waitingReview.state}}"
+  - "{{tracker.inReview.state}}"
 job: null
 autonomy: auto
 needs:
