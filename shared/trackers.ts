@@ -117,6 +117,9 @@ export const trackerSettingsShape = {
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
   states: z.record(trackerNameSchema, z.enum(['backlog', ...TASK_STATUSES])).optional(),
+  reviewStages: z
+    .strictObject({ waiting: trackerNameSchema, active: trackerNameSchema })
+    .optional(),
   actions: z.strictObject(trackerActionsShape).optional(),
 }
 
@@ -146,6 +149,38 @@ export function refuseNonCursorProjectId(
       code: 'custom',
       path: ['projectId'],
       message: 'projectId is accepted only by the cursor-mcp protocol; remove tracker.projectId',
+    })
+  }
+}
+
+/** Review stage names select two distinct raw states already categorized as review. */
+export function refuseInvalidReviewStages(
+  tracker: TrackerSettings,
+  context: z.core.$RefinementCtx<TrackerSettings>,
+): void {
+  const stages = tracker.reviewStages
+  if (!stages) return
+  const remedy =
+    `set it with: orch project set <name> --settings ` +
+    `'${JSON.stringify({ tracker: { reviewStages: { waiting: '<waiting-review-state>', active: '<in-review-state>' } } })}'`
+  for (const [stage, raw] of Object.entries(stages)) {
+    const category = tracker.states?.[raw]
+    if (category !== 'review') {
+      context.addIssue({
+        code: 'custom',
+        path: ['reviewStages', stage],
+        message:
+          category === undefined
+            ? `value "${raw}" is not a key of tracker.states; ${remedy}`
+            : `value "${raw}" maps to "${category}", not "review"; ${remedy}`,
+      })
+    }
+  }
+  if (stages.waiting === stages.active) {
+    context.addIssue({
+      code: 'custom',
+      path: ['reviewStages', 'active'],
+      message: `value "${stages.active}" must differ from reviewStages.waiting; ${remedy}`,
     })
   }
 }

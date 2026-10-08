@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import {
   refuseHubActionOverrides,
+  refuseInvalidReviewStages,
   refuseNonCursorProjectId,
   resolveTrackerAgentActions,
   TRACKER_PROTOCOLS,
@@ -45,6 +46,7 @@ const trackerSchema = strictObject({
 }).superRefine((tracker, context) => {
   refuseHubActionOverrides(tracker, context)
   refuseNonCursorProjectId(tracker, context)
+  refuseInvalidReviewStages(tracker, context)
 })
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
@@ -54,12 +56,18 @@ type ResolvedDocs = DocsSettings & {
   read: string[]
   write: string[]
 }
+export type ResolvedReviewStage = {
+  state: string
+  floor: 'tracker-transition' | 'recorded-artifact'
+}
 type ResolvedTracker = {
   kind: string
   protocol: TrackerProtocol
   server?: string
   actions: Partial<Record<TrackerAction, string>>
   states: Partial<Record<'active' | 'review' | 'done', string>>
+  waitingReview: ResolvedReviewStage
+  inReview: ResolvedReviewStage
 }
 
 const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: string[] }> = {
@@ -109,6 +117,61 @@ export function unresolvedTrackerActionPlaceholder(
   if (action.includes('{key}'))
     return `task-key value "${key ?? '(missing)'}" does not match task-key grammar`
   return null
+}
+
+function resolvedReviewStages(
+  projectName: string,
+  tracker: TrackerSettings,
+  protocol: TrackerProtocol,
+) {
+  const reviewStates = Object.entries(tracker.states ?? {}).flatMap(([raw, category]) =>
+    category === 'review' ? [raw] : [],
+  )
+  const defaultReviewState = protocol === 'hub' ? 'review' : undefined
+  if (defaultReviewState && reviewStates.length === 0) reviewStates.push(defaultReviewState)
+  if (!tracker.reviewStages && reviewStates.length > 1) {
+    throw new Error(
+      `project ${projectName} tracker has several review states (${reviewStates.join(', ')}) but no reviewStages selection; set it with: orch project set ${projectName} --settings '${JSON.stringify({ tracker: { reviewStages: { waiting: '<waiting-review-state>', active: '<in-review-state>' } } })}'`,
+    )
+  }
+  const waiting = tracker.reviewStages?.waiting ?? reviewStates[0]
+  const active = tracker.reviewStages?.active ?? reviewStates[0]
+  const stage = (state: string | undefined): ResolvedReviewStage =>
+    state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
+  return { waitingReview: stage(waiting), inReview: stage(active) }
+}
+
+function resolvedTracker(
+  project: InjectableProject,
+  tracker: TrackerSettings,
+  args: Record<string, string>,
+): ResolvedTracker {
+  const protocol = trackerProtocol(tracker.protocol)
+  const actionNames = resolveTrackerAgentActions(protocol, tracker.actions)
+  const actions = Object.fromEntries(
+    Object.entries(actionNames).map(([action, name]) => [
+      action,
+      substituteAction(name, project.name, args.key),
+    ]),
+  ) as Partial<Record<TrackerAction, string>>
+  const states = Object.fromEntries(
+    (['active', 'done'] as const).flatMap((category) => {
+      const raw = Object.entries(tracker.states ?? {}).find(
+        ([, mapped]) => mapped === category,
+      )?.[0]
+      return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
+    }),
+  ) as ResolvedTracker['states']
+  const reviewStages = resolvedReviewStages(project.name, tracker, protocol)
+  if (reviewStages.inReview.state !== 'none') states.review = reviewStages.inReview.state
+  return {
+    kind: tracker.kind ?? protocol,
+    protocol,
+    ...(protocol === 'hub' ? {} : { server: project.name }),
+    actions,
+    states,
+    ...reviewStages,
+  }
 }
 
 type InjectionSettings = {
@@ -217,32 +280,7 @@ export function resolveInjection<
   for (const source of needs) {
     const value = source === 'stack' ? project.stack : project.settings[source]
     if (source === 'tracker') {
-      const tracker = value as TrackerSettings
-      const protocol = trackerProtocol(tracker.protocol)
-      const actionNames = resolveTrackerAgentActions(protocol, tracker.actions)
-      const actions = Object.fromEntries(
-        Object.entries(actionNames).map(([action, name]) => [
-          action,
-          substituteAction(name, project.name, args.key),
-        ]),
-      ) as Partial<Record<TrackerAction, string>>
-      const states = Object.fromEntries(
-        (['active', 'review', 'done'] as const).flatMap((category) => {
-          const raw = Object.entries(tracker.states ?? {}).find(
-            ([, mapped]) => mapped === category,
-          )?.[0]
-          return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
-        }),
-      ) as ResolvedTracker['states']
-      Object.assign(resolved, {
-        tracker: {
-          kind: tracker.kind ?? protocol,
-          protocol,
-          ...(protocol === 'hub' ? {} : { server: project.name }),
-          actions,
-          states,
-        },
-      })
+      Object.assign(resolved, { tracker: resolvedTracker(project, value as TrackerSettings, args) })
     } else if (source === 'docs') {
       const docs = value as DocsSettings
       Object.assign(resolved, {

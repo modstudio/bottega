@@ -179,6 +179,37 @@ describe('ship-to workflow composition', () => {
     expect(served.expectedStatus).toBe('none')
   })
 
+  test('a remaining rung closes to the configured in-review state', () => {
+    const d = database()
+    publishShipToFixture(d)
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { waiting: 'review', reviewing: 'review', completed: 'done' },
+          reviewStages: { waiting: 'waiting', active: 'reviewing' },
+        },
+        release,
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+
+    const composed = composeWorkflow(
+      'ship-to-fixture',
+      'fixture',
+      undefined,
+      {},
+      d,
+      {},
+      shipToAutonomy('trunk'),
+    )
+    expect(composed.facts.shipTo).toMatchObject({
+      closeAction: 'review',
+      closeState: 'reviewing',
+    })
+  })
+
   test('a placeholder floor resolving to a non-kind refuses workflow promotion', () => {
     const d = database()
     expect(() => publishShipToFixture(d, ['tracker', 'ship-to'], '{{shipTo.closeState}}')).toThrow(

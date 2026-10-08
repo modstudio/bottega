@@ -33,7 +33,9 @@ export function workflowStepTemplates(step: CatalogueStep): WorkflowStepTemplate
       isFloorKind(template) ? [] : [{ field: 'floor' as const, template }],
     ),
     ...(step.expectedStatus
-      ? [{ field: 'expectedStatus' as const, template: step.expectedStatus }]
+      ? (Array.isArray(step.expectedStatus) ? step.expectedStatus : [step.expectedStatus]).map(
+          (template) => ({ field: 'expectedStatus' as const, template }),
+        )
       : []),
   ]
 }
@@ -89,21 +91,21 @@ export function resolveWorkflowStepFloors(
 export function resolveWorkflowStepExpectedStatus(
   step: Pick<CatalogueStep, 'slug' | 'expectedStatus'>,
   resolve: (template: string) => string,
-): string | undefined {
-  return step.expectedStatus
-    ? (resolveWorkflowStepTemplate(
-        step.slug,
-        'expectedStatus',
-        step.expectedStatus,
-        resolve,
-      ) as string)
-    : undefined
+): string | string[] | undefined {
+  if (!step.expectedStatus) return undefined
+  const resolved = (
+    Array.isArray(step.expectedStatus) ? step.expectedStatus : [step.expectedStatus]
+  ).map(
+    (template) =>
+      resolveWorkflowStepTemplate(step.slug, 'expectedStatus', template, resolve) as string,
+  )
+  return Array.isArray(step.expectedStatus) ? resolved : resolved[0]
 }
 
 export function resolveWorkflowStepTemplates(
   step: Pick<CatalogueStep, 'slug' | 'body' | 'floor' | 'expectedStatus'>,
   resolve: (template: string) => string,
-): { body: string; floor: FloorKind[]; expectedStatus?: string } {
+): { body: string; floor: FloorKind[]; expectedStatus?: string | string[] } {
   const body = resolveWorkflowStepTemplate(step.slug, 'body', step.body, resolve) as string
   const floor = resolveWorkflowStepFloors(step, resolve)
   const expectedStatus = resolveWorkflowStepExpectedStatus(step, resolve)

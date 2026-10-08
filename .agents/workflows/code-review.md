@@ -16,6 +16,7 @@ modes:
     title: Report findings
     default: true
     steps:
+      - in-review
       - scope
       - review-lenses
       - triage-findings
@@ -23,6 +24,7 @@ modes:
   - slug: apply
     title: Apply accepted findings
     steps:
+      - in-review
       - scope
       - sequence: review
       - run-gate

@@ -57,6 +57,19 @@ test('new catalogue versions require a stage and reject legacy proof names', () 
   ).toContain('step "design" has invalid floor kind "human-ruling"')
 })
 
+test('expectedStatus accepts one string or a non-empty string list', () => {
+  const staged = { ...step, stage: 'plan' as const }
+  expect(validateStepCatalogue({ steps: [{ ...staged, expectedStatus: 'active' }] })).toEqual([])
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, expectedStatus: ['waiting', 'reviewing'] }] }),
+  ).toEqual([])
+  for (const expectedStatus of [[], ['', 'reviewing'], ['waiting', 4]] as unknown[]) {
+    expect(validateStepCatalogue({ steps: [{ ...staged, expectedStatus }] as never })).toContain(
+      'step "design" expectedStatus must be a non-empty string or string list',
+    )
+  }
+})
+
 test('catalogue sequences reject nesting, duplicate names, and the step namespace', () => {
   const design = { ...step, stage: 'plan' as const }
   const errors = validateStepCatalogue({
