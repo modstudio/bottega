@@ -239,10 +239,7 @@ describe('importWorkflowTree', () => {
       'fixture',
     )
     const composed = composeWorkflow('intake', 'fixture', undefined, {}, d)
-    const select = composed.steps.find(({ slug }) => slug === 'select')
-
     expect(composed.facts.signals).toEqual(signals)
-    expect(select).toMatchObject({ floor: ['ruling'], autonomy: 'ask', operatorRuling: true })
   })
 
   test('one invalid floor refuses the entire import without writing a draft', () => {

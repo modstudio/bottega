@@ -56,19 +56,6 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('signals.sources.0.list')])
   })
 
-  test('validates stored signal facts again when a workflow reads them', () => {
-    expect(() =>
-      resolveInjection(
-        {
-          name: 'fixture',
-          stack: 'node',
-          settings: { signals: { sources: [{ name: 'errors' }] } as SignalsSettings },
-        },
-        ['signals'],
-      ),
-    ).toThrow('list')
-  })
-
   test('validates a rung live command as a non-empty string', () => {
     expect(
       validateProjectSettings({

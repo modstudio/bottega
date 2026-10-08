@@ -14,9 +14,6 @@ import {
 } from '../../../shared/trackers.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
-const nonEmptyString = z.string().refine((value) => value.trim().length > 0, {
-  message: 'must be a non-empty string',
-})
 
 const releaseSchema = strictObject({
   rungs: z.array(
@@ -42,9 +39,9 @@ const docsSchema = z.discriminatedUnion('protocol', [
 const signalsSchema = strictObject({
   sources: z.array(
     strictObject({
-      name: nonEmptyString,
-      list: nonEmptyString,
-      get: z.string().optional(),
+      name: z.string().trim().min(1),
+      list: z.string().trim().min(1),
+      get: z.string().trim().min(1).optional(),
     }),
   ),
 })
@@ -308,8 +305,6 @@ export function resolveInjection<
           ...docsAdapters[docs.protocol],
         },
       })
-    } else if (source === 'signals') {
-      Object.assign(resolved, { signals: signalsSchema.parse(value) })
     } else if (source === 'mainStack') {
       const requiredServices = (value as InjectionSettings['mainStack'])?.requiredServices ?? []
       Object.assign(resolved, {
