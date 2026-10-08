@@ -111,7 +111,7 @@ export function installWorkflowStoreFixture(d: Database): void {
   )
   promoteStepCatalogue(catalogue.n, 'publish neutral workflow test fixture', 'test', d)
   const workflow = setWorkflow(
-    'fixture-workflow',
+    'flow',
     {
       title: 'Fixture workflow',
       description: 'Exercises generic workflow behavior.',
@@ -143,11 +143,5 @@ export function installWorkflowStoreFixture(d: Database): void {
     'test',
     d,
   )
-  promoteWorkflow(
-    'fixture-workflow',
-    workflow.n,
-    'publish neutral workflow test fixture',
-    'test',
-    d,
-  )
+  promoteWorkflow('flow', workflow.n, 'publish neutral workflow test fixture', 'test', d)
 }

@@ -35,7 +35,7 @@ describe('workflow rendering', () => {
     const d = database()
     expect(
       renderWorkflowStep(
-        getWorkflowStep('fixture-workflow', 'fixture', 'rebase', args, d, { mode: 'default' }),
+        getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
       'Evidence for command-exit: run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`.',
@@ -44,12 +44,12 @@ describe('workflow rendering', () => {
 
   test('a composed mode tells the agent how to fetch and finish every step', () => {
     const rendered = renderWorkflowComposition(
-      composeWorkflow('fixture-workflow', 'fixture', 'default', args, database()),
+      composeWorkflow('flow', 'fixture', 'default', args, database()),
     )
 
     expect(rendered).toContain('Exercises generic workflow behavior.')
     expect(rendered).toContain('`get_workflow_step`')
-    expect(rendered).toContain('`orch workflow step fixture-workflow rebase')
+    expect(rendered).toContain('`orch workflow step flow rebase')
     expect(rendered).toContain('project "fixture"')
     expect(rendered).toContain('mode "default"')
     expect(rendered).toContain(`args ${JSON.stringify(args)}`)
@@ -113,7 +113,7 @@ describe('workflow rendering', () => {
   test('an argument value with a space is quoted in the generated command', () => {
     const rendered = renderWorkflowComposition(
       composeWorkflow(
-        'fixture-workflow',
+        'flow',
         'fixture',
         'default',
         { ...args, worktree: "/tmp/my work's" },
@@ -126,7 +126,7 @@ describe('workflow rendering', () => {
 
   test('a composition missing required arguments stops to ask for them but keeps the step list', () => {
     const rendered = renderWorkflowComposition(
-      composeWorkflow('fixture-workflow', 'fixture', 'default', {}, database()),
+      composeWorkflow('flow', 'fixture', 'default', {}, database()),
     )
     expect(rendered.split('\n').slice(0, 5)).toEqual([
       'Fixture workflow — Default',
@@ -143,24 +143,22 @@ describe('workflow rendering', () => {
     const d = database()
     expect(
       renderWorkflowStep(
-        getWorkflowStep('fixture-workflow', 'fixture', 'rebase', args, d, { mode: 'default' }),
+        getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
       'Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).',
     )
     expect(
       renderWorkflowStep(
-        getWorkflowStep('fixture-workflow', 'fixture', 'rebase', args, d, { mode: 'default' }),
+        getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toEndWith(
       "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves step 2 lens — Run independent review lenses.",
     )
     expect(
-      renderWorkflowStep(
-        getWorkflowStep('fixture-workflow', 'fixture', 'close', args, d, { mode: 'default' }),
-      ),
+      renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'close', args, d, { mode: 'default' })),
     ).toEndWith(
-      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of fixture-workflow (default), and closing it finishes the workflow.",
+      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of flow (default), and closing it finishes the workflow.",
     )
 
     const draft = setWorkflow(
@@ -191,7 +189,7 @@ describe('workflow rendering', () => {
     const d = database()
     const rendered = renderWorkflowStep(
       getWorkflowStep(
-        'fixture-workflow',
+        'flow',
         'fixture',
         'ship-triage',
         args,

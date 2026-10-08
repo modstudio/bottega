@@ -356,7 +356,7 @@ describe('workflow versions and project composition', () => {
 
     expect(
       getWorkflowStep(
-        'fixture-workflow',
+        'flow',
         'fixture',
         'lens',
         { key: 'DEV-1', branch: 'DEV-1-work', worktree: '/work' },
@@ -442,7 +442,7 @@ describe('workflow versions and project composition', () => {
   test('compose uses a requested draft workflow version instead of production', () => {
     const d = database(),
       draft = setWorkflow(
-        'fixture-workflow',
+        'flow',
         {
           ...valid(),
           modes: [{ slug: 'cohort', title: 'Cohort', default: true, steps: ['lens'] }],
@@ -452,7 +452,7 @@ describe('workflow versions and project composition', () => {
         d,
       )
 
-    const composed = composeWorkflow('fixture-workflow', 'fixture', 'cohort', {}, d, {
+    const composed = composeWorkflow('flow', 'fixture', 'cohort', {}, d, {
       version: draft.n,
     })
 
@@ -460,7 +460,7 @@ describe('workflow versions and project composition', () => {
     expect(composed.mode?.slug).toBe('cohort')
     expect(
       getWorkflowStep(
-        'fixture-workflow',
+        'flow',
         'fixture',
         'lens',
         { key: 'DEV-794', branch: 'DEV-794-test', worktree: '/tmp/test' },
@@ -471,10 +471,10 @@ describe('workflow versions and project composition', () => {
   })
   test('compose without a workflow version still uses production', () => {
     const d = database(),
-      production = showWorkflow('fixture-workflow', undefined, d),
-      draft = setWorkflow('fixture-workflow', valid(), 'ignored draft fixture', 'test', d)
+      production = showWorkflow('flow', undefined, d),
+      draft = setWorkflow('flow', valid(), 'ignored draft fixture', 'test', d)
 
-    const composed = composeWorkflow('fixture-workflow', 'fixture', undefined, {}, d)
+    const composed = composeWorkflow('flow', 'fixture', undefined, {}, d)
 
     expect(draft.n).not.toBe(production.n)
     expect(composed.workflow.version).toBe(production.n)
@@ -483,15 +483,15 @@ describe('workflow versions and project composition', () => {
     const d = database(),
       args = { key: 'DEV-821', branch: 'DEV-821-test', worktree: '/tmp/test' }
 
+    expect(getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }).next).toEqual(
+      {
+        n: 2,
+        slug: 'lens',
+        title: 'Run independent review lenses',
+      },
+    )
     expect(
-      getWorkflowStep('fixture-workflow', 'fixture', 'rebase', args, d, { mode: 'default' }).next,
-    ).toEqual({
-      n: 2,
-      slug: 'lens',
-      title: 'Run independent review lenses',
-    })
-    expect(
-      getWorkflowStep('fixture-workflow', 'fixture', 'close', args, d, { mode: 'default' }).next,
+      getWorkflowStep('flow', 'fixture', 'close', args, d, { mode: 'default' }).next,
     ).toBeNull()
   })
   test('compose uses a requested draft catalogue version instead of production', () => {
@@ -539,7 +539,7 @@ describe('workflow versions and project composition', () => {
     const row = d
       .query(
         `SELECT v.id,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
-         WHERE w.slug='fixture-workflow' AND v.status='production'`,
+         WHERE w.slug='flow' AND v.status='production'`,
       )
       .get() as { id: number; definition: string }
     const definition = JSON.parse(row.definition) as WorkflowDefinition
@@ -549,8 +549,8 @@ describe('workflow versions and project composition', () => {
       row.id,
     )
 
-    expect(() => composeWorkflow('fixture-workflow', 'fixture', undefined, {}, d)).toThrow(
-      'workflow "fixture-workflow" names steps absent from the production catalogue:\n' +
+    expect(() => composeWorkflow('flow', 'fixture', undefined, {}, d)).toThrow(
+      'workflow "flow" names steps absent from the production catalogue:\n' +
         '- mode "default": "missing-compose-step"\n' +
         'fix: promote a catalogue step with that slug, or set the workflow to a mode that does not use it',
     )
@@ -772,7 +772,7 @@ describe('workflow versions and project composition', () => {
     const d = database(),
       args = { key: 'x', branch: 'b', worktree: '/w' }
     d.query("UPDATE project SET settings='{}' WHERE name='fixture'").run()
-    expect(() => composeWorkflow('fixture-workflow', 'fixture', undefined, args, d)).toThrow('gate')
+    expect(() => composeWorkflow('flow', 'fixture', undefined, args, d)).toThrow('gate')
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({ gate: 'ok', docs: { protocol: 'orch-docs' } }),
       'fixture',
@@ -789,7 +789,7 @@ describe('workflow versions and project composition', () => {
       d,
     )
     expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow(
-      'workflow fixture-workflow, mode default, step lens, field body, placeholder unknown',
+      'workflow flow, mode default, step lens, field body, placeholder unknown',
     )
   })
   test('an unresolved declared argument placeholder names the late-argument remedy', () => {
@@ -845,7 +845,7 @@ describe('workflow versions and project composition', () => {
       'a',
       d,
     )
-    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow('fixture-workflow: lens')
+    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow('flow: lens')
   })
   test('workflow promotion refuses a draft whose step the catalogue has since dropped', () => {
     const d = database(),

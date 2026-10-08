@@ -142,7 +142,7 @@ const database = () => {
       (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('fixture','fixture-workflow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
+     VALUES ('fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
              1,'2026-09-01','2026-09-01','floors')`,
   ).run()
   return d

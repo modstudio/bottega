@@ -47,15 +47,9 @@ describe('versioned lifecycle retirement', () => {
 
   test('retires a production version without clearing its promotion time', () => {
     const d = database()
-    const production = showWorkflow('fixture-workflow', undefined, d)
+    const production = showWorkflow('flow', undefined, d)
 
-    const retired = retireWorkflow(
-      'fixture-workflow',
-      production.n,
-      'withdraw production',
-      'architect',
-      d,
-    )
+    const retired = retireWorkflow('flow', production.n, 'withdraw production', 'architect', d)
 
     expect(retired).toMatchObject({
       status: 'retired',
