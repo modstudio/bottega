@@ -189,7 +189,7 @@ test('runs and records a relative gate from the caller checkout top level', asyn
 test('refuses when the caller checkout top level cannot be resolved', async () => {
   const d = database()
   const cwd = `${repositoryPath}/.claude/worktrees/X`
-  expect(
+  await expect(
     runArchitectGate({
       cwd,
       d,
