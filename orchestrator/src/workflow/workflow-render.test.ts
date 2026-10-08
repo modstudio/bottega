@@ -72,7 +72,10 @@ describe('workflow rendering', () => {
       {
         title: 'Choose',
         description: 'Choose a path.',
-        arguments: [{ name: 'key', required: false, description: 'Existing task key.' }],
+        arguments: [
+          { name: 'key', required: false, description: 'Existing task key.' },
+          { name: 'branch', required: false, description: 'Review branch.' },
+        ],
         modes: [
           { slug: 'one', title: 'One', entry: 'First?', steps: ['lens'] },
           { slug: 'two', title: 'Two', entry: 'Second?', steps: ['lens'] },
@@ -163,7 +166,10 @@ describe('workflow rendering', () => {
       {
         title: 'Forked next',
         description: 'Test divergent successors.',
-        arguments: [],
+        arguments: [
+          { name: 'key', required: false, description: 'Task key.' },
+          { name: 'branch', required: false, description: 'Review branch.' },
+        ],
         modes: [
           { slug: 'one', title: 'One', entry: 'First?', steps: ['score', 'lens'] },
           { slug: 'two', title: 'Two', entry: 'Second?', steps: ['score', 'complete'] },

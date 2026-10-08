@@ -179,19 +179,11 @@ describe('ship-to workflow composition', () => {
     expect(served.expectedStatus).toBe('none')
   })
 
-  test('a placeholder floor resolving to a non-kind refuses compose and step fetch', () => {
+  test('a placeholder floor resolving to a non-kind refuses workflow promotion', () => {
     const d = database()
-    publishShipToFixture(d, ['tracker', 'ship-to'], '{{shipTo.closeState}}')
-    const autonomy = shipToAutonomy('trunk')
-    const expected =
-      'step "ship-to-fixture" floor placeholder "{{shipTo.closeState}}" resolved to invalid floor kind "done"'
-
-    expect(() =>
-      composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy),
-    ).toThrow(expected)
-    expect(() =>
-      getWorkflowStep('ship-to-fixture', 'fixture', 'ship-to-fixture', {}, d, {}, autonomy),
-    ).toThrow(expected)
+    expect(() => publishShipToFixture(d, ['tracker', 'ship-to'], '{{shipTo.closeState}}')).toThrow(
+      'project fixture, workflow ship-to-fixture, mode default, step ship-to-fixture, field floor, placeholder shipTo.closeState',
+    )
   })
 
   test('a close action of done refuses a tracker with no done state', () => {

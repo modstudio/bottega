@@ -256,12 +256,19 @@ function catalogueBody(workflow: string, step: string, legacyBody: string): stri
     .replace('origin/main', 'origin/{{trunk}}')
     .replace('--base main', '--base {{trunk}}')
 }
+function catalogueNeeds(workflow: string, step: string, runsGate: boolean): string[] {
+  return [
+    ...(runsGate ? ['gate'] : []),
+    ...(usesTrunk(workflow, step) ? ['trunk'] : []),
+    ...(workflow === 'fix-defect' && step === 'diagnose' ? ['tracker'] : []),
+    ...(catalogueSlug(workflow, step) === 'close' ? ['tracker'] : []),
+  ]
+}
 function catalogueDefinition() {
   const steps: SeedCatalogueStep[] = []
   for (const seed of seeds) {
     for (const legacy of seed.definition.steps) {
       const runsGate = legacy.gate !== null
-      const runsOnTrunk = usesTrunk(seed.slug, legacy.slug)
       steps.push({
         slug: catalogueSlug(seed.slug, legacy.slug),
         title: legacy.title,
@@ -273,11 +280,7 @@ function catalogueDefinition() {
           : {}),
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
-        needs: [
-          ...(runsGate ? ['gate'] : []),
-          ...(runsOnTrunk ? ['trunk'] : []),
-          ...(catalogueSlug(seed.slug, legacy.slug) === 'close' ? ['tracker'] : []),
-        ],
+        needs: catalogueNeeds(seed.slug, legacy.slug, runsGate),
       })
     }
   }
@@ -322,7 +325,7 @@ function workflowDefinition(seed: LegacySeed) {
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
-    revision = 4,
+    revision = 5,
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {

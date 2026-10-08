@@ -5,11 +5,13 @@ import { constants } from 'node:os'
 import { resolve } from 'node:path'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
+import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
   forkStepCatalogue,
+  productionStepCatalogue,
   promoteStepCatalogue,
   retireStepCatalogue,
   setStepCatalogue,
@@ -42,6 +44,7 @@ import {
   recordWorkflowProbe,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
+import { checkWorkflowRendering, workflowRenderCheckLines } from './workflow-render-check.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -52,6 +55,7 @@ import {
   forkWorkflow,
   getWorkflowStep,
   listWorkflows,
+  productionWorkflows,
   promoteWorkflow,
   retireWorkflow,
   setWorkflow,
@@ -134,6 +138,7 @@ export async function workflowCommand(
   else if (sub === 'fork')
     print(forkWorkflow(argv[2]!, positive(flag('from'), '--from'), flag('reason'), flag('author')))
   else if (sub === 'versions') print(workflowVersions(argv[2]!))
+  else if (sub === 'render-check') renderCheckCommand(json, presentation)
   else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
   else if (sub === 'step') await stepCommand(argv, print)
   else if (await cursorCommand(sub, argv, print, presentation, options)) return
@@ -141,8 +146,24 @@ export async function workflowCommand(
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import',
+      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import',
     )
+}
+
+function renderCheckCommand(json: boolean, presentation: Presentation): void {
+  const result = checkWorkflowRendering(
+    productionWorkflows(db()),
+    productionStepCatalogue().definition,
+    projects(),
+  )
+  if (json) presentation.log(JSON.stringify(result))
+  else for (const line of workflowRenderCheckLines(result)) presentation.log(line)
+  if (
+    result.failures.length ||
+    result.unresolvedProjects.length ||
+    result.resolutionFailures.length
+  )
+    presentation.setExitCode(1)
 }
 
 async function cursorCommand(

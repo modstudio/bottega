@@ -206,6 +206,7 @@ describe('workflow cursor adapter', () => {
         arguments: [
           { name: 'key', required: true, description: 'Task key.' },
           { name: 'worktree', required: true, rebind: true, description: 'Worktree path.' },
+          { name: 'branch', required: false, description: 'Review branch.' },
         ],
         modes: [
           {
@@ -265,6 +266,7 @@ describe('workflow cursor adapter', () => {
       arguments: [
         { name: 'key', required: true, description: 'Task key.' },
         { name: 'worktree', required: true, description: 'Worktree path.' },
+        { name: 'branch', required: false, description: 'Review branch.' },
       ],
       modes: [
         {
@@ -524,7 +526,7 @@ describe('workflow cursor adapter', () => {
             slug: 'agent',
             title: 'Agent',
             default: true,
-            steps: ['close'],
+            steps: ['complete'],
           },
         ],
       },
@@ -837,7 +839,7 @@ describe('workflow cursor adapter', () => {
         ...current,
         title: 'Ship a task (later)',
         arguments: current.arguments.filter((argument) => argument.name !== 'key'),
-        modes: [{ ...current.modes[0]!, steps: ['close', 'rebase'] }],
+        modes: [{ ...current.modes[0]!, steps: ['complete', 'rebase'] }],
       },
       'test fixture',
       'test',
