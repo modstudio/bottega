@@ -2,7 +2,9 @@
 /** Knows env import, adoption, guarded render writes, and restore command semantics. */
 import { realpathSync } from 'node:fs'
 import { gitToplevel } from '../../../shared/git.ts'
+import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
+import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
@@ -32,6 +34,7 @@ import {
   userLocalSettingsPath,
   userSettingsPath,
 } from './settings-files.ts'
+import { withMachineProductHooks } from './settings-machine-hooks.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { displaySettingsValue, renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
@@ -177,10 +180,15 @@ export async function settingsRenderWriteCommand(
   const path = target.kind === 'user' ? userSettingsPath(root) : projectSettingsPath(root)
   const parsed = readSettingsFile(path)
   const hosted = parseStoredOwnedSettings(row.body)
-  const owned =
+  const merged =
     target.kind === 'user'
       ? mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
       : hosted
+  const owned =
+    target.kind === 'user'
+      ? withMachineProductHooks(merged, assetPath(), resolveOrchestratorDatabase(process.env))
+          .settings
+      : merged
   const droppedEnv = flags.values?.('drop-env') ?? []
   if (target.kind === 'project' && droppedEnv.length > 0) {
     throw new Error('refusing settings render: --drop-env is user-only')
