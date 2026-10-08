@@ -242,6 +242,86 @@ describe('record push-docs grouping', () => {
 })
 
 describe('record push-docs command', () => {
+  test('imports a superseded parent after its replacement and before its current child', async () => {
+    const parentId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'old-parent',
+      title: 'Old parent',
+      body: 'old parent',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    insertRevision({
+      docId: parentId,
+      scope: 'global',
+      subject: null,
+      slug: 'old-parent',
+      op: 'set',
+      title: 'Old parent',
+      body: 'old parent',
+      delivery: 'demand',
+      reason: 'replace parent',
+      at: NEW,
+    })
+    const childId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'child',
+      title: 'Child',
+      body: 'child',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+      parentId,
+    })
+    insertRevision({
+      docId: childId,
+      scope: 'global',
+      subject: null,
+      slug: 'child',
+      op: 'create',
+      title: 'Child',
+      body: 'child',
+      delivery: 'demand',
+      reason: 'create child',
+      at: OLD,
+      parentId,
+    })
+    const replacementId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'new-parent',
+      title: 'New parent',
+      body: 'new parent',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    insertRevision({
+      docId: replacementId,
+      scope: 'global',
+      subject: null,
+      slug: 'new-parent',
+      op: 'create',
+      title: 'New parent',
+      body: 'new parent',
+      delivery: 'demand',
+      reason: 'create replacement',
+      at: OLD,
+    })
+    db()
+      .query("UPDATE doc SET status='superseded', replacement_slug='new-parent' WHERE id=?")
+      .run(parentId)
+
+    const { client, imports } = capturingClient()
+    installRecordApiClient(client)
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+
+    expect(imports.map((input) => input.doc.slug)).toEqual(['new-parent', 'old-parent', 'child'])
+  })
+
   test('uses the hosted parent id returned by an earlier import for child and revision', async () => {
     const parentId = insertDoc({
       scope: 'global',

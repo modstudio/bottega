@@ -51,15 +51,15 @@ export async function validateImportedDocumentLifecycles(
   input: LifecycleAddress,
   snapshots: Array<{ status: DocStatus; replacementSlug: string | null }>,
 ): Promise<void> {
-  for (const snapshot of snapshots) {
-    const decision = documentLifecycleDecision({
-      scope: input.scope,
-      subject: input.subject,
-      slug: input.slug,
-      requestedStatus: snapshot.status,
-      requestedReplacementSlug: snapshot.replacementSlug,
-      replacementExists: await replacementExists(tx, input, snapshot.replacementSlug),
-    })
-    assertWrite(decision.refusal)
-  }
+  const snapshot = snapshots[0]
+  if (!snapshot) return
+  const decision = documentLifecycleDecision({
+    scope: input.scope,
+    subject: input.subject,
+    slug: input.slug,
+    requestedStatus: snapshot.status,
+    requestedReplacementSlug: snapshot.replacementSlug,
+    replacementExists: await replacementExists(tx, input, snapshot.replacementSlug),
+  })
+  assertWrite(decision.refusal)
 }

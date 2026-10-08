@@ -73,6 +73,15 @@ function address(scope: string, subject: string | null, slug: string): string {
   return `${scope}/${subject ?? ''}/${slug}`
 }
 
+function lifecycleAddress(input: {
+  scope: string
+  subject: string | null
+  owner?: string | null
+  slug: string
+}): string {
+  return `${input.scope}\0${input.subject ?? ''}\0${input.owner ?? ''}\0${input.slug}`
+}
+
 function projectNames(local: ReturnType<typeof db>): Map<number, string> {
   const names = new Map<number, string>()
   for (const row of local
@@ -228,6 +237,11 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
     groups.push(groupFromDeleted(list, names, recordIds))
   }
   const byLocalId = new Map(groups.map((group) => [group.sourceDocId, group]))
+  const liveByAddress = new Map(
+    groups
+      .filter((group) => group.localDocId !== null)
+      .map((group) => [lifecycleAddress(group.payload.doc), group]),
+  )
   const ordered: ImportGroup[] = []
   const visited = new Set<number>()
   const visit = (group: ImportGroup): void => {
@@ -239,13 +253,17 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
       const parentGroup = byLocalId.get(parent)
       if (parentGroup) visit(parentGroup)
     }
+    const replacement = group.payload.doc.replacementSlug
+    if (group.localDocId !== null && group.payload.doc.status === 'superseded' && replacement) {
+      const replacementGroup = liveByAddress.get(
+        lifecycleAddress({ ...group.payload.doc, slug: replacement }),
+      )
+      if (replacementGroup) visit(replacementGroup)
+    }
     ordered.push(group)
   }
   for (const group of groups) visit(group)
-  return [
-    ...ordered.filter((group) => group.payload.doc.status !== 'superseded'),
-    ...ordered.filter((group) => group.payload.doc.status === 'superseded'),
-  ]
+  return ordered
 }
 
 function payloadWithImportedParentIds(
