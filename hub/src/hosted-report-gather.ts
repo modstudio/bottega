@@ -148,7 +148,7 @@ export async function hostedGatherReport(
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
       LEFT JOIN project p ON p.space_id=i.space_id
         AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
-      JOIN space s ON s.id=i.space_id
+      LEFT JOIN space s ON s.id=i.space_id
       WHERE i.start_at < ${period.to}::timestamptz AND i.end_at >= ${period.from}::timestamptz
         AND (${project}::text IS NULL OR COALESCE(t.project,i.project_name)=${project})
         AND (${person}::uuid IS NULL OR i.user_id=${person}::uuid)
