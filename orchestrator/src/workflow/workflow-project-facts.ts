@@ -5,6 +5,7 @@ import {
   composeIndexSources,
   type InjectionSource,
   resolveDeclaredFacts,
+  type ResolvedReviewStage,
   type WorkflowFactSource,
 } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
@@ -24,7 +25,7 @@ function closeShipToFact(
   tracker:
     | {
         states: Partial<Record<'review' | 'done', string>>
-        inReview: { state: string; floor: 'tracker-transition' | 'recorded-artifact' }
+        inReview: ResolvedReviewStage
       }
     | undefined,
 ) {
@@ -68,7 +69,7 @@ function shipToFact(
   const tracker = needsCloseState
     ? (projectFacts.tracker as {
         states: Partial<Record<'review' | 'done', string>>
-        inReview: { state: string; floor: 'tracker-transition' | 'recorded-artifact' }
+        inReview: ResolvedReviewStage
       })
     : undefined
   return {
