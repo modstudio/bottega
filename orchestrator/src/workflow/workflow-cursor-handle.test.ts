@@ -380,7 +380,15 @@ test('a handle to a done or abandoned cursor never opens a replacement', () => {
 test('a handle validates supplied identity and serves the active step for an earlier request', () => {
   const d = database()
   const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-  const opened = getWorkflowStepWithCursor('fixture-workflow', 'fixture', 'rebase', args, 'default', context, d)
+  const opened = getWorkflowStepWithCursor(
+    'fixture-workflow',
+    'fixture',
+    'rebase',
+    args,
+    'default',
+    context,
+    d,
+  )
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
   nextWorkflowStep(
     'fixture-workflow',

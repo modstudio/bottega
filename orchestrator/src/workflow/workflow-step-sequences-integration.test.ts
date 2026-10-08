@@ -7,8 +7,8 @@ import {
   setStepCatalogue,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
-import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
   composeWorkflow,
   getWorkflowStep,

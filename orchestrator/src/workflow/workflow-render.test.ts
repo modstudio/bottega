@@ -156,7 +156,9 @@ describe('workflow rendering', () => {
       "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves step 2 lens — Run independent review lenses.",
     )
     expect(
-      renderWorkflowStep(getWorkflowStep('fixture-workflow', 'fixture', 'close', args, d, { mode: 'default' })),
+      renderWorkflowStep(
+        getWorkflowStep('fixture-workflow', 'fixture', 'close', args, d, { mode: 'default' }),
+      ),
     ).toEndWith(
       "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of fixture-workflow (default), and closing it finishes the workflow.",
     )

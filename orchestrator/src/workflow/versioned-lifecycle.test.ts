@@ -49,7 +49,13 @@ describe('versioned lifecycle retirement', () => {
     const d = database()
     const production = showWorkflow('fixture-workflow', undefined, d)
 
-    const retired = retireWorkflow('fixture-workflow', production.n, 'withdraw production', 'architect', d)
+    const retired = retireWorkflow(
+      'fixture-workflow',
+      production.n,
+      'withdraw production',
+      'architect',
+      d,
+    )
 
     expect(retired).toMatchObject({
       status: 'retired',

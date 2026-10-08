@@ -452,7 +452,9 @@ describe('workflow versions and project composition', () => {
         d,
       )
 
-    const composed = composeWorkflow('fixture-workflow', 'fixture', 'cohort', {}, d, { version: draft.n })
+    const composed = composeWorkflow('fixture-workflow', 'fixture', 'cohort', {}, d, {
+      version: draft.n,
+    })
 
     expect(composed.workflow.version).toBe(draft.n)
     expect(composed.mode?.slug).toBe('cohort')
@@ -481,13 +483,13 @@ describe('workflow versions and project composition', () => {
     const d = database(),
       args = { key: 'DEV-821', branch: 'DEV-821-test', worktree: '/tmp/test' }
 
-    expect(getWorkflowStep('fixture-workflow', 'fixture', 'rebase', args, d, { mode: 'default' }).next).toEqual(
-      {
-        n: 2,
-        slug: 'lens',
-        title: 'Run independent review lenses',
-      },
-    )
+    expect(
+      getWorkflowStep('fixture-workflow', 'fixture', 'rebase', args, d, { mode: 'default' }).next,
+    ).toEqual({
+      n: 2,
+      slug: 'lens',
+      title: 'Run independent review lenses',
+    })
     expect(
       getWorkflowStep('fixture-workflow', 'fixture', 'close', args, d, { mode: 'default' }).next,
     ).toBeNull()
@@ -843,9 +845,7 @@ describe('workflow versions and project composition', () => {
       'a',
       d,
     )
-    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow(
-      'fixture-workflow: lens',
-    )
+    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow('fixture-workflow: lens')
   })
   test('workflow promotion refuses a draft whose step the catalogue has since dropped', () => {
     const d = database(),

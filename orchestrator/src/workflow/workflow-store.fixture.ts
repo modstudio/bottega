@@ -1,5 +1,9 @@
 import type { Database } from 'bun:sqlite'
-import { productionStepCatalogue, promoteStepCatalogue, setStepCatalogue } from './step-catalogue.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogue,
+  setStepCatalogue,
+} from './step-catalogue.ts'
 import { promoteWorkflow, setWorkflow } from './workflows.ts'
 
 /** Installs a neutral multi-step workflow for tests of generic workflow behavior. */
@@ -139,5 +143,11 @@ export function installWorkflowStoreFixture(d: Database): void {
     'test',
     d,
   )
-  promoteWorkflow('fixture-workflow', workflow.n, 'publish neutral workflow test fixture', 'test', d)
+  promoteWorkflow(
+    'fixture-workflow',
+    workflow.n,
+    'publish neutral workflow test fixture',
+    'test',
+    d,
+  )
 }

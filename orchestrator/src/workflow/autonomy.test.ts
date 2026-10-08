@@ -209,7 +209,9 @@ describe('autonomy resolution', () => {
       rulings: 'user',
       workflows: { 'fixture-workflow': { preset: 'manual', rulings: 'agent' } },
     } as const
-    expect(resolveAutonomy(steps, [{ name: 'same', settings }], 'fixture-workflow').rulings).toEqual({
+    expect(
+      resolveAutonomy(steps, [{ name: 'same', settings }], 'fixture-workflow').rulings,
+    ).toEqual({
       value: 'agent',
       scope: 'same',
     })

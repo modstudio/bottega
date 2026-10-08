@@ -151,7 +151,12 @@ describe('orch MCP', () => {
       for (const request of [
         {
           name: 'compose_workflow',
-          arguments: { slug: 'fix-defect', project, mode: 'default', autonomy: 'ship-to=production' },
+          arguments: {
+            slug: 'fix-defect',
+            project,
+            mode: 'default',
+            autonomy: 'ship-to=production',
+          },
         },
         {
           name: 'get_workflow_step',
