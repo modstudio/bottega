@@ -162,7 +162,11 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
   }
 }
 
-export function applyHostedTaskChanges(changes: HostedChanges, cursorKey = CURSOR_KEY) {
+export function applyHostedTaskChanges(
+  changes: HostedChanges,
+  cursorKey = CURSOR_KEY,
+  clearLegacyCursor = false,
+) {
   writeTransaction((conn) => {
     changes.tasks.forEach((row) => {
       applyHostedTask(conn, row)
@@ -182,6 +186,7 @@ export function applyHostedTaskChanges(changes: HostedChanges, cursorKey = CURSO
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       )
       .run(cursorKey, changes.cursor)
+    if (clearLegacyCursor) conn.query(`DELETE FROM setting WHERE key=?`).run(CURSOR_KEY)
   })
 }
 
@@ -197,8 +202,19 @@ function pullSpaces(
   return [...spaces]
 }
 
-const cursorKeyFor = (spaceId: string, activeSpaceId: string) =>
-  spaceId === activeSpaceId ? CURSOR_KEY : `${CURSOR_KEY}.${spaceId}`
+const cursorKeyFor = (spaceId: string) => `${CURSOR_KEY}.${spaceId}`
+
+function pullCursor(spaceId: string, activeSpaceId: string) {
+  const cursor = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+    .get(cursorKeyFor(spaceId))?.value
+  if (cursor !== undefined) return { cursor, fromLegacy: false }
+  if (spaceId !== activeSpaceId) return { cursor: null, fromLegacy: false }
+  const legacy = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+    .get(CURSOR_KEY)?.value
+  return { cursor: legacy ?? null, fromLegacy: legacy !== undefined }
+}
 
 export async function pullHostedTasks(
   options: {
@@ -215,14 +231,11 @@ export async function pullHostedTasks(
   let activeCursor = ''
   const failures: string[] = []
   for (const spaceId of spaces) {
-    const cursorKey = cursorKeyFor(spaceId, identity.activeSpaceId)
-    const cursor =
-      db()
-        .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
-        .get(cursorKey)?.value ?? null
+    const cursorKey = cursorKeyFor(spaceId)
+    const { cursor, fromLegacy } = pullCursor(spaceId, identity.activeSpaceId)
     try {
       const changes = await hostedTaskChanges(cursor, { ...requestOptions, recordSpace: spaceId })
-      applyHostedTaskChanges(changes, cursorKey)
+      applyHostedTaskChanges(changes, cursorKey, fromLegacy)
       totals.tasks += changes.tasks.length
       totals.comments += changes.comments.length
       totals.documents += changes.documents.length
