@@ -4,10 +4,10 @@
 import { MissingWorkflowInjectionFactsError } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
-import type { StepCatalogueDefinition } from './step-catalogue.ts'
+import type { StepCatalogueDefinition } from './step-catalogue-definition.ts'
+import type { WorkflowDefinition } from './workflow-definition.ts'
 import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
 import { resolveWorkflowTemplate, workflowTemplatePlaceholders } from './workflow-template.ts'
-import type { WorkflowDefinition } from './workflows.ts'
 
 export type WorkflowPlaceholderFailure = {
   project: string

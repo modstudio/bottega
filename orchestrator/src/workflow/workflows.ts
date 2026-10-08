@@ -24,26 +24,13 @@ import {
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import { resolveWorkflowTemplate } from './workflow-template.ts'
+import type {
+  WorkflowArgument,
+  WorkflowDefinition,
+  WorkflowMode,
+} from './workflow-definition.ts'
 
-type WorkflowArgument = { name: string; required: boolean; description: string; rebind?: boolean }
-type WorkflowMode = {
-  slug: string
-  title: string
-  default?: boolean
-  entry?: string
-  requires?: string[]
-  steps: string[]
-}
-export type WorkflowDefinition = {
-  title: string
-  description: string
-  defaultPreset?: AutonomyPreset
-  arguments: WorkflowArgument[]
-  modes: WorkflowMode[]
-  // Steps are shared on purpose: a catalogue change reaches every workflow
-  // that uses the step. The catalogue is therefore versioned, and compose
-  // reports the exact catalogue version alongside the workflow version.
-}
+export type { WorkflowDefinition } from './workflow-definition.ts'
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>

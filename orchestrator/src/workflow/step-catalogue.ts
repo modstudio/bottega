@@ -15,27 +15,15 @@ import {
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import type { WorkflowDefinition } from './workflows.ts'
+import type {
+  CatalogueStep,
+  FloorEntry,
+  StepCatalogueDefinition,
+} from './step-catalogue-definition.ts'
+import type { WorkflowDefinition } from './workflow-definition.ts'
 
+export type { CatalogueStep, FloorEntry, StepCatalogueDefinition } from './step-catalogue-definition.ts'
 export type { FloorKind }
-export type FloorEntry = FloorKind | `{{${string}}}`
-export type CatalogueStep = {
-  slug: string
-  title: string
-  body: string
-  floor: FloorEntry[]
-  deferrable?: FloorKind[]
-  expectedStatus?: string
-  requirePullRequest?: boolean
-  operatorRuling?: boolean
-  commandEvidence?: CommandEvidence
-  job: string | null
-  /** Optional only when reading a stored catalogue created before stages existed. */
-  stage?: AutonomyStage
-  autonomy: AutonomyValue
-  needs: WorkflowFactSource[]
-}
-export type StepCatalogueDefinition = { steps: CatalogueStep[] }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
