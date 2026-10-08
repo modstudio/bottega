@@ -27,30 +27,18 @@ modes:
       - discover
       - reproduce
       - research
+      - recurrence
       - design
       - decompose
       - signoff
       - write
       - start
-  - slug: chore
-    title: Plan a chore
-    entry: Is the work maintenance with no intended behavior change?
-    steps:
-      - dedupe
-      - refresh
-      - discover
-      - research
-      - design
-      - decompose
-      - signoff
-      - write
-      - start
-  - slug: intake
-    title: Capture an intake
+  - slug: requirements
+    title: Record requirements
     entry: Should this request be clarified and recorded without technical design?
     steps:
       - dedupe
       - discover
       - write
 ---
-Turn an intention into an approved, evidence-based task that another worker can pick up cold. Choose the mode by kind of work; whether the task already exists is carried separately by the optional key argument. Intake records settled requirements and stops before technical design.
+Turn an intention into an approved, evidence-based task that another worker can pick up cold. Choose `feature` for new or changed behavior, `fix` for reproducible incorrect behavior, or `requirements` to record settled requirements without technical design. Whether the task already exists is carried separately by the optional key argument.

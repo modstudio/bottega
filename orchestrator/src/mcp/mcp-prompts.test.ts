@@ -64,7 +64,7 @@ describe('workflow prompt argument binding', () => {
     title: 'Plan task',
     description: 'Plan one task.',
     arguments: [{ name: 'key', description: 'Task key.', required: false }],
-    modes: ['feature', 'fix', 'chore', 'intake'].map((slug) => ({
+    modes: ['feature', 'fix', 'requirements'].map((slug) => ({
       slug,
       title: slug,
       steps: ['plan'],
@@ -156,7 +156,7 @@ describe('workflow prompt argument binding', () => {
     expect(result).toHaveProperty('refusal')
     if (!('refusal' in result)) throw new Error('expected binding refusal')
     expect(result.refusal).toContain('STAR-4292')
-    expect(result.refusal).toContain('feature, fix, chore, intake')
+    expect(result.refusal).toContain('feature, fix, requirements')
     expect(result.refusal).toContain('key')
     expect(result.refusal).toContain('key=STAR-4292')
   })
@@ -202,7 +202,7 @@ describe('workflow prompts on the wire', () => {
         title: 'Plan a task',
         description: 'Plan work.',
         arguments: [{ name: 'key', required: false, description: 'Task key.' }],
-        modes: ['feature', 'fix', 'chore', 'intake'].map((mode) => ({
+        modes: ['feature', 'fix', 'requirements'].map((mode) => ({
           slug: mode,
           title: mode[0]!.toUpperCase() + mode.slice(1),
           entry: `Choose ${mode}?`,

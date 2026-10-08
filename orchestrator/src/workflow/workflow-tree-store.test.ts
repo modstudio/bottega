@@ -210,6 +210,58 @@ describe('importWorkflowTree', () => {
     })
   })
 
+  test('the plan-task tree composes only its three recorded modes', () => {
+    const d = database()
+    importAndPromoteCurrentTree(d)
+    d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+      'fixture',
+      '/fixture',
+      'bun',
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        docs: { protocol: 'orch-docs' },
+        gate: 'bun run check',
+        trunk: 'main',
+      }),
+    )
+
+    expect(
+      composeWorkflow('plan-task', 'fixture', 'feature', {}, d).steps.map(({ slug }) => slug),
+    ).toEqual([
+      'dedupe',
+      'refresh',
+      'discover',
+      'research',
+      'design',
+      'decompose',
+      'signoff',
+      'write',
+      'start',
+    ])
+    expect(
+      composeWorkflow('plan-task', 'fixture', 'fix', {}, d).steps.map(({ slug }) => slug),
+    ).toEqual([
+      'dedupe',
+      'refresh',
+      'discover',
+      'reproduce',
+      'research',
+      'recurrence',
+      'design',
+      'decompose',
+      'signoff',
+      'write',
+      'start',
+    ])
+    expect(
+      composeWorkflow('plan-task', 'fixture', 'requirements', {}, d).steps.map(({ slug }) => slug),
+    ).toEqual(['dedupe', 'discover', 'write'])
+    for (const removed of ['chore', 'intake'])
+      expect(() => composeWorkflow('plan-task', 'fixture', removed, {}, d)).toThrow(
+        `no mode "${removed}"`,
+      )
+  })
+
   test('one invalid floor refuses the entire import without writing a draft', () => {
     const d = database()
     const tree = renderedTree(d)
