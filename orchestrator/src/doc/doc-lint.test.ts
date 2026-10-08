@@ -3,6 +3,7 @@ import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
+  docLintProfile,
   introducedDocFindings,
   lintDoc,
 } from './doc-lint.ts'
@@ -33,6 +34,11 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
 })
 
 describe('stored document lint', () => {
+  test('kind selects whether the profile includes the numeral rule', () => {
+    expect(docLintProfile('working').rules.numeral).toBe('error')
+    expect(docLintProfile('article').rules.numeral).toBeUndefined()
+  })
+
   test.each(['working', 'article'] as const)('%s warns for both used-to senses', (kind) => {
     for (const body of [
       'This field is used to compute the price.',
