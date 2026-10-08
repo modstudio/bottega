@@ -30,7 +30,12 @@ async function responseObject(
   path: string,
   method: string,
   body?: unknown,
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    recordSpace?: string | null
+  } = {},
 ): Promise<{ response: Response; value: Record<string, unknown> }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -46,6 +51,7 @@ async function responseObject(
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
+        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
@@ -66,7 +72,12 @@ async function request<T>(
   path: string,
   method: string,
   body?: unknown,
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    recordSpace?: string | null
+  } = {},
 ): Promise<T> {
   const { response, value } = await responseObject(path, method, body, options)
   if (!response.ok)

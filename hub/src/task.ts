@@ -4,7 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
-import { projectWriteDecisionFor } from './hosted-write-mode.ts'
+import { declaredProjectSpace, projectWriteDecisionFor } from './hosted-write-mode.ts'
 import { persistInstallBinding, readInstallBinding } from './install-binding.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { projects, type StatusCategory } from './projects.ts'
@@ -177,6 +177,11 @@ function assertParent(key: string | null | undefined, project?: string) {
 
 /** Check, allocate, insert, and record an override under one serialized write transaction. */
 type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
+
+function hostedOptionsForProject(projectName: string, options?: HostedOptions) {
+  const recordSpace = declaredProjectSpace(registeredProject(projectName).settings.space)
+  return recordSpace ? { ...options, recordSpace } : options
+}
 
 type DoneTransitionOptions = {
   abandonReason?: string
@@ -431,10 +436,14 @@ export async function createTask(
       closed_at: input.closedAt,
       updated_at: input.closedAt ?? input.openedAt,
     },
-    options.hosted,
+    hostedOptionsForProject(input.project, options.hosted),
   )
   const comment = options.allowDuplicateReason
-    ? await hostedCommentTask(hosted.key, options.allowDuplicateReason, options.hosted)
+    ? await hostedCommentTask(
+        hosted.key,
+        options.allowDuplicateReason,
+        hostedOptionsForProject(input.project, options.hosted),
+      )
     : null
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
@@ -701,7 +710,7 @@ export async function setTask(
       ...(changes.body !== undefined ? { body: changes.body } : {}),
       ...(changes.assignee !== undefined ? { assignee: changes.assignee } : {}),
     },
-    options.hosted,
+    hostedOptionsForProject(current.project, options.hosted),
   )
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
@@ -740,7 +749,10 @@ export async function closeTask(
       return closed
     })
   }
-  const hosted = await hostedCloseTask(current.key, options.hosted)
+  const hosted = await hostedCloseTask(
+    current.key,
+    hostedOptionsForProject(current.project, options.hosted),
+  )
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
     cacheStatusEvent(conn, hosted.status_event, current.project, current.record_id)
@@ -785,7 +797,11 @@ export async function commentTask(
       }
     })
   }
-  const comment = await hostedCommentTask(current.key, body, options.hosted)
+  const comment = await hostedCommentTask(
+    current.key,
+    body,
+    hostedOptionsForProject(current.project, options.hosted),
+  )
   const result = writeTransaction((conn) => {
     const inserted = conn
       .query(
@@ -875,7 +891,7 @@ export async function createTaskDocument(
   const hosted = await hostedCreateDocument(
     task.key,
     { title: input.title, body: input.body ?? '', role: documentRole(input.role), version },
-    options.hosted,
+    hostedOptionsForProject(task.project, options.hosted),
   )
   const result = writeTransaction((conn) =>
     conn
@@ -971,7 +987,7 @@ export async function updateTaskDocument(
       role,
       version: documentVersion(),
     },
-    options.hosted,
+    hostedOptionsForProject(task.project, options.hosted),
   )
   writeTransaction((conn) =>
     conn
@@ -1009,7 +1025,11 @@ export async function deleteTaskDocument(
     throw new Error(
       `task document ${id} has not been synchronized; run the hosted push and collector`,
     )
-  await hostedDeleteDocument(task.key, removed.record_id, options.hosted)
+  await hostedDeleteDocument(
+    task.key,
+    removed.record_id,
+    hostedOptionsForProject(task.project, options.hosted),
+  )
   writeTransaction((conn) => conn.query(`DELETE FROM task_document WHERE id = ?`).run(id))
   return removed
 }
