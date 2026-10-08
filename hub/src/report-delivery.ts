@@ -225,11 +225,16 @@ export function renderReport(
   if (!subscription.sections?.length) return base
   const sectionText = subscription.sections.map(
     (section) =>
-      `${section.name}\n${renderText(section.report, new Map(), {
-        ...presentation,
-        scopeName: section.name,
-        measures: section.measures,
-      })}`,
+      `${section.name}\n${renderText(
+        section.report,
+        new Map(),
+        {
+          ...presentation,
+          scopeName: section.name,
+          measures: section.measures,
+        },
+        { summary: false },
+      )}`,
   )
   const sectionHtml = subscription.sections.map(
     (section) =>
@@ -241,6 +246,7 @@ export function renderReport(
           scopeName: section.name,
           measures: section.measures,
         },
+        { summary: false },
       )
         .replace(/^.*?<body[^>]*>/s, '')
         .replace(/<\/body>.*$/s, '')}`,

@@ -103,15 +103,31 @@ function loadedScope(
   return { kind: 'space' as const }
 }
 
-function loadedScopeName(loaded: {
-  scope_kind: 'space' | 'project' | 'members' | 'projects'
-  project_name: string | null
-  member_names: string[]
-  space_name: string
-}) {
+export function selectedProjectsScopeName(projects: { project_name: string | null }[]) {
+  return (
+    projects
+      .map((project) => project.project_name)
+      .filter((name) => name !== null)
+      .join(', ') || 'Selected projects'
+  )
+}
+
+export function selectedProjectsHaveSections(projects: { space_id: string | null }[]) {
+  return new Set(projects.map((project) => project.space_id).filter((id) => id !== null)).size > 1
+}
+
+function loadedScopeName(
+  loaded: {
+    scope_kind: 'space' | 'project' | 'members' | 'projects'
+    project_name: string | null
+    member_names: string[]
+    space_name: string
+  },
+  projects: SelectedProject[],
+) {
   if (loaded.scope_kind === 'project') return loaded.project_name!
   if (loaded.scope_kind === 'members') return loaded.member_names.join(', ')
-  if (loaded.scope_kind === 'projects') return 'Selected projects'
+  if (loaded.scope_kind === 'projects') return selectedProjectsScopeName(projects)
   return loaded.space_name
 }
 
@@ -241,7 +257,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       )
       const exclusions = projectExclusions(selectedProjects, value.spaceId)
       const scope = loadedScope(loaded, validProjects)
-      const scopeName = loadedScopeName(loaded)
+      const scopeName = loadedScopeName(loaded, validProjects)
       const recipientIdentity =
         loaded.scope_kind === 'projects'
           ? {
@@ -266,7 +282,7 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
       ])
       const sectionGroups = projectsBySpace(validProjects)
       const sections =
-        loaded.scope_kind === 'projects'
+        loaded.scope_kind === 'projects' && selectedProjectsHaveSections(validProjects)
           ? await Promise.all(
               [...sectionGroups.values()].map(async (projects) => {
                 const sectionScope = {

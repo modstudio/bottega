@@ -8,7 +8,12 @@ import {
   renderReport,
   runReportDeliveryPass,
 } from './report-delivery.ts'
-import { projectIsAvailable, sesReportMailClient } from './report-delivery-hosted.ts'
+import {
+  projectIsAvailable,
+  selectedProjectsHaveSections,
+  selectedProjectsScopeName,
+  sesReportMailClient,
+} from './report-delivery-hosted.ts'
 import type { GatheredReport } from './report-renderer.ts'
 
 const now = new Date('2026-09-18T13:30:00.000Z') // 09:30 America/New_York
@@ -134,7 +139,7 @@ const emptyMeasures: Measures = {
 
 const measures = (work = true) => (work ? workMeasures : emptyMeasures)
 
-const gatheredReport = (): GatheredReport => {
+const gatheredReport = (project = 'workshop'): GatheredReport => {
   const items = [
     { key: 'DEV-785', title: 'Restore the formatted report', closed: true, agentTokens: 1_200 },
     {
@@ -147,7 +152,7 @@ const gatheredReport = (): GatheredReport => {
     { key: 'DEV-788', title: 'Keep small totals plain', closed: false, agentTokens: 999 },
   ].map((item) => ({
     ...item,
-    project: 'workshop',
+    project,
     status: item.closed ? 'done' : 'active',
     engaged: '1h 0m',
     engagedMs: 3_600_000,
@@ -161,7 +166,7 @@ const gatheredReport = (): GatheredReport => {
     engagedMs: 3_600_000,
     projects: [
       {
-        project: 'workshop',
+        project,
         color: '#654321',
         taskMs: 4 * 3_600_000,
         engagedMs: 3_600_000,
@@ -474,7 +479,7 @@ describe('hosted report delivery', () => {
     expect(rendered.text.toLowerCase()).not.toMatch(/ranking|composite|lines per|spent|worked/)
   })
 
-  test('projects report renders combined totals before its space sections', () => {
+  test('multi-space projects report renders one summary and detail-only space sections', () => {
     const value = candidate('projects')
     const projectPeriod = duePeriod(value, now)!
     const rendered = renderReport(
@@ -482,17 +487,54 @@ describe('hosted report delivery', () => {
       projectPeriod,
       subscription({
         scope: { kind: 'projects', projectIds: ['a', 'b'] },
-        scopeName: 'Selected projects',
+        scopeName: 'starship, stopal',
         sections: [
-          { name: 'Alpha space', measures: measures(), report: gatheredReport() },
-          { name: 'Beta space', measures: measures(), report: gatheredReport() },
+          { name: 'Alpha space', measures: measures(), report: gatheredReport('starship') },
+          { name: 'Beta space', measures: measures(), report: gatheredReport('stopal') },
         ],
       }),
     )
+    expect(rendered.subject).toBe('Report: starship, stopal')
     expect(rendered.text.indexOf('4.0h of task work')).toBeLessThan(
       rendered.text.indexOf('Alpha space'),
     )
     expect(rendered.text.indexOf('Alpha space')).toBeLessThan(rendered.text.indexOf('Beta space'))
+    expect(rendered.text).toContain('starship')
+    expect(rendered.text).toContain('stopal')
+    expect(rendered.html).toContain('Alpha space')
+    expect(rendered.html).toContain('Beta space')
+    expect(rendered.html).toContain('starship')
+    expect(rendered.html).toContain('stopal')
+    expect(rendered.text.match(/^MEASURES$/gm)).toHaveLength(1)
+    expect(rendered.html.match(/>measures</g)).toHaveLength(1)
+    expect(rendered.text.match(/TASK HOURS adds/g)).toHaveLength(1)
+    expect(rendered.html.match(/TASK HOURS adds/g)).toHaveLength(1)
+  })
+
+  test('one-space project selection has no sections or space heading and names its projects', () => {
+    const projects = [
+      { project_name: 'starship', space_id: 'alpha' },
+      { project_name: 'stopal', space_id: 'alpha' },
+    ]
+    expect(selectedProjectsHaveSections(projects)).toBe(false)
+    const rendered = renderReport(
+      candidate('one-space'),
+      duePeriod(candidate('one-space'), now)!,
+      subscription({
+        scope: { kind: 'projects', projectIds: ['a', 'b'] },
+        scopeName: selectedProjectsScopeName(projects),
+        report: gatheredReport('starship'),
+      }),
+    )
+    expect(rendered.subject).toBe('Report: starship, stopal')
+    expect(rendered.text).not.toContain('Alpha space')
+    expect(rendered.html).not.toContain('Alpha space')
+    expect(rendered.text).toContain('BY PROJECT')
+  })
+
+  test('project selection falls back to its generic name when none is available', () => {
+    expect(selectedProjectsScopeName([])).toBe('Selected projects')
+    expect(selectedProjectsScopeName([{ project_name: null }])).toBe('Selected projects')
   })
 
   test('a failure after dispatch leaves the intent as failed, not clean', async () => {
