@@ -2,6 +2,11 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
+  productionStepCatalogue,
+  promoteStepCatalogue,
+  setStepCatalogue,
+} from './step-catalogue.ts'
+import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
@@ -832,6 +837,17 @@ describe('workflow cursor adapter', () => {
     composeWorkflowWithCursor('ship', 'fixture', 'default', args, context, d)
     getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
     closeStep('ship', 'fixture', 'default', args, 'rebased', context, d)
+    const currentCatalogue = productionStepCatalogue(d).definition
+    const catalogueDraft = setStepCatalogue(
+      {
+        steps: currentCatalogue.steps,
+        sequences: [{ slug: 'later', title: 'Later', steps: ['close'] }],
+      },
+      'test fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogueDraft.n, 'publish', 'test', d)
     const current = showWorkflow('ship', undefined, d).definition
     const draft = setWorkflow(
       'ship',

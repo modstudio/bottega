@@ -12,10 +12,11 @@ import {
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
+  type StepCatalogueDefinition,
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
-import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
+import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
   resolveWorkflowProjectFacts,
   stepNeedsCloseState,
@@ -23,6 +24,12 @@ import {
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
+import {
+  expandWorkflowSteps,
+  inspectWorkflowSteps,
+  isSequenceReference,
+  workflowModeStepError,
+} from './workflow-step-sequences.ts'
 import {
   resolveWorkflowStepExpectedStatus,
   resolveWorkflowStepFloors,
@@ -86,25 +93,54 @@ function workflowModeRequirementErrors(mode: Record<string, unknown>, args: unkn
   )
 }
 
-function workflowStepSlugs(
+function workflowCatalogue(
   d: Database | undefined,
-  knownStepSlugs: ReadonlySet<string> | undefined,
+  knownCatalogue: StepCatalogueDefinition | undefined,
   errors: string[],
-): ReadonlySet<string> | null {
-  if (knownStepSlugs) return knownStepSlugs
+): StepCatalogueDefinition | null {
+  if (knownCatalogue) return knownCatalogue
   if (!d) return null
   try {
-    return new Set(productionStepCatalogue(d).definition.steps.map((step) => step.slug))
+    return productionStepCatalogue(d).definition
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error))
     return null
   }
 }
 
+function workflowModeReferenceErrors(
+  mode: Record<string, unknown>,
+  catalogue: StepCatalogueDefinition | null,
+): string[] {
+  const slug = text(mode.slug)
+  if (!Array.isArray(mode.steps) || mode.steps.length === 0)
+    return [`mode "${slug}" must contain at least one step`]
+  if (!catalogue) return []
+  const entries = mode.steps.filter(
+    (entry): entry is WorkflowModeStep => typeof entry === 'string' || isSequenceReference(entry),
+  )
+  const stepNames = new Set(catalogue.steps.map((step) => step.slug))
+  const inspection = inspectWorkflowSteps(entries, catalogue.sequences ?? [], stepNames)
+  if (inspection.missingSequences.length)
+    return [
+      `mode "${slug}" sequence "${inspection.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
+    ]
+  const missing = inspection.missingSteps.map(
+    (ref) =>
+      `mode "${slug}" references missing step "${ref}"; add and promote that catalogue step, or edit the workflow mode`,
+  )
+  return inspection.duplicateSteps.length
+    ? [
+        ...missing,
+        `mode "${slug}" expands to duplicate step ${inspection.duplicateSteps.map((ref) => `"${ref}"`).join(', ')}; edit its step and sequence references so each step appears once`,
+      ]
+    : missing
+}
+
 export function validateWorkflowDefinition(
   value: unknown,
   d?: Database,
-  knownStepSlugs?: ReadonlySet<string>,
+  knownCatalogue?: StepCatalogueDefinition,
 ): string[] {
   const errors: string[] = []
   if (!object(value)) return ['definition must be an object']
@@ -133,8 +169,12 @@ export function validateWorkflowDefinition(
     if (mode.entry !== undefined && typeof mode.entry !== 'string')
       errors.push(`mode "${text(mode.slug)}" entry must be a string`)
     errors.push(...workflowModeRequirementErrors(mode, args))
-    if (!Array.isArray(mode.steps) || mode.steps.some((step) => typeof step !== 'string'))
-      errors.push(`mode "${text(mode.slug)}" steps must be a string array`)
+    if (!Array.isArray(mode.steps)) errors.push(`mode "${text(mode.slug)}" steps must be an array`)
+    else
+      for (const entry of mode.steps) {
+        const error = workflowModeStepError(entry)
+        if (error) errors.push(`mode "${text(mode.slug)}" ${error}`)
+      }
   }
 
   const checkSlugs = (items: unknown[], kind: string) => {
@@ -172,17 +212,10 @@ export function validateWorkflowDefinition(
     }
   }
 
-  const stepNames = workflowStepSlugs(d, knownStepSlugs, errors)
+  const catalogue = workflowCatalogue(d, knownCatalogue, errors)
   for (const mode of modes) {
     if (!object(mode)) continue
-    if (!Array.isArray(mode.steps) || mode.steps.length === 0) {
-      errors.push(`mode "${text(mode.slug)}" must contain at least one step`)
-      continue
-    }
-    for (const ref of mode.steps) {
-      if (typeof ref !== 'string' || (stepNames !== null && !stepNames.has(ref)))
-        errors.push(`mode "${text(mode.slug)}" references missing step "${String(ref)}"`)
-    }
+    errors.push(...workflowModeReferenceErrors(mode, catalogue))
   }
   return [...new Set(errors)]
 }
@@ -190,9 +223,9 @@ export function validateWorkflowDefinition(
 function requireValid(
   value: unknown,
   d?: Database,
-  knownStepSlugs?: ReadonlySet<string>,
+  knownCatalogue?: StepCatalogueDefinition,
 ): asserts value is WorkflowDefinition {
-  const errors = validateWorkflowDefinition(value, d, knownStepSlugs)
+  const errors = validateWorkflowDefinition(value, d, knownCatalogue)
   if (errors.length)
     throw new Error(`invalid workflow definition:\n${errors.map((e) => `- ${e}`).join('\n')}`)
 }
@@ -200,16 +233,22 @@ function requireValid(
 function catalogueReferenceRefusal(
   workflowSlug: string,
   definition: WorkflowDefinition,
-  catalogueSlugs: ReadonlySet<string>,
+  catalogue: StepCatalogueDefinition,
   selectedMode?: string,
 ): string | null {
-  const missing = definition.modes
-    .filter((mode) => selectedMode === undefined || mode.slug === selectedMode)
-    .map((mode) => ({
-      slug: mode.slug,
-      steps: [...new Set(mode.steps.filter((step) => !catalogueSlugs.has(step)))],
-    }))
-    .filter((mode) => mode.steps.length > 0)
+  const catalogueSlugs = new Set(catalogue.steps.map((step) => step.slug))
+  const missing: { slug: string; steps: string[] }[] = []
+  for (const mode of definition.modes.filter(
+    (mode) => selectedMode === undefined || mode.slug === selectedMode,
+  )) {
+    const inspection = inspectWorkflowSteps(mode.steps, catalogue.sequences ?? [], catalogueSlugs)
+    if (inspection.missingSequences.length)
+      return `workflow "${workflowSlug}" mode "${mode.slug}" sequence "${inspection.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`
+    if (inspection.duplicateSteps.length)
+      return `workflow "${workflowSlug}" mode "${mode.slug}" expands to duplicate step ${inspection.duplicateSteps.map((step) => `"${step}"`).join(', ')}; edit its step and sequence references so each step appears once`
+    if (inspection.missingSteps.length)
+      missing.push({ slug: mode.slug, steps: inspection.missingSteps })
+  }
   if (!missing.length) return null
   return [
     `workflow "${workflowSlug}" names steps absent from the production catalogue:`,
@@ -310,7 +349,7 @@ export function showWorkflow(slug: string, n?: number, d: Database = db()) {
   return parseVersion(versionRow(slug, n, d))
 }
 
-const workflowLifecycleFor = (knownStepSlugs?: ReadonlySet<string>) =>
+const workflowLifecycleFor = (knownCatalogue?: StepCatalogueDefinition) =>
   versionedLifecycle<WorkflowDefinition>({
     noun: 'workflow',
     identityTable: 'workflow',
@@ -318,7 +357,7 @@ const workflowLifecycleFor = (knownStepSlugs?: ReadonlySet<string>) =>
     eventTable: 'workflow_event',
     foreignKey: 'workflow_id',
     validate(value, d) {
-      requireValid(value, d, knownStepSlugs)
+      requireValid(value, d, knownCatalogue)
     },
   })
 const workflowLifecycle = workflowLifecycleFor()
@@ -329,11 +368,11 @@ function writeDraft(
   authorValue?: string,
   kind: Extract<VersionEvent, 'set' | 'fork' | 'import'> = 'set',
   d: Database = writableDb(),
-  knownStepSlugs?: ReadonlySet<string>,
+  knownCatalogue?: StepCatalogueDefinition,
 ) {
   requireSlug(slug)
   requireSlug(slug)
-  return (knownStepSlugs ? workflowLifecycleFor(knownStepSlugs) : workflowLifecycle).write(
+  return (knownCatalogue ? workflowLifecycleFor(knownCatalogue) : workflowLifecycle).write(
     slug,
     definition,
     reasonValue,
@@ -361,10 +400,8 @@ export function promoteWorkflow(
   // production catalogue may have dropped one of its steps since.
   return workflowLifecycle.promote(slug, n, reasonValue, authorValue, d, (definition, database) => {
     requireValid(definition)
-    const catalogueSlugs = new Set(
-        productionStepCatalogue(database).definition.steps.map((step) => step.slug),
-      ),
-      refusal = catalogueReferenceRefusal(slug, definition, catalogueSlugs)
+    const catalogue = productionStepCatalogue(database).definition,
+      refusal = catalogueReferenceRefusal(slug, definition, catalogue)
     if (refusal) throw new Error(refusal)
     const workflows = productionWorkflows(database).filter((workflow) => workflow.slug !== slug)
     workflows.push({ slug, definition })
@@ -432,9 +469,11 @@ export function workflowModeStepLists(
   d: Database = db(),
   selection: WorkflowSelection = {},
 ): WorkflowModeStepList[] {
-  return selectedWorkflow(slug, selection.version, d).definition.modes.map((mode) => ({
+  const workflow = selectedWorkflow(slug, selection.version, d)
+  const catalogue = selectedCatalogue(selection.catalogueVersion, d)
+  return workflow.definition.modes.map((mode) => ({
     mode: mode.slug,
-    steps: mode.steps,
+    steps: expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? []),
   }))
 }
 
@@ -472,12 +511,7 @@ export function composeWorkflow(
   if (!mode)
     needs.mode = definition.modes.map(({ slug, title, entry }) => ({ slug, title, entry: entry! }))
   const refusal = mode
-    ? catalogueReferenceRefusal(
-        slug,
-        definition,
-        new Set(catalogue.definition.steps.map((step) => step.slug)),
-        mode.slug,
-      )
+    ? catalogueReferenceRefusal(slug, definition, catalogue.definition, mode.slug)
     : null
   if (refusal) throw new Error(refusal)
   const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
@@ -491,10 +525,12 @@ export function composeWorkflow(
     stack: projectRow.stack,
     settings: JSON.parse(projectRow.settings ?? '{}'),
   }
-  const selected =
-    mode?.steps.map((stepSlug) =>
-      compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
-    ) ?? []
+  const selectedSlugs = mode
+    ? expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? [])
+    : []
+  const selected = selectedSlugs.map((stepSlug) =>
+    compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
+  )
   const effectiveAutonomy =
     autonomy ??
     resolveAutonomy(
@@ -556,6 +592,28 @@ export function composeWorkflow(
     autonomyNote: autonomy?.note,
   }
 }
+
+function workflowModesForStep(
+  definition: WorkflowDefinition,
+  sequences: StepCatalogueDefinition['sequences'],
+  selectedModeSlug: string | undefined,
+  stepSlug: string,
+) {
+  const expandedModes = definition.modes.map((mode) => ({
+    mode,
+    steps: expandWorkflowSteps(mode.steps, sequences ?? []),
+  }))
+  const selectedMode = selectedModeSlug
+    ? expandedModes.find(({ mode }) => mode.slug === selectedModeSlug)
+    : undefined
+  const containingModes = expandedModes.filter(({ steps }) => steps.includes(stepSlug))
+  return {
+    selectedMode,
+    containingModes,
+    referenced: selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
+  }
+}
+
 export function getWorkflowStep(
   slug: string,
   projectName: string,
@@ -568,11 +626,12 @@ export function getWorkflowStep(
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d),
-    selectedMode = selection.mode
-      ? definition.modes.find((mode) => mode.slug === selection.mode)
-      : undefined,
-    containingModes = definition.modes.filter((mode) => mode.steps.includes(stepSlug)),
-    referenced = selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
+    { selectedMode, containingModes, referenced } = workflowModesForStep(
+      definition,
+      catalogue.definition.sequences,
+      selection.mode,
+      stepSlug,
+    ),
     rawStep = catalogue.definition.steps.find((item) => item.slug === stepSlug),
     step = rawStep ? compatibleCatalogueStep(rawStep) : undefined
   if (selection.mode && !selectedMode)
@@ -580,7 +639,7 @@ export function getWorkflowStep(
   if (!referenced || !step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
   const missing = missingWorkflowArguments(
     definition,
-    selectedMode ? [selectedMode] : containingModes,
+    selectedMode ? [selectedMode.mode] : containingModes.map(({ mode }) => mode),
     args,
   )
   if (missing.length)
@@ -616,13 +675,14 @@ export function getWorkflowStep(
       key: args.key,
     })
   const templates = resolveWorkflowStepTemplates(step, resolve)
-  const successor = (mode: WorkflowMode) => {
-    const index = mode.steps.indexOf(stepSlug)
-    if (index === mode.steps.length - 1) return null
-    const next = catalogue.definition.steps.find((item) => item.slug === mode.steps[index + 1])!
+  const successor = ({ steps }: { steps: string[] }) => {
+    const index = steps.indexOf(stepSlug)
+    if (index === steps.length - 1) return null
+    const next = catalogue.definition.steps.find((item) => item.slug === steps[index + 1])!
     return { n: index + 2, slug: next.slug, title: next.title }
   }
-  const successors = (selectedMode ? [selectedMode] : containingModes).map(successor)
+  const successorModes = selectedMode ? [selectedMode] : containingModes
+  const successors = successorModes.map(successor)
   const next = selectedMode
     ? successors[0]
     : successors.every((candidate) => JSON.stringify(candidate) === JSON.stringify(successors[0]))
@@ -638,7 +698,7 @@ export function getWorkflowStep(
     version: row.n,
     catalogueVersion: catalogue.n,
     project: projectName,
-    mode: selectedMode?.slug,
+    mode: selectedMode?.mode.slug,
     facts,
     body: templates.body,
     next,
@@ -651,8 +711,8 @@ export function importWorkflow(
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-  knownStepSlugs?: ReadonlySet<string>,
+  knownCatalogue?: StepCatalogueDefinition,
 ) {
   required(reason, 'reason')
-  return writeDraft(slug, definition, reason, author, 'import', d, knownStepSlugs)
+  return writeDraft(slug, definition, reason, author, 'import', d, knownCatalogue)
 }

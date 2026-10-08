@@ -11,6 +11,7 @@ import {
 } from '../review/review-vocabulary.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import { type FloorKind, validateStepCatalogue } from './step-catalogue.ts'
+import { expandWorkflowSteps } from './workflow-step-sequences.ts'
 
 const seedDefinition = (definition: unknown) => JSON.stringify(definition)
 
@@ -317,7 +318,10 @@ function workflowDefinition(seed: LegacySeed) {
     ...definition,
     modes: definition.modes.map((mode) => ({
       ...mode,
-      steps: mode.steps.map((step) => catalogueSlug(seed.slug, step)),
+      steps: expandWorkflowSteps(
+        mode.steps.map((step) => catalogueSlug(seed.slug, step)),
+        [],
+      ),
     })),
   }
 }
@@ -362,6 +366,11 @@ function seedCatalogue(d: Database, now: string): void {
           (JSON.parse(prior.definition) as { steps: SeedCatalogueStep[] }).steps,
           seeded.steps,
         ),
+        ...((JSON.parse(prior.definition) as { sequences?: unknown }).sequences === undefined
+          ? {}
+          : {
+              sequences: (JSON.parse(prior.definition) as { sequences: unknown }).sequences,
+            }),
       }
     : seeded
   requireValidSeedCatalogue(assembled)

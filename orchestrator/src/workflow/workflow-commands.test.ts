@@ -7,6 +7,7 @@ import {
   commandOutcome,
   workflowChildCommandInvocation,
   workflowCommand,
+  workflowImportLines,
 } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
@@ -61,6 +62,12 @@ const registerCurrentProject = (name: string) =>
     stack: 'bun',
     settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
   })
+
+test('workflow import reports a sequence-only draft as a change', () => {
+  expect(workflowImportLines({ steps: [], sequences: ['review'], workflows: [] })).toEqual([
+    'drafted sequence review',
+  ])
+})
 
 const publishCursorWorkflow = (slug: string, modes: WorkflowDefinition['modes']) => {
   const draft = setWorkflow(

@@ -7,6 +7,7 @@ import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from
 import type { CatalogueStep, StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import { resolveWorkflowProjectFacts, stepNeedsCloseState } from './workflow-project-facts.ts'
+import { expandWorkflowSteps } from './workflow-step-sequences.ts'
 import {
   resolveWorkflowStepTemplate,
   resolveWorkflowTemplate,
@@ -91,7 +92,7 @@ export function unresolvedWorkflowStepPlaceholders(
   }
   const bySlug = new Map(catalogue.steps.map((step) => [step.slug, step]))
   return workflow.modes.flatMap((mode) =>
-    mode.steps.flatMap((stepSlug) => {
+    expandWorkflowSteps(mode.steps, catalogue.sequences ?? []).flatMap((stepSlug) => {
       const step = bySlug.get(stepSlug)
       return step
         ? unresolvedStepPlaceholders(
@@ -212,7 +213,7 @@ export function checkWorkflowRendering(
     for (const { slug, definition } of workflows) {
       const args = standInArguments(definition, project)
       for (const mode of definition.modes) {
-        for (const stepSlug of mode.steps) {
+        for (const stepSlug of expandWorkflowSteps(mode.steps, catalogue.sequences ?? [])) {
           const step = bySlug.get(stepSlug)
           if (!step) continue
           recordStepResult(

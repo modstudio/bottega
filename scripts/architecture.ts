@@ -648,7 +648,15 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
     './landing-tree.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-tree.ts', ['./step-catalogue.ts', './workflows.ts']),
+  module('orchestrator/src/workflow/workflow-step-sequences.ts', [
+    './step-catalogue-definition.ts',
+    './workflow-definition.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-tree.ts', [
+    './step-catalogue.ts',
+    './workflow-step-sequences.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-tree-files.ts', [
     'node:fs',
     'node:path',
@@ -659,6 +667,7 @@ export const modules: ArchitectureModule[] = [
     'node:util',
     '../database/db.ts',
     './step-catalogue.ts',
+    './workflow-step-sequences.ts',
     './workflow-tree.ts',
     './workflows.ts',
   ]),

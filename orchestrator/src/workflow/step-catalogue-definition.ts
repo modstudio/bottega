@@ -24,4 +24,13 @@ export type CatalogueStep = {
   needs: WorkflowFactSource[]
 }
 
-export type StepCatalogueDefinition = { steps: CatalogueStep[] }
+export type CatalogueSequence = {
+  slug: string
+  title: string
+  steps: string[]
+}
+
+export type StepCatalogueDefinition = {
+  steps: CatalogueStep[]
+  sequences?: CatalogueSequence[]
+}

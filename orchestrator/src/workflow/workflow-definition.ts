@@ -3,6 +3,8 @@
 
 import type { AutonomyPreset } from './autonomy.ts'
 
+export type WorkflowModeStep = string | { sequence: string }
+
 type WorkflowArgument = {
   name: string
   required: boolean
@@ -16,7 +18,7 @@ export type WorkflowMode = {
   default?: boolean
   entry?: string
   requires?: string[]
-  steps: string[]
+  steps: WorkflowModeStep[]
 }
 
 export type WorkflowDefinition = {

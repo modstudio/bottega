@@ -108,6 +108,28 @@ describe('workflow render check', () => {
     expect(present).toEqual([])
   })
 
+  test('reports an unrenderable step reached only through a sequence', () => {
+    const definition = workflow('check')
+    definition.modes[0]!.steps = [{ sequence: 'checks' }]
+    const sequencedCatalogue = catalogue('Use {{tracker.server}}.')
+    sequencedCatalogue.sequences = [{ slug: 'checks', title: 'Checks', steps: ['check'] }]
+
+    const result = checkWorkflowRendering([{ slug: 'sequenced', definition }], sequencedCatalogue, [
+      project({ tracker: { protocol: 'hub' } }),
+    ])
+
+    expect(result.failures).toEqual([
+      {
+        project: 'fixture',
+        workflow: 'sequenced',
+        mode: 'default',
+        step: 'check',
+        field: 'body',
+        placeholder: 'tracker.server',
+      },
+    ])
+  })
+
   test('reports a project whose required facts cannot resolve once instead of counting it clean', () => {
     const result = checkWorkflowRendering(
       [

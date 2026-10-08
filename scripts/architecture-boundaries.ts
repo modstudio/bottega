@@ -891,7 +891,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'workflows-boundary',
     'orchestrator/src/workflow/workflow-seeds.ts',
-    ['../database/db.ts', '../review/review-vocabulary.ts', './step-catalogue.ts', 'bun:sqlite'],
+    [
+      '../database/db.ts',
+      '../review/review-vocabulary.ts',
+      './step-catalogue.ts',
+      './workflow-step-sequences.ts',
+      'bun:sqlite',
+    ],
     'Keep workflow seeds dependent only on database transactions, review vocabulary, and catalogue validation.',
     ['./autonomy.ts'],
   ),
