@@ -3,6 +3,7 @@ import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { mapDoc, mapSearchMatch, mapTreeItem } from './map.ts'
 import { isScope } from './scope.ts'
+import { docsSearchInputs } from './search-input.ts'
 import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsSource, DocsTreeItem } from './types.ts'
 
 async function loadHostedTree(): Promise<DocsTreeItem[]> {
@@ -80,24 +81,21 @@ export function useDocsSearch(
   query: string,
   audience: DocsAudience,
   subject: string | undefined,
+  includeDrafts: boolean,
 ) {
   const trimmed = query.trim()
   const enabled = trimmed.length >= 2
+  const input = docsSearchInputs(trimmed, audience, subject, includeDrafts)
   const local = useQuery({
-    ...trpc.doc.search.queryOptions({ query: trimmed, audience, subject }),
+    ...trpc.doc.search.queryOptions(input.local),
     enabled: source === 'local' && enabled,
   })
   const hosted = useQuery({
-    ...trpc.record.docSearch.queryOptions({
-      query: trimmed,
-      audience,
-      subject,
-      acrossReadableSpaces: true,
-    }),
+    ...trpc.record.docSearch.queryOptions(input.hosted),
     enabled: source === 'hosted' && enabled,
   })
   const published = useQuery({
-    ...hostedTrpc.publicDocs.search.queryOptions({ query: trimmed }),
+    ...hostedTrpc.publicDocs.search.queryOptions(input.public),
     enabled: source === 'public' && enabled,
   })
   const result = source === 'local' ? local : source === 'hosted' ? hosted : published

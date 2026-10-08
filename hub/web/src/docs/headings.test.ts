@@ -47,6 +47,8 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
+    status: 'draft',
+    replacementSlug: null,
     spaceName: 'Workshop',
     body: 'hello',
   })
@@ -61,11 +63,33 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     subject: 'atlas',
     audience: 'user',
     delivery: 'demand',
+    status: 'draft',
+    replacementSlug: null,
     summary: '',
     featured: false,
     projectName: 'atlas',
   })
   expect(mapDoc({ ...mapped, body: '# Hi' }).body).toBe('# Hi')
+})
+
+test('local, hosted and public records carry lifecycle fields through the shared mapper', () => {
+  const local = mapTreeItem({
+    id: 'local',
+    slug: 'local',
+    title: 'Local',
+    status: 'superseded',
+    replacementSlug: 'replacement',
+  })
+  const hosted = mapTreeItem({
+    id: 'hosted',
+    slug: 'hosted',
+    title: 'Hosted',
+    status: 'draft',
+  })
+  const published = mapTreeItem({ id: 'public', slug: 'public', title: 'Public' })
+  expect([local.status, local.replacementSlug]).toEqual(['superseded', 'replacement'])
+  expect([hosted.status, hosted.replacementSlug]).toEqual(['draft', null])
+  expect([published.status, published.replacementSlug]).toEqual(['current', null])
 })
 
 test('hosted projectName is used as-is; local and public derive it from project scopes', () => {
@@ -123,6 +147,7 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
     id: '1',
     slug: 'a',
     title: 'A',
+    status: 'current',
     snippet: 'x',
     matchPosition: 0,
   })

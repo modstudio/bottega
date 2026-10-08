@@ -14,6 +14,8 @@ const items: DocsTreeItem[] = [
     scope: 'project',
     subject: 'atlas',
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'demand',
     projectName: 'atlas',
   },
@@ -27,6 +29,8 @@ const items: DocsTreeItem[] = [
     scope: 'project',
     subject: 'atlas',
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'demand',
     projectName: 'atlas',
   },
@@ -40,6 +44,8 @@ const items: DocsTreeItem[] = [
     scope: 'global',
     subject: null,
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'inject',
   },
   {
@@ -52,6 +58,8 @@ const items: DocsTreeItem[] = [
     scope: 'canon',
     subject: 'atlas',
     audience: 'technical',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'inject',
     projectName: 'atlas',
   },
@@ -68,10 +76,19 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       onProject={() => {}}
       signedIn
       showProjectChooser
+      showDrafts={false}
+      onShowDrafts={() => {}}
+      canShowDrafts
       doc={{
         ...items[1]!,
         body: '## Open a task\n\nEvery piece of work carries a key.\n',
       }}
+      replacement={null}
+      locationFor={(item) => ({
+        to: '/docs/$scope/$subject/$slug',
+        params: { scope: item.scope, subject: item.subject ?? '_', slug: item.slug },
+        search: {},
+      })}
       onSelect={() => {}}
       onOpenFirst={() => {}}
       onLeaveTree={() => {}}
@@ -132,6 +149,8 @@ test('All projects groups roots by subject, and a single project does not', () =
     scope: 'global',
     subject: null,
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
   }
   const grouped = render({ items: [...items, extra], project: 'all', selectedId: '1' })
   expect(grouped).toContain('Shared')
@@ -170,6 +189,31 @@ test('the pane is empty when the selected document is not in the visible tree', 
   expect(html).not.toContain('Principles')
   expect(html).not.toContain('Hidden heading')
   expect(html).not.toContain('On this page')
+})
+
+test('a document omitted from navigation stays pending until its body loads', () => {
+  const retired: DocsTreeItem = {
+    ...items[1]!,
+    id: 'retired',
+    slug: 'old-run',
+    title: 'Old run',
+    status: 'archived',
+  }
+  const pending = render({
+    items: [...items, retired],
+    selectedId: retired.id,
+    doc: null,
+  })
+  expect(pending).not.toContain('No document to show.')
+
+  const loaded = render({
+    items: [...items, retired],
+    selectedId: retired.id,
+    doc: { ...retired, body: '## Retired instructions\n' },
+  })
+  expect(loaded).toContain('Old run')
+  expect(loaded).toContain('Retired instructions')
+  expect(loaded).toContain('Archived')
 })
 
 test('New doc sits in the top bar when the local create control is passed', () => {

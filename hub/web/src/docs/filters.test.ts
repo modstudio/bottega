@@ -24,6 +24,8 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     updatedAt: '2026-10-06T00:00:00.000Z',
     audience: 'user',
     ...partial,
+    status: partial.status ?? 'current',
+    replacementSlug: partial.replacementSlug ?? null,
     scope,
     subject,
     projectName:

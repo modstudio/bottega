@@ -5,6 +5,7 @@ import { Kbd } from '@/ui/kbd/kbd'
 import { moveIndex } from '@/ui/state/list-navigation'
 import { classes } from '@/ui/text/classes'
 import { highlightSnippet } from './map.ts'
+import { DocStatusBadge } from './status-badge.tsx'
 import type { DocsSearchMatch, DocsTreeItem } from './types.ts'
 
 export function SearchDialog({
@@ -127,6 +128,7 @@ export function SearchDialog({
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="text-md text-text-primary">{match.title}</span>
+                    <DocStatusBadge status={match.status} />
                     {match.spaceName ? (
                       <span className="text-text-muted text-xs">{match.spaceName}</span>
                     ) : null}

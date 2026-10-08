@@ -15,6 +15,8 @@ const item = (id: string, title: string, extra: Partial<DocsTreeItem> = {}): Doc
   summary: `${title} summary`,
   featured: false,
   ...extra,
+  status: extra.status ?? 'current',
+  replacementSlug: extra.replacementSlug ?? null,
 })
 
 test('home decision orders and caps featured guides and lists top-level topics with their counts', () => {
