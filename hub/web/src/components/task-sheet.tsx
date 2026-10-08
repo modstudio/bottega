@@ -14,7 +14,7 @@ import { Identifier } from '@/ui/identifier/identifier'
 import { Select } from '@/ui/listbox/select'
 import { ProjectMark, SourceMark } from './design-system'
 import { HostedTaskSheet } from './hosted-task-sheet'
-import { Markdown } from './markdown'
+import { Markdown } from './markdown/markdown'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   const entries = [

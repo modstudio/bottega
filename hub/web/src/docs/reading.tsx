@@ -1,6 +1,6 @@
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
-import { Markdown } from '@/components/markdown'
+import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'

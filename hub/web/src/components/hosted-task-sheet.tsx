@@ -8,7 +8,7 @@ import { Companion } from '@/ui/companion/companion'
 import { DisplayRow, FieldSection } from '@/ui/form-layout/form-layout'
 import { Identifier } from '@/ui/identifier/identifier'
 import { ProjectMark, SourceMark } from './design-system'
-import { Markdown } from './markdown'
+import { Markdown } from './markdown/markdown'
 import { MeasuresSummary } from './measure-display'
 
 type HostedDetail = {
