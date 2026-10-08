@@ -80,6 +80,8 @@ mock.module('../mcp.ts', () => ({
 }))
 
 let refuseMirror = false
+let refuseTaskMirror = false
+let refuseStatusEventMirror = false
 let refuseIdentity = false
 let supportsTargetSpace = true
 let refusedTargetSpace: string | null = null
@@ -119,7 +121,12 @@ mock.module('../task-client.ts', () => ({
     options?: { recordSpace?: string | null },
   ) => {
     if (!options?.recordSpace) throw new Error('missing target space')
-    if (refuseMirror || refusedTargetSpace === options.recordSpace)
+    if (
+      refuseMirror ||
+      (refuseTaskMirror && body.tasks.length > 0) ||
+      (refuseStatusEventMirror && (body.statusEvents?.length ?? 0) > 0) ||
+      refusedTargetSpace === options.recordSpace
+    )
       throw new Error('simulated hosted refusal')
     mirroredTargets.push(options.recordSpace)
     for (const task of body.tasks ?? []) {
@@ -164,6 +171,8 @@ beforeEach(() => {
   mirroredEvents.length = 0
   mirroredTargets.length = 0
   refuseMirror = false
+  refuseTaskMirror = false
+  refuseStatusEventMirror = false
   refuseIdentity = false
   supportsTargetSpace = true
   refusedTargetSpace = null
@@ -290,6 +299,59 @@ test('tracker status events follow their task project destinations', async () =>
     { project: 'stopal', count: 1 },
   ])
   expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha', 'stopal'])
+})
+
+test('a refused collected transition is delivered by a later unchanged collection pass', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+  refuseStatusEventMirror = true
+
+  const refused = await ingestTrackers()
+
+  expect(refused.find((result) => result.project === 'alpha')?.error).toBe(
+    'hosted mirror skipped: alpha: delivery-failed: simulated hosted refusal',
+  )
+  expect(mirroredEvents).toEqual([])
+  expect(pendingTrackerStatusEvents()).toEqual([
+    expect.objectContaining({ project: 'alpha', key: 'ALP-1' }),
+  ])
+
+  refuseStatusEventMirror = false
+  const recovered = await ingestTrackers()
+
+  expect(recovered.every((result) => result.changed === 0)).toBeTrue()
+  expect(mirroredEvents.map((event) => event.task_key)).toEqual(['ALP-1'])
+  expect(pendingTrackerStatusEvents()).toEqual([])
+})
+
+test('a delivered collected transition is sent exactly once across two passes', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+
+  await ingestTrackers()
+  await ingestTrackers()
+
+  expect(mirroredEvents.filter((event) => event.task_key === 'ALP-1')).toHaveLength(1)
+  expect(pendingTrackerStatusEvents()).toEqual([])
+})
+
+test('a failed task mirror leaves its collected transition queued', async () => {
+  await ingestTrackers()
+  trackerStatuses.ALP = 'completed'
+  refuseTaskMirror = true
+
+  const failed = await ingestTrackers()
+
+  expect(failed.find((result) => result.project === 'alpha')?.error).toBe(
+    'hosted mirror skipped: alpha: delivery-failed: simulated hosted refusal',
+  )
+  expect(mirroredEvents).toEqual([])
+  expect(pendingTrackerStatusEvents().map((event) => event.key)).toEqual(['ALP-1'])
+
+  refuseTaskMirror = false
+  await ingestTrackers()
+  expect(mirroredEvents.map((event) => event.task_key)).toEqual(['ALP-1'])
+  expect(pendingTrackerStatusEvents()).toEqual([])
 })
 
 test('a fresh transition is mirrored exactly once by the following collect', async () => {
