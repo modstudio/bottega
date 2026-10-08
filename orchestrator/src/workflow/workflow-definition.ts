@@ -3,7 +3,7 @@
 
 import type { AutonomyPreset } from './autonomy.ts'
 
-export type WorkflowArgument = {
+type WorkflowArgument = {
   name: string
   required: boolean
   description: string

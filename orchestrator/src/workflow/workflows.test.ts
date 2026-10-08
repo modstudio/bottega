@@ -778,9 +778,8 @@ describe('workflow versions and project composition', () => {
       'a',
       d,
     )
-    promoteStepCatalogue(draft.n, 'publish', 'a', d)
-    expect(() => getWorkflowStep('ship', 'fixture', 'lens', args, d)).toThrow(
-      'unresolved workflow placeholder "unknown"',
+    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow(
+      'workflow ship, mode default, step lens, placeholder unknown',
     )
   })
   test('an unresolved declared argument placeholder names the late-argument remedy', () => {

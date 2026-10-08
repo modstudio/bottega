@@ -16,6 +16,7 @@ import {
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import { type FloorKind, isFloorKind } from './workflow-floor.ts'
 import {
   resolveWorkflowProjectFacts,
@@ -24,11 +25,6 @@ import {
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import { resolveWorkflowTemplate } from './workflow-template.ts'
-import type {
-  WorkflowArgument,
-  WorkflowDefinition,
-  WorkflowMode,
-} from './workflow-definition.ts'
 
 export type { WorkflowDefinition } from './workflow-definition.ts'
 

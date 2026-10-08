@@ -4,8 +4,8 @@
 import { MissingWorkflowInjectionFactsError } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
-import type { StepCatalogueDefinition } from './step-catalogue-definition.ts'
-import type { WorkflowDefinition } from './workflow-definition.ts'
+import type { CatalogueStep, StepCatalogueDefinition } from './step-catalogue-definition.ts'
+import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
 import { resolveWorkflowTemplate, workflowTemplatePlaceholders } from './workflow-template.ts'
 
@@ -112,84 +112,123 @@ function standInArguments(
   )
 }
 
+type StepCheckResult =
+  | { kind: 'placeholders'; failures: WorkflowPlaceholderFailure[] }
+  | { kind: 'missing-facts'; facts: string[] }
+  | { kind: 'resolution'; reason: string }
+
+function checkStepRendering(
+  project: Project,
+  workflowSlug: string,
+  definition: WorkflowDefinition,
+  mode: WorkflowMode,
+  step: CatalogueStep,
+  args: Record<string, string>,
+): StepCheckResult {
+  try {
+    const autonomy = resolveAutonomy(
+      catalogueStepsForAutonomy([step]),
+      [builtInAutonomyScope(definition.defaultPreset)],
+      workflowSlug,
+    )
+    const { facts } = resolveWorkflowProjectFacts(
+      { name: project.name, stack: project.stack, settings: project.settings },
+      step.needs,
+      step.needs.includes('ship-to') && step.needs.includes('tracker'),
+      args,
+      autonomy,
+    )
+    return {
+      kind: 'placeholders',
+      failures: unresolvedWorkflowStepPlaceholders(
+        workflowSlug,
+        { ...definition, modes: [{ ...mode, steps: [step.slug] }] },
+        { steps: [step] },
+        { project: project.name, arguments: args, facts },
+      ),
+    }
+  } catch (error) {
+    return error instanceof MissingWorkflowInjectionFactsError
+      ? { kind: 'missing-facts', facts: error.missing.map(({ remedy }) => remedy) }
+      : {
+          kind: 'resolution',
+          reason: error instanceof Error ? error.message.replaceAll('\n', ' ') : String(error),
+        }
+  }
+}
+
+type RenderCheckAccumulator = {
+  failures: WorkflowPlaceholderFailure[]
+  resolutionFailures: WorkflowStepResolutionFailure[]
+  unresolvedByProject: Map<string, { workflows: Set<string>; facts: Set<string> }>
+}
+
+function recordStepResult(
+  accumulator: RenderCheckAccumulator,
+  result: StepCheckResult,
+  project: string,
+  workflow: string,
+  mode: string,
+  step: string,
+): void {
+  if (result.kind === 'placeholders') accumulator.failures.push(...result.failures)
+  else if (result.kind === 'resolution')
+    accumulator.resolutionFailures.push({ project, workflow, mode, step, reason: result.reason })
+  else {
+    const unresolved = accumulator.unresolvedByProject.get(project) ?? {
+      workflows: new Set<string>(),
+      facts: new Set<string>(),
+    }
+    unresolved.workflows.add(workflow)
+    for (const fact of result.facts) unresolved.facts.add(fact)
+    accumulator.unresolvedByProject.set(project, unresolved)
+  }
+}
+
 export function checkWorkflowRendering(
   workflows: { slug: string; definition: WorkflowDefinition }[],
   catalogue: StepCatalogueDefinition,
   registeredProjects: Project[],
 ): WorkflowRenderCheckResult {
-  const failures: WorkflowPlaceholderFailure[] = []
-  const resolutionFailures: WorkflowStepResolutionFailure[] = []
-  const unresolvedByProject = new Map<string, { workflows: Set<string>; facts: Set<string> }>()
+  const accumulator: RenderCheckAccumulator = {
+    failures: [],
+    resolutionFailures: [],
+    unresolvedByProject: new Map(),
+  }
   const bySlug = new Map(catalogue.steps.map((step) => [step.slug, step]))
 
   for (const project of registeredProjects) {
     for (const { slug, definition } of workflows) {
       const args = standInArguments(definition, project)
-      const context = {
-        argumentNames: new Set(definition.arguments.map(({ name }) => name)),
-        project: project.name,
-        key: args.key,
-      }
       for (const mode of definition.modes) {
         for (const stepSlug of mode.steps) {
           const step = bySlug.get(stepSlug)
           if (!step) continue
-          try {
-            const autonomy = resolveAutonomy(
-              catalogueStepsForAutonomy([step]),
-              [builtInAutonomyScope(definition.defaultPreset)],
-              slug,
-            )
-            const { facts } = resolveWorkflowProjectFacts(
-              { name: project.name, stack: project.stack, settings: project.settings },
-              step.needs,
-              step.needs.includes('ship-to') && step.needs.includes('tracker'),
-              args,
-              autonomy,
-            )
-            failures.push(
-              ...unresolvedStepPlaceholders(
-                project.name,
-                slug,
-                mode.slug,
-                step,
-                { project: project.name, ...args, ...facts },
-                context,
-              ),
-            )
-          } catch (error) {
-            if (error instanceof MissingWorkflowInjectionFactsError) {
-              const unresolved = unresolvedByProject.get(project.name) ?? {
-                workflows: new Set<string>(),
-                facts: new Set<string>(),
-              }
-              unresolved.workflows.add(slug)
-              for (const { remedy } of error.missing) unresolved.facts.add(remedy)
-              unresolvedByProject.set(project.name, unresolved)
-            } else {
-              resolutionFailures.push({
-                project: project.name,
-                workflow: slug,
-                mode: mode.slug,
-                step: stepSlug,
-                reason:
-                  error instanceof Error ? error.message.replaceAll('\n', ' ') : String(error),
-              })
-            }
-          }
+          recordStepResult(
+            accumulator,
+            checkStepRendering(project, slug, definition, mode, step, args),
+            project.name,
+            slug,
+            mode.slug,
+            stepSlug,
+          )
         }
       }
     }
   }
 
-  const unresolvedProjects = [...unresolvedByProject.entries()].map(
+  const unresolvedProjects = [...accumulator.unresolvedByProject.entries()].map(
     ([project, unresolved]): WorkflowFactResolutionFailure => ({
       project,
       workflows: [...unresolved.workflows].sort(),
       facts: [...unresolved.facts].sort(),
     }),
   )
-  return { failures, unresolvedProjects, resolutionFailures }
+  return {
+    failures: accumulator.failures,
+    unresolvedProjects,
+    resolutionFailures: accumulator.resolutionFailures,
+  }
 }
 
 export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): string[] {
@@ -210,20 +249,10 @@ export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): str
 }
 
 export function renderCheckRefusal(result: WorkflowRenderCheckResult): string | null {
-  const lines = [
-    ...result.failures.map(
-      (failure) =>
-        `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
-    ),
-    ...result.unresolvedProjects.map(
-      (failure) =>
-        `- project ${failure.project}, workflows ${failure.workflows.join(',')}, missing ${failure.facts.join('; ')}`,
-    ),
-    ...result.resolutionFailures.map(
-      (failure) =>
-        `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}: ${failure.reason}`,
-    ),
-  ]
+  const lines = result.failures.map(
+    (failure) =>
+      `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
+  )
   if (!lines.length) return null
   return [
     'production workflow steps do not render for every registered project:',
