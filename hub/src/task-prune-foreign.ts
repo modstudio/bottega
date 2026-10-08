@@ -1,6 +1,6 @@
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import { confirmCount, type HostedTask } from './hosted-tasks.ts'
-import { installBindingFromIdentity, rememberHostedInstall } from './install-binding.ts'
+import { rememberHostedInstall } from './install-binding.ts'
 import { projects } from './projects.ts'
 import {
   hostedDeleteTasks,
@@ -9,7 +9,7 @@ import {
   hostedTaskPresence,
   type TaskFetch,
 } from './task-client.ts'
-import { type RegisteredTaskSpace, taskProjectSpaceDisposition } from './task-project-space.ts'
+import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
 
 export type ForeignHostedTask = Pick<HostedTask, 'id' | 'key' | 'project' | 'source'> & {
   present_elsewhere: boolean | null
@@ -26,16 +26,15 @@ export function selectForeignHostedTasks(
   const existing = new Set(present.map((pair) => `${pair.space_id}\0${pair.key}`))
   return tasks.flatMap((task) => {
     if (task.deleted_at || (filters.project && task.project !== filters.project)) return []
-    const disposition = taskProjectSpaceDisposition(
-      task.project,
-      registered,
-      identity,
-      installBindingFromIdentity(identity),
+    const destination = taskProjectDestination(task.project, registered, identity)
+    if (
+      'destinationSpaceId' in destination &&
+      destination.destinationSpaceId === identity.activeSpaceId
     )
-    if (disposition.belongsToActiveSpace) return []
-    const presentElsewhere = disposition.targetSpaceId
-      ? existing.has(`${disposition.targetSpaceId}\0${task.key}`)
-      : null
+      return []
+    const targetSpaceId =
+      'destinationSpaceId' in destination ? destination.destinationSpaceId : null
+    const presentElsewhere = targetSpaceId ? existing.has(`${targetSpaceId}\0${task.key}`) : null
     if (filters.onlyPresentElsewhere && presentElsewhere !== true) return []
     return [
       {
@@ -44,7 +43,7 @@ export function selectForeignHostedTasks(
         project: task.project,
         source: task.source,
         present_elsewhere: presentElsewhere,
-        target_space_id: disposition.targetSpaceId,
+        target_space_id: targetSpaceId,
       },
     ]
   })

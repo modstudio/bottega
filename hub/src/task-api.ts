@@ -6,7 +6,6 @@ import {
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
   addHostedComment,
-  assertMirrorExpectedSpace,
   createHostedDocument,
   createHostedTask,
   getHostedTask,
@@ -17,6 +16,7 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
+import { principalForMemberSpace } from './member-space-principal.ts'
 
 const TEST_REFUSAL =
   'hub task API refuses real identity and database clients unless stubs are injected in tests'
@@ -144,8 +144,10 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )
-  if (request.method === 'GET' && url.pathname === '/v1/tasks/counts')
-    return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, who))
+  if (request.method === 'GET' && url.pathname === '/v1/tasks/counts') {
+    const target = principalForMemberSpace(who, url.searchParams.get('spaceId') ?? undefined)
+    return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, target))
+  }
   if (request.method !== 'GET' || !keyMatch) return null
   const value = await call(dependencies.get, getHostedTask)(
     config.recordDatabaseUrl,
@@ -187,14 +189,14 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
     return value ? json(value) : json({ error: 'task not found' }, 404)
   }
   if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
-  assertMirrorExpectedSpace(
-    typeof body?.expectedSpaceId === 'string' ? body.expectedSpaceId : undefined,
-    who.spaceId,
+  const target = principalForMemberSpace(
+    who,
+    typeof body?.targetSpaceId === 'string' ? body.targetSpaceId : undefined,
   )
   return json(
     await call(dependencies.mirror, mirrorHostedTasks)(
       config.recordDatabaseUrl,
-      who,
+      target,
       body as Parameters<typeof mirrorHostedTasks>[2],
     ),
   )

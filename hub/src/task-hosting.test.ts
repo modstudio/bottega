@@ -207,18 +207,26 @@ describe('hosted-only task safety', () => {
     )
   })
 
-  test('a mismatched mirror request reaches no write service', async () => {
+  test('a non-member mirror target and injected spaceIds reach no write service', async () => {
     let writes = 0
     const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks/mirror', {
         method: 'PUT',
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-        body: JSON.stringify({ tasks: [], expectedSpaceId: 'space-a' }),
+        body: JSON.stringify({
+          tasks: [],
+          targetSpaceId: 'space-z',
+          spaceIds: ['space-z'],
+        }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
         fetch: async () =>
-          Response.json({ user: { id: 'user-1' }, activeSpaceId: 'space-b', memberships: [] }),
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active' }],
+          }),
         mirror: async () => {
           writes++
           return { upserted: 0, adoptions: [] }
@@ -228,10 +236,45 @@ describe('hosted-only task safety', () => {
 
     expect(response?.status).toBe(409)
     expect(await response?.json()).toEqual({
-      error:
-        'mirror expected space space-a, actual space space-b; re-run after the active space settles',
+      error: "target space space-z is not one of the authenticated user's memberships",
     })
     expect(writes).toBe(0)
+  })
+
+  test('a member mirror target derives its tenant principal without body-supplied spaceIds', async () => {
+    const principals: Array<{ userId: string; spaceId: string; spaceIds?: readonly string[] }> = []
+    const response = await taskApi(
+      new Request('https://hub.example.test/v1/tasks/mirror', {
+        method: 'PUT',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ tasks: [], targetSpaceId: 'space-b', spaceIds: ['space-z'] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [
+              { space_id: 'space-a', slug: 'active' },
+              { space_id: 'space-b', slug: 'other' },
+            ],
+          }),
+        mirror: async (_url, identity) => {
+          principals.push(identity)
+          return { upserted: 0, adoptions: [] }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(principals).toEqual([
+      {
+        userId: 'user-1',
+        spaceId: 'space-b',
+        spaceIds: ['space-a', 'space-b'],
+      },
+    ])
   })
 
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {

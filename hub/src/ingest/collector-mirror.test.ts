@@ -9,6 +9,7 @@ const project = {
   repository: true,
   settings: {
     keyPrefixes: ['ALP'],
+    space: 'alpha',
     tracker: {
       protocol: 'workspace-mcp' as const,
       envPrefix: 'ALPHA',
@@ -80,11 +81,12 @@ mock.module('../mcp.ts', () => ({
 
 let refuseMirror = false
 let refuseIdentity = false
-let changeActiveSpace = false
+let refusedTargetSpace: string | null = null
 const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started' }
 const trackerTaskOverrides: Record<string, Array<Record<string, unknown>> | undefined> = {}
 const mirrored = new Map<string, string[]>()
 const mirroredEvents: Array<{ task_key: string; project_name: string }> = []
+const mirroredTargets: string[] = []
 mock.module('../task-client.ts', () => ({
   hostedTaskIdentity: async () => {
     if (refuseIdentity) throw new Error('simulated identity refusal')
@@ -93,6 +95,7 @@ mock.module('../task-client.ts', () => ({
       activeSpaceId: 'space-active',
       memberships: [
         { spaceId: 'space-active', slug: 'active' },
+        { spaceId: 'space-alpha', slug: 'alpha' },
         { spaceId: 'space-stopal', slug: 'stopal' },
       ],
     }
@@ -100,20 +103,18 @@ mock.module('../task-client.ts', () => ({
   hostedMirrorTasks: async (body: {
     tasks: Array<{ id: string; key: string }>
     statusEvents?: Array<{ task_key: string; project_name: string }>
-    expectedSpaceId?: string
+    targetSpaceId?: string
   }) => {
-    if (changeActiveSpace)
-      throw new Error(
-        `hosted hub refused the request (409): mirror expected space ${body.expectedSpaceId}, actual space space-changed; re-run after the active space settles`,
-      )
-    if (body.expectedSpaceId !== 'space-active') throw new Error('missing expected active space')
+    if (!body.targetSpaceId) throw new Error('missing target space')
+    if (refuseMirror || refusedTargetSpace === body.targetSpaceId)
+      throw new Error('simulated hosted refusal')
+    mirroredTargets.push(body.targetSpaceId)
     for (const task of body.tasks ?? []) {
       const ids = mirrored.get(task.key) ?? []
       ids.push(task.id)
       mirrored.set(task.key, ids)
     }
     mirroredEvents.push(...(body.statusEvents ?? []))
-    if (refuseMirror) throw new Error('simulated hosted refusal')
     return { upserted: (body.tasks ?? []).length, adoptions: [] }
   },
 }))
@@ -142,9 +143,10 @@ beforeEach(() => {
   })
   mirrored.clear()
   mirroredEvents.length = 0
+  mirroredTargets.length = 0
   refuseMirror = false
   refuseIdentity = false
-  changeActiveSpace = false
+  refusedTargetSpace = null
   trackerStatuses.ALP = 'started'
   trackerStatuses.STO = 'started'
   delete trackerTaskOverrides.ALP
@@ -153,25 +155,26 @@ beforeEach(() => {
 
 test('a refused tracker mirror still writes locally and retries the persisted task id', async () => {
   refuseMirror = true
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
   const refused = await ingestTrackers()
   const local = db()
     .query<{ record_id: string; title: string }, []>(
       `SELECT record_id,title FROM task WHERE project='alpha' AND key='ALP-1'`,
     )
     .get()!
-  expect(refused[0]).toMatchObject({
-    project: 'alpha',
-    tasks: 1,
-    error: 'hosted mirror skipped: simulated hosted refusal',
-  })
+  expect(refused[0]?.error).toBeUndefined()
+  expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+    'project=alpha reason=delivery-failed: simulated hosted refusal',
+  )
   expect(local.title).toBe('Collected task')
 
   refuseMirror = false
   await ingestTrackers()
-  expect(mirrored.get('ALP-1')).toEqual([local.record_id, local.record_id])
+  expect(mirrored.get('ALP-1')).toEqual([local.record_id])
+  errors.mockRestore()
 })
 
-test('git seeding keeps a foreign-space task local and mirrors only the active-space task', async () => {
+test('git seeding mirrors two project destinations while the active space is a third', async () => {
   const scanned: string[] = []
   const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     scanned.push(command[2]!)
@@ -200,7 +203,14 @@ test('git seeding keeps a foreign-space task local and mirrors only the active-s
     db().query<{ project: string }, []>(`SELECT project FROM task WHERE key='STO-2'`).get()
       ?.project,
   ).toBe('stopal')
-  expect(mirrored.has('STO-2')).toBe(false)
+  const stopalId = db()
+    .query<{ record_id: string }, []>(
+      `SELECT record_id FROM task WHERE project='stopal' AND key='STO-2'`,
+    )
+    .get()!.record_id
+  expect(mirrored.get('STO-2')).toEqual([stopalId, stopalId])
+  expect(new Set(mirroredTargets)).toEqual(new Set(['space-alpha', 'space-stopal']))
+  expect(mirroredTargets).not.toContain('space-active')
   expect(scanned).toEqual([
     '/fixtures/repos/alpha',
     '/fixtures/repos/stopal',
@@ -209,7 +219,7 @@ test('git seeding keeps a foreign-space task local and mirrors only the active-s
   ])
 })
 
-test('tracker status events use the same project-space filter as task snapshots', async () => {
+test('tracker status events follow their task project destinations', async () => {
   await ingestTrackers()
   trackerStatuses.ALP = 'completed'
   trackerStatuses.STO = 'completed'
@@ -226,7 +236,7 @@ test('tracker status events use the same project-space filter as task snapshots'
     { project: 'alpha', count: 1 },
     { project: 'stopal', count: 1 },
   ])
-  expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha'])
+  expect(mirroredEvents.map((event) => event.project_name)).toEqual(['alpha', 'stopal'])
 })
 
 test('a fresh transition is mirrored exactly once by the following collect', async () => {
@@ -339,21 +349,19 @@ test('an unreadable identity keeps collected tasks local and performs no hosted 
   errors.mockRestore()
 })
 
-test('an active-space change keeps collected tasks local and skips the rest of the pass', async () => {
-  changeActiveSpace = true
+test('one refused destination leaves the other delivered and reports the project', async () => {
+  refusedTargetSpace = 'space-stopal'
   const errors = spyOn(console, 'error').mockImplementation(() => {})
 
   const result = await ingestTrackers()
 
   expect(db().query(`SELECT 1 FROM task WHERE key='ALP-1'`).get()).toBeTruthy()
   expect(db().query(`SELECT 1 FROM task WHERE key='STO-1'`).get()).toBeTruthy()
-  expect(mirrored.size).toBe(0)
+  expect(mirrored.has('ALP-1')).toBeTrue()
+  expect(mirrored.has('STO-1')).toBeFalse()
   expect(result.every((row) => row.error === undefined)).toBeTrue()
   expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
-    'reason=identity-unreadable',
-  )
-  expect(errors.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
-    're-run after the active space settles',
+    'project=stopal reason=delivery-failed: simulated hosted refusal',
   )
   errors.mockRestore()
 })

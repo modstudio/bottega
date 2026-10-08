@@ -1,42 +1,27 @@
 import { recordSpaceMembership } from '../../shared/record-space-membership.ts'
-import {
-  declaredProjectSpace,
-  type InstallBinding,
-  projectBelongsToHostedSpace,
-} from './hosted-write-mode.ts'
+import { declaredProjectSpace } from './hosted-write-mode.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 
 export type RegisteredTaskSpace = { name: string; settings: { space?: string } }
-export type TaskProjectSpaceDisposition =
-  | { belongsToActiveSpace: true; targetSpaceId: string }
+export type TaskProjectDestination =
+  | { project: string; destinationSpaceId: string }
   | {
-      belongsToActiveSpace: false
-      targetSpaceId: string | null
-      reason: 'unmapped' | 'different-space'
+      project: string
+      refused: 'unregistered-project' | 'declared-space-not-member'
     }
 
-/** Apply the project-space rule shared by task push and foreign-task cleanup. */
-export function taskProjectSpaceDisposition(
+/** Resolve a project's registered destination against the signed-in user's memberships. */
+export function taskProjectDestination(
   projectName: string,
   registered: readonly RegisteredTaskSpace[],
   identity: HostedTaskIdentity,
-  installBinding: InstallBinding,
-): TaskProjectSpaceDisposition {
+): TaskProjectDestination {
   const project = registered.find((candidate) => candidate.name === projectName)
-  if (!project) return { belongsToActiveSpace: false, targetSpaceId: null, reason: 'unmapped' }
+  if (!project) return { project: projectName, refused: 'unregistered-project' }
   const declared = declaredProjectSpace(project.settings.space)
-  if (declared) {
-    const membership = recordSpaceMembership(declared, identity.memberships)
-    if (!membership) return { belongsToActiveSpace: false, targetSpaceId: null, reason: 'unmapped' }
-    return membership.spaceId === identity.activeSpaceId
-      ? { belongsToActiveSpace: true, targetSpaceId: membership.spaceId }
-      : {
-          belongsToActiveSpace: false,
-          targetSpaceId: membership.spaceId,
-          reason: 'different-space',
-        }
-  }
-  if (!projectBelongsToHostedSpace(project.settings.space, installBinding))
-    return { belongsToActiveSpace: false, targetSpaceId: null, reason: 'unmapped' }
-  return { belongsToActiveSpace: true, targetSpaceId: identity.activeSpaceId }
+  if (!declared) return { project: projectName, destinationSpaceId: identity.activeSpaceId }
+  const membership = recordSpaceMembership(declared, identity.memberships)
+  return membership
+    ? { project: projectName, destinationSpaceId: membership.spaceId }
+    : { project: projectName, refused: 'declared-space-not-member' }
 }

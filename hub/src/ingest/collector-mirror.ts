@@ -1,15 +1,14 @@
 import {
   type HostedStatusEvent,
   type HostedTask,
-  isMirrorExpectedSpaceMismatch,
   isTaskMirrorAdoption,
   type MirrorAdoption,
 } from '../hosted-tasks.ts'
-import { installBindingFromIdentity, rememberHostedInstall } from '../install-binding.ts'
+import { rememberHostedInstall } from '../install-binding.ts'
 import { projects } from '../projects.ts'
 import { persistTaskAdoptions } from '../task-adoption.ts'
 import { type HostedTaskIdentity, hostedMirrorTasks, hostedTaskIdentity } from '../task-client.ts'
-import { taskProjectSpaceDisposition } from '../task-project-space.ts'
+import { taskProjectDestination } from '../task-project-space.ts'
 
 type CollectedTaskRow = Pick<
   HostedTask,
@@ -55,11 +54,9 @@ function hostedTaskBody(row: CollectedTaskRow): HostedTask {
 }
 
 type CollectorMirrorKind = 'tasks' | 'statusEvents'
-type CollectorMirrorSkipReason = 'unmapped' | 'different-space' | 'identity-unreadable'
-
 type CollectorMirrorSkip = {
   project: string
-  reason: CollectorMirrorSkipReason
+  reason: string
   tasks: number
   statusEvents: number
 }
@@ -86,75 +83,64 @@ export async function createCollectorMirrorPass(
   }
   const registered = projects()
   const skipped = new Map<string, CollectorMirrorSkip>()
-  const skip = (project: string, reason: CollectorMirrorSkipReason, kind: CollectorMirrorKind) => {
+  const skip = (project: string, reason: string, kind: CollectorMirrorKind) => {
     const key = `${project}\0${reason}`
     const entry = skipped.get(key) ?? { project, reason, tasks: 0, statusEvents: 0 }
     entry[kind]++
     skipped.set(key, entry)
   }
-  const select = <T extends { project_name: string }>(
-    rows: readonly T[],
-    kind: CollectorMirrorKind,
-  ) =>
-    rows.filter((row) => {
-      if (!identity) {
-        skip(row.project_name, 'identity-unreadable', kind)
-        return false
-      }
-      const disposition = taskProjectSpaceDisposition(
-        row.project_name,
-        registered,
-        identity,
-        installBindingFromIdentity(identity),
-      )
-      if (disposition.belongsToActiveSpace) return true
-      skip(row.project_name, disposition.reason, kind)
-      return false
-    })
-
-  const refuseChangedSpace = <T extends { project_name: string }>(
-    error: unknown,
+  const grouped = <T extends { project_name: string }>(
     rows: readonly T[],
     kind: CollectorMirrorKind,
   ) => {
-    if (!isMirrorExpectedSpaceMismatch(error)) return false
-    identity = null
-    identityError = error instanceof Error ? error : new Error(String(error))
-    for (const row of rows) skip(row.project_name, 'identity-unreadable', kind)
-    return true
+    const destinations = new Map<string, T[]>()
+    for (const row of rows) {
+      if (!identity) {
+        skip(row.project_name, 'identity-unreadable', kind)
+        continue
+      }
+      const decision = taskProjectDestination(row.project_name, registered, identity)
+      if ('refused' in decision) {
+        skip(row.project_name, decision.refused, kind)
+        continue
+      }
+      const selected = destinations.get(decision.destinationSpaceId) ?? []
+      selected.push(row)
+      destinations.set(decision.destinationSpaceId, selected)
+    }
+    return destinations
   }
 
   return {
     async mirrorTasks(rows) {
-      const selected = select(rows.map(hostedTaskBody), 'tasks')
-      if (!selected.length) return identity ? 'not-applicable' : 'unreadable'
-      try {
-        const response = await hostedMirrorTasks({
-          tasks: selected,
-          expectedSpaceId: identity!.activeSpaceId,
-        })
-        const adoptions: MirrorAdoption[] = response.adoptions ?? []
-        persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
-        return 'mirrored'
-      } catch (error) {
-        if (refuseChangedSpace(error, selected, 'tasks')) return 'unreadable'
-        throw error
+      const destinations = grouped(rows.map(hostedTaskBody), 'tasks')
+      let delivered = false
+      for (const [spaceId, selected] of destinations) {
+        try {
+          const response = await hostedMirrorTasks({ tasks: selected, targetSpaceId: spaceId })
+          const adoptions: MirrorAdoption[] = response.adoptions ?? []
+          persistTaskAdoptions(adoptions.filter(isTaskMirrorAdoption))
+          delivered = true
+        } catch (error) {
+          for (const project of new Set(selected.map((row) => row.project_name)))
+            skip(project, `delivery-failed: ${(error as Error).message}`, 'tasks')
+        }
       }
+      return delivered ? 'mirrored' : identity ? 'not-applicable' : 'unreadable'
     },
     async mirrorStatusEvents(rows) {
-      const selected = select(rows, 'statusEvents')
-      if (!selected.length) return identity ? 'not-applicable' : 'unreadable'
-      try {
-        await hostedMirrorTasks({
-          tasks: [],
-          statusEvents: selected,
-          expectedSpaceId: identity!.activeSpaceId,
-        })
-        return 'mirrored'
-      } catch (error) {
-        if (refuseChangedSpace(error, selected, 'statusEvents')) return 'unreadable'
-        throw error
+      const destinations = grouped(rows, 'statusEvents')
+      let delivered = false
+      for (const [spaceId, selected] of destinations) {
+        try {
+          await hostedMirrorTasks({ tasks: [], statusEvents: selected, targetSpaceId: spaceId })
+          delivered = true
+        } catch (error) {
+          for (const project of new Set(selected.map((row) => row.project_name)))
+            skip(project, `delivery-failed: ${(error as Error).message}`, 'statusEvents')
+        }
       }
+      return delivered ? 'mirrored' : identity ? 'not-applicable' : 'unreadable'
     },
     reportSkipped() {
       for (const entry of [...skipped.values()].sort(

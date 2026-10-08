@@ -36,7 +36,3 @@ export function persistInstallBinding(conn: Database, activeSpaceId?: string | n
 export function rememberHostedInstall(activeSpaceId?: string | null): void {
   writeTransaction((conn) => persistInstallBinding(conn, activeSpaceId))
 }
-
-export function installBindingFromIdentity(identity: { activeSpaceId: string }): InstallBinding {
-  return { bound: true, activeSpaceId: identity.activeSpaceId }
-}

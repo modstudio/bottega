@@ -7,21 +7,11 @@ import {
   projectBelongsToHostedSpace,
   projectHasRemoteTracker,
   projectMappedToHostedSpace,
-  projectWriteDecision,
   projectWriteDecisionFor,
   reportedWriteMode,
 } from './hosted-write-mode.ts'
-import { taskProjectSpaceDisposition } from './task-project-space.ts'
 
 const bound = { bound: true, activeSpaceId: 'space-a' }
-const identity = {
-  userId: 'user-a',
-  activeSpaceId: 'space-a',
-  memberships: [
-    { spaceId: 'space-a', slug: 'active' },
-    { spaceId: 'space-b', slug: 'other' },
-  ],
-}
 
 const hublocal = {
   name: 'hublocal',
@@ -149,55 +139,5 @@ describe('hosted write mode', () => {
       'write mode     hosted-configured',
       '  workshop       hosted-configured',
     ])
-  })
-})
-
-describe('write decision and space disposition agree', () => {
-  const registered = [
-    { name: 'hublocal', settings: {} },
-    { name: 'by-slug', settings: { space: 'active' } },
-    { name: 'other', settings: { space: 'other' } },
-    { name: 'unknown-space', settings: { space: 'missing' } },
-  ]
-
-  test('a hosted-bound hub-protocol project with no space is hosted and belongs to the active space', () => {
-    const write = projectWriteDecisionFor(hublocal, bound, undefined)
-    const space = taskProjectSpaceDisposition('hublocal', registered, identity, bound)
-    expect(write.mode).toBe('refused')
-    expect(space).toEqual({ belongsToActiveSpace: true, targetSpaceId: 'space-a' })
-  })
-
-  test('a never-bound hub-protocol project with no space is local and unmapped', () => {
-    const write = projectWriteDecisionFor(hublocal, NEVER_BOUND, undefined)
-    const space = taskProjectSpaceDisposition('hublocal', registered, identity, NEVER_BOUND)
-    expect(write).toEqual({ mode: 'local-authoritative' })
-    expect(space).toEqual({
-      belongsToActiveSpace: false,
-      targetSpaceId: null,
-      reason: 'unmapped',
-    })
-  })
-
-  test('a declared space is hosted membership on a never-bound install', () => {
-    const write = projectWriteDecisionFor(gamma, NEVER_BOUND, undefined)
-    const space = taskProjectSpaceDisposition('by-slug', registered, identity, NEVER_BOUND)
-    expect(write.mode).toBe('refused')
-    expect(space).toEqual({ belongsToActiveSpace: true, targetSpaceId: 'space-a' })
-  })
-
-  test('an unregistered project is unmapped for both', () => {
-    expect(
-      projectWriteDecision({
-        hostedUrl: undefined,
-        remoteTracker: false,
-        belongsToHostedSpace: false,
-        project: 'unregistered',
-      }),
-    ).toEqual({ mode: 'local-authoritative' })
-    expect(taskProjectSpaceDisposition('unregistered', registered, identity, bound)).toEqual({
-      belongsToActiveSpace: false,
-      targetSpaceId: null,
-      reason: 'unmapped',
-    })
   })
 })

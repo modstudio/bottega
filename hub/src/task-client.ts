@@ -299,9 +299,9 @@ export async function hostedSignedInUserId(
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
 }
-export const hostedTaskCounts = (options?: Parameters<typeof request>[3]) =>
+export const hostedTaskCounts = (targetSpaceId: string, options?: Parameters<typeof request>[3]) =>
   request<Record<string, Array<{ source: string; count: number }>>>(
-    '/v1/tasks/counts',
+    `/v1/tasks/counts?${new URLSearchParams({ spaceId: targetSpaceId })}`,
     'GET',
     undefined,
     options,
