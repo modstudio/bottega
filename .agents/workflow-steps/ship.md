@@ -9,4 +9,4 @@ autonomy: ask
 needs:
   []
 ---
-Ship the fix through the `ship` workflow: gate, pull request, merge.
+Ship the fix through the `ship-task` workflow: gate, pull request, merge.

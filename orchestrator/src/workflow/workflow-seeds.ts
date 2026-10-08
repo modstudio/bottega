@@ -126,7 +126,6 @@ function catalogueNeeds(workflow: string, step: string, runsGate: boolean): stri
   return [
     ...(runsGate ? ['gate'] : []),
     ...(workflow === 'fix-defect' && step === 'diagnose' ? ['tracker'] : []),
-    ...(catalogueSlug(workflow, step) === 'close' ? ['tracker'] : []),
   ]
 }
 function catalogueDefinition() {
@@ -140,9 +139,6 @@ function catalogueDefinition() {
         body: catalogueBody(seed.slug, legacy.slug, legacy.body),
         stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
-        ...(catalogueSlug(seed.slug, legacy.slug) === 'close'
-          ? { expectedStatus: '{{tracker.states.done}}', requirePullRequest: true }
-          : {}),
         job: legacy.job,
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
         needs: catalogueNeeds(seed.slug, legacy.slug, runsGate),
