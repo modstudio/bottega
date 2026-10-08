@@ -91,7 +91,7 @@ describe('file ruling', () => {
           (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
            workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('workflow-fixture','ship','default','DEV-964','','owner-session',1,1,'{}',0,
+         VALUES ('workflow-fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,
                  'build','running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
       )
       .get() as { id: number }
@@ -117,7 +117,7 @@ describe('file ruling', () => {
     )
 
     expect(writes[0]?.subject).toBe('workflow-fixture')
-    expect(writes[0]?.body).toContain('workflow: ship')
+    expect(writes[0]?.body).toContain('workflow: fixture-workflow')
     expect(writes[0]?.body).toContain('workflow_mode: default')
     expect(writes[0]?.body).toContain(`workflow_cursor: ${cursor.id}`)
     expect(writes[0]?.body).not.toContain('\nrun:')
@@ -139,7 +139,7 @@ describe('file ruling', () => {
           (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
            workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('workflow-fixture','ship','default','DEV-964','','owner-session',1,1,'{}',0,
+         VALUES ('workflow-fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,
                  'build','running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
       )
       .get() as { id: number }

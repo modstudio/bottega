@@ -22,7 +22,7 @@ const store: WorkflowTreeStore = {
   ],
   workflows: [
     {
-      slug: 'ship',
+      slug: 'fixture-workflow',
       definition: {
         title: 'Ship',
         description: 'Ship the change.',
@@ -51,7 +51,7 @@ describe('planWorkflowHydration', () => {
     expect(first.writes.map(({ path }) => path)).toEqual([
       '.agents/workflow-sequences/quality.md',
       '.agents/workflow-steps/verify.md',
-      '.agents/workflows/ship.md',
+      '.agents/workflows/fixture-workflow.md',
     ])
     expect(planWorkflowHydration({ store, tree: first.writes })).toEqual({
       writes: [],

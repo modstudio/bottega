@@ -27,11 +27,13 @@ afterEach(() => {
 test('writing a workflow creates its mirror directory', () => {
   const { tree } = fixture()
   applyWorkflowTreePlan(tree, {
-    writes: [{ path: '.agents/workflows/ship.md', body: 'workflow\n' }],
+    writes: [{ path: '.agents/workflows/fixture-workflow.md', body: 'workflow\n' }],
     deletes: [],
   })
 
-  expect(readFileSync(join(tree, '.agents', 'workflows', 'ship.md'), 'utf8')).toBe('workflow\n')
+  expect(readFileSync(join(tree, '.agents', 'workflows', 'fixture-workflow.md'), 'utf8')).toBe(
+    'workflow\n',
+  )
   expect(existsSync(join(tree, '.claude', 'commands'))).toBe(false)
 })
 

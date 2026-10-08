@@ -7,6 +7,7 @@ import {
   setStepCatalogue,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import {
   composeWorkflow,
@@ -33,6 +34,7 @@ const database = () => {
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   seedWorkflows(d)
+  installWorkflowStoreFixture(d)
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'fixture',
     '/fixture',

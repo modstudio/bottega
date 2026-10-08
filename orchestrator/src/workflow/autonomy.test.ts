@@ -100,10 +100,10 @@ describe('autonomy resolution', () => {
           { name: 'higher', settings: { stages: { plan: 'review' } } },
           {
             name: 'lower',
-            settings: { workflows: { ship: { steps: { design: 'auto' } } } },
+            settings: { workflows: { 'fixture-workflow': { steps: { design: 'auto' } } } },
           },
         ],
-        'ship',
+        'fixture-workflow',
       ).steps.design,
     ).toEqual({ value: 'review', scope: 'higher' })
     expect(
@@ -114,11 +114,11 @@ describe('autonomy resolution', () => {
             name: 'same',
             settings: {
               steps: { design: 'ask' },
-              workflows: { ship: { preset: 'autonomous' } },
+              workflows: { 'fixture-workflow': { preset: 'autonomous' } },
             },
           },
         ],
-        'ship',
+        'fixture-workflow',
       ).steps.design,
     ).toEqual({ value: 'auto', scope: 'same' })
   })
@@ -207,9 +207,9 @@ describe('autonomy resolution', () => {
     const settings = {
       preset: 'manual',
       rulings: 'user',
-      workflows: { ship: { preset: 'manual', rulings: 'agent' } },
+      workflows: { 'fixture-workflow': { preset: 'manual', rulings: 'agent' } },
     } as const
-    expect(resolveAutonomy(steps, [{ name: 'same', settings }], 'ship').rulings).toEqual({
+    expect(resolveAutonomy(steps, [{ name: 'same', settings }], 'fixture-workflow').rulings).toEqual({
       value: 'agent',
       scope: 'same',
     })
@@ -223,10 +223,13 @@ describe('autonomy resolution', () => {
         [
           {
             name: 'same',
-            settings: { rulings: 'user', workflows: { ship: { preset: 'guided' } } },
+            settings: {
+              rulings: 'user',
+              workflows: { 'fixture-workflow': { preset: 'guided' } },
+            },
           },
         ],
-        'ship',
+        'fixture-workflow',
       ).rulings,
     ).toEqual({ value: 'agent', scope: 'same' })
   })

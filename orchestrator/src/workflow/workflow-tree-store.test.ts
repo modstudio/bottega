@@ -53,22 +53,24 @@ describe('importWorkflowTree', () => {
     const d = database()
     const production = productionStepCatalogue(d)
     const tree = renderedTree(d)
-    const target = tree.find(({ path }) => path === '.agents/workflow-steps/lens.md')!
+    const target = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
     target.body = target.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nAn edited lens body.\n')
 
     const result = importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
 
-    expect(result.steps).toEqual(['lens'])
+    expect(result.steps).toEqual(['blast-radius'])
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
     expect(
-      showStepCatalogue(draft.n, d).definition.steps.find((step) => step.slug === 'lens')?.body,
+      showStepCatalogue(draft.n, d).definition.steps.find((step) => step.slug === 'blast-radius')
+        ?.body,
     ).toBe('An edited lens body.')
     expect(productionStepCatalogue(d).n).toBe(production.n)
     expect(
-      productionStepCatalogue(d).definition.steps.find((step) => step.slug === 'lens')?.body,
-    ).toBe(production.definition.steps.find((step) => step.slug === 'lens')?.body)
+      productionStepCatalogue(d).definition.steps.find((step) => step.slug === 'blast-radius')
+        ?.body,
+    ).toBe(production.definition.steps.find((step) => step.slug === 'blast-radius')?.body)
   })
 
   test('a sequence file imports into the catalogue draft', () => {
@@ -76,7 +78,7 @@ describe('importWorkflowTree', () => {
     const tree = renderedTree(d)
     tree.push({
       path: '.agents/workflow-sequences/quality.md',
-      body: '---\nslug: quality\ntitle: Quality\nsteps:\n  - lens\n  - score\n---\n\n',
+      body: '---\nslug: quality\ntitle: Quality\nsteps:\n  - diagnose\n  - verify\n---\n\n',
     })
 
     const result = importWorkflowTree(parseWorkflowTree(tree), 'add sequence', 'worker', d)
@@ -86,7 +88,7 @@ describe('importWorkflowTree', () => {
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
     expect(showStepCatalogue(draft.n, d).definition.sequences).toEqual([
-      { slug: 'quality', title: 'Quality', steps: ['lens', 'score'] },
+      { slug: 'quality', title: 'Quality', steps: ['diagnose', 'verify'] },
     ])
   })
 
@@ -103,13 +105,13 @@ describe('importWorkflowTree', () => {
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
     promoteStepCatalogue(catalogue.n, 'compose fixture', 'test', d)
-    const ship = d
+    const shipTask = d
       .query(
-        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug='ship' AND v.status='draft'",
+        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug='ship-task' AND v.status='draft'",
       )
       .get() as { n: number }
-    expect(imported.workflows).toContain('ship')
-    promoteWorkflow('ship', ship.n, 'compose fixture', 'test', d)
+    expect(imported.workflows).toContain('ship-task')
+    promoteWorkflow('ship-task', shipTask.n, 'compose fixture', 'test', d)
 
     for (const [project, protocol] of [
       ['orch-docs-fixture', 'orch-docs'],
@@ -122,7 +124,7 @@ describe('importWorkflowTree', () => {
         JSON.stringify({ docs: { protocol } }),
       )
       const step = getWorkflowStep(
-        'ship',
+        'ship-task',
         project,
         'sync-docs',
         { key: 'DEV-945', branch: 'DEV-945-fixture', worktree: '/fixture' },
@@ -146,9 +148,9 @@ describe('importWorkflowTree', () => {
   test('one invalid floor refuses the entire import without writing a draft', () => {
     const d = database()
     const tree = renderedTree(d)
-    const lens = tree.find(({ path }) => path === '.agents/workflow-steps/lens.md')!
+    const lens = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
     lens.body = lens.body.replace('\n---\n', '\n---\nEdited but valid.\n')
-    const score = tree.find(({ path }) => path === '.agents/workflow-steps/score.md')!
+    const score = tree.find(({ path }) => path === '.agents/workflow-steps/verify.md')!
     const validScore = score.body
     score.body = score.body.replace(/floor:\n(?: {2}- [^\n]+\n)+/, 'floor:\n  - not-a-proof\n')
     expect(score.body).not.toBe(validScore)
@@ -213,7 +215,7 @@ describe('importWorkflowTree', () => {
 
   test('a production flow missing from the tree refuses the import and writes nothing', () => {
     const d = database()
-    const tree = renderedTree(d).filter(({ path }) => path !== '.agents/workflows/ship.md')
+    const tree = renderedTree(d).filter(({ path }) => path !== '.agents/workflows/fix-defect.md')
     const before = {
       catalogues: (
         d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as {
@@ -224,8 +226,8 @@ describe('importWorkflowTree', () => {
         .count,
     }
 
-    expect(() => importWorkflowTree(parseWorkflowTree(tree), 'drop ship', 'worker', d)).toThrow(
-      'orch workflow retire ship',
+    expect(() => importWorkflowTree(parseWorkflowTree(tree), 'drop fixture', 'worker', d)).toThrow(
+      'orch workflow retire fix-defect',
     )
     expect(
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })

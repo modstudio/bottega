@@ -9,6 +9,7 @@ import {
 } from './workflow-cursor.ts'
 import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { promoteWorkflow, setWorkflow } from './workflows.ts'
 
 const context = { session: 'session-one' }
@@ -33,6 +34,7 @@ function database(): Database {
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   seedWorkflows(d)
+  installWorkflowStoreFixture(d)
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'fixture',
     '/fixture',
@@ -378,10 +380,10 @@ test('a handle to a done or abandoned cursor never opens a replacement', () => {
 test('a handle validates supplied identity and serves the active step for an earlier request', () => {
   const d = database()
   const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-  const opened = getWorkflowStepWithCursor('ship', 'fixture', 'rebase', args, 'default', context, d)
+  const opened = getWorkflowStepWithCursor('fixture-workflow', 'fixture', 'rebase', args, 'default', context, d)
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
   nextWorkflowStep(
-    'ship',
+    'fixture-workflow',
     'fixture',
     'default',
     args,
@@ -393,7 +395,7 @@ test('a handle validates supplied identity and serves the active step for an ear
     opened.cursor,
   )
   const served = getWorkflowStepWithCursor(
-    'ship',
+    'fixture-workflow',
     'fixture',
     'rebase',
     args,
@@ -407,7 +409,7 @@ test('a handle validates supplied identity and serves the active step for an ear
   expect(served.notice).toContain('Requested step 1 rebase; serving active step 2 lens.')
   expect(() =>
     getWorkflowStepWithCursor(
-      'ship',
+      'fixture-workflow',
       'wrong-project',
       'lens',
       args,

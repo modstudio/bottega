@@ -53,7 +53,7 @@ describe('task ruling candidate query', () => {
         `INSERT INTO workflow_cursor
           (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,
            catalogue_version,args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
-         VALUES (?, 'ship','default','DEV-960','',1,1,'{}',0,'build','running','[]',NULL,1,
+         VALUES (?, 'fixture-workflow','default','DEV-960','',1,1,'{}',0,'build','running','[]',NULL,1,
                  '2026-09-01','2026-10-05') RETURNING id`,
       )
       .get(PLATFORM_SLUG) as { id: number }
