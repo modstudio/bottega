@@ -164,7 +164,7 @@ function applyUserCanon(
   check: boolean,
   deps: Dependencies,
 ): MachineSettingsApplyResult[] {
-  const rows = listDocs({ scope: 'canon', subject: null, owner })
+  const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
   const homes = userCanonHomesFromEnvironment(deps.environment, deps.runsDirectory).filter(
     (home) => home.installed,
   )

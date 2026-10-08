@@ -42,7 +42,7 @@ import {
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
-import { docLifecycle, statusDocWriteInput } from './doc-status.ts'
+import { documentLifecycleDecision } from './doc-status.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import {
   assertLocalDocRemovalAllowed,
@@ -377,9 +377,22 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const tree = localDocTreeFields(input, prior)
-  const lifecycle = docLifecycle(input, prior, (replacementSlug) =>
-    Boolean(getDoc(input.scope, input.subject, replacementSlug, input.owner ?? null)),
-  )
+  const replacementToCheck =
+    input.replacementSlug ??
+    (input.status === undefined || input.status === 'superseded' ? prior?.replacement_slug : null)
+  const lifecycle = documentLifecycleDecision({
+    scope: input.scope,
+    subject: input.subject,
+    slug: input.slug,
+    requestedStatus: input.status,
+    requestedReplacementSlug: input.replacementSlug,
+    priorStatus: prior?.status,
+    priorReplacementSlug: prior?.replacement_slug,
+    replacementExists:
+      replacementToCheck == null ||
+      Boolean(getDoc(input.scope, input.subject, replacementToCheck, input.owner ?? null)),
+  })
+  if (lifecycle.refusal !== null) throw new Error(lifecycle.refusal)
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
@@ -474,7 +487,22 @@ export async function setDocStatus(
 ): Promise<Doc> {
   const current = getDoc(scope, subject, slug, owner)
   if (!current) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
-  return setDoc({ ...statusDocWriteInput(current, status, replacementSlug), ...context })
+  return setDoc({
+    scope: current.scope,
+    subject: current.subject,
+    owner: current.owner,
+    slug: current.slug,
+    title: current.title,
+    body: current.body,
+    delivery: current.delivery,
+    audience: current.audience,
+    parentSlug: current.parent_slug,
+    position: current.position,
+    featured: current.featured,
+    status,
+    replacementSlug,
+    ...context,
+  })
 }
 
 export async function importDoc(
@@ -843,7 +871,8 @@ export function listDocRevisions(
   validateHistoricDocAddress(scope, slug)
   return db()
     .query(
-      `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
+      `SELECT id, op, author, reason, at, status, replacement_slug, record_id,
+              length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
     .all(scope, subject, owner, slug) as DocRevisionMetadata[]

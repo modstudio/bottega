@@ -142,6 +142,7 @@ async function semanticSearch(
   const filter = {
     ...(flags.has('scope') ? { scope: flags.flag('scope') } : {}),
     ...(flags.has('subject') ? { subject: flags.flag('subject') } : {}),
+    ...(flags.has('include-drafts') ? { includeDrafts: true } : {}),
   }
   validateDocAddressFilter(filter)
   const output = await searchDocs(query, Number(rawK), filter)
@@ -152,7 +153,7 @@ async function semanticSearch(
   presentation.log(formatDocSearchRefresh(output.refresh))
   for (const result of output.results) {
     presentation.log(
-      `${result.scope}/${result.subject ?? '_'}/${result.slug} · ${result.headingPath.join(' > ') || result.title}`,
+      `${result.scope}/${result.subject ?? '_'}/${result.slug} [${result.status}] · ${result.headingPath.join(' > ') || result.title}`,
     )
     presentation.log(`  ${result.snippet}${result.truncated ? '…' : ''}`)
   }

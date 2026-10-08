@@ -86,9 +86,9 @@ export type DocRevision = {
   at: string
   record_id: string | null
 }
-export type DocRevisionMetadata = Omit<
+export type DocRevisionMetadata = Pick<
   DocRevision,
-  'title' | 'body' | 'delivery' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'
+  'id' | 'op' | 'author' | 'reason' | 'at' | 'status' | 'replacement_slug' | 'record_id'
 > & { bytes: number }
 
 const LATEST_REVISION_SQL =

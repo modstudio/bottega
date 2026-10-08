@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DOC_STATUSES } from './docs.ts'
 import type { OperatorInboxKind } from './operator-inbox.ts'
 import type { OperatorNotification } from './operator-notification-contract.ts'
 import {
@@ -40,6 +41,7 @@ export const DocSearchOutputSchema = z
           subject: z.string().nullable(),
           slug: z.string(),
           title: z.string(),
+          status: z.enum(DOC_STATUSES),
           headingPath: z.array(z.string()),
           snippet: z.string(),
           truncated: z.boolean(),

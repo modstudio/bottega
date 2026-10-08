@@ -1,7 +1,7 @@
 // concern: record-public-docs
 /** Owns public-role document reads and hosted document search. Must not know HTTP or sessions. */
 import { SQL } from 'bun'
-import { type DocAudience, docSummary } from '../../../shared/docs.ts'
+import { type DocAudience, type DocStatus, docSummary } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
 const DOC_SEARCH_RESULT_LIMIT = 20
@@ -30,6 +30,7 @@ export type RecordDocSearchMatch = {
   title: string
   snippet: string
   spaceName?: string
+  status: DocStatus
 }
 
 export type RecordDocSearchInput = {
@@ -38,6 +39,7 @@ export type RecordDocSearchInput = {
   subject?: string | null
   audience?: DocAudience
   acrossReadableSpaces: boolean
+  includeDrafts?: boolean
 }
 
 export function normalizeDocSearchQuery(value: string): string {
@@ -68,6 +70,7 @@ export function recordDocSearchMatchRow(row: Record<string, unknown>): RecordDoc
     slug: String(row.slug),
     title: String(row.title),
     snippet: String(row.snippet),
+    status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
     ...(row.space_name == null ? {} : { spaceName: String(row.space_name) }),
   }
 }
@@ -145,7 +148,7 @@ export async function searchPublicRecordDocs(input: {
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
-      SELECT id, slug, title, ts_headline('english', body, value) AS snippet, rank
+      SELECT id, slug, title, 'current' AS status, ts_headline('english', body, value) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, id
     `
@@ -165,7 +168,7 @@ export async function searchRecordDocs(
       WITH search_query AS (
         SELECT websearch_to_tsquery('english', ${query}) AS value
       ), limited AS (
-        SELECT d.id, d.slug, d.title, d.body, s.name AS space_name, q.value,
+        SELECT d.id, d.slug, d.title, d.body, d.status, s.name AS space_name, q.value,
                ts_rank(d.search_vector, q.value) AS rank
         FROM doc d
         JOIN space s ON s.id=d.space_id
@@ -179,12 +182,12 @@ export async function searchRecordDocs(
             OR (${input.subject === null}::boolean AND d.subject IS NULL)
             OR d.subject=${input.subject ?? null}
           )
-          AND d.status = 'current'
+          AND (d.status = 'current' OR (${input.includeDrafts ?? false}::boolean AND d.status = 'draft'))
           AND d.search_vector @@ q.value
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
-      SELECT id, slug, title, space_name,
+      SELECT id, slug, title, status, space_name,
              ts_headline('english', body, value) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, id

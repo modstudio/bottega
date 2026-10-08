@@ -10,6 +10,7 @@ export type LocalDocSearchInput = {
   scope?: string
   subject?: string | null
   audience?: DocAudience
+  includeDrafts?: boolean
 }
 
 export function docSnippet(
@@ -62,14 +63,19 @@ export async function searchLocalDocs(
 ): Promise<DocSearchMatch[]> {
   const query = input.query.trim()
   if (!query) return []
-  const rows = await list({
+  const filters = {
     scope: input.scope,
     subject: input.subject,
     audience: input.audience,
-    status: 'current',
     match: query,
     bodyMatch: query,
-  })
+  }
+  const rows = (
+    await Promise.all([
+      list({ ...filters, status: 'current' }),
+      ...(input.includeDrafts ? [list({ ...filters, status: 'draft' })] : []),
+    ])
+  ).flat()
   const normalized = query.toLocaleLowerCase()
   return rows
     .filter((row) =>
@@ -82,6 +88,7 @@ export async function searchLocalDocs(
       id: String(row.id),
       slug: row.slug,
       title: row.title,
+      status: row.status ?? 'current',
       ...docSnippet(row.body, query),
     }))
 }

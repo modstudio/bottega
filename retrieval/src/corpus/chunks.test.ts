@@ -39,6 +39,7 @@ describe('chunkText', () => {
       slug: 'retrieval-design',
       title: 'Retrieval design',
       body: 'The measured design.',
+      status: 'current',
     })
 
     expect(chunk?.identity).toEqual({
@@ -60,6 +61,7 @@ describe('chunkText', () => {
       slug: 'headed',
       title: 'Whole document',
       body: '## Parent\nparent text\n\n### Child\nchild text\n\n## Sibling\nsibling text',
+      status: 'current',
     })
 
     expect(chunks.map((chunk) => chunk.text)).toEqual([
@@ -81,6 +83,7 @@ describe('chunkText', () => {
       slug: 'long-doc',
       title: 'Long doc',
       body: `## Details\n${paragraph}\n\n${paragraph}\n\n${longLines}`,
+      status: 'current',
     })
 
     expect(chunks.length).toBeGreaterThan(2)

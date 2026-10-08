@@ -270,6 +270,7 @@ export const recordRouter = t.router({
         scope: filter,
         subject: filter,
         audience: z.enum(DOC_AUDIENCES).optional(),
+        includeDrafts: z.boolean().optional(),
         acrossReadableSpaces: z.boolean().optional(),
       }),
     )

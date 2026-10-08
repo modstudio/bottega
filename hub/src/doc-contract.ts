@@ -24,6 +24,7 @@ const DocSearchMatchSchema = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),
+  status: z.enum(DOC_STATUSES).default('current'),
   snippet: z.string(),
   spaceName: z.string().optional(),
   matchPosition: z.number().int().nonnegative().nullable().default(null),

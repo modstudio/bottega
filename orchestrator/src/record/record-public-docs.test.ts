@@ -62,6 +62,7 @@ describe('record public docs', () => {
         id: 'doc-a',
         slug: 'guide',
         title: 'Guide',
+        status: 'current',
         snippet: '<b>Read</b> me',
         space_name: 'Public',
       }),
@@ -69,6 +70,7 @@ describe('record public docs', () => {
       id: 'doc-a',
       slug: 'guide',
       title: 'Guide',
+      status: 'current',
       snippet: '<b>Read</b> me',
       spaceName: 'Public',
     })

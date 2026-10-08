@@ -50,6 +50,7 @@ export const docRouter = t.router({
         scope: scope.optional(),
         subject: z.string().nullable().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
+        includeDrafts: z.boolean().optional(),
       }),
     )
     .query(({ input }) => fromOrch(() => localDocSearch(input))),

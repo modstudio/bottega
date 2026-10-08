@@ -6,7 +6,7 @@ import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
-import { planCanonImport } from './canon-import-policy.ts'
+import { nonCurrentCanonCollisionRefusal, planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlans,
@@ -71,18 +71,29 @@ export async function userCanonImportCommand(
     slug,
     body: stripUserCanonManagedMarker(text),
   }))
-  const currentRows = listDocs({ scope: 'canon', subject: null, owner })
-  const global = listDocs({ scope: 'canon', subject: null }).map(({ slug, body }) => ({
-    slug,
-    body,
-  }))
+  const allUserRows = listDocs({ scope: 'canon', subject: null, owner })
+  const collision = nonCurrentCanonCollisionRefusal({
+    rows: allUserRows,
+    desiredSlugs: rows.map((row) => row.slug),
+    address: { kind: 'user' },
+  })
+  if (collision) throw new Error(collision)
+  const currentRows = allUserRows.filter((row) => row.status === 'current')
+  const global = listDocs({ scope: 'canon', subject: null, status: 'current' }).map(
+    ({ slug, body }) => ({
+      slug,
+      body,
+    }),
+  )
   const surroundings = userCanonWriteTargets(projects()).map((project) => ({
     global,
     project: project
-      ? listDocs({ scope: 'canon', subject: project.name }).map(({ slug, body }) => ({
-          slug,
-          body,
-        }))
+      ? listDocs({ scope: 'canon', subject: project.name, status: 'current' }).map(
+          ({ slug, body }) => ({
+            slug,
+            body,
+          }),
+        )
       : [],
   }))
   const preview = planCanonImport({

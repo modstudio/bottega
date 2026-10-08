@@ -24,6 +24,7 @@ type IndexedRow = StoredVectorRow & {
   subject: string | null
   slug: string
   title: string
+  status: string
   headingPath: string
   text: string
   document: string
@@ -85,6 +86,7 @@ export function configureIndexDatabase(database: Database): void {
           subject TEXT,
           slug TEXT NOT NULL,
           title TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'current',
           heading_path TEXT NOT NULL,
           text TEXT NOT NULL,
           document TEXT NOT NULL,
@@ -115,6 +117,7 @@ export function configureIndexDatabase(database: Database): void {
         ['repository_path', 'TEXT'],
         ['start_line', 'INTEGER'],
         ['end_line', 'INTEGER'],
+        ['status', "TEXT NOT NULL DEFAULT 'current'"],
       ] as const) {
         if (!columns.has(name))
           database.exec(`ALTER TABLE document_vector ADD COLUMN ${name} ${declaration}`)
@@ -262,8 +265,8 @@ export function applyRefresh(database: Database, prepared: PreparedRefresh): App
     INSERT INTO document_vector (
       chunk_id, content_hash, model, dimension, instruction_version,
       corpus_key, project, repository_path, start_line, end_line,
-      scope, subject, slug, title, heading_path, text, document, vector
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      scope, subject, slug, title, status, heading_path, text, document, vector
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(chunk_id) DO UPDATE SET
       content_hash=excluded.content_hash, model=excluded.model,
       dimension=excluded.dimension, instruction_version=excluded.instruction_version,
@@ -271,7 +274,7 @@ export function applyRefresh(database: Database, prepared: PreparedRefresh): App
       repository_path=excluded.repository_path, start_line=excluded.start_line,
       end_line=excluded.end_line,
       scope=excluded.scope, subject=excluded.subject, slug=excluded.slug,
-      title=excluded.title, heading_path=excluded.heading_path, text=excluded.text,
+      title=excluded.title, status=excluded.status, heading_path=excluded.heading_path, text=excluded.text,
       document=excluded.document, vector=excluded.vector
   `)
   const remove = database.query('DELETE FROM document_vector WHERE chunk_id = ?')
@@ -339,6 +342,7 @@ export function applyRefresh(database: Database, prepared: PreparedRefresh): App
           doc?.subject ?? null,
           doc?.slug ?? '',
           candidate.chunk.docTitle ?? '',
+          candidate.chunk.docStatus ?? 'current',
           JSON.stringify(candidate.chunk.headingPath ?? []),
           candidate.chunk.text,
           candidate.document,
@@ -372,6 +376,7 @@ export function indexedRows(database: Database, corpusKey = 'docs'): IndexedRow[
       subject: row.subject === null ? null : String(row.subject),
       slug: String(row.slug),
       title: String(row.title),
+      status: row.status == null ? 'current' : String(row.status),
       headingPath: String(row.heading_path),
       text: String(row.text),
       document: String(row.document),

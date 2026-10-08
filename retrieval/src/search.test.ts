@@ -14,6 +14,7 @@ const chunk = (id: string, text = id): Chunk => ({
   text,
   docTitle: 'Doc',
   headingPath: [],
+  docStatus: 'current',
 })
 
 const addressedChunk = (
@@ -127,6 +128,39 @@ test('filters indexed rows before candidate selection without narrowing refresh'
         scenario.expected.toSorted((left, right) => left.slug.localeCompare(right.slug)),
       )
     }
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('drafts are indexed but absent by default and returned when requested', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-draft-filter-test-'))
+  const chunks = [
+    chunk('current', 'current answer'),
+    { ...chunk('draft', 'draft answer'), docStatus: 'draft' as const },
+  ]
+  const clients = {
+    embed: async (_url: string, input: string[]) =>
+      input.map(() => [1, ...Array.from<number>({ length: 1_023 }).fill(0)]),
+    rerank: async (_url: string, _query: string, documents: string[]) =>
+      documents.map((_document, index) => documents.length - index),
+  }
+  try {
+    const databasePath = join(directory, 'retrieval.db')
+    const current = await search('answer', 5, {
+      databasePath,
+      loadChunks: async () => chunks,
+      clients,
+    })
+    expect(current.results.map((result) => result.status)).toEqual(['current'])
+
+    const withDrafts = await search('answer', 5, {
+      databasePath,
+      loadChunks: async () => chunks,
+      clients,
+      includeDrafts: true,
+    })
+    expect(withDrafts.results.map((result) => result.status).sort()).toEqual(['current', 'draft'])
   } finally {
     rmSync(directory, { recursive: true })
   }

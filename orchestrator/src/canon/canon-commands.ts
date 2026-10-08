@@ -33,7 +33,7 @@ import {
   mainCheckoutHydrationRefusal,
   planHydration,
 } from './canon-hydrate.ts'
-import { planCanonImport } from './canon-import-policy.ts'
+import { nonCurrentCanonCollisionRefusal, planCanonImport } from './canon-import-policy.ts'
 import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'
@@ -155,7 +155,7 @@ function projectCanonImportPlan(
   if (renderedRows.length === 0) {
     throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
   }
-  const global = listDocs({ scope: 'canon', subject: null })
+  const global = listDocs({ scope: 'canon', subject: null, status: 'current' })
   const globalBySlug = new Map(global.map((row) => [row.slug, row]))
   for (const row of renderedRows) {
     const globalRow = globalBySlug.get(row.slug)
@@ -166,7 +166,14 @@ function projectCanonImportPlan(
     }
   }
   const rows = renderedRows.filter((row) => !globalBySlug.has(row.slug))
-  const projectRows = listDocs({ scope: 'canon', subject: project.name })
+  const allProjectRows = listDocs({ scope: 'canon', subject: project.name })
+  const collision = nonCurrentCanonCollisionRefusal({
+    rows: allProjectRows,
+    desiredSlugs: rows.map((row) => row.slug),
+    address: { kind: 'project', subject: project.name },
+  })
+  if (collision) throw new Error(collision)
+  const projectRows = allProjectRows.filter((row) => row.status === 'current')
   const plan = planCanonImport({
     address: { kind: 'project' },
     current: projectRows.map(({ slug, body }) => ({ slug, body })),

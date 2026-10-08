@@ -1,7 +1,44 @@
 import { expect, test } from 'bun:test'
-import { assertUserCanonHydrateAllowed } from './docs.ts'
+import { Command } from 'commander'
+import { assertUserCanonHydrateAllowed, register } from './docs.ts'
 
 const flags = (...names: string[]) => ({ has: (name: string) => names.includes(name) })
+
+function parseDocOptions(argv: string[]) {
+  const program = new Command().exitOverride()
+  register(program)
+  const command = program.commands.find((candidate) => candidate.name() === 'doc')!
+  const parsed = command.parseOptions(argv)
+  return { parsed, options: command.opts() }
+}
+
+test('the registered doc command parses status, set, and filtered list lifecycle flags', () => {
+  expect(
+    parseDocOptions([
+      'status',
+      'guide',
+      '--scope',
+      'global',
+      '--status',
+      'superseded',
+      '--replacement',
+      'new-guide',
+    ]),
+  ).toMatchObject({
+    parsed: { operands: ['status', 'guide'], unknown: [] },
+    options: { scope: 'global', status: 'superseded', replacement: 'new-guide' },
+  })
+  expect(parseDocOptions(['set', 'guide', '--scope', 'global', '--status', 'draft'])).toMatchObject(
+    {
+      parsed: { operands: ['set', 'guide'], unknown: [] },
+      options: { scope: 'global', status: 'draft' },
+    },
+  )
+  expect(parseDocOptions(['list', '--status', 'archived'])).toMatchObject({
+    parsed: { operands: ['list'], unknown: [] },
+    options: { status: 'archived' },
+  })
+})
 
 test('an orch worker cannot hydrate user canon but can check it', () => {
   const inventory = {

@@ -61,6 +61,7 @@ test('local search makes one orch call and excludes a subject-only store match',
     revision: null,
     created_at: '2026-10-06T12:00:00.000Z',
     updated_at: '2026-10-06T12:00:00.000Z',
+    status: 'current' as const,
   }
   const list = mock(async () => [base, { ...base, id: 2, body: 'Other.', subject: 'needle' }])
   expect(await searchLocalDocs({ query: 'needle' }, list as never)).toEqual([
@@ -68,6 +69,7 @@ test('local search makes one orch call and excludes a subject-only store match',
       id: '1',
       slug: 'guide',
       title: 'Guide',
+      status: 'current',
       snippet: 'A needle in the body.',
       matchPosition: 2,
     },
@@ -81,4 +83,24 @@ test('local search makes one orch call and excludes a subject-only store match',
     match: 'needle',
     bodyMatch: 'needle',
   })
+})
+
+test('local search includes draft rows only when requested', async () => {
+  const list = mock(async (filters: { status?: string }) =>
+    filters.status === 'draft'
+      ? [
+          {
+            id: 2,
+            slug: 'draft-guide',
+            title: 'Draft guide',
+            body: 'Needle draft.',
+            status: 'draft' as const,
+          },
+        ]
+      : [],
+  )
+  expect(await searchLocalDocs({ query: 'needle' }, list as never)).toEqual([])
+  expect(await searchLocalDocs({ query: 'needle', includeDrafts: true }, list as never)).toEqual([
+    expect.objectContaining({ slug: 'draft-guide', status: 'draft' }),
+  ])
 })

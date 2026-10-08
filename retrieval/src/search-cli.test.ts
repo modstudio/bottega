@@ -11,7 +11,14 @@ test('retrieval search human output reports stale refresh work', () => {
 test('retrieval search accepts options before the query', () => {
   expect(
     parseSearchArguments(['--code', '--project', '/checkout', '--k', '3', '--json', 'meaning']),
-  ).toEqual({ query: 'meaning', k: 3, json: true, code: true, projectPath: '/checkout' })
+  ).toEqual({
+    query: 'meaning',
+    k: 3,
+    json: true,
+    code: true,
+    projectPath: '/checkout',
+    includeDrafts: false,
+  })
 })
 
 test('retrieval document search parses address filters', () => {
@@ -22,8 +29,17 @@ test('retrieval document search parses address filters', () => {
     k: 3,
     json: false,
     code: false,
+    includeDrafts: false,
     scope: 'canon',
     subject: PLATFORM_SLUG,
+  })
+})
+
+test('retrieval document search parses draft inclusion', () => {
+  expect(parseSearchArguments(['meaning', '--include-drafts'])).toMatchObject({
+    query: 'meaning',
+    includeDrafts: true,
+    code: false,
   })
 })
 

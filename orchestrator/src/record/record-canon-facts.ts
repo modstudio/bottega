@@ -89,7 +89,7 @@ export async function recordCanonImportSurroundings(
     await tx`
       SELECT slug, body FROM doc
       WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject IS NULL
-        AND owner_user_id IS NULL AND deleted_at IS NULL
+        AND owner_user_id IS NULL AND deleted_at IS NULL AND status='current'
     `,
   )
   if (input.address.kind === 'project') return [{ global, project: [] }]
@@ -102,7 +102,7 @@ export async function recordCanonImportSurroundings(
           await tx`
             SELECT slug, body FROM doc
             WHERE space_id=${input.spaceId}::uuid AND scope='canon' AND subject=${name}
-              AND owner_user_id IS NULL AND deleted_at IS NULL
+              AND owner_user_id IS NULL AND deleted_at IS NULL AND status='current'
           `,
         )
       : []

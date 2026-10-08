@@ -117,6 +117,7 @@ describe('record client', () => {
           id,
           slug: 'welcome',
           title: 'Welcome',
+          status: 'current',
           snippet: 'Welcome body',
           matchPosition: null,
         },
@@ -168,10 +169,11 @@ describe('record client', () => {
       scope: 'project',
       subject: 'workshop',
       audience: 'technical',
+      includeDrafts: true,
       acrossReadableSpaces: true,
     })
     expect(requested).toBe(
-      'https://api.example.test/v1/docs/search?q=welcome&scope=project&subject=workshop&audience=technical&acrossReadableSpaces=true',
+      'https://api.example.test/v1/docs/search?q=welcome&scope=project&subject=workshop&audience=technical&includeDrafts=true&acrossReadableSpaces=true',
     )
     expect(result.items[0]).toMatchObject({ spaceName: 'Workshop', matchPosition: null })
   })
