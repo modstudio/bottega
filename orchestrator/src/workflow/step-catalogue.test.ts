@@ -57,6 +57,26 @@ test('new catalogue versions require a stage and reject legacy proof names', () 
   ).toContain('step "design" has invalid floor kind "human-ruling"')
 })
 
+test('catalogue sequences reject nesting, duplicate names, and the step namespace', () => {
+  const design = { ...step, stage: 'plan' as const }
+  const errors = validateStepCatalogue({
+    steps: [design],
+    sequences: [
+      { slug: 'quality', title: 'Quality', steps: ['other'] },
+      { slug: 'quality', title: 'Again', steps: ['design'] },
+      { slug: 'design', title: 'Collision', steps: ['quality'] },
+    ],
+  })
+  expect(errors).toEqual(
+    expect.arrayContaining([
+      'duplicate sequence slug "quality"; rename or remove one sequence',
+      'slug "design" names both a step and a sequence; rename either the step or the sequence',
+      'sequence "quality" references missing step "other"; add that step or edit the sequence',
+      'sequence "design" names sequence "quality"; replace it with that sequence\'s step slugs',
+    ]),
+  )
+})
+
 test('stored legacy steps normalize without revalidation', () => {
   expect(
     compatibleCatalogueStep({ ...step, autonomy: 'manual', floor: ['human-ruling'] } as never),

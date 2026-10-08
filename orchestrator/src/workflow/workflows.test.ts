@@ -7,6 +7,7 @@ import {
   setStepCatalogue,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
@@ -16,6 +17,7 @@ import {
   showWorkflow,
   validateWorkflowDefinition,
   type WorkflowDefinition,
+  workflowModeStepLists,
   workflowVersions,
 } from './workflows.ts'
 
@@ -115,6 +117,35 @@ describe('workflow definition validation', () => {
     missing.modes[0]!.steps = ['absent']
     expect(validateWorkflowDefinition(missing, d).join('\n')).toContain('references missing step')
   })
+  test('refuses an invalid entry and a sequence expansion with a duplicate step', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: current.steps,
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
+      },
+      'sequence fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    expect(
+      validateWorkflowDefinition(
+        { ...valid(), modes: [{ ...valid().modes[0]!, steps: [{ step: 'lens' }] }] },
+        d,
+      ).join('\n'),
+    ).toContain('must be a step slug or exactly')
+    expect(
+      validateWorkflowDefinition(
+        {
+          ...valid(),
+          modes: [{ ...valid().modes[0]!, steps: ['lens', { sequence: 'quality' }] }],
+        },
+        d,
+      ).join('\n'),
+    ).toContain('expands to duplicate step "lens"')
+  })
   test('validates modes and arguments', () => {
     const d = database(),
       definition = valid()
@@ -200,6 +231,46 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  test('sequence and flat modes compose, look up, and number identically', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogue(
+      {
+        steps: current.steps,
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
+      },
+      'sequence fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    for (const [slug, steps] of [
+      ['flat-fixture', ['rebase', 'lens', 'score', 'close']],
+      ['sequence-fixture', ['rebase', { sequence: 'quality' }, 'close']],
+    ] as const) {
+      const draft = setWorkflow(
+        slug,
+        { ...valid(), modes: [{ ...valid().modes[0]!, steps: [...steps] }] },
+        'sequence fixture',
+        'test',
+        d,
+      )
+      promoteWorkflow(slug, draft.n, 'publish', 'test', d)
+    }
+
+    const callArgs = { key: 'DEV-1195', branch: 'DEV-1195-sequences', worktree: '/tmp/fixture' }
+    const flat = composeWorkflow('flat-fixture', 'fixture', 'default', callArgs, d)
+    const sequence = composeWorkflow('sequence-fixture', 'fixture', 'default', callArgs, d)
+    expect(sequence.steps.map(({ slug }) => slug)).toEqual(flat.steps.map(({ slug }) => slug))
+    expect(
+      getWorkflowStep('sequence-fixture', 'fixture', 'lens', callArgs, d, { mode: 'default' }).next,
+    ).toEqual(
+      getWorkflowStep('flat-fixture', 'fixture', 'lens', callArgs, d, { mode: 'default' }).next,
+    )
+    expect(resolveWorkflowStepReference('3', workflowModeStepLists('sequence-fixture', d))).toBe(
+      'score',
+    )
+  })
   test('separate ship-to and tracker needs do not require a tracker review state', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
@@ -476,7 +547,7 @@ describe('workflow versions and project composition', () => {
         'draft workflow fixture',
         'test',
         d,
-        new Set(catalogue.definition.steps.map((step) => step.slug)),
+        catalogue.definition,
       )
 
     const composed = composeWorkflow('draft-flow', 'fixture', undefined, {}, d, {
@@ -853,6 +924,104 @@ describe('workflow versions and project composition', () => {
     promoteStepCatalogue(withoutTemp.n, 'publish', 'a', d)
     expect(() => promoteWorkflow('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
       'invalid workflow definition:\n- mode "default" references missing step "temp"',
+    )
+  })
+  test('promotion guards preserve production sequence references', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const withSequence = setStepCatalogue(
+      {
+        steps: current.steps,
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
+      },
+      'add sequence',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(withSequence.n, 'publish', 'test', d)
+    const definition = {
+      ...valid(),
+      modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
+    }
+    const flow = setWorkflow('sequence-guard', definition, 'use sequence', 'test', d)
+    promoteWorkflow('sequence-guard', flow.n, 'publish', 'test', d)
+    const withoutSequence = setStepCatalogue({ steps: current.steps }, 'drop sequence', 'test', d)
+    expect(() => promoteStepCatalogue(withoutSequence.n, 'publish', 'test', d)).toThrow(
+      'sequence "quality" is absent from the catalogue',
+    )
+  })
+
+  test('catalogue promotion preserves a step reached through a production sequence', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const lens = current.steps.find(({ slug }) => slug === 'lens')!
+    const withSequence = setStepCatalogue(
+      {
+        steps: [...current.steps, { ...lens, slug: 'sequence-only' }],
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['sequence-only'] }],
+      },
+      'add sequence step',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(withSequence.n, 'publish', 'test', d)
+    const flow = setWorkflow(
+      'sequence-step-guard',
+      {
+        ...valid(),
+        modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
+      },
+      'use sequence',
+      'test',
+      d,
+    )
+    promoteWorkflow('sequence-step-guard', flow.n, 'publish', 'test', d)
+    const withoutReachedStep = setStepCatalogue(
+      {
+        steps: current.steps,
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens'] }],
+      },
+      'drop reached step',
+      'test',
+      d,
+    )
+    expect(() => promoteStepCatalogue(withoutReachedStep.n, 'publish', 'test', d)).toThrow(
+      'sequence-step-guard: sequence-only',
+    )
+  })
+
+  test('workflow promotion refuses a sequence absent from production', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const withSequence = setStepCatalogue(
+      {
+        steps: current.steps,
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens'] }],
+      },
+      'add sequence',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(withSequence.n, 'publish', 'test', d)
+    const draft = setWorkflow(
+      'sequence-draft',
+      {
+        ...valid(),
+        modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
+      },
+      'use sequence',
+      'test',
+      d,
+    )
+    const withoutSequence = setStepCatalogue(
+      { steps: current.steps },
+      'drop unused sequence',
+      'test',
+      d,
+    )
+    promoteStepCatalogue(withoutSequence.n, 'publish', 'test', d)
+    expect(() => promoteWorkflow('sequence-draft', draft.n, 'publish', 'test', d)).toThrow(
+      'sequence "quality" is absent from the catalogue',
     )
   })
 })

@@ -13,6 +13,12 @@ import {
 } from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
+import {
+  type CatalogueSequence,
+  expandWorkflowSteps,
+  validateCatalogueSequences,
+  type WorkflowStepReference,
+} from './workflow-step-sequences.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`
@@ -32,7 +38,10 @@ export type CatalogueStep = {
   autonomy: AutonomyValue
   needs: WorkflowFactSource[]
 }
-type StepCatalogueDefinition = { steps: CatalogueStep[] }
+export type StepCatalogueDefinition = {
+  steps: CatalogueStep[]
+  sequences?: CatalogueSequence[]
+}
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -52,6 +61,16 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateNeeds(item, errors)
     validateDispatchPrompts(item, errors)
   }
+  errors.push(
+    ...validateCatalogueSequences(
+      value.sequences,
+      new Set(
+        value.steps.flatMap((item) =>
+          object(item) && typeof item.slug === 'string' ? [item.slug] : [],
+        ),
+      ),
+    ),
+  )
   return [...new Set(errors)]
 }
 
@@ -280,7 +299,10 @@ const CATALOGUE = 'shared'
 
 const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(row: T): T => ({
   ...row,
-  definition: { steps: row.definition.steps.map(compatibleCatalogueStep) },
+  definition: {
+    steps: row.definition.steps.map(compatibleCatalogueStep),
+    ...(row.definition.sequences === undefined ? {} : { sequences: row.definition.sequences }),
+  },
 })
 export const showStepCatalogue = (n?: number, d: Database = db()) =>
   compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
@@ -309,6 +331,53 @@ export const retireStepCatalogue = (
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
 export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
 
+type ProductionWorkflowDefinition = {
+  modes?: { slug?: string; steps?: WorkflowStepReference[] }[]
+  steps?: unknown[]
+}
+
+function catalogueModePromotionErrors(
+  workflowSlug: string,
+  mode: { slug?: string; steps?: WorkflowStepReference[] },
+  available: ReadonlySet<string>,
+  currentSequences: readonly CatalogueSequence[],
+  proposedSequences: readonly CatalogueSequence[],
+): string[] {
+  const entries = mode.steps ?? []
+  const priorSteps = expandWorkflowSteps(entries, currentSequences)
+  const absent = [...new Set(priorSteps)].filter((slug) => !available.has(slug))
+  const errors = absent.length ? [`${workflowSlug}: ${absent.join(', ')}`] : []
+  try {
+    const expanded = expandWorkflowSteps(entries, proposedSequences)
+    const duplicates = expanded.filter((slug, index) => expanded.indexOf(slug) !== index)
+    if (duplicates.length)
+      errors.push(
+        `${workflowSlug} mode ${mode.slug ?? ''}: duplicate steps ${[...new Set(duplicates)].join(', ')}`,
+      )
+  } catch (error) {
+    errors.push(
+      `${workflowSlug} mode ${mode.slug ?? ''}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  return errors
+}
+
+function cataloguePromotionReferenceErrors(
+  definition: StepCatalogueDefinition,
+  currentSequences: readonly CatalogueSequence[],
+  rows: { slug: string; definition: string }[],
+): string[] {
+  const available = new Set(definition.steps.map((step) => step.slug))
+  const proposedSequences = definition.sequences ?? []
+  return rows.flatMap((row) => {
+    const workflow = JSON.parse(row.definition) as ProductionWorkflowDefinition
+    if (workflow.steps) return [] // Legacy inline versions remain valid history and self-contained.
+    return (workflow.modes ?? []).flatMap((mode) =>
+      catalogueModePromotionErrors(row.slug, mode, available, currentSequences, proposedSequences),
+    )
+  })
+}
+
 export function promoteStepCatalogue(
   n: number,
   reason: string | undefined,
@@ -316,27 +385,16 @@ export function promoteStepCatalogue(
   d: Database = writableDb(),
 ) {
   return lifecycle.promote(CATALOGUE, n, reason, author, d, (definition, database) => {
-    const available = new Set(definition.steps.map((step) => step.slug))
-    const missing: string[] = []
+    const currentSequences = productionStepCatalogue(database).definition.sequences ?? []
     const rows = database
       .query(
         `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id WHERE v.status='production'`,
       )
       .all() as { slug: string; definition: string }[]
-    for (const row of rows) {
-      const workflow = JSON.parse(row.definition) as {
-        modes?: { steps?: string[] }[]
-        steps?: unknown[]
-      }
-      if (workflow.steps) continue // Legacy inline versions remain valid history and self-contained.
-      const absent = [...new Set(workflow.modes?.flatMap((mode) => mode.steps ?? []) ?? [])].filter(
-        (slug) => !available.has(slug),
-      )
-      if (absent.length) missing.push(`${row.slug}: ${absent.join(', ')}`)
-    }
+    const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
     if (missing.length)
       throw new Error(
-        `step catalogue drops steps used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}`,
+        `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
       )
   })
 }

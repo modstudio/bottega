@@ -71,6 +71,25 @@ describe('importWorkflowTree', () => {
     ).toBe(production.definition.steps.find((step) => step.slug === 'lens')?.body)
   })
 
+  test('a sequence file imports into the catalogue draft', () => {
+    const d = database()
+    const tree = renderedTree(d)
+    tree.push({
+      path: '.agents/workflow-sequences/quality.md',
+      body: '---\nslug: quality\ntitle: Quality\nsteps:\n  - lens\n  - score\n---\n\n',
+    })
+
+    const result = importWorkflowTree(parseWorkflowTree(tree), 'add sequence', 'worker', d)
+
+    expect(result).toEqual({ steps: [], sequences: ['quality'], workflows: [] })
+    const draft = d
+      .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
+      .get() as { n: number }
+    expect(showStepCatalogue(draft.n, d).definition.sequences).toEqual([
+      { slug: 'quality', title: 'Quality', steps: ['lens', 'score'] },
+    ])
+  })
+
   test('sync docs composes through orch-docs and array-mcp', () => {
     const d = database()
     const root = fileURLToPath(new URL('../../..', import.meta.url))
@@ -180,7 +199,7 @@ describe('importWorkflowTree', () => {
 
     const result = importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
 
-    expect(result).toEqual({ steps: ['tree-step'], workflows: ['tree-flow'] })
+    expect(result).toEqual({ steps: ['tree-step'], sequences: [], workflows: ['tree-flow'] })
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }

@@ -1,17 +1,19 @@
 // concern: workflow-tree
 /** Knows the pure markdown mirror for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
 import type { CatalogueStep } from './step-catalogue.ts'
+import type { CatalogueSequence } from './workflow-step-sequences.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
 export type WorkflowTreeStore = {
   steps: CatalogueStep[]
+  sequences: CatalogueSequence[]
   workflows: { slug: string; definition: WorkflowDefinition }[]
 }
 export type WorkflowTreeFile = { path: string; body: string }
 export type WorkflowTreePlan = { writes: WorkflowTreeFile[]; deletes: string[] }
 
 export const WORKFLOW_TREE_ROOT = '.agents'
-export const WORKFLOW_TREE_FOLDERS = ['workflow-steps', 'workflows'] as const
+export const WORKFLOW_TREE_FOLDERS = ['workflow-sequences', 'workflow-steps', 'workflows'] as const
 export type WorkflowTreeFolder = (typeof WORKFLOW_TREE_FOLDERS)[number]
 
 const SLUG = '[a-z0-9][a-z0-9-]{0,63}'
@@ -38,6 +40,10 @@ function document(frontMatter: Record<string, unknown>, body: string): string {
 }
 
 function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
+  const sequences = store.sequences.map((sequence) => ({
+    path: treePath('workflow-sequences', sequence.slug),
+    body: document({ slug: sequence.slug, title: sequence.title, steps: sequence.steps }, ''),
+  }))
   const steps = store.steps.map((step) => ({
     path: treePath('workflow-steps', step.slug),
     body: document(
@@ -71,7 +77,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
       definition.description,
     ),
   }))
-  return [...steps, ...workflows].sort((a, b) => a.path.localeCompare(b.path))
+  return [...sequences, ...steps, ...workflows].sort((a, b) => a.path.localeCompare(b.path))
 }
 
 export function planWorkflowHydration(input: {
@@ -138,13 +144,20 @@ const commandEvidenceFrom = (frontMatter: Record<string, unknown>) =>
 
 export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   const steps: CatalogueStep[] = []
+  const sequences: CatalogueSequence[] = []
   const workflows: WorkflowTreeStore['workflows'] = []
   for (const file of [...tree].sort((a, b) => a.path.localeCompare(b.path))) {
     const match = matchWorkflowTreePath(file.path)
     if (!match) continue
     const parsed = parseDocument(file)
     const frontMatter = record(parsed.frontMatter, file.path)
-    if (match.folder === 'workflow-steps') {
+    if (match.folder === 'workflow-sequences') {
+      sequences.push({
+        slug: frontMatter.slug as string,
+        title: frontMatter.title as string,
+        steps: frontMatter.steps as string[],
+      })
+    } else if (match.folder === 'workflow-steps') {
       steps.push({
         slug: match.slug,
         title: frontMatter.title as string,
@@ -178,5 +191,5 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
       })
     }
   }
-  return { steps, workflows }
+  return { steps, sequences, workflows }
 }
