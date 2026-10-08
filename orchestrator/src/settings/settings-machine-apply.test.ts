@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { assetPath } from '../../../shared/install-root.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -13,7 +14,7 @@ import { setDoc } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
-import { withMachineBoardHooks } from './settings-machine-hooks.ts'
+import { withMachineProductHooks } from './settings-machine-hooks.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
@@ -83,7 +84,11 @@ function writeCurrentSettings() {
     join(root, '.claude', 'settings.json'),
     `${JSON.stringify(
       {
-        ...withMachineBoardHooks({ permissions: { allow: ['Bash(orch *)'] }, hooks: {} }),
+        ...withMachineProductHooks(
+          { permissions: { allow: ['Bash(orch *)'] }, hooks: {} },
+          assetPath(),
+          join(root, 'state', 'orchestrator', 'orch.db'),
+        ).settings,
         env: {},
       },
       null,
@@ -273,11 +278,16 @@ describe('settings apply', () => {
     }
   })
 
-  test('presentation emits exactly one line per target', () => {
+  test('presentation emits target lines and one deletion notice per superseded profile handler', () => {
     const lines: string[] = []
     printMachineSettingsApplyResults(
       [
-        { target: 'settings one', outcome: 'current', changed: false },
+        {
+          target: 'settings one',
+          outcome: 'current',
+          changed: false,
+          superseded: [{ event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' }],
+        },
         { target: 'canon two', outcome: 'refused', detail: 'first\nsecond', changed: false },
         { target: 'settings apply', outcome: 'skipped', changed: false },
       ],
@@ -285,6 +295,7 @@ describe('settings apply', () => {
     )
     expect(lines).toEqual([
       'settings one: already current',
+      'profile hook PreToolUse Bash git-guard.py is superseded by the product hook and can be deleted from the profile',
       'canon two: refused; first; second',
       'settings apply already running; skipped',
     ])

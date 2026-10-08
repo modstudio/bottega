@@ -3,8 +3,13 @@
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
-import { resolveRunsDirectory, resolveStatePaths } from '../../../shared/state-directory.ts'
+import {
+  resolveOrchestratorDatabase,
+  resolveRunsDirectory,
+  resolveStatePaths,
+} from '../../../shared/state-directory.ts'
 import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
@@ -28,7 +33,7 @@ import {
   userSettingsEnvPath,
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
-import { withMachineBoardHooks } from './settings-machine-hooks.ts'
+import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
@@ -38,6 +43,7 @@ export type MachineSettingsApplyResult = {
   outcome: 'applied' | 'current' | 'refused' | 'skipped'
   detail?: string
   changed: boolean
+  superseded?: SupersededProfileHook[]
 }
 
 type Dependencies = {
@@ -91,7 +97,12 @@ function applyUserSettings(
       parseStoredOwnedSettings(row.body),
       readMachinePermissions(deps.environment),
     )
-    const owned = withMachineBoardHooks(merged.settings)
+    const productHooks = withMachineProductHooks(
+      merged.settings,
+      assetPath(),
+      resolveOrchestratorDatabase(deps.environment),
+    )
+    const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
     const removed = parsed.envKeys.filter((name) => !(owned.envKeys ?? []).includes(name))
@@ -111,6 +122,9 @@ function applyUserSettings(
         outcome: 'current',
         detail: unmatchedDropDetail(merged.unmatchedDrops),
         changed: false,
+        ...(!check && productHooks.superseded.length
+          ? { superseded: productHooks.superseded }
+          : {}),
       }
     }
     if (check)
@@ -133,6 +147,7 @@ function applyUserSettings(
         .filter(Boolean)
         .join('; '),
       changed: true,
+      ...(!check && productHooks.superseded.length ? { superseded: productHooks.superseded } : {}),
     }
   } catch (error) {
     return refusal(target, error)
@@ -266,5 +281,10 @@ export function printMachineSettingsApplyResults(
     const status = result.outcome === 'current' ? 'already current' : result.outcome
     const detail = result.detail?.replaceAll('\n', '; ')
     log(`${result.target}: ${status}${detail ? `; ${detail}` : ''}`)
+    for (const hook of result.superseded ?? []) {
+      log(
+        `profile hook ${hook.event} ${hook.matcher ?? '-'} ${hook.script} is superseded by the product hook and can be deleted from the profile`,
+      )
+    }
   }
 }

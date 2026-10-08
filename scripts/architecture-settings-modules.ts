@@ -64,6 +64,7 @@ export const settingsModules: SettingsModule[] = [
     'bun:sqlite',
     'fs',
     'path',
+    '../../../shared/install-root.ts',
     '../../../shared/state-directory.ts',
     '../../../shared/machine-config.ts',
     '../canon/user-canon-home-files.ts',
@@ -83,8 +84,6 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-machine-hooks.ts', [
     'node:path',
-    '../../../shared/install-root.ts',
-    '../../../shared/state-directory.ts',
     '../board/board-delivery.ts',
     './settings.ts',
   ]),
