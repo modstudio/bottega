@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_STATUSES } from '../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../shared/docs.ts'
 
 export const DocTreeItemSchema = z.object({
   id: z.string(),
@@ -15,6 +15,7 @@ export const DocTreeItemSchema = z.object({
   summary: z.string().optional(),
   featured: z.boolean().optional(),
   status: z.enum(DOC_STATUSES).optional(),
+  kind: z.enum(DOC_KINDS).optional(),
   replacementSlug: z.string().nullable().optional(),
 })
 
@@ -25,6 +26,7 @@ const DocSearchMatchSchema = z.object({
   slug: z.string(),
   title: z.string(),
   status: z.enum(DOC_STATUSES).default('current'),
+  kind: z.enum(DOC_KINDS).default('working'),
   snippet: z.string(),
   spaceName: z.string().optional(),
   matchPosition: z.number().int().nonnegative().nullable().default(null),

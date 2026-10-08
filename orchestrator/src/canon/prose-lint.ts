@@ -6,6 +6,7 @@ export type ProseFinding = {
   line: number
   message: string
   remedy: string
+  historyCertainty?: 'certain' | 'ambiguous'
 }
 
 const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
@@ -40,15 +41,24 @@ export const DEFAULT_COMMENT_HISTORY_PHRASES = [
   'restores the previous',
 ] as const
 
-const HISTORY_PATTERNS = [
+const CERTAIN_HISTORY_PATTERNS = [/\bwas (?:called|named)\b/i, /\brenamed\b/i]
+
+const AMBIGUOUS_HISTORY_PATTERNS = [
   /\bused to\b/i,
-  /\bwas (?:called|named)\b/i,
-  /\brenamed\b/i,
   /\bno longer\b/i,
   /\bpreviously\b/i,
   /\bformerly\b/i,
   /\b(?:that|this|it) (?:has )?changed\b/i,
 ]
+
+function historyPattern(
+  line: string,
+): { pattern: RegExp; certainty: 'certain' | 'ambiguous' } | undefined {
+  const certain = CERTAIN_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
+  if (certain) return { pattern: certain, certainty: 'certain' }
+  const ambiguous = AMBIGUOUS_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
+  return ambiguous ? { pattern: ambiguous, certainty: 'ambiguous' } : undefined
+}
 
 const ISSUE_PATTERNS = [
   /\bworkaround\b/i,
@@ -99,13 +109,14 @@ export function lintProse(text: string): ProseFinding[] {
   const findings: ProseFinding[] = []
   for (const { text: line, line: lineNumber } of proseLines(text)) {
     const withoutInlineCode = line.replace(/(`+)[^`]*?\1/g, '')
-    const historyPattern = HISTORY_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
-    if (historyPattern) {
+    const matchedHistoryPattern = historyPattern(withoutInlineCode)
+    if (matchedHistoryPattern) {
       findings.push({
         line: lineNumber,
         rule: 'history',
-        message: `matches banned history pattern ${historyPattern.source}`,
+        message: `matches banned history pattern ${matchedHistoryPattern.pattern.source}`,
         remedy: 'state only the current rule, constraint, behavior, or reason',
+        historyCertainty: matchedHistoryPattern.certainty,
       })
     }
     const issuePattern = ISSUE_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))

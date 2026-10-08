@@ -1,7 +1,12 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { DOC_AUDIENCES, type DocAudience, type DocStatus } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  type DocAudience,
+  type DocKind,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -14,6 +19,7 @@ import {
   type DocRevisionOp,
   docWriteProjectName,
   recordDocLintRefusal,
+  refuseArticleDelivery,
   refuseDocWrite,
   refuseMismatchedDocProject,
   refuseOwnedDocAddress,
@@ -36,6 +42,7 @@ import {
   recordDocRevisionRow,
   recordDocRow,
 } from './record-doc-mapping.ts'
+import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
   existingDocAtAddress,
   recordCanonTreeWriteRefusal,
@@ -62,12 +69,36 @@ export type RecordCanonImportResult = {
 
 type Tenant = { url: string } & TenantPrincipal
 type RecordCursor = { at: string; id: string }
+type StoredDocRow = Record<string, unknown>
+
+function storedDocKind(input: { kind?: DocKind }, existing?: StoredDocRow): DocKind {
+  return input.kind ?? (existing?.kind == null ? 'working' : (String(existing.kind) as DocKind))
+}
+
+function storedDocAudience(
+  input: { audience?: DocAudience },
+  existing?: StoredDocRow,
+): DocAudience {
+  return (
+    input.audience ??
+    (existing?.audience == null ? 'technical' : (String(existing.audience) as DocAudience))
+  )
+}
+
+function storedDocParentId(
+  input: { parentRecordId?: string | null },
+  existing?: StoredDocRow,
+): string | null {
+  if (input.parentRecordId !== undefined) return input.parentRecordId
+  return existing?.parent_id == null ? null : String(existing.parent_id)
+}
 
 export type RecordDocListInput = {
   scope?: string
   subject?: string | null
   audience?: DocAudience
   status?: DocStatus
+  kind?: DocKind
   updatedSince?: string
   limit: number
   cursor: RecordCursor | null
@@ -111,6 +142,7 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
         AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
         AND (${input.audience ?? null}::text IS NULL OR d.audience=${input.audience ?? null})
         AND (${input.status ?? null}::text IS NULL OR d.status=${input.status ?? null})
+        AND (${input.kind ?? null}::text IS NULL OR d.kind=${input.kind ?? null})
         AND (
           ${input.subject === undefined}::boolean
           OR (${input.subject === null}::boolean AND d.subject IS NULL)
@@ -174,6 +206,7 @@ export async function upsertRecordDoc(
     position?: number
     featured?: boolean
     status?: DocStatus
+    kind?: DocKind
     replacementSlug?: string | null
     projectName?: string | null
     reason: string
@@ -194,7 +227,7 @@ export async function upsertRecordDoc(
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, audience, featured, status, replacement_slug, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, audience, featured, status, kind, replacement_slug, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -231,15 +264,18 @@ export async function upsertRecordDoc(
         ...facts,
       }),
     )
+    const kind = storedDocKind(input, existing[0])
+    assertWrite(refuseArticleDelivery({ ...input, kind }))
     assertWrite(
       recordDocLintRefusal(
-        input,
+        { ...input, kind },
         existing[0]
           ? {
               scope: String(existing[0].scope),
               subject: existing[0].subject == null ? null : String(existing[0].subject),
               slug: String(existing[0].slug),
               body: String(existing[0].body),
+              kind: (existing[0].kind == null ? 'working' : String(existing[0].kind)) as DocKind,
             }
           : undefined,
       ),
@@ -251,19 +287,12 @@ export async function upsertRecordDoc(
     )
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
-    const audience =
-      input.audience ??
-      ((existing[0]?.audience == null ? 'technical' : String(existing[0].audience)) as DocAudience)
+    const audience = storedDocAudience(input, existing[0])
     if (!DOC_AUDIENCES.includes(audience))
       throw new RecordDocError(
         `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
       )
-    const parentId =
-      input.parentRecordId === undefined
-        ? existing[0]?.parent_id == null
-          ? null
-          : String(existing[0].parent_id)
-        : input.parentRecordId
+    const parentId = storedDocParentId(input, existing[0])
     assertWrite(
       await recordTreeWriteRefusal(tx, {
         spaceId: input.spaceId,
@@ -290,7 +319,7 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audience=${audience}, featured=${featured}, status=${status}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+            audience=${audience}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -298,15 +327,15 @@ export async function upsertRecordDoc(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audience, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${audience}, ${featured}, ${status}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${audience}, ${featured}, ${status}, ${kind}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
     }
-    const revisionId = await insertRevision(tx, {
+    const revisionId = await insertRecordDocRevision(tx, {
       id: input.revisionId,
       spaceId: input.spaceId,
       docId,
@@ -324,6 +353,7 @@ export async function upsertRecordDoc(
       position,
       featured,
       status,
+      kind,
       replacementSlug,
       author: input.author,
       reason: input.reason,
@@ -332,62 +362,6 @@ export async function upsertRecordDoc(
     })
     return { id: docId, revisionId }
   })
-}
-
-async function insertRevision(
-  tx: SQL,
-  input: {
-    id?: string
-    spaceId: string
-    docId: string
-    scope: string
-    subject: string | null
-    owner: string | null
-    slug: string
-    projectId: string | null
-    op: DocRevisionOp
-    title: string
-    body: string
-    delivery: DocDelivery
-    audience: DocAudience
-    parentId: string | null
-    position: number
-    featured?: boolean
-    status?: DocStatus
-    replacementSlug?: string | null
-    author: string
-    reason: string
-    sessionId: string | null
-    at: string
-  },
-): Promise<string> {
-  const id = input.id ?? newRecordId()
-  const existing = input.id
-    ? await tx`SELECT id FROM doc_revision WHERE space_id=${input.spaceId}::uuid AND id=${id}::uuid`
-    : await tx`
-        SELECT id FROM doc_revision
-        WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.docId}::uuid
-          AND at=${input.at}::timestamptz AND op=${input.op}
-          AND author=${input.author} AND reason=${input.reason}
-      `
-  const storedId = existing[0] ? String(existing[0].id) : id
-  if (!existing[0]) {
-    await tx`
-      INSERT INTO doc_revision (
-        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position,
-        author, reason, session_id, at
-      ) VALUES (
-        ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
-        ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-        ${input.delivery}, ${input.audience}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
-      )
-    `
-  }
-  await tx`
-    UPDATE doc SET latest_revision_id=${storedId}::uuid
-    WHERE space_id=${input.spaceId}::uuid AND id=${input.docId}::uuid
-  `
-  return storedId
 }
 
 type CanonImportRow = RecordCanonImportInput['rows'][number]
@@ -456,7 +430,7 @@ async function writeCanonRows(
         )
       `
     }
-    const revisionId = await insertRevision(tx, {
+    const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: id,
       scope: 'canon',
@@ -472,6 +446,7 @@ async function writeCanonRows(
       parentId: null,
       position: 0,
       status: prior?.status == null ? 'current' : (String(prior.status) as DocStatus),
+      kind: prior?.kind == null ? 'working' : (String(prior.kind) as DocKind),
       replacementSlug: prior?.replacement_slug == null ? null : String(prior.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -512,7 +487,7 @@ async function deleteMissingCanonRows(
       UPDATE doc SET deleted_at=${at}::timestamptz, updated_at=${at}::timestamptz
       WHERE space_id=${input.spaceId}::uuid AND id=${id}::uuid
     `
-    const revisionId = await insertRevision(tx, {
+    const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: id,
       scope: 'canon',
@@ -528,6 +503,7 @@ async function deleteMissingCanonRows(
       parentId: null,
       position: 0,
       status: prior.status == null ? 'current' : (String(prior.status) as DocStatus),
+      kind: prior.kind == null ? 'working' : (String(prior.kind) as DocKind),
       replacementSlug: prior.replacement_slug == null ? null : String(prior.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -663,7 +639,7 @@ export async function deleteRecordDoc(
       UPDATE doc SET deleted_at=${now}::timestamptz, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid AND deleted_at IS NULL
     `
-    const revisionId = await insertRevision(tx, {
+    const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
       scope: String(doc.scope),
@@ -679,6 +655,7 @@ export async function deleteRecordDoc(
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
+      kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -719,7 +696,7 @@ export async function consumeRecordDoc(
       UPDATE doc SET body=${consumed.body}, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
-    const revisionId = await insertRevision(tx, {
+    const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
       scope: String(doc.scope),
@@ -735,6 +712,7 @@ export async function consumeRecordDoc(
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
+      kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -806,6 +784,7 @@ export async function restoreRecordDoc(
     const position = Number(revision.position)
     const featured = revision.featured == null ? false : Boolean(revision.featured)
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
+    const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -839,12 +818,12 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audience=${audience}, featured=${featured}, status=${status}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audience=${audience}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
-    const revisionId = await insertRevision(tx, {
+    const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
       scope,
@@ -861,6 +840,7 @@ export async function restoreRecordDoc(
       position,
       featured,
       status,
+      kind,
       replacementSlug,
       author: input.author,
       reason: input.reason,
@@ -955,6 +935,7 @@ export async function importRecordDoc(
               subject: existing.subject == null ? null : String(existing.subject),
               slug: String(existing.slug),
               body: String(existing.body),
+              kind: (existing.kind == null ? 'working' : String(existing.kind)) as DocKind,
             }
           : undefined,
       ),
@@ -995,7 +976,7 @@ export async function importRecordDoc(
     const revisionIds: string[] = []
     for (const revision of revisions) {
       revisionIds.push(
-        await insertRevision(tx, {
+        await insertRecordDocRevision(tx, {
           spaceId: input.spaceId,
           docId: id,
           scope: doc.scope,
@@ -1012,6 +993,7 @@ export async function importRecordDoc(
           position: revision.position,
           featured: revision.featured,
           status: revision.status,
+          kind: revision.kind,
           replacementSlug: revision.replacementSlug,
           author: revision.author,
           reason: revision.reason,

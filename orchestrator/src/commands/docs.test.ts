@@ -38,6 +38,14 @@ test('the registered doc command parses status, set, and filtered list lifecycle
     parsed: { operands: ['list'], unknown: [] },
     options: { status: 'archived' },
   })
+  expect(parseDocOptions(['set', 'guide', '--kind', 'article'])).toMatchObject({
+    parsed: { operands: ['set', 'guide'], unknown: [] },
+    options: { kind: 'article' },
+  })
+  expect(parseDocOptions(['list', '--kind', 'working'])).toMatchObject({
+    parsed: { operands: ['list'], unknown: [] },
+    options: { kind: 'working' },
+  })
 })
 
 test('an orch worker cannot hydrate user canon but can check it', () => {

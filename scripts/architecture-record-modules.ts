@@ -19,6 +19,12 @@ export const recordModules: RecordModule[] = [
     './record-doc-errors.ts',
   ]),
   module('orchestrator/src/record/record-doc-import-write.ts', ['bun', './record-doc-mapping.ts']),
+  module('orchestrator/src/record/record-doc-revision-write.ts', [
+    'bun',
+    '../../../shared/docs.ts',
+    '../../../shared/record/schema.ts',
+    '../doc/doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/record/record-write-decision.ts', []),
   module('orchestrator/src/record/record-write-authority.ts', [

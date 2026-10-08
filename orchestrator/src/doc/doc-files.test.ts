@@ -13,6 +13,7 @@ test('import writes replacements before superseded documents regardless of file 
     slug: 'z-current',
     title: 'Current',
     body: 'new',
+    kind: 'article',
   })
   await setDoc({
     scope: 'global',
@@ -45,6 +46,7 @@ test('import writes replacements before superseded documents regardless of file 
       status: 'superseded',
       replacement_slug: 'z-current',
     })
+    expect(getDoc('global', null, 'z-current')?.kind).toBe('article')
   } finally {
     rmSync(target, { recursive: true, force: true })
   }

@@ -4,12 +4,27 @@ import {
   decideDocRevisionWrite,
   docWriteProjectName,
   globalCanonWriteTargets,
+  refuseArticleDelivery,
   refuseCanonWrite,
   refuseMismatchedDocProject,
   refuseOwnedDocAddress,
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('articles are demand-only and excluded from canon', () => {
+  const base = { scope: 'job', subject: 'understand', slug: 'guide', kind: 'article' as const }
+  expect(refuseArticleDelivery({ ...base, delivery: 'inject' })).toContain(
+    'kind article requires effective delivery demand',
+  )
+  expect(refuseArticleDelivery({ ...base, delivery: 'inject' })).toContain(
+    'orch doc set guide --scope job --subject understand --kind article --delivery demand',
+  )
+  expect(refuseArticleDelivery({ ...base, delivery: 'demand' })).toBeNull()
+  expect(
+    refuseArticleDelivery({ ...base, scope: 'canon', subject: null, delivery: 'demand' }),
+  ).toContain('canon scope requires kind working')
+})
 
 test('document writes derive their project from the shared scope subject kind', () => {
   const cases: [string, string | null, string | null][] = [

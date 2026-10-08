@@ -1,7 +1,7 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
 
-import type { DocAudience, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -25,6 +25,7 @@ type LocalDoc = {
   position: number
   featured: boolean
   status: DocStatus
+  kind: DocKind
   replacement_slug: string | null
   project_id: number | null
   created_at: string
@@ -48,6 +49,7 @@ type LocalRevision = {
   position: number
   featured: boolean
   status: DocStatus
+  kind: DocKind
   replacement_slug: string | null
   author: string
   reason: string
@@ -110,6 +112,7 @@ function asRevision(
     position: row.position,
     featured: Boolean(row.featured),
     status: row.status,
+    kind: row.kind,
     replacementSlug: row.replacement_slug,
     author: row.author,
     reason: row.reason,
@@ -146,6 +149,7 @@ function groupFromLive(
         position: doc.position,
         featured: Boolean(doc.featured),
         status: doc.status,
+        kind: doc.kind,
         replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
@@ -204,13 +208,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, status, replacement_slug, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, status, kind, replacement_slug, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )
@@ -292,7 +296,7 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, replacement_slug, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, kind, replacement_slug, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
@@ -332,6 +336,9 @@ function liveDocMismatches(
   }
   if (hosted.status !== doc.status) {
     mismatches.push(`${label}: status ${doc.status} != ${String(hosted.status)}`)
+  }
+  if (hosted.kind !== doc.kind) {
+    mismatches.push(`${label}: kind ${doc.kind} != ${String(hosted.kind)}`)
   }
   if ((hosted.replacementSlug ?? null) !== doc.replacement_slug) {
     mismatches.push(

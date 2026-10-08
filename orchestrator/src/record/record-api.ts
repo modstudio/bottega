@@ -5,7 +5,7 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_STATUSES } from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes } from './record-api-access.ts'
@@ -729,6 +729,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         subject: z.string().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
         status: z.enum(DOC_STATUSES).optional(),
+        kind: z.enum(DOC_KINDS).optional(),
         updatedSince: z.string().datetime({ offset: true }).optional(),
         limit: limitSchema,
         cursor: z.string().optional(),
@@ -755,6 +756,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       subject: query.data.subject === undefined ? undefined : query.data.subject || null,
       audience: query.data.audience,
       status: query.data.status,
+      kind: query.data.kind,
       updatedSince: query.data.updatedSince,
       limit: query.data.limit,
       cursor,

@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_SCOPES, DOC_STATUSES } from '../../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_SCOPES, DOC_STATUSES } from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
 import { localDocRead, localDocsTree } from '../../local-docs.ts'
 import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
@@ -21,6 +21,7 @@ export const docRouter = t.router({
           subject: z.string().nullable().optional(),
           audience: z.enum(DOC_AUDIENCES).optional(),
           status: z.enum(DOC_STATUSES).optional(),
+          kind: z.enum(DOC_KINDS).optional(),
         })
         .optional(),
     )
@@ -36,6 +37,7 @@ export const docRouter = t.router({
           subject: z.string().nullable().optional(),
           audience: z.enum(DOC_AUDIENCES).optional(),
           status: z.enum(DOC_STATUSES).optional(),
+          kind: z.enum(DOC_KINDS).optional(),
         })
         .optional(),
     )
@@ -66,6 +68,7 @@ export const docRouter = t.router({
         delivery: z.enum(['inject', 'demand']).optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
         status: z.enum(DOC_STATUSES).optional(),
+        kind: z.enum(DOC_KINDS).optional(),
         replacementSlug: z.string().nullable().optional(),
         parentSlug: z.string().nullable().optional(),
         position: z.number().int().optional(),
