@@ -183,6 +183,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/run/run-board-prompt.ts', [
     'node:fs',
     '../board/board-delivery.ts',
+    '../board/board-render.ts',
     '../database/db.ts',
     './run-process.ts',
   ]),

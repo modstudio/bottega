@@ -11,7 +11,6 @@ import { boardContext, boardRunContext } from './board-context.ts'
 import {
   acknowledgementRefusal,
   architectIdentity,
-  audienceRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
@@ -379,8 +378,6 @@ export function insertRootMessage(
     input.audience,
     postingMachine,
   )
-  const refusal = audienceRefusal(audience, actor.kind)
-  if (refusal) throw new Error(refusal)
   const runRefusal = runAudienceRefusal(
     audience,
     actor.kind,
@@ -503,10 +500,21 @@ export function messageTags(messageId: number, database = db()): BoardTag[] {
     .all(messageId) as BoardTag[]
 }
 
-export function addressed(message: MessageRow, reader: string, clock: number): boolean {
+export function addressed(
+  message: MessageRow,
+  reader: string,
+  clock: number,
+  database = db(),
+): boolean {
   return (
     message.audience !== null &&
-    recipients(message.audience, clock, messageTags(message.id)).includes(reader)
+    recipients(
+      message.audience,
+      clock,
+      messageTags(message.id, database),
+      database,
+      presenceFacts(database, clock),
+    ).includes(reader)
   )
 }
 
@@ -525,9 +533,9 @@ export function rowIsLive(message: MessageRow, clock: number, database = db()): 
   )
 }
 
-export function hasReceipt(messageId: number, reader: string): boolean {
+export function hasReceipt(messageId: number, reader: string, database = db()): boolean {
   return Boolean(
-    db()
+    database
       .query('SELECT 1 FROM board_receipt WHERE message_id=? AND reader_session=?')
       .get(messageId, reader),
   )

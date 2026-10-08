@@ -11,7 +11,6 @@ import {
   OPERATOR_READER,
   parseAudience,
   requireRealSession,
-  shouldInterrupt,
 } from './board-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
 import {
@@ -120,23 +119,28 @@ export function runReader(runId: number): string {
   return `run:${row.root_id}`
 }
 
-function wasDelivered(messageId: number, reader: string): boolean {
-  const receipt = db()
+function wasDelivered(messageId: number, reader: string, database = db()): boolean {
+  const receipt = database
     .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
     .get(messageId, reader) as { delivered_at: string | null } | null
   return Boolean(receipt?.delivered_at)
 }
 
-function deliverableTo(message: MessageRow, reader: string, clock: number): boolean {
+function deliverableTo(
+  message: MessageRow,
+  reader: string,
+  clock: number,
+  database = db(),
+): boolean {
   return message.kind === 'reply'
-    ? hasReceipt(message.id, reader)
-    : addressed(message, reader, clock)
+    ? hasReceipt(message.id, reader, database)
+    : addressed(message, reader, clock, database)
 }
 
-function render(message: MessageRow, worker = false) {
-  const tags = messageTags(message.id)
+function render(message: MessageRow, worker = false, database = db()) {
+  const tags = messageTags(message.id, database)
   if (message.kind === 'reply') {
-    const root = messageRows().find((candidate) => candidate.id === message.thread_root_id)
+    const root = messageRows(database).find((candidate) => candidate.id === message.thread_root_id)
     if (!root?.title) throw new Error(`board reply ${message.id} has no thread root`)
     return {
       id: message.id,
@@ -233,16 +237,18 @@ export function claimNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
+  database = db(),
 ): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
   const reader = boardReader(env)
-  const rows = messageRows().filter(
+  const rows = messageRows(database).filter(
     (row) =>
-      rowIsLive(row, clock) &&
-      deliverableTo(row, reader, clock) &&
-      (all || !wasDelivered(row.id, reader)),
+      row.author_session !== reader &&
+      rowIsLive(row, clock, database) &&
+      deliverableTo(row, reader, clock, database) &&
+      (all || !wasDelivered(row.id, reader, database)),
   )
   return rows.map((row) => ({
-    ...render(row),
+    ...render(row, false, database),
     ackRequired: row.ack_required === 1,
     createdAt: row.created_at,
   }))
@@ -257,7 +263,11 @@ export function markNoticesDelivered(
   const reader = boardReader(env)
   const idSet = new Set(ids)
   const rows = messageRows(database).filter(
-    (row) => idSet.has(row.id) && rowIsLive(row, clock) && deliverableTo(row, reader, clock),
+    (row) =>
+      idSet.has(row.id) &&
+      row.author_session !== reader &&
+      rowIsLive(row, clock, database) &&
+      deliverableTo(row, reader, clock, database),
   )
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
@@ -356,27 +366,7 @@ export function withdrawNotice(id: number, env: Environment = process.env, clock
     .run(new Date(clock).toISOString(), id)
 }
 
-export function claimInterruptNotices(session: string, clock = Date.now()) {
-  requireRealSession(session, 'board delivery')
-  return messageRows()
-    .filter(
-      (row) =>
-        row.kind === 'notice' &&
-        rowIsLive(row, clock) &&
-        addressed(row, session, clock) &&
-        shouldInterrupt({
-          authorKind: row.author_kind,
-          audienceKind: parseAudience(row.audience!).kind,
-          ackRequired: row.ack_required === 1,
-          claimConflict: row.claim_id !== null,
-          ownPost: row.author_session === session,
-        }) &&
-        !wasDelivered(row.id, session),
-    )
-    .map((row) => ({ noticeId: `board:${row.id}` as const, detail: render(row).text }))
-}
-
-export function markInterruptNoticesDelivered(session: string, ids: number[], at = nowIso()) {
+export function markSessionMessagesDelivered(session: string, ids: number[], at = nowIso()) {
   requireRealSession(session, 'board delivery acknowledgement')
   const database = writableDb()
   for (const id of ids)

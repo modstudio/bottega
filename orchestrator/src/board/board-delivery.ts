@@ -5,20 +5,17 @@ import { classifyBoardId } from '../../../shared/board-mode.ts'
 
 import {
   claimCachedHosted,
-  claimCachedHostedInterrupts,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   refreshHostedBoard,
-  takeHostedBoardVerificationTransition,
 } from './board-hosted-cache.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import {
-  claimInterruptNotices,
   claimNotices,
   claimRunNotices,
-  markInterruptNoticesDelivered,
   markNoticesDelivered,
   markRunNoticesDelivered,
+  markSessionMessagesDelivered,
   readNotices,
   runReader,
 } from './board-service.ts'
@@ -29,7 +26,6 @@ export const BOARD_PUSH_REMIND_SECONDS = 300
 export const BOARD_PUSH_RETRY_SECONDS = 15
 export const BOARD_ACK_STOP_BLOCKS = 3
 export const BOARD_PUSH_SLOW_TIMEOUT_SECONDS = (BOARD_READ_REFRESH_BUDGET_MS + 2_000) / 1_000
-const BOARD_MONITOR_REFRESH_BUDGET_MS = 500
 const BOARD_PROMPT_REFRESH_BUDGET_MS = 750
 export const BOARD_ASK_REFRESH_BUDGET_MS = 500
 
@@ -141,35 +137,13 @@ export async function markBoardNoticesDelivered(
   if (ids.hosted.length) await markCachedHostedDelivered(sessionReader(env), ids.hosted)
 }
 
-export async function claimBoardInterrupts(
-  ownerSession: string,
-  input: { refresh?: boolean } = {},
-): Promise<{
-  notices: Array<{ noticeId: `board:${string}`; detail: string }>
-  warning: string | null
-}> {
-  const refreshed =
-    input.refresh === false
-      ? 'success'
-      : await refreshHostedBoard({ budgetMs: BOARD_MONITOR_REFRESH_BUDGET_MS })
-  const local = claimInterruptNotices(ownerSession)
-  if (refreshed === 'local') return { notices: local, warning: null }
-  return {
-    notices: [...local, ...claimCachedHostedInterrupts(ownerSession)],
-    warning:
-      input.refresh === false
-        ? hostedBoardVerificationWarning()
-        : takeHostedBoardVerificationTransition(),
-  }
-}
-
-export async function markBoardInterruptsDelivered(
+export async function markBoardDeliveriesDelivered(
   ownerSession: string,
   ids: string[],
   deliveredAt: string,
 ): Promise<void> {
   const split = splitBoardIds(ids)
-  markInterruptNoticesDelivered(ownerSession, split.local, deliveredAt)
+  markSessionMessagesDelivered(ownerSession, split.local, deliveredAt)
   if (split.hosted.length)
     await markCachedHostedDelivered(ownerSession, split.hosted, {
       clock: Date.parse(deliveredAt),

@@ -64,15 +64,6 @@ export function parseAudience(expression: string): Audience {
   }
 }
 
-export function audienceRefusal(
-  audience: Audience,
-  author: 'operator' | 'architect',
-): string | null {
-  return audience.kind === 'architects' && author !== 'operator'
-    ? 'only the operator may address architects; use project:<name>'
-    : null
-}
-
 export function acknowledgementRefusal(input: {
   ackRequired: boolean
   audience: Audience
@@ -123,22 +114,6 @@ export function resolveAudience(
   if (audience.kind === 'machine')
     return readers(live.filter((row) => row.machine === audience.value))
   return readers(live.filter((row) => row.role === 'architect' && row.reader === audience.value))
-}
-
-export const shouldInterrupt = (message: {
-  authorKind: string
-  authorIsSignedInUser?: boolean
-  audienceKind: Audience['kind']
-  ackRequired: boolean
-  claimConflict?: boolean
-  ownPost?: boolean
-}): boolean => {
-  if (message.ownPost) return false
-  return (
-    message.claimConflict === true ||
-    (message.ackRequired &&
-      !(message.authorKind === 'operator' && message.authorIsSignedInUser === false))
-  )
 }
 
 export function requireRealSession(session: string, action: string): void {

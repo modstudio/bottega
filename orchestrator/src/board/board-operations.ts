@@ -269,9 +269,14 @@ export function hostedBoardStatusResult(
   return {
     message: hostedMessage(message),
     receipts: receipts.map((receipt) => ({ ...receipt })),
-    reached: null,
-    acknowledged: null,
-    unacknowledged: null,
+    reached: receipts.length,
+    acknowledged: receipts.filter((receipt) => receipt.acknowledgedAt !== null).length,
+    unacknowledged: message.ackRequired
+      ? receipts
+          .filter((receipt) => receipt.acknowledgedAt === null)
+          .map((receipt) => receipt.readerSession)
+          .sort()
+      : [],
   }
 }
 

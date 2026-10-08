@@ -199,9 +199,9 @@ test('an adopted overview combines local and cached roots with null hosted reach
   expect(listed.messages[0]).toMatchObject({
     id: hosted.id,
     store: 'hosted',
-    reached: null,
-    acknowledged: null,
-    unacknowledged: null,
+    reached: 0,
+    acknowledged: 0,
+    unacknowledged: [],
     replyCount: 0,
   })
   expect(listed.messages[1]).toMatchObject({ id: String(local.id), store: 'local', reached: 0 })

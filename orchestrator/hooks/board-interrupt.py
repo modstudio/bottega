@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PostToolUse hook: inject due acknowledgement-required board notices."""
+"""PostToolUse hook: inject due board delivery without changing Stop policy."""
 from __future__ import annotations
 
 import calendar
@@ -11,6 +11,7 @@ import time
 
 from board_hook_common import (
     marker_path,
+    mark_delivered,
     pending,
     read_marker,
     store_path,
@@ -31,24 +32,29 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
     try:
         local = connection.execute(
             """SELECT CAST(m.id AS TEXT) FROM board_message m
-               WHERE m.kind='notice' AND m.ack_required=1 AND m.withdrawn_at IS NULL
-                 AND julianday(m.expires_at)>julianday('now')
+               WHERE m.withdrawn_at IS NULL
+                 AND (m.kind='reply' OR julianday(m.expires_at)>julianday('now'))
                  AND (m.author_session IS NULL OR m.author_session<>?)
-                 AND NOT EXISTS (SELECT 1 FROM board_receipt r WHERE r.message_id=m.id
-                   AND r.reader_session=? AND r.acknowledged_at IS NOT NULL)""",
-            (session, session),
+                 AND (NOT EXISTS (SELECT 1 FROM board_receipt r WHERE r.message_id=m.id
+                   AND r.reader_session=? AND r.delivered_at IS NOT NULL)
+                   OR (m.kind='notice' AND m.ack_required=1 AND NOT EXISTS
+                     (SELECT 1 FROM board_receipt r WHERE r.message_id=m.id
+                      AND r.reader_session=? AND r.acknowledged_at IS NOT NULL)))""",
+            (session, session, session),
         ).fetchall()
         hosted = connection.execute(
             """SELECT m.id FROM hosted_board_message_cache m
-               WHERE m.kind='notice' AND json_extract(m.payload,'$.ackRequired')=1
-                 AND json_extract(m.payload,'$.withdrawnAt') IS NULL
-                 AND julianday(json_extract(m.payload,'$.expiresAt'))>julianday('now')
+               WHERE json_extract(m.payload,'$.withdrawnAt') IS NULL
+                 AND (m.kind='reply' OR julianday(json_extract(m.payload,'$.expiresAt'))>julianday('now'))
                  AND (json_extract(m.payload,'$.authorSession') IS NULL
                       OR json_extract(m.payload,'$.authorSession')<>?)
-                 AND NOT EXISTS (SELECT 1 FROM hosted_board_receipt_cache r
-                   WHERE r.message_id=m.id AND r.reader_session=?
-                     AND r.acknowledged_at IS NOT NULL)""",
-            (session, session),
+                 AND (NOT EXISTS (SELECT 1 FROM hosted_board_receipt_cache r
+                   WHERE r.message_id=m.id AND r.reader_session=? AND r.delivered_at IS NOT NULL)
+                   OR (m.kind='notice' AND json_extract(m.payload,'$.ackRequired')=1
+                     AND NOT EXISTS (SELECT 1 FROM hosted_board_receipt_cache r
+                       WHERE r.message_id=m.id AND r.reader_session=?
+                         AND r.acknowledged_at IS NOT NULL)))""",
+            (session, session, session),
         ).fetchall()
         row = connection.execute(
             "SELECT value FROM schema_meta WHERE key='board_hosted_refresh_at'"
@@ -151,7 +157,7 @@ def main() -> int:
         ):
             return 0
         try:
-            notices = pending(session)
+            notices, overflow, _pending_acknowledgements = pending(session)
         except Exception:
             previous = marker or {
                 "candidate_ids": set(),
@@ -170,25 +176,35 @@ def main() -> int:
             return 0
         injected_at = {} if marker is None else marker["injected_at"]
         due = due_notices(notices, injected_at, remind, now)
-        for notice in due:
-            injected_at[notice["id"]] = now
+        if due:
+            context = "\n\n".join(item["text"] for item in due)
+            if overflow:
+                context += "\n\n" + overflow
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": context,
+                }
+            }
+            sys.stdout.write(json.dumps(output) + "\n")
+            sys.stdout.flush()
+            mark_delivered(session, [item["id"] for item in due])
+            for notice in due:
+                injected_at[notice["id"]] = now
+        recorded_candidates = candidates
+        if overflow:
+            recorded_candidates = candidates.intersection(
+                item["id"] for item in notices
+            )
         write_marker(
             path,
             {
-                "candidate_ids": sorted(candidates),
+                "candidate_ids": sorted(recorded_candidates),
                 "ran_at": now,
                 "failure_at": 0,
                 "injected_at": injected_at,
             },
         )
-        if due:
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": "\n\n".join(item["text"] for item in due),
-                }
-            }
-            sys.stdout.write(json.dumps(output) + "\n")
     except Exception:
         pass
     return 0

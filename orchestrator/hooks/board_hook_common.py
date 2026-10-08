@@ -1,4 +1,4 @@
-"""Shared standard-library helpers for acknowledgement-required board hooks."""
+"""Shared standard-library helpers for board delivery and acknowledgement hooks."""
 from __future__ import annotations
 
 import hashlib
@@ -75,12 +75,33 @@ def pending(session: str):
         check=True,
     )
     value = json.loads(result.stdout)
-    notices = value.get("notices")
-    if not isinstance(notices, list) or any(
+    delivery = value.get("delivery")
+    acknowledgements = value.get("pendingAcknowledgements")
+    if not isinstance(delivery, list) or not isinstance(acknowledgements, list) or any(
         not isinstance(item, dict)
         or not isinstance(item.get("id"), str)
         or not isinstance(item.get("text"), str)
-        for item in notices
+        or not isinstance(item.get("requiresAcknowledgement"), bool)
+        for item in [*delivery, *acknowledgements]
     ):
         raise ValueError("malformed board pending output")
-    return notices
+    overflow = value.get("overflow")
+    if overflow is not None and not isinstance(overflow, str):
+        raise ValueError("malformed board pending output")
+    return delivery, overflow, acknowledgements
+
+
+def mark_delivered(session: str, ids: list[str]) -> None:
+    if not ids:
+        return
+    binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch")
+    )
+    command = [binary, "board", "delivered", ",".join(ids), "--session", session]
+    subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=float(os.environ["BOARD_PUSH_SLOW_TIMEOUT_SECONDS"]),
+        check=True,
+    )

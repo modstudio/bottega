@@ -18,7 +18,6 @@ import {
   messageIsLive,
   OPERATOR_READER,
   parseAudience,
-  shouldInterrupt,
 } from './board-policy.ts'
 import { boardHeaderValue, renderBoardNotice } from './board-render.ts'
 import { originText, presenceFacts, recipients } from './board-store.ts'
@@ -446,6 +445,7 @@ export function claimCachedHosted(
   return rows
     .filter(
       (row) =>
+        !readerMatchesAuthor(row.message, reader, database) &&
         cachedMessageAddressed(row, reader, clock, database) &&
         (all || !delivered(database, row.message.id, reader)),
     )
@@ -529,40 +529,6 @@ export async function markCachedHostedDelivered(
         .run(id, reader)
     } catch {}
   }
-}
-
-export function claimCachedHostedInterrupts(
-  session: string,
-  clock = Date.now(),
-  database: Database = db(),
-) {
-  const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
-  return cachedRows(database)
-    .filter((row) => {
-      const message = row.message
-      return (
-        message.kind === 'notice' &&
-        cachedMessageAddressed(row, session, clock, database) &&
-        !delivered(database, message.id, session) &&
-        shouldInterrupt({
-          authorKind: message.origin.kind,
-          authorIsSignedInUser: message.authorUserId === signedIn,
-          audienceKind: parseAudience(message.audience!).kind,
-          ackRequired: message.ackRequired,
-          claimConflict: message.claimId !== null,
-          ownPost: message.authorSession === session,
-        })
-      )
-    })
-    .map(({ message, tags }) => ({
-      noticeId: `board:${message.id}` as const,
-      detail: renderCached(
-        message,
-        tags,
-        cachedRows(database).map((row) => row.message),
-        false,
-      ),
-    }))
 }
 
 export function reapHostedBoardCache(

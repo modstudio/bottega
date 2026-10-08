@@ -24,7 +24,7 @@ afterEach(() => {
   delete process.env.ORCH_RECORD_API_URL
 })
 
-test('monitor notice and interrupt claims emit hosted beside local once with a failed-refresh warning', async () => {
+test('heartbeat delivery emits ordinary hosted beside local once with a failed-refresh warning', async () => {
   const session = 'monitor-hosted-reader'
   const userId = newRecordId()
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -43,7 +43,7 @@ test('monitor notice and interrupt claims emit hosted beside local once with a f
       audience: `session:${session}`,
       title: 'Local interrupt',
       body: 'local monitor body',
-      ackRequired: true,
+      ackRequired: false,
     },
     {},
     Date.parse(createdAt),
@@ -78,7 +78,7 @@ test('monitor notice and interrupt claims emit hosted beside local once with a f
     claimId: null,
     authorUserId: userId,
     authorSession: null,
-    ackRequired: true,
+    ackRequired: false,
     ackDeadline: null,
   }
   db()
@@ -86,10 +86,12 @@ test('monitor notice and interrupt claims emit hosted beside local once with a f
       'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
     )
     .run(hosted.id, hosted.kind, null, hosted.revision, JSON.stringify(hosted))
+  let refreshFails = true
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     listBoardChanges: async () => {
-      throw new Error('monitor refresh offline\nForged-Warning: monitor')
+      if (refreshFails) throw new Error('monitor refresh offline\nForged-Warning: monitor')
+      return { userId, items: [], highestRevision: null }
     },
     putBoardReceipt: async () => {
       throw new Error('receipt offline')
@@ -107,7 +109,16 @@ test('monitor notice and interrupt claims emit hosted beside local once with a f
     session,
     delivery.notices.map((row) => row.noticeId),
   )
-  expect((await claimMonitorNoticesWithHosted(session)).notices).toEqual([])
+  const repeatedFailure = await claimMonitorNoticesWithHosted(session)
+  expect(repeatedFailure.notices).toEqual([])
+  expect(repeatedFailure.warning).toBeNull()
+  refreshFails = false
+  const recovery = await claimMonitorNoticesWithHosted(session)
+  expect(recovery.notices).toEqual([])
+  expect(recovery.warning).toContain('Hosted board cache is verified again')
+  const verified = await claimMonitorNoticesWithHosted(session)
+  expect(verified.notices).toEqual([])
+  expect(verified.warning).toBeNull()
 })
 
 test('session-start monitor skips hosted refresh while the heartbeat monitor refreshes', async () => {

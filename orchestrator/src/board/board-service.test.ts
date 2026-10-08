@@ -9,10 +9,9 @@ import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import {
   acknowledgeNotice,
   boardEscalations,
-  claimInterruptNotices,
   claimNotices,
   claimRunNotices,
-  markInterruptNoticesDelivered,
+  markSessionMessagesDelivered,
   noticeStatus,
   postNotice,
   readNotices,
@@ -514,7 +513,7 @@ test('delivery entry point refuses the operator sentinel before changing its rec
     {},
     clock,
   )
-  expect(() => markInterruptNoticesDelivered('operator', [posted.id])).toThrow(/real session id/)
+  expect(() => markSessionMessagesDelivered('operator', [posted.id])).toThrow(/real session id/)
   expect(() => markMonitorNoticesDelivered('operator', [`board:${posted.id}`])).toThrow(
     /real session id/,
   )
@@ -552,9 +551,11 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
       }
     ).audience,
   ).toBe(`machine:${machine}`)
-  expect(claimInterruptNotices('machine-one', clock + 1).map((notice) => notice.noticeId)).toEqual([
-    `board:${posted.id}`,
-  ])
+  expect(
+    claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 1).map(
+      (notice) => notice.id,
+    ),
+  ).toEqual([posted.id])
   expect(noticeStatus(posted.id, {}, clock + 1).unacknowledged).toEqual([
     'machine-one',
     'machine-two',
