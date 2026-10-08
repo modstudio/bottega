@@ -1,8 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { hostedTaskChanges, type TaskFetch } from './task-client.ts'
+import { projects } from './projects.ts'
+import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
+import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
 
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
@@ -160,7 +162,7 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
   }
 }
 
-export function applyHostedTaskChanges(changes: HostedChanges) {
+export function applyHostedTaskChanges(changes: HostedChanges, cursorKey = CURSOR_KEY) {
   writeTransaction((conn) => {
     changes.tasks.forEach((row) => {
       applyHostedTask(conn, row)
@@ -179,23 +181,60 @@ export function applyHostedTaskChanges(changes: HostedChanges) {
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       )
-      .run(CURSOR_KEY, changes.cursor)
+      .run(cursorKey, changes.cursor)
   })
 }
 
-export async function pullHostedTasks(
-  options: { baseUrl?: string; token?: string | null; fetch?: TaskFetch } = {},
+function pullSpaces(
+  registered: readonly RegisteredTaskSpace[],
+  identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
 ) {
-  const cursor =
-    db().query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`).get(CURSOR_KEY)
-      ?.value ?? null
-  const changes = await hostedTaskChanges(cursor, options)
-  applyHostedTaskChanges(changes)
+  const spaces = new Set([identity.activeSpaceId])
+  for (const project of registered) {
+    const destination = taskProjectDestination(project.name, registered, identity)
+    if ('destinationSpaceId' in destination) spaces.add(destination.destinationSpaceId)
+  }
+  return [...spaces]
+}
+
+const cursorKeyFor = (spaceId: string, activeSpaceId: string) =>
+  spaceId === activeSpaceId ? CURSOR_KEY : `${CURSOR_KEY}.${spaceId}`
+
+export async function pullHostedTasks(
+  options: {
+    baseUrl?: string
+    token?: string | null
+    fetch?: TaskFetch
+    registeredProjects?: readonly RegisteredTaskSpace[]
+  } = {},
+) {
+  const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
+  const identity = await hostedTaskIdentity(requestOptions)
+  const spaces = pullSpaces(options.registeredProjects ?? projects(), identity)
+  const totals = { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
+  let activeCursor = ''
+  const failures: string[] = []
+  for (const spaceId of spaces) {
+    const cursorKey = cursorKeyFor(spaceId, identity.activeSpaceId)
+    const cursor =
+      db()
+        .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+        .get(cursorKey)?.value ?? null
+    try {
+      const changes = await hostedTaskChanges(cursor, { ...requestOptions, recordSpace: spaceId })
+      applyHostedTaskChanges(changes, cursorKey)
+      totals.tasks += changes.tasks.length
+      totals.comments += changes.comments.length
+      totals.documents += changes.documents.length
+      totals.statusEvents += changes.statusEvents.length
+      if (spaceId === identity.activeSpaceId) activeCursor = changes.cursor
+    } catch (cause) {
+      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+  if (failures.length) throw new Error(`hosted task pulls failed: ${failures.join('; ')}`)
   return {
-    tasks: changes.tasks.length,
-    comments: changes.comments.length,
-    documents: changes.documents.length,
-    statusEvents: changes.statusEvents.length,
-    cursor: changes.cursor,
+    ...totals,
+    cursor: activeCursor,
   }
 }
