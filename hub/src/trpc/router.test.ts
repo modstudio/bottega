@@ -502,6 +502,8 @@ describe('doc router', () => {
           delivery: 'inject',
           summary: 'Hi',
           featured: false,
+          status: 'current',
+          replacementSlug: null,
         },
       ],
     })
@@ -524,6 +526,8 @@ describe('doc router', () => {
       delivery: 'inject',
       summary: 'Hi',
       featured: false,
+      status: 'current',
+      replacementSlug: null,
       body: 'Hi',
     })
   })

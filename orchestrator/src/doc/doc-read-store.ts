@@ -105,16 +105,20 @@ function treeColumns(database: Database): boolean {
   )
 }
 
+function statusColumns(database: Database): boolean {
+  return Boolean(database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='status'").get())
+}
+
 function docTreeSelect(database: Database): { columns: string; join: string; position: string } {
+  const status = statusColumns(database) ? '' : ", 'current' AS status, NULL AS replacement_slug"
   return treeColumns(database)
     ? {
-        columns: 'd.*, p.slug AS parent_slug',
+        columns: `d.*, p.slug AS parent_slug${status}`,
         join: ' LEFT JOIN doc p ON p.id=d.parent_id',
         position: 'd.position',
       }
     : {
-        columns:
-          "d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position",
+        columns: `d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position${status}`,
         join: '',
         position: '0+0',
       }
@@ -201,8 +205,10 @@ export function listDocsStore(
   }
   if (filters.status !== undefined) {
     validStatus(filters.status)
-    where.push('d.status = ?')
-    values.push(filters.status)
+    if (statusColumns(database)) {
+      where.push('d.status = ?')
+      values.push(filters.status)
+    } else if (filters.status !== 'current') where.push('0')
   }
   return (
     database

@@ -1,12 +1,7 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import {
-  DOC_AUDIENCES,
-  DOC_STATUSES,
-  type DocAudience,
-  type DocStatus,
-} from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, type DocAudience, type DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -36,6 +31,7 @@ import {
   recordDocRevisionRow,
   recordDocRow,
 } from './record-doc-mapping.ts'
+import { recordDocLifecycle } from './record-doc-status.ts'
 import {
   existingDocAtAddress,
   recordCanonTreeWriteRefusal,
@@ -283,43 +279,13 @@ export async function upsertRecordDoc(
       input.position ?? (existing[0]?.position == null ? 0 : Number(existing[0].position))
     const featured =
       input.featured ?? (existing[0]?.featured == null ? false : Boolean(existing[0].featured))
-    const status =
-      input.scope === 'resume'
-        ? 'current'
-        : ((input.status ??
-            (existing[0]?.status == null ? 'current' : String(existing[0].status))) as DocStatus)
-    if (!DOC_STATUSES.includes(status)) throw new RecordDocError(`unknown doc status "${status}"`)
-    const replacementSlug =
-      input.scope === 'resume'
-        ? null
-        : input.replacementSlug !== undefined
-          ? input.replacementSlug
-          : input.status !== undefined && input.status !== 'superseded'
-            ? null
-            : existing[0]?.replacement_slug == null
-              ? null
-              : String(existing[0].replacement_slug)
-    if (status !== 'superseded' && replacementSlug !== null) {
-      throw new RecordDocError(
-        'replacement is permitted only for superseded documents; cleared by: retry the write without replacementSlug',
-      )
-    }
-    if (status === 'superseded') {
-      if (!replacementSlug)
-        throw new RecordDocError(
-          'superseded document requires a replacement slug; cleared by: retry with replacementSlug',
-        )
-      if (replacementSlug === input.slug)
-        throw new RecordDocError(
-          'document cannot replace itself; cleared by: name another document as replacement',
-        )
-      const replacements =
-        await tx`SELECT id FROM doc WHERE space_id=${input.spaceId}::uuid AND scope=${input.scope} AND COALESCE(subject, '')=${input.subject ?? ''} AND COALESCE(owner_user_id::text, '')=${input.owner ?? ''} AND slug=${replacementSlug} AND deleted_at IS NULL`
-      if (!replacements[0])
-        throw new RecordDocError(
-          `replacement document "${replacementSlug}" does not exist in the same scope and subject; cleared by: create that document, then retry the write`,
-        )
-    }
+    const { status, replacementSlug } = await recordDocLifecycle(input, existing[0], async (slug) =>
+      Boolean(
+        (
+          await tx`SELECT id FROM doc WHERE space_id=${input.spaceId}::uuid AND scope=${input.scope} AND COALESCE(subject, '')=${input.subject ?? ''} AND COALESCE(owner_user_id::text, '')=${input.owner ?? ''} AND slug=${slug} AND deleted_at IS NULL`
+        )[0],
+      ),
+    )
     const op: DocRevisionOp = input.op ?? (existing[0] ? 'set' : 'create')
     if (existing[0]) {
       await tx`

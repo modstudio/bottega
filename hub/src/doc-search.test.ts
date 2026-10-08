@@ -77,6 +77,7 @@ test('local search makes one orch call and excludes a subject-only store match',
     scope: undefined,
     subject: undefined,
     audience: undefined,
+    status: 'current',
     match: 'needle',
     bodyMatch: 'needle',
   })

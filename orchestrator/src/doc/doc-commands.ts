@@ -338,6 +338,43 @@ async function handleSetDocCommand(
   return true
 }
 
+async function handleStatusDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+): Promise<boolean> {
+  if (sub !== 'status') return false
+  const slug = argv[2]
+  const status = docStatus(flags.flag('status'))
+  const reason = flags.flag('reason')
+  if (!slug || !address.scope || !status || !reason?.trim()) {
+    throw new Error(
+      'orch doc status <slug> --scope S [--subject X] --status STATUS [--replacement SLUG] --reason TEXT [--expect REVISION]',
+    )
+  }
+  const result = await setDocStatus(
+    address.scope,
+    address.subject,
+    slug,
+    status,
+    flags.flag('replacement'),
+    {
+      reason,
+      author: flags.flag('author'),
+      expectedRevision: flags.flag('expect'),
+    },
+    address.owner,
+  )
+  if (flags.has('json')) presentation.log(JSON.stringify(result))
+  else
+    presentation.log(
+      `set status ${result.scope}/${result.subject ?? '_'}/${result.slug} ${result.status}`,
+    )
+  return true
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -352,35 +389,8 @@ export async function docCommand(
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
-  if (sub === 'status') {
-    const slug = argv[2]
-    const status = docStatus(flag('status'))
-    const reason = flag('reason')
-    if (!slug || !scope || !status || !reason?.trim()) {
-      throw new Error(
-        'orch doc status <slug> --scope S [--subject X] --status STATUS [--replacement SLUG] --reason TEXT [--expect REVISION]',
-      )
-    }
-    const result = await setDocStatus(
-      scope,
-      subject,
-      slug,
-      status,
-      flag('replacement'),
-      {
-        reason,
-        author: flag('author'),
-        expectedRevision: flag('expect'),
-      },
-      owner,
-    )
-    if (has('json')) presentation.log(JSON.stringify(result))
-    else
-      presentation.log(
-        `set status ${result.scope}/${result.subject ?? '_'}/${result.slug} ${result.status}`,
-      )
+  if (await handleStatusDocCommand(sub, argv, flags, presentation, { scope, subject, owner }))
     return
-  }
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)

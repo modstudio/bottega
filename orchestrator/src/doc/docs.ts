@@ -44,6 +44,7 @@ import {
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
+import { docLifecycle } from './doc-status.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import {
   assertLocalDocRemovalAllowed,
@@ -264,48 +265,6 @@ type DocWriteInput = {
   replacementSlug?: string | null
 } & DocWriteContext
 
-function docLifecycle(
-  input: Pick<DocWriteInput, 'scope' | 'subject' | 'owner' | 'slug' | 'status' | 'replacementSlug'>,
-  prior: Doc | null,
-) {
-  const status = input.scope === 'resume' ? 'current' : (input.status ?? prior?.status ?? 'current')
-  if (!DOC_STATUSES.includes(status)) {
-    throw new Error(`unknown doc status "${status}"; valid statuses: ${DOC_STATUSES.join(', ')}`)
-  }
-  const replacementSlug =
-    input.scope === 'resume'
-      ? null
-      : input.replacementSlug !== undefined
-        ? input.replacementSlug
-        : input.status !== undefined && input.status !== 'superseded'
-          ? null
-          : (prior?.replacement_slug ?? null)
-  const address = `--scope ${input.scope}${input.subject ? ` --subject ${input.subject}` : ''}`
-  if (status !== 'superseded' && replacementSlug !== null) {
-    throw new Error(
-      `replacement is permitted only for superseded documents; cleared by: orch doc status ${input.slug} ${address} --status ${status} --reason TEXT`,
-    )
-  }
-  if (status === 'superseded') {
-    if (!replacementSlug) {
-      throw new Error(
-        `superseded document requires a replacement slug; cleared by: orch doc status ${input.slug} ${address} --status superseded --replacement SLUG --reason TEXT`,
-      )
-    }
-    if (replacementSlug === input.slug) {
-      throw new Error(
-        'document cannot replace itself; cleared by: name another document with --replacement',
-      )
-    }
-    if (!getDoc(input.scope, input.subject, replacementSlug, input.owner ?? null)) {
-      throw new Error(
-        `replacement document "${replacementSlug}" does not exist in the same scope and subject; cleared by: orch doc set ${replacementSlug} ${address} --title TITLE --reason TEXT`,
-      )
-    }
-  }
-  return { status, replacementSlug }
-}
-
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
   const surroundings = userCanonWriteTargets(projects()).map((target) => ({
     global,
@@ -421,7 +380,9 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const tree = localDocTreeFields(input, prior)
-  const lifecycle = docLifecycle(input, prior)
+  const lifecycle = docLifecycle(input, prior, (replacementSlug) =>
+    Boolean(getDoc(input.scope, input.subject, replacementSlug, input.owner ?? null)),
+  )
   const projectName = docWriteProjectName(input.scope, input.subject)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)

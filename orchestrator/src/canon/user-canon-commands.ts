@@ -145,7 +145,7 @@ export async function userCanonHydrateCommand(
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
   const overrideStatus = userCanonHomeOverridesStatus(homes)
   if (overrideStatus) presentation.log(overrideStatus)
-  const rows = listDocs({ scope: 'canon', subject: null, owner })
+  const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
   const plans = homes
     .filter((home) => {
       const status = userCanonHomeInstallationStatus(home)
