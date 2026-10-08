@@ -6,6 +6,7 @@ import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { type RecordCanonImportResult, recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
+import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import {
@@ -45,7 +46,14 @@ export async function importCanon(input: {
   const subject = input.address.kind === 'project' ? input.address.subject : null
   const owner = input.address.kind === 'user' ? input.address.owner : null
   const projectId = input.address.kind === 'project' ? input.address.projectId : null
-  const current = listDocsStore({ scope: 'canon', subject, owner })
+  const allRows = listDocsStore({ scope: 'canon', subject, owner })
+  const collision = nonCurrentCanonCollisionRefusal({
+    rows: allRows,
+    desiredSlugs: input.rows.map((row) => row.slug),
+    address: input.address,
+  })
+  if (collision) throw new Error(collision)
+  const current = allRows.filter((row) => row.status === 'current')
   for (const row of current) {
     assertLocalRevisionWrite(
       { scope: 'canon', expectedRevision: row.revision ?? undefined },
@@ -71,7 +79,7 @@ export async function importCanon(input: {
           revisionId: newRecordId(),
         })),
       findings: [],
-      bootstrap: current.length === 0,
+      bootstrap: !hasCanonImportHistory(input.address),
     }),
     hosted: () =>
       recordApiClient().importCanon({
@@ -86,7 +94,7 @@ export async function importCanon(input: {
       }),
   })
   return writeTransaction(() => {
-    const live = listDocsStore({ scope: 'canon', subject, owner })
+    const live = listDocsStore({ scope: 'canon', subject, owner, status: 'current' })
     const liveBySlug = new Map(live.map((row) => [row.slug, row]))
     for (const row of current) {
       const existing = liveBySlug.get(row.slug)

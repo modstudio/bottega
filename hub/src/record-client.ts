@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES } from '../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_STATUSES, type DocStatus } from '../../shared/docs.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
@@ -220,6 +220,8 @@ const docSchema = DocSchema.extend({
   audience: z.enum(DOC_AUDIENCES).default('technical'),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
+  status: z.enum(DOC_STATUSES).default('current'),
+  replacementSlug: z.string().nullable().default(null),
   summary: z.string().default(''),
   featured: z.boolean().default(false),
   projectName: z.string().nullable(),
@@ -258,6 +260,8 @@ const docRevisionSchema = z.object({
   audience: z.enum(DOC_AUDIENCES).default('technical'),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
+  status: z.enum(DOC_STATUSES).default('current'),
+  replacementSlug: z.string().nullable().default(null),
   author: z.string(),
   reason: z.string(),
   sessionId: z.string().nullable(),
@@ -270,6 +274,7 @@ type RecordDocListInput = {
   scope?: string
   subject?: string
   audience?: 'user' | 'technical'
+  status?: DocStatus
   limit?: number
   cursor?: string
   acrossReadableSpaces?: boolean
@@ -518,6 +523,7 @@ export function createRecordClient(options: RecordClientOptions) {
           scope: input.scope,
           subject: input.subject,
           audience: input.audience,
+          status: input.status,
           limit: input.limit,
           cursor: input.cursor,
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
@@ -530,6 +536,7 @@ export function createRecordClient(options: RecordClientOptions) {
       scope?: string
       subject?: string
       audience?: 'user' | 'technical'
+      includeDrafts?: boolean
       acrossReadableSpaces?: boolean
     }) =>
       request(
@@ -539,6 +546,7 @@ export function createRecordClient(options: RecordClientOptions) {
           scope: input.scope,
           subject: input.subject,
           audience: input.audience,
+          includeDrafts: input.includeDrafts ? 'true' : undefined,
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
         }),
         DocSearchSchema,

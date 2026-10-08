@@ -3,6 +3,7 @@
 import type { Finding } from '../../../shared/ratchet.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
+import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
@@ -71,18 +72,29 @@ export async function userCanonImportCommand(
     slug,
     body: stripUserCanonManagedMarker(text),
   }))
-  const currentRows = listDocs({ scope: 'canon', subject: null, owner })
-  const global = listDocs({ scope: 'canon', subject: null }).map(({ slug, body }) => ({
-    slug,
-    body,
-  }))
+  const allUserRows = listDocs({ scope: 'canon', subject: null, owner })
+  const collision = nonCurrentCanonCollisionRefusal({
+    rows: allUserRows,
+    desiredSlugs: rows.map((row) => row.slug),
+    address: { kind: 'user' },
+  })
+  if (collision) throw new Error(collision)
+  const currentRows = allUserRows.filter((row) => row.status === 'current')
+  const global = listDocs({ scope: 'canon', subject: null, status: 'current' }).map(
+    ({ slug, body }) => ({
+      slug,
+      body,
+    }),
+  )
   const surroundings = userCanonWriteTargets(projects()).map((project) => ({
     global,
     project: project
-      ? listDocs({ scope: 'canon', subject: project.name }).map(({ slug, body }) => ({
-          slug,
-          body,
-        }))
+      ? listDocs({ scope: 'canon', subject: project.name, status: 'current' }).map(
+          ({ slug, body }) => ({
+            slug,
+            body,
+          }),
+        )
       : [],
   }))
   const preview = planCanonImport({
@@ -145,7 +157,7 @@ export async function userCanonHydrateCommand(
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
   const overrideStatus = userCanonHomeOverridesStatus(homes)
   if (overrideStatus) presentation.log(overrideStatus)
-  const rows = listDocs({ scope: 'canon', subject: null, owner })
+  const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
   const plans = homes
     .filter((home) => {
       const status = userCanonHomeInstallationStatus(home)

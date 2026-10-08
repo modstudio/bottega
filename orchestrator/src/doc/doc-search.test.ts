@@ -14,6 +14,7 @@ test('orch adapter parses the retrieval JSON contract', async () => {
         subject: PLATFORM_SLUG,
         slug: 'design',
         title: 'Design',
+        status: 'current' as const,
         headingPath: ['Why'],
         snippet: 'answer',
         truncated: false,
@@ -50,12 +51,14 @@ test('orch adapter forwards optional document address filters', async () => {
   await searchDocs('meaning', 2, { scope: 'canon' }, runner)
   await searchDocs('meaning', 2, { subject: PLATFORM_SLUG }, runner)
   await searchDocs('meaning', 2, { scope: 'canon', subject: PLATFORM_SLUG }, runner)
+  await searchDocs('meaning', 2, { includeDrafts: true }, runner)
 
   expect(seen).toEqual([
     ['meaning', '--k', '2', '--json'],
     ['meaning', '--k', '2', '--json', '--scope', 'canon'],
     ['meaning', '--k', '2', '--json', '--subject', PLATFORM_SLUG],
     ['meaning', '--k', '2', '--json', '--scope', 'canon', '--subject', PLATFORM_SLUG],
+    ['meaning', '--k', '2', '--json', '--include-drafts'],
   ])
 })
 

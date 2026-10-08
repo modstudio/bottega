@@ -49,12 +49,13 @@ export async function checkRetrieval(runner: Runner = runRetrieval) {
 export async function searchDocs(
   query: string,
   k: number,
-  filter: { scope?: string; subject?: string } = {},
+  filter: { scope?: string; subject?: string; includeDrafts?: boolean } = {},
   runner: Runner = runRetrieval,
 ) {
   const argv = [query, '--k', String(k), '--json']
   if (filter.scope !== undefined) argv.push('--scope', filter.scope)
   if (filter.subject !== undefined) argv.push('--subject', filter.subject)
+  if (filter.includeDrafts) argv.push('--include-drafts')
   const result = await runner(argv)
   if (result.exitCode !== 0) {
     throw new Error(

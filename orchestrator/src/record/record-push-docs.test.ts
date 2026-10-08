@@ -242,6 +242,86 @@ describe('record push-docs grouping', () => {
 })
 
 describe('record push-docs command', () => {
+  test('imports a superseded parent after its replacement and before its current child', async () => {
+    const parentId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'old-parent',
+      title: 'Old parent',
+      body: 'old parent',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    insertRevision({
+      docId: parentId,
+      scope: 'global',
+      subject: null,
+      slug: 'old-parent',
+      op: 'set',
+      title: 'Old parent',
+      body: 'old parent',
+      delivery: 'demand',
+      reason: 'replace parent',
+      at: NEW,
+    })
+    const childId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'child',
+      title: 'Child',
+      body: 'child',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+      parentId,
+    })
+    insertRevision({
+      docId: childId,
+      scope: 'global',
+      subject: null,
+      slug: 'child',
+      op: 'create',
+      title: 'Child',
+      body: 'child',
+      delivery: 'demand',
+      reason: 'create child',
+      at: OLD,
+      parentId,
+    })
+    const replacementId = insertDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'new-parent',
+      title: 'New parent',
+      body: 'new parent',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    insertRevision({
+      docId: replacementId,
+      scope: 'global',
+      subject: null,
+      slug: 'new-parent',
+      op: 'create',
+      title: 'New parent',
+      body: 'new parent',
+      delivery: 'demand',
+      reason: 'create replacement',
+      at: OLD,
+    })
+    db()
+      .query("UPDATE doc SET status='superseded', replacement_slug='new-parent' WHERE id=?")
+      .run(parentId)
+
+    const { client, imports } = capturingClient()
+    installRecordApiClient(client)
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+
+    expect(imports.map((input) => input.doc.slug)).toEqual(['new-parent', 'old-parent', 'child'])
+  })
+
   test('uses the hosted parent id returned by an earlier import for child and revision', async () => {
     const parentId = insertDoc({
       scope: 'global',
@@ -302,6 +382,8 @@ describe('record push-docs command', () => {
         id: hostedId,
         body: hostedId === returnedParentId ? 'parent' : 'child',
         delivery: 'demand',
+        status: 'current',
+        replacementSlug: null,
         deletedAt: null,
       }),
       counts: async () => ({ docs: 2, revisions: 2, scores: 0, voids: 0 }),
@@ -461,6 +543,77 @@ describe('record push-docs command', () => {
     await pushDocsCommand({ dryRun: false }, { log: () => undefined })
     expect(imports[0]?.doc.featured).toBe(true)
     expect(imports[0]?.revisions[0]?.featured).toBe(true)
+  })
+
+  test('draft and superseded documents keep lifecycle fields and import replacements first', async () => {
+    const supersededId = insertDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'a-old',
+      title: 'Old',
+      body: 'old',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    const supersededRevision = insertRevision({
+      docId: supersededId,
+      scope: 'machine',
+      subject: null,
+      slug: 'a-old',
+      op: 'set',
+      title: 'Old',
+      body: 'old',
+      delivery: 'demand',
+      reason: 'supersede old',
+      at: NEW,
+    })
+    const replacementId = insertDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'z-new',
+      title: 'New',
+      body: 'new',
+      delivery: 'demand',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    const draftRevision = insertRevision({
+      docId: replacementId,
+      scope: 'machine',
+      subject: null,
+      slug: 'z-new',
+      op: 'create',
+      title: 'New',
+      body: 'new',
+      delivery: 'demand',
+      reason: 'draft new',
+      at: NEW,
+    })
+    db()
+      .query("UPDATE doc SET status='superseded', replacement_slug='z-new' WHERE id=?")
+      .run(supersededId)
+    db()
+      .query("UPDATE doc_revision SET status='superseded', replacement_slug='z-new' WHERE id=?")
+      .run(supersededRevision)
+    db().query("UPDATE doc SET status='draft' WHERE id=?").run(replacementId)
+    db().query("UPDATE doc_revision SET status='draft' WHERE id=?").run(draftRevision)
+    const { client, imports } = capturingClient()
+    installRecordApiClient(client)
+
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+
+    expect(imports.map((input) => input.doc.slug)).toEqual(['z-new', 'a-old'])
+    expect(imports[0]?.doc.status).toBe('draft')
+    expect(imports[0]?.revisions[0]?.status).toBe('draft')
+    expect(imports[1]?.doc).toMatchObject({
+      status: 'superseded',
+      replacementSlug: 'z-new',
+    })
+    expect(imports[1]?.revisions[0]).toMatchObject({
+      status: 'superseded',
+      replacementSlug: 'z-new',
+    })
   })
 
   test('comparison detects body, delivery, and deleted_at mismatches', async () => {

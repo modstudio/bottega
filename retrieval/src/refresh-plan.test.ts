@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { INSTRUCTION_VERSION } from './contract.ts'
 import type { Chunk } from './corpus/chunks.ts'
 import { planRefresh } from './refresh-plan.ts'
 
@@ -22,7 +23,7 @@ const stored = (
   contentHash,
   model: 'Qwen/Qwen3-Embedding-0.6B',
   dimension: 1_024,
-  instructionVersion: 'doc-search-v1',
+  instructionVersion: INSTRUCTION_VERSION,
   ...overrides,
 })
 
@@ -53,7 +54,7 @@ describe('retrieval refresh plan', () => {
           contentHash: 'old-hash',
           model: 'Qwen/Qwen3-Embedding-0.6B',
           dimension: 1_024,
-          instructionVersion: 'doc-search-v1',
+          instructionVersion: INSTRUCTION_VERSION,
         },
       },
       {

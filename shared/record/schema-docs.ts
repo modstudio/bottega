@@ -16,7 +16,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { DOC_AUDIENCES } from '../docs.ts'
+import { DOC_AUDIENCES, DOC_STATUSES } from '../docs.ts'
 import {
   project,
   RECORD_PUBLIC_ROLE,
@@ -86,6 +86,8 @@ export const doc = pgTable.withRLS(
     delivery: text().notNull(),
     audience: text().notNull().default('technical'),
     featured: boolean().notNull().default(false),
+    status: text().notNull().default('current'),
+    replacementSlug: text('replacement_slug'),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
     projectId: uuid('project_id').references(() => project.id),
@@ -109,6 +111,14 @@ export const doc = pgTable.withRLS(
       'doc_audience_check',
       sql`${table.audience} IN (${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))})`,
     ),
+    check(
+      'doc_status_check',
+      sql`${table.status} IN (${sql.raw(DOC_STATUSES.map((value) => `'${value}'`).join(','))})`,
+    ),
+    check(
+      'doc_replacement_check',
+      sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
+    ),
     foreignKey({
       columns: [table.parentId],
       foreignColumns: [table.id],
@@ -131,6 +141,7 @@ export const doc = pgTable.withRLS(
       for: 'select',
       to: RECORD_PUBLIC_ROLE,
       using: sql`${table.audience} = 'user'
+        AND ${table.status} = 'current'
         AND ${table.ownerUserId} IS NULL
         AND ${table.deletedAt} IS NULL
         AND EXISTS (
@@ -182,6 +193,8 @@ export const docRevision = pgTable.withRLS(
     delivery: text().notNull(),
     audience: text().notNull().default('technical'),
     featured: boolean().notNull().default(false),
+    status: text().notNull().default('current'),
+    replacementSlug: text('replacement_slug'),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
     author: text().notNull(),
@@ -198,6 +211,14 @@ export const docRevision = pgTable.withRLS(
     check(
       'doc_revision_audience_check',
       sql`${table.audience} IN (${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))})`,
+    ),
+    check(
+      'doc_revision_status_check',
+      sql`${table.status} IN (${sql.raw(DOC_STATUSES.map((value) => `'${value}'`).join(','))})`,
+    ),
+    check(
+      'doc_revision_replacement_check',
+      sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
     ),
     check(
       'doc_revision_op_check',

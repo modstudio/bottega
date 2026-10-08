@@ -1,6 +1,6 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
-import { type DocAudience, docSummary } from '../../../shared/docs.ts'
+import { type DocAudience, type DocStatus, docSummary } from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 
 export type RecordDoc = {
@@ -18,6 +18,8 @@ export type RecordDoc = {
   parentId: string | null
   position: number
   featured?: boolean
+  status?: DocStatus
+  replacementSlug?: string | null
   summary?: string
   projectName: string | null
   createdAt: string
@@ -40,6 +42,8 @@ export type RecordDocRevision = {
   parentId: string | null
   position: number
   featured?: boolean
+  status?: DocStatus
+  replacementSlug?: string | null
   author: string
   reason: string
   sessionId: string | null
@@ -61,6 +65,8 @@ export type RecordDocImportInput = {
     parentId?: string | null
     position?: number
     featured?: boolean
+    status?: DocStatus
+    replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
     updatedAt: string
@@ -79,6 +85,8 @@ export type RecordDocImportInput = {
     parentId?: string | null
     position?: number
     featured?: boolean
+    status?: DocStatus
+    replacementSlug?: string | null
     author: string
     reason: string
     sessionId?: string | null
@@ -89,23 +97,27 @@ export type RecordDocImportInput = {
 export type NormalizedRecordDocImport = {
   doc: Omit<
     RecordDocImportInput['doc'],
-    'id' | 'audience' | 'parentId' | 'position' | 'featured'
+    'id' | 'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'replacementSlug'
   > & {
     id: string
     audience: DocAudience
     parentId: string | null
     position: number
     featured: boolean
+    status: DocStatus
+    replacementSlug: string | null
   }
   revisions: Array<
     Omit<
       RecordDocImportInput['revisions'][number],
-      'audience' | 'parentId' | 'position' | 'featured'
+      'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'replacementSlug'
     > & {
       audience: DocAudience
       parentId: string | null
       position: number
       featured: boolean
+      status: DocStatus
+      replacementSlug: string | null
     }
   >
 }
@@ -129,6 +141,8 @@ export function normalizeRecordDocImport(
       parentId: input.doc.parentId ?? null,
       position: input.doc.position ?? 0,
       featured: input.doc.featured ?? false,
+      status: input.doc.status ?? 'current',
+      replacementSlug: input.doc.replacementSlug ?? null,
     },
     revisions: input.revisions.map((revision) => ({
       ...revision,
@@ -136,6 +150,8 @@ export function normalizeRecordDocImport(
       parentId: revision.parentId ?? null,
       position: revision.position ?? 0,
       featured: revision.featured ?? false,
+      status: revision.status ?? 'current',
+      replacementSlug: revision.replacementSlug ?? null,
     })),
   }
 }
@@ -187,6 +203,8 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),
+    status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
+    replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     summary: docSummary(String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
     createdAt: recordDocIso(row.created_at)!,
@@ -211,6 +229,8 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),
+    status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
+    replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
     reason: String(row.reason),
     sessionId: row.session_id == null ? null : String(row.session_id),
