@@ -98,10 +98,19 @@ async function importSubjectFiles(
       delivery: importedDocDelivery(scope),
     })
   }
-  const ordered = [
-    ...documents.filter((document) => document.status !== 'superseded'),
-    ...documents.filter((document) => document.status === 'superseded'),
-  ]
+  const bySlug = new Map(documents.map((document) => [document.slug, document]))
+  const ordered: ImportedDoc[] = []
+  const visited = new Set<string>()
+  const visit = (document: ImportedDoc): void => {
+    if (visited.has(document.slug)) return
+    visited.add(document.slug)
+    if (document.status === 'superseded' && document.replacementSlug) {
+      const replacement = bySlug.get(document.replacementSlug)
+      if (replacement) visit(replacement)
+    }
+    ordered.push(document)
+  }
+  for (const document of documents) visit(document)
   for (const document of ordered) {
     await write(document)
   }

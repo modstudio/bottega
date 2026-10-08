@@ -10,27 +10,40 @@ test('import writes replacements before superseded documents regardless of file 
   await setDoc({
     scope: 'global',
     subject: null,
-    slug: 'z-replacement',
-    title: 'Replacement',
+    slug: 'z-current',
+    title: 'Current',
     body: 'new',
   })
   await setDoc({
     scope: 'global',
     subject: null,
-    slug: 'a-superseded',
-    title: 'Superseded',
+    slug: 'z-middle',
+    title: 'Middle',
+    body: 'middle',
+    status: 'superseded',
+    replacementSlug: 'z-current',
+  })
+  await setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'a-old',
+    title: 'Old',
     body: 'old',
     status: 'superseded',
-    replacementSlug: 'z-replacement',
+    replacementSlug: 'z-middle',
   })
   const target = mkdtempSync(join(tmpdir(), 'orch-doc-status-import-'))
   try {
-    expect(exportDocs(target)).toBe(2)
+    expect(exportDocs(target)).toBe(3)
     db().exec('DELETE FROM doc')
-    expect(await importDocs(target)).toBe(2)
-    expect(getDoc('global', null, 'a-superseded')).toMatchObject({
+    expect(await importDocs(target)).toBe(3)
+    expect(getDoc('global', null, 'a-old')).toMatchObject({
       status: 'superseded',
-      replacement_slug: 'z-replacement',
+      replacement_slug: 'z-middle',
+    })
+    expect(getDoc('global', null, 'z-middle')).toMatchObject({
+      status: 'superseded',
+      replacement_slug: 'z-current',
     })
   } finally {
     rmSync(target, { recursive: true, force: true })
