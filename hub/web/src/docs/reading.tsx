@@ -153,14 +153,15 @@ function DocLifecycle({
   onSelect: (item: DocsTreeItem) => void
 }) {
   if (doc.status === 'current') return null
-  const replacement = doc.replacementSlug
-    ? items.find(
+  const replacements = doc.replacementSlug
+    ? items.filter(
         (item) =>
           item.scope === doc.scope &&
           item.subject === doc.subject &&
           item.slug === doc.replacementSlug,
       )
-    : undefined
+    : []
+  const replacement = replacements.length === 1 ? replacements[0] : undefined
   return (
     <div className="doc-measure mt-3 flex flex-wrap items-center gap-2 text-md text-text-muted">
       <DocStatusBadge status={doc.status} />
