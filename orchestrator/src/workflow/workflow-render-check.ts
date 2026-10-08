@@ -6,7 +6,7 @@ import type { Project } from '../project/projects.ts'
 import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
 import type { CatalogueStep, StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
-import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
+import { resolveWorkflowProjectFacts, stepNeedsCloseState } from './workflow-project-facts.ts'
 import { resolveWorkflowTemplate, workflowTemplatePlaceholders } from './workflow-template.ts'
 
 export type WorkflowPlaceholderFailure = {
@@ -134,7 +134,7 @@ function checkStepRendering(
     const { facts } = resolveWorkflowProjectFacts(
       { name: project.name, stack: project.stack, settings: project.settings },
       step.needs,
-      step.needs.includes('ship-to') && step.needs.includes('tracker'),
+      stepNeedsCloseState(step.needs),
       args,
       autonomy,
     )

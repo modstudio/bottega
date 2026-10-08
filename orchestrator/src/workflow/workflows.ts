@@ -20,6 +20,7 @@ import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import { type FloorKind, isFloorKind } from './workflow-floor.ts'
 import {
   resolveWorkflowProjectFacts,
+  stepNeedsCloseState,
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
@@ -517,7 +518,7 @@ export function composeWorkflow(
   const { resolved, facts } = resolveWorkflowProjectFacts(
     project,
     allNeeds,
-    selected.some((step) => step.needs.includes('ship-to') && step.needs.includes('tracker')),
+    selected.some((step) => stepNeedsCloseState(step.needs)),
     args,
     effectiveAutonomy,
     workflowCompositionFactExtras,
@@ -616,7 +617,7 @@ export function getWorkflowStep(
   const { facts } = resolveWorkflowProjectFacts(
     project,
     step.needs,
-    step.needs.includes('ship-to') && step.needs.includes('tracker'),
+    stepNeedsCloseState(step.needs),
     args,
     effectiveAutonomy,
   )

@@ -77,6 +77,10 @@ function shipToFact(
   }
 }
 
+/** Close-state facts apply to a step that needs both the ship-to level and the tracker. */
+export const stepNeedsCloseState = (needs: readonly WorkflowFactSource[]): boolean =>
+  needs.includes('ship-to') && needs.includes('tracker')
+
 export function resolveWorkflowProjectFacts(
   project: WorkflowFactProject,
   needs: readonly WorkflowFactSource[],
