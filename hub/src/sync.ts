@@ -6,11 +6,14 @@ import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-eviden
 import { projects } from './projects.ts'
 import {
   assertTargetSpaceIntervalEvidence,
-  type HostedTaskIdentity,
   hostedSignedInUserId,
   hostedTaskIdentity,
 } from './task-client.ts'
-import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
+import {
+  partitionProjectRows,
+  type RegisteredTaskSpace,
+  type TaskDestinationIdentity,
+} from './task-project-space.ts'
 
 const TEST_REFUSAL =
   'hub evidence sync refuses a real hosted URL unless a stub is injected in tests'
@@ -22,6 +25,7 @@ type LedgerRow = {
 }
 type DiffLedgerRow = Pick<LedgerRow, 'local_key' | 'content_hash'>
 type IntervalEntry = { key: string; row: IntervalEvidence }
+type RoutedIntervalEntry = IntervalEntry & { project_name: string | null }
 type IntervalDelivery = {
   key: string
   hash: string
@@ -117,30 +121,33 @@ function intervalDeliveries(
   rows: IntervalEntry[],
   acknowledgements: LedgerRow[],
   registered: readonly RegisteredTaskSpace[],
-  identity: HostedTaskIdentity,
+  identity: TaskDestinationIdentity,
 ) {
   const known = new Map(acknowledgements.map((row) => [row.local_key, row]))
   const deliveries: IntervalDelivery[] = []
-  const refused: IntervalSyncIssue[] = []
-  for (const entry of rows) {
-    const destination = entry.row.project_name
-      ? taskProjectDestination(entry.row.project_name, registered, identity)
-      : { project: '', destinationSpaceId: identity.activeSpaceId }
-    if ('refused' in destination) {
-      refused.push({ project: destination.project, reason: destination.refused })
-      continue
+  const partitioned = partitionProjectRows<RoutedIntervalEntry>(
+    rows.map((entry) => ({ ...entry, project_name: entry.row.project_name })),
+    registered,
+    identity,
+  )
+  for (const [destinationSpaceId, destinationRows] of partitioned.destinations) {
+    for (const entry of destinationRows) {
+      const hash = contentHash(entry.row)
+      const old = known.get(entry.key)
+      if (old?.destination_space_id === destinationSpaceId && old.content_hash === hash) continue
+      deliveries.push({
+        key: entry.key,
+        row: entry.row,
+        hash,
+        destinationSpaceId,
+        acknowledgedSpaceId: old?.destination_space_id ?? null,
+      })
     }
-    const hash = contentHash(entry.row)
-    const old = known.get(entry.key)
-    if (old?.destination_space_id === destination.destinationSpaceId && old.content_hash === hash)
-      continue
-    deliveries.push({
-      ...entry,
-      hash,
-      destinationSpaceId: destination.destinationSpaceId,
-      acknowledgedSpaceId: old?.destination_space_id ?? null,
-    })
   }
+  const refused = [...partitioned.refusals].map(([project, refusal]) => ({
+    project,
+    reason: refusal.reason,
+  }))
   return { deliveries, refused }
 }
 
@@ -271,14 +278,15 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
   return issues
 }
 
-async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: DeliveryRequest) {
+async function deleteVanishedIntervals(
+  rows: LedgerRow[],
+  activeSpaceId: string,
+  requestOptions: DeliveryRequest,
+) {
   const issues: IntervalSyncIssue[] = []
-  const addressed = rows.filter(
-    (row): row is LedgerRow & { destination_space_id: string } => row.destination_space_id !== null,
-  )
   for (const [destinationSpaceId, destinationRows] of groupedBy(
-    addressed,
-    (row) => row.destination_space_id,
+    rows,
+    (row) => row.destination_space_id ?? activeSpaceId,
   )) {
     try {
       for (const group of batches(destinationRows)) {
@@ -302,9 +310,6 @@ async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: Delive
       })
     }
   }
-  forgetIntervals(
-    rows.filter((row) => row.destination_space_id === null).map((row) => row.local_key),
-  )
   return issues
 }
 
@@ -333,8 +338,8 @@ export async function syncEvidence(
     registeredProjects?: readonly RegisteredTaskSpace[]
   } = {},
 ): Promise<SyncResult> {
-  if (process.env.NODE_ENV === 'test' && options.baseUrl && !options.fetch)
-    throw new Error(TEST_REFUSAL)
+  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
   const intervalRows = localIntervals()
   const intervalLedger = ledger('interval')
   const day = diffRows(localDays(), ledger('day'), false)
@@ -353,7 +358,6 @@ export async function syncEvidence(
       local: day.localCount,
     },
   }
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (!baseUrl) return result
   const token = options.token ?? readRecordSessionToken()
   if (!token) throw new Error('record session is absent; run `orch record sign-in`')
@@ -368,16 +372,20 @@ export async function syncEvidence(
     identity,
   )
   const currentKeys = new Set(intervalRows.map((row) => row.key))
-  const vanished = intervalLedger.filter((row) => !currentKeys.has(row.local_key))
+  const deleteSkipped = intervalRows.length === 0 && intervalLedger.length > 0
+  const vanished = deleteSkipped
+    ? []
+    : intervalLedger.filter((row) => !currentKeys.has(row.local_key))
   result.interval.changed = interval.deliveries.length
-  result.interval.deleted = vanished.filter((row) => row.destination_space_id).length
+  result.interval.deleted = vanished.length
+  result.interval.deleteSkipped = deleteSkipped
   result.interval.issues.push(...interval.refused)
   if (options.dryRun) return result
 
   const deliveryRequest = { fetch: fetchImpl, baseUrl, token }
   result.interval.issues.push(
     ...(await deliverIntervalChanges(interval.deliveries, deliveryRequest)),
-    ...(await deleteVanishedIntervals(vanished, deliveryRequest)),
+    ...(await deleteVanishedIntervals(vanished, identity.activeSpaceId, deliveryRequest)),
   )
   for (const group of batches(day.changed.map((entry) => entry.row)))
     await request(fetchImpl, baseUrl, token, '/v1/evidence/days', 'PUT', {

@@ -13,7 +13,7 @@ import {
   hostedMirrorTasks,
   hostedTaskIdentity,
 } from '../task-client.ts'
-import { taskProjectDestination } from '../task-project-space.ts'
+import { partitionProjectRows } from '../task-project-space.ts'
 
 type CollectedTaskRow = Pick<
   HostedTask,
@@ -109,26 +109,17 @@ export async function createCollectorMirrorPass(
     rows: readonly T[],
     kind: CollectorMirrorKind,
   ) => {
-    const destinations = new Map<string, T[]>()
-    const refusals = new Map<string, Set<string>>()
-    for (const row of rows) {
-      if (!identity) {
-        skip(row.project_name, 'identity-unreadable', kind)
-        continue
-      }
-      const decision = taskProjectDestination(row.project_name, registered, identity)
-      if ('refused' in decision) {
-        skip(row.project_name, decision.refused, kind)
-        const reasons = refusals.get(row.project_name) ?? new Set<string>()
-        reasons.add(decision.refused)
-        refusals.set(row.project_name, reasons)
-        continue
-      }
-      const selected = destinations.get(decision.destinationSpaceId) ?? []
-      selected.push(row)
-      destinations.set(decision.destinationSpaceId, selected)
+    if (!identity) {
+      for (const row of rows) skip(row.project_name, 'identity-unreadable', kind)
+      return { destinations: new Map<string, T[]>(), refusals: new Map<string, Set<string>>() }
     }
-    return { destinations, refusals }
+    const partitioned = partitionProjectRows(rows, registered, identity)
+    const refusals = new Map<string, Set<string>>()
+    for (const [project, refusal] of partitioned.refusals) {
+      for (const _row of refusal.rows) skip(project, refusal.reason, kind)
+      refusals.set(project, new Set([refusal.reason]))
+    }
+    return { destinations: partitioned.destinations, refusals }
   }
 
   const failure = (failures: Map<string, Set<string>>) =>

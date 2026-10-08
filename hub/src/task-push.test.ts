@@ -37,7 +37,6 @@ test('task push groups projects and children by destination and reports refusals
       { name: 'unknown-space', settings: { space: 'missing' } },
     ],
     {
-      userId: 'user-a',
       activeSpaceId: 'space-a',
       memberships: [
         { spaceId: 'space-a', slug: 'active' },

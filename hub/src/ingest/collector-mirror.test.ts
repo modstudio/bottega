@@ -239,6 +239,37 @@ test('git seeding mirrors two project destinations while the active space is a t
   ])
 })
 
+test('a refused first git mirror batch does not stop a later deliverable batch', async () => {
+  const originalSpace = project.settings.space
+  project.settings.space = 'not-a-membership'
+  const outputFor = (stopal: boolean) => {
+    const count = stopal ? 1 : 500
+    const prefix = stopal ? 'STO' : 'ALP'
+    return new TextEncoder().encode(
+      Array.from(
+        { length: count },
+        (_, index) =>
+          `\u00002026-09-24\t2026-09-24T12:00:00.000Z\t${prefix.toLowerCase()}-${index}\t${prefix}-${index + 10} collected\n1\t0\tsrc/file-${index}.ts`,
+      ).join('\n'),
+    )
+  }
+  const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => ({
+    stdout: outputFor(command.includes('/fixtures/repos/stopal')),
+  })) as typeof Bun.spawnSync)
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await ingestGit('2026-09-01')
+  } finally {
+    errors.mockRestore()
+    spawn.mockRestore()
+    project.settings.space = originalSpace
+  }
+
+  expect(mirrored.has('ALP-10')).toBeFalse()
+  expect(mirrored.has('STO-10')).toBeTrue()
+  expect(mirroredTargets).toEqual(['space-stopal'])
+})
+
 test('tracker status events follow their task project destinations', async () => {
   await ingestTrackers()
   trackerStatuses.ALP = 'completed'

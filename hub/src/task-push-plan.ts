@@ -1,5 +1,8 @@
-import type { HostedTaskIdentity } from './task-client.ts'
-import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
+import {
+  partitionProjectRows,
+  type RegisteredTaskSpace,
+  type TaskDestinationIdentity,
+} from './task-project-space.ts'
 
 export type PushCollections = {
   tasks: Array<
@@ -50,43 +53,38 @@ const emptyIssue = (project: string, reason: string): PushIssue => ({
 export function planTaskPush(
   rows: PushCollections,
   registered: readonly RegisteredTaskSpace[],
-  identity: HostedTaskIdentity,
+  identity: TaskDestinationIdentity,
 ) {
-  const decisions = new Map(
-    [
-      ...new Set(Object.values(rows).flatMap((values) => values.map((row) => row.project_name))),
-    ].map((project) => [project, taskProjectDestination(project, registered, identity)] as const),
+  const tagged = (
+    Object.entries(rows) as Array<[keyof PushCollections, PushCollections[keyof PushCollections]]>
+  ).flatMap(([name, values]) =>
+    values.map((row) => ({ name, row, project_name: row.project_name })),
   )
+  const partitioned = partitionProjectRows(tagged, registered, identity)
   const destinations = new Map<string, TaskPushDestination>()
-  const refused = new Map<string, PushIssue>()
-  for (const [name, values] of Object.entries(rows) as Array<
-    [keyof PushCollections, PushCollections[keyof PushCollections]]
-  >) {
-    for (const row of values) {
-      const decision = decisions.get(row.project_name)!
-      if ('refused' in decision) {
-        const issue =
-          refused.get(row.project_name) ?? emptyIssue(row.project_name, decision.refused)
-        issue[name]++
-        refused.set(row.project_name, issue)
-        continue
-      }
-      const destination = destinations.get(decision.destinationSpaceId) ?? {
-        spaceId: decision.destinationSpaceId,
-        projects: [],
-        rows: emptyRows(),
-      }
+  for (const [spaceId, selected] of partitioned.destinations) {
+    const destination = destinations.get(spaceId) ?? {
+      spaceId,
+      projects: [],
+      rows: emptyRows(),
+    }
+    for (const { name, row } of selected) {
       if (!destination.projects.includes(row.project_name))
         destination.projects.push(row.project_name)
       ;(destination.rows[name] as Array<typeof row>).push(row)
-      destinations.set(destination.spaceId, destination)
     }
+    destinations.set(spaceId, destination)
   }
+  const refused = [...partitioned.refusals].map(([project, refusal]) => {
+    const issue = emptyIssue(project, refusal.reason)
+    for (const { name } of refusal.rows) issue[name]++
+    return issue
+  })
   return {
     destinations: [...destinations.values()]
       .map((destination) => ({ ...destination, projects: destination.projects.sort() }))
       .sort((a, b) => a.spaceId.localeCompare(b.spaceId)),
-    refused: [...refused.values()].sort((a, b) => a.project.localeCompare(b.project)),
+    refused: refused.sort((a, b) => a.project.localeCompare(b.project)),
   }
 }
 

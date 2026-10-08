@@ -225,7 +225,11 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       updated_at: t.last,
     }))
     for (let index = 0; index < mirrored.length; index += 500) {
-      await mirror.mirrorTasks(mirrored.slice(index, index + 500))
+      try {
+        await mirror.mirrorTasks(mirrored.slice(index, index + 500))
+      } catch (error) {
+        console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
+      }
     }
   } catch (error) {
     console.error(`hub: git task mirror skipped: ${(error as Error).message}`)

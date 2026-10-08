@@ -322,13 +322,16 @@ describe('evidence sync planning', () => {
   })
 
   test('deletes a vanished row from its acknowledged destination', async () => {
+    const current = interval('1', 'one')
     const vanished = interval('2', 'two')
+    insertInterval(current)
     writeTransaction((conn) => {
       const put = conn.query(
         `INSERT INTO record_ledger
            (table_name,local_key,content_hash,synced_at,destination_space_id)
          VALUES ('interval',?,?,?,?)`,
       )
+      put.run(keyOf(current), contentHash(current), '2026-10-01T00:00:00.000Z', 'space-a')
       put.run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', 'space-b')
     })
     const writes: Array<{ method: string; body: Record<string, unknown> }> = []
@@ -341,7 +344,67 @@ describe('evidence sync planning', () => {
     expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
       ['DELETE', 'space-b'],
     ])
-    expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 0 })
+    expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 1 })
+  })
+
+  test('an empty local interval table skips deletes and keeps every acknowledgement', async () => {
+    const vanished = interval('2', 'two')
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger
+             (table_name,local_key,content_hash,synced_at,destination_space_id)
+           VALUES ('interval',?,?,?,?)`,
+        )
+        .run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', 'space-b'),
+    )
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+
+    const result = await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+
+    expect(result.interval.deleteSkipped).toBe(true)
+    expect(result.interval.deleted).toBe(0)
+    expect(writes).toEqual([])
+    expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 1 })
+  })
+
+  test('deletes a vanished legacy acknowledgement from the active space', async () => {
+    const current = interval('1', 'one')
+    const vanished = interval('2', 'two')
+    insertInterval(current)
+    writeTransaction((conn) => {
+      const put = conn.query(
+        `INSERT INTO record_ledger
+           (table_name,local_key,content_hash,synced_at,destination_space_id)
+         VALUES ('interval',?,?,?,?)`,
+      )
+      put.run(keyOf(current), contentHash(current), '2026-10-01T00:00:00.000Z', 'space-a')
+      put.run(keyOf(vanished), contentHash(vanished), '2026-10-01T00:00:00.000Z', null)
+    })
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+
+    expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
+      ['DELETE', 'space-active'],
+    ])
+    expect(
+      db()
+        .query<{ local_key: string }, []>(
+          `SELECT local_key FROM record_ledger WHERE table_name='interval'`,
+        )
+        .all(),
+    ).toEqual([{ local_key: keyOf(current) }])
   })
 
   test('refuses a server without interval target-space support before any write', async () => {
@@ -439,5 +502,14 @@ describe('evidence API', () => {
     await expect(
       syncEvidence({ baseUrl: 'https://hub.example.test', token: 'fixture' }),
     ).rejects.toThrow('refuses a real hosted URL')
+
+    const hostedUrl = process.env.HUB_HOSTED_URL
+    process.env.HUB_HOSTED_URL = 'https://hub-from-environment.example.test'
+    try {
+      await expect(syncEvidence({ token: 'fixture' })).rejects.toThrow('refuses a real hosted URL')
+    } finally {
+      if (hostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = hostedUrl
+    }
   })
 })
