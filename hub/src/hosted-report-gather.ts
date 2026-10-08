@@ -54,23 +54,27 @@ export function gatherHostedReport(
   const groups = new Map<string, HostedReportRow[]>()
   for (const row of usable) {
     const project = row.task_project ?? row.project_name!
-    const id = row.task_id ?? `\0untasked:${row.space_id}:${project}`
+    const id = row.task_id
+      ? `task:${row.task_id}`
+      : JSON.stringify([row.space_id, project, row.task_key])
     groups.set(id, [...(groups.get(id) ?? []), row])
   }
 
   const projected = [...groups.values()].map((grouped) => {
     const first = grouped[0]!
     const key = first.task_key
+    const unmatched = Boolean(key && !first.task_id)
     const project = first.task_project ?? first.project_name!
     const itemSpans = grouped.map((row) => span(row, period))
     const engaged = engagedMs(itemSpans)
     const item: Item = {
       key,
+      unmatched,
       projectId: first.project_id ?? null,
       spaceId: first.space_id,
       project,
-      title: key ? first.task_title : null,
-      status: key ? first.task_status : null,
+      title: key && !unmatched ? first.task_title : null,
+      status: key && !unmatched ? first.task_status : null,
       closed: first.task_id ? closedTaskIds.has(first.task_id) : false,
       engaged: human(engaged),
       engagedMs: engaged,
@@ -86,6 +90,7 @@ export function gatherHostedReport(
       const mine = projected.filter(({ item }) => projectIdentity(item) === identity)
       const project = mine[0]!.item.project
       const tasks = mine.map(({ item }) => item).filter((item) => item.key)
+      const matched = tasks.filter((item) => !item.unmatched)
       const untasked = mine.map(({ item }) => item).find((item) => !item.key) ?? null
       return {
         project,
@@ -94,8 +99,9 @@ export function gatherHostedReport(
         engagedMs: engagedMs(
           mine.flatMap(({ rows: grouped }) => grouped.map((row) => span(row, period))),
         ),
-        shipped: tasks.filter((item) => item.closed).length,
-        moving: tasks.filter((item) => !item.closed).length,
+        shipped: matched.filter((item) => item.closed).length,
+        moving: matched.filter((item) => !item.closed).length,
+        unmatched: tasks.filter((item) => item.unmatched).length,
         agentTokens: mine.reduce((sum, { item }) => sum + item.agentTokens, 0),
         items: tasks,
         untasked,

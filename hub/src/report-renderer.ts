@@ -5,6 +5,7 @@ import type { Measures } from './measures.ts'
 
 export type Item = {
   key: string | null
+  unmatched: boolean
   projectId?: string | null
   spaceId?: string
   project: string
@@ -32,6 +33,7 @@ export type GatheredReport = {
     engagedMs: number
     shipped: number
     moving: number
+    unmatched: number
     agentTokens: number
     items: Item[]
     untasked: Item | null
@@ -45,6 +47,23 @@ export type ReportPresentation = {
 }
 
 export type ReportSliceOptions = { details?: boolean; summary?: boolean }
+
+const isMatchedTask = (item: Item) => Boolean(item.key) && !item.unmatched
+const matchedTasks = (items: Item[]) => items.filter(isMatchedTask)
+
+export function projectItemPresentation(items: Item[]) {
+  const done = items.filter((item) => isMatchedTask(item) && item.closed)
+  const open = items.filter((item) => isMatchedTask(item) && !item.closed)
+  const unmatched = items.filter((item) => item.unmatched)
+  const displayItems = [...done, ...open, ...unmatched].map((item) => ({
+    item,
+    label: item.unmatched ? `${item.key} — not in the task record` : item.title || item.key || '',
+  }))
+  const unmatchedNotice = unmatched.length
+    ? `${unmatched.length} ${unmatched.length === 1 ? 'task was' : 'tasks were'} not found in the task record: ${unmatched.map((item) => item.key).join(', ')}`
+    : null
+  return { done, open, unmatched, displayItems, unmatchedNotice }
+}
 
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -111,7 +130,7 @@ export function renderHtml(
     day: 'numeric',
     timeZone: 'America/New_York',
   })
-  const tasks = g.items.filter((i) => i.key)
+  const tasks = matchedTasks(g.items)
   const shipped = tasks.filter((i) => i.closed).length
   const moving = tasks.length - shipped
   const measureLines = presentation ? reportMeasureLines(presentation) : []
@@ -179,11 +198,11 @@ export function renderHtml(
     )
     .join('')
 
-  const task = (i: Item) => {
+  const task = (i: Item, label: string) => {
     const s = sentences.get(i.key!)
     return `
     <tr><td style="padding:11px 0;border-top:1px solid ${RULE}">
-      <div class="ttl" style="font-family:${SANS};font-weight:600;font-size:16px;line-height:1.35;color:${INK};letter-spacing:-.005em">${esc(i.title || i.key || '')}</div>
+      <div class="ttl" style="font-family:${SANS};font-weight:600;font-size:16px;line-height:1.35;color:${INK};letter-spacing:-.005em">${esc(label)}</div>
       ${s ? `<div style="font-family:${SANS};font-weight:400;font-size:14px;line-height:1.6;color:${MUTED};padding-top:5px">${esc(s)}</div>` : ''}
       <div style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.4;color:${FAINT};padding-top:5px">
         ${esc(i.key ?? '')} &middot; ${esc(i.engaged)} engaged
@@ -200,8 +219,7 @@ export function renderHtml(
     </td></tr>`
 
   const group = (p: (typeof g.projects)[number]) => {
-    const done = p.items.filter((i) => i.closed)
-    const open = p.items.filter((i) => !i.closed)
+    const { displayItems, unmatchedNotice } = projectItemPresentation(p.items)
     return `
     <tr><td style="padding:26px 0 2px">
       <span style="display:inline-block;width:4px;height:14px;background:${p.color ?? MUTED};
@@ -210,9 +228,14 @@ export function renderHtml(
       <span class="gstat" style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.5;color:${FAINT};padding-left:9px">
         ${hours1(p.taskMs)}h of task work in ${hours1(p.engagedMs)}h
         &middot; ${p.shipped} done &middot; ${p.moving} open</span>
-    </td></tr>
+    </td></tr>${
+      unmatchedNotice
+        ? `
+    <tr><td style="font-family:${SANS};font-weight:400;font-size:12px;line-height:1.5;color:${MUTED};padding:3px 0 2px">${esc(unmatchedNotice)}</td></tr>`
+        : ''
+    }
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-      ${[...done, ...open].map(task).join('')}
+      ${displayItems.map(({ item, label }) => task(item, label)).join('')}
       ${p.untasked ? untasked(p.untasked) : ''}
     </table></td></tr>`
   }
@@ -367,13 +390,13 @@ export function renderText(
 ) {
   // The plain part mirrors the HTML's shape, because a reader who gets this one
   // should not get a different report.
-  const line = (i: Item) =>
+  const line = (i: Item, label: string) =>
     [
-      `  ${i.closed ? '+' : ' '} ${i.title || i.key}`,
+      `  ${i.closed ? '+' : ' '} ${label}`,
       ...(sentences.get(i.key!) ? [`      ${sentences.get(i.key!)}`] : []),
       `      ${i.key} · ${i.engaged} engaged · ${compactTokens(i.agentTokens)} agent tokens`,
     ].join('\n')
-  const tasks = g.items.filter((i) => i.key)
+  const tasks = matchedTasks(g.items)
   const shipped = tasks.filter((i) => i.closed).length
   return [
     ...(options.summary === false
@@ -401,14 +424,18 @@ export function renderText(
               ` ${(hours1(p.engagedMs) + 'h').padStart(8)}` +
               `  ${String(p.shipped).padStart(2)} done  ${String(p.moving).padStart(2)} open`,
           ),
-          ...g.projects.flatMap((p) => [
-            '',
-            p.project.toUpperCase(),
-            ...[...p.items.filter((i) => i.closed), ...p.items.filter((i) => !i.closed)].map(line),
-            ...(p.untasked
-              ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`]
-              : []),
-          ]),
+          ...g.projects.flatMap((p) => {
+            const { displayItems, unmatchedNotice } = projectItemPresentation(p.items)
+            return [
+              '',
+              p.project.toUpperCase(),
+              ...(unmatchedNotice ? [unmatchedNotice] : []),
+              ...displayItems.map(({ item, label }) => line(item, label)),
+              ...(p.untasked
+                ? [`  NO TICKET\n      ${p.untasked.engaged} not tied to a ticket`]
+                : []),
+            ]
+          }),
         ]),
   ].join('\n')
 }
