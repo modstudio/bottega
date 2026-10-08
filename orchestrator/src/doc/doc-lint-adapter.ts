@@ -12,7 +12,13 @@ import {
 } from './doc-lint.ts'
 import type { CanonWriteTree } from './doc-write-allowed.ts'
 
-type StoredDoc = { scope: string; subject: string | null; slug: string; body: string }
+type StoredDoc = {
+  scope: string
+  subject: string | null
+  slug: string
+  body: string
+  kind: 'working' | 'article'
+}
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()
 

@@ -118,6 +118,7 @@ describe('record client', () => {
           slug: 'welcome',
           title: 'Welcome',
           status: 'current',
+          kind: 'working',
           snippet: 'Welcome body',
           matchPosition: null,
         },

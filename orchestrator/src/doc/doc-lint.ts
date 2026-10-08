@@ -1,6 +1,6 @@
 // concern: doc-lint
 /** Pure lint rules for stored documents. */
-import type { DocScope } from '../../../shared/docs.ts'
+import type { DocKind, DocScope } from '../../../shared/docs.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
 import { lintProse } from '../canon/prose-lint.ts'
 
@@ -16,7 +16,15 @@ export type LintableDoc = {
   subject: string | null
   slug: string
   body: string
+  kind: DocKind
   referenceProjects?: DocReferenceProject[]
+}
+
+export type DocLintRule = 'history' | 'issue' | 'numeral' | 'date'
+
+/** Selects the prose lint profile without store or environment access. */
+export function docLintRules(kind: DocKind): readonly DocLintRule[] {
+  return kind === 'article' ? ['history', 'issue', 'date'] : ['history', 'issue', 'numeral', 'date']
 }
 
 export type DocReferenceProject = {
@@ -156,10 +164,13 @@ function designHeadingFindings(body: string): DocLintFinding[] {
 
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   if (doc.scope === 'resume' || doc.scope === 'canon' || doc.scope === 'settings') return []
-  const findings = lintProse(doc.body).map((finding) => ({
-    ...finding,
-    rule: `doc/${finding.rule}`,
-  }))
+  const rules = docLintRules(doc.kind)
+  const findings = lintProse(doc.body)
+    .filter((finding) => rules.includes(finding.rule))
+    .map((finding) => ({
+      ...finding,
+      rule: `doc/${finding.rule}`,
+    }))
   if (doc.referenceProjects) findings.push(...referenceFindings(doc))
   if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
   return findings.sort(
@@ -188,18 +199,20 @@ export function introducedDocFindings(
 }
 
 export function docLintRefusal(
-  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug'>,
+  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'kind'>,
   findings: DocLintFinding[],
 ): string | null {
   if (!findings.length) return null
   const address = `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
   return (
-    `refusing doc ${address}:\n` +
+    `refusing doc ${address} with ${doc.kind} profile:\n` +
     findings
       .map(
         (finding) =>
           `- ${finding.rule} line ${finding.line}: ${finding.message}\n  remedy: ${finding.remedy}`,
       )
-      .join('\n')
+      .join('\n') +
+    `\nclear with orch doc set ${doc.slug} --scope ${doc.scope}${doc.subject === null ? '' : ` --subject ${doc.subject}`} --kind ${doc.kind} and a corrected body` +
+    (doc.kind === 'article' ? '' : `, or use --kind article when this is a product article`)
   )
 }

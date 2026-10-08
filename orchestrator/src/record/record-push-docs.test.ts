@@ -538,11 +538,15 @@ describe('record push-docs command', () => {
     })
     db().query('UPDATE doc SET featured=1 WHERE id=?').run(id)
     db().query('UPDATE doc_revision SET featured=1 WHERE id=?').run(revision)
+    db().query("UPDATE doc SET kind='article' WHERE id=?").run(id)
+    db().query("UPDATE doc_revision SET kind='article' WHERE id=?").run(revision)
     const { client, imports } = capturingClient()
     installRecordApiClient(client)
     await pushDocsCommand({ dryRun: false }, { log: () => undefined })
     expect(imports[0]?.doc.featured).toBe(true)
     expect(imports[0]?.revisions[0]?.featured).toBe(true)
+    expect(imports[0]?.doc.kind).toBe('article')
+    expect(imports[0]?.revisions[0]?.kind).toBe('article')
   })
 
   test('draft and superseded documents keep lifecycle fields and import replacements first', async () => {

@@ -21,9 +21,11 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import {
   DOC_AUDIENCES,
+  DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
   type DocAudience,
+  type DocKind,
   type DocScope,
   type DocStatus,
   type FilingDocScope,
@@ -572,6 +574,7 @@ export type DocRow = {
   position: number
   featured?: boolean
   status?: DocStatus
+  kind?: DocKind
   replacement_slug?: string | null
   revision: string | null
   created_at: string
@@ -592,6 +595,7 @@ const DocRowSchema = z.object({
   position: z.number().int(),
   featured: z.boolean().default(false),
   status: z.enum(DOC_STATUSES).default('current'),
+  kind: z.enum(DOC_KINDS).default('working'),
   replacement_slug: z.string().nullable().default(null),
   revision: z.string().nullable(),
   created_at: z.string(),
@@ -874,6 +878,7 @@ export type DocListFilters = {
   subject?: string | null
   audience?: 'user' | 'technical'
   status?: DocStatus
+  kind?: DocKind
   match?: string
   bodyMatch?: string
 }
@@ -888,6 +893,7 @@ export type DocSetInput = {
   delivery?: 'inject' | 'demand'
   audience?: 'user' | 'technical'
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
   parentSlug?: string | null
   position?: number
@@ -902,6 +908,7 @@ export type DocRevisionMetadata = {
   at: string
   bytes: number
   status?: DocStatus
+  kind?: DocKind
   replacement_slug?: string | null
 }
 
@@ -915,6 +922,7 @@ export type DocArgvInput = {
   delivery?: 'inject' | 'demand'
   audience?: 'user' | 'technical'
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
   match?: string
   bodyMatch?: string
@@ -942,6 +950,7 @@ function docSetFlags(input: DocArgvInput): string[] {
     ...(input.delivery ? ['--delivery', input.delivery] : []),
     ...(input.audience ? ['--audience', input.audience] : []),
     ...(input.status ? ['--status', input.status] : []),
+    ...(input.kind ? ['--kind', input.kind] : []),
     ...(input.replacementSlug ? ['--replacement', input.replacementSlug] : []),
     ...(input.parentSlug === null
       ? ['--no-parent']
@@ -962,6 +971,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         ...docAddressFlags(input),
         ...(input.audience ? ['--audience', input.audience] : []),
         ...(input.status ? ['--status', input.status] : []),
+        ...(input.kind ? ['--kind', input.kind] : []),
         ...(input.match !== undefined ? ['--match', input.match] : []),
         ...(input.bodyMatch !== undefined ? ['--body-match', input.bodyMatch] : []),
         '--json',

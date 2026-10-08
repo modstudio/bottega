@@ -1,6 +1,6 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
-import { type DocAudience, type DocStatus, docSummary } from '../../../shared/docs.ts'
+import { type DocAudience, type DocKind, type DocStatus, docSummary } from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 
 export type RecordDoc = {
@@ -19,6 +19,7 @@ export type RecordDoc = {
   position: number
   featured?: boolean
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
   summary?: string
   projectName: string | null
@@ -43,6 +44,7 @@ export type RecordDocRevision = {
   position: number
   featured?: boolean
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
   author: string
   reason: string
@@ -66,6 +68,7 @@ export type RecordDocImportInput = {
     position?: number
     featured?: boolean
     status?: DocStatus
+    kind?: DocKind
     replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
@@ -86,6 +89,7 @@ export type RecordDocImportInput = {
     position?: number
     featured?: boolean
     status?: DocStatus
+    kind?: DocKind
     replacementSlug?: string | null
     author: string
     reason: string
@@ -97,7 +101,7 @@ export type RecordDocImportInput = {
 export type NormalizedRecordDocImport = {
   doc: Omit<
     RecordDocImportInput['doc'],
-    'id' | 'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'replacementSlug'
+    'id' | 'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
   > & {
     id: string
     audience: DocAudience
@@ -105,18 +109,20 @@ export type NormalizedRecordDocImport = {
     position: number
     featured: boolean
     status: DocStatus
+    kind: DocKind
     replacementSlug: string | null
   }
   revisions: Array<
     Omit<
       RecordDocImportInput['revisions'][number],
-      'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'replacementSlug'
+      'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
     > & {
       audience: DocAudience
       parentId: string | null
       position: number
       featured: boolean
       status: DocStatus
+      kind: DocKind
       replacementSlug: string | null
     }
   >
@@ -142,6 +148,7 @@ export function normalizeRecordDocImport(
       position: input.doc.position ?? 0,
       featured: input.doc.featured ?? false,
       status: input.doc.status ?? 'current',
+      kind: input.doc.kind ?? 'working',
       replacementSlug: input.doc.replacementSlug ?? null,
     },
     revisions: input.revisions.map((revision) => ({
@@ -151,6 +158,7 @@ export function normalizeRecordDocImport(
       position: revision.position ?? 0,
       featured: revision.featured ?? false,
       status: revision.status ?? 'current',
+      kind: revision.kind ?? 'working',
       replacementSlug: revision.replacementSlug ?? null,
     })),
   }
@@ -204,6 +212,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
+    kind: (row.kind == null ? 'working' : String(row.kind)) as DocKind,
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     summary: docSummary(String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
@@ -230,6 +239,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
+    kind: (row.kind == null ? 'working' : String(row.kind)) as DocKind,
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
     reason: String(row.reason),

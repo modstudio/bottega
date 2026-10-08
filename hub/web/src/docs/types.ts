@@ -1,6 +1,7 @@
 import type { DocStatus } from '../../../../shared/docs.ts'
 
 export type DocsAudience = 'user' | 'technical'
+export type DocsKind = 'working' | 'article'
 type DocsDelivery = 'inject' | 'demand'
 
 /** Shared tree item, matching `hub/src/doc-contract.ts`, plus delivery when the source has it. */
@@ -19,6 +20,7 @@ export type DocsTreeItem = {
   delivery?: DocsDelivery
   summary?: string
   featured?: boolean
+  kind?: DocsKind
   /** Set when the adapter says this document belongs to a project. */
   projectName?: string
 }

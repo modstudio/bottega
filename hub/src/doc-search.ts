@@ -89,6 +89,7 @@ export async function searchLocalDocs(
       slug: row.slug,
       title: row.title,
       status: row.status ?? 'current',
+      kind: row.kind ?? 'working',
       ...docSnippet(row.body, query),
     }))
 }

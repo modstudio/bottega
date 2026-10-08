@@ -8,11 +8,18 @@ const doc = (body: string) => ({
   subject: null,
   slug: 'record-service',
   body,
+  kind: 'working' as const,
 })
 
 describe('record service doc lint', () => {
   test('refuses an invalid new document', () => {
-    expect(recordDocLintRefusal(doc('This was formerly different.'))).toContain('doc/history')
+    expect(recordDocLintRefusal(doc('This was formerly different.'))).toMatch(
+      /working profile[\s\S]*doc\/history/,
+    )
+  })
+
+  test('article profile permits numerals', () => {
+    expect(recordDocLintRefusal({ ...doc('There are 2 prices.'), kind: 'article' })).toBeNull()
   })
 
   test('allows a clean append to a legacy document', () => {

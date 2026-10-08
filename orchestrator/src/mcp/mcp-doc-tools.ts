@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_STATUSES } from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
@@ -70,6 +70,7 @@ export function registerDocTools(server: McpServer): void {
         user: z.boolean().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
         status: z.enum(DOC_STATUSES).optional(),
+        kind: z.enum(DOC_KINDS).optional(),
       }),
     },
     async ({
@@ -82,6 +83,7 @@ export function registerDocTools(server: McpServer): void {
       user,
       audience,
       status,
+      kind,
     }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       const owner = user ? await signedInDocOwner() : null
@@ -96,6 +98,7 @@ export function registerDocTools(server: McpServer): void {
           owner,
           audience,
           status,
+          kind,
         }),
       )
     },
@@ -143,6 +146,7 @@ export function registerDocTools(server: McpServer): void {
         position: z.number().int().optional(),
         featured: z.boolean().optional(),
         status: z.enum(DOC_STATUSES).optional(),
+        kind: z.enum(DOC_KINDS).optional(),
         replacement: z.string().trim().min(1).nullable().optional(),
         force_inject: z
           .string()
@@ -173,6 +177,7 @@ export function registerDocTools(server: McpServer): void {
       position,
       featured,
       status,
+      kind,
       replacement,
       force_inject,
       reason,
@@ -196,6 +201,7 @@ export function registerDocTools(server: McpServer): void {
           position,
           featured,
           status,
+          kind,
           replacementSlug: replacement,
           forceInject: force_inject,
           reason,

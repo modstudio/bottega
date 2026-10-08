@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
-import { type DocReferenceProject, introducedDocFindings, lintDoc } from './doc-lint.ts'
+import {
+  type DocReferenceProject,
+  docLintRules,
+  introducedDocFindings,
+  lintDoc,
+} from './doc-lint.ts'
 
 const checkout = (paths: string[]): CanonLintInput => ({
   files: [],
@@ -24,10 +29,29 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
   subject: PLATFORM_NAME.toLowerCase(),
   slug: 'guide',
   body,
+  kind: 'working' as const,
   ...extra,
 })
 
 describe('stored document lint', () => {
+  test('kind selects the prose rule set', () => {
+    expect(docLintRules('working')).toEqual(['history', 'issue', 'numeral', 'date'])
+    expect(docLintRules('article')).toEqual(['history', 'issue', 'date'])
+  })
+
+  test.each(['working', 'article'] as const)('%s distinguishes the two used-to senses', (kind) => {
+    expect(lintDoc(doc('This field is used to compute the price.', { kind }))).toEqual([])
+    expect(lintDoc(doc('The page used to show totals.', { kind }))).toEqual([
+      expect.objectContaining({ rule: 'doc/history' }),
+    ])
+  })
+
+  test('article permits a numeral while working refuses it', () => {
+    expect(lintDoc(doc('There are 2 prices.', { kind: 'article' }))).toEqual([])
+    expect(lintDoc(doc('There are 2 prices.'))).toEqual([
+      expect.objectContaining({ rule: 'doc/numeral' }),
+    ])
+  })
   test('resume documents are exempt', () => {
     expect(lintDoc(doc('DEV-880 was formerly active on 2026-09-23.', { scope: 'resume' }))).toEqual(
       [],

@@ -4,7 +4,7 @@ import { type DocRow, docGet, docList } from './orch.ts'
 
 export type LocalDocFilters = Pick<
   NonNullable<Parameters<typeof docList>[0]>,
-  'scope' | 'subject' | 'audience' | 'status'
+  'scope' | 'subject' | 'audience' | 'status' | 'kind'
 >
 
 function localDocContract(
@@ -27,6 +27,7 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     summary: docSummary(row.body),
     featured: Boolean(row.featured),
     status: row.status ?? 'current',
+    kind: row.kind ?? 'working',
     replacementSlug: row.replacement_slug ?? null,
   }
   return includeBody ? DocSchema.parse({ ...item, body: row.body }) : DocTreeItemSchema.parse(item)

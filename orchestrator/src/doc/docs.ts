@@ -14,6 +14,7 @@ import {
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
   type DocAudience,
+  type DocKind,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -152,6 +153,7 @@ function assertInjectSize(input: {
         audience: 'technical',
         featured: false,
         status: 'current',
+        kind: 'working',
         replacement_slug: null,
         parent_id: null,
         parent_slug: null,
@@ -254,6 +256,7 @@ type DocWriteInput = {
   position?: number
   featured?: boolean
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
 } & DocWriteContext
 
@@ -354,9 +357,10 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
-  const findings = lintStoredDoc(input as Pick<Doc, 'scope' | 'subject' | 'slug' | 'body'>)
+  const lintInput = { ...input, kind: input.kind ?? prior?.kind ?? 'working' }
+  const findings = lintStoredDoc(lintInput)
   const introduced = prior ? introducedDocFindings(lintStoredDoc(prior), findings) : findings
-  const refusal = docLintRefusal(input, introduced)
+  const refusal = docLintRefusal(lintInput, introduced)
   if (refusal) throw new Error(refusal)
 }
 
@@ -409,6 +413,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         }),
         position: tree.position,
         featured: tree.featured,
+        kind: input.kind ?? prior?.kind ?? 'working',
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -852,7 +857,7 @@ export function listDocRevisions(
   validateHistoricDocAddress(scope, slug)
   return db()
     .query(
-      `SELECT id, op, author, reason, at, status, replacement_slug, record_id,
+      `SELECT id, op, author, reason, at, status, kind, replacement_slug, record_id,
               length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
@@ -913,6 +918,7 @@ export async function restoreDoc(
       title: revision.title,
       body: revision.body,
       delivery: revision.delivery,
+      kind: revision.kind,
       ...context,
     },
     getDoc(scope, subject, slug, owner),
@@ -959,6 +965,7 @@ export async function restoreDoc(
         delivery: revision.delivery,
         ...tree,
         status: revision.status,
+        kind: revision.kind,
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,
@@ -1001,6 +1008,7 @@ export async function restoreDoc(
           position: revision.position,
           featured: revision.featured,
           status: revision.status,
+          kind: revision.kind,
           replacementSlug: revision.replacement_slug,
           projectName,
           reason: identity.reason,
@@ -1027,6 +1035,7 @@ export async function restoreDoc(
         delivery: revision.delivery,
         ...tree,
         status: revision.status,
+        kind: revision.kind,
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,
@@ -1044,12 +1053,14 @@ export function diffDocRevisions(a: number, b: number, owner: string | null = nu
   if (!right) throw new Error(`no doc revision ${b}`)
   const x = [
     `status: ${left.status}`,
+    `kind: ${left.kind}`,
     `replacement: ${left.replacement_slug ?? '-'}`,
     '',
     ...left.body.split('\n'),
   ]
   const y = [
     `status: ${right.status}`,
+    `kind: ${right.kind}`,
     `replacement: ${right.replacement_slug ?? '-'}`,
     '',
     ...right.body.split('\n'),

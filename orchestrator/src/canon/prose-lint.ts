@@ -41,7 +41,6 @@ export const DEFAULT_COMMENT_HISTORY_PHRASES = [
 ] as const
 
 const HISTORY_PATTERNS = [
-  /\bused to\b/i,
   /\bwas (?:called|named)\b/i,
   /\brenamed\b/i,
   /\bno longer\b/i,
@@ -49,6 +48,17 @@ const HISTORY_PATTERNS = [
   /\bformerly\b/i,
   /\b(?:that|this|it) (?:has )?changed\b/i,
 ]
+
+const FORMER_STATE_USED_TO = /\bused to\s+(?:be|have|[a-z]+)\b/i
+const BE_FORM_BEFORE_USED_TO = /\b(?:is|are|was|were|be|been|being)\s+$/i
+
+function historyPattern(line: string): RegExp | null {
+  const usedTo = FORMER_STATE_USED_TO.exec(line)
+  if (usedTo && !BE_FORM_BEFORE_USED_TO.test(line.slice(0, usedTo.index))) {
+    return FORMER_STATE_USED_TO
+  }
+  return HISTORY_PATTERNS.find((pattern) => pattern.test(line)) ?? null
+}
 
 const ISSUE_PATTERNS = [
   /\bworkaround\b/i,
@@ -99,12 +109,12 @@ export function lintProse(text: string): ProseFinding[] {
   const findings: ProseFinding[] = []
   for (const { text: line, line: lineNumber } of proseLines(text)) {
     const withoutInlineCode = line.replace(/(`+)[^`]*?\1/g, '')
-    const historyPattern = HISTORY_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
-    if (historyPattern) {
+    const matchedHistoryPattern = historyPattern(withoutInlineCode)
+    if (matchedHistoryPattern) {
       findings.push({
         line: lineNumber,
         rule: 'history',
-        message: `matches banned history pattern ${historyPattern.source}`,
+        message: `matches banned history pattern ${matchedHistoryPattern.source}`,
         remedy: 'state only the current rule, constraint, behavior, or reason',
       })
     }

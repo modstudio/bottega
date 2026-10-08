@@ -51,6 +51,7 @@ export function register(program: Command): void {
     .option('--featured')
     .option('--no-featured')
     .option('--status <value>')
+    .option('--kind <value>')
     .option('--replacement <slug>')
     .option('--include-drafts')
     .option('--force-inject <value>')
