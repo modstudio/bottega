@@ -37,14 +37,9 @@ modes:
       - implement-fix
       - verify
       - blast-radius
-      - triage-findings
-      - apply-findings
-      - run-gate
-      - open-pr
-      - merge-pr
-      - sync-docs
-      - promote-release
-      - close-task
+      - sequence: review
+      - sequence: land
+      - sequence: release
   - slug: cohort
     title: Fix a root-cause cohort
     entry: "Which production signal should be grouped by root cause, and under which task key?"
@@ -59,12 +54,8 @@ modes:
       - implement-fix
       - verify
       - blast-radius
-      - triage-findings
-      - apply-findings
-      - run-gate
-      - open-pr
-      - merge-pr
-      - sync-docs
+      - sequence: review
+      - sequence: land
       - promote-release
       - observe-release
       - close-task
