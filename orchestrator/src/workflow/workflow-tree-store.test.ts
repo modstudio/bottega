@@ -122,7 +122,7 @@ describe('importWorkflowTree', () => {
     ])
   })
 
-  test('sync docs composes through orch-docs and array-mcp', () => {
+  test('the documentation apply step composes through orch-docs and array-mcp', () => {
     const d = database()
     const root = fileURLToPath(new URL('../../..', import.meta.url))
     const imported = importWorkflowTree(
@@ -151,16 +151,16 @@ describe('importWorkflowTree', () => {
         project,
         `/${project}`,
         'bun',
-        JSON.stringify({ docs: { protocol } }),
+        JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol } }),
       )
       const step = getWorkflowStep(
         'ship-task',
         project,
-        'sync-docs',
+        'docs-apply',
         { key: 'DEV-945', branch: 'DEV-945-fixture', worktree: '/fixture' },
         d,
       )
-      expect(step.needs).toEqual(['docs'])
+      expect(step.needs).toEqual(['tracker', 'docs'])
       expect(step.body).toContain(`adapter is named by \`${protocol}\``)
       if (protocol === 'array-mcp') {
         expect(step.body).toContain(
