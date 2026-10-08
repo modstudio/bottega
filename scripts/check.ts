@@ -250,6 +250,7 @@ if (
     './scripts/check-machine-state.test.ts',
     './scripts/check-runtime.test.ts',
     './scripts/check-outcome.test.ts',
+    './scripts/check-gitleaks-plan.test.ts',
     './scripts/check-cascade-preservation.test.ts',
     './scripts/check-outbox-payload-contracts.test.ts',
     './scripts/postgres-migration-rls.test.ts',
