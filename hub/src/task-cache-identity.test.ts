@@ -5,7 +5,6 @@ import { applyHostedTaskChanges } from './task-cache.ts'
 
 const AT = '2026-10-08T12:00:00.000Z'
 const TASK_A = '01990000-0000-7000-8000-000000000001'
-const TASK_B = '01990000-0000-7000-8000-000000000002'
 
 beforeEach(resetFixtureStore)
 
@@ -157,7 +156,7 @@ test('tombstones with another row legacy id delete no child rows', () => {
   expect(recordIds('task_status_event')).toEqual(['kept-event'])
 })
 
-test('legacy ids adopt unhosted child rows belonging to the same task', () => {
+test('legacy ids do not adopt unhosted child rows belonging to the same task', () => {
   seedTask(TASK_A, 'DEV-1')
   writeTransaction((conn) => {
     conn
@@ -187,43 +186,70 @@ test('legacy ids adopt unhosted child rows belonging to the same task', () => {
     }),
   )
 
-  expect(recordIds('task_comment')).toEqual(['adopt-comment'])
-  expect(recordIds('task_document')).toEqual(['adopt-document'])
-  expect(recordIds('task_status_event')).toEqual(['adopt-event'])
+  expect(recordIds('task_comment')).toEqual([null, 'adopt-comment'])
+  expect(recordIds('task_document')).toEqual([null, 'adopt-document'])
+  expect(recordIds('task_status_event')).toEqual([null, 'adopt-event'])
 })
 
-test('legacy ids do not adopt unhosted child rows belonging to another task', () => {
+test('matching record ids update and delete child rows', () => {
   seedTask(TASK_A, 'DEV-1')
-  seedTask(TASK_B, 'DEV-2')
   writeTransaction((conn) => {
     conn
       .query(
-        `INSERT INTO task_comment(id,task_key,task_record_id,body,created_at)
-         VALUES (401,'DEV-2',?,'local',?)`,
+        `INSERT INTO task_comment(id,record_id,task_key,task_record_id,body,created_at)
+         VALUES (401,'matched-comment','DEV-1',?,'local',?)`,
       )
-      .run(TASK_B, AT)
+      .run(TASK_A, AT)
     conn
       .query(
-        `INSERT INTO task_document(id,task_key,task_record_id,title,body,version,created_at,updated_at)
-         VALUES (402,'DEV-2',?,'local','body','v1',?,?)`,
+        `INSERT INTO task_document(id,record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
+         VALUES (402,'matched-document','DEV-1',?,'local','body','v1',?,?)`,
       )
-      .run(TASK_B, AT, AT)
+      .run(TASK_A, AT, AT)
     conn
       .query(
-        `INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status)
-         VALUES (403,'DEV-2',?,?,'open')`,
+        `INSERT INTO task_status_event(id,record_id,task_key,task_record_id,at,to_status)
+         VALUES (403,'matched-event','DEV-1',?,?,'open')`,
       )
-      .run(TASK_B, AT)
+      .run(TASK_A, AT)
   })
 
   applyHostedTaskChanges(
     changes({
-      ids: { comment: 'new-comment', document: 'new-document', event: 'new-event' },
+      ids: {
+        comment: 'matched-comment',
+        document: 'matched-document',
+        event: 'matched-event',
+      },
       legacy: { comment: 401, document: 402, event: 403 },
     }),
   )
 
-  expect(recordIds('task_comment')).toEqual([null, 'new-comment'])
-  expect(recordIds('task_document')).toEqual([null, 'new-document'])
-  expect(recordIds('task_status_event')).toEqual([null, 'new-event'])
+  expect(
+    db().query<{ body: string }, []>(`SELECT body FROM task_comment WHERE id=401`).get()?.body,
+  ).toBe('hosted comment')
+  expect(
+    db().query<{ title: string }, []>(`SELECT title FROM task_document WHERE id=402`).get()?.title,
+  ).toBe('hosted document')
+  expect(
+    db()
+      .query<{ to_status: string }, []>(`SELECT to_status FROM task_status_event WHERE id=403`)
+      .get()?.to_status,
+  ).toBe('active')
+
+  applyHostedTaskChanges(
+    changes({
+      ids: {
+        comment: 'matched-comment',
+        document: 'matched-document',
+        event: 'matched-event',
+      },
+      legacy: { comment: 999, document: 999, event: 999 },
+      deleted: true,
+    }),
+  )
+
+  expect(recordIds('task_comment')).toEqual([])
+  expect(recordIds('task_document')).toEqual([])
+  expect(recordIds('task_status_event')).toEqual([])
 })
