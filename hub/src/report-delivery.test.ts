@@ -505,9 +505,9 @@ describe('hosted report delivery', () => {
     expect(rendered.html).toContain('Beta space')
     expect(rendered.html).toContain('starship')
     expect(rendered.html).toContain('stopal')
-    expect(rendered.text.match(/^MEASURES$/gm)).toHaveLength(1)
+    expect(rendered.text.match(/of task work in .* engaged/g)).toHaveLength(1)
+    expect(rendered.text.match(/^Window:/gm)).toHaveLength(1)
     expect(rendered.html.match(/>measures</g)).toHaveLength(1)
-    expect(rendered.text.match(/TASK HOURS adds/g)).toHaveLength(1)
     expect(rendered.html.match(/TASK HOURS adds/g)).toHaveLength(1)
   })
 

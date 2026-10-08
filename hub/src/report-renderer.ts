@@ -381,27 +381,14 @@ export function renderText(
             `${shipped} done · ${tasks.length - shipped} in progress`,
           `the last ${g.hours} hours across ${g.projects.length} projects`,
           ...(presentation
-            ? [
-                presentation.windowLine,
-                '',
-                ...(options.details === false ? ['MEASURES'] : []),
-                ...reportMeasureLines(presentation),
-                ...(options.details === false
-                  ? [
-                      '',
-                      'TASK HOURS adds the time charged to the listed tasks. ENGAGED counts simultaneous work once and includes work carrying no ticket.',
-                    ]
-                  : []),
-              ]
+            ? [presentation.windowLine, '', ...reportMeasureLines(presentation)]
             : []),
         ]),
     ...(options.details === false
       ? []
       : [
           '',
-          options.summary === false
-            ? 'BY PROJECT'
-            : 'BY PROJECT   (task hours add up; engaged includes work carrying no ticket)',
+          'BY PROJECT   (task hours add up; engaged includes work carrying no ticket)',
           `  ${'PROJECT'.padEnd(11)} ${'TASK'.padStart(6)} ${'ENGAGED'.padStart(8)}`,
           `  ${'TOTAL'.padEnd(11)} ${(hours1(g.taskMs) + 'h').padStart(6)}` +
             ` ${(hours1(g.engagedMs) + 'h').padStart(8)}` +
