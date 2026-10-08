@@ -21,10 +21,15 @@ const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionS
 function closeShipToFact(
   projectName: string,
   remaining: number,
-  tracker: { states: Partial<Record<'review' | 'done', string>> } | undefined,
+  tracker:
+    | {
+        states: Partial<Record<'review' | 'done', string>>
+        inReview: { state: string; floor: 'tracker-transition' | 'recorded-artifact' }
+      }
+    | undefined,
 ) {
   if (!tracker) return {}
-  const closeAction = !remaining ? 'done' : tracker.states.review ? 'review' : 'ask'
+  const closeAction = !remaining ? 'done' : tracker.inReview.state !== 'none' ? 'review' : 'ask'
   if (closeAction === 'done' && !tracker.states.done)
     throw new Error(
       `project ${projectName} tracker is missing workflow state "done"; set it with: orch project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
@@ -36,7 +41,7 @@ function closeShipToFact(
       closeAction === 'done'
         ? tracker.states.done
         : closeAction === 'review'
-          ? tracker.states.review
+          ? tracker.inReview.state
           : 'none',
   }
 }
@@ -61,7 +66,10 @@ function shipToFact(
   )
   if (!decision.allowed) throw new Error(decision.refusal)
   const tracker = needsCloseState
-    ? (projectFacts.tracker as { states: Partial<Record<'review' | 'done', string>> })
+    ? (projectFacts.tracker as {
+        states: Partial<Record<'review' | 'done', string>>
+        inReview: { state: string; floor: 'tracker-transition' | 'recorded-artifact' }
+      })
     : undefined
   return {
     shipTo: {

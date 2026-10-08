@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import {
   refuseHubActionOverrides,
+  refuseInvalidReviewStages,
   refuseNonCursorProjectId,
   resolveTrackerAgentActions,
   TRACKER_PROTOCOLS,
@@ -45,6 +46,7 @@ const trackerSchema = strictObject({
 }).superRefine((tracker, context) => {
   refuseHubActionOverrides(tracker, context)
   refuseNonCursorProjectId(tracker, context)
+  refuseInvalidReviewStages(tracker, context)
 })
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
@@ -60,6 +62,8 @@ type ResolvedTracker = {
   server?: string
   actions: Partial<Record<TrackerAction, string>>
   states: Partial<Record<'active' | 'review' | 'done', string>>
+  waitingReview: { state: string; floor: 'tracker-transition' | 'recorded-artifact' }
+  inReview: { state: string; floor: 'tracker-transition' | 'recorded-artifact' }
 }
 
 const docsAdapters: Record<DocsSettings['protocol'], { read: string[]; write: string[] }> = {
@@ -109,6 +113,25 @@ export function unresolvedTrackerActionPlaceholder(
   if (action.includes('{key}'))
     return `task-key value "${key ?? '(missing)'}" does not match task-key grammar`
   return null
+}
+
+function resolvedReviewStages(projectName: string, tracker: TrackerSettings, protocol: TrackerProtocol) {
+  const reviewStates = Object.entries(tracker.states ?? {}).flatMap(([raw, category]) =>
+    category === 'review' ? [raw] : [],
+  )
+  if (protocol === 'hub' && reviewStates.length === 0) reviewStates.push('review')
+  if (!tracker.reviewStages && reviewStates.length > 1) {
+    throw new Error(
+      `project ${projectName} tracker has several review states (${reviewStates.join(', ')}) but no reviewStages selection; set it with: orch project set ${projectName} --settings '${JSON.stringify({ tracker: { reviewStages: { waiting: '<waiting-review-state>', active: '<in-review-state>' } } })}'`,
+    )
+  }
+  const waiting = tracker.reviewStages?.waiting ?? reviewStates[0]
+  const active = tracker.reviewStages?.active ?? reviewStates[0]
+  const stage = (state: string | undefined) =>
+    state
+      ? ({ state, floor: 'tracker-transition' } as const)
+      : ({ state: 'none', floor: 'recorded-artifact' } as const)
+  return { waitingReview: stage(waiting), inReview: stage(active) }
 }
 
 type InjectionSettings = {
@@ -234,6 +257,8 @@ export function resolveInjection<
           return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
         }),
       ) as ResolvedTracker['states']
+      const reviewStages = resolvedReviewStages(project.name, tracker, protocol)
+      if (tracker.reviewStages) states.review = tracker.reviewStages.active
       Object.assign(resolved, {
         tracker: {
           kind: tracker.kind ?? protocol,
@@ -241,6 +266,7 @@ export function resolveInjection<
           ...(protocol === 'hub' ? {} : { server: project.name }),
           actions,
           states,
+          ...reviewStages,
         },
       })
     } else if (source === 'docs') {

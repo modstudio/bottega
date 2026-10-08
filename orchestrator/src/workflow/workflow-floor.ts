@@ -249,14 +249,26 @@ function expectedTrackerCategory(
   return mapped === 'backlog' ? 'open' : mapped
 }
 
+function categoryHasSeveralStates(category: string, states: TrackerStates): boolean {
+  return Object.values(states).filter(
+    (mapped) => (mapped === 'backlog' ? 'open' : mapped) === category,
+  ).length > 1
+}
+
 function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const task = evidence.task
   const expectedCategory = task
     ? expectedTrackerCategory(floor.expectedStatus, task.trackerStates)
     : undefined
+  const requiresExactStatus = Boolean(
+    expectedCategory && categoryHasSeveralStates(expectedCategory, task?.trackerStates ?? {}),
+  )
   if (
     !task ||
     (task.status !== floor.expectedStatus &&
+      requiresExactStatus) ||
+    (!requiresExactStatus &&
+      task.status !== floor.expectedStatus &&
       task.statusCategory !== floor.expectedStatus &&
       task.statusCategory !== expectedCategory)
   )
