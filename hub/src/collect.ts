@@ -14,7 +14,7 @@ import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
 import { claimWaitingNotifications } from './orch.ts'
 import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
-import { syncEvidence } from './sync.ts'
+import { type SyncResult, syncEvidence } from './sync.ts'
 import { pullHostedTasks } from './task-cache.ts'
 import { hoursAgo } from './time.ts'
 
@@ -95,17 +95,35 @@ async function settleLeg(source: string, work: () => Promise<unknown>): Promise<
   }
 }
 
-const HOSTED_COLLECT_LEGS = [
-  ['hosted evidence', syncEvidence],
-  ['hosted tasks', pullHostedTasks],
-  ['hosted notes', pullHostedNotes],
-  ['hosted reports', pullHostedReports],
-] as const
+type HostedCollectDependencies = {
+  evidence?: () => Promise<SyncResult>
+  tasks?: () => Promise<unknown>
+  notes?: () => Promise<unknown>
+  reports?: () => Promise<unknown>
+}
 
-async function hostedCollectLegs(guard?: LeaseGuard): Promise<CollectLegResult[]> {
+export async function hostedCollectLegs(
+  guard?: LeaseGuard,
+  dependencies: HostedCollectDependencies = {},
+): Promise<CollectLegResult[]> {
+  const evidence = async () => {
+    const result = await (dependencies.evidence ?? syncEvidence)()
+    if (result.interval.issues.length > 0)
+      throw new Error(
+        `interval sync issues: ${result.interval.issues
+          .map((issue) => `${issue.project ?? '(no project)'}: ${issue.reason}`)
+          .join('; ')}`,
+      )
+  }
+  const legs = [
+    ['hosted evidence', evidence],
+    ['hosted tasks', dependencies.tasks ?? pullHostedTasks],
+    ['hosted notes', dependencies.notes ?? pullHostedNotes],
+    ['hosted reports', dependencies.reports ?? pullHostedReports],
+  ] as const
   const results: CollectLegResult[] = []
   let previous: string | undefined
-  for (const [source, work] of HOSTED_COLLECT_LEGS) {
+  for (const [source, work] of legs) {
     guard?.assertHeld(previous)
     results.push(await settleLeg(source, work))
     previous = source

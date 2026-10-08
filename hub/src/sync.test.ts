@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
 import { evidenceApi } from './evidence-api.ts'
 import type { IntervalEvidence } from './hosted-evidence.ts'
@@ -231,6 +232,50 @@ describe('evidence sync planning', () => {
     ).toEqual([{ local_key: keyOf(delivered) }])
   })
 
+  test('hosted collection reports a refused project after delivering healthy evidence and continues', async () => {
+    const refused = interval('1', 'missing')
+    const delivered = interval('2', 'one')
+    insertInterval(refused)
+    insertInterval(delivered)
+    const writes: Array<{ method: string; body: Record<string, unknown> }> = []
+    const ran: string[] = []
+
+    const results = await hostedCollectLegs(undefined, {
+      evidence: () =>
+        syncEvidence({
+          baseUrl: 'https://hub.example.test',
+          token: 'session',
+          fetch: syncFetch(writes),
+          registeredProjects: registered,
+        }),
+      tasks: async () => {
+        ran.push('following leg')
+      },
+      notes: async () => {},
+      reports: async () => {},
+    })
+
+    expect(writes.map((write) => write.body.targetSpaceId)).toEqual(['space-a'])
+    expect(ran).toEqual(['following leg'])
+    expect(results).toEqual([
+      {
+        source: 'hosted evidence',
+        ok: false,
+        error: 'interval sync issues: missing: unregistered-project',
+      },
+      { source: 'hosted tasks', ok: true },
+      { source: 'hosted notes', ok: true },
+      { source: 'hosted reports', ok: true },
+    ])
+    expect(
+      db()
+        .query<{ local_key: string }, []>(
+          `SELECT local_key FROM record_ledger WHERE table_name='interval'`,
+        )
+        .all(),
+    ).toEqual([{ local_key: keyOf(delivered) }])
+  })
+
   test('resends a legacy acknowledgement with no destination', async () => {
     const row = interval('1', 'one')
     insertInterval(row)
@@ -373,7 +418,7 @@ describe('evidence sync planning', () => {
     expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 1 })
   })
 
-  test('deletes a vanished legacy acknowledgement from the active space', async () => {
+  test('retires a vanished legacy acknowledgement without guessing its hosted destination', async () => {
     const current = interval('1', 'one')
     const vanished = interval('2', 'two')
     insertInterval(current)
@@ -388,15 +433,21 @@ describe('evidence sync planning', () => {
     })
     const writes: Array<{ method: string; body: Record<string, unknown> }> = []
 
-    await syncEvidence({
+    const result = await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
       fetch: syncFetch(writes),
       registeredProjects: registered,
     })
 
-    expect(writes.map((write) => [write.method, write.body.targetSpaceId])).toEqual([
-      ['DELETE', 'space-active'],
+    expect(writes).toEqual([])
+    expect(result.interval.deleted).toBe(0)
+    expect(result.interval.issues).toEqual([
+      {
+        project: null,
+        reason:
+          '1 vanished interval acknowledgement had an unknown hosted destination; the hosted row was left in place',
+      },
     ])
     expect(
       db()

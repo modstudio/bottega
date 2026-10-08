@@ -278,15 +278,11 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
   return issues
 }
 
-async function deleteVanishedIntervals(
-  rows: LedgerRow[],
-  activeSpaceId: string,
-  requestOptions: DeliveryRequest,
-) {
+async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: DeliveryRequest) {
   const issues: IntervalSyncIssue[] = []
   for (const [destinationSpaceId, destinationRows] of groupedBy(
     rows,
-    (row) => row.destination_space_id ?? activeSpaceId,
+    (row) => row.destination_space_id!,
   )) {
     try {
       for (const group of batches(destinationRows)) {
@@ -376,16 +372,30 @@ export async function syncEvidence(
   const vanished = deleteSkipped
     ? []
     : intervalLedger.filter((row) => !currentKeys.has(row.local_key))
+  const vanishedWithDestination = vanished.filter(
+    (row): row is LedgerRow & { destination_space_id: string } => row.destination_space_id !== null,
+  )
+  const vanishedWithoutDestination = vanished.filter((row) => row.destination_space_id === null)
   result.interval.changed = interval.deliveries.length
-  result.interval.deleted = vanished.length
+  result.interval.deleted = vanishedWithDestination.length
   result.interval.deleteSkipped = deleteSkipped
   result.interval.issues.push(...interval.refused)
+  if (vanishedWithoutDestination.length > 0)
+    result.interval.issues.push({
+      project: null,
+      reason: `${vanishedWithoutDestination.length} vanished interval acknowledgement${
+        vanishedWithoutDestination.length === 1 ? '' : 's'
+      } had an unknown hosted destination; the hosted row${
+        vanishedWithoutDestination.length === 1 ? ' was' : 's were'
+      } left in place`,
+    })
   if (options.dryRun) return result
 
   const deliveryRequest = { fetch: fetchImpl, baseUrl, token }
+  forgetIntervals(vanishedWithoutDestination.map((row) => row.local_key))
   result.interval.issues.push(
     ...(await deliverIntervalChanges(interval.deliveries, deliveryRequest)),
-    ...(await deleteVanishedIntervals(vanished, identity.activeSpaceId, deliveryRequest)),
+    ...(await deleteVanishedIntervals(vanishedWithDestination, deliveryRequest)),
   )
   for (const group of batches(day.changed.map((entry) => entry.row)))
     await request(fetchImpl, baseUrl, token, '/v1/evidence/days', 'PUT', {
