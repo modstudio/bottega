@@ -318,12 +318,15 @@ describe('hosted-only task safety', () => {
 
   test('mirror collision decisions insert, update, deduplicate events, and refuse reused ids', () => {
     const incoming = { id: 'id-1', spaceId: 'space-a', naturalKey: 'task DEV-1' }
-    expect(mirrorCollisionDecision(incoming, null, 'update')).toEqual({ action: 'insert' })
+    expect(mirrorCollisionDecision(incoming, null, { sameRow: 'update' })).toEqual({
+      action: 'insert',
+    })
     expect(
-      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, false, {
-        id: 'id-2',
-        spaceId: 'space-a',
-        naturalKey: 'task DEV-1',
+      mirrorCollisionDecision(incoming, null, {
+        sameRow: 'update',
+        naturalKey: {
+          holder: { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+        },
       }),
     ).toEqual({
       action: 'refuse',
@@ -331,84 +334,87 @@ describe('hosted-only task safety', () => {
         "refusing to mirror task DEV-1 with id id-1: task DEV-1 in space space-a already belongs to id id-2; restore this local row's record id to id-2, change the task key in that space, or ask the hosted-space operator to resolve the task key collision",
     })
     expect(
-      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, true, {
-        id: 'id-2',
-        spaceId: 'space-a',
-        naturalKey: 'task DEV-1',
+      mirrorCollisionDecision(incoming, null, {
+        sameRow: 'update',
+        naturalKey: {
+          holder: { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+          mayAdopt: true,
+        },
       }),
     ).toEqual({ action: 'adopt', id: 'id-2' })
     expect(
-      mirrorCollisionDecision(incoming, null, 'update', 'natural-key', null, true, {
-        id: 'id-2',
-        spaceId: 'space-b',
-        naturalKey: 'task DEV-1',
+      mirrorCollisionDecision(incoming, null, {
+        sameRow: 'update',
+        naturalKey: {
+          holder: { id: 'id-2', spaceId: 'space-b', naturalKey: 'task DEV-1' },
+          mayAdopt: true,
+        },
       }),
     ).toMatchObject({ action: 'refuse' })
-    expect(mirrorCollisionDecision(incoming, incoming, 'update')).toEqual({
+    expect(mirrorCollisionDecision(incoming, incoming, { sameRow: 'update' })).toEqual({
       action: 'update-same-row',
     })
-    expect(mirrorCollisionDecision(incoming, incoming, 'idempotent')).toEqual({
+    expect(mirrorCollisionDecision(incoming, incoming, { sameRow: 'idempotent' })).toEqual({
       action: 'idempotent-duplicate',
     })
     expect(
       mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment 760' },
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'comment with no local id' },
-        'update',
-        'id',
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'incoming comment' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'existing comment' },
+        { sameRow: 'update' },
       ),
     ).toEqual({ action: 'update-same-row' })
     expect(
       mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'status event 42' },
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'status event with no local id' },
-        'idempotent',
-        'id',
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'incoming status event' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'existing status event' },
+        { sameRow: 'idempotent' },
       ),
     ).toEqual({ action: 'idempotent-duplicate' })
     expect(
       mirrorCollisionDecision(
         { id: 'pushed-id', spaceId: 'space-a', naturalKey: 'status event DEV-1/open/at' },
         null,
-        'idempotent',
-        'natural-key',
-        null,
-        false,
         {
-          id: 'collector-id',
-          spaceId: 'space-a',
-          naturalKey: 'status event DEV-1/open/at',
+          sameRow: 'idempotent',
+          naturalKey: {
+            holder: {
+              id: 'collector-id',
+              spaceId: 'space-a',
+              naturalKey: 'status event DEV-1/open/at',
+            },
+          },
         },
       ),
     ).toMatchObject({ action: 'refuse' })
     expect(
       mirrorCollisionDecision(
-        { id: 'id-1', spaceId: 'space-b', naturalKey: 'document 12' },
-        { id: 'id-1', spaceId: 'space-a', naturalKey: 'document with no local id' },
-        'update',
-        'id',
+        { id: 'id-1', spaceId: 'space-b', naturalKey: 'incoming document' },
+        { id: 'id-1', spaceId: 'space-a', naturalKey: 'existing document' },
+        { sameRow: 'update' },
       ),
     ).toEqual({
       action: 'refuse',
       reason:
-        "refusing to mirror document 12: id id-1 already belongs to document with no local id in space space-a; restore this local row's record id to the id for document 12, or ask the hosted-space operator to resolve the id collision",
+        "refusing to mirror incoming document: id id-1 already belongs to existing document in space space-a; restore this local row's record id to the id for incoming document, or ask the hosted-space operator to resolve the id collision",
     })
     expect(
       mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-a', naturalKey: 'task OPS-12' },
-        'update',
+        { sameRow: 'update' },
       ),
     ).toEqual({ action: 'update-same-row' })
     expect(
       mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-a', naturalKey: 'task OPS-12' },
-        'update',
-        'natural-key',
-        null,
-        false,
-        { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+        {
+          sameRow: 'update',
+          naturalKey: {
+            holder: { id: 'id-2', spaceId: 'space-a', naturalKey: 'task DEV-1' },
+          },
+        },
       ),
     ).toEqual({
       action: 'refuse',
@@ -419,7 +425,7 @@ describe('hosted-only task safety', () => {
       mirrorCollisionDecision(
         incoming,
         { id: 'id-1', spaceId: 'space-b', naturalKey: 'task OPS-12' },
-        'update',
+        { sameRow: 'update' },
       ),
     ).toEqual({
       action: 'refuse',

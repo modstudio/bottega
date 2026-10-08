@@ -394,7 +394,6 @@ type MirrorBody = {
 }
 
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
-type MirrorLegacyLocalIdHolder = { id: string; spaceId: string; legacyLocalId: number }
 type MirrorCollisionDecision =
   | { action: 'insert' }
   | { action: 'update-same-row' }
@@ -422,32 +421,13 @@ function naturalKeyCollisionDecision(
   }
 }
 
-function legacyLocalIdCollisionDecision(
-  incoming: MirrorIdentity,
-  mayAdopt: boolean,
-  legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null,
-): MirrorCollisionDecision | null {
-  if (!legacyLocalIdHolder || legacyLocalIdHolder.id === incoming.id) return null
-  if (mayAdopt && legacyLocalIdHolder.spaceId === incoming.spaceId)
-    return { action: 'adopt', id: legacyLocalIdHolder.id }
-  return {
-    action: 'refuse',
-    reason:
-      `refusing to mirror ${incoming.naturalKey} with id ${incoming.id}: legacy local id ` +
-      `${legacyLocalIdHolder.legacyLocalId} in space ${legacyLocalIdHolder.spaceId} already ` +
-      `belongs to id ${legacyLocalIdHolder.id}; restore this local row's record id to ` +
-      `${legacyLocalIdHolder.id}, or ask the hosted-space operator to resolve the local id collision`,
-  }
-}
-
 export function mirrorCollisionDecision(
   incoming: MirrorIdentity,
   existing: MirrorIdentity | null,
-  sameRow: 'update' | 'idempotent',
-  identity: 'natural-key' | 'id' | 'status-event' = 'natural-key',
-  legacyLocalIdHolder: MirrorLegacyLocalIdHolder | null = null,
-  mayAdopt = false,
-  naturalKeyHolder: MirrorIdentity | null = null,
+  options: {
+    sameRow: 'update' | 'idempotent'
+    naturalKey?: { holder: MirrorIdentity | null; mayAdopt?: boolean }
+  },
 ): MirrorCollisionDecision {
   if (existing && existing.spaceId !== incoming.spaceId)
     return {
@@ -457,17 +437,19 @@ export function mirrorCollisionDecision(
         `${existing.naturalKey} in space ${existing.spaceId}; restore this local row's record id ` +
         `to the id for ${incoming.naturalKey}, or ask the hosted-space operator to resolve the id collision`,
     }
-  const naturalKeyCollision =
-    identity !== 'id'
-      ? naturalKeyCollisionDecision(incoming, existing, mayAdopt, naturalKeyHolder)
-      : null
+  const naturalKeyCollision = options.naturalKey
+    ? naturalKeyCollisionDecision(
+        incoming,
+        existing,
+        options.naturalKey.mayAdopt ?? false,
+        options.naturalKey.holder,
+      )
+    : null
   if (naturalKeyCollision) return naturalKeyCollision
-  if (!existing) {
-    const legacyCollision = legacyLocalIdCollisionDecision(incoming, mayAdopt, legacyLocalIdHolder)
-    if (legacyCollision) return legacyCollision
-    return { action: 'insert' }
+  if (!existing) return { action: 'insert' }
+  return {
+    action: options.sameRow === 'update' ? 'update-same-row' : 'idempotent-duplicate',
   }
-  return { action: sameRow === 'update' ? 'update-same-row' : 'idempotent-duplicate' }
 }
 
 function applyMirrorDecision(decision: MirrorCollisionDecision): boolean {
@@ -545,11 +527,13 @@ async function mirrorTaskRow(
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
     selectedMirrorIdentity(existing, (selected) => `task ${selected.key}`),
-    'update',
-    'natural-key',
-    null,
-    mayAdopt,
-    selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
+    {
+      sameRow: 'update',
+      naturalKey: {
+        holder: selectedMirrorIdentity(keyHolder, (selected) => `task ${selected.key}`),
+        mayAdopt,
+      },
+    },
   )
   applyMirrorDecision(decision)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
@@ -598,11 +582,13 @@ async function mirrorTaskRow(
     const collisionDecision = mirrorCollisionDecision(
       { id: row.id, spaceId: identity.spaceId, naturalKey: `task ${row.key}` },
       null,
-      'update',
-      'natural-key',
-      null,
-      mayAdopt,
-      selectedMirrorIdentity(collision, (selected) => `task ${selected.key}`),
+      {
+        sameRow: 'update',
+        naturalKey: {
+          holder: selectedMirrorIdentity(collision, (selected) => `task ${selected.key}`),
+          mayAdopt,
+        },
+      },
     )
     applyMirrorDecision(collisionDecision)
     if (collisionDecision.action === 'adopt') return taskMirrorAdoption(row, collisionDecision.id)
@@ -622,8 +608,7 @@ async function mirrorCommentRow(
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: `comment ${row.id}` },
     selectedMirrorIdentity(existing, () => `comment ${row.id}`),
-    'update',
-    'id',
+    { sameRow: 'update' },
   )
   applyMirrorDecision(decision)
   if (decision.action === 'update-same-row') {
@@ -650,8 +635,7 @@ async function mirrorDocumentRow(
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: `document ${row.id}` },
     selectedMirrorIdentity(existing, () => `document ${row.id}`),
-    'update',
-    'id',
+    { sameRow: 'update' },
   )
   applyMirrorDecision(decision)
   if (decision.action === 'update-same-row') {
@@ -682,11 +666,12 @@ async function mirrorStatusEventRow(
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: statusEventMirrorNaturalKey(row) },
     selectedMirrorIdentity(existing, () => statusEventMirrorNaturalKey(row)),
-    'idempotent',
-    'natural-key',
-    null,
-    false,
-    selectedMirrorIdentity(naturalKeyHolder, () => statusEventMirrorNaturalKey(row)),
+    {
+      sameRow: 'idempotent',
+      naturalKey: {
+        holder: selectedMirrorIdentity(naturalKeyHolder, () => statusEventMirrorNaturalKey(row)),
+      },
+    },
   )
   applyMirrorDecision(decision)
   if (decision.action === 'idempotent-duplicate') {
