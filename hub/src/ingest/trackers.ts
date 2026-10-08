@@ -525,15 +525,20 @@ export async function mirrorPendingTrackerStatusEvents(
       )
   }
   const expiredIds = new Set(expired.map((entry) => entry.eventRecordId))
-  const pending = projectPending.filter((entry) => !expiredIds.has(entry.eventRecordId))
+  const pending = projectPending
+    .filter((entry) => !expiredIds.has(entry.eventRecordId))
+    .sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
   if (!pending.length) return null
   try {
-    const result = await mirror.mirrorStatusEvents(pending.map(pendingStatusEventMirrorRow))
-    if (result === 'mirrored')
-      removePendingTrackerStatusEvents(new Set(pending.map((entry) => entry.eventRecordId)))
-    return result === 'refused'
-      ? new Error(mirror.refusedReason?.() ?? 'project destination was refused')
-      : null
+    for (let index = 0; index < pending.length; index += 500) {
+      const slice = pending.slice(index, index + 500)
+      const result = await mirror.mirrorStatusEvents(slice.map(pendingStatusEventMirrorRow))
+      if (result === 'refused')
+        return new Error(mirror.refusedReason?.() ?? 'project destination was refused')
+      if (result !== 'mirrored') return null
+      removePendingTrackerStatusEvents(new Set(slice.map((entry) => entry.eventRecordId)))
+    }
+    return null
   } catch (error) {
     return error as Error
   }
