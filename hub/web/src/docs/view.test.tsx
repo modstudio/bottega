@@ -68,9 +68,7 @@ const items: DocsTreeItem[] = [
 function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
   return renderToStaticMarkup(
     <DocsView
-      allItems={items}
       items={items}
-      selectedItem={items[1]!}
       selectedId="2"
       audience="user"
       onAudience={() => {}}
@@ -81,6 +79,7 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       showDrafts={false}
       onShowDrafts={() => {}}
       canShowDrafts
+      source="local"
       doc={{
         ...items[1]!,
         body: '## Open a task\n\nEvery piece of work carries a key.\n',
@@ -185,6 +184,31 @@ test('the pane is empty when the selected document is not in the visible tree', 
   expect(html).not.toContain('Principles')
   expect(html).not.toContain('Hidden heading')
   expect(html).not.toContain('On this page')
+})
+
+test('a document omitted from navigation stays pending until its body loads', () => {
+  const retired: DocsTreeItem = {
+    ...items[1]!,
+    id: 'retired',
+    slug: 'old-run',
+    title: 'Old run',
+    status: 'archived',
+  }
+  const pending = render({
+    items: [...items, retired],
+    selectedId: retired.id,
+    doc: null,
+  })
+  expect(pending).not.toContain('No document to show.')
+
+  const loaded = render({
+    items: [...items, retired],
+    selectedId: retired.id,
+    doc: { ...retired, body: '## Retired instructions\n' },
+  })
+  expect(loaded).toContain('Old run')
+  expect(loaded).toContain('Retired instructions')
+  expect(loaded).toContain('Archived')
 })
 
 test('New doc sits in the top bar when the local create control is passed', () => {

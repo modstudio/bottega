@@ -8,6 +8,7 @@ import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
 import { chooserProject, projectSubjects, searchSubject } from './filters.ts'
 import { DocsHome } from './home.tsx'
+import { docsLocation } from './location.ts'
 import { docsVisibleByStatus } from './model.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 import { docsSource } from './types.ts'
@@ -81,13 +82,7 @@ export function DocsPage() {
   const open = useCallback(
     (item: DocsTreeItem, replace = false) => {
       void navigate({
-        to: '/docs/$scope/$subject/$slug',
-        params: {
-          scope: item.scope,
-          subject: item.subject ?? '_',
-          slug: item.slug,
-        },
-        search: source === 'local' ? {} : { id: item.id },
+        ...docsLocation(item, source),
         replace,
       })
     },
@@ -112,9 +107,7 @@ export function DocsPage() {
   return (
     <>
       <DocsView
-        allItems={catalog.items}
-        items={items}
-        selectedItem={selected}
+        items={catalog.items}
         selectedId={selected?.id ?? null}
         audience={audience}
         onAudience={(next) => {
@@ -128,6 +121,7 @@ export function DocsPage() {
         showDrafts={showDrafts}
         onShowDrafts={setShowDrafts}
         canShowDrafts={source !== 'public'}
+        source={source}
         doc={reading.document}
         onSelect={open}
         onOpenFirst={openFirst}

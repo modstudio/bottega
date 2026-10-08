@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
 import { Select } from '@/ui/listbox/select'
@@ -9,7 +9,7 @@ import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import { FilterPanel } from './filter-panel.tsx'
 import { EMPTY_FILTERS, type FilterSelection, type OfferedFilter } from './filters.ts'
-import { docsViewModel } from './model.ts'
+import { docsViewModel, docsVisibleByStatus } from './model.ts'
 import { DocsFacts, DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
@@ -18,6 +18,7 @@ import type {
   DocsAudience,
   DocsDoc,
   DocsSearchMatch,
+  DocsSource,
   DocsTreeGroup,
   DocsTreeItem,
   TreeNode,
@@ -27,9 +28,8 @@ import { useHeldPanel } from './use-held-panel.ts'
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
 export type DocsViewProps = {
-  allItems: readonly DocsTreeItem[]
+  /** The complete catalogue, including documents omitted from navigation. */
   items: readonly DocsTreeItem[]
-  selectedItem: DocsTreeItem | null
   selectedId: string | null
   audience: DocsAudience
   onAudience: (audience: DocsAudience) => void
@@ -40,6 +40,7 @@ export type DocsViewProps = {
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
+  source: DocsSource
   doc: DocsDoc | null
   onSelect: (item: DocsTreeItem) => void
   /** Opens a document the reader did not pick, replacing the current history entry. */
@@ -258,9 +259,7 @@ function filtersHiding(item: DocsTreeItem, chosen: FilterSelection): FilterSelec
 }
 
 export function DocsView({
-  allItems,
   items,
-  selectedItem,
   selectedId,
   audience,
   onAudience,
@@ -271,6 +270,7 @@ export function DocsView({
   showDrafts,
   onShowDrafts,
   canShowDrafts,
+  source,
   doc,
   onSelect,
   onOpenFirst,
@@ -290,7 +290,9 @@ export function DocsView({
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [wide, setWide] = useState(false)
   const openedId = useRef<string | null>(null)
-  const model = docsViewModel(items, audience, project, chosen, selectedId, doc)
+  const navigationItems = useMemo(() => docsVisibleByStatus(items, showDrafts), [items, showDrafts])
+  const selectedItem = items.find((item) => item.id === selectedId) ?? null
+  const model = docsViewModel(navigationItems, audience, project, chosen, selectedId, doc)
   useEffect(() => {
     if (model.stale.scope !== chosen.scope || model.stale.delivery !== chosen.delivery) {
       setChosen(model.stale)
@@ -303,14 +305,14 @@ export function DocsView({
     }
     if (openedId.current === selectedId) return
     openedId.current = selectedId
-    const item = items.find((row) => row.id === selectedId)
+    const item = navigationItems.find((row) => row.id === selectedId)
     if (!item) return
     setChosen((current) => {
       const next = filtersHiding(item, current)
       if (next.scope === current.scope && next.delivery === current.delivery) return current
       return next
     })
-  }, [selectedId, items])
+  }, [selectedId, navigationItems])
   useEffect(() => {
     if (!selectedId) return
     const ancestors = treePath(model.tree, selectedId).slice(0, -1)
@@ -325,7 +327,8 @@ export function DocsView({
     })
   }, [selectedId, model.tree])
   useSearchHotkey(() => setSearchOpen(true))
-  const detached = !model.selected && selectedItem !== null && selectedItem.status !== 'current'
+  const detached =
+    selectedItem !== null && !navigationItems.some((item) => item.id === selectedItem.id)
   const visible = model.selected || detached ? doc : null
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
   const readingAround = detached ? { previous: null, next: null } : model.around
@@ -341,16 +344,23 @@ export function DocsView({
       onAudience('technical')
       return
     }
-    const first = items.find((item) => item.id === firstId)
+    const first = navigationItems.find((item) => item.id === firstId)
     if (first) onOpenFirst(first)
-  }, [ready, selectedId, firstId, technicalOnly, items, onOpenFirst, onAudience])
+  }, [ready, selectedId, firstId, technicalOnly, navigationItems, onOpenFirst, onAudience])
   const leaveIfGone = (
     nextAudience: DocsAudience,
     nextProject: string | 'all',
     nextFilters: FilterSelection,
   ) => {
     if (!selectedId) return
-    const next = docsViewModel(items, nextAudience, nextProject, nextFilters, selectedId, doc)
+    const next = docsViewModel(
+      navigationItems,
+      nextAudience,
+      nextProject,
+      nextFilters,
+      selectedId,
+      doc,
+    )
     if (next.selected) return
     if (next.first) onOpenFirst(next.first)
     else onLeaveTree()
@@ -432,13 +442,14 @@ export function DocsView({
         />
         <DocsReading
           doc={visible}
-          pending={!visible && (Boolean(model.selected) || !ready)}
+          pending={!visible && (Boolean(model.selected) || detached || !ready)}
           wide={wide}
           onWide={setWide}
           crumbs={readingCrumbs}
           around={readingAround}
           onSelect={onSelect}
-          items={allItems}
+          items={items}
+          source={source}
           localActions={localActions}
           error={error}
         />
@@ -455,7 +466,7 @@ export function DocsView({
         query={searchQuery}
         onQueryChange={onSearchQuery}
         results={searchResults}
-        tree={items}
+        tree={navigationItems}
         onChoose={onSelect}
         scopeLabel={`Searching the ${audience === 'user' ? 'User guide' : 'Technical'} docs`}
       />
