@@ -3,6 +3,8 @@
 
 import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
+import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+import { validateHistoricDocAddress } from './doc-subjects.ts'
 import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
 
 type RevisionDoc = {
@@ -108,4 +110,71 @@ export function insertLocalRevision(
       at,
       recordId,
     )
+}
+
+export function listStoredDocRevisions(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null = null,
+): DocRevisionMetadata[] {
+  validateHistoricDocAddress(scope, slug)
+  return db()
+    .query(
+      `SELECT id, op, author, reason, at, status, kind, replacement_slug, record_id,
+              length(CAST(body AS BLOB)) AS bytes
+       FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
+    )
+    .all(scope, subject, owner, slug) as DocRevisionMetadata[]
+}
+
+export function getStoredDocRevision(id: number, owner: string | null = null): DocRevision | null {
+  const row = db().query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?').get(id, owner) as
+    | (DocRevision & { featured: boolean | number })
+    | null
+  return row ? { ...row, featured: Boolean(row.featured) } : null
+}
+
+export function diffStoredDocRevisions(a: number, b: number, owner: string | null = null): string {
+  const left = getStoredDocRevision(a, owner)
+  const right = getStoredDocRevision(b, owner)
+  if (!left) throw new Error(`no doc revision ${a}`)
+  if (!right) throw new Error(`no doc revision ${b}`)
+  const x = [
+    `status: ${left.status}`,
+    `kind: ${left.kind}`,
+    `replacement: ${left.replacement_slug ?? '-'}`,
+    '',
+    ...left.body.split('\n'),
+  ]
+  const y = [
+    `status: ${right.status}`,
+    `kind: ${right.kind}`,
+    `replacement: ${right.replacement_slug ?? '-'}`,
+    '',
+    ...right.body.split('\n'),
+  ]
+  const lengths = Array.from({ length: x.length + 1 }, () =>
+    new Array<number>(y.length + 1).fill(0),
+  )
+  for (let i = x.length - 1; i >= 0; i--)
+    for (let j = y.length - 1; j >= 0; j--) {
+      lengths[i]![j] =
+        x[i] === y[j]
+          ? lengths[i + 1]![j + 1]! + 1
+          : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!)
+    }
+  const lines = [`--- revision-${a}`, `+++ revision-${b}`]
+  let i = 0
+  let j = 0
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      lines.push(` ${x[i]}`)
+      i++
+      j++
+    } else if (j < y.length && (i === x.length || lengths[i]![j + 1]! > lengths[i + 1]![j]!)) {
+      lines.push(`+${y[j++]}`)
+    } else lines.push(`-${x[i++]}`)
+  }
+  return `${lines.join('\n')}\n`
 }

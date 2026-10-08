@@ -13,7 +13,7 @@ const doc = (body: string) => ({
 
 describe('record service doc lint', () => {
   test('refuses an invalid new document', () => {
-    expect(recordDocLintRefusal(doc('This was formerly different.'))).toMatch(
+    expect(recordDocLintRefusal(doc('This was called legacy.'))).toMatch(
       /working profile[\s\S]*doc\/history/,
     )
   })

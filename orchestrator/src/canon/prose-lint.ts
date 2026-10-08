@@ -41,10 +41,7 @@ export const DEFAULT_COMMENT_HISTORY_PHRASES = [
   'restores the previous',
 ] as const
 
-const CERTAIN_HISTORY_PATTERNS = [
-  /\bwas (?:called|named)\b/i,
-  /\brenamed\b/i,
-]
+const CERTAIN_HISTORY_PATTERNS = [/\bwas (?:called|named)\b/i, /\brenamed\b/i]
 
 const AMBIGUOUS_HISTORY_PATTERNS = [
   /\bno longer\b/i,

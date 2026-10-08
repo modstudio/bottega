@@ -30,8 +30,7 @@ import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
-import { docLintRefusal, introducedDocFindings } from './doc-lint.ts'
-import { lintStoredDoc } from './doc-lint-adapter.ts'
+import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import {
   type Doc,
   type DocRevision,
@@ -69,7 +68,10 @@ export type DocMetadata = StoreDocMetadata
 import {
   assertLocalRevisionWrite,
   currentDocRevision,
+  diffStoredDocRevisions,
   docWriteIdentity,
+  getStoredDocRevision,
+  listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import {
   type CanonWriteTree,
@@ -357,10 +359,7 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
-  const lintInput = { ...input, kind: input.kind ?? prior?.kind ?? 'working' }
-  const findings = lintStoredDoc(lintInput)
-  const introduced = prior ? introducedDocFindings(lintStoredDoc(prior), findings) : findings
-  const refusal = docLintRefusal(lintInput, introduced)
+  const refusal = storedDocLintRefusal(input, prior)
   if (refusal) throw new Error(refusal)
 }
 
@@ -854,21 +853,11 @@ export function listDocRevisions(
   slug: string,
   owner: string | null = null,
 ): DocRevisionMetadata[] {
-  validateHistoricDocAddress(scope, slug)
-  return db()
-    .query(
-      `SELECT id, op, author, reason, at, status, kind, replacement_slug, record_id,
-              length(CAST(body AS BLOB)) AS bytes
-       FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
-    )
-    .all(scope, subject, owner, slug) as DocRevisionMetadata[]
+  return listStoredDocRevisions(scope, subject, slug, owner)
 }
 
 export function getDocRevision(id: number, owner: string | null = null): DocRevision | null {
-  const row = db().query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?').get(id, owner) as
-    | (DocRevision & { featured: boolean | number })
-    | null
-  return row ? { ...row, featured: Boolean(row.featured) } : null
+  return getStoredDocRevision(id, owner)
 }
 
 export async function restoreDoc(
@@ -1047,45 +1036,5 @@ export async function restoreDoc(
 }
 
 export function diffDocRevisions(a: number, b: number, owner: string | null = null): string {
-  const left = getDocRevision(a, owner)
-  const right = getDocRevision(b, owner)
-  if (!left) throw new Error(`no doc revision ${a}`)
-  if (!right) throw new Error(`no doc revision ${b}`)
-  const x = [
-    `status: ${left.status}`,
-    `kind: ${left.kind}`,
-    `replacement: ${left.replacement_slug ?? '-'}`,
-    '',
-    ...left.body.split('\n'),
-  ]
-  const y = [
-    `status: ${right.status}`,
-    `kind: ${right.kind}`,
-    `replacement: ${right.replacement_slug ?? '-'}`,
-    '',
-    ...right.body.split('\n'),
-  ]
-  const lengths = Array.from({ length: x.length + 1 }, () =>
-    new Array<number>(y.length + 1).fill(0),
-  )
-  for (let i = x.length - 1; i >= 0; i--)
-    for (let j = y.length - 1; j >= 0; j--) {
-      lengths[i]![j] =
-        x[i] === y[j]
-          ? lengths[i + 1]![j + 1]! + 1
-          : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!)
-    }
-  const lines = [`--- revision-${a}`, `+++ revision-${b}`]
-  let i = 0
-  let j = 0
-  while (i < x.length || j < y.length) {
-    if (i < x.length && j < y.length && x[i] === y[j]) {
-      lines.push(` ${x[i]}`)
-      i++
-      j++
-    } else if (j < y.length && (i === x.length || lengths[i]![j + 1]! > lengths[i + 1]![j]!)) {
-      lines.push(`+${y[j++]}`)
-    } else lines.push(`-${x[i++]}`)
-  }
-  return `${lines.join('\n')}\n`
+  return diffStoredDocRevisions(a, b, owner)
 }

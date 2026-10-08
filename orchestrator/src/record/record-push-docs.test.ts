@@ -383,6 +383,7 @@ describe('record push-docs command', () => {
         body: hostedId === returnedParentId ? 'parent' : 'child',
         delivery: 'demand',
         status: 'current',
+        kind: 'working',
         replacementSlug: null,
         deletedAt: null,
       }),

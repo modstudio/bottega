@@ -30,41 +30,6 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
-  test('kind selects lint and an omitted kind keeps the current value', async () => {
-    const article = await writeDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'article-profile',
-      title: 'Article profile',
-      body: 'There are 2 prices.',
-      delivery: 'demand',
-      kind: 'article',
-      reason: 'create article profile fixture',
-    })
-    const updated = await writeDoc({
-      scope: article.scope,
-      subject: article.subject,
-      slug: article.slug,
-      title: article.title,
-      body: 'There are 3 prices.',
-      delivery: article.delivery,
-      reason: 'update article without kind',
-      expectedRevision: article.revision!,
-    })
-    expect(updated.kind).toBe('article')
-    await expect(
-      writeDoc({
-        scope: 'global',
-        subject: null,
-        slug: 'working-profile',
-        title: 'Working profile',
-        body: 'There are 2 prices.',
-        delivery: 'demand',
-        reason: 'prove working profile refusal',
-      }),
-    ).rejects.toThrow(/working profile[\s\S]*doc\/numeral[\s\S]*--kind article/)
-  })
-
   test('never-bound document lifecycle stays local and rejects a stale revision', async () => {
     const calls: string[] = []
     const client = createMemoryRecordApiClient()

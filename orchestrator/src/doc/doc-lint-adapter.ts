@@ -8,6 +8,8 @@ import {
   type DocLintFinding,
   type DocReferenceProject,
   docHasRepositoryReferences,
+  docLintRefusal,
+  introducedDocFindings,
   lintDoc,
 } from './doc-lint.ts'
 import type { CanonWriteTree } from './doc-write-allowed.ts'
@@ -92,4 +94,14 @@ export function lintStoredDoc(
       ? { referenceProjects: referenceProjects ?? collectDocReferenceProjects(doc) }
       : {}),
   })
+}
+
+export function storedDocLintRefusal(
+  next: Omit<StoredDoc, 'kind'> & { kind?: StoredDoc['kind'] },
+  current: StoredDoc | null,
+): string | null {
+  const doc = { ...next, kind: next.kind ?? current?.kind ?? 'working' }
+  const findings = lintStoredDoc(doc)
+  const introduced = current ? introducedDocFindings(lintStoredDoc(current), findings) : findings
+  return docLintRefusal(doc, introduced)
 }

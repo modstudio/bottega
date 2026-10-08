@@ -345,7 +345,9 @@ async function handleSetDocCommand(
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
   const lintWarnings = lintStoredDoc(doc).filter(({ level }) => level === 'warning')
   if (has('json'))
-    presentation.log(JSON.stringify({ ...doc, lintFindings: lintWarnings, warnings, tree: canonTree?.root }))
+    presentation.log(
+      JSON.stringify({ ...doc, lintFindings: lintWarnings, warnings, tree: canonTree?.root }),
+    )
   else {
     presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
     for (const warning of lintWarnings)
