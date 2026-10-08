@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Popover } from '@/ui/popover/popover'
+import { Switch } from '@/ui/switch/switch'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import { FilterPanel } from './filter-panel.tsx'
@@ -11,7 +12,7 @@ import { EMPTY_FILTERS, type FilterSelection, type OfferedFilter } from './filte
 import { docsViewModel } from './model.ts'
 import { DocsFacts, DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
-import { treePath } from './tree.ts'
+import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
 import type {
   DocsAudience,
@@ -26,7 +27,9 @@ import { useHeldPanel } from './use-held-panel.ts'
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
 export type DocsViewProps = {
+  allItems: readonly DocsTreeItem[]
   items: readonly DocsTreeItem[]
+  selectedItem: DocsTreeItem | null
   selectedId: string | null
   audience: DocsAudience
   onAudience: (audience: DocsAudience) => void
@@ -34,6 +37,9 @@ export type DocsViewProps = {
   onProject: (project: string | 'all') => void
   signedIn: boolean
   showProjectChooser: boolean
+  showDrafts: boolean
+  onShowDrafts: (show: boolean) => void
+  canShowDrafts: boolean
   doc: DocsDoc | null
   onSelect: (item: DocsTreeItem) => void
   /** Opens a document the reader did not pick, replacing the current history entry. */
@@ -67,6 +73,9 @@ function DocsChrome({
   inView,
   active,
   createAction,
+  showDrafts,
+  onShowDrafts,
+  canShowDrafts,
 }: {
   audience: DocsAudience
   onAudience: (audience: DocsAudience) => void
@@ -83,7 +92,11 @@ function DocsChrome({
   inView: number
   active: number
   createAction?: ReactNode
+  showDrafts: boolean
+  onShowDrafts: (show: boolean) => void
+  canShowDrafts: boolean
 }) {
+  const showDraftsId = useId()
   const tabs = [
     { value: 'user', label: 'User guide', count: userCount },
     ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
@@ -101,6 +114,20 @@ function DocsChrome({
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 py-2">
+          {canShowDrafts ? (
+            <label
+              htmlFor={showDraftsId}
+              className="flex items-center gap-2 text-md text-text-secondary"
+            >
+              <Switch
+                id={showDraftsId}
+                aria-label="Show drafts"
+                checked={showDrafts}
+                onChange={(event) => onShowDrafts(event.currentTarget.checked)}
+              />
+              Show drafts
+            </label>
+          ) : null}
           {showProjectChooser ? (
             <div className="flex items-center gap-2">
               <span className={eyebrow}>Project</span>
@@ -231,7 +258,9 @@ function filtersHiding(item: DocsTreeItem, chosen: FilterSelection): FilterSelec
 }
 
 export function DocsView({
+  allItems,
   items,
+  selectedItem,
   selectedId,
   audience,
   onAudience,
@@ -239,6 +268,9 @@ export function DocsView({
   onProject,
   signedIn,
   showProjectChooser,
+  showDrafts,
+  onShowDrafts,
+  canShowDrafts,
   doc,
   onSelect,
   onOpenFirst,
@@ -293,7 +325,10 @@ export function DocsView({
     })
   }, [selectedId, model.tree])
   useSearchHotkey(() => setSearchOpen(true))
-  const visible = model.selected ? doc : null
+  const detached = !model.selected && selectedItem !== null && selectedItem.status !== 'current'
+  const visible = model.selected || detached ? doc : null
+  const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
+  const readingAround = detached ? { previous: null, next: null } : model.around
   // With nothing open, the page shows the first document in view instead of an empty pane.
   const firstId = model.first?.id ?? null
   const tabChosen = useRef(false)
@@ -365,6 +400,9 @@ export function DocsView({
         inView={model.inView}
         active={model.active}
         createAction={framed ? createAction : null}
+        showDrafts={showDrafts}
+        onShowDrafts={onShowDrafts}
+        canShowDrafts={canShowDrafts}
       />
       <div
         className={classes(
@@ -397,9 +435,10 @@ export function DocsView({
           pending={!visible && (Boolean(model.selected) || !ready)}
           wide={wide}
           onWide={setWide}
-          crumbs={model.crumbs}
-          around={model.around}
+          crumbs={readingCrumbs}
+          around={readingAround}
           onSelect={onSelect}
+          items={allItems}
           localActions={localActions}
           error={error}
         />

@@ -14,6 +14,8 @@ const items: DocsTreeItem[] = [
     scope: 'project',
     subject: 'atlas',
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'demand',
     projectName: 'atlas',
   },
@@ -27,6 +29,8 @@ const items: DocsTreeItem[] = [
     scope: 'project',
     subject: 'atlas',
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'demand',
     projectName: 'atlas',
   },
@@ -40,6 +44,8 @@ const items: DocsTreeItem[] = [
     scope: 'global',
     subject: null,
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'inject',
   },
   {
@@ -52,6 +58,8 @@ const items: DocsTreeItem[] = [
     scope: 'canon',
     subject: 'atlas',
     audience: 'technical',
+    status: 'current',
+    replacementSlug: null,
     delivery: 'inject',
     projectName: 'atlas',
   },
@@ -60,7 +68,9 @@ const items: DocsTreeItem[] = [
 function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
   return renderToStaticMarkup(
     <DocsView
+      allItems={items}
       items={items}
+      selectedItem={items[1]!}
       selectedId="2"
       audience="user"
       onAudience={() => {}}
@@ -68,6 +78,9 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       onProject={() => {}}
       signedIn
       showProjectChooser
+      showDrafts={false}
+      onShowDrafts={() => {}}
+      canShowDrafts
       doc={{
         ...items[1]!,
         body: '## Open a task\n\nEvery piece of work carries a key.\n',
@@ -132,6 +145,8 @@ test('All projects groups roots by subject, and a single project does not', () =
     scope: 'global',
     subject: null,
     audience: 'user',
+    status: 'current',
+    replacementSlug: null,
   }
   const grouped = render({ items: [...items, extra], project: 'all', selectedId: '1' })
   expect(grouped).toContain('Shared')

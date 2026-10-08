@@ -23,6 +23,8 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     audience: partial.audience ?? 'user',
     delivery: partial.delivery,
     ...partial,
+    status: partial.status ?? 'current',
+    replacementSlug: partial.replacementSlug ?? null,
     scope,
     subject,
     projectName:

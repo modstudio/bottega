@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import { EMPTY_FILTERS } from './filters.ts'
-import { docsViewModel } from './model.ts'
+import { docsViewModel, docsVisibleByStatus } from './model.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
@@ -14,6 +14,8 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     updatedAt: '2026-10-06T00:00:00.000Z',
     audience: 'user',
     ...partial,
+    status: partial.status ?? 'current',
+    replacementSlug: partial.replacementSlug ?? null,
     scope,
     subject,
     projectName:
@@ -31,6 +33,20 @@ const items = [
   item({ id: 's', title: 'Shared note', subject: null, position: 1 }),
   item({ id: 'z', title: 'Zed', subject: 'starship', position: 2 }),
 ]
+
+test('tree visibility includes drafts only when asked and never includes retired documents', () => {
+  const lifecycleItems = [
+    item({ id: 'current', title: 'Current', status: 'current' }),
+    item({ id: 'draft', title: 'Draft', status: 'draft' }),
+    item({ id: 'superseded', title: 'Superseded', status: 'superseded' }),
+    item({ id: 'archived', title: 'Archived', status: 'archived' }),
+  ]
+  expect(docsVisibleByStatus(lifecycleItems, false).map((row) => row.id)).toEqual(['current'])
+  expect(docsVisibleByStatus(lifecycleItems, true).map((row) => row.id)).toEqual([
+    'current',
+    'draft',
+  ])
+})
 
 test('the breadcrumb is Docs, subject and ancestors, not the document title', () => {
   const model = docsViewModel(items, 'user', 'atlas', EMPTY_FILTERS, 'r', null)

@@ -1,4 +1,4 @@
-import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
+import { DOC_STATUSES, type DocStatus, docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsTreeItem } from './types.ts'
 
 function audienceOf(value: unknown): DocsAudience {
@@ -7,6 +7,10 @@ function audienceOf(value: unknown): DocsAudience {
 
 function deliveryOf(value: unknown): DocsTreeItem['delivery'] {
   return value === 'inject' || value === 'demand' ? value : undefined
+}
+
+function statusOf(value: unknown): DocStatus {
+  return DOC_STATUSES.includes(value as DocStatus) ? (value as DocStatus) : 'current'
 }
 
 function projectNameOf(
@@ -35,6 +39,8 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     scope,
     subject,
     audience: audienceOf(row.audience),
+    status: statusOf(row.status),
+    replacementSlug: typeof row.replacementSlug === 'string' ? row.replacementSlug : null,
     delivery: deliveryOf(row.delivery),
     summary: typeof row.summary === 'string' ? row.summary : '',
     featured: row.featured === true,
@@ -51,6 +57,7 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
     id: String(row.id),
     slug: String(row.slug ?? ''),
     title: String(row.title ?? ''),
+    status: statusOf(row.status),
     snippet: String(row.snippet ?? ''),
     spaceName: typeof row.spaceName === 'string' ? row.spaceName : undefined,
     matchPosition: typeof row.matchPosition === 'number' ? row.matchPosition : null,

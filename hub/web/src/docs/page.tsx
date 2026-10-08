@@ -8,6 +8,7 @@ import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
 import { chooserProject, projectSubjects, searchSubject } from './filters.ts'
 import { DocsHome } from './home.tsx'
+import { docsVisibleByStatus } from './model.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 import { docsSource } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
@@ -33,8 +34,13 @@ export function DocsPage() {
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
   const [creating, setCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showDrafts, setShowDrafts] = useState(false)
   const catalog = useDocsTree(source)
-  const subjects = useMemo(() => projectSubjects(catalog.items), [catalog.items])
+  const items = useMemo(
+    () => docsVisibleByStatus(catalog.items, source !== 'public' && showDrafts),
+    [catalog.items, showDrafts, source],
+  )
+  const subjects = useMemo(() => projectSubjects(items), [items])
   const selected = useMemo(() => {
     if (!params) return null
     const subject = params.subject === '_' ? null : params.subject
@@ -68,7 +74,8 @@ export function DocsPage() {
     source,
     searchQuery,
     audience,
-    searchSubject(project, catalog.items),
+    searchSubject(project, items),
+    source !== 'public' && showDrafts,
   )
 
   const open = useCallback(
@@ -105,7 +112,9 @@ export function DocsPage() {
   return (
     <>
       <DocsView
-        items={catalog.items}
+        allItems={catalog.items}
+        items={items}
+        selectedItem={selected}
         selectedId={selected?.id ?? null}
         audience={audience}
         onAudience={(next) => {
@@ -116,6 +125,9 @@ export function DocsPage() {
         onProject={setProject}
         signedIn={signedIn}
         showProjectChooser={signedIn}
+        showDrafts={showDrafts}
+        onShowDrafts={setShowDrafts}
+        canShowDrafts={source !== 'public'}
         doc={reading.document}
         onSelect={open}
         onOpenFirst={openFirst}

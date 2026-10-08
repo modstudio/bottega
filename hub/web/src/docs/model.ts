@@ -12,6 +12,16 @@ import { secondLevelHeadings } from './headings.ts'
 import { breadcrumb, buildDocTree, groupRootsBySubject, neighbors, treePath } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
 
+/** The catalogue rows that belong in navigation for the chosen draft visibility. */
+export function docsVisibleByStatus(
+  items: readonly DocsTreeItem[],
+  showDrafts: boolean,
+): DocsTreeItem[] {
+  return items.filter(
+    (item) => item.status === 'current' || (showDrafts && item.status === 'draft'),
+  )
+}
+
 export function docsViewModel(
   items: readonly DocsTreeItem[],
   audience: DocsAudience,

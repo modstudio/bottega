@@ -5,6 +5,7 @@ import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'
 import type { DocHeading } from './headings.ts'
+import { DocStatusBadge } from './status-badge.tsx'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
@@ -142,11 +143,56 @@ function ReadingAround({
   )
 }
 
+function DocLifecycle({
+  doc,
+  items,
+  onSelect,
+}: {
+  doc: DocsDoc
+  items: readonly DocsTreeItem[]
+  onSelect: (item: DocsTreeItem) => void
+}) {
+  if (doc.status === 'current') return null
+  const replacement = doc.replacementSlug
+    ? items.find(
+        (item) =>
+          item.scope === doc.scope &&
+          item.subject === doc.subject &&
+          item.slug === doc.replacementSlug,
+      )
+    : undefined
+  return (
+    <div className="doc-measure mt-3 flex flex-wrap items-center gap-2 text-md text-text-muted">
+      <DocStatusBadge status={doc.status} />
+      {doc.status === 'superseded' && doc.replacementSlug ? (
+        <span>
+          Replaced by{' '}
+          {replacement ? (
+            <a
+              href={`/docs/${encodeURIComponent(replacement.scope)}/${encodeURIComponent(replacement.subject ?? '_')}/${encodeURIComponent(replacement.slug)}?id=${encodeURIComponent(replacement.id)}`}
+              className="text-link hover:underline"
+              onClick={(event) => {
+                event.preventDefault()
+                onSelect(replacement)
+              }}
+            >
+              {replacement.title}
+            </a>
+          ) : (
+            doc.replacementSlug
+          )}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export function DocsReading({
   doc,
   crumbs,
   around,
   onSelect,
+  items,
   localActions,
   error,
   pending,
@@ -161,6 +207,7 @@ export function DocsReading({
   crumbs: readonly BreadcrumbPart[]
   around: { previous: DocsTreeItem | null; next: DocsTreeItem | null }
   onSelect: (item: DocsTreeItem) => void
+  items: readonly DocsTreeItem[]
   localActions?: ReactNode
   error?: string | null
 }) {
@@ -193,6 +240,7 @@ export function DocsReading({
           >
             {shown.title}
           </h1>
+          <DocLifecycle doc={doc} items={items} onSelect={onSelect} />
           {shown.lede ? (
             <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
           ) : null}
