@@ -14,11 +14,8 @@ import {
 } from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
-import {
-  checkWorkflowRendering,
-  productionWorkflowDefinitions,
-  renderCheckRefusal,
-} from './workflow-render-check.ts'
+import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import type { WorkflowDefinition } from './workflows.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`
@@ -329,27 +326,27 @@ export function promoteStepCatalogue(
         `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id WHERE v.status='production'`,
       )
       .all() as { slug: string; definition: string }[]
-    for (const row of rows) {
-      const workflow = JSON.parse(row.definition) as {
+    const workflows = rows.map((row) => ({
+      slug: row.slug,
+      definition: JSON.parse(row.definition) as WorkflowDefinition,
+    }))
+    for (const { slug, definition: workflow } of workflows) {
+      const compatible = workflow as WorkflowDefinition & {
         modes?: { steps?: string[] }[]
         steps?: unknown[]
       }
-      if (workflow.steps) continue // Legacy inline versions remain valid history and self-contained.
-      const absent = [...new Set(workflow.modes?.flatMap((mode) => mode.steps ?? []) ?? [])].filter(
-        (slug) => !available.has(slug),
-      )
-      if (absent.length) missing.push(`${row.slug}: ${absent.join(', ')}`)
+      if (compatible.steps) continue // Legacy inline versions remain valid history and self-contained.
+      const absent = [
+        ...new Set(compatible.modes?.flatMap((mode) => mode.steps ?? []) ?? []),
+      ].filter((slug) => !available.has(slug))
+      if (absent.length) missing.push(`${slug}: ${absent.join(', ')}`)
     }
     if (missing.length)
       throw new Error(
         `step catalogue drops steps used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}`,
       )
     const refusal = renderCheckRefusal(
-      checkWorkflowRendering(
-        productionWorkflowDefinitions(database),
-        definition,
-        projects(undefined, database),
-      ),
+      checkWorkflowRendering(workflows, definition, projects(undefined, database)),
     )
     if (refusal) throw new Error(refusal)
   })

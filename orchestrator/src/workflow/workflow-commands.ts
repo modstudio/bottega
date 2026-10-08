@@ -44,11 +44,7 @@ import {
   recordWorkflowProbe,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
-import {
-  checkWorkflowRendering,
-  productionWorkflowDefinitions,
-  workflowRenderCheckLines,
-} from './workflow-render-check.ts'
+import { checkWorkflowRendering, workflowRenderCheckLines } from './workflow-render-check.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -59,6 +55,7 @@ import {
   forkWorkflow,
   getWorkflowStep,
   listWorkflows,
+  productionWorkflows,
   promoteWorkflow,
   retireWorkflow,
   setWorkflow,
@@ -155,13 +152,18 @@ export async function workflowCommand(
 
 function renderCheckCommand(json: boolean, presentation: Presentation): void {
   const result = checkWorkflowRendering(
-    productionWorkflowDefinitions(db()),
+    productionWorkflows(db()),
     productionStepCatalogue().definition,
     projects(),
   )
   if (json) presentation.log(JSON.stringify(result))
   else for (const line of workflowRenderCheckLines(result)) presentation.log(line)
-  if (result.failures.length || result.unresolvedProjects.length) presentation.setExitCode(1)
+  if (
+    result.failures.length ||
+    result.unresolvedProjects.length ||
+    result.resolutionFailures.length
+  )
+    presentation.setExitCode(1)
 }
 
 async function cursorCommand(

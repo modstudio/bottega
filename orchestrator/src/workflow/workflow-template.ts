@@ -12,6 +12,10 @@ export type WorkflowTemplateContext = {
   key?: string
 }
 
+export function workflowTemplatePlaceholders(template: string): string[] {
+  return [...new Set([...template.matchAll(/\{\{([^{}]+)\}\}/g)].map((match) => match[1]!))]
+}
+
 export function resolveWorkflowTemplate(
   template: string,
   values: Record<string, unknown>,

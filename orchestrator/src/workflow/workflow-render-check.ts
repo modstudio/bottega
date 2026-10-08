@@ -1,33 +1,13 @@
 // concern: workflows
 /** Measures whether production workflow step bodies render for registered projects. */
 
-import type { Database } from 'bun:sqlite'
-import type { WorkflowFactSource } from '../project/project-injection.ts'
+import { MissingWorkflowInjectionFactsError } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  type AutonomyPreset,
-  type AutonomyStage,
-  type AutonomyValue,
-  builtInAutonomyScope,
-  catalogueStepsForAutonomy,
-  resolveAutonomy,
-} from './autonomy.ts'
+import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
+import type { StepCatalogueDefinition } from './step-catalogue.ts'
 import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
-import { resolveWorkflowTemplate } from './workflow-template.ts'
-
-type RenderCheckWorkflowDefinition = {
-  defaultPreset?: AutonomyPreset
-  arguments: { name: string }[]
-  modes: { slug: string; steps: string[] }[]
-}
-type RenderCheckCatalogueStep = {
-  slug: string
-  body: string
-  stage?: AutonomyStage
-  autonomy: AutonomyValue
-  needs: WorkflowFactSource[]
-}
-type RenderCheckCatalogueDefinition = { steps: RenderCheckCatalogueStep[] }
+import { resolveWorkflowTemplate, workflowTemplatePlaceholders } from './workflow-template.ts'
+import type { WorkflowDefinition } from './workflows.ts'
 
 export type WorkflowPlaceholderFailure = {
   project: string
@@ -43,9 +23,18 @@ type WorkflowFactResolutionFailure = {
   facts: string[]
 }
 
+type WorkflowStepResolutionFailure = {
+  project: string
+  workflow: string
+  mode: string
+  step: string
+  reason: string
+}
+
 export type WorkflowRenderCheckResult = {
   failures: WorkflowPlaceholderFailure[]
   unresolvedProjects: WorkflowFactResolutionFailure[]
+  resolutionFailures: WorkflowStepResolutionFailure[]
 }
 
 export type ResolvedWorkflowRenderFacts = {
@@ -54,15 +43,29 @@ export type ResolvedWorkflowRenderFacts = {
   facts: Record<string, unknown>
 }
 
-const placeholderPaths = (body: string): string[] => [
-  ...new Set([...body.matchAll(/\{\{([^{}]+)\}\}/g)].map((match) => match[1]!)),
-]
+function unresolvedStepPlaceholders(
+  project: string,
+  workflowSlug: string,
+  mode: string,
+  step: { slug: string; body: string },
+  values: Record<string, unknown>,
+  context: { argumentNames: ReadonlySet<string>; project: string; key?: string },
+): WorkflowPlaceholderFailure[] {
+  return workflowTemplatePlaceholders(step.body).flatMap((placeholder) => {
+    try {
+      resolveWorkflowTemplate(`{{${placeholder}}}`, values, context)
+      return []
+    } catch {
+      return [{ project, workflow: workflowSlug, mode, step: step.slug, placeholder }]
+    }
+  })
+}
 
 /** Purely report every step-body placeholder that the supplied project facts cannot render. */
 export function unresolvedWorkflowStepPlaceholders(
   workflowSlug: string,
-  workflow: RenderCheckWorkflowDefinition,
-  catalogue: RenderCheckCatalogueDefinition,
+  workflow: WorkflowDefinition,
+  catalogue: StepCatalogueDefinition,
   resolved: ResolvedWorkflowRenderFacts,
 ): WorkflowPlaceholderFailure[] {
   const values: Record<string, unknown> = {
@@ -76,31 +79,25 @@ export function unresolvedWorkflowStepPlaceholders(
     key: resolved.arguments.key,
   }
   const bySlug = new Map(catalogue.steps.map((step) => [step.slug, step]))
-  const failures: WorkflowPlaceholderFailure[] = []
-  for (const mode of workflow.modes) {
-    for (const stepSlug of mode.steps) {
+  return workflow.modes.flatMap((mode) =>
+    mode.steps.flatMap((stepSlug) => {
       const step = bySlug.get(stepSlug)
-      if (!step) continue
-      for (const placeholder of placeholderPaths(step.body)) {
-        try {
-          resolveWorkflowTemplate(`{{${placeholder}}}`, values, context)
-        } catch {
-          failures.push({
-            project: resolved.project,
-            workflow: workflowSlug,
-            mode: mode.slug,
-            step: stepSlug,
-            placeholder,
-          })
-        }
-      }
-    }
-  }
-  return failures
+      return step
+        ? unresolvedStepPlaceholders(
+            resolved.project,
+            workflowSlug,
+            mode.slug,
+            step,
+            values,
+            context,
+          )
+        : []
+    }),
+  )
 }
 
 function standInArguments(
-  definition: RenderCheckWorkflowDefinition,
+  definition: WorkflowDefinition,
   project: Project,
 ): Record<string, string> {
   const release = project.settings.release
@@ -116,28 +113,75 @@ function standInArguments(
 }
 
 export function checkWorkflowRendering(
-  workflows: { slug: string; definition: RenderCheckWorkflowDefinition }[],
-  catalogue: RenderCheckCatalogueDefinition,
+  workflows: { slug: string; definition: WorkflowDefinition }[],
+  catalogue: StepCatalogueDefinition,
   registeredProjects: Project[],
 ): WorkflowRenderCheckResult {
   const failures: WorkflowPlaceholderFailure[] = []
+  const resolutionFailures: WorkflowStepResolutionFailure[] = []
   const unresolvedByProject = new Map<string, { workflows: Set<string>; facts: Set<string> }>()
   const bySlug = new Map(catalogue.steps.map((step) => [step.slug, step]))
+
   for (const project of registeredProjects) {
     for (const { slug, definition } of workflows) {
-      const result = checkProjectWorkflow(project, slug, definition, catalogue, bySlug)
-      if (Array.isArray(result)) failures.push(...result)
-      else {
-        const unresolved = unresolvedByProject.get(project.name) ?? {
-          workflows: new Set<string>(),
-          facts: new Set<string>(),
+      const args = standInArguments(definition, project)
+      const context = {
+        argumentNames: new Set(definition.arguments.map(({ name }) => name)),
+        project: project.name,
+        key: args.key,
+      }
+      for (const mode of definition.modes) {
+        for (const stepSlug of mode.steps) {
+          const step = bySlug.get(stepSlug)
+          if (!step) continue
+          try {
+            const autonomy = resolveAutonomy(
+              catalogueStepsForAutonomy([step]),
+              [builtInAutonomyScope(definition.defaultPreset)],
+              slug,
+            )
+            const { facts } = resolveWorkflowProjectFacts(
+              { name: project.name, stack: project.stack, settings: project.settings },
+              step.needs,
+              step.needs.includes('ship-to') && step.needs.includes('tracker'),
+              args,
+              autonomy,
+            )
+            failures.push(
+              ...unresolvedStepPlaceholders(
+                project.name,
+                slug,
+                mode.slug,
+                step,
+                { project: project.name, ...args, ...facts },
+                context,
+              ),
+            )
+          } catch (error) {
+            if (error instanceof MissingWorkflowInjectionFactsError) {
+              const unresolved = unresolvedByProject.get(project.name) ?? {
+                workflows: new Set<string>(),
+                facts: new Set<string>(),
+              }
+              unresolved.workflows.add(slug)
+              for (const { remedy } of error.missing) unresolved.facts.add(remedy)
+              unresolvedByProject.set(project.name, unresolved)
+            } else {
+              resolutionFailures.push({
+                project: project.name,
+                workflow: slug,
+                mode: mode.slug,
+                step: stepSlug,
+                reason:
+                  error instanceof Error ? error.message.replaceAll('\n', ' ') : String(error),
+              })
+            }
+          }
         }
-        unresolved.workflows.add(slug)
-        for (const fact of result.facts) unresolved.facts.add(fact)
-        unresolvedByProject.set(project.name, unresolved)
       }
     }
   }
+
   const unresolvedProjects = [...unresolvedByProject.entries()].map(
     ([project, unresolved]): WorkflowFactResolutionFailure => ({
       project,
@@ -145,63 +189,7 @@ export function checkWorkflowRendering(
       facts: [...unresolved.facts].sort(),
     }),
   )
-  return { failures, unresolvedProjects }
-}
-
-function checkProjectWorkflow(
-  project: Project,
-  slug: string,
-  definition: RenderCheckWorkflowDefinition,
-  catalogue: RenderCheckCatalogueDefinition,
-  bySlug: Map<string, RenderCheckCatalogueStep>,
-): WorkflowPlaceholderFailure[] | { facts: string[] } {
-  const selected = definition.modes.flatMap((mode) =>
-    mode.steps.flatMap((stepSlug) => {
-      const step = bySlug.get(stepSlug)
-      return step ? [step] : []
-    }),
-  )
-  const args = standInArguments(definition, project)
-  try {
-    const autonomy = resolveAutonomy(
-      catalogueStepsForAutonomy(selected),
-      [builtInAutonomyScope(definition.defaultPreset)],
-      slug,
-    )
-    const { facts } = resolveWorkflowProjectFacts(
-      { name: project.name, stack: project.stack, settings: project.settings },
-      selected.flatMap((step) => step.needs),
-      selected.some((step) => step.needs.includes('ship-to') && step.needs.includes('tracker')),
-      args,
-      autonomy,
-    )
-    return unresolvedWorkflowStepPlaceholders(slug, definition, catalogue, {
-      project: project.name,
-      arguments: args,
-      facts,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    const remedies = message
-      .split('\n')
-      .filter((line) => line.startsWith('- '))
-      .map((line) => line.slice(2))
-    return { facts: remedies.length ? remedies : [message.replaceAll('\n', ' ')] }
-  }
-}
-
-export function productionWorkflowDefinitions(d: Database) {
-  return (
-    d
-      .query(
-        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
-         WHERE v.status='production' ORDER BY w.slug`,
-      )
-      .all() as { slug: string; definition: string }[]
-  ).map((row) => ({
-    slug: row.slug,
-    definition: JSON.parse(row.definition) as RenderCheckWorkflowDefinition,
-  }))
+  return { failures, unresolvedProjects, resolutionFailures }
 }
 
 export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): string[] {
@@ -214,14 +202,28 @@ export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): str
       (failure) =>
         `${failure.project}  ${failure.workflows.join(',')}  project facts could not be resolved: ${failure.facts.join('; ')}`,
     ),
+    ...result.resolutionFailures.map(
+      (failure) =>
+        `${failure.project}  ${failure.workflow}  ${failure.mode}  ${failure.step}  ${failure.reason}`,
+    ),
   ]
 }
 
 export function renderCheckRefusal(result: WorkflowRenderCheckResult): string | null {
-  const lines = result.failures.map(
-    (failure) =>
-      `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
-  )
+  const lines = [
+    ...result.failures.map(
+      (failure) =>
+        `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
+    ),
+    ...result.unresolvedProjects.map(
+      (failure) =>
+        `- project ${failure.project}, workflows ${failure.workflows.join(',')}, missing ${failure.facts.join('; ')}`,
+    ),
+    ...result.resolutionFailures.map(
+      (failure) =>
+        `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}: ${failure.reason}`,
+    ),
+  ]
   if (!lines.length) return null
   return [
     'production workflow steps do not render for every registered project:',

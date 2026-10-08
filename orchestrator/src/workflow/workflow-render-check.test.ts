@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import type { WorkflowFactSource } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import {
   productionStepCatalogue,
@@ -22,7 +23,10 @@ const workflow = (step: string): WorkflowDefinition => ({
   modes: [{ slug: 'default', title: 'Default', default: true, steps: [step] }],
 })
 
-const catalogue = (body: string, needs: ['tracker'] = ['tracker']): StepCatalogueDefinition => ({
+const catalogue = (
+  body: string,
+  needs: WorkflowFactSource[] = ['tracker'],
+): StepCatalogueDefinition => ({
   steps: [
     {
       slug: 'check',
@@ -56,7 +60,13 @@ const database = () => {
     'fixture',
     '/fixture',
     'bun',
-    JSON.stringify({ tracker: { protocol: 'hub' } }),
+    JSON.stringify({
+      tracker: { protocol: 'hub' },
+      docs: { protocol: 'orch-docs' },
+      gate: 'true',
+      trunk: 'main',
+      release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+    }),
   )
   return d
 }
@@ -108,6 +118,7 @@ describe('workflow render check', () => {
     )
 
     expect(result.failures).toEqual([])
+    expect(result.resolutionFailures).toEqual([])
     expect(result.unresolvedProjects).toEqual([
       {
         project: 'fixture',
@@ -115,6 +126,58 @@ describe('workflow render check', () => {
         facts: [
           `tracker; set with: orch project set fixture --settings '{"tracker":{"protocol":"<protocol>"}}'`,
         ],
+      },
+    ])
+  })
+
+  test('resolves each step from only that step declared needs', () => {
+    const definition: WorkflowDefinition = {
+      ...workflow('undeclared'),
+      modes: [
+        { slug: 'first', title: 'First', default: true, steps: ['undeclared'] },
+        { slug: 'second', title: 'Second', steps: ['declared'] },
+      ],
+    }
+    const definitionCatalogue: StepCatalogueDefinition = {
+      steps: [
+        { ...catalogue('Use {{tracker.protocol}}.', []).steps[0]!, slug: 'undeclared' },
+        { ...catalogue('Tracker is declared.').steps[0]!, slug: 'declared' },
+      ],
+    }
+
+    const result = checkWorkflowRendering([{ slug: 'per-step', definition }], definitionCatalogue, [
+      project({ tracker: { protocol: 'hub' } }),
+    ])
+
+    expect(result.failures).toEqual([
+      {
+        project: 'fixture',
+        workflow: 'per-step',
+        mode: 'first',
+        step: 'undeclared',
+        placeholder: 'tracker.protocol',
+      },
+    ])
+    expect(result.unresolvedProjects).toEqual([])
+    expect(result.resolutionFailures).toEqual([])
+  })
+
+  test('reports a non-missing-fact refusal under its own wording', () => {
+    const result = checkWorkflowRendering(
+      [{ slug: 'invalid-tracker', definition: workflow('check') }],
+      catalogue('Use {{tracker.protocol}}.'),
+      [project({ tracker: { protocol: 'unsupported' as 'hub' } })],
+    )
+
+    expect(result.unresolvedProjects).toEqual([])
+    expect(result.resolutionFailures).toEqual([
+      {
+        project: 'fixture',
+        workflow: 'invalid-tracker',
+        mode: 'default',
+        step: 'check',
+        reason:
+          'tracker protocol unsupported has no workflow injection support; set tracker.protocol to one of workspace-mcp, cursor-mcp, array-mcp, hub',
       },
     ])
   })

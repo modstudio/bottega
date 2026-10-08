@@ -21,11 +21,7 @@ import {
   resolveWorkflowProjectFacts,
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
-import {
-  checkWorkflowRendering,
-  productionWorkflowDefinitions,
-  renderCheckRefusal,
-} from './workflow-render-check.ts'
+import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import { resolveWorkflowTemplate } from './workflow-template.ts'
 
@@ -383,9 +379,7 @@ export function promoteWorkflow(
       ),
       refusal = catalogueReferenceRefusal(slug, definition, catalogueSlugs)
     if (refusal) throw new Error(refusal)
-    const workflows = productionWorkflowDefinitions(database).filter(
-      (workflow) => workflow.slug !== slug,
-    )
+    const workflows = productionWorkflows(database).filter((workflow) => workflow.slug !== slug)
     workflows.push({ slug, definition })
     const renderRefusal = renderCheckRefusal(
       checkWorkflowRendering(
