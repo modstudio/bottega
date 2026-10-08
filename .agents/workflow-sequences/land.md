@@ -6,6 +6,5 @@ steps:
   - open-pr
   - waiting-for-review
   - merge-pr
-  - sync-docs
 ---
 
