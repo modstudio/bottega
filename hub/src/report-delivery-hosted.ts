@@ -112,10 +112,6 @@ export function selectedProjectsScopeName(projects: { project_name: string | nul
   )
 }
 
-export function selectedProjectsHaveSections(spaceCount: number) {
-  return spaceCount > 1
-}
-
 function loadedScopeName(
   loaded: {
     scope_kind: 'space' | 'project' | 'members' | 'projects'
@@ -129,16 +125,6 @@ function loadedScopeName(
   if (loaded.scope_kind === 'members') return loaded.member_names.join(', ')
   if (loaded.scope_kind === 'projects') return selectedProjectsScopeName(projects)
   return loaded.space_name
-}
-
-function projectsBySpace(projects: SelectedProject[]) {
-  const groups = new Map<string, SelectedProject[]>()
-  for (const project of projects) {
-    const current = groups.get(project.space_id!) ?? []
-    current.push(project)
-    groups.set(project.space_id!, current)
-  }
-  return groups
 }
 
 export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepository {
@@ -280,34 +266,12 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
         hostedMeasures(databaseUrl, recipientIdentity, period, scope),
         hostedGatherReport(databaseUrl, recipientIdentity, period, scope),
       ])
-      const sectionGroups = projectsBySpace(validProjects)
-      const sections =
-        loaded.scope_kind === 'projects' && selectedProjectsHaveSections(sectionGroups.size)
-          ? await Promise.all(
-              [...sectionGroups.values()].map(async (projects) => {
-                const sectionScope = {
-                  kind: 'projects' as const,
-                  projectIds: projects.map((row) => row.project_id),
-                }
-                return {
-                  name: projects[0]!.space_name!,
-                  report: await hostedGatherReport(
-                    databaseUrl,
-                    recipientIdentity,
-                    period,
-                    sectionScope,
-                  ),
-                }
-              }),
-            )
-          : undefined
       return {
         recipients,
         scope,
         scopeName,
         measures,
         report,
-        sections,
         exclusions,
       }
     },
