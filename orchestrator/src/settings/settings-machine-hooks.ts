@@ -24,7 +24,7 @@ const SCRIPT_FILES = [
   'session-brief.py',
 ] as const
 
-export type ScriptFile = (typeof SCRIPT_FILES)[number]
+type ScriptFile = (typeof SCRIPT_FILES)[number]
 type HookEvent = 'PreToolUse' | 'SubagentStart' | 'PostToolUse' | 'Stop' | 'SessionStart'
 type HookCondition = string | { absoluteOrch: 'do' | 'land' }
 type ProductHookDeclaration = {
@@ -170,8 +170,21 @@ export function withMachineProductHooks(
   databasePath: string,
 ): MachineProductHooksResult {
   const profileHooks = isPlainObject(settings.hooks) ? settings.hooks : {}
-  const hooks: Record<string, unknown> = {}
   const superseded: SupersededProfileHook[] = []
+  const hooks = withoutSupersededProfileHooks(profileHooks, superseded)
+
+  for (const [event, groups] of declaredGroups(assetRoot, databasePath)) {
+    const existing = Array.isArray(hooks[event]) ? hooks[event] : []
+    hooks[event] = [...existing, ...groups]
+  }
+  return { settings: { ...settings, hooks }, superseded }
+}
+
+function withoutSupersededProfileHooks(
+  profileHooks: Record<string, unknown>,
+  superseded: SupersededProfileHook[],
+): Record<string, unknown> {
+  const hooks: Record<string, unknown> = {}
 
   for (const [event, value] of Object.entries(profileHooks)) {
     if (!Array.isArray(value)) {
@@ -198,10 +211,5 @@ export function withMachineProductHooks(
     }
     if (groups.length > 0) hooks[event] = groups
   }
-
-  for (const [event, groups] of declaredGroups(assetRoot, databasePath)) {
-    const existing = Array.isArray(hooks[event]) ? hooks[event] : []
-    hooks[event] = [...existing, ...groups]
-  }
-  return { settings: { ...settings, hooks }, superseded }
+  return hooks
 }

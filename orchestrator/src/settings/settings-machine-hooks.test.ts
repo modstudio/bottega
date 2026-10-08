@@ -8,7 +8,7 @@ import {
 } from '../board/board-delivery.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
 
-const ASSET_ROOT = '/installed/bottega'
+const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orch.db'
 const OLD_ROOT = '/Users/operator/Projects/bottega'
 const command = (file: string) => `python3 ${OLD_ROOT}/orchestrator/hooks/${file}`

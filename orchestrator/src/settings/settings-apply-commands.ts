@@ -51,6 +51,12 @@ type Presentation = {
 }
 type Target = { kind: 'user' } | { kind: 'project'; name: string }
 
+function withProductHooksForTarget(target: Target, settings: OwnedSettings): OwnedSettings {
+  if (target.kind === 'project') return settings
+  return withMachineProductHooks(settings, assetPath(), resolveOrchestratorDatabase(process.env))
+    .settings
+}
+
 export async function settingsEnvImportCommand(
   flags: Flags,
   presentation: Presentation,
@@ -184,11 +190,7 @@ export async function settingsRenderWriteCommand(
     target.kind === 'user'
       ? mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
       : hosted
-  const owned =
-    target.kind === 'user'
-      ? withMachineProductHooks(merged, assetPath(), resolveOrchestratorDatabase(process.env))
-          .settings
-      : merged
+  const owned = withProductHooksForTarget(target, merged)
   const droppedEnv = flags.values?.('drop-env') ?? []
   if (target.kind === 'project' && droppedEnv.length > 0) {
     throw new Error('refusing settings render: --drop-env is user-only')
