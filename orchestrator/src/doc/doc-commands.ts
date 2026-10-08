@@ -80,12 +80,12 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   else {
     for (const finding of findings) {
       presentation.log(
-        `${finding.scope}/${finding.subject ?? '_'}/${finding.slug}:${finding.line} ${finding.rule} ${finding.message}`,
+        `${finding.scope}/${finding.subject ?? '_'}/${finding.slug}:${finding.line} ${finding.rule} ${finding.level} ${finding.message}`,
       )
       presentation.log(`  remedy: ${finding.remedy}`)
     }
   }
-  if (findings.length) presentation.exitCode?.(1)
+  if (findings.some(({ level }) => level === 'error')) presentation.exitCode?.(1)
 }
 
 function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined {
@@ -343,9 +343,13 @@ async function handleSetDocCommand(
   })
   const root = repoRootForDoc(doc, canonTree?.root)
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-  if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
+  const lintWarnings = lintStoredDoc(doc).filter(({ level }) => level === 'warning')
+  if (has('json'))
+    presentation.log(JSON.stringify({ ...doc, lintFindings: lintWarnings, warnings, tree: canonTree?.root }))
   else {
     presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+    for (const warning of lintWarnings)
+      presentation.error(`warning: line ${warning.line}: ${warning.message}`)
     for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
   }
   return true

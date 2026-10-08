@@ -3,6 +3,7 @@ import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
+  docLintProfile,
   docLintRules,
   introducedDocFindings,
   lintDoc,
@@ -37,13 +38,36 @@ describe('stored document lint', () => {
   test('kind selects the prose rule set', () => {
     expect(docLintRules('working')).toEqual(['history', 'issue', 'numeral', 'date'])
     expect(docLintRules('article')).toEqual(['history', 'issue', 'date'])
+    expect(docLintProfile('working')).toEqual({
+      rules: { history: 'error', issue: 'error', numeral: 'error', date: 'error' },
+      ambiguousHistory: 'warning',
+    })
+    expect(docLintProfile('article')).toEqual({
+      rules: { history: 'error', issue: 'error', date: 'error' },
+      ambiguousHistory: 'warning',
+    })
   })
 
   test.each(['working', 'article'] as const)('%s distinguishes the two used-to senses', (kind) => {
     expect(lintDoc(doc('This field is used to compute the price.', { kind }))).toEqual([])
     expect(lintDoc(doc('The page used to show totals.', { kind }))).toEqual([
-      expect.objectContaining({ rule: 'doc/history' }),
+      expect.objectContaining({ rule: 'doc/history', level: 'error' }),
     ])
+  })
+
+  test.each(['working', 'article'] as const)('%s warns for ambiguous history prose', (kind) => {
+    for (const body of [
+      'This is no longer required.',
+      'This was previously optional.',
+      'This was formerly optional.',
+      'This has changed.',
+      'That changed.',
+      'It has changed.',
+    ]) {
+      expect(lintDoc(doc(body, { kind }))).toEqual([
+        expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
+      ])
+    }
   })
 
   test('article permits a numeral while working refuses it', () => {

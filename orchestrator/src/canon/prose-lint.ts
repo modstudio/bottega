@@ -6,6 +6,7 @@ export type ProseFinding = {
   line: number
   message: string
   remedy: string
+  historyCertainty?: 'certain' | 'ambiguous'
 }
 
 const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
@@ -40,9 +41,12 @@ export const DEFAULT_COMMENT_HISTORY_PHRASES = [
   'restores the previous',
 ] as const
 
-const HISTORY_PATTERNS = [
+const CERTAIN_HISTORY_PATTERNS = [
   /\bwas (?:called|named)\b/i,
   /\brenamed\b/i,
+]
+
+const AMBIGUOUS_HISTORY_PATTERNS = [
   /\bno longer\b/i,
   /\bpreviously\b/i,
   /\bformerly\b/i,
@@ -52,12 +56,17 @@ const HISTORY_PATTERNS = [
 const FORMER_STATE_USED_TO = /\bused to\s+(?:be|have|[a-z]+)\b/i
 const BE_FORM_BEFORE_USED_TO = /\b(?:is|are|was|were|be|been|being)\s+$/i
 
-function historyPattern(line: string): RegExp | null {
+function historyPattern(
+  line: string,
+): { pattern: RegExp; certainty: 'certain' | 'ambiguous' } | null {
   const usedTo = FORMER_STATE_USED_TO.exec(line)
   if (usedTo && !BE_FORM_BEFORE_USED_TO.test(line.slice(0, usedTo.index))) {
-    return FORMER_STATE_USED_TO
+    return { pattern: FORMER_STATE_USED_TO, certainty: 'certain' }
   }
-  return HISTORY_PATTERNS.find((pattern) => pattern.test(line)) ?? null
+  const certain = CERTAIN_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
+  if (certain) return { pattern: certain, certainty: 'certain' }
+  const ambiguous = AMBIGUOUS_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
+  return ambiguous ? { pattern: ambiguous, certainty: 'ambiguous' } : null
 }
 
 const ISSUE_PATTERNS = [
@@ -114,8 +123,9 @@ export function lintProse(text: string): ProseFinding[] {
       findings.push({
         line: lineNumber,
         rule: 'history',
-        message: `matches banned history pattern ${matchedHistoryPattern.source}`,
+        message: `matches banned history pattern ${matchedHistoryPattern.pattern.source}`,
         remedy: 'state only the current rule, constraint, behavior, or reason',
+        historyCertainty: matchedHistoryPattern.certainty,
       })
     }
     const issuePattern = ISSUE_PATTERNS.find((pattern) => pattern.test(withoutInlineCode))
