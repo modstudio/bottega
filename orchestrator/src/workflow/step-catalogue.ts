@@ -5,6 +5,7 @@ import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { type WorkflowFactSource, workflowFactSources } from '../project/project-injection.ts'
+import { projects } from '../project/projects.ts'
 import {
   type AutonomyStage,
   type AutonomyValue,
@@ -12,6 +13,11 @@ import {
   autonomyValues,
 } from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
+import {
+  checkWorkflowRendering,
+  productionWorkflowDefinitions,
+  renderCheckRefusal,
+} from './workflow-render-check.ts'
 import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
@@ -32,7 +38,7 @@ export type CatalogueStep = {
   autonomy: AutonomyValue
   needs: WorkflowFactSource[]
 }
-type StepCatalogueDefinition = { steps: CatalogueStep[] }
+export type StepCatalogueDefinition = { steps: CatalogueStep[] }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -338,6 +344,14 @@ export function promoteStepCatalogue(
       throw new Error(
         `step catalogue drops steps used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}`,
       )
+    const refusal = renderCheckRefusal(
+      checkWorkflowRendering(
+        productionWorkflowDefinitions(database),
+        definition,
+        projects(undefined, database),
+      ),
+    )
+    if (refusal) throw new Error(refusal)
   })
 }
 
