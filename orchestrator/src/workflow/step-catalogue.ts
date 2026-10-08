@@ -197,6 +197,18 @@ function validateDeferrable(
   }
 }
 
+function validateExpectedStatus(item: Record<string, unknown>, errors: string[]): void {
+  if (item.expectedStatus === undefined) return
+  const statuses = Array.isArray(item.expectedStatus) ? item.expectedStatus : [item.expectedStatus]
+  if (
+    statuses.length === 0 ||
+    statuses.some((status) => typeof status !== 'string' || !status.trim())
+  )
+    errors.push(
+      `step "${String(item.slug ?? '')}" expectedStatus must be a non-empty string or string list`,
+    )
+}
+
 function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   const slug = String(item.slug ?? '')
   if (!Array.isArray(item.floor) || item.floor.length === 0) {
@@ -217,11 +229,7 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   validateCommandEvidence(item, floor, errors)
-  if (
-    item.expectedStatus !== undefined &&
-    (typeof item.expectedStatus !== 'string' || !item.expectedStatus.trim())
-  )
-    errors.push(`step "${slug}" expectedStatus must be a non-empty string`)
+  validateExpectedStatus(item, errors)
 }
 
 function validateCommandEvidence(

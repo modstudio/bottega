@@ -13,7 +13,7 @@ export type CatalogueStep = {
   body: string
   floor: FloorEntry[]
   deferrable?: FloorKind[]
-  expectedStatus?: string
+  expectedStatus?: string | string[]
   requirePullRequest?: boolean
   operatorRuling?: boolean
   commandEvidence?: CommandEvidence
