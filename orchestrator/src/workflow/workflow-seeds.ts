@@ -276,6 +276,7 @@ function catalogueDefinition() {
         needs: [
           ...(runsGate ? ['gate'] : []),
           ...(runsOnTrunk ? ['trunk'] : []),
+          ...(seed.slug === 'fix-defect' && legacy.slug === 'diagnose' ? ['tracker'] : []),
           ...(catalogueSlug(seed.slug, legacy.slug) === 'close' ? ['tracker'] : []),
         ],
       })
@@ -322,7 +323,7 @@ function workflowDefinition(seed: LegacySeed) {
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
-    revision = 4,
+    revision = 5,
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
   let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {

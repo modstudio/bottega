@@ -44,12 +44,13 @@ import {
   recordWorkflowProbe,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
-import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
 import {
   checkWorkflowRendering,
   productionWorkflowDefinitions,
+  workflowRenderCheckLines,
 } from './workflow-render-check.ts'
+import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -159,16 +160,7 @@ function renderCheckCommand(json: boolean, presentation: Presentation): void {
     projects(),
   )
   if (json) presentation.log(JSON.stringify(result))
-  else {
-    for (const failure of result.failures)
-      presentation.log(
-        `${failure.project}  ${failure.workflow}  ${failure.mode}  ${failure.step}  ${failure.placeholder}`,
-      )
-    for (const failure of result.unresolvedProjects)
-      presentation.log(
-        `${failure.project}  ${failure.workflow}  project facts could not be resolved: ${failure.error}`,
-      )
-  }
+  else for (const line of workflowRenderCheckLines(result)) presentation.log(line)
   if (result.failures.length || result.unresolvedProjects.length) presentation.setExitCode(1)
 }
 

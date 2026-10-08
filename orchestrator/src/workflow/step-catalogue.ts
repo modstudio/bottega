@@ -13,12 +13,12 @@ import {
   autonomyValues,
 } from './autonomy.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
+import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 import {
   checkWorkflowRendering,
   productionWorkflowDefinitions,
   renderCheckRefusal,
 } from './workflow-render-check.ts'
-import { type CommandEvidence, type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
 
 export type { FloorKind }
 export type FloorEntry = FloorKind | `{{${string}}}`

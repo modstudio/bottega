@@ -22,7 +22,10 @@ import {
 const valid = (): WorkflowDefinition => ({
   title: 'A workflow',
   description: 'Does work.',
-  arguments: [{ name: 'key', required: true, description: 'Task key' }],
+  arguments: [
+    { name: 'key', required: true, description: 'Task key' },
+    { name: 'branch', required: true, description: 'Branch' },
+  ],
   modes: [{ slug: 'default', title: 'Default', default: true, steps: ['lens'] }],
 })
 const release = {

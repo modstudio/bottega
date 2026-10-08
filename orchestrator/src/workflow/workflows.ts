@@ -17,17 +17,17 @@ import {
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 import { type FloorKind, isFloorKind } from './workflow-floor.ts'
-import type { WorkflowModeStepList } from './workflow-step-reference.ts'
-import { resolveWorkflowTemplate } from './workflow-template.ts'
+import {
+  resolveWorkflowProjectFacts,
+  workflowCompositionFactExtras,
+} from './workflow-project-facts.ts'
 import {
   checkWorkflowRendering,
   productionWorkflowDefinitions,
   renderCheckRefusal,
 } from './workflow-render-check.ts'
-import {
-  resolveWorkflowProjectFacts,
-  workflowCompositionFactExtras,
-} from './workflow-project-facts.ts'
+import type { WorkflowModeStepList } from './workflow-step-reference.ts'
+import { resolveWorkflowTemplate } from './workflow-template.ts'
 
 type WorkflowArgument = { name: string; required: boolean; description: string; rebind?: boolean }
 type WorkflowMode = {

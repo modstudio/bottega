@@ -3,11 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
-import {
-  builtInAutonomyScope,
-  catalogueStepsForAutonomy,
-  resolveAutonomy,
-} from './autonomy.ts'
+import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
 import type { StepCatalogueDefinition } from './step-catalogue.ts'
 import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
 import { resolveWorkflowTemplate } from './workflow-template.ts'
@@ -23,8 +19,8 @@ export type WorkflowPlaceholderFailure = {
 
 export type WorkflowFactResolutionFailure = {
   project: string
-  workflow: string
-  error: string
+  workflows: string[]
+  facts: string[]
 }
 
 export type WorkflowRenderCheckResult = {
@@ -83,7 +79,10 @@ export function unresolvedWorkflowStepPlaceholders(
   return failures
 }
 
-function standInArguments(definition: WorkflowDefinition, project: Project): Record<string, string> {
+function standInArguments(
+  definition: WorkflowDefinition,
+  project: Project,
+): Record<string, string> {
   const release = project.settings.release
   return Object.fromEntries(
     definition.arguments.map(({ name }) => {
@@ -102,7 +101,7 @@ export function checkWorkflowRendering(
   registeredProjects: Project[],
 ): WorkflowRenderCheckResult {
   const failures: WorkflowPlaceholderFailure[] = []
-  const unresolvedProjects: WorkflowFactResolutionFailure[] = []
+  const unresolvedByProject = new Map<string, { workflows: Set<string>; facts: Set<string> }>()
   const bySlug = new Map(catalogue.steps.map((step) => [step.slug, step]))
   for (const project of registeredProjects) {
     for (const { slug, definition } of workflows) {
@@ -123,9 +122,7 @@ export function checkWorkflowRendering(
         const { facts } = resolveWorkflowProjectFacts(
           { name: project.name, stack: project.stack, settings: project.settings },
           needs,
-          selected.some(
-            (step) => step.needs.includes('ship-to') && step.needs.includes('tracker'),
-          ),
+          selected.some((step) => step.needs.includes('ship-to') && step.needs.includes('tracker')),
           args,
           autonomy,
         )
@@ -137,14 +134,29 @@ export function checkWorkflowRendering(
           }),
         )
       } catch (error) {
-        unresolvedProjects.push({
-          project: project.name,
-          workflow: slug,
-          error: error instanceof Error ? error.message : String(error),
-        })
+        const unresolved = unresolvedByProject.get(project.name) ?? {
+          workflows: new Set<string>(),
+          facts: new Set<string>(),
+        }
+        unresolved.workflows.add(slug)
+        const message = error instanceof Error ? error.message : String(error)
+        const remedies = message
+          .split('\n')
+          .filter((line) => line.startsWith('- '))
+          .map((line) => line.slice(2))
+        for (const fact of remedies.length ? remedies : [message.replaceAll('\n', ' ')])
+          unresolved.facts.add(fact)
+        unresolvedByProject.set(project.name, unresolved)
       }
     }
   }
+  const unresolvedProjects = [...unresolvedByProject.entries()].map(
+    ([project, unresolved]): WorkflowFactResolutionFailure => ({
+      project,
+      workflows: [...unresolved.workflows].sort(),
+      facts: [...unresolved.facts].sort(),
+    }),
+  )
   return { failures, unresolvedProjects }
 }
 
@@ -159,17 +171,24 @@ export function productionWorkflowDefinitions(d: Database) {
   ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
 }
 
-export function renderCheckRefusal(result: WorkflowRenderCheckResult): string | null {
-  const lines = [
+export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): string[] {
+  return [
     ...result.failures.map(
       (failure) =>
-        `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
+        `${failure.project}  ${failure.workflow}  ${failure.mode}  ${failure.step}  ${failure.placeholder}`,
     ),
     ...result.unresolvedProjects.map(
       (failure) =>
-        `- project ${failure.project}, workflow ${failure.workflow}: project facts could not be resolved: ${failure.error}`,
+        `${failure.project}  ${failure.workflows.join(',')}  project facts could not be resolved: ${failure.facts.join('; ')}`,
     ),
   ]
+}
+
+export function renderCheckRefusal(result: WorkflowRenderCheckResult): string | null {
+  const lines = result.failures.map(
+    (failure) =>
+      `- project ${failure.project}, workflow ${failure.workflow}, mode ${failure.mode}, step ${failure.step}, placeholder ${failure.placeholder}`,
+  )
   if (!lines.length) return null
   return [
     'production workflow steps do not render for every registered project:',
