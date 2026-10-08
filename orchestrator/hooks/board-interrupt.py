@@ -117,20 +117,6 @@ def should_run_slow_path(
     )
 
 
-def due_notices(
-    notices,
-    injected_at: dict[str, float],
-    remind_seconds: int,
-    now: float,
-):
-    return [
-        notice
-        for notice in notices
-        if notice["id"] not in injected_at
-        or now - injected_at[notice["id"]] >= remind_seconds
-    ]
-
-
 def main() -> int:
     try:
         if os.environ.get("ORCH_RUN_ID"):
@@ -156,8 +142,16 @@ def main() -> int:
             now,
         ):
             return 0
+        injected_at = {} if marker is None else marker["injected_at"]
+        recently_injected = sorted(
+            message_id
+            for message_id, injected in injected_at.items()
+            if now - injected < remind
+        )
         try:
-            notices, overflow, _pending_acknowledgements = pending(session)
+            notices, overflow, _pending_acknowledgements = pending(
+                session, recently_injected
+            )
         except Exception:
             previous = marker or {
                 "candidate_ids": set(),
@@ -174,10 +168,8 @@ def main() -> int:
                 },
             )
             return 0
-        injected_at = {} if marker is None else marker["injected_at"]
-        due = due_notices(notices, injected_at, remind, now)
-        if due:
-            context = "\n\n".join(item["text"] for item in due)
+        if notices:
+            context = "\n\n".join(item["text"] for item in notices)
             if overflow:
                 context += "\n\n" + overflow
             output = {
@@ -188,8 +180,8 @@ def main() -> int:
             }
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
-            mark_delivered(session, [item["id"] for item in due])
-            for notice in due:
+            mark_delivered(session, [item["id"] for item in notices])
+            for notice in notices:
                 injected_at[notice["id"]] = now
         recorded_candidates = candidates
         if overflow:

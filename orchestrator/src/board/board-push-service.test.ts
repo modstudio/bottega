@@ -17,6 +17,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
+import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
 import { acknowledgeNotice, postNotice } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
@@ -134,7 +135,7 @@ function runHookRepeated(
     'pending_values = json.loads(sys.argv[4])',
     'if pending_values is not None:',
     '    pending_iterator = iter(pending_values)',
-    '    module.pending = lambda session: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
+    '    module.pending = lambda session, recently_injected=None: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
     '    module.mark_delivered = lambda session, ids: None',
     'results = []',
     'for _ in range(int(sys.argv[3])):',
@@ -596,6 +597,83 @@ test('delivery returns every pending notice and preserves its first delivered ti
   ).toEqual(first)
 })
 
+test('recent reminders are removed before bounding without changing pending acknowledgements', async () => {
+  const clock = Date.parse('2026-10-08T12:30:00.000Z')
+  const session = 'bounded-reminder-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const reminders = Array.from({ length: BOARD_DELIVERY_MAX_MESSAGES }, (_, index) =>
+    postNotice(
+      {
+        audience: `session:${session}`,
+        title: `Reminder ${index}`,
+        body: 'Remember',
+        ackRequired: true,
+      },
+      {},
+      clock + index,
+    ),
+  )
+  await markBoardDeliveryDelivered({
+    session,
+    ids: reminders.map((notice) => String(notice.id)),
+    clock: clock + 10,
+  })
+  const ordinary = postNotice(
+    { audience: `session:${session}`, title: 'Fresh', body: 'Fresh body' },
+    {},
+    clock + 11,
+  )
+
+  const result = await pendingBoardDelivery({
+    session,
+    budgetMs: 0,
+    includeAcknowledgementReminders: true,
+    recentlyInjectedIds: reminders.map((notice) => String(notice.id)),
+    clock: clock + 12,
+  })
+
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.id)])
+  expect(result.pendingAcknowledgements.map((notice) => notice.id)).toEqual(
+    reminders.map((notice) => String(notice.id)),
+  )
+})
+
+test('recently-injected ids do not suppress messages never delivered to the session', async () => {
+  const clock = Date.parse('2026-10-08T12:45:00.000Z')
+  const session = 'unread-reminder-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const unread = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Unread acknowledgement',
+      body: 'Must still arrive',
+      ackRequired: true,
+    },
+    {},
+    clock,
+  )
+
+  const result = await pendingBoardDelivery({
+    session,
+    budgetMs: 0,
+    includeAcknowledgementReminders: true,
+    recentlyInjectedIds: [String(unread.id)],
+    clock: clock + 1,
+  })
+
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.id)])
+})
+
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
   const item = createHookFixture(hookOutput)
   for (const [payload, extra] of [
@@ -661,6 +739,46 @@ test('PostToolUse injects once and again only after the reminder interval', () =
 
   expect(runHook(interruptHook, payload, item).stdout.toString()).not.toBe('')
   expect(invocationCount(item)).toBe(2)
+})
+
+test('PostToolUse passes recent reminders before selection and stamps only fresh delivery', () => {
+  const freshOutput = JSON.stringify({
+    delivery: [{ id: '8', text: 'fresh notice', requiresAcknowledgement: false }],
+    overflow: null,
+    pendingAcknowledgements: [{ id: '7', text: 'recent reminder', requiresAcknowledgement: true }],
+  })
+  const item = createHookFixture(freshOutput)
+  addCandidate(item, 7)
+  addCandidate(item, 8)
+  item.database
+    .query("INSERT INTO board_receipt VALUES (7,'reader',?,NULL)")
+    .run(new Date().toISOString())
+  item.database.query('UPDATE board_message SET ack_required=0 WHERE id=8').run()
+  writeFileSync(
+    item.command,
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${item.invocationLog}'\nif [ "$2" = "pending" ]; then printf '%s\\n' '${freshOutput}'; fi\n`,
+  )
+  chmodSync(item.command, 0o700)
+  const markerRoot = join(item.root, 'board-hook-state', 'interrupt')
+  mkdirSync(markerRoot, { recursive: true })
+  const marker = join(markerRoot, createHash('sha256').update('reader').digest('hex'))
+  writeFileSync(
+    marker,
+    JSON.stringify({
+      candidate_ids: ['7'],
+      ran_at: 0,
+      failure_at: 0,
+      injected_at: { '7': Date.now() / 1000 },
+    }),
+  )
+
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext).toBe(
+    'fresh notice',
+  )
+  const invocations = readFileSync(item.invocationLog, 'utf8').trim().split('\n')
+  expect(invocations[0]).toContain('--recently-injected 7')
+  expect(invocations[1]).toBe('board delivered 8 --session reader')
 })
 
 test('PostToolUse throttles a failed path until the retry interval', () => {

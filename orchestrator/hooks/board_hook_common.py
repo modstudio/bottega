@@ -61,11 +61,13 @@ def write_marker(path: str, value) -> bool:
         return False
 
 
-def pending(session: str):
+def pending(session: str, recently_injected: list[str] | None = None):
     binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch")
     )
     command = [binary, "board", "pending", "--session", session, "--json"]
+    if recently_injected:
+        command.extend(["--recently-injected", ",".join(recently_injected)])
     timeout = float(os.environ["BOARD_PUSH_SLOW_TIMEOUT_SECONDS"])
     result = subprocess.run(
         command,

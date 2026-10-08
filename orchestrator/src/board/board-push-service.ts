@@ -23,6 +23,7 @@ type DeliveryInput = {
   session: string
   budgetMs: number
   includeAcknowledgementReminders?: boolean
+  recentlyInjectedIds?: string[]
   clock?: number
   database?: Database
 }
@@ -140,11 +141,14 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     ...localPendingAcknowledgements(input.session, clock, database),
     ...hostedPendingAcknowledgements(input.session, clock, database),
   ]
+  const recentlyInjected = new Set(input.recentlyInjectedIds ?? [])
   const candidates = input.includeAcknowledgementReminders
     ? [
         ...unread,
         ...pendingAcknowledgements.filter(
-          (pending) => !unread.some((message) => message.id === pending.id),
+          (pending) =>
+            !unread.some((message) => message.id === pending.id) &&
+            !(pending.deliveredAt && recentlyInjected.has(pending.id)),
         ),
       ]
     : unread
