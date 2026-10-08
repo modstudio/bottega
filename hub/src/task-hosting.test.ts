@@ -154,8 +154,8 @@ describe('hosted-only task safety', () => {
     expect(boundSpace).toBe('space-a')
   })
 
-  test('a requested space is ignored by list routes', async () => {
-    let boundSpace = ''
+  test('a non-member requested space on the changes route reaches no list service', async () => {
+    let reads = 0
     const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks', {
         headers: { authorization: 'Bearer test', 'x-record-space': 'not-a-member' },
@@ -168,14 +168,14 @@ describe('hosted-only task safety', () => {
             activeSpaceId: 'space-a',
             memberships: [{ space_id: 'space-a', slug: 'active' }],
           }),
-        list: async (_url, identity) => {
-          boundSpace = identity.spaceId
+        list: async (_url, _identity) => {
+          reads++
           return { tasks: [], comments: [], documents: [], statusEvents: [], cursor: '' }
         },
       },
     )
-    expect(response?.status).toBe(200)
-    expect(boundSpace).toBe('space-a')
+    expect(response?.status).toBe(403)
+    expect(reads).toBe(0)
   })
 
   test('task creation distinguishes an absent project from a project without a prefix', async () => {
