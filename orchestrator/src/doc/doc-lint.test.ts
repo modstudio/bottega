@@ -53,13 +53,15 @@ describe('stored document lint', () => {
   test.each(['working', 'article'] as const)(
     '%s keeps certain history errors when the line also says used to',
     (kind) => {
-      expect(lintDoc(doc('The page was called Totals and used to show prices.', { kind }))).toEqual([
-        expect.objectContaining({
-          rule: 'doc/history',
-          level: 'error',
-          message: expect.stringContaining('was (?:called|named)'),
-        }),
-      ])
+      expect(lintDoc(doc('The page was called Totals and used to show prices.', { kind }))).toEqual(
+        [
+          expect.objectContaining({
+            rule: 'doc/history',
+            level: 'error',
+            message: expect.stringContaining('was (?:called|named)'),
+          }),
+        ],
+      )
     },
   )
 
