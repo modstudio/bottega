@@ -3,7 +3,6 @@ import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
-  docLintProfile,
   introducedDocFindings,
   lintDoc,
 } from './doc-lint.ts'
@@ -34,21 +33,18 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
 })
 
 describe('stored document lint', () => {
-  test('kind selects the prose rule set', () => {
-    expect(docLintProfile('working')).toEqual({
-      rules: { history: 'error', issue: 'error', numeral: 'error', date: 'error' },
-      ambiguousHistory: 'warning',
-    })
-    expect(docLintProfile('article')).toEqual({
-      rules: { history: 'error', issue: 'error', date: 'error' },
-      ambiguousHistory: 'warning',
-    })
-  })
-
-  test.each(['working', 'article'] as const)('%s distinguishes the two used-to senses', (kind) => {
-    expect(lintDoc(doc('This field is used to compute the price.', { kind }))).toEqual([])
-    expect(lintDoc(doc('The page used to show totals.', { kind }))).toEqual([
-      expect.objectContaining({ rule: 'doc/history', level: 'error' }),
+  test.each(['working', 'article'] as const)('%s warns for both used-to senses', (kind) => {
+    for (const body of [
+      'This field is used to compute the price.',
+      'The page used to show totals.',
+    ]) {
+      expect(lintDoc(doc(body, { kind }))).toEqual([
+        expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
+      ])
+    }
+    expect(lintDoc(doc('It used to work and is used to compute totals.', { kind }))).toEqual([
+      expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
+      expect.objectContaining({ rule: 'doc/history', level: 'warning' }),
     ])
   })
 
@@ -71,6 +67,13 @@ describe('stored document lint', () => {
     expect(lintDoc(doc('There are 2 prices.', { kind: 'article' }))).toEqual([])
     expect(lintDoc(doc('There are 2 prices.'))).toEqual([
       expect.objectContaining({ rule: 'doc/numeral' }),
+    ])
+  })
+
+  test('article keeps the date and issue rules', () => {
+    expect(lintDoc(doc('DEV-880 applies on 2026-09-23.', { kind: 'article' }))).toEqual([
+      expect.objectContaining({ rule: 'doc/date', level: 'error' }),
+      expect.objectContaining({ rule: 'doc/issue', level: 'error' }),
     ])
   })
   test('resume documents are exempt', () => {

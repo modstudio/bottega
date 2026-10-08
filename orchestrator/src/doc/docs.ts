@@ -80,6 +80,7 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
+  refuseArticleDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
@@ -375,9 +376,12 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
+  const kind = input.kind ?? prior?.kind ?? 'working'
   const tree = localDocTreeFields(input, prior)
   const lifecycle = localDocumentLifecycle(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)
+  const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
+  if (articleDelivery) throw new Error(articleDelivery)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
   return applyRecordWriteAuthority({
@@ -412,7 +416,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         }),
         position: tree.position,
         featured: tree.featured,
-        kind: input.kind ?? prior?.kind ?? 'working',
+        kind,
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,

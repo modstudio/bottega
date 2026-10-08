@@ -44,26 +44,37 @@ export const DEFAULT_COMMENT_HISTORY_PHRASES = [
 const CERTAIN_HISTORY_PATTERNS = [/\bwas (?:called|named)\b/i, /\brenamed\b/i]
 
 const AMBIGUOUS_HISTORY_PATTERNS = [
+  /\bused to\b/gi,
   /\bno longer\b/i,
   /\bpreviously\b/i,
   /\bformerly\b/i,
   /\b(?:that|this|it) (?:has )?changed\b/i,
 ]
 
-const FORMER_STATE_USED_TO = /\bused to\s+(?:be|have|[a-z]+)\b/i
-const BE_FORM_BEFORE_USED_TO = /\b(?:is|are|was|were|be|been|being)\s+$/i
-
-function historyPattern(
+function historyPatterns(
   line: string,
-): { pattern: RegExp; certainty: 'certain' | 'ambiguous' } | null {
-  const usedTo = FORMER_STATE_USED_TO.exec(line)
-  if (usedTo && !BE_FORM_BEFORE_USED_TO.test(line.slice(0, usedTo.index))) {
-    return { pattern: FORMER_STATE_USED_TO, certainty: 'certain' }
+): Array<{ pattern: RegExp; certainty: 'certain' | 'ambiguous'; index: number }> {
+  const usedTo = AMBIGUOUS_HISTORY_PATTERNS[0]!
+  const usedToMatches = [...line.matchAll(usedTo)].map((match) => ({
+    pattern: usedTo,
+    certainty: 'ambiguous' as const,
+    index: match.index,
+  }))
+  if (usedToMatches.length) return usedToMatches
+
+  for (const pattern of [...CERTAIN_HISTORY_PATTERNS, ...AMBIGUOUS_HISTORY_PATTERNS.slice(1)]) {
+    const match = pattern.exec(line)
+    if (match) {
+      return [
+        {
+          pattern,
+          certainty: CERTAIN_HISTORY_PATTERNS.includes(pattern) ? 'certain' : 'ambiguous',
+          index: match.index,
+        },
+      ]
+    }
   }
-  const certain = CERTAIN_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
-  if (certain) return { pattern: certain, certainty: 'certain' }
-  const ambiguous = AMBIGUOUS_HISTORY_PATTERNS.find((pattern) => pattern.test(line))
-  return ambiguous ? { pattern: ambiguous, certainty: 'ambiguous' } : null
+  return []
 }
 
 const ISSUE_PATTERNS = [
@@ -115,8 +126,7 @@ export function lintProse(text: string): ProseFinding[] {
   const findings: ProseFinding[] = []
   for (const { text: line, line: lineNumber } of proseLines(text)) {
     const withoutInlineCode = line.replace(/(`+)[^`]*?\1/g, '')
-    const matchedHistoryPattern = historyPattern(withoutInlineCode)
-    if (matchedHistoryPattern) {
+    for (const matchedHistoryPattern of historyPatterns(withoutInlineCode)) {
       findings.push({
         line: lineNumber,
         rule: 'history',

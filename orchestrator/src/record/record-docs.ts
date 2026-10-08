@@ -19,6 +19,7 @@ import {
   type DocRevisionOp,
   docWriteProjectName,
   recordDocLintRefusal,
+  refuseArticleDelivery,
   refuseDocWrite,
   refuseMismatchedDocProject,
   refuseOwnedDocAddress,
@@ -264,6 +265,7 @@ export async function upsertRecordDoc(
       }),
     )
     const kind = storedDocKind(input, existing[0])
+    assertWrite(refuseArticleDelivery({ ...input, kind }))
     assertWrite(
       recordDocLintRefusal(
         { ...input, kind },

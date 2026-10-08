@@ -1,6 +1,7 @@
 // concern: doc-lint
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
+import type { DocKind } from '../../../shared/docs.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
 import { type Project, projects } from '../project/projects.ts'
@@ -19,7 +20,7 @@ type StoredDoc = {
   subject: string | null
   slug: string
   body: string
-  kind: 'working' | 'article'
+  kind: DocKind
 }
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()

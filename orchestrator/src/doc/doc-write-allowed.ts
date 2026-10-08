@@ -2,6 +2,7 @@
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
 import {
   DOC_SCOPE_ALLOWS_OWNER,
+  type DocKind,
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
@@ -75,6 +76,32 @@ export function importedDocDelivery(scope: string): 'demand' | undefined {
 
 export function forcedDocDelivery(scope: string): 'demand' | null {
   return scope === 'canon' || scope === 'settings' ? 'demand' : null
+}
+
+/** Articles are discovered on demand and never participate in canon or prompt injection. */
+export function refuseArticleDelivery(input: {
+  scope: string
+  subject: string | null
+  slug: string
+  kind: DocKind
+  delivery: DocDelivery
+}): string | null {
+  if (input.kind !== 'article') return null
+  const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
+  const command = `orch doc set ${input.slug} --scope ${input.scope}${input.subject === null ? '' : ` --subject ${input.subject}`}`
+  if (input.scope === 'canon') {
+    return (
+      `refusing article document ${address}: canon scope requires kind working\n` +
+      `cleared by: ${command} --kind working with the current body`
+    )
+  }
+  if (input.delivery === 'inject') {
+    return (
+      `refusing article document ${address}: kind article requires effective delivery demand\n` +
+      `cleared by: ${command} --kind article --delivery demand with the current body, or use --kind working`
+    )
+  }
+  return null
 }
 
 export function docWriteProjectName(scope: string, subject: string | null): string | null {

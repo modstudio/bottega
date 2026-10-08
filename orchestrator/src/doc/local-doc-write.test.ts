@@ -40,6 +40,81 @@ test('kind selects lint and an omitted kind keeps the current value', async () =
   ).rejects.toThrow(/working profile[\s\S]*doc\/numeral[\s\S]*--kind article/)
 })
 
+test('used-to warnings store for both document kinds', async () => {
+  for (const kind of ['working', 'article'] as const) {
+    await expect(
+      setDoc({
+        scope: 'machine',
+        subject: null,
+        slug: `used-to-${kind}`,
+        title: `Used to ${kind}`,
+        body: 'The page used to show totals. This field is used to compute the price.',
+        delivery: 'demand',
+        kind,
+        reason: 'prove history warnings do not refuse writes',
+      }),
+    ).resolves.toMatchObject({ kind })
+  }
+})
+
+test('an article cannot be created or changed to effective inject delivery', async () => {
+  await expect(
+    setDoc({
+      scope: 'job',
+      subject: 'understand',
+      slug: 'article-inject-create',
+      title: 'Article inject create',
+      body: 'Current.',
+      delivery: 'inject',
+      kind: 'article',
+      reason: 'prove create refusal',
+    }),
+  ).rejects.toThrow('kind article requires effective delivery demand')
+
+  const injected = await setDoc({
+    scope: 'job',
+    subject: 'understand',
+    slug: 'article-inject-kind-update',
+    title: 'Article inject kind update',
+    body: 'Current.',
+    delivery: 'inject',
+    reason: 'create injected working document',
+  })
+  await expect(
+    setDoc({
+      scope: injected.scope,
+      subject: injected.subject,
+      slug: injected.slug,
+      title: injected.title,
+      body: injected.body,
+      kind: 'article',
+      reason: 'prove kind update refusal',
+    }),
+  ).rejects.toThrow('kind article requires effective delivery demand')
+
+  const article = await setDoc({
+    scope: 'machine',
+    subject: null,
+    slug: 'article-inject-delivery-update',
+    title: 'Article inject delivery update',
+    body: 'Current.',
+    delivery: 'demand',
+    kind: 'article',
+    reason: 'create demand article',
+  })
+  await expect(
+    setDoc({
+      scope: article.scope,
+      subject: article.subject,
+      slug: article.slug,
+      title: article.title,
+      body: article.body,
+      delivery: 'inject',
+      reason: 'prove delivery update refusal',
+    }),
+  ).rejects.toThrow('kind article requires effective delivery demand')
+})
+
 test('set and restore repair the project id on an existing document', () => {
   upsertProject({
     name: 'repair-project',
