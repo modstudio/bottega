@@ -1,7 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { DocAudience, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -53,6 +53,7 @@ export type RecordDocUpsertInput = {
   position: number
   featured?: boolean
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
   projectName?: string | null
   reason: string
@@ -81,6 +82,7 @@ export type RecordDocImportInput = {
     position?: number
     featured?: boolean
     status?: DocStatus
+    kind?: DocKind
     replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
@@ -101,6 +103,7 @@ export type RecordDocImportInput = {
     position?: number
     featured?: boolean
     status?: DocStatus
+    kind?: DocKind
     replacementSlug?: string | null
     author: string
     reason: string
@@ -158,10 +161,12 @@ export type RecordApiClient = {
     scope?: string
     subject?: string | null
     audience?: DocAudience
+    status?: DocStatus
     updatedSince?: string
     limit?: number
     cursor?: string | null
     includeDeleted?: boolean
+    kind?: DocKind
     acrossReadableSpaces?: boolean
   }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
   getDoc(id: string): Promise<Record<string, unknown>>
@@ -387,6 +392,8 @@ export function recordApiClient(): RecordApiClient {
       if (query.scope) search.set('scope', query.scope)
       if (query.subject !== undefined) search.set('subject', query.subject ?? '')
       if (query.audience) search.set('audience', query.audience)
+      if (query.status) search.set('status', query.status)
+      if (query.kind) search.set('kind', query.kind)
       if (query.updatedSince) search.set('updatedSince', query.updatedSince)
       if (query.limit) search.set('limit', String(query.limit))
       if (query.cursor) search.set('cursor', query.cursor)

@@ -2,9 +2,11 @@
 import type { Database } from 'bun:sqlite'
 import {
   DOC_AUDIENCES,
+  DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
   type DocAudience,
+  type DocKind,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -24,6 +26,7 @@ export type Doc = {
   audience: DocAudience
   featured: boolean
   status: DocStatus
+  kind: DocKind
   replacement_slug: string | null
   parent_id: number | null
   parent_slug: string | null
@@ -43,6 +46,7 @@ export type DocMetadata = Pick<
   | 'audience'
   | 'featured'
   | 'status'
+  | 'kind'
   | 'replacement_slug'
   | 'parent_id'
   | 'parent_slug'
@@ -60,6 +64,7 @@ export type DocListFilters = {
   owner?: string | null
   audience?: string
   status?: string
+  kind?: string
 }
 
 export type DocRevision = {
@@ -77,6 +82,7 @@ export type DocRevision = {
   audience: DocAudience
   featured: boolean
   status: DocStatus
+  kind: DocKind
   replacement_slug: string | null
   parent_id: number | null
   position: number
@@ -88,7 +94,7 @@ export type DocRevision = {
 }
 export type DocRevisionMetadata = Pick<
   DocRevision,
-  'id' | 'op' | 'author' | 'reason' | 'at' | 'status' | 'replacement_slug' | 'record_id'
+  'id' | 'op' | 'author' | 'reason' | 'at' | 'status' | 'kind' | 'replacement_slug' | 'record_id'
 > & { bytes: number }
 
 const LATEST_REVISION_SQL =
@@ -109,16 +115,21 @@ function statusColumns(database: Database): boolean {
   return Boolean(database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='status'").get())
 }
 
+function kindColumns(database: Database): boolean {
+  return Boolean(database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='kind'").get())
+}
+
 function docTreeSelect(database: Database): { columns: string; join: string; position: string } {
   const status = statusColumns(database) ? '' : ", 'current' AS status, NULL AS replacement_slug"
+  const kind = kindColumns(database) ? '' : ", 'working' AS kind"
   return treeColumns(database)
     ? {
-        columns: `d.*, p.slug AS parent_slug${status}`,
+        columns: `d.*, p.slug AS parent_slug${status}${kind}`,
         join: ' LEFT JOIN doc p ON p.id=d.parent_id',
         position: 'd.position',
       }
     : {
-        columns: `d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position${status}`,
+        columns: `d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position${status}${kind}`,
         join: '',
         position: '0+0',
       }
@@ -141,6 +152,12 @@ function validAudience(audience: string): asserts audience is DocAudience {
 function validStatus(status: string): asserts status is DocStatus {
   if (!DOC_STATUSES.includes(status as DocStatus)) {
     throw new Error(`unknown doc status "${status}"; valid statuses: ${DOC_STATUSES.join(', ')}`)
+  }
+}
+
+function validKind(kind: string): asserts kind is DocKind {
+  if (!DOC_KINDS.includes(kind as DocKind)) {
+    throw new Error(`unknown doc kind "${kind}"; valid kinds: ${DOC_KINDS.join(', ')}`)
   }
 }
 
@@ -191,6 +208,7 @@ export function listDocsStore(
     owner?: string | null
     audience?: string
     status?: string
+    kind?: string
   } = {},
   database: Database = db(),
 ): Doc[] {
@@ -210,6 +228,13 @@ export function listDocsStore(
       values.push(filters.status)
     } else if (filters.status !== 'current') where.push('0')
   }
+  if (filters.kind !== undefined) {
+    validKind(filters.kind)
+    if (kindColumns(database)) {
+      where.push('d.kind = ?')
+      values.push(filters.kind)
+    } else if (filters.kind !== 'working') where.push('0')
+  }
   return (
     database
       .query(
@@ -221,6 +246,21 @@ export function listDocsStore(
 }
 
 export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[] {
+  const { where, values } = metadataFilters(filters)
+  const order = filters.updatedAtOrder
+    ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
+    : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
+  return (
+    db()
+      .query(
+        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+       FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
+      )
+      .all(...values) as Array<DocMetadata & { featured: boolean | number }>
+  ).map(docRow)
+}
+
+function metadataFilters(filters: DocListFilters): { where: string[]; values: string[] } {
   if (filters.scopes !== undefined) {
     for (const scope of filters.scopes) validScope(scope)
   }
@@ -237,6 +277,11 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
     validStatus(filters.status)
     where.push('d.status = ?')
     values.push(filters.status)
+  }
+  if (filters.kind !== undefined) {
+    validKind(filters.kind)
+    where.push('d.kind = ?')
+    values.push(filters.kind)
   }
   if (filters.scopes !== undefined) {
     if (filters.scopes.length === 0) where.push('0')
@@ -257,15 +302,5 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
     where.push('instr(lower(d.body), lower(?)) > 0')
     values.push(filters.bodyMatch)
   }
-  const order = filters.updatedAtOrder
-    ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
-    : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
-  return (
-    db()
-      .query(
-        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.status, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
-       FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
-      )
-      .all(...values) as Array<DocMetadata & { featured: boolean | number }>
-  ).map(docRow)
+  return { where, values }
 }

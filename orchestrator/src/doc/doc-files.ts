@@ -1,7 +1,14 @@
 /** Owns document export and import filesystem representation. Must not know stores or transport. */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DOC_SCOPES, DOC_STATUSES, type DocScope, type DocStatus } from '../../../shared/docs.ts'
+import {
+  DOC_KINDS,
+  DOC_SCOPES,
+  DOC_STATUSES,
+  type DocKind,
+  type DocScope,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import type { Doc } from './doc-read-store.ts'
 import { importedDocDelivery } from './doc-write-allowed.ts'
 
@@ -11,6 +18,7 @@ type ImportedDoc = {
   slug: string
   title: string
   status?: DocStatus
+  kind?: DocKind
   replacementSlug?: string | null
   body: string
   delivery?: 'inject' | 'demand'
@@ -22,7 +30,7 @@ export function exportDocFiles(dir: string, docs: Doc[]): number {
     mkdirSync(target, { recursive: true })
     writeFileSync(
       join(target, `${doc.slug}.md`),
-      `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
+      `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nkind: ${JSON.stringify(doc.kind)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
     )
   }
   return docs.length
@@ -34,7 +42,7 @@ function importedDoc(
 ): Omit<ImportedDoc, 'scope' | 'subject' | 'slug' | 'delivery'> {
   const raw = readFileSync(path, 'utf8')
   const match = raw.match(
-    /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\nreplacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
+    /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\n(?:kind:\s*(.+)\r?\n)?replacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
   )
   if (!match) throw new Error(`${fileName}: expected YAML frontmatter with a title`)
   let title: unknown
@@ -45,9 +53,13 @@ function importedDoc(
   }
   if (typeof title !== 'string') throw new Error(`${fileName}: title must be a string`)
   const status = match[2] === undefined ? undefined : JSON.parse(match[2])
-  const replacementSlug = match[3] === undefined ? undefined : JSON.parse(match[3])
+  const kind = match[3] === undefined ? undefined : JSON.parse(match[3])
+  const replacementSlug = match[4] === undefined ? undefined : JSON.parse(match[4])
   if (status !== undefined && !DOC_STATUSES.includes(status)) {
     throw new Error(`${fileName}: status must be ${DOC_STATUSES.join(', ')}`)
+  }
+  if (kind !== undefined && !DOC_KINDS.includes(kind)) {
+    throw new Error(`${fileName}: kind must be ${DOC_KINDS.join(', ')}`)
   }
   if (
     replacementSlug !== undefined &&
@@ -56,7 +68,7 @@ function importedDoc(
   ) {
     throw new Error(`${fileName}: replacement must be a string or null`)
   }
-  return { title, status, replacementSlug, body: match[4]! }
+  return { title, status, kind, replacementSlug, body: match[5]! }
 }
 
 export async function importDocFiles(

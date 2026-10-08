@@ -16,7 +16,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { DOC_AUDIENCES, DOC_STATUSES } from '../docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../docs.ts'
 import {
   project,
   RECORD_PUBLIC_ROLE,
@@ -87,6 +87,7 @@ export const doc = pgTable.withRLS(
     audience: text().notNull().default('technical'),
     featured: boolean().notNull().default(false),
     status: text().notNull().default('current'),
+    kind: text().notNull().default('working'),
     replacementSlug: text('replacement_slug'),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
@@ -114,6 +115,10 @@ export const doc = pgTable.withRLS(
     check(
       'doc_status_check',
       sql`${table.status} IN (${sql.raw(DOC_STATUSES.map((value) => `'${value}'`).join(','))})`,
+    ),
+    check(
+      'doc_kind_check',
+      sql`${table.kind} IN (${sql.raw(DOC_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
     check(
       'doc_replacement_check',
@@ -194,6 +199,7 @@ export const docRevision = pgTable.withRLS(
     audience: text().notNull().default('technical'),
     featured: boolean().notNull().default(false),
     status: text().notNull().default('current'),
+    kind: text().notNull().default('working'),
     replacementSlug: text('replacement_slug'),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
@@ -215,6 +221,10 @@ export const docRevision = pgTable.withRLS(
     check(
       'doc_revision_status_check',
       sql`${table.status} IN (${sql.raw(DOC_STATUSES.map((value) => `'${value}'`).join(','))})`,
+    ),
+    check(
+      'doc_revision_kind_check',
+      sql`${table.kind} IN (${sql.raw(DOC_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
     check(
       'doc_revision_replacement_check',

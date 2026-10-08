@@ -1,11 +1,12 @@
 // concern: doc-lint
 /** Pure lint rules for stored documents. */
-import type { DocScope } from '../../../shared/docs.ts'
+import type { DocKind, DocScope } from '../../../shared/docs.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
 import { lintProse } from '../canon/prose-lint.ts'
 
 export type DocLintFinding = {
   rule: string
+  level: DocLintLevel
   line: number
   message: string
   remedy: string
@@ -16,7 +17,28 @@ export type LintableDoc = {
   subject: string | null
   slug: string
   body: string
+  kind: DocKind
   referenceProjects?: DocReferenceProject[]
+}
+
+type DocLintRule = 'history' | 'issue' | 'numeral' | 'date'
+type DocLintLevel = 'error' | 'warning'
+export type DocLintProfile = {
+  rules: Readonly<Partial<Record<DocLintRule, DocLintLevel>>>
+  ambiguousHistory: DocLintLevel
+}
+
+/** Selects prose rules and their levels without store or environment access. */
+export function docLintProfile(kind: DocKind): DocLintProfile {
+  return {
+    rules: {
+      history: 'error',
+      issue: 'error',
+      ...(kind === 'working' ? { numeral: 'error' as const } : {}),
+      date: 'error',
+    },
+    ambiguousHistory: 'warning',
+  }
 }
 
 export type DocReferenceProject = {
@@ -85,6 +107,7 @@ function referenceFindings(doc: LintableDoc): DocLintFinding[] {
     return [
       {
         rule: 'doc/reference-unverifiable',
+        level: 'error',
         line: 1,
         message: `no available registered project checkout for stack ${doc.subject}`,
         remedy: 'register or restore a project checkout for the named stack',
@@ -94,6 +117,7 @@ function referenceFindings(doc: LintableDoc): DocLintFinding[] {
   const unavailable = targets.filter(({ checkout }) => checkout === null)
   const findings: DocLintFinding[] = unavailable.map(({ name, unavailable: detail }) => ({
     rule: 'doc/reference-unverifiable',
+    level: 'error',
     line: 1,
     message: detail
       ? `registered project ${name} checkout could not be inspected: ${detail}`
@@ -111,6 +135,7 @@ function referenceFindings(doc: LintableDoc): DocLintFinding[] {
       const rule = finding.rule.replace(/^canon\//, 'doc/')
       return {
         rule,
+        level: 'error' as const,
         line: finding.line,
         message: finding.message,
         remedy: referenceRemedy(rule),
@@ -130,6 +155,7 @@ function designHeadingFindings(body: string): DocLintFinding[] {
     return [
       {
         rule: 'doc/design-headings',
+        level: 'error',
         line: 1,
         message: `missing ${missing.join(', ')}`,
         remedy:
@@ -146,6 +172,7 @@ function designHeadingFindings(body: string): DocLintFinding[] {
   return [
     {
       rule: 'doc/design-headings',
+      level: 'error',
       line: 1,
       message: 'design record headings are out of order',
       remedy:
@@ -156,10 +183,19 @@ function designHeadingFindings(body: string): DocLintFinding[] {
 
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   if (doc.scope === 'resume' || doc.scope === 'canon' || doc.scope === 'settings') return []
-  const findings = lintProse(doc.body).map((finding) => ({
-    ...finding,
-    rule: `doc/${finding.rule}`,
-  }))
+  const profile = docLintProfile(doc.kind)
+  const findings = lintProse(doc.body)
+    .filter((finding) => profile.rules[finding.rule] !== undefined)
+    .map((finding) => ({
+      rule: `doc/${finding.rule}`,
+      level:
+        finding.rule === 'history' && finding.historyCertainty === 'ambiguous'
+          ? profile.ambiguousHistory
+          : profile.rules[finding.rule]!,
+      line: finding.line,
+      message: finding.message,
+      remedy: finding.remedy,
+    }))
   if (doc.referenceProjects) findings.push(...referenceFindings(doc))
   if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
   return findings.sort(
@@ -188,18 +224,21 @@ export function introducedDocFindings(
 }
 
 export function docLintRefusal(
-  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug'>,
+  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'kind'>,
   findings: DocLintFinding[],
 ): string | null {
-  if (!findings.length) return null
+  const errors = findings.filter(({ level }) => level === 'error')
+  if (!errors.length) return null
   const address = `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
   return (
-    `refusing doc ${address}:\n` +
-    findings
+    `refusing doc ${address} with ${doc.kind} profile:\n` +
+    errors
       .map(
         (finding) =>
           `- ${finding.rule} line ${finding.line}: ${finding.message}\n  remedy: ${finding.remedy}`,
       )
-      .join('\n')
+      .join('\n') +
+    `\nclear with orch doc set ${doc.slug} --scope ${doc.scope}${doc.subject === null ? '' : ` --subject ${doc.subject}`} --kind ${doc.kind} and a corrected body` +
+    (doc.kind === 'article' ? '' : `, or use --kind article when this is a product article`)
   )
 }

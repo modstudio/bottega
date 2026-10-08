@@ -1,6 +1,12 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_STATUSES, type DocStatus } from '../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_KINDS,
+  DOC_STATUSES,
+  type DocKind,
+  type DocStatus,
+} from '../../shared/docs.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
@@ -221,6 +227,7 @@ const docSchema = DocSchema.extend({
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
+  kind: z.enum(DOC_KINDS).default('working'),
   replacementSlug: z.string().nullable().default(null),
   summary: z.string().default(''),
   featured: z.boolean().default(false),
@@ -261,6 +268,7 @@ const docRevisionSchema = z.object({
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
+  kind: z.enum(DOC_KINDS).default('working'),
   replacementSlug: z.string().nullable().default(null),
   author: z.string(),
   reason: z.string(),
@@ -275,6 +283,7 @@ type RecordDocListInput = {
   subject?: string
   audience?: 'user' | 'technical'
   status?: DocStatus
+  kind?: DocKind
   limit?: number
   cursor?: string
   acrossReadableSpaces?: boolean
@@ -524,6 +533,7 @@ export function createRecordClient(options: RecordClientOptions) {
           subject: input.subject,
           audience: input.audience,
           status: input.status,
+          kind: input.kind,
           limit: input.limit,
           cursor: input.cursor,
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,

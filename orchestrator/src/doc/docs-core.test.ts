@@ -307,7 +307,7 @@ describe('scoped operator docs', () => {
         subject: null,
         slug: 'bad-prose',
         title: 'Bad prose',
-        body: 'This was formerly different.',
+        body: 'This was called legacy.',
       }),
     ).rejects.toThrow('remedy: state only the current rule')
     expect(getDoc('global', null, 'bad-prose')).toBeNull()

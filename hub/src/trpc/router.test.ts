@@ -483,6 +483,7 @@ describe('doc router', () => {
     summary: 'Hi',
     featured: false,
     status: 'current',
+    kind: 'working',
     replacementSlug: null,
   } as const
 

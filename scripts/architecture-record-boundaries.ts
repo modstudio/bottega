@@ -72,6 +72,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       './record-doc-lifecycle.ts',
       './record-doc-import-write.ts',
       './record-doc-mapping.ts',
+      './record-doc-revision-write.ts',
       './record-doc-tree.ts',
     ],
     'Enforce the record-docs concern boundary.',

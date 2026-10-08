@@ -6,8 +6,10 @@
 import { readFileSync } from 'node:fs'
 import {
   DOC_AUDIENCES,
+  DOC_KINDS,
   DOC_STATUSES,
   type DocAudience,
+  type DocKind,
   type DocStatus,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
@@ -78,12 +80,12 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   else {
     for (const finding of findings) {
       presentation.log(
-        `${finding.scope}/${finding.subject ?? '_'}/${finding.slug}:${finding.line} ${finding.rule} ${finding.message}`,
+        `${finding.scope}/${finding.subject ?? '_'}/${finding.slug}:${finding.line} ${finding.rule} ${finding.level} ${finding.message}`,
       )
       presentation.log(`  remedy: ${finding.remedy}`)
     }
   }
-  if (findings.length) presentation.exitCode?.(1)
+  if (findings.some(({ level }) => level === 'error')) presentation.exitCode?.(1)
 }
 
 function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined {
@@ -101,6 +103,12 @@ function docStatus(value: string | undefined): DocStatus | undefined {
   if (value === undefined) return undefined
   if (DOC_STATUSES.includes(value as DocStatus)) return value as DocStatus
   throw new Error(`--status must be ${DOC_STATUSES.join(' or ')}`)
+}
+
+function docKind(value: string | undefined): DocKind | undefined {
+  if (value === undefined) return undefined
+  if (DOC_KINDS.includes(value as DocKind)) return value as DocKind
+  throw new Error(`--kind must be ${DOC_KINDS.join(' or ')}`)
 }
 
 function docPosition(value: string | undefined): number | undefined {
@@ -224,6 +232,7 @@ function handledReadDocCommand(
       owner: address.owner,
       audience: flags.flag('audience'),
       status: flags.flag('status'),
+      kind: flags.flag('kind'),
     }
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
@@ -231,12 +240,12 @@ function handledReadDocCommand(
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(
-        'scope    subject          slug                     title                    status      delivery  bytes  updated',
+        'scope    subject          slug                     title                    kind     status      delivery  bytes  updated',
       )
       for (const d of rows) {
         presentation.log(
           `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-            `${d.title.padEnd(24)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
+            `${d.title.padEnd(24)} ${d.kind.padEnd(8)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
         )
       }
     }
@@ -251,7 +260,7 @@ function handledReadDocCommand(
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
-      `status: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudience: ${doc.audience}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `kind: ${doc.kind}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudience: ${doc.audience}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
 }
@@ -262,6 +271,7 @@ function setTreeOptions(flags: DocFlags): {
   position: number | undefined
   featured: boolean | undefined
   status: DocStatus | undefined
+  kind: DocKind | undefined
   replacementSlug: string | null | undefined
 } {
   const { has, flag } = flags
@@ -281,6 +291,7 @@ function setTreeOptions(flags: DocFlags): {
     position: docPosition(flag('position')),
     featured,
     status: docStatus(flag('status')),
+    kind: docKind(flag('kind')),
     replacementSlug,
   }
 }
@@ -332,9 +343,15 @@ async function handleSetDocCommand(
   })
   const root = repoRootForDoc(doc, canonTree?.root)
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-  if (has('json')) presentation.log(JSON.stringify({ ...doc, warnings, tree: canonTree?.root }))
+  const lintWarnings = lintStoredDoc(doc).filter(({ level }) => level === 'warning')
+  if (has('json'))
+    presentation.log(
+      JSON.stringify({ ...doc, lintFindings: lintWarnings, warnings, tree: canonTree?.root }),
+    )
   else {
     presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+    for (const warning of lintWarnings)
+      presentation.error(`warning: line ${warning.line}: ${warning.message}`)
     for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
   }
   return true
@@ -483,7 +500,7 @@ export async function docCommand(
       else
         for (const revision of revisions) {
           presentation.log(
-            `${revision.id}  ${revision.op.padEnd(8)} ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
+            `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
       return

@@ -1,6 +1,7 @@
 // concern: doc-lint
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
+import type { DocKind } from '../../../shared/docs.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
 import { type Project, projects } from '../project/projects.ts'
@@ -8,11 +9,19 @@ import {
   type DocLintFinding,
   type DocReferenceProject,
   docHasRepositoryReferences,
+  docLintRefusal,
+  introducedDocFindings,
   lintDoc,
 } from './doc-lint.ts'
 import type { CanonWriteTree } from './doc-write-allowed.ts'
 
-type StoredDoc = { scope: string; subject: string | null; slug: string; body: string }
+type StoredDoc = {
+  scope: string
+  subject: string | null
+  slug: string
+  body: string
+  kind: DocKind
+}
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()
 
@@ -86,4 +95,14 @@ export function lintStoredDoc(
       ? { referenceProjects: referenceProjects ?? collectDocReferenceProjects(doc) }
       : {}),
   })
+}
+
+export function storedDocLintRefusal(
+  next: Omit<StoredDoc, 'kind'> & { kind?: StoredDoc['kind'] },
+  current: StoredDoc | null,
+): string | null {
+  const doc = { ...next, kind: next.kind ?? current?.kind ?? 'working' }
+  const findings = lintStoredDoc(doc)
+  const introduced = current ? introducedDocFindings(lintStoredDoc(current), findings) : findings
+  return docLintRefusal(doc, introduced)
 }
