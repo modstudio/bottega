@@ -153,6 +153,32 @@ describe('workflow render check', () => {
     ])
   })
 
+  test('reports the signals remedy only for a step that declares the fact', () => {
+    const definition = workflow('check')
+    const missing = checkWorkflowRendering(
+      [{ slug: 'signal-check', definition }],
+      catalogue('Collect signals.', ['signals']),
+      [project({})],
+    )
+    const unaffected = checkWorkflowRendering(
+      [{ slug: 'plain-check', definition }],
+      catalogue('No project facts.', []),
+      [project({})],
+    )
+
+    expect(missing.unresolvedProjects).toEqual([
+      {
+        project: 'fixture',
+        workflows: ['signal-check'],
+        facts: [
+          `signals; set with: orch project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
+        ],
+      },
+    ])
+    expect(unaffected.unresolvedProjects).toEqual([])
+    expect(unaffected.resolutionFailures).toEqual([])
+  })
+
   test('resolves each step from only that step declared needs', () => {
     const definition: WorkflowDefinition = {
       ...workflow('undeclared'),

@@ -20,6 +20,11 @@ const samples = {
   release: { setting: { depth: 'pr' }, column: 'release', value: '{"depth":"pr"}' },
   requireCleanMain: { setting: false, column: 'requireCleanMain', value: false },
   secretPaths: { setting: ['secret'], column: 'secretPaths', value: ['secret'] },
+  signals: {
+    setting: { sources: [{ name: 'errors', list: 'error_list' }] },
+    column: 'signals',
+    value: '{"sources":[{"name":"errors","list":"error_list"}]}',
+  },
   states: { setting: { todo: 'open' }, column: 'states', value: '{"todo":"open"}' },
   tracker: { setting: { kind: 'hub' }, column: 'tracker', value: '{"kind":"hub"}' },
   trunk: { setting: 'develop', column: 'landingBranch', value: 'develop' },

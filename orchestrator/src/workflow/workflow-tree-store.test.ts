@@ -210,6 +210,38 @@ describe('importWorkflowTree', () => {
     })
   })
 
+  test('intake carries declared signals and leaves workflows without that need unaffected', () => {
+    const d = database()
+    importAndPromoteCurrentTree(d)
+    d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+      'fixture',
+      '/fixture',
+      'bun',
+      JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
+    )
+
+    expect(() => composeWorkflow('intake', 'fixture', undefined, {}, d)).toThrow(
+      `signals; set with: orch project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
+    )
+    expect(composeWorkflow('plan-task', 'fixture', 'feature', {}, d).workflow.slug).toBe(
+      'plan-task',
+    )
+
+    const signals = {
+      sources: [{ name: 'errors', list: 'error_list', get: 'error_get' }],
+    }
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        docs: { protocol: 'orch-docs' },
+        signals,
+      }),
+      'fixture',
+    )
+    const composed = composeWorkflow('intake', 'fixture', undefined, {}, d)
+    expect(composed.facts.signals).toEqual(signals)
+  })
+
   test('one invalid floor refuses the entire import without writing a draft', () => {
     const d = database()
     const tree = renderedTree(d)

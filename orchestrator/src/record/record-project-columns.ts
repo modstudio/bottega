@@ -33,6 +33,7 @@ export type HostedProjectColumns = {
   secretPaths: string[] | null
   mcpProbeTool: string | null
   docs: string | null
+  signals: string | null
   release: string | null
   states: string | null
   tracker: string | null
@@ -58,6 +59,7 @@ export const PROJECT_SETTING_COLUMNS = {
   release: 'release',
   requireCleanMain: 'requireCleanMain',
   secretPaths: 'secretPaths',
+  signals: 'signals',
   states: 'states',
   tracker: 'tracker',
   trunk: 'landingBranch',
@@ -162,6 +164,10 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.secretPaths]: optionalStringArray(settings, 'secretPaths', project),
     [PROJECT_SETTING_COLUMNS.mcp]: mcpProbeTool(settings, project),
     [PROJECT_SETTING_COLUMNS.docs]: document(settings.docs, `project ${project} settings.docs`),
+    [PROJECT_SETTING_COLUMNS.signals]: document(
+      settings.signals,
+      `project ${project} settings.signals`,
+    ),
     [PROJECT_SETTING_COLUMNS.release]: document(
       settings.release,
       `project ${project} settings.release`,
