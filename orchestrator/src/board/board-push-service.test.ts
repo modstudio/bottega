@@ -25,7 +25,10 @@ afterEach(() => {
   for (const root of hookRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function createHookFixture(commandOutput: string, sleep = false) {
+function createHookFixture(
+  commandOutput: string,
+  behavior: 'success' | 'timeout' | 'failure' = 'success',
+) {
   const root = mkdtempSync(join(tmpdir(), 'board-hooks-'))
   hookRoots.push(root)
   const databasePath = join(root, 'orch.db')
@@ -44,9 +47,11 @@ function createHookFixture(commandOutput: string, sleep = false) {
   const invocationLog = join(root, 'invocations')
   writeFileSync(
     command,
-    sleep
+    behavior === 'timeout'
       ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nsleep 2\n`
-      : `#!/bin/sh\nprintf x >> '${invocationLog}'\nprintf '%s\\n' '${commandOutput}'\n`,
+      : behavior === 'failure'
+        ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nexit 1\n`
+        : `#!/bin/sh\nprintf x >> '${invocationLog}'\nprintf '%s\\n' '${commandOutput}'\n`,
   )
   chmodSync(command, 0o700)
   return { root, database, databasePath, command, invocationLog }
@@ -94,7 +99,7 @@ function runHook(
       BOARD_PUSH_REMIND_SECONDS: '300',
       BOARD_PUSH_RETRY_SECONDS: '15',
       BOARD_ACK_STOP_BLOCKS: '3',
-      BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
+      BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
       ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
       ...extra,
     },
@@ -140,7 +145,7 @@ function runHookRepeated(
         BOARD_PUSH_REMIND_SECONDS: '300',
         BOARD_PUSH_RETRY_SECONDS: '15',
         BOARD_ACK_STOP_BLOCKS: '3',
-        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
+        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
         ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
       },
     },
@@ -296,9 +301,11 @@ test('PostToolUse injects pending text and fails open on command timeout or malf
     additionalContext: JSON.parse(hookOutput).notices[0].text,
   })
 
-  const slow = createHookFixture(hookOutput, true)
+  const slow = createHookFixture(hookOutput, 'timeout')
   addCandidate(slow, 1)
-  const timed = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), slow)
+  const timed = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), slow, {
+    BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '0.1',
+  })
   expect(timed.exitCode).toBe(0)
   expect(timed.stdout.toString()).toBe('')
 
@@ -337,8 +344,8 @@ test('PostToolUse injects once and again only after the reminder interval', () =
   expect(invocationCount(item)).toBe(2)
 })
 
-test('PostToolUse throttles a failed slow path until the retry interval', () => {
-  const item = createHookFixture(hookOutput, true)
+test('PostToolUse throttles a failed path until the retry interval', () => {
+  const item = createHookFixture(hookOutput, 'failure')
   addCandidate(item, 1)
   const payload = JSON.stringify({ session_id: 'reader' })
   runHookRepeated(interruptHook, payload, item, 2)
