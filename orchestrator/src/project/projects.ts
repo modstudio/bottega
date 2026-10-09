@@ -791,7 +791,35 @@ export type RegisterBranchCheck = {
   head: string | null
   landing: string | null
   canonIntegration: string | null
+  releaseTag: string | null
   problems: string[]
+}
+
+export type DetachedCheckoutDecision = {
+  releaseTag: string | null
+  message: string
+}
+
+/** Choose the detached-checkout message from facts already gathered by the git adapter. */
+export function detachedCheckoutDecision(
+  landing: string | null,
+  detached: boolean,
+  tagsAtHead: readonly string[],
+  checkoutPath: string,
+): DetachedCheckoutDecision | null {
+  if (!landing || !detached) return null
+  const releaseTag = [...tagsAtHead].sort().find((tag) => /^v[0-9A-Za-z][0-9A-Za-z.-]*$/.test(tag))
+  return releaseTag
+    ? {
+        releaseTag,
+        message:
+          `release tag ${releaseTag} is checked out; a development checkout stays on its landing branch ${landing}\n` +
+          `cleared by: git -C ${checkoutPath} switch ${landing}`,
+      }
+    : {
+        releaseTag: null,
+        message: `checkout HEAD is detached, not landing branch ${landing}`,
+      }
 }
 
 /** Verify branch facts at registration time; never guess a detached HEAD. */
@@ -811,6 +839,22 @@ export function registerBranchCheck(
     },
   )
   const head = headResult.exitCode === 0 ? headResult.stdout.toString().trim() || null : null
+  const tagResult =
+    head === null
+      ? Bun.spawnSync(['git', '-C', project.path, 'tag', '--points-at', 'HEAD'], {
+          env: inspectionGitEnv(),
+          stdout: 'pipe',
+          stderr: 'ignore',
+        })
+      : null
+  const tagsAtHead =
+    tagResult?.exitCode === 0 ? tagResult.stdout.toString().trim().split('\n').filter(Boolean) : []
+  const detachedDecision = detachedCheckoutDecision(
+    landing,
+    head === null,
+    tagsAtHead,
+    project.path,
+  )
   let canonIntegration: string | null = null
   const canonPath = join(project.path, 'AGENTS.md')
   if (existsSync(canonPath)) {
@@ -821,8 +865,14 @@ export function registerBranchCheck(
     canonIntegration = match?.[1] ?? null
   }
   const problems: string[] = []
-  if (landing && head !== landing)
-    problems.push(`checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}`)
+  if (landing && head !== landing) {
+    problems.push(
+      detachedDecision?.releaseTag
+        ? detachedDecision.message
+        : (detachedDecision?.message ??
+            `checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}`),
+    )
+  }
   if (landing && canonIntegration && canonIntegration !== landing) {
     problems.push(
       `canon names integration branch ${canonIntegration}, not landing branch ${landing}`,
@@ -835,7 +885,13 @@ export function registerBranchCheck(
   if (landing && production && production === landing) {
     problems.push(`production branch ${production} must be distinct from landing branch ${landing}`)
   }
-  return { head, landing, canonIntegration, problems }
+  return {
+    head,
+    landing,
+    canonIntegration,
+    releaseTag: detachedDecision?.releaseTag ?? null,
+    problems,
+  }
 }
 
 export function assertRegisterBranches(
@@ -846,7 +902,9 @@ export function assertRegisterBranches(
   throw new Error(
     `${project.name}: ${check.problems.join('; ')}\n` +
       'invariant: the register landing branch agrees with the main checkout and its integration-branch canon\n' +
-      `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+      (check.releaseTag
+        ? ''
+        : `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`),
   )
 }
 

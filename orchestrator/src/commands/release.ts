@@ -1,7 +1,11 @@
 // concern: cli
 /** Registers the release adapter. Must not own release policy or persistence. */
 import type { Command } from 'commander'
-import { releaseLog, releaseProject } from '../release/release-service.ts'
+import {
+  releaseLog,
+  releaseProject,
+  validateReleaseTagVersion,
+} from '../release/release-service.ts'
 import { log } from './support.ts'
 
 export function register(program: Command): void {
@@ -26,6 +30,15 @@ export function register(program: Command): void {
         if (result.warning) log(`warning: ${result.warning}`)
       }
       if (result.exitCode !== 0) process.exitCode = result.exitCode
+    })
+
+  release
+    .command('check <tag>')
+    .description('validate the reported version before tagging a release')
+    .allowExcessArguments(false)
+    .action((tag) => {
+      const checked = validateReleaseTagVersion(tag)
+      log(`reported version ${checked.reportedVersion} matches release tag ${checked.tag}`)
     })
 
   release

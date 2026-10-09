@@ -54,7 +54,11 @@ export function isHelpShapedInvocation(argv: string[]): boolean {
 
 /** Informational commands that neither need nor stamp the orchestrator store. */
 export function isStoreFreeInvocation(argv: string[]): boolean {
-  return isHelpShapedInvocation(argv) || (argv[0] === 'setup' && argv[1] === 'facts')
+  return (
+    isHelpShapedInvocation(argv) ||
+    (argv[0] === 'setup' && argv[1] === 'facts') ||
+    (argv[0] === 'release' && argv[1] === 'check')
+  )
 }
 
 async function degradedCollection(argv: string[], error: unknown): Promise<number> {
