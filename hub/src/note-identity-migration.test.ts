@@ -32,16 +32,16 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     VALUES (41,'session-a','2026-01-02',1,NULL),
            (42,'session-b','2026-01-02',1,'00000000-0000-4000-8000-000000000142');
   `)
-  expect(applyMigrations(d)).toEqual(['0021_note_uuid_identity'])
+  expect(applyMigrations(d)).toEqual(['0021_note_uuid_identity', '0022_note_project_counter'])
   expect(
     d
-      .query<{ id: number; number: number; record_id: string }, []>(
-        'SELECT id,number,record_id FROM note WHERE id >= 41 ORDER BY id',
+      .query<{ number: number; record_id: string }, []>(
+        'SELECT number,record_id FROM note WHERE number >= 41 ORDER BY number',
       )
       .all(),
   ).toEqual([
-    { id: 41, number: 41, record_id: expect.any(String) },
-    { id: 42, number: 42, record_id: '00000000-0000-4000-8000-000000000042' },
+    { number: 41, record_id: expect.any(String) },
+    { number: 42, record_id: '00000000-0000-4000-8000-000000000042' },
   ])
   expect(
     d
@@ -59,8 +59,8 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     .map((row) => row.name)
   expect(acknowledgementColumns).not.toContain('note_id')
   expect(() =>
-    d.exec(`INSERT INTO note(id,record_id,number,project,text,anchors,created_at,last_seen_at)
-      VALUES (43,'00000000-0000-4000-8000-000000000043',42,'alpha','duplicate','[]','2026-01-01','2026-01-01')`),
+    d.exec(`INSERT INTO note(record_id,number,project,text,anchors,created_at,last_seen_at)
+      VALUES ('00000000-0000-4000-8000-000000000043',42,'alpha','duplicate','[]','2026-01-01','2026-01-01')`),
   ).toThrow('UNIQUE constraint failed: note.project, note.number')
   d.close()
 })

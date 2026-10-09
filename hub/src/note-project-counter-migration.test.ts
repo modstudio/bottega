@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function storeBeforeProjectCounters() {
@@ -43,7 +44,7 @@ test('note project counter migration preserves rows and acknowledgements', () =>
   expect(applyMigrations(d)).toEqual(['0022_note_project_counter'])
   expect(d.query('SELECT project,next FROM note_counter ORDER BY project').all()).toEqual([
     { project: 'alpha', next: 42 },
-    { project: 'bottega', next: 2 },
+    { project: PLATFORM_NAME.toLowerCase(), next: 2 },
     { project: 'workshop', next: 49 },
   ])
   expect(

@@ -18,9 +18,19 @@ test('hosted note and report pulls refuse HTML and preserve their cursors', asyn
     put.run('collect.hosted-notes.cursor', 'note-before')
     put.run('collect.hosted-sends.cursor', 'report-before')
   })
+  const noteFetch = async (input: string | URL | Request) => {
+    if (String(input).endsWith('/v1/tasks/identity'))
+      return Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'space-1',
+        memberships: [{ spaceId: 'space-1', slug: 'workshop' }],
+        capabilities: { projectNoteCounters: true },
+      })
+    return html()
+  }
   const options = { baseUrl: 'https://hub.example.test', token: 'session', fetch: html }
 
-  await expect(pullHostedNotes(options)).rejects.toThrow(
+  await expect(pullHostedNotes({ ...options, fetch: noteFetch })).rejects.toThrow(
     'hosted notes refused the response from https://hub.example.test/v1/notes',
   )
   await expect(pullHostedReports(options)).rejects.toThrow(
