@@ -30,7 +30,22 @@ export const testSubstanceModules = [
   { file: 'shared/test-substance/self-comparison.ts', allowed: ['eslint'] },
   {
     file: 'orchestrator/src/test-substance-commands.ts',
-    allowed: ['node:fs', 'node:path', '../../shared/test-substance/test-substance.ts'],
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../shared/test-substance/test-substance.ts',
+      './test-substance-project-policy.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/test-substance-project-policy.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../shared/test-substance/test-substance.ts',
+      './database/db.ts',
+      './project/project-settings.ts',
+      './project/projects.ts',
+    ],
   },
   {
     file: 'orchestrator/src/commands/test-substance.ts',

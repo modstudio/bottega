@@ -85,7 +85,7 @@ describe('project workflow injection', () => {
     expect(
       validateProjectSettings({
         testSubstance: { phpPolicyRules: ['unknown-rule'] },
-      } as Project['settings']),
+      } as unknown as Project['settings']),
     ).toEqual([
       expect.stringMatching(
         /unknown PHP policy rule; valid rules: createMock, .*; set with: orch project set <project> --settings/,

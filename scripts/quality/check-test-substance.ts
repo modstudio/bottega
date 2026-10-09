@@ -157,11 +157,16 @@ async function judgeFile(
   }
 }
 
+function gatePhpPolicyRules() {
+  const policy = resolvePhpPolicyRules(process.cwd())
+  if (policy.notReadReason) console.error(unreadPhpPolicyRulesLine(policy.notReadReason))
+  return policy.rules
+}
+
 async function main() {
   const startedAt = performance.now()
   const mode = parseMode(Bun.argv.slice(2))
-  const policy = resolvePhpPolicyRules(process.cwd())
-  if (policy.notReadReason) console.error(unreadPhpPolicyRulesLine(policy.notReadReason))
+  const phpPolicyRules = gatePhpPolicyRules()
   const guardFailures = await guardFixtures()
   if (guardFailures.length) {
     console.error('test substance fixture guard failed:')
@@ -176,7 +181,7 @@ async function main() {
   const unchecked: string[] = []
   const unrecognised: string[] = []
   for (const file of files) {
-    const judgment = await judgeFile(mode, file, policy.rules)
+    const judgment = await judgeFile(mode, file, phpPolicyRules)
     if (judgment.unrecognised) unrecognised.push(file)
     if (judgment.unchecked) unchecked.push(judgment.unchecked)
     introduced.push(...judgment.findings)
