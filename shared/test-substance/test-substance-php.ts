@@ -68,7 +68,7 @@ const RULES = [
 ] as const
 
 export const PHP_GUARDED_RULES = [...RULES.map(({ rule }) => rule), 'vacuous-test', 'unused-waiver']
-export const PHP_UNIVERSAL_RULES = [
+const PHP_UNIVERSAL_RULES = [
   'self-equal-assertion',
   'tautology',
   'no-assertions',
@@ -77,6 +77,7 @@ export const PHP_UNIVERSAL_RULES = [
 ] as const
 
 const policyRules = new Set<string>(PHP_POLICY_RULES)
+const universalRules = new Set<string>(PHP_UNIVERSAL_RULES)
 
 function lineAt(content: string, offset: number): number {
   let line = 1
@@ -238,6 +239,45 @@ function finding(
   }
 }
 
+function lineRuleEnabled(rule: string, enabledPolicyRules: ReadonlySet<PhpPolicyRule>): boolean {
+  return universalRules.has(rule) || enabledPolicyRules.has(rule as PhpPolicyRule)
+}
+
+function splitSqlFinding(
+  file: string,
+  content: string,
+  methods: TestMethod[],
+  offset: number,
+  line: string,
+  previous: string | undefined,
+  enabledPolicyRules: ReadonlySet<PhpPolicyRule>,
+): TestFinding | undefined {
+  if (!enabledPolicyRules.has('sql-string-matching')) return undefined
+  if (!/^\s*(?:toSql|getBindings)\s*\(/.test(line) || !/->\s*$/.test(previous ?? '')) {
+    return undefined
+  }
+  return finding(file, content, methods, offset, 'sql-string-matching', RULES.at(-1)!.message)
+}
+
+function directLineFindings(
+  file: string,
+  content: string,
+  methods: TestMethod[],
+  offset: number,
+  line: string,
+  enabledPolicyRules: ReadonlySet<PhpPolicyRule>,
+): TestFinding[] {
+  const findings: TestFinding[] = []
+  for (const rule of RULES) {
+    if (!lineRuleEnabled(rule.rule, enabledPolicyRules)) continue
+    rule.pattern.lastIndex = 0
+    for (const match of line.matchAll(rule.pattern)) {
+      findings.push(finding(file, content, methods, offset + match.index, rule.rule, rule.message))
+    }
+  }
+  return findings
+}
+
 function lineFindings(
   file: string,
   content: string,
@@ -250,25 +290,17 @@ function lineFindings(
   let previous: { content: string; offset: number } | undefined
   for (const line of lines) {
     if (!commentLine(line)) {
-      for (const rule of RULES) {
-        if (policyRules.has(rule.rule) && !enabledPolicyRules.has(rule.rule as PhpPolicyRule))
-          continue
-        rule.pattern.lastIndex = 0
-        for (const match of line.matchAll(rule.pattern)) {
-          findings.push(
-            finding(file, content, methods, offset + match.index, rule.rule, rule.message),
-          )
-        }
-      }
-      if (
-        enabledPolicyRules.has('sql-string-matching') &&
-        /^\s*(?:toSql|getBindings)\s*\(/.test(line) &&
-        /->\s*$/.test(previous?.content ?? '')
-      ) {
-        findings.push(
-          finding(file, content, methods, offset, 'sql-string-matching', RULES.at(-1)!.message),
-        )
-      }
+      findings.push(...directLineFindings(file, content, methods, offset, line, enabledPolicyRules))
+      const splitFinding = splitSqlFinding(
+        file,
+        content,
+        methods,
+        offset,
+        line,
+        previous?.content,
+        enabledPolicyRules,
+      )
+      if (splitFinding) findings.push(splitFinding)
       previous = { content: line, offset }
     }
     offset += line.length + 1
@@ -289,6 +321,29 @@ function callArguments(line: string, from: number): string | undefined {
   return undefined
 }
 
+function isRealReceiverAssertion(name: string, prefix: string): boolean {
+  const arrowReceiver = prefix.endsWith('->')
+  const scopeReceiver = prefix.endsWith('::')
+  const frameworkReceiver = /(?:\$this\s*->|(?:self|static|parent)\s*::)\s*$/.test(prefix)
+  if (name.startsWith('assert')) return (arrowReceiver || scopeReceiver) && !frameworkReceiver
+  if (name.startsWith('expects') || name.startsWith('should')) {
+    return arrowReceiver || scopeReceiver
+  }
+  return name.startsWith('expectException') && /\$this\s*->\s*$/.test(prefix)
+}
+
+function classifyAssertion(line: string, match: RegExpMatchArray): Assertion {
+  const name = match[1]!
+  const prefix = line.slice(0, match.index).trimEnd()
+  if (isRealReceiverAssertion(name, prefix)) return { name, kind: 'real' }
+  if (name === 'assertInstanceOf' || name === 'assertNotNull') return { name, kind: 'type-only' }
+  const args = callArguments(line, match.index! + match[0].indexOf(name) + name.length)
+  return {
+    name,
+    kind: args !== undefined && !/[$(]|::/.test(args) ? 'constant' : 'real',
+  }
+}
+
 function assertions(body: string): Assertion[] {
   const result: Assertion[] = []
   for (const line of body.split('\n')) {
@@ -296,29 +351,7 @@ function assertions(body: string): Assertion[] {
     for (const match of line.matchAll(
       /\b((?:assert|expects|should)[A-Z]\w*|expectException\w*)\s*\(/g,
     )) {
-      const name = match[1]!
-      const prefix = line.slice(0, match.index).trimEnd()
-      const arrowReceiver = prefix.endsWith('->')
-      const scopeReceiver = prefix.endsWith('::')
-      const frameworkReceiver = /(?:\$this\s*->|(?:self|static|parent)\s*::)\s*$/.test(prefix)
-      if (
-        (name.startsWith('assert') && (arrowReceiver || scopeReceiver) && !frameworkReceiver) ||
-        ((name.startsWith('expects') || name.startsWith('should')) &&
-          (arrowReceiver || scopeReceiver)) ||
-        (name.startsWith('expectException') && /\$this\s*->\s*$/.test(prefix))
-      ) {
-        result.push({ name, kind: 'real' })
-        continue
-      }
-      if (name === 'assertInstanceOf' || name === 'assertNotNull') {
-        result.push({ name, kind: 'type-only' })
-        continue
-      }
-      const args = callArguments(line, match.index + match[0].indexOf(name) + name.length)
-      result.push({
-        name,
-        kind: args !== undefined && !/[$(]|::/.test(args) ? 'constant' : 'real',
-      })
+      result.push(classifyAssertion(line, match))
     }
   }
   return result
