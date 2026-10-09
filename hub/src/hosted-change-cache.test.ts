@@ -2,12 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { formatCollectLeg, hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
-import {
-  classifyHostedChangeDelete,
-  classifyHostedChangeUpsert,
-  HOSTED_NOTE_CHANGES_CURSOR_KEY,
-  pullHostedNoteChanges,
-} from './hosted-change-cache.ts'
+import { HOSTED_NOTE_CHANGES_CURSOR_KEY, pullHostedNoteChanges } from './hosted-change-cache.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import {
   applyHostedAcknowledgement,
@@ -134,22 +129,6 @@ function storeCursor(value: string, space = 'space-one') {
 const pull = (fetch: TestFetch, registeredProjects = registered.slice(0, 1)) =>
   pullHostedNoteChanges({ ...options, fetch, registeredProjects })
 
-test('change classifications depend only on the gathered row values', () => {
-  expect(classifyHostedChangeDelete('space-one', 'space-one')).toBe('apply')
-  expect(classifyHostedChangeDelete(null, 'space-one')).toBe('skip')
-  expect(classifyHostedChangeDelete('space-two', 'space-one')).toBe('skip')
-  expect(classifyHostedChangeUpsert({ text: 'same' }, { text: 'same' })).toEqual({
-    kind: 'no-op',
-    differingColumns: [],
-  })
-  expect(
-    classifyHostedChangeUpsert(
-      { text: 'before', status: 'open' },
-      { text: 'after', status: 'open' },
-    ),
-  ).toEqual({ kind: 'changed', differingColumns: ['text'] })
-})
-
 test('the note family starts and resets through the full note pull including counters', async () => {
   let fullPulls = 0
   const fetch = routeFetch({
@@ -244,7 +223,9 @@ test('note deletes apply only in the row own space', async () => {
   expect(db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId)).toBeNull()
   expect(
     db()
-      .query<{ kind: string }, []>('SELECT kind FROM hosted_change_evidence ORDER BY id')
+      .query<{ kind: string }, []>(
+        'SELECT kind FROM hosted_change_evidence ORDER BY observed_at,record_id',
+      )
       .all()
       .map((row) => row.kind),
   ).toEqual(['skipped-delete', 'applied-delete'])

@@ -1,12 +1,11 @@
 import {
-  HOSTED_CHANGE_EVIDENCE_FAMILIES,
   HOSTED_CHANGE_EVIDENCE_KINDS,
-  type HostedChangeEvidenceFamily,
   type HostedChangeEvidenceFilters,
   type HostedChangeEvidenceKind,
   listHostedChangeEvidence,
   summarizeHostedChangeEvidence,
 } from './hosted-change-evidence.ts'
+import { HOSTED_CHANGE_FAMILIES, type HostedChangeFamilyName } from './hosted-change-family.ts'
 
 export const HOSTED_CHANGE_EVIDENCE_USAGE =
   'hub changes [--family task|note] [--space ID] [--kind changed-upsert|applied-delete|skipped-delete] [--summary] [--json]'
@@ -21,10 +20,7 @@ function flag(argv: string[], name: string) {
 
 function filters(argv: string[]): HostedChangeEvidenceFilters {
   const family = flag(argv, 'family')
-  if (
-    family !== undefined &&
-    !HOSTED_CHANGE_EVIDENCE_FAMILIES.includes(family as HostedChangeEvidenceFamily)
-  )
+  if (family !== undefined && !HOSTED_CHANGE_FAMILIES.includes(family as HostedChangeFamilyName))
     throw new Error('--family must be task or note')
   const kind = flag(argv, 'kind')
   if (
@@ -33,26 +29,25 @@ function filters(argv: string[]): HostedChangeEvidenceFilters {
   )
     throw new Error('--kind must be changed-upsert, applied-delete, or skipped-delete')
   return {
-    family: family as HostedChangeEvidenceFamily | undefined,
+    family: family as HostedChangeFamilyName | undefined,
     space: flag(argv, 'space'),
     kind: kind as HostedChangeEvidenceKind | undefined,
   }
 }
 
-export function runHostedChangeEvidenceCommand(argv: string[]) {
+export function runHostedChangeEvidenceCommand(argv: string[]): string[] {
   const selected = filters(argv)
   const json = argv.includes('--json')
   if (argv.includes('--summary')) {
-    printSummary(selected, json)
-    return
+    return summaryLines(selected, json)
   }
-  printEvents(selected, json)
+  return eventLines(selected, json)
 }
 
-function printSummary(selected: HostedChangeEvidenceFilters, json: boolean) {
+function summaryLines(selected: HostedChangeEvidenceFilters, json: boolean): string[] {
   const rows = summarizeHostedChangeEvidence(selected)
   if (json)
-    console.log(
+    return [
       JSON.stringify(
         rows.map((row) => ({
           table: row.table,
@@ -60,19 +55,18 @@ function printSummary(selected: HostedChangeEvidenceFilters, json: boolean) {
           count: row.count,
         })),
       ),
-    )
-  else if (!rows.length) console.log('no hosted change evidence')
-  else
-    for (const row of rows) {
-      const columns = row.differingColumns.join(',') || '(none)'
-      console.log(`${row.table}  ${columns}  ${row.count}`)
-    }
+    ]
+  if (!rows.length) return ['no hosted change evidence']
+  return rows.map((row) => {
+    const columns = row.differingColumns.join(',') || '(none)'
+    return `${row.table}  ${columns}  ${row.count}`
+  })
 }
 
-function printEvents(selected: HostedChangeEvidenceFilters, json: boolean) {
+function eventLines(selected: HostedChangeEvidenceFilters, json: boolean): string[] {
   const rows = listHostedChangeEvidence(selected)
   if (json)
-    console.log(
+    return [
       JSON.stringify(
         rows.map((row) => ({
           observed_at: row.observedAt,
@@ -84,15 +78,10 @@ function printEvents(selected: HostedChangeEvidenceFilters, json: boolean) {
           differing_columns: row.differingColumns,
         })),
       ),
-    )
-  else if (!rows.length) console.log('no hosted change evidence')
-  else
-    for (const row of rows) {
-      const columns = row.differingColumns.length
-        ? `  columns ${row.differingColumns.join(',')}`
-        : ''
-      console.log(
-        `${row.observedAt}  ${row.family}  ${row.spaceId}  ${row.table}  ${row.rowId}  ${row.kind}${columns}`,
-      )
-    }
+    ]
+  if (!rows.length) return ['no hosted change evidence']
+  return rows.map((row) => {
+    const columns = row.differingColumns.length ? `  columns ${row.differingColumns.join(',')}` : ''
+    return `${row.observedAt}  ${row.family}  ${row.spaceId}  ${row.table}  ${row.rowId}  ${row.kind}${columns}`
+  })
 }

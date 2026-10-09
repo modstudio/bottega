@@ -664,7 +664,7 @@ try {
       for (const line of hubDoctorLines()) console.log(line)
       break
     case 'changes':
-      runHostedChangeEvidenceCommand(argv)
+      for (const line of runHostedChangeEvidenceCommand(argv)) console.log(line)
       break
     case 'collect':
       if (has('watch')) {

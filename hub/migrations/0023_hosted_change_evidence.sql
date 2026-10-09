@@ -1,5 +1,5 @@
 CREATE TABLE hosted_change_evidence (
-  id INTEGER PRIMARY KEY,
+  record_id TEXT PRIMARY KEY NOT NULL,
   observed_at TEXT NOT NULL,
   family TEXT NOT NULL CHECK (family IN ('task','note')),
   space_id TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE hosted_change_evidence (
 );
 --> statement-breakpoint
 CREATE INDEX hosted_change_evidence_newest
-ON hosted_change_evidence(observed_at DESC, id DESC);
+ON hosted_change_evidence(observed_at DESC, record_id DESC);
 --> statement-breakpoint
 CREATE INDEX hosted_change_evidence_filters
-ON hosted_change_evidence(family, space_id, kind, observed_at DESC);
+ON hosted_change_evidence(family, space_id, kind, observed_at DESC, record_id DESC);

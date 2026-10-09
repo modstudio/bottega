@@ -1,7 +1,12 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { pruneHostedChangeEvidence, recordHostedChangeEvidence } from './hosted-change-evidence.ts'
-import type { HostedChangeFamily, HostedChangeRequestOptions } from './hosted-change-family.ts'
+import {
+  classifyHostedChangeDelete,
+  classifyHostedChangeUpsert,
+  type HostedChangeFamily,
+  type HostedChangeRequestOptions,
+} from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { createHostedTaskChangeFamily } from './hosted-task-change-family.ts'
 import {
@@ -94,32 +99,6 @@ function storeCursor(conn: Database, family: HostedChangeFamily, spaceId: string
     )
     .run(`${family.cursorPrefix}.${spaceId}`, String(cursor))
 }
-export const classifyHostedChangeDelete = (machineSpace: string | null, logSpace: string) =>
-  machineSpace === logSpace ? 'apply' : 'skip'
-
-export type HostedChangeUpsertDecision =
-  | { kind: 'no-op'; differingColumns: [] }
-  | { kind: 'changed'; differingColumns: string[] }
-
-export const classifyHostedChangeUpsert = (
-  before: Record<string, unknown> | null,
-  after: Record<string, unknown> | null,
-): HostedChangeUpsertDecision => {
-  if (JSON.stringify(before) === JSON.stringify(after))
-    return { kind: 'no-op', differingColumns: [] }
-  const beforeRow = before ?? {}
-  const afterRow = after ?? {}
-  const differingColumns = [...new Set([...Object.keys(beforeRow), ...Object.keys(afterRow)])]
-    .filter(
-      (column) =>
-        !(column in beforeRow) ||
-        !(column in afterRow) ||
-        JSON.stringify(beforeRow[column]) !== JSON.stringify(afterRow[column]),
-    )
-    .sort()
-  return { kind: 'changed', differingColumns }
-}
-
 function applyOneChange(
   conn: Database,
   change: HostedSpaceChange,

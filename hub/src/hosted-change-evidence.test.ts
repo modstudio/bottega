@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { writeTransaction } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import {
   KEEP_HOSTED_CHANGE_EVIDENCE_DAYS,
   listHostedChangeEvidence,
@@ -41,6 +41,15 @@ test('hosted change evidence retention removes only rows older than its named wi
 
   expect(pruneHostedChangeEvidence(now)).toBe(1)
   expect(listHostedChangeEvidence().map((row) => row.rowId)).toEqual(['current'])
+})
+
+test('hosted change evidence rows have UUID record identities', () => {
+  writeTransaction((conn) => recordHostedChangeEvidence(conn, event()))
+
+  const recordId = db()
+    .query<{ record_id: string }, []>('SELECT record_id FROM hosted_change_evidence')
+    .get()?.record_id
+  expect(recordId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 })
 
 test('hosted change evidence summary groups by table and differing column set', () => {

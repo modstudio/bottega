@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import type { HostedChangeFamilyName } from './hosted-change-family.ts'
 
 export const KEEP_HOSTED_CHANGE_EVIDENCE_DAYS = 30
 
-export const HOSTED_CHANGE_EVIDENCE_FAMILIES = ['task', 'note'] as const
-export type HostedChangeEvidenceFamily = (typeof HOSTED_CHANGE_EVIDENCE_FAMILIES)[number]
 export const HOSTED_CHANGE_EVIDENCE_KINDS = [
   'changed-upsert',
   'applied-delete',
@@ -14,7 +14,7 @@ export type HostedChangeEvidenceKind = (typeof HOSTED_CHANGE_EVIDENCE_KINDS)[num
 
 export type HostedChangeEvidenceEvent = {
   observedAt: string
-  family: HostedChangeEvidenceFamily
+  family: HostedChangeFamilyName
   spaceId: string
   table: string
   rowId: string
@@ -23,14 +23,15 @@ export type HostedChangeEvidenceEvent = {
 }
 
 export type HostedChangeEvidenceFilters = {
-  family?: HostedChangeEvidenceFamily
+  family?: HostedChangeFamilyName
   space?: string
   kind?: HostedChangeEvidenceKind
 }
 
 type StoredEvent = {
+  record_id: string
   observed_at: string
-  family: HostedChangeEvidenceFamily
+  family: HostedChangeFamilyName
   space_id: string
   hosted_table: string
   row_id: string
@@ -55,10 +56,11 @@ export function recordHostedChangeEvidence(
   conn
     .query(
       `INSERT INTO hosted_change_evidence
-       (observed_at,family,space_id,hosted_table,row_id,kind,differing_columns)
-       VALUES (?,?,?,?,?,?,?)`,
+       (record_id,observed_at,family,space_id,hosted_table,row_id,kind,differing_columns)
+       VALUES (?,?,?,?,?,?,?,?)`,
     )
     .run(
+      newRecordId(),
       event.observedAt ?? nowIso(),
       event.family,
       event.spaceId,
@@ -85,12 +87,12 @@ export function listHostedChangeEvidence(
       StoredEvent,
       [string | null, string | null, string | null, string | null, string | null, string | null]
     >(
-      `SELECT observed_at,family,space_id,hosted_table,row_id,kind,differing_columns
+      `SELECT record_id,observed_at,family,space_id,hosted_table,row_id,kind,differing_columns
        FROM hosted_change_evidence
        WHERE (? IS NULL OR family=?)
          AND (? IS NULL OR space_id=?)
          AND (? IS NULL OR kind=?)
-       ORDER BY observed_at DESC,id DESC`,
+       ORDER BY observed_at DESC,record_id DESC`,
     )
     .all(
       filters.family ?? null,

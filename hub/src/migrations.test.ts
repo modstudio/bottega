@@ -170,7 +170,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '3d8475b3d3564cbd7f7dc92d55eff905267eab46fa58d47a11c9fe3b6d0336fd',
+      '3e83d8fa91881125131fd54d037e0e9976be3d5a9bb71e698a4a3a9c87b56903',
     )
     d.close()
   })
