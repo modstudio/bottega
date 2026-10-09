@@ -62,7 +62,7 @@ function parsed<T>(value: string, label: string): T {
   }
 }
 
-export const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
+const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   view(cwd, target) {
     const value = parsed<{
       number?: unknown
@@ -174,6 +174,53 @@ export const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   },
 }
 
+function admittedIdentity(
+  pullRequest: PullRequestMergeFacts,
+  landingBranch: string,
+): MergeProofInput {
+  return {
+    number: pullRequest.number,
+    state: pullRequest.state,
+    baseBranch: pullRequest.baseBranch,
+    landingBranch,
+    headCommit: pullRequest.headCommit,
+    requiredChecks: [],
+    checks: [],
+    passingGateId: 1,
+    remoteLandingTip: pullRequest.headCommit,
+    mergeBase: pullRequest.headCommit,
+  }
+}
+
+function collectMergeProof(
+  pullRequest: PullRequestMergeFacts,
+  landingBranch: string,
+  requiredChecks: readonly string[],
+  cwd: string,
+  adapter: PullRequestMergeAdapter,
+  database: Database,
+): MergeProofInput {
+  if (requiredChecks.length > 0) {
+    return {
+      ...admittedIdentity(pullRequest, landingBranch),
+      requiredChecks,
+      checks: adapter.checks(cwd, pullRequest.number),
+      passingGateId: null,
+      remoteLandingTip: null,
+      mergeBase: null,
+    }
+  }
+  const passingGateId = passingGateForCommit(pullRequest.headCommit, cwd, database).gateId
+  if (passingGateId === null) {
+    return { ...admittedIdentity(pullRequest, landingBranch), passingGateId: null }
+  }
+  return {
+    ...admittedIdentity(pullRequest, landingBranch),
+    passingGateId,
+    ...adapter.landingState(cwd, pullRequest.headCommit, landingBranch),
+  }
+}
+
 export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
@@ -196,56 +243,18 @@ export function mergePullRequest(
 
   try {
     const pullRequest = adapter.view(cwd, target)
-    const identityDecision = decideMergeProof({
-      number: pullRequest.number,
-      state: pullRequest.state,
-      baseBranch: pullRequest.baseBranch,
-      landingBranch,
-      headCommit: pullRequest.headCommit,
-      requiredChecks: [],
-      checks: [],
-      passingGateId: 1,
-      remoteLandingTip: pullRequest.headCommit,
-      mergeBase: pullRequest.headCommit,
-    })
+    const identityDecision = decideMergeProof(admittedIdentity(pullRequest, landingBranch))
     if (!identityDecision.admitted) {
       throw new Error(`refusing merge: ${identityDecision.refusal}`)
     }
-    const checks = release.requiredChecks.length > 0 ? adapter.checks(cwd, pullRequest.number) : []
-    const gate =
-      release.requiredChecks.length === 0
-        ? passingGateForCommit(pullRequest.headCommit, cwd, database).gateId
-        : null
-    if (release.requiredChecks.length === 0 && gate === null) {
-      const gateDecision = decideMergeProof({
-        number: pullRequest.number,
-        state: pullRequest.state,
-        baseBranch: pullRequest.baseBranch,
-        landingBranch,
-        headCommit: pullRequest.headCommit,
-        requiredChecks: [],
-        checks: [],
-        passingGateId: null,
-        remoteLandingTip: pullRequest.headCommit,
-        mergeBase: pullRequest.headCommit,
-      })
-      if (!gateDecision.admitted) throw new Error(`refusing merge: ${gateDecision.refusal}`)
-    }
-    const landing =
-      release.requiredChecks.length === 0
-        ? adapter.landingState(cwd, pullRequest.headCommit, landingBranch)
-        : { remoteLandingTip: null, mergeBase: null }
-    const input: MergeProofInput = {
-      number: pullRequest.number,
-      state: pullRequest.state,
-      baseBranch: pullRequest.baseBranch,
+    const input = collectMergeProof(
+      pullRequest,
       landingBranch,
-      headCommit: pullRequest.headCommit,
-      requiredChecks: release.requiredChecks,
-      checks,
-      passingGateId: gate,
-      ...landing,
-    }
+      release.requiredChecks,
+      cwd,
+      adapter,
+      database,
+    )
     const decision = decideMergeProof(input)
     if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
     const subject = `${pullRequest.title} (#${pullRequest.number})`
