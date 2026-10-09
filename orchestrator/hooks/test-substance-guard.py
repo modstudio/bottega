@@ -12,7 +12,7 @@ JUDGE_TIMEOUT_SECONDS = 2
 EDITOR_TOOLS = {"Write", "Edit", "MultiEdit"}
 JUDGE_ENVIRONMENT_KEYS = ("PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE")
 TEST_FILE = re.compile(
-    r"(?:^|/)(?:[^/]+\.(?:test|spec)\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts)|tests/.+Test\.php)$"
+    r"(?:\.test\.|\.spec\.|Test\.php$)"
 )
 
 

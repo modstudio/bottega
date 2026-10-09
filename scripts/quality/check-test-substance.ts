@@ -4,16 +4,14 @@ import {
   isTestFile,
   judgeTestSubstance,
   PHP_POLICY_RULES,
+  PHP_UNIVERSAL_RULES,
   type TestFinding,
 } from '../../shared/test-substance/test-substance'
 import {
   guardedRules,
   testSubstanceReport,
 } from '../../shared/test-substance/test-substance-eslint'
-import {
-  PHP_GUARDED_RULES,
-  phpTestSubstanceReport,
-} from '../../shared/test-substance/test-substance-php'
+import { phpTestSubstanceReport } from '../../shared/test-substance/test-substance-php'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
@@ -89,7 +87,10 @@ async function guardPhpFixture(failures: string[]) {
     }
   }
   const expectedPhpCounts = new Map<string, number>(
-    PHP_GUARDED_RULES.map((rule) => [rule, rule === 'sql-string-matching' ? 2 : 1]),
+    [...PHP_UNIVERSAL_RULES, ...PHP_POLICY_RULES].map((rule) => [
+      rule,
+      rule === 'sql-string-matching' ? 2 : 1,
+    ]),
   )
   for (const [rule, count] of expectedPhpCounts) {
     const produced = phpCounts.get(rule) ?? 0

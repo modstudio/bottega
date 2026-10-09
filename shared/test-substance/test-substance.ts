@@ -30,7 +30,15 @@ export const PHP_POLICY_RULES = [
   'no-assertions',
   'type-only-test',
 ] as const
+export const PHP_UNIVERSAL_RULES = [
+  'self-equal-assertion',
+  'tautology',
+  'vacuous-test',
+  'unused-waiver',
+] as const
 export type PhpPolicyRule = (typeof PHP_POLICY_RULES)[number]
+export type PhpUniversalRule = (typeof PHP_UNIVERSAL_RULES)[number]
+export type PhpRule = PhpPolicyRule | PhpUniversalRule
 
 export type TestSubstanceJudgment = {
   status: 'ok' | 'refused' | 'unchecked'

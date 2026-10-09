@@ -11,7 +11,7 @@ async function findings(content: string) {
 }
 
 describe('PHP test attribution', () => {
-  test('attributes methods by name, attribute, and multi-line signature, then leaves later code outside', async () => {
+  test('attributes class and trait methods, then leaves later code outside', async () => {
     const report = await phpTestSubstanceReport(
       file,
       `<?php
@@ -26,6 +26,9 @@ class FooTest {
   ): void { self::expectNotToPerformAssertions(); }
 }
 $this->getMockBuilder(Foo::class);
+trait SharedTests {
+  public function testFromTrait(): void { $this->createMock(Foo::class); }
+}
 `,
       PHP_POLICY_RULES,
     )
@@ -35,6 +38,7 @@ $this->getMockBuilder(Foo::class);
       ['createMock', 'annotated'],
       ['no-assertions', 'testMultiLine'],
       ['mock-builder', OUTSIDE_TEST],
+      ['createMock', 'testFromTrait'],
       ['vacuous-test', 'attributed'],
     ])
   })
@@ -110,6 +114,26 @@ describe('PHP vacuous methods', () => {
 `)
     expect(report.filter(({ rule }) => rule === 'vacuous-test')).toEqual([])
   })
+
+  test('classifies PHPUnit assertions only through PHPUnit receivers', async () => {
+    const report = await findings(`
+  public function testAssertClass(): void {
+    Assert::assertSame('a', 'b');
+  }
+  public function testNamespacedAssertClass(): void {
+    \\PHPUnit\\Framework\\Assert::assertSame('a', 'b');
+  }
+  public function testThisScope(): void {
+    $this::assertSame('a', 'b');
+  }
+  public function testObjectHelper(): void {
+    $response->assertSame('a', 'b');
+  }
+`)
+    expect(
+      report.filter(({ rule }) => rule === 'vacuous-test').map(({ testName }) => testName),
+    ).toEqual(['testAssertClass', 'testNamespacedAssertClass', 'testThisScope'])
+  })
 })
 
 test('detects a query-builder assertion split after the object operator', async () => {
@@ -122,4 +146,20 @@ test('detects a query-builder assertion split after the object operator', async 
   expect(report).toContainEqual(
     expect.objectContaining({ rule: 'sql-string-matching', testName: 'testQuery', line: 6 }),
   )
+})
+
+test('keeps method and unterminated-signature scans within the hook budget', async () => {
+  const maximumScanMilliseconds = 5_000
+  const method = `public function testSmall(): void { self::assertSame('a', 'b'); }\n`
+  const manyMethods = `<?php class LargeTest {\n${method.repeat(15_000)}}`
+  const withoutBraces = `<?php class LargeTest {\npublic function testMissing(${`value, `.repeat(150_000)}`
+
+  for (const [shape, content] of [
+    ['many small methods', manyMethods],
+    ['one unterminated signature', withoutBraces],
+  ] as const) {
+    const started = performance.now()
+    await phpTestSubstanceReport(file, content, PHP_POLICY_RULES)
+    expect(performance.now() - started, shape).toBeLessThan(maximumScanMilliseconds)
+  }
 })
