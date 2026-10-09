@@ -401,6 +401,7 @@ export async function hostedNotes(
 ) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     type HostedNoteView = {
+      id: string
       space_id: string
       space_name: string
       number: string | number
@@ -426,19 +427,20 @@ export async function hostedNotes(
     )
     const acknowledgements = rows<{
       space_id: string
-      note_id: string | number
+      note_id: string
       session_id: string
       acknowledged_at: SqlTime
       sightings: string | number
     }>(
-      await tx`SELECT a.space_id,n.number AS note_id,a.session_id,a.acknowledged_at,a.sightings FROM hub_note_acknowledgement a
+      await tx`SELECT a.space_id,a.note_id,a.session_id,a.acknowledged_at,a.sightings FROM hub_note_acknowledgement a
         JOIN hub_note n ON n.space_id=a.space_id AND n.id=a.note_id AND n.deleted_at IS NULL
         WHERE a.deleted_at IS NULL
         ORDER BY a.acknowledged_at DESC`,
     )
     return {
       notes: noteRows.map((row) => ({
-        id: number(row.number),
+        id: row.id,
+        number: number(row.number),
         label: formatNoteLabel(row.project, number(row.number)),
         space_id: row.space_id,
         space_name: row.space_name,
@@ -458,7 +460,7 @@ export async function hostedNotes(
       })),
       acknowledgements: acknowledgements.map((row) => ({
         space_id: row.space_id,
-        note_id: number(row.note_id),
+        note_id: row.note_id,
         session_id: row.session_id,
         acknowledged_at: iso(row.acknowledged_at)!,
         sightings: number(row.sightings),

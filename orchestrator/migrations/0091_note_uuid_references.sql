@@ -129,3 +129,9 @@ CREATE INDEX board_message_author_rate
   ON board_message(author_kind, author_session, author_run_id, created_at);
 CREATE INDEX board_message_tag_message ON board_message_tag(message_id);
 CREATE INDEX board_message_thread ON board_message(thread_root_id, created_at, id);
+
+ALTER TABLE question ADD COLUMN filed_record_id TEXT;
+ALTER TABLE question ADD COLUMN filed_label TEXT;
+UPDATE question
+SET filed_label=filed_ref, filed_ref=NULL
+WHERE filed_as='canon-proposal' AND filed_ref IS NOT NULL;

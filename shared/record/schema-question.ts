@@ -42,6 +42,8 @@ export const question = pgTable.withRLS(
     replacement: text(),
     filedAs: text('filed_as'),
     filedRef: text('filed_ref'),
+    filedRecordId: uuid('filed_record_id'),
+    filedLabel: text('filed_label'),
     filedAt: timestamp('filed_at', { withTimezone: true }),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closeReason: text('close_reason'),

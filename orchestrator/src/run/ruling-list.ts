@@ -28,7 +28,7 @@ export function listRulings(options: {
               q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,q.asked_via,
               q.answerer_kind,q.answer_channel,q.closed_at,q.close_reason,
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
-              q.filed_as,q.filed_ref,q.filed_at
+              q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
          FROM question q LEFT JOIN run r ON r.id=q.run_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}

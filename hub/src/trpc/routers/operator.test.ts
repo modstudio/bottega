@@ -33,6 +33,8 @@ test('waiting query and answer mutation use the orch seam', async () => {
         question_id: input.questionId,
         filed_as: input.as === 'canon' ? ('canon-proposal' as const) : ('doc' as const),
         filed_ref: '12@rev-1',
+        filed_record_id: null,
+        filed_label: null,
         filed_at: '2026-09-25T12:00:00.000Z',
       }
     },
@@ -50,6 +52,8 @@ test('waiting query and answer mutation use the orch seam', async () => {
     question_id: 7,
     filed_as: 'doc',
     filed_ref: '12@rev-1',
+    filed_record_id: null,
+    filed_label: null,
     filed_at: '2026-09-25T12:00:00.000Z',
   })
   expect(calls).toEqual([

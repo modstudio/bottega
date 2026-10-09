@@ -39,7 +39,9 @@ test('question payload contains the hosted shape and replaces a pending mutation
   database
     .query(
       `UPDATE question SET answer='One',answered_at='2026-09-25T10:02:00.000Z',revision=revision+1,
-       answered_by='architect',answerer_kind='agent',answer_channel='cli' WHERE id=?`,
+       answered_by='architect',answerer_kind='agent',answer_channel='cli',
+       filed_as='canon-proposal',filed_record_id='11111111-1111-4111-8111-111111111111',
+       filed_label='bottega#44' WHERE id=?`,
     )
     .run(question.id)
   database
@@ -64,6 +66,9 @@ test('question payload contains the hosted shape and replaces a pending mutation
     revision: 2,
     withheldFields: [],
     answeredAt: '2026-09-25T10:02:00.000Z',
+    filedRef: null,
+    filedRecordId: '11111111-1111-4111-8111-111111111111',
+    filedLabel: 'bottega#44',
     audits: [
       {
         action: 'rule',

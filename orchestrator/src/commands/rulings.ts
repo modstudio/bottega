@@ -135,6 +135,10 @@ export function register(program: Command): void {
         rulingFileStores,
       )
       if (options.json) log(JSON.stringify(result))
-      else log(`filed as ${result.filed_as} at ${result.filed_ref}`)
+      else {
+        const shown = result.filed_label ?? result.filed_ref
+        const identity = result.filed_record_id ? ` (${result.filed_record_id})` : ''
+        log(`filed as ${result.filed_as} at ${shown}${identity}`)
+      }
     })
 }

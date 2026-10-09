@@ -3,7 +3,6 @@ import { lintProse } from '../canon/prose-lint.ts'
 import {
   filedDocRef,
   operatorAttributedRuling,
-  parseFiledNoteId,
   renderCanonProposalNote,
   renderRulingFileText,
   rulingDocSlug,
@@ -89,10 +88,8 @@ describe('operator file-offer hint', () => {
 })
 
 describe('filed refs', () => {
-  test('joins a doc id and revision, and parses a hub note id', () => {
+  test('joins a doc id and revision', () => {
     expect(filedDocRef(12, 'rev-1')).toBe('12@rev-1')
     expect(filedDocRef(12, null)).toBe('12')
-    expect(parseFiledNoteId('near 3 score 0.900  other\nnote 44 filed; 1 sighting\n')).toBe(44)
-    expect(() => parseFiledNoteId('possible duplicate notes')).toThrow('did not report a note id')
   })
 })

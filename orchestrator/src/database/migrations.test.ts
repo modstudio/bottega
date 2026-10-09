@@ -183,6 +183,13 @@ test('note UUID reference migration preserves rows and turns old integers into d
          VALUES ('question','architect','author','operator','Title','Body',0,'2026-10-10','2026-10-09',72)`,
       )
       .run()
+    database
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,filed_as,filed_ref)
+         VALUES (?,'2026-10-09','Canon?','canon-proposal','73'),
+                (?,'2026-10-09','Doc?','doc','12@rev-1')`,
+      )
+      .run(run.id, run.id)
 
     expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0091_note_uuid_references'))
     expect(
@@ -198,9 +205,31 @@ test('note UUID reference migration preserves rows and turns old integers into d
       candidate_ids: '[]',
       candidate_labels: '["8","13"]',
     })
+    expect(database.query('SELECT note_record_id,note_label FROM board_message').get()).toEqual({
+      note_record_id: null,
+      note_label: '72',
+    })
     expect(
-      database.query('SELECT note_record_id,note_label FROM board_message').get(),
-    ).toEqual({ note_record_id: null, note_label: '72' })
+      database
+        .query(
+          `SELECT filed_as,filed_ref,filed_record_id,filed_label
+           FROM question ORDER BY id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        filed_as: 'canon-proposal',
+        filed_ref: null,
+        filed_record_id: null,
+        filed_label: '73',
+      },
+      {
+        filed_as: 'doc',
+        filed_ref: '12@rev-1',
+        filed_record_id: null,
+        filed_label: null,
+      },
+    ])
     expect(
       database
         .query(
@@ -653,7 +682,13 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       database
         .query(`SELECT name FROM pragma_table_info('question') WHERE name LIKE 'filed_%'`)
         .all(),
-    ).toHaveLength(3)
+    ).toEqual([
+      { name: 'filed_as' },
+      { name: 'filed_ref' },
+      { name: 'filed_at' },
+      { name: 'filed_record_id' },
+      { name: 'filed_label' },
+    ])
     expect(
       database
         .query("SELECT name FROM sqlite_master WHERE type='table' AND name='run_carried_ruling'")

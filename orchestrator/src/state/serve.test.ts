@@ -97,20 +97,23 @@ describe('run detail', () => {
     ])
   })
 
-  test('publishes a filed ruling ref', () => {
+  test('publishes a filed ruling identity', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()
       .query(
         `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at)
-         VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal','44','2026-09-22')`,
+          (run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
+         VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
+                 '11111111-1111-4111-8111-111111111111','bottega#44','2026-09-22')`,
       )
       .run(id)
     expect(runDetail(id)!.questions).toEqual([
       expect.objectContaining({
         question: 'Which?',
         filed_as: 'canon-proposal',
-        filed_ref: '44',
+        filed_ref: null,
+        filed_record_id: '11111111-1111-4111-8111-111111111111',
+        filed_label: 'bottega#44',
         filed_at: '2026-09-22',
       }),
     ])

@@ -189,12 +189,12 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
 
   ${TASK_USAGE}
 
-  hub note new "<text>" [--same-as ID|--new] [--area AREA]
+  hub note new "<text>" [--same-as LABEL|UUID|NUMBER|--new] [--area AREA]
   hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
-  hub note same <ID> <ID>
-  hub note keep <ID>...
-  hub note promote <ID>
-  hub note drop <ID> --reason "..."
+  hub note same <LABEL|UUID|NUMBER> <LABEL|UUID|NUMBER>
+  hub note keep <LABEL|UUID|NUMBER>...
+  hub note promote <LABEL|UUID|NUMBER>
+  hub note drop <LABEL|UUID|NUMBER> --reason "..."
   hub note stale              mark vanished anchors and reap eligible notes
   hub note curate [--scheduled]
   hub note curator [--enable|--disable]
@@ -650,7 +650,9 @@ async function note() {
   if (sub === 'push') return pushNoteCache()
   if (sub === 'list') {
     if (argv[2] && !argv[2]!.startsWith('--')) {
-      throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
+      throw new Error(
+        'to file the text "list", use: hub note new "list" [--new|--same-as LABEL|UUID|NUMBER]',
+      )
     }
     if (has('actionable') && has('kept'))
       throw new Error('--actionable and --kept are mutually exclusive')
@@ -672,7 +674,7 @@ async function note() {
   }
   if (sub === 'keep') {
     const ids = argv.slice(2).filter((value) => !value.startsWith('--'))
-    if (!ids.length) throw new Error('hub note keep <id>...')
+    if (!ids.length) throw new Error('hub note keep <LABEL|UUID|NUMBER>...')
     const session = noteSessionId()
     if (!session) throw new Error('hub note keep requires a session environment')
     for (const id of ids) {
@@ -693,7 +695,7 @@ async function note() {
   }
   if (sub === 'drop') {
     const reason = flag('reason')
-    if (!reason) throw new Error('hub note drop <id> --reason "..."')
+    if (!reason) throw new Error('hub note drop <LABEL|UUID|NUMBER> --reason "..."')
     const row = await dropNote(reference(argv[2] ?? ''), reason)
     console.log(noteDropLine(row))
     return
@@ -723,7 +725,7 @@ async function note() {
   }
   if (sub !== 'new') {
     throw new Error(
-      `hub note new <text> [--same-as ID|--new]; to file the text "${sub ?? ''}", put new before it`,
+      `hub note new <text> [--same-as LABEL|UUID|NUMBER|--new]; to file the text "${sub ?? ''}", put new before it`,
     )
   }
   const text = argv[2] ?? ''
@@ -740,21 +742,20 @@ async function note() {
       console.log(JSON.stringify(noteFiledJson(null, result.candidates)))
       return
     }
-    const lines = result.candidates.map(
-      noteCandidateLine,
-    )
+    const lines = result.candidates.map(noteCandidateLine)
     if (!process.stdin.isTTY) {
       throw new Error(
-        `possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <id> or --new.`,
+        `possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <LABEL|UUID|NUMBER> or --new.`,
       )
     }
     console.log(`possible duplicate notes:\n${lines.join('\n')}`)
     const answer = prompt(NOTE_DUPLICATE_PROMPT)?.trim() ?? ''
-    result = answer && answer !== 'new'
-      ? await createNote({ text, area: flag('area'), sameAs: reference(answer) })
-      : answer === 'new'
-        ? await createNote({ text, area: flag('area'), forceNew: true })
-        : result
+    result =
+      answer && answer !== 'new'
+        ? await createNote({ text, area: flag('area'), sameAs: reference(answer) })
+        : answer === 'new'
+          ? await createNote({ text, area: flag('area'), forceNew: true })
+          : result
     if (!result.note) throw new Error('note not filed')
   }
   if (has('json')) console.log(JSON.stringify(noteFiledJson(result.note, result.candidates)))
@@ -817,7 +818,9 @@ function refuseAmbiguousNoteVerb(sub: string | undefined): void {
     'push',
   ])
   if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
-    throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
+    throw new Error(
+      `to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as LABEL|UUID|NUMBER]`,
+    )
   }
 }
 

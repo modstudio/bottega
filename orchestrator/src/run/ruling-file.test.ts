@@ -67,7 +67,10 @@ function addAnsweredQuestion(
 
 const stores = (overrides: Partial<RulingFileStores> = {}): RulingFileStores => ({
   writeDoc: async () => ({ id: 12, revision: 'rev-1' }),
-  fileNote: async () => ({ output: 'note 44 filed; 1 sighting' }),
+  fileNote: async () => ({
+    noteRecordId: '11111111-1111-4111-8111-111111111111',
+    noteLabel: 'bottega#44',
+  }),
   ...overrides,
 })
 
@@ -188,6 +191,8 @@ describe('file ruling', () => {
       question_id: questionId,
       filed_as: 'doc',
       filed_ref: '12@rev-1',
+      filed_record_id: null,
+      filed_label: null,
       filed_at: expect.any(String),
     })
     expect(writes).toEqual([
@@ -258,12 +263,17 @@ describe('file ruling', () => {
       stores({
         fileNote: async (input, options) => {
           notes.push({ input, options })
-          return { output: 'note 44 filed; 1 sighting' }
+          return {
+            noteRecordId: '11111111-1111-4111-8111-111111111111',
+            noteLabel: 'bottega#44',
+          }
         },
       }),
     )
     expect(result.filed_as).toBe('canon-proposal')
-    expect(result.filed_ref).toBe('44')
+    expect(result.filed_ref).toBeNull()
+    expect(result.filed_record_id).toBe('11111111-1111-4111-8111-111111111111')
+    expect(result.filed_label).toBe('bottega#44')
     expect(notes).toEqual([
       {
         input: { text: expect.stringMatching(/^Canon proposal: /), new: true },
@@ -271,8 +281,15 @@ describe('file ruling', () => {
       },
     ])
     expect(
-      db().query('SELECT filed_as, filed_ref FROM question WHERE id=?').get(questionId),
-    ).toEqual({ filed_as: 'canon-proposal', filed_ref: '44' })
+      db()
+        .query('SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE id=?')
+        .get(questionId),
+    ).toEqual({
+      filed_as: 'canon-proposal',
+      filed_ref: null,
+      filed_record_id: '11111111-1111-4111-8111-111111111111',
+      filed_label: 'bottega#44',
+    })
   })
 
   test('refuses an unanswered question', async () => {

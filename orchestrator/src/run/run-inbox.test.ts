@@ -122,6 +122,28 @@ test('inbox shows a filed ruling ref', async () => {
     expect.objectContaining({ filed_as: 'doc', filed_ref: '12@rev-1' }),
   )
 })
+test('inbox shows a canon filing label and UUID', async () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  db()
+    .query(
+      `INSERT INTO question
+        (run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
+       VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
+               '11111111-1111-4111-8111-111111111111','bottega#44','2026-09-22')`,
+    )
+    .run(run)
+  const output = await inbox({ all: true })
+  expect(output).toContain(
+    'filed: canon-proposal bottega#44 (11111111-1111-4111-8111-111111111111)',
+  )
+  expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
+    expect.objectContaining({
+      filed_ref: null,
+      filed_record_id: '11111111-1111-4111-8111-111111111111',
+      filed_label: 'bottega#44',
+    }),
+  )
+})
 test.each(['ok', 'failed'])(
   'inbox treats an asking child under a %s root as live',
   async (status) => {
