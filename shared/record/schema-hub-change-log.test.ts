@@ -136,7 +136,7 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
     INSERT INTO hub_task (
       id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at
     ) VALUES (
-      '${taskId}','${spaceA}','bottega','DEV-1240','bottega','first','local',
+      '${taskId}','${spaceA}','fixture-project','DEV-1240','fixture-project','first','local',
       now(),now(),now(),now()
     );
     UPDATE hub_task SET title='second' WHERE id='${taskId}';
@@ -202,7 +202,7 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
     INSERT INTO hub_task (
       id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at
     ) VALUES (
-      '${movedTaskId}','${spaceA}','bottega','DEV-1240-MOVE','bottega','move','local',
+      '${movedTaskId}','${spaceA}','fixture-project','DEV-1240-MOVE','fixture-project','move','local',
       now(),now(),now(),now()
     );
   `)
@@ -231,7 +231,7 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
   await database.exec(`
     INSERT INTO hub_send (
       id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine
-    ) VALUES ('${sendId}','${spaceA}',now(),'day','one','bottega',1,'pending',0,now(),'test');
+    ) VALUES ('${sendId}','${spaceA}',now(),'day','one','fixture-project',1,'pending',0,now(),'test');
     INSERT INTO hub_send_recipient (id,space_id,send_id,name,email,created_at)
     VALUES ('${recipientId}','${spaceA}','${sendId}','Test','test@example.com',now());
   `)
