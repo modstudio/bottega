@@ -11,8 +11,8 @@ test('task adoption re-keys a local task and cascades to its children', () => {
   conn.exec(`
     INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
     VALUES ('old-id','DEV-895','${PLATFORM_SLUG}','mcp','2026-09-24','2026-09-24');
-    INSERT INTO task_comment(task_key,task_record_id,body,created_at)
-    VALUES ('DEV-895','old-id','child','2026-09-24');
+    INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+    VALUES ('comment-id','DEV-895','old-id','child','2026-09-24');
   `)
 
   expect(

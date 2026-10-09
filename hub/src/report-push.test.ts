@@ -8,7 +8,7 @@ beforeEach(resetFixtureStore)
 
 const at = '2026-10-08T12:00:00.000Z'
 
-function insertSend(recordId: string | null) {
+function insertSend(recordId: string) {
   writeTransaction((conn) => {
     conn
       .query(`INSERT INTO send(record_id,at,window,recipients,projects,items,status,error,test)
@@ -16,23 +16,6 @@ function insertSend(recordId: string | null) {
       .run(recordId, at, 'day', '[]', '[]', 1, 'sent', null, 0)
   })
 }
-
-test('report push refuses a send without a record id before any request', async () => {
-  insertSend(null)
-  let requests = 0
-  const fetch = async () => {
-    requests++
-    return Response.json({})
-  }
-  await expect(
-    pushReports({
-      baseUrl: 'https://hub.example.test',
-      token: 'test',
-      fetch,
-    }),
-  ).rejects.toThrow('send local row 1 has no record id')
-  expect(requests).toBe(0)
-})
 
 test('report push sends the existing record id without a legacy local id', async () => {
   const recordId = '01990000-0000-7000-8000-000000000201'

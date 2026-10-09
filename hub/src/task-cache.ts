@@ -9,6 +9,12 @@ import { type RegisteredTaskSpace, taskProjectDestination } from './task-project
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
 
+function localDocumentId(conn: Database, recordId: string) {
+  return conn
+    .query<{ id: number }, [string]>(`SELECT id FROM task_document WHERE record_id=?`)
+    .get(recordId)?.id
+}
+
 function reconcileParentRecordIds(conn: Database) {
   for (const relationship of taskIdentityRelationships) {
     if (relationship.table !== 'task') continue
@@ -27,13 +33,6 @@ function reconcileParentRecordIds(conn: Database) {
       if (recordId) update.run(recordId, key, project)
     }
   }
-}
-
-function localId(conn: Database, table: string, recordId: string) {
-  const byRecord = conn
-    .query<{ id: number }, [string]>(`SELECT id FROM ${table} WHERE record_id=?`)
-    .get(recordId)
-  return byRecord?.id ?? null
 }
 
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
@@ -76,27 +75,26 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
 
 function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  const id = localId(conn, 'task_comment', row.id)
   if (row.deleted_at) {
-    if (id) conn.query(`DELETE FROM task_comment WHERE id=?`).run(id)
-  } else if (id) {
-    conn
-      .query(
-        `UPDATE task_comment SET record_id=?,task_key=?,task_record_id=?,body=?,created_at=? WHERE id=?`,
-      )
-      .run(row.id, row.task_key, taskRecordId, row.body, row.created_at, id)
-  } else {
+    conn.query(`DELETE FROM task_comment WHERE record_id=?`).run(row.id)
+    return
+  }
+  const updated = conn
+    .query(
+      `UPDATE task_comment SET task_key=?,task_record_id=?,body=?,created_at=? WHERE record_id=?`,
+    )
+    .run(row.task_key, taskRecordId, row.body, row.created_at, row.id)
+  if (!updated.changes)
     conn
       .query(
         `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
       )
       .run(row.id, row.task_key, taskRecordId, row.body, row.created_at)
-  }
 }
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  const id = localId(conn, 'task_document', row.id)
+  const id = localDocumentId(conn, row.id)
   if (row.deleted_at) {
     if (id) conn.query(`DELETE FROM task_document WHERE id=?`).run(id)
   } else if (id) {
@@ -137,22 +135,21 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  const id = localId(conn, 'task_status_event', row.id)
   if (row.deleted_at) {
-    if (id) conn.query(`DELETE FROM task_status_event WHERE id=?`).run(id)
-  } else if (id) {
-    conn
-      .query(
-        `UPDATE task_status_event SET record_id=?,task_key=?,task_record_id=?,at=?,from_status=?,to_status=? WHERE id=?`,
-      )
-      .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status, id)
-  } else {
+    conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(row.id)
+    return
+  }
+  const updated = conn
+    .query(
+      `UPDATE task_status_event SET task_key=?,task_record_id=?,at=?,from_status=?,to_status=? WHERE record_id=?`,
+    )
+    .run(row.task_key, taskRecordId, row.at, row.from_status, row.to_status, row.id)
+  if (!updated.changes)
     conn
       .query(
         `INSERT OR IGNORE INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status) VALUES (?,?,?,?,?,?)`,
       )
       .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
-  }
 }
 
 export function applyHostedTaskChanges(

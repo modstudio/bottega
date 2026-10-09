@@ -120,6 +120,13 @@
       "when": 1790272800007,
       "tag": "0016_interval_ledger_destination",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790272800008,
+      "tag": "0017_uuid_row_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -383,8 +383,8 @@ export async function mirrorHostedReports(
       writes.push(
         rows<{ id: string }>(
           await tx`INSERT INTO hub_send
-      (id,legacy_local_id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine)
-      VALUES (${row.id}::uuid,${null},${identity.spaceId}::uuid,${row.at}::timestamptz,
+      (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine)
+      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.at}::timestamptz,
       ${row.window},${row.recipients},${row.projects},${row.items},${row.status},${row.error},
       ${row.test},${row.created_at}::timestamptz,${row.machine})
       ON CONFLICT(id) DO NOTHING RETURNING id`,
