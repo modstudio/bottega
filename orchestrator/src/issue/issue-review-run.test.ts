@@ -14,11 +14,12 @@ describe('filed issue review adapter', () => {
         if (lens === 'issue-blast-radius') {
           await Promise.resolve()
           firstClaimed = true
-          return 11
+          return { claim: 11, dispatchNext: true }
         }
         expect(firstClaimed).toBe(true)
-        return 12
+        return { claim: 12, dispatchNext: true }
       },
+      () => -1,
       async (lens, runId) => {
         if (lens === 'issue-blast-radius') await Promise.resolve()
         gathered.push(lens)
@@ -29,5 +30,30 @@ describe('filed issue review adapter', () => {
     expect(dispatched).toEqual(['issue-blast-radius', 'correctness'])
     expect(gathered).toEqual(['correctness', 'issue-blast-radius'])
     expect(results).toEqual(['issue-blast-radius:11', 'correctness:12'])
+  })
+
+  test('gathers a started lens and does not dispatch another while it remains pending', async () => {
+    const dispatched: string[] = []
+    const gathered: string[] = []
+
+    const results = await dispatchThenGatherIssueReviews<number | string, string>(
+      ['issue-blast-radius', 'correctness'],
+      async (lens) => {
+        dispatched.push(lens)
+        return { claim: 11, dispatchNext: false }
+      },
+      (lens, blockingLens) => `${lens}:blocked-by:${blockingLens}`,
+      async (lens, claim) => {
+        gathered.push(lens)
+        return `${lens}:${claim}`
+      },
+    )
+
+    expect(dispatched).toEqual(['issue-blast-radius'])
+    expect(gathered).toEqual(['issue-blast-radius', 'correctness'])
+    expect(results).toEqual([
+      'issue-blast-radius:11',
+      'correctness:correctness:blocked-by:issue-blast-radius',
+    ])
   })
 })

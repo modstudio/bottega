@@ -64,7 +64,7 @@ describe('filed issue coordinator inputs', () => {
     )
     const lens = reviewSource.slice(
       reviewSource.indexOf("runId = await detach('review-lens'"),
-      reviewSource.indexOf('await waitUntilRoutingCounts(runId)'),
+      reviewSource.indexOf('const dispatchNext = await waitUntilRoutingCounts(runId)'),
     )
     expect(diagnosis).toContain("job: 'diagnose'")
     expect(diagnosis).not.toContain('seed:')

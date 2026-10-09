@@ -6,6 +6,7 @@ import {
   issueReviewEvidence,
   issueReviewLenses,
   issueReviewRunLabel,
+  issueReviewStartEvidence,
   parseIssueReviewRunLabel,
 } from './issue-review.ts'
 
@@ -32,6 +33,7 @@ describe('filed issue review policy', () => {
   test('requires every lens to finish cleanly', () => {
     expect(issueReviewDecision([clean('issue-blast-radius'), clean('correctness')])).toEqual({
       ready: true,
+      reviewNotStarted: null,
       lensesWithFindings: [],
       lensesNotRun: [],
     })
@@ -40,7 +42,12 @@ describe('filed issue review policy', () => {
         clean('issue-blast-radius'),
         { ...clean('correctness'), findingCount: 1, findings: [{ severity: 'high' }] },
       ]),
-    ).toEqual({ ready: false, lensesWithFindings: ['correctness'], lensesNotRun: [] })
+    ).toEqual({
+      ready: false,
+      reviewNotStarted: null,
+      lensesWithFindings: ['correctness'],
+      lensesNotRun: [],
+    })
     expect(
       issueReviewDecision([
         clean('issue-blast-radius'),
@@ -53,7 +60,23 @@ describe('filed issue review policy', () => {
           runId: null,
         },
       ]),
-    ).toEqual({ ready: false, lensesWithFindings: [], lensesNotRun: ['correctness'] })
+    ).toEqual({
+      ready: false,
+      reviewNotStarted: null,
+      lensesWithFindings: [],
+      lensesNotRun: ['correctness'],
+    })
+  })
+
+  test('review setup failure is not ready and its evidence names why review did not start', () => {
+    const reason = 'fix run 42 has no worktree to review'
+    expect(issueReviewDecision([], reason)).toEqual({
+      ready: false,
+      reviewNotStarted: reason,
+      lensesWithFindings: [],
+      lensesNotRun: [],
+    })
+    expect(issueReviewStartEvidence(reason)).toBe(`Review did not start: ${reason}`)
   })
 
   test('handback evidence names a lens that did not run and why', () => {

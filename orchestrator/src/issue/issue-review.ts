@@ -14,6 +14,7 @@ export type IssueReviewLensResult = {
 
 export type IssueReviewDecision = {
   ready: boolean
+  reviewNotStarted: string | null
   lensesWithFindings: string[]
   lensesNotRun: string[]
 }
@@ -36,16 +37,24 @@ export function issueReviewDecision(
     IssueReviewLensResult,
     'lens' | 'finished' | 'failedToRun' | 'findingCount'
   >[],
+  reviewNotStarted: string | null = null,
 ): IssueReviewDecision {
   const lensesNotRun = results.filter(issueReviewDidNotRun).map((result) => result.lens)
   const lensesWithFindings = results
     .filter((result) => result.finished && (result.findingCount ?? 0) > 0)
     .map((result) => result.lens)
   return {
-    ready: lensesNotRun.length === 0 && lensesWithFindings.length === 0,
+    ready:
+      reviewNotStarted === null && lensesNotRun.length === 0 && lensesWithFindings.length === 0,
+    reviewNotStarted,
     lensesWithFindings,
     lensesNotRun,
   }
+}
+
+/** One durable task-document line when review setup could not produce a lens set. */
+export function issueReviewStartEvidence(reason: string): string {
+  return `Review did not start: ${reason}`
 }
 
 /** One durable task-document line for a gathered lens result. */

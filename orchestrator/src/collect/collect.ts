@@ -619,13 +619,15 @@ type CollectWaitServiceOptions = {
   sleep?: (milliseconds: number) => Promise<void>
 }
 
+const COLLECT_WAIT_DEFAULT_MS = 1800_000
+
 /** Wait for failover chains and return their terminal records without presenting or exiting. */
 export async function collectWaitForRuns(
   database: Database,
   ids: readonly number[],
   options: CollectWaitServiceOptions = {},
 ): Promise<CollectWaitServiceResult> {
-  const timeoutMs = options.timeoutMs ?? 1800_000
+  const timeoutMs = options.timeoutMs ?? COLLECT_WAIT_DEFAULT_MS
   const beforePoll = options.beforePoll ?? (() => {})
   const onObservedDead = options.onObservedDead ?? (() => {})
   const readOutput = options.readOutput ?? ((path: string) => readFileSync(path, 'utf8'))
@@ -734,7 +736,7 @@ export async function collectWait(
     .map(Number)
   if (!ids.length) throw new Error('orch wait <run-id>...')
   const timeoutAt = argv.indexOf('--timeout')
-  const timeoutMs = Number(timeoutAt >= 0 ? argv[timeoutAt + 1] : 1800) * 1000
+  const timeoutMs = timeoutAt >= 0 ? Number(argv[timeoutAt + 1]) * 1000 : COLLECT_WAIT_DEFAULT_MS
   const result = await collectWaitForRuns(database, ids, {
     timeoutMs,
     beforePoll,

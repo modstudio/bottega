@@ -33,7 +33,11 @@ import {
   seedAnswer,
   seedFromReport,
 } from './issue-file.ts'
-import { issueReviewDecision, issueReviewEvidence } from './issue-review.ts'
+import {
+  issueReviewDecision,
+  issueReviewEvidence,
+  issueReviewStartEvidence,
+} from './issue-review.ts'
 import { runIssueFixReviews } from './issue-review-run.ts'
 import {
   filedIssueCommandPlan,
@@ -471,7 +475,7 @@ async function verifyOrHandbackFix(
   const reviewPass = await runIssueFixReviews({ issue, fixRun, target, branchKey })
   // Findings runs record their reviews as part of terminalisation. Gathering
   // here decides coordinator readiness; the owning session still judges them.
-  const reviewDecision = issueReviewDecision(reviewPass.results)
+  const reviewDecision = issueReviewDecision(reviewPass.results, reviewPass.reviewNotStarted)
   const ready = issueFixReady(
     fix,
     diagnosis,
@@ -486,7 +490,8 @@ async function verifyOrHandbackFix(
     `Coordinator after: ${after.text}`,
     `Coordinator plain gate: ${plainGate.text}`,
     `Coordinator worker-environment gate: ${environmentGate.text}`,
-    `Review tier: ${reviewPass.tier}; selected lenses: ${JSON.stringify(reviewPass.selectedLenses)}`,
+    `Review tier: ${reviewPass.tier ?? 'not selected'}; selected lenses: ${JSON.stringify(reviewPass.selectedLenses)}`,
+    ...(reviewPass.reviewNotStarted ? [issueReviewStartEvidence(reviewPass.reviewNotStarted)] : []),
     ...reviewPass.results.map(issueReviewEvidence),
     `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
     `Fix run: ${fixRun.id}`,
