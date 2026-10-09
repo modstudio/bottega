@@ -11,7 +11,11 @@ const userId = '01990000-0000-7000-8000-000000000701'
 const subscriptionId = '01990000-0000-7000-8000-000000000768'
 
 const identityFetch = (async () =>
-  Response.json({ user: { id: userId }, activeSpaceId: otherSpace })) as unknown as typeof fetch
+  Response.json({
+    user: { id: userId },
+    activeSpaceId: otherSpace,
+    memberships: [{ space_id: otherSpace, slug: 'other', permission: 'write' }],
+  })) as unknown as typeof fetch
 
 test('the hosted route cannot update or remove a subscription in another space', async () => {
   const refuseOtherSpace = (_url: string, identity: { userId: string; spaceId: string }) => {

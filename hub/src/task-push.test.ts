@@ -39,8 +39,8 @@ test('task push groups projects and children by destination and reports refusals
     {
       activeSpaceId: 'space-a',
       memberships: [
-        { spaceId: 'space-a', slug: 'active' },
-        { spaceId: 'space-b', slug: 'other' },
+        { spaceId: 'space-a', slug: 'active', permission: 'write' },
+        { spaceId: 'space-b', slug: 'other', permission: 'write' },
       ],
     },
   )

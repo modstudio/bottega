@@ -53,6 +53,7 @@ const { ORCH_RECORD_URL: actorUrl, RECORD_AUTH_DATABASE_URL: authUrl } = process
 const SPACE_A = '01990000-0000-7000-8000-00000000000a'
 const SPACE_B = '01990000-0000-7000-8000-00000000000b'
 const USER_A = '01990000-0000-7000-8000-000000000010'
+const READ_USER = '01990000-0000-7000-8000-000000000013'
 const AUTH_EMAIL_HTTP = 'auth-http@example.test'
 const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
 const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
@@ -104,10 +105,12 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO space (id, name, slug, created_at) VALUES
         ('${SPACE_A}', 'space-a', 'space-a', now()), ('${SPACE_B}', 'space-b', 'space-b', now());
       INSERT INTO "user" (id, email, name, created_at)
-        VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
+        VALUES ('${USER_A}', 'owner@example.test', 'Owner', now()),
+          ('${READ_USER}', 'reader@example.test', 'Reader', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
         VALUES
-        ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now()),
+        ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'admin', 'write', now()),
+        ('01990000-0000-7000-8000-000000000013', '${SPACE_A}', '${READ_USER}', 'member', 'read', now()),
         ('01990000-0000-7000-8000-000000000012', '${SPACE_B}', '${USER_A}', 'member', 'write', now());
       INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
@@ -316,7 +319,7 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: OPERATOR_USER_ID,
+    userId: USER_A,
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
@@ -855,11 +858,11 @@ realPostgres('RLS proof against real Postgres', () => {
         `SELECT has_table_privilege('public_probe', 'project', 'SELECT');`,
       ),
     ).toBe('f')
-    const result = asSpace(
+    const result = psql(
       'public_probe',
       'public-password',
-      SPACE_A,
-      `SELECT name FROM public.project WHERE id = '${PROJECT_A}';`,
+      `SET app.space_id='${SPACE_A}';
+       SELECT name FROM public.project WHERE id = '${PROJECT_A}';`,
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('permission denied for schema public')
@@ -884,6 +887,79 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(write.code).not.toBe(0)
     expect(write.stderr).toContain('permission denied for table project')
+  })
+
+  test('read membership can select tenant rows but cannot write project or hub rows', () => {
+    // Production break watched: remove the write-membership predicate from tenantPolicies.
+    const session = `SET app.space_id='${SPACE_A}'; SET app.user_id='${READ_USER}';`
+    const read = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `${session} SELECT name FROM project WHERE id='${PROJECT_A}'; SELECT count(*) FROM hub_task;`,
+    )
+    expect(read.code, read.stderr).toBe(0)
+    expect(read.stdout.split('\n')).toEqual(['alpha', '0'])
+    for (const statement of [
+      `INSERT INTO project (id,space_id,name,created_at) VALUES ('01990000-0000-7000-8000-00000000002d','${SPACE_A}','read-insert',now())`,
+      `INSERT INTO hub_task (id,space_id,project_name,key,project,source,first_seen,last_seen,created_at,updated_at) VALUES ('01990000-0000-7000-8000-00000000002e','${SPACE_A}','alpha','DEV-READ','alpha','local',now(),now(),now(),now())`,
+    ]) {
+      const refused = psql(RECORD_ACTOR_ROLE, 'actor-password', `${session} ${statement};`)
+      expect(refused.code).not.toBe(0)
+      expect(refused.stderr).toContain('row-level security policy')
+    }
+    for (const statement of [
+      `UPDATE project SET name='read-update' WHERE id='${PROJECT_A}' RETURNING id`,
+      `DELETE FROM project WHERE id='${PROJECT_A}' RETURNING id`,
+    ]) {
+      const hidden = psql(RECORD_ACTOR_ROLE, 'actor-password', `${session} ${statement};`)
+      expect(hidden.code, hidden.stderr).toBe(0)
+      expect(hidden.stdout).toBe('')
+    }
+  })
+
+  test('write membership can insert, update, and delete tenant rows', () => {
+    // Production break watched: make tenantPolicies reject every actor write.
+    const result = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      SPACE_A,
+      `INSERT INTO project (id,space_id,name,created_at) VALUES
+        ('01990000-0000-7000-8000-00000000002f','${SPACE_A}','write-member',now());
+       UPDATE project SET name='write-member-updated'
+        WHERE id='01990000-0000-7000-8000-00000000002f';
+       DELETE FROM project WHERE id='01990000-0000-7000-8000-00000000002f';`,
+    )
+    expect(result.code, result.stderr).toBe(0)
+  })
+
+  test('plain member cannot raise permission and admin can change another member', () => {
+    // Production break watched: replace record_membership_admin with a same-space check.
+    const member = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.space_id='${SPACE_A}'; SET app.user_id='${READ_USER}';
+       UPDATE membership SET permission='write'
+       WHERE space_id='${SPACE_A}' AND user_id='${READ_USER}';`,
+    )
+    expect(member.code, member.stderr).toBe(0)
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT permission FROM membership WHERE space_id='${SPACE_A}' AND user_id='${READ_USER}';`,
+      ),
+    ).toBe('read')
+
+    const admin = psql(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      `SET app.space_id='${SPACE_A}'; SET app.user_id='${USER_A}';
+       UPDATE membership SET permission='write'
+       WHERE space_id='${SPACE_A}' AND user_id='${READ_USER}';
+       UPDATE membership SET permission='read'
+       WHERE space_id='${SPACE_A}' AND user_id='${READ_USER}';`,
+    )
+    expect(admin.code, admin.stderr).toBe(0)
   })
 
   test('tables created later inherit actor and reader grants', () => {

@@ -1,4 +1,5 @@
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
@@ -242,6 +243,12 @@ export async function taskApi(
       },
       403,
     )
+  const access = recordSpaceAccessDecision(
+    request.method === 'GET' || request.method === 'HEAD' ? 'read' : 'write',
+    who.spaceId,
+    who.memberships,
+  )
+  if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
   if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
     return json({
       userId: who.userId,

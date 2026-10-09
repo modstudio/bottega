@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { recordSpaceRequestDecision } from './record-space-request.ts'
+import { recordSpaceAccessDecision, recordSpaceRequestDecision } from './record-space-request.ts'
 
 const SPACE_A_ID = '01990000-0000-7000-8000-000000000003'
 const SPACE_B_ID = '01990000-0000-7000-8000-000000000004'
 const memberships = [
-  { spaceId: SPACE_A_ID, slug: 'active' },
-  { spaceId: SPACE_B_ID, slug: 'declared' },
+  { spaceId: SPACE_A_ID, slug: 'active', permission: 'read' },
+  { spaceId: SPACE_B_ID, slug: 'declared', permission: 'write' },
 ]
 
 describe('record space request', () => {
@@ -40,4 +40,19 @@ describe('record space request', () => {
       requestedSpace: 'outside',
     })
   })
+})
+
+test('read membership allows reads and refuses writes with a remedy', () => {
+  // Production break watched: remove the write-nature permission branch.
+  expect(recordSpaceAccessDecision('read', SPACE_A_ID, memberships)).toEqual({ allowed: true })
+  expect(recordSpaceAccessDecision('write', SPACE_A_ID, memberships)).toEqual({
+    allowed: false,
+    error: `record space ${SPACE_A_ID} membership is read-only`,
+    remedy: 'A space owner or admin can change the membership permission.',
+  })
+})
+
+test('write membership allows writes', () => {
+  // Production break watched: compare the membership permission to a value other than write.
+  expect(recordSpaceAccessDecision('write', SPACE_B_ID, memberships)).toEqual({ allowed: true })
 })

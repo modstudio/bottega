@@ -13,9 +13,9 @@ const identity = (capability = true, intervalRecordId = true, dayRecordId = true
   userId: 'user-1',
   activeSpaceId: 'space-active',
   memberships: [
-    { spaceId: 'space-active', slug: 'active' },
-    { spaceId: 'space-a', slug: 'alpha' },
-    { spaceId: 'space-b', slug: 'beta' },
+    { spaceId: 'space-active', slug: 'active', permission: 'write' },
+    { spaceId: 'space-a', slug: 'alpha', permission: 'write' },
+    { spaceId: 'space-b', slug: 'beta', permission: 'write' },
   ],
   capabilities: capability
     ? { targetSpaceIntervalEvidence: true, intervalRecordId, dayRecordId }
@@ -26,7 +26,7 @@ const identityFetch = async () =>
   Response.json({
     user: { id: 'user-1' },
     activeSpaceId: 'space-active',
-    memberships: [{ space_id: 'space-active', slug: 'active' }],
+    memberships: [{ space_id: 'space-active', slug: 'active', permission: 'write' }],
   })
 
 function interval(ref: string, project: string | null): IntervalEvidence & { id: string } {
@@ -891,7 +891,7 @@ describe('evidence API', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-active',
-            memberships: [{ space_id: 'space-active', slug: 'active' }],
+            memberships: [{ space_id: 'space-active', slug: 'active', permission: 'write' }],
           }),
         removeIntervals: async (_url, _tenant, values) => {
           ids.push(...values)
@@ -959,7 +959,7 @@ describe('evidence API', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-active',
-            memberships: [{ space_id: 'space-active', slug: 'active' }],
+            memberships: [{ space_id: 'space-active', slug: 'active', permission: 'write' }],
           }),
         putIntervals: async () => {
           wrote = true
@@ -993,7 +993,7 @@ describe('evidence API', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-active',
-            memberships: [{ space_id: 'space-active', slug: 'active' }],
+            memberships: [{ space_id: 'space-active', slug: 'active', permission: 'write' }],
           }),
         putDays: async (_url, tenant) => {
           boundSpace = tenant.spaceId

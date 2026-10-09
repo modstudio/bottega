@@ -1,3 +1,5 @@
+import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
   appendHostedSend,
   createHostedReportSubscription,
@@ -161,9 +163,18 @@ export async function reportApi(
   const identity = (await response.json().catch(() => null)) as {
     user?: { id?: string }
     activeSpaceId?: string
+    memberships?: unknown
   } | null
   if (!response.ok || !identity?.user?.id || !identity.activeSpaceId)
     return json({ error: 'authorization and an active space are required' }, 401)
+  if (url.pathname.startsWith('/v1/report-subscriptions') && request.method !== 'GET') {
+    const access = recordSpaceAccessDecision(
+      'write',
+      identity.activeSpaceId,
+      parseRecordSpaceMemberships(identity.memberships),
+    )
+    if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
+  }
   const who = { userId: identity.user.id, spaceId: identity.activeSpaceId }
   const body =
     request.method === 'GET'

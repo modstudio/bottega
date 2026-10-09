@@ -1321,6 +1321,8 @@ try {
   await admin`DELETE FROM operator_waiting_email WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid)`
   await admin.close()

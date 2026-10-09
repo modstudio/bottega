@@ -1,14 +1,16 @@
 import { hasRecordIdShape } from './record-id.ts'
 
-export type RecordSpaceMembership = { spaceId: string; slug: string }
+export type RecordSpaceMembership = { spaceId: string; slug: string; permission: string }
 
 export function parseRecordSpaceMemberships(value: unknown): RecordSpaceMembership[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((row) => {
     if (!row || typeof row !== 'object' || Array.isArray(row)) return []
     const membership = row as Record<string, unknown>
-    return typeof membership.space_id === 'string' && typeof membership.slug === 'string'
-      ? [{ spaceId: membership.space_id, slug: membership.slug }]
+    return typeof membership.space_id === 'string' &&
+      typeof membership.slug === 'string' &&
+      typeof membership.permission === 'string'
+      ? [{ spaceId: membership.space_id, slug: membership.slug, permission: membership.permission }]
       : []
   })
 }

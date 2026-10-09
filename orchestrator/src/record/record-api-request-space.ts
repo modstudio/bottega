@@ -3,7 +3,10 @@
 
 import type { Context, Hono, Next } from 'hono'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordSpaceRequestDecision } from '../../../shared/record-space-request.ts'
+import {
+  recordSpaceAccessDecision,
+  recordSpaceRequestDecision,
+} from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordSpaceMembershipRefusal } from './record-project-destination.ts'
 
@@ -16,11 +19,11 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   const requestedSpace = async (context: Context<ApiEnvironment>, next: Next) => {
     if (context.req.method === 'GET' && context.req.path === '/v1/docs/search') return next()
     const requested = context.req.header('x-record-space') ?? null
-    if (requested === null) return next()
+    const memberships = parseRecordSpaceMemberships(context.get('identity').memberships)
     const decision = recordSpaceRequestDecision(
       requested,
       context.get('identity').activeSpaceId,
-      parseRecordSpaceMemberships(context.get('identity').memberships),
+      memberships,
     )
     if (!decision.allowed) {
       return context.json(
@@ -31,7 +34,16 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
         403,
       )
     }
-    if (decision.spaceId !== null) context.set('destinationSpaceId', decision.spaceId)
+    if (decision.spaceId !== null) {
+      const access = recordSpaceAccessDecision(
+        context.req.method === 'GET' || context.req.method === 'HEAD' ? 'read' : 'write',
+        decision.spaceId,
+        memberships,
+      )
+      if (!access.allowed) return context.json({ error: access.error, remedy: access.remedy }, 403)
+    }
+    if (requested !== null && decision.spaceId !== null)
+      context.set('destinationSpaceId', decision.spaceId)
     await next()
   }
   app.use('/v1/projects', requestedSpace)

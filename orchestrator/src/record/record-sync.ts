@@ -29,6 +29,7 @@ import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
@@ -90,7 +91,7 @@ async function syncMemberships(
   return postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const rows = await tx`
-      SELECT m.space_id, s.slug FROM membership m JOIN space s ON s.id=m.space_id
+      SELECT m.space_id, s.slug, m.permission FROM membership m JOIN space s ON s.id=m.space_id
       WHERE m.user_id=${principal.userId}::uuid
     `
     return parseRecordSpaceMemberships(rows)
@@ -899,6 +900,10 @@ async function pushOutboxRow(
         attempt.projectSpaces,
       ),
     )
+    const access = recordSpaceAccessDecision('write', rowPrincipal.spaceId, attempt.memberships)
+    if (!access.allowed) {
+      throw new OutboxRowError(`${access.error}; ${access.remedy}`, 'declared-space', projectName)
+    }
     const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
     if (String(record.machineId) !== identity.id) {
       throw new OutboxRowError(
@@ -963,8 +968,9 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         userId: current.user.id,
         spaceId: current.activeSpaceId,
       })))
-    const memberships =
-      options.memberships ?? (options.principal ? [] : await syncMemberships(postgres, principal))
+    const memberships = options.memberships ?? (await syncMemberships(postgres, principal))
+    const initialAccess = recordSpaceAccessDecision('write', principal.spaceId, memberships)
+    if (!initialAccess.allowed) throw new Error(`${initialAccess.error}; ${initialAccess.remedy}`)
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity, principal)
     const rows = writableLocal
       .query<OutboxRow, []>(

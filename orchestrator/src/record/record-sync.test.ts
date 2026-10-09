@@ -188,6 +188,13 @@ const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
     userId: '01990000-0000-7000-8000-000000000002',
     spaceId: '01990000-0000-7000-8000-000000000001',
   },
+  memberships: [
+    {
+      spaceId: '01990000-0000-7000-8000-000000000001',
+      slug: 'platform',
+      permission: 'write',
+    },
+  ],
 })
 
 test('sync upserts once and a second pass has no run mutation', async () => {
@@ -873,7 +880,10 @@ test('declared project spaces override the active space while an unset project f
   expect(
     await syncRecord({
       ...options(local, remote),
-      memberships: [{ spaceId: declaredSpace, slug: 'team' }],
+      memberships: [
+        { spaceId: declaredSpace, slug: 'team', permission: 'write' },
+        ...options(local, remote).memberships,
+      ],
       projectSpaces: { declared: 'team' },
     }),
   ).toEqual({
@@ -903,8 +913,9 @@ test('two declared projects bind their own spaces in separate transactions', asy
     await syncRecord({
       ...options(local, remote),
       memberships: [
-        { spaceId: alpha, slug: 'alpha' },
-        { spaceId: beta, slug: 'beta' },
+        { spaceId: alpha, slug: 'alpha', permission: 'write' },
+        { spaceId: beta, slug: 'beta', permission: 'write' },
+        ...options(local, remote).memberships,
       ],
       projectSpaces: { alpha: 'alpha', beta: 'beta' },
     }),

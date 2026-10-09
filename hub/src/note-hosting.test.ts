@@ -51,7 +51,7 @@ describe('hosted-only note safety', () => {
             Response.json({
               user: { id: 'user-1' },
               activeSpaceId: 'space-a',
-              memberships: [{ space_id: 'space-a', slug: 'active' }],
+              memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
             })) as unknown as typeof fetch,
         },
       )
@@ -91,8 +91,8 @@ describe('hosted-only note safety', () => {
               userId: 'user-1',
               activeSpaceId: 'space-a',
               memberships: [
-                { spaceId: 'space-a', slug: 'active' },
-                { spaceId: 'space-b', slug: 'target' },
+                { spaceId: 'space-a', slug: 'active', permission: 'write' },
+                { spaceId: 'space-b', slug: 'target', permission: 'write' },
               ],
               capabilities: { projectNoteCounters: true },
             })
