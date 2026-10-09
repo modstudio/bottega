@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'nod
 import { dirname, join } from 'node:path'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-paths.ts'
+import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
@@ -294,14 +295,30 @@ export function branchNote(database: Database, runId: number): string {
   const branch = mintedBranchForRun(database, runId)
   if (!branch) return ''
   const turn = database
-    .query('SELECT base_commit, branch_kept_tip, changed_paths, prompt_path FROM run WHERE id=?')
-    .get(runId) as (Parameters<typeof noCommitNote>[0] & { prompt_path: string | null }) | null
+    .query(
+      `SELECT base_commit, branch_kept, branch_kept_tip, changed_paths, prompt_path, repo, launch_key
+       FROM run WHERE id=?`,
+    )
+    .get(runId) as
+    | (Parameters<typeof noCommitNote>[0] & {
+        branch_kept: string | null
+        prompt_path: string | null
+        repo: string | null
+        launch_key: string | null
+      })
+    | null
   // Prompts and per-run artifacts share the runs directory; derive it from the
   // row rather than importing the artifact module into the degraded graph.
   const artifacts = turn?.prompt_path
     ? join(dirname(turn.prompt_path), String(runId), 'artifacts')
     : null
-  return `\n  branch:    ${branch}${turn ? noCommitNote(turn, artifacts) : ''}`
+  const retained = turn?.branch_kept
+  const prune = retained ? retainedBranchPruneCommand(turn.repo, turn.launch_key) : null
+  return (
+    `\n  branch:    ${branch}${turn ? noCommitNote(turn, artifacts) : ''}` +
+    (retained ? `\n  retained:  ${retainedBranchReason(retained)}` : '') +
+    (prune ? `\n  prune:     ${prune}` : '')
+  )
 }
 
 /** Tell the caller how to recover a released writer tree without inspecting lifecycle state. */
