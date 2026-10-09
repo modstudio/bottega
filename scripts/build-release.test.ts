@@ -13,7 +13,7 @@ import {
 
 test('the payload has only the declared runtime paths', () => {
   expect(DECLARED_PAYLOAD_PATHS).toEqual([
-    'orchestrator/src/cli/orch.ts',
+    'orchestrator/src/cli/orch',
     'hub/src/cli.ts',
     'orchestrator/src/run/exec.ts',
     'orchestrator/src/database/store-write-lock.c',

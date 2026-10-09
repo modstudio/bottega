@@ -24,6 +24,7 @@ import { register as registerSetup } from '../commands/setup.ts'
 import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
+import { register as registerTestSubstance } from '../commands/test-substance.ts'
 import { recordSessionSeen } from '../database/db.ts'
 
 export const program = new Command()
@@ -61,6 +62,7 @@ registerLogic(program)
 registerSettings(program)
 registerSetup(program)
 registerSync(program)
+registerTestSubstance(program)
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {

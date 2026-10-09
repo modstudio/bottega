@@ -404,6 +404,7 @@ subtle production defect and the defect's blast radius justifies that cost.
 Reject vacuous assertions that cannot fail, change detectors that restate the
 implementation, and over-isolated tests that never reach the real subject.
 Assert observable effects rather than interactions.
+`scripts/quality/check-test-substance.ts` enforces the vacuous-assertion rule.
 
 Write tests where failure is silent and expensive. Skip them where the worst
 case announces itself, and record that choice in the commit or task. Coverage
@@ -489,6 +490,16 @@ regardless of state. Clear claims instead of orphaning them.
 
 These are examples of the governing rule, not an exhaustive lookup table. A
 new caller names and answers its own question.
+
+## Refuse defects when they are written
+
+A check that can judge a file when it is written runs there as a hook and
+refuses the edit. Refusing an edit costs far less than finding the defect at
+the gate or in review. The hook and the gate run the same check; the gate is
+the backstop.
+
+A write-time check that cannot judge allows the edit and says so. Failure of
+the write-time check itself never blocks the edit.
 
 ---
 description: Rules for current, compact, resolvable canon and documentation

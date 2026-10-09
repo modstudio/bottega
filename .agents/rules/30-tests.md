@@ -11,6 +11,7 @@ subtle production defect and the defect's blast radius justifies that cost.
 Reject vacuous assertions that cannot fail, change detectors that restate the
 implementation, and over-isolated tests that never reach the real subject.
 Assert observable effects rather than interactions.
+`scripts/quality/check-test-substance.ts` enforces the vacuous-assertion rule.
 
 Write tests where failure is silent and expensive. Skip them where the worst
 case announces itself, and record that choice in the commit or task. Coverage

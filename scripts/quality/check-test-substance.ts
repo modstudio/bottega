@@ -1,12 +1,20 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { introducedTestFindings, type TestFinding } from './test-substance'
-import { guardedRules, testSubstanceReport } from './test-substance-eslint'
+import {
+  isTestFile,
+  judgeTestSubstance,
+  type TestFinding,
+} from '../../shared/test-substance/test-substance'
+import {
+  guardedRules,
+  testSubstanceReport,
+} from '../../shared/test-substance/test-substance-eslint'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
-const TEST_FILE = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/
-const fixtureDirectory = fileURLToPath(new URL('fixtures/', import.meta.url))
+const fixtureDirectory = fileURLToPath(
+  new URL('../../shared/test-substance/fixtures/', import.meta.url),
+)
 
 function git(args: string[], allowFailure = false) {
   const result = Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' })
@@ -31,9 +39,7 @@ function changedTestFiles(mode: Mode) {
     mode.kind === 'staged'
       ? ['diff', '--cached', '--name-only', '--diff-filter=ACMR', 'HEAD']
       : ['diff', '--name-only', '--diff-filter=ACMR', mode.ref, 'HEAD']
-  return git(args)
-    .stdout.split('\n')
-    .filter((file) => TEST_FILE.test(file))
+  return git(args).stdout.split('\n').filter(isTestFile)
 }
 
 function contentAt(ref: string, file: string): string | undefined {
@@ -83,27 +89,19 @@ type FileJudgment = {
 
 async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
   const beforeContent = contentAt(mode.kind === 'staged' ? 'HEAD' : mode.ref, file)
-  const afterReport = await testSubstanceReport(file, afterContent(mode, file))
-  const unrecognised = afterReport.runner === 'unrecognised'
-  if (afterReport.parseError) {
-    return { findings: [], unchecked: `${file}: ${afterReport.parseError}`, unrecognised }
-  }
-  if (unrecognised) {
-    return {
-      findings: [],
-      unchecked: `${file}: runner not recognised`,
-      unrecognised,
-    }
-  }
-  if (beforeContent === undefined) {
-    return { findings: afterReport.findings, unrecognised }
-  }
-  const beforeReport = await testSubstanceReport(file, beforeContent)
-  if (beforeReport.parseError) {
-    return { findings: afterReport.findings, unrecognised }
-  }
+  const judgment = await judgeTestSubstance({
+    file,
+    before: beforeContent ?? null,
+    after: afterContent(mode, file),
+  })
+  const unrecognised = judgment.reason === 'test runner not recognised'
   return {
-    findings: introducedTestFindings(beforeReport.findings, afterReport.findings),
+    findings: judgment.findings.map(({ test, ...finding }) => ({
+      ...finding,
+      file,
+      testName: test,
+    })),
+    unchecked: judgment.status === 'unchecked' ? `${file}: ${judgment.reason}` : undefined,
     unrecognised,
   }
 }
