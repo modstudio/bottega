@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  PHP_POLICY_RULES,
   isTestFile,
   judgeTestSubstance,
+  PHP_POLICY_RULES,
   type TestFinding,
 } from '../../shared/test-substance/test-substance'
 import {
