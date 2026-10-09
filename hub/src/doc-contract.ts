@@ -1,12 +1,16 @@
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, normalizeDocAudiences } from '../../shared/docs.ts'
+import { DOC_KINDS, DOC_STATUSES, hostedDocAudiences } from '../../shared/docs.ts'
 
 export const HostedDocAudiencesSchema = z
-  .array(z.union([z.enum(DOC_AUDIENCES), z.literal('user')]))
+  .array(z.string())
   .nonempty()
-  .transform((audiences) => {
-    const tolerated = audiences.map((audience) => (audience === 'user' ? 'internal' : audience))
-    return normalizeDocAudiences([...new Set(tolerated)])
+  .transform((audiences, context) => {
+    try {
+      return hostedDocAudiences(audiences)
+    } catch (error) {
+      context.addIssue({ code: 'custom', message: (error as Error).message })
+      return z.NEVER
+    }
   })
 
 export const DocTreeItemSchema = z.object({

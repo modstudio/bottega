@@ -37,6 +37,15 @@ export function normalizeDocAudiences(input: readonly string[]): DocAudiences {
   }
   return DOC_AUDIENCES.filter((audience) => seen.has(audience)) as DocAudiences
 }
+
+/**
+ * Audiences read from a hosted record that may still carry the retired `user`
+ * value, which reads as `internal`. Writes never go through this.
+ */
+export function hostedDocAudiences(input: readonly string[]): DocAudiences {
+  const tolerated = input.map((audience) => (audience === 'user' ? 'internal' : audience))
+  return normalizeDocAudiences([...new Set(tolerated)])
+}
 export const DOC_STATUSES = ['draft', 'current', 'superseded', 'archived'] as const
 export type DocStatus = (typeof DOC_STATUSES)[number]
 export const DOC_KINDS = ['working', 'article'] as const
