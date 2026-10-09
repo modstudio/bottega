@@ -791,12 +791,6 @@
     "score": 16
   },
   {
-    "file": "scripts/quality/no-expect.ts",
-    "function": "visit#1",
-    "line": 35,
-    "score": 21
-  },
-  {
     "file": "shared/git.ts",
     "function": "parsePorcelain",
     "line": 140,

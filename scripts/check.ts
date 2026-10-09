@@ -270,7 +270,8 @@ if (
     './scripts/quality/dead-code.test.ts',
     './scripts/architecture.test.ts',
     './scripts/import-scanner.test.ts',
-    './scripts/quality/no-expect.test.ts',
+    './scripts/quality/test-substance.test.ts',
+    './scripts/quality/self-comparison.test.ts',
     './shared/ratchet.test.ts',
     './scripts/quality/ceiling-decision.test.ts',
     './scripts/quality/test-timing-decision.test.ts',
@@ -336,7 +337,7 @@ try {
   process.exit(1)
 }
 gateSteps.push(
-  await recordGateStep(staticCheck('scripts/quality/check-no-expect.ts', [qualityMode])),
+  await recordGateStep(staticCheck('scripts/quality/check-test-substance.ts', [qualityMode])),
 )
 
 clearTimeout(runtimeDeadline)
