@@ -22,4 +22,11 @@ describe('record space decisions', () => {
       ]),
     ).toThrow('record space slug team already exists: 01990000-0000-7000-8000-000000000003')
   })
+
+  test('refuses a slug shaped like a record id and names the ambiguity', () => {
+    const slug = '01990000-0000-7000-8000-000000000003'
+    expect(() => refuseDuplicateRecordSpaceSlug(slug, [])).toThrow(
+      `record space slug ${slug} is shaped like a record id and would make space selection ambiguous`,
+    )
+  })
 })

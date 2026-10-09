@@ -8,6 +8,10 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
+import {
+  parseRecordSpaceMemberships,
+  recordSpaceMembership,
+} from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { describeRecordInstallBinding, readRecordInstallBinding } from './install-binding.ts'
@@ -182,16 +186,13 @@ async function declaredProjectSpaceChecks(
   })
   return projects.flatMap((project) => {
     if (!project.space) return []
-    const reachable = memberships.find(
-      (membership: Record<string, unknown>) =>
-        String(membership.slug) === project.space || String(membership.space_id) === project.space,
-    )
+    const reachable = recordSpaceMembership(project.space, parseRecordSpaceMemberships(memberships))
     return [
       reachable
         ? {
             name: `project ${project.name} declared space`,
             status: 'pass' as const,
-            detail: `${String(reachable.slug)} (${String(reachable.space_id)})`,
+            detail: `${reachable.slug} (${reachable.spaceId})`,
           }
         : {
             name: `project ${project.name} declared space`,

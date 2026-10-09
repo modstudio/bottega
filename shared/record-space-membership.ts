@@ -1,5 +1,11 @@
 export type RecordSpaceMembership = { spaceId: string; slug: string }
 
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function hasRecordIdShape(value: string): boolean {
+  return RECORD_ID.test(value)
+}
+
 export function parseRecordSpaceMemberships(value: unknown): RecordSpaceMembership[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((row) => {
@@ -12,11 +18,12 @@ export function parseRecordSpaceMemberships(value: unknown): RecordSpaceMembersh
 }
 
 /** Match the register's declared space, which may be either a stable id or a human slug. */
-export function recordSpaceMembership(
+export function recordSpaceMembership<T extends RecordSpaceMembership>(
   declared: string,
-  memberships: readonly RecordSpaceMembership[],
-): RecordSpaceMembership | undefined {
-  return memberships.find(
-    (membership) => membership.spaceId === declared || membership.slug === declared,
+  memberships: readonly T[],
+): T | undefined {
+  return (
+    memberships.find((membership) => membership.spaceId === declared) ??
+    memberships.find((membership) => membership.slug === declared)
   )
 }
