@@ -11,6 +11,10 @@ import {
 } from './canon-lint.ts'
 import { CODEX_PROJECT_DOC_PATH } from './codex-project-doc.ts'
 
+export type CanonLintInputCollector = (
+  root: string,
+) => Pick<CanonLintInput, 'trackedPaths' | 'packageScripts' | 'sourceTexts'>
+
 function git(cwd: string, args: string[]): string {
   const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
     stdout: 'pipe',

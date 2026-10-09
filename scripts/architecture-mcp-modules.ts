@@ -66,6 +66,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../../../shared/docs.ts',
+    '../canon/canon-files.ts',
     '../canon/canon.ts',
     '../doc/doc-canon-tree.ts',
     '../doc/docs.ts',

@@ -13,7 +13,10 @@ import {
   type DocStatus,
 } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { collectCanonLintInput as productionCanonLintInput } from '../canon/canon-files.ts'
+import {
+  type CanonLintInputCollector,
+  collectCanonLintInput as productionCanonLintInput,
+} from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
@@ -58,12 +61,6 @@ import {
 export type { Doc, DocRevision, DocRevisionMetadata }
 export type DocListFilters = StoreDocListFilters
 export type DocMetadata = StoreDocMetadata
-export type CanonLintInputCollector = (
-  root: string,
-) => Pick<
-  ReturnType<typeof productionCanonLintInput>,
-  'trackedPaths' | 'packageScripts' | 'sourceTexts'
->
 
 import {
   assertLocalRevisionWrite,

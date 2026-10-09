@@ -13,10 +13,10 @@ import {
   type DocStatus,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { SelectedCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
 import {
-  type CanonLintInputCollector,
   collectDocReferenceProjects,
   consumeDoc,
   diffDocRevisions,

@@ -1,7 +1,7 @@
 // concern: docs
 /** Gathers stored canon and shared workflow facts for the pure removal decision. */
 
-import type { collectCanonLintInput } from '../canon/canon-files.ts'
+import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideCanonRemoval } from '../canon/canon-write-gate.ts'
 import { projectByName } from '../project/projects.ts'
@@ -9,13 +9,6 @@ import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { type CanonWriteTree, canonRemovalRefusal } from './doc-write-allowed.ts'
-
-type CanonLintInputCollector = (
-  root: string,
-) => Pick<
-  ReturnType<typeof collectCanonLintInput>,
-  'trackedPaths' | 'packageScripts' | 'sourceTexts'
->
 
 const withoutSlug = (rows: Doc[], slug: string) => rows.filter((row) => row.slug !== slug)
 const canonRows = (global: Doc[], project: Doc[]) =>

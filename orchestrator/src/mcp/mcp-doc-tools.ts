@@ -2,9 +2,9 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
+import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { SelectedCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
-  type CanonLintInputCollector,
   consumeDoc,
   getDoc,
   getDocRevision,
