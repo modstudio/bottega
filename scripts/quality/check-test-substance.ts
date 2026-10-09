@@ -128,6 +128,33 @@ async function guardSpecialJavaScriptFixtures(failures: string[]) {
     failures.push('derived browser fixture was not excluded from judgment')
   }
 
+  const globalWithBrowserHelperFile = `${fixtureDirectory}test-substance-global-with-browser-helper.fixtures.ts`
+  const globalWithBrowserHelperReport = await testSubstanceReport(
+    globalWithBrowserHelperFile,
+    readFileSync(globalWithBrowserHelperFile, 'utf8'),
+  )
+  if (globalWithBrowserHelperReport.runner !== 'unrecognised') {
+    failures.push('global test was incorrectly assigned the runner from a relative helper')
+  }
+
+  const bunWithVitestHelperFile = `${fixtureDirectory}test-substance-bun-with-vitest-helper.fixtures.ts`
+  const bunWithVitestHelperReport = await testSubstanceReport(
+    bunWithVitestHelperFile,
+    readFileSync(bunWithVitestHelperFile, 'utf8'),
+  )
+  if (bunWithVitestHelperReport.runner !== 'bun' || bunWithVitestHelperReport.findings.length) {
+    failures.push('unrelated Vitest helper prevented recognition of the Bun runner')
+  }
+
+  const typeOnlyBrowserHelperFile = `${fixtureDirectory}test-substance-type-only-browser-helper.fixtures.ts`
+  const typeOnlyBrowserHelperReport = await testSubstanceReport(
+    typeOnlyBrowserHelperFile,
+    readFileSync(typeOnlyBrowserHelperFile, 'utf8'),
+  )
+  if (typeOnlyBrowserHelperReport.runner !== 'unrecognised') {
+    failures.push('type-only import incorrectly supplied the browser runner')
+  }
+
   const directiveFile = `${fixtureDirectory}test-substance-inline-directive.fixture.txt`
   const directiveReport = await testSubstanceReport(
     `${fixtureDirectory}inline-directive.test.ts`,

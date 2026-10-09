@@ -20,6 +20,12 @@ import { vitestAsyncAssertionRule } from './vitest-async-assertion'
 
 type Runner = 'browser' | 'bun' | 'vitest' | 'unrecognised'
 
+const RUNNERS_BY_PACKAGE = new Map<string, Exclude<Runner, 'unrecognised'>>([
+  ['bun:test', 'bun'],
+  ['vitest', 'vitest'],
+  ['@playwright/test', 'browser'],
+])
+
 export type SubstanceReport = {
   findings: TestFinding[]
   parseError?: string
@@ -112,40 +118,31 @@ function testLocations(file: string, content: string): TestLocation[] {
   return locations
 }
 
-function directRunner(source: ts.SourceFile): Runner {
-  let runner: Runner = 'unrecognised'
-  function recognize(specifier: ts.Expression | undefined) {
-    if (!specifier || !ts.isStringLiteralLike(specifier)) return
-    if (specifier.text === 'bun:test') runner = 'bun'
-    if (specifier.text === 'vitest') runner = 'vitest'
-    if (specifier.text === '@playwright/test') runner = 'browser'
-  }
-  function visit(node: ts.Node) {
-    if (runner !== 'unrecognised') return
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      recognize(node.moduleSpecifier)
-    } else if (ts.isCallExpression(node)) {
-      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
-      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
-      if (isRequire || isDynamicImport) recognize(node.arguments[0])
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(source)
-  return runner
-}
-
-function runnerPackages(source: ts.SourceFile) {
-  const packages = new Set<string>()
+function importedRunners(source: ts.SourceFile) {
+  const runners: Exclude<Runner, 'unrecognised'>[] = []
   function collect(specifier: ts.Expression | undefined) {
     if (!specifier || !ts.isStringLiteralLike(specifier)) return
-    if (['bun:test', 'vitest', '@playwright/test'].includes(specifier.text)) {
-      packages.add(specifier.text)
-    }
+    const runner = RUNNERS_BY_PACKAGE.get(specifier.text)
+    if (runner) runners.push(runner)
   }
   function visit(node: ts.Node) {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      collect(node.moduleSpecifier)
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause
+      const importsValue =
+        !clause ||
+        (!clause.isTypeOnly &&
+          (Boolean(clause.name) ||
+            !clause.namedBindings ||
+            ts.isNamespaceImport(clause.namedBindings) ||
+            clause.namedBindings.elements.some((element) => !element.isTypeOnly)))
+      if (importsValue) collect(node.moduleSpecifier)
+    } else if (ts.isExportDeclaration(node)) {
+      const exportsValue =
+        !node.isTypeOnly &&
+        (!node.exportClause ||
+          ts.isNamespaceExport(node.exportClause) ||
+          node.exportClause.elements.some((element) => !element.isTypeOnly))
+      if (exportsValue) collect(node.moduleSpecifier)
     } else if (ts.isCallExpression(node)) {
       const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
@@ -154,26 +151,69 @@ function runnerPackages(source: ts.SourceFile) {
     ts.forEachChild(node, visit)
   }
   visit(source)
-  return packages
+  return runners
+}
+
+function valueImportBindings(statement: ts.ImportDeclaration) {
+  const clause = statement.importClause
+  if (!clause || clause.isTypeOnly) return []
+  const bindings: string[] = []
+  if (clause.name) bindings.push(clause.name.text)
+  if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+    bindings.push(clause.namedBindings.name.text)
+  }
+  if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+    for (const element of clause.namedBindings.elements) {
+      if (!element.isTypeOnly) bindings.push(element.name.text)
+    }
+  }
+  return bindings
+}
+
+function statementCallRoots(source: ts.SourceFile) {
+  const roots = new Set<string>()
+  function visit(node: ts.Node) {
+    if (ts.isFunctionLike(node)) return
+    if (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression)) {
+      const root = callRootName(node.expression.expression)
+      if (root) roots.add(root)
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return roots
 }
 
 function runnerFor(file: string, content: string): Runner {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
-  const direct = directRunner(source)
-  if (direct !== 'unrecognised') return direct
-  const packages = new Set<string>()
+  const [direct] = importedRunners(source)
+  if (direct) return direct
+
+  const called = statementCallRoots(source)
+  const valueBindings = new Set<string>()
+  const relativeImports: Array<{ bindings: string[]; specifier: string }> = []
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement)) continue
     if (!ts.isStringLiteralLike(statement.moduleSpecifier)) continue
-    const imported = readRelativeModule(file, statement.moduleSpecifier.text)
-    if (!imported) continue
-    for (const packageName of runnerPackages(imported.parsed.source)) packages.add(packageName)
+    const bindings = valueImportBindings(statement)
+    for (const binding of bindings) valueBindings.add(binding)
+    if (bindings.length && statement.moduleSpecifier.text.startsWith('.')) {
+      relativeImports.push({ bindings, specifier: statement.moduleSpecifier.text })
+    }
   }
-  if (packages.size !== 1) return 'unrecognised'
-  const [packageName] = packages
-  if (packageName === 'bun:test') return 'bun'
-  if (packageName === 'vitest') return 'vitest'
-  return 'browser'
+  if (['test', 'it', 'describe'].some((name) => called.has(name) && !valueBindings.has(name))) {
+    return 'unrecognised'
+  }
+
+  const runners = new Set<Exclude<Runner, 'unrecognised'>>()
+  for (const { bindings, specifier } of relativeImports) {
+    if (!bindings.some((binding) => called.has(binding))) continue
+    const imported = readRelativeModule(file, specifier)
+    if (!imported) continue
+    for (const runner of importedRunners(imported.parsed.source)) runners.add(runner)
+  }
+  return runners.size === 1 ? [...runners][0]! : 'unrecognised'
 }
 
 function rules(prefix: string, names: readonly string[]): Linter.RulesRecord {
