@@ -148,7 +148,7 @@ export function printReconcile(result: ReconcileResult): void {
     console.log(`${verb}:`)
     for (const item of result.closed) {
       console.log(
-        `  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}; removes ${human(item.removesMs)} engaged time`,
+        `  interval ${item.record_id}  ${item.ref}  ${identity(item)}  ${item.reason}; removes ${human(item.removesMs)} engaged time`,
       )
     }
   }
@@ -156,7 +156,7 @@ export function printReconcile(result: ReconcileResult): void {
   if (!result.leftOpen.length) console.log('  none')
   else
     for (const item of result.leftOpen) {
-      console.log(`  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}`)
+      console.log(`  interval ${item.record_id}  ${item.ref}  ${identity(item)}  ${item.reason}`)
     }
   console.log(
     `${result.dryRun ? 'dry run: ' : ''}${verb} ${result.closed.length}; left ${result.leftOpen.length} open`,

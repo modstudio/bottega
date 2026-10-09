@@ -154,11 +154,51 @@ try {
     })
     if (crossSpaceProjects.length !== 2)
       throw new Error('app.space_ids did not admit a two-space project read')
-    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
-      { source: interval.source, ref: interval.ref, start_at: interval.start_at },
-    ])
+    const hostedId = await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${USER}, true)`
+      await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
+      const rows = await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_interval`
+      return rows[0]!.id
+    })
+    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [hostedId])
     if ((await count(SPACE_A, 'hub_interval')) !== 0)
       throw new Error('vanished interval was not deleted')
+
+    const clientIntervalId = newRecordId()
+    const otherIntervalId = newRecordId()
+    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
+    const rekey = await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...interval, id: clientIntervalId },
+    ])
+    if (rekey.rekeyed !== 1) throw new Error('known tuple did not re-key to the client id')
+    const update = await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...interval, id: clientIntervalId, vendor_tokens: 250 },
+    ])
+    if (update.rekeyed !== 0) throw new Error('known id was re-keyed instead of updated')
+    const tokens = await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${USER}, true)`
+      await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
+      return tx<{ id: string; vendor_tokens: number }[]>`
+        SELECT id::text AS id, vendor_tokens FROM hub_interval`
+    })
+    if (
+      tokens.length !== 1 ||
+      tokens[0]!.id !== clientIntervalId ||
+      tokens[0]!.vendor_tokens !== 250
+    )
+      throw new Error('known id did not update in place')
+    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...interval, id: otherIntervalId, ref: 'orch:other', start_at: '2026-09-17T13:00:00.000Z' },
+    ])
+    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [otherIntervalId])
+    const remaining = await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${USER}, true)`
+      await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
+      return tx<{ id: string }[]>`SELECT id::text AS id FROM hub_interval`
+    })
+    if (remaining.length !== 1 || remaining[0]!.id !== clientIntervalId)
+      throw new Error('delete by id removed a row outside the requested id')
+    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [clientIntervalId])
 
     const identity = { userId: USER, spaceId: SPACE_A }
     const stamp = '2026-09-17T12:10:00.000Z'

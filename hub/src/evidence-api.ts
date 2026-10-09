@@ -53,7 +53,7 @@ async function identity(
     : null
 }
 
-function batch(body: unknown, field: 'rows' | 'keys'): unknown[] | null {
+function batch(body: unknown, field: 'rows' | 'keys' | 'ids'): unknown[] | null {
   if (!body || typeof body !== 'object') return null
   const value = (body as Record<string, unknown>)[field]
   return Array.isArray(value) && value.length <= 500 ? value : null
@@ -120,10 +120,7 @@ async function deleteIntervalBatch(
       ),
     )
   }
-  return Response.json(
-    { error: 'ids or keys must contain at most 500 items' },
-    { status: 400 },
-  )
+  return Response.json({ error: 'ids or keys must contain at most 500 items' }, { status: 400 })
 }
 
 export async function evidenceApi(

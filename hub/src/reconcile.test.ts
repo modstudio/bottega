@@ -8,15 +8,15 @@ const { indexRunAnswers, reconcileOpenIntervals, runRef, statusFor } = await imp
 
 beforeAll(resetFixtureStore)
 
-function add(id: number, ref: string, endAt: string) {
+function add(recordId: string, ref: string, endAt: string) {
   writeTransaction((conn) =>
     conn
       .query(
         `INSERT INTO interval
-       (id, source, start_at, end_at, ref, open, claude_tokens, vendor_tokens)
+       (record_id, source, start_at, end_at, ref, open, claude_tokens, vendor_tokens)
      VALUES (?, 'orch', '2026-09-03T00:00:00.000Z', ?, ?, 1, 0, 0)`,
       )
-      .run(id, endAt, ref),
+      .run(recordId, endAt, ref),
   )
 }
 
@@ -127,9 +127,9 @@ function chain(row: {
 
 describe('open interval reconciliation', () => {
   test('dry-run reports terminal, live, and unknown rows without writing', async () => {
-    add(1, 'orch:1205', '2026-09-03T00:00:01.000Z')
-    add(2, 'orch:1206', '2026-09-03T00:00:02.000Z')
-    add(3, 'orch:9999', '2026-09-03T00:00:03.000Z')
+    add('interval-1', 'orch:1205', '2026-09-03T00:00:01.000Z')
+    add('interval-2', 'orch:1206', '2026-09-03T00:00:02.000Z')
+    add('interval-3', 'orch:9999', '2026-09-03T00:00:03.000Z')
     const spawn = orchAnswers([
       { id: 1205, status: 'ok' },
       { id: 1206, status: 'running' },
@@ -140,17 +140,17 @@ describe('open interval reconciliation', () => {
         dryRun: true,
         now: new Date('2026-09-03T02:00:01.000Z').getTime(),
       })
-      expect(result.closed.map((row) => [row.id, row.status, row.removesMs])).toEqual([
-        [1, 'ok', 7_200_000],
+      expect(result.closed.map((row) => [row.record_id, row.status, row.removesMs])).toEqual([
+        ['interval-1', 'ok', 7_200_000],
       ])
-      expect(result.leftOpen.map((row) => [row.id, row.reason])).toEqual([
-        [2, 'run 1206 is still running'],
-        [3, 'run 9999 is unknown to orch; needs a decision'],
+      expect(result.leftOpen.map((row) => [row.record_id, row.reason])).toEqual([
+        ['interval-2', 'run 1206 is still running'],
+        ['interval-3', 'run 9999 is unknown to orch; needs a decision'],
       ])
-      expect(db().query('SELECT id, open FROM interval ORDER BY id').all()).toEqual([
-        { id: 1, open: 1 },
-        { id: 2, open: 1 },
-        { id: 3, open: 1 },
+      expect(db().query('SELECT record_id, open FROM interval ORDER BY record_id').all()).toEqual([
+        { record_id: 'interval-1', open: 1 },
+        { record_id: 'interval-2', open: 1 },
+        { record_id: 'interval-3', open: 1 },
       ])
     } finally {
       spawn.mockRestore()
@@ -164,10 +164,12 @@ describe('open interval reconciliation', () => {
       { id: 9999, status: 'unknown', unknown: true },
     ])
     try {
-      const before = db().query('SELECT end_at FROM interval WHERE id = 1').get()
+      const before = db().query('SELECT end_at FROM interval WHERE record_id = ?').get('interval-1')
       const first = await reconcileOpenIntervals()
-      expect(first.closed.map((row) => row.id)).toEqual([1])
-      expect(db().query('SELECT open, end_at FROM interval WHERE id = 1').get()).toEqual({
+      expect(first.closed.map((row) => row.record_id)).toEqual(['interval-1'])
+      expect(
+        db().query('SELECT open, end_at FROM interval WHERE record_id = ?').get('interval-1'),
+      ).toEqual({
         open: 0,
         ...(before as { end_at: string }),
       })

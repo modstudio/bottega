@@ -33,6 +33,8 @@ export function decideCollectorReplace<T extends IntervalNaturalKey>(
   return {
     updates,
     inserts,
-    deletes: existing.filter((row) => !recomputedKeys.has(naturalKey(row))).map((row) => row.record_id),
+    deletes: existing
+      .filter((row) => !recomputedKeys.has(naturalKey(row)))
+      .map((row) => row.record_id),
   }
 }

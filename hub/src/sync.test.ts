@@ -8,7 +8,7 @@ import { batches, contentHash, diffRows, signedInRecordUserId, syncEvidence } fr
 
 beforeEach(resetFixtureStore)
 
-const identity = (capability = true) => ({
+const identity = (capability = true, intervalRecordId = true) => ({
   userId: 'user-1',
   activeSpaceId: 'space-active',
   memberships: [
@@ -16,11 +16,12 @@ const identity = (capability = true) => ({
     { spaceId: 'space-a', slug: 'alpha' },
     { spaceId: 'space-b', slug: 'beta' },
   ],
-  capabilities: capability ? { targetSpaceIntervalEvidence: true } : {},
+  capabilities: capability ? { targetSpaceIntervalEvidence: true, intervalRecordId } : {},
 })
 
-function interval(ref: string, project: string | null): IntervalEvidence {
+function interval(ref: string, project: string | null): IntervalEvidence & { id: string } {
   return {
+    id: `00000000-0000-4000-8000-00000000000${ref}`,
     task_key: null,
     project_name: project,
     source: 'orch',
@@ -39,16 +40,17 @@ function interval(ref: string, project: string | null): IntervalEvidence {
   }
 }
 
-function insertInterval(row: IntervalEvidence) {
+function insertInterval(row: IntervalEvidence & { id: string }) {
   writeTransaction((conn) => {
     conn
       .query(
         `INSERT INTO interval
-          (task_key,project,source,agent,job,start_at,end_at,claude_tokens,vendor_tokens,
+          (record_id,task_key,project,source,agent,job,start_at,end_at,claude_tokens,vendor_tokens,
            vendor_cost_usd,ref,via,open,session_id,user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
+        row.id,
         row.task_key,
         row.project_name,
         row.source,
@@ -68,15 +70,17 @@ function insertInterval(row: IntervalEvidence) {
   })
 }
 
-const keyOf = (row: IntervalEvidence) => JSON.stringify([row.source, row.ref, row.start_at])
+const keyOf = (row: IntervalEvidence & { id?: string }) => row.id!
 
 function syncFetch(
   writes: Array<{ method: string; recordSpace: string | null; body: Record<string, unknown> }>,
-  options: { capability?: boolean; failSpace?: string } = {},
+  options: { capability?: boolean; intervalRecordId?: boolean; failSpace?: string } = {},
 ) {
   return async (url: string, init?: RequestInit) => {
     if (url.endsWith('/v1/tasks/identity'))
-      return Response.json(identity(options.capability !== false))
+      return Response.json(
+        identity(options.capability !== false, options.intervalRecordId !== false),
+      )
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     const recordSpace = new Headers(init?.headers).get('x-record-space')
     writes.push({ method: init?.method ?? 'GET', recordSpace, body })
@@ -349,8 +353,8 @@ describe('evidence sync planning', () => {
       registeredProjects: registered,
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
-      ['PUT', 'space-b'],
       ['DELETE', 'space-a'],
+      ['PUT', 'space-b'],
     ])
     expect(
       db()
@@ -384,7 +388,10 @@ describe('evidence sync planning', () => {
       fetch: syncFetch(writes, { failSpace: 'space-b' }),
       registeredProjects: registered,
     })
-    expect(writes.map((write) => write.method)).toEqual(['PUT'])
+    expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
+      ['DELETE', 'space-a'],
+      ['PUT', 'space-b'],
+    ])
     expect(result.interval.issues[0]?.reason).toContain('delivery-failed')
     expect(
       db()
@@ -419,8 +426,8 @@ describe('evidence sync planning', () => {
       fetch: syncFetch(writes),
       registeredProjects: registered,
     })
-    expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
-      ['DELETE', 'space-b'],
+    expect(writes.map((write) => [write.method, write.recordSpace, write.body])).toEqual([
+      ['DELETE', 'space-b', { ids: [keyOf(vanished)] }],
     ])
     expect(db().query(`SELECT COUNT(*) AS n FROM record_ledger`).get()).toEqual({ n: 1 })
   })
@@ -499,6 +506,178 @@ describe('evidence sync planning', () => {
     ).toEqual([{ local_key: keyOf(current) }])
   })
 
+  test('a failed move PUT leaves the ledger unchanged and the next sync completes the move', async () => {
+    const row = interval('1', 'two')
+    insertInterval(row)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger
+             (table_name,local_key,content_hash,synced_at,destination_space_id)
+           VALUES ('interval',?,?,?,?)`,
+        )
+        .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z', 'space-a'),
+    )
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch([], { failSpace: 'space-b' }),
+      registeredProjects: registered,
+    })
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-a' })
+
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
+      ['DELETE', 'space-a'],
+      ['PUT', 'space-b'],
+    ])
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-b' })
+  })
+
+  test('after an unchanged collection the next push sends no interval', async () => {
+    insertInterval(interval('1', 'one'))
+    const first: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(first),
+      registeredProjects: registered,
+    })
+    expect(first.map((write) => write.method)).toEqual(['PUT'])
+    const second: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(second),
+      registeredProjects: registered,
+    })
+    expect(second).toEqual([])
+  })
+
+  test('a re-timed row produces one PUT and one DELETE by UUID', async () => {
+    const original = interval('1', 'one')
+    insertInterval(original)
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch([]),
+      registeredProjects: registered,
+    })
+    const replacement = interval('2', 'one')
+    writeTransaction((conn) => {
+      conn.query(`DELETE FROM interval WHERE record_id=?`).run(original.id)
+      conn
+        .query(
+          `INSERT INTO interval
+            (record_id,task_key,project,source,agent,job,start_at,end_at,claude_tokens,vendor_tokens,
+             vendor_cost_usd,ref,via,open,session_id,user_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          replacement.id,
+          replacement.task_key,
+          replacement.project_name,
+          replacement.source,
+          replacement.agent,
+          replacement.job,
+          replacement.start_at,
+          replacement.end_at,
+          replacement.claude_tokens,
+          replacement.vendor_tokens,
+          replacement.vendor_cost_usd,
+          original.ref,
+          replacement.via,
+          replacement.open,
+          replacement.session_id,
+          replacement.user_id,
+        )
+    })
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes.map((write) => [write.method, write.recordSpace, write.body])).toEqual([
+      ['PUT', 'space-a', { rows: [{ ...replacement, ref: original.ref }] }],
+      ['DELETE', 'space-a', { ids: [original.id] }],
+    ])
+  })
+
+  test('a vanished tuple acknowledgement deletes by tuple one last time', async () => {
+    const current = interval('1', 'one')
+    insertInterval(current)
+    writeTransaction((conn) => {
+      const put = conn.query(
+        `INSERT INTO record_ledger
+           (table_name,local_key,content_hash,synced_at,destination_space_id)
+         VALUES ('interval',?,?,?,?)`,
+      )
+      put.run(current.id, contentHash(current), '2026-10-01T00:00:00.000Z', 'space-a')
+      put.run(
+        '["orch","orch:gone","2026-10-08T00:00:00.000Z"]',
+        'hash-gone',
+        '2026-10-01T00:00:00.000Z',
+        'space-b',
+      )
+    })
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: registered,
+    })
+    expect(writes).toEqual([
+      {
+        method: 'DELETE',
+        recordSpace: 'space-b',
+        body: {
+          keys: [{ source: 'orch', ref: 'orch:gone', start_at: '2026-10-08T00:00:00.000Z' }],
+        },
+      },
+    ])
+  })
+
   test('refuses a server without interval target-space support before any write', async () => {
     insertInterval(interval('1', 'one'))
     const writes: Array<{
@@ -514,6 +693,24 @@ describe('evidence sync planning', () => {
         registeredProjects: registered,
       }),
     ).rejects.toThrow('does not advertise target-space interval evidence support')
+    expect(writes).toEqual([])
+  })
+
+  test('refuses a server without interval record id support before any write', async () => {
+    insertInterval(interval('1', 'one'))
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+    await expect(
+      syncEvidence({
+        baseUrl: 'https://hub.example.test',
+        token: 'session',
+        fetch: syncFetch(writes, { intervalRecordId: false }),
+        registeredProjects: registered,
+      }),
+    ).rejects.toThrow('does not advertise interval record id support')
     expect(writes).toEqual([])
   })
 
@@ -540,6 +737,66 @@ describe('evidence sync planning', () => {
 })
 
 describe('evidence API', () => {
+  test('DELETE by id calls the id remover and DELETE by tuple calls the key remover', async () => {
+    const ids: string[] = []
+    const keys: unknown[] = []
+    const idResponse = await evidenceApi(
+      new Request('https://hub.example.test/v1/evidence/intervals', {
+        method: 'DELETE',
+        headers: {
+          authorization: 'Bearer fixture',
+          'content-type': 'application/json',
+          'x-record-space': 'space-active',
+        },
+        body: JSON.stringify({ ids: ['interval-id'] }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-active',
+            memberships: [{ space_id: 'space-active', slug: 'active' }],
+          }),
+        removeIntervals: async (_url, _tenant, values) => {
+          ids.push(...values)
+          return { deleted: values.length }
+        },
+      },
+    )
+    expect(idResponse?.status).toBe(200)
+    expect(ids).toEqual(['interval-id'])
+
+    const keyResponse = await evidenceApi(
+      new Request('https://hub.example.test/v1/evidence/intervals', {
+        method: 'DELETE',
+        headers: {
+          authorization: 'Bearer fixture',
+          'content-type': 'application/json',
+          'x-record-space': 'space-active',
+        },
+        body: JSON.stringify({
+          keys: [{ source: 'orch', ref: 'orch:1', start_at: '2026-10-08T00:00:00.000Z' }],
+        }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
+      {
+        fetch: async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-active',
+            memberships: [{ space_id: 'space-active', slug: 'active' }],
+          }),
+        removeIntervalKeys: async (_url, _tenant, values) => {
+          keys.push(...values)
+          return { deleted: values.length }
+        },
+      },
+    )
+    expect(keyResponse?.status).toBe(200)
+    expect(keys).toEqual([{ source: 'orch', ref: 'orch:1', start_at: '2026-10-08T00:00:00.000Z' }])
+  })
+
   test('a non-member interval target returns 403 before the write service', async () => {
     let wrote = false
     const response = await evidenceApi(
@@ -562,7 +819,7 @@ describe('evidence API', () => {
           }),
         putIntervals: async () => {
           wrote = true
-          return { upserted: 0 }
+          return { upserted: 0, rekeyed: 0 }
         },
       },
     )

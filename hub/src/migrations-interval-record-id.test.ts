@@ -79,15 +79,12 @@ test('interval UUID rebuild preserves rows, rewrites matching ledger keys, and l
   expect(intervals.every((row) => row.record_id.includes('-'))).toBe(true)
 
   const ledger = database
-    .query<
-      { local_key: string; destination_space_id: string | null; table_name: string },
-      []
-    >(`SELECT table_name, local_key, destination_space_id FROM record_ledger ORDER BY table_name, local_key`)
+    .query<{ local_key: string; destination_space_id: string | null; table_name: string }, []>(
+      `SELECT table_name, local_key, destination_space_id FROM record_ledger ORDER BY table_name, local_key`,
+    )
     .all()
   const intervalLedger = ledger.filter((row) => row.table_name === 'interval')
-  const matchedClaude = intervalLedger.find(
-    (row) => row.local_key === intervals[0]!.record_id,
-  )
+  const matchedClaude = intervalLedger.find((row) => row.local_key === intervals[0]!.record_id)
   const matchedOrch = intervalLedger.find((row) => row.local_key === intervals[1]!.record_id)
   expect(matchedClaude).toEqual({
     table_name: 'interval',

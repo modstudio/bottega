@@ -42,22 +42,25 @@ test('fixture question selection removes only documented sessions whose run is a
 test('listed fixture interval with explicit unknown answer is selected (mutation: skip the unknown-run check)', () => {
   expect(
     fixtureIntervalsWithoutRuns(
-      [{ id: 1, source: 'orch', ref: 'orch:9103' }],
+      [{ record_id: 'interval-1', source: 'orch', ref: 'orch:9103' }],
       new Map([[9103, { id: 9103, status: 'unknown', unknown: true }]]),
     ),
-  ).toEqual([{ id: 1, source: 'orch', ref: 'orch:9103' }])
+  ).toEqual([{ record_id: 'interval-1', source: 'orch', ref: 'orch:9103' }])
 })
 
 test('listed fixture interval with no answer is kept (mutation: treat a missing answer as unknown)', () => {
   expect(
-    fixtureIntervalsWithoutRuns([{ id: 1, source: 'orch', ref: 'orch:9103' }], new Map()),
+    fixtureIntervalsWithoutRuns(
+      [{ record_id: 'interval-1', source: 'orch', ref: 'orch:9103' }],
+      new Map(),
+    ),
   ).toEqual([])
 })
 
 test('listed fixture interval with known run is kept (mutation: select every listed ref)', () => {
   expect(
     fixtureIntervalsWithoutRuns(
-      [{ id: 1, source: 'orch', ref: 'orch:9103' }],
+      [{ record_id: 'interval-1', source: 'orch', ref: 'orch:9103' }],
       new Map([[9103, { id: 9103, status: 'ok' }]]),
     ),
   ).toEqual([])
@@ -66,14 +69,14 @@ test('listed fixture interval with known run is kept (mutation: select every lis
 test('unlisted interval with unknown run is kept (mutation: select any unknown orch interval)', () => {
   expect(
     fixtureIntervalsWithoutRuns(
-      [{ id: 1, source: 'orch', ref: 'orch:2072' }],
+      [{ record_id: 'interval-1', source: 'orch', ref: 'orch:2072' }],
       new Map([[2072, { id: 2072, status: 'unknown', unknown: true }]]),
     ),
   ).toEqual([])
 })
 
 test('turn ref looks up the turn id not the root (mutation: look up parsed.root for turn refs)', () => {
-  const interval = { id: 1, source: 'orch' as const, ref: 'orch:9301:turn:9302' }
+  const interval = { record_id: 'interval-1', source: 'orch' as const, ref: 'orch:9301:turn:9302' }
   expect(
     fixtureIntervalsWithoutRuns(
       [interval],

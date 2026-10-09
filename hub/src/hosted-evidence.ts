@@ -90,7 +90,7 @@ function intervalValues(row: IntervalEvidence) {
   }
 }
 
-async function writeHostedInterval(
+async function insertHostedInterval(
   tx: SQL,
   identity: EvidenceIdentity,
   id: string,
@@ -107,13 +107,27 @@ async function writeHostedInterval(
        ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
        ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
        ${value.user_id}::uuid, now())
-    ON CONFLICT (id) DO UPDATE SET
-      task_key=excluded.task_key, project_name=excluded.project_name, agent=excluded.agent,
-      job=excluded.job, start_at=excluded.start_at, end_at=excluded.end_at,
-      claude_tokens=excluded.claude_tokens, vendor_tokens=excluded.vendor_tokens,
-      vendor_cost_usd=excluded.vendor_cost_usd, ref=excluded.ref, via=excluded.via,
-      open=excluded.open, session_id=excluded.session_id, user_id=excluded.user_id,
+  `
+}
+
+async function updateHostedInterval(
+  tx: SQL,
+  identity: EvidenceIdentity,
+  currentId: string,
+  nextId: string,
+  row: IntervalEvidence,
+) {
+  const value = intervalValues(row)
+  await tx`
+    UPDATE hub_interval SET
+      id=${nextId}::uuid, task_key=${value.task_key}, project_name=${value.project_name},
+      source=${value.source}, agent=${value.agent}, job=${value.job},
+      start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
+      claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},
+      vendor_cost_usd=${value.vendor_cost_usd}, ref=${value.ref}, via=${value.via},
+      open=${value.open}, session_id=${value.session_id}, user_id=${value.user_id}::uuid,
       updated_at=now()
+    WHERE id=${currentId}::uuid AND space_id=${identity.spaceId}::uuid
   `
 }
 
@@ -159,13 +173,12 @@ async function upsertOneInterval(
   }
   if (decision.kind === 'rekey') {
     // Re-keys a hosted interval to the client's record_id.
-    await tx`
-      UPDATE hub_interval SET id=${decision.toId}::uuid WHERE id=${decision.fromId}::uuid
-        AND space_id=${identity.spaceId}::uuid`
-    await writeHostedInterval(tx, identity, decision.toId, row)
+    await updateHostedInterval(tx, identity, decision.fromId, decision.toId, row)
     return 1
   }
-  await writeHostedInterval(tx, identity, decision.id, row)
+  if (decision.kind === 'update')
+    await updateHostedInterval(tx, identity, decision.id, decision.id, row)
+  else await insertHostedInterval(tx, identity, decision.id, row)
   return 0
 }
 
