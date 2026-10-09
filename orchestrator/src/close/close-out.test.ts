@@ -141,7 +141,7 @@ test('a recreated released tree path survives a second close-out', () => {
     const first = closeOutRun(fixture.id, { intent: 'terminal' })
     expect(first.outcome).toBe('released')
     expect(first.detail).toContain(
-      `DEV-647-orch-${fixture.id} is run recovery evidence until task landing is classified`,
+      `DEV-647-orch-${fixture.id} is kept so this run's commits stay recoverable until the task lands`,
     )
     expect(first.detail).toContain(
       `prune after landing: orch branches prune --project close-out-${fixture.id} --key DEV-647`,

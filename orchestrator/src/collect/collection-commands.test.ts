@@ -59,7 +59,7 @@ test('result explains why a released writing branch remains and how to prune it'
   })
 
   expect(lines.join('\n')).toContain(
-    'retained:  DEV-1199-orch-1 is run recovery evidence until task landing is classified',
+    "retained:  DEV-1199-orch-1 is kept so this run's commits stay recoverable until the task lands",
   )
   expect(lines.join('\n')).toContain(
     'prune:     orch branches prune --project fixture-project --key DEV-1199',

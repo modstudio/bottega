@@ -5,7 +5,7 @@ export function retainedBranchForCloseOut(mintedBranch: string | null): string |
 
 /** Explain the recovery claim represented by a retained run branch. */
 export function retainedBranchReason(branch: string): string {
-  return `${branch} is run recovery evidence until task landing is classified`
+  return `${branch} is kept so this run's commits stay recoverable until the task lands`
 }
 
 /** Name the task-scoped classifier and cleanup for a retained run branch. */
