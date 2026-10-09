@@ -79,7 +79,7 @@ test('reports detector failures for proposed and prior content as unchecked', as
   ).toEqual({ status: 'unchecked', findings: [], reason: 'detector failed: prior lint exploded' })
 })
 
-test('matches only the supported JavaScript and TypeScript test extensions', () => {
+test('matches supported JavaScript, TypeScript, and PHP test paths', () => {
   for (const extension of ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts']) {
     expect(isTestFile(`/project/example.test.${extension}`)).toBe(true)
     expect(isTestFile(`/project/example.spec.${extension}`)).toBe(true)
@@ -87,6 +87,43 @@ test('matches only the supported JavaScript and TypeScript test extensions', () 
   for (const extension of ['mtsx', 'ctsx', 'mjsx', 'cjsx']) {
     expect(isTestFile(`/project/example.test.${extension}`)).toBe(false)
   }
+  expect(isTestFile('/project/tests/Feature/FooTest.php')).toBe(true)
+  expect(isTestFile('/project/test/Feature/FooTest.php')).toBe(false)
+  expect(isTestFile('/project/tests/Feature/Foo.php')).toBe(false)
+})
+
+test('judges only a newly added PHP vacuous method', async () => {
+  const oldMethod = `public function testOld(): void { self::assertSame('old', 'value'); }`
+  const before = `<?php class FooTest { ${oldMethod} }`
+  const unchanged = await judgeTestSubstance({
+    file: '/project/tests/Feature/FooTest.php',
+    before,
+    after: `${before}\n// unrelated edit`,
+  })
+  expect(unchanged).toEqual({ status: 'ok', findings: [], reason: '' })
+
+  const added = await judgeTestSubstance({
+    file: '/project/tests/Feature/FooTest.php',
+    before,
+    after: `<?php class FooTest { ${oldMethod} public function testAdded(): void { self::assertSame('new', 'value'); } }`,
+  })
+  expect(added).toMatchObject({
+    status: 'refused',
+    findings: [{ test: 'testAdded', rule: 'vacuous-test' }],
+  })
+})
+
+test('enables PHP policy findings only when requested', async () => {
+  const input = {
+    file: '/project/tests/Feature/FooTest.php',
+    before: null,
+    after: `<?php class FooTest { public function testMock(): void { $this->createMock(Foo::class); } }`,
+  }
+  expect(await judgeTestSubstance(input)).toEqual({ status: 'ok', findings: [], reason: '' })
+  expect(await judgeTestSubstance({ ...input, phpPolicyRules: ['createMock'] })).toMatchObject({
+    status: 'refused',
+    findings: [{ test: 'testMock', rule: 'createMock' }],
+  })
 })
 
 function finding(testName: string, line = 4): TestFinding {

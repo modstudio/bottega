@@ -4,7 +4,11 @@
 export const testSubstanceModules = [
   {
     file: 'shared/test-substance/test-substance.ts',
-    allowed: ['../ratchet.ts', './test-substance-eslint.ts'],
+    allowed: ['../ratchet.ts', './test-substance-eslint.ts', './test-substance-php.ts'],
+  },
+  {
+    file: 'shared/test-substance/test-substance-php.ts',
+    allowed: ['./test-substance.ts'],
   },
   {
     file: 'shared/test-substance/test-substance-eslint.ts',

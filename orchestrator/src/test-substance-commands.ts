@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import {
   isTestFile,
   judgeTestSubstance,
+  PHP_POLICY_RULES,
   type TestSubstanceInput,
   type TestSubstanceJudgment,
 } from '../../shared/test-substance/test-substance.ts'
@@ -61,7 +62,7 @@ function reconstructWrite(
   toolInput: Record<string, unknown>,
 ): Reconstruction {
   return typeof toolInput.content === 'string'
-    ? { status: 'ready', input: { file, before, after: toolInput.content } }
+    ? { status: 'ready', input: { file, before, after: toolInput.content, phpPolicyRules: [] } }
     : { status: 'unchecked', file, reason: 'Write input has no string content' }
 }
 
@@ -73,7 +74,7 @@ function reconstructEdit(
   const result = replaced(before, toolInput.old_string, toolInput.new_string, toolInput.replace_all)
   return result.content === undefined
     ? { status: 'unchecked', file, reason: result.reason! }
-    : { status: 'ready', input: { file, before, after: result.content } }
+    : { status: 'ready', input: { file, before, after: result.content, phpPolicyRules: [] } }
 }
 
 function reconstructMultiEdit(file: string, before: string, edits: unknown[]): Reconstruction {
@@ -87,7 +88,7 @@ function reconstructMultiEdit(file: string, before: string, edits: unknown[]): R
     }
     after = result.content
   }
-  return { status: 'ready', input: { file, before, after } }
+  return { status: 'ready', input: { file, before, after, phpPolicyRules: [] } }
 }
 
 /** Reconstruct the whole file produced by one editor-tool call, without applying it. */
@@ -118,15 +119,27 @@ export function reconstructTestEdit(
 
 function parsePublicInput(value: unknown): TestSubstanceInput {
   const input = object(value)
+  const phpPolicyRules = input?.phpPolicyRules ?? []
   if (
     !input ||
     typeof input.file !== 'string' ||
     (input.before !== null && typeof input.before !== 'string') ||
-    typeof input.after !== 'string'
+    typeof input.after !== 'string' ||
+    !Array.isArray(phpPolicyRules) ||
+    !phpPolicyRules.every(
+      (rule) => typeof rule === 'string' && PHP_POLICY_RULES.includes(rule as never),
+    )
   ) {
-    throw new Error('input must be {"file":string,"before":string|null,"after":string}')
+    throw new Error(
+      'input must be {"file":string,"before":string|null,"after":string,"phpPolicyRules"?:string[]}',
+    )
   }
-  return { file: input.file, before: input.before, after: input.after }
+  return {
+    file: input.file,
+    before: input.before,
+    after: input.after,
+    phpPolicyRules: phpPolicyRules as TestSubstanceInput['phpPolicyRules'],
+  }
 }
 
 type TargetRead =

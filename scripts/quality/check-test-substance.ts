@@ -3,12 +3,15 @@ import { fileURLToPath } from 'node:url'
 import {
   isTestFile,
   judgeTestSubstance,
+  PHP_POLICY_RULES,
+  PHP_UNIVERSAL_RULES,
   type TestFinding,
 } from '../../shared/test-substance/test-substance'
 import {
   guardedRules,
   testSubstanceReport,
 } from '../../shared/test-substance/test-substance-eslint'
+import { phpTestSubstanceReport } from '../../shared/test-substance/test-substance-php'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
@@ -53,8 +56,7 @@ function afterContent(mode: Mode, file: string) {
     : git(['show', `HEAD:${file}`]).stdout
 }
 
-async function guardFixtures() {
-  const failures: string[] = []
+async function guardJavaScriptFixtures(failures: string[]) {
   for (const runner of ['bun', 'vitest'] as const) {
     const file = `${fixtureDirectory}test-substance-${runner}.fixtures.ts`
     const report = await testSubstanceReport(file, readFileSync(file, 'utf8'))
@@ -68,6 +70,46 @@ async function guardFixtures() {
         failures.push(`${runner}: ${rule} produced no finding on its fixture`)
     }
   }
+}
+
+async function guardPhpFixture(failures: string[]) {
+  const phpFile = `${fixtureDirectory}test-substance-php.fixtures.php`
+  const content = readFileSync(phpFile, 'utf8')
+  const phpReport = await phpTestSubstanceReport(phpFile, content, PHP_POLICY_RULES)
+  const phpCounts = new Map<string, number>()
+  for (const finding of phpReport.findings) {
+    phpCounts.set(finding.rule, (phpCounts.get(finding.rule) ?? 0) + 1)
+  }
+  const universalReport = await phpTestSubstanceReport(phpFile, content, [])
+  for (const finding of universalReport.findings) {
+    if (PHP_POLICY_RULES.includes(finding.rule as never)) {
+      failures.push(`php: disabled policy rule ${finding.rule} produced a finding`)
+    }
+  }
+  const expectedPhpCounts = new Map<string, number>(
+    [...PHP_UNIVERSAL_RULES, ...PHP_POLICY_RULES].map((rule) => [
+      rule,
+      rule === 'sql-string-matching' ? 2 : 1,
+    ]),
+  )
+  for (const [rule, count] of expectedPhpCounts) {
+    const produced = phpCounts.get(rule) ?? 0
+    if (produced !== count)
+      failures.push(`php: ${rule} expected ${count} finding(s), produced ${produced}`)
+  }
+  for (const finding of phpReport.findings) {
+    if (!expectedPhpCounts.has(finding.rule))
+      failures.push(`php: unexpected ${finding.rule} finding`)
+    if (finding.testName.startsWith('testClean')) {
+      failures.push(`php: clean counterpart ${finding.testName} produced ${finding.rule}`)
+    }
+  }
+}
+
+async function guardFixtures() {
+  const failures: string[] = []
+  await guardJavaScriptFixtures(failures)
+  await guardPhpFixture(failures)
   return failures
 }
 
@@ -93,6 +135,7 @@ async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
     file,
     before: beforeContent ?? null,
     after: afterContent(mode, file),
+    phpPolicyRules: [],
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
   return {
