@@ -7,11 +7,11 @@ import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
 import {
   ingestTrackers,
+  type TrackerTask,
   trackerCredentials,
   trackerLegError,
   trackerObservationTimes,
   trackerRegistrations,
-  upsertTrackerTask,
   writeTrackerCache,
 } from './trackers.ts'
 
@@ -39,6 +39,9 @@ const storedTrackerTask = {
   updated_at: '2026-09-01T10:00:00.000Z',
   assignee: null,
 }
+
+const cacheTrackerTask = (task: TrackerTask, at = new Date().toISOString()) =>
+  writeTrackerCache([task], at)
 
 describe('tracker observation times', () => {
   const at = '2026-09-03T10:00:00.000Z'
@@ -248,8 +251,8 @@ describe('tracker assignees', () => {
   test('a second unchanged observation preserves repaired machine times', () => {
     const firstAt = '2026-09-23T10:00:00.000Z'
     const secondAt = '2026-09-24T10:00:00.000Z'
-    upsertTrackerTask(trackerTask, firstAt)
-    upsertTrackerTask(trackerTask, secondAt)
+    cacheTrackerTask(trackerTask, firstAt)
+    cacheTrackerTask(trackerTask, secondAt)
 
     expect(
       db()
@@ -293,7 +296,7 @@ describe('tracker assignees', () => {
     expect(names).toEqual([null])
     expect(calls).toBe(0)
 
-    upsertTrackerTask({
+    cacheTrackerTask({
       externalId: 'tracker-alp-899',
       key: 'ALP-899',
       project: 'alpha',
@@ -325,8 +328,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask(task, '2026-09-23T10:00:00.000Z')
-    upsertTrackerTask({ ...task, externalId: null }, '2026-09-24T10:00:00.000Z')
+    cacheTrackerTask(task, '2026-09-23T10:00:00.000Z')
+    cacheTrackerTask({ ...task, externalId: null }, '2026-09-24T10:00:00.000Z')
 
     expect(
       db()
@@ -346,8 +349,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask({ ...shared, project: 'starship', externalId: 'starship-21' })
-    upsertTrackerTask({ ...shared, project: 'stopal', externalId: 'stopal-21' })
+    cacheTrackerTask({ ...shared, project: 'starship', externalId: 'starship-21' })
+    cacheTrackerTask({ ...shared, project: 'stopal', externalId: 'stopal-21' })
 
     expect(
       db()
@@ -369,7 +372,7 @@ describe('tracker assignees', () => {
       `),
     )
 
-    upsertTrackerTask({
+    cacheTrackerTask({
       externalId: 'tracker-alp-901',
       key: 'ALP-901',
       project: 'alpha',
@@ -397,8 +400,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask({ ...task, key: 'REN-1' })
-    upsertTrackerTask({ ...task, key: 'REN-2' })
+    cacheTrackerTask({ ...task, key: 'REN-1' })
+    cacheTrackerTask({ ...task, key: 'REN-2' })
 
     expect(
       db()
@@ -425,8 +428,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-OLD' })
-    upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
+    cacheTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-OLD' })
+    cacheTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
 
     const renamed = { ...task, externalId: 'collision-target', key: 'COL-NEW' }
     const first = writeTrackerCache([renamed], '2026-09-23T10:00:00.000Z')[0]!
@@ -459,8 +462,8 @@ describe('tracker assignees', () => {
     ).toBe(1)
     expect(taskIdentityDoctor().collidedKeyUncertainties).toBe(1)
 
-    upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-FREED' })
-    upsertTrackerTask(renamed)
+    cacheTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-FREED' })
+    cacheTrackerTask(renamed)
     expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
       key: 'COL-NEW',
     })

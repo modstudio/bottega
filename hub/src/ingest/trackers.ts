@@ -361,10 +361,6 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
   return { stored: row, times, changed }
 }
 
-export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
-  writeTransaction((conn) => upsertTrackerTaskOn(conn, t, at))
-}
-
 export type TrackerTaskObservation = {
   at: string
   taskRecordId: string | null

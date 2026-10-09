@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
-import { upsertTrackerTask } from './ingest/trackers.ts'
+import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import {
   closeTask,
@@ -203,16 +203,21 @@ describe('local task tracker', () => {
     writeTransaction((conn) =>
       conn.query(`UPDATE task SET assignee = 'Local Owner' WHERE key = ?`).run(local.key),
     )
-    upsertTrackerTask({
-      externalId: 'tracker-local-key',
-      key: local.key,
-      project: 'gamma',
-      title: 'Tracker replacement',
-      status: 'done',
-      category: 'done',
-      updatedAt: '2026-09-02T00:00:00.000Z',
-      assignee: 'Tracker Owner',
-    })
+    writeTrackerCache(
+      [
+        {
+          externalId: 'tracker-local-key',
+          key: local.key,
+          project: 'gamma',
+          title: 'Tracker replacement',
+          status: 'done',
+          category: 'done',
+          updatedAt: '2026-09-02T00:00:00.000Z',
+          assignee: 'Tracker Owner',
+        },
+      ],
+      '2026-09-02T00:00:00.000Z',
+    )
     const after = showTask(local.key).task
     expect(after.source).toBe('local')
     expect(after.title).toBe('Keep this local')
