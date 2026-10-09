@@ -21,7 +21,7 @@ import {
 
 const CONFINEMENT_JOB_KINDS = ['reading', 'writing'] as const
 export type ConfinementJobKind = (typeof CONFINEMENT_JOB_KINDS)[number]
-export type ConfinementSandbox = RunSandbox | CodexSandboxRuling['sandbox']
+type ConfinementSandbox = RunSandbox | CodexSandboxRuling['sandbox']
 
 export type ConfinementReportAgent = {
   name: string
