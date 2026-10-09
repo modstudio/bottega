@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
+  resolvePhpPolicyRules,
+  unreadPhpPolicyRulesLine,
+} from '../../orchestrator/src/test-substance-project-policy'
+import {
   isTestFile,
   judgeTestSubstance,
   PHP_POLICY_RULES,
@@ -129,13 +133,17 @@ type FileJudgment = {
   unrecognised: boolean
 }
 
-async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
+async function judgeFile(
+  mode: Mode,
+  file: string,
+  phpPolicyRules: Parameters<typeof judgeTestSubstance>[0]['phpPolicyRules'],
+): Promise<FileJudgment> {
   const beforeContent = contentAt(mode.kind === 'staged' ? 'HEAD' : mode.ref, file)
   const judgment = await judgeTestSubstance({
     file,
     before: beforeContent ?? null,
     after: afterContent(mode, file),
-    phpPolicyRules: [],
+    phpPolicyRules,
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
   return {
@@ -152,6 +160,8 @@ async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
 async function main() {
   const startedAt = performance.now()
   const mode = parseMode(Bun.argv.slice(2))
+  const policy = resolvePhpPolicyRules(process.cwd())
+  if (policy.notReadReason) console.error(unreadPhpPolicyRulesLine(policy.notReadReason))
   const guardFailures = await guardFixtures()
   if (guardFailures.length) {
     console.error('test substance fixture guard failed:')
@@ -166,7 +176,7 @@ async function main() {
   const unchecked: string[] = []
   const unrecognised: string[] = []
   for (const file of files) {
-    const judgment = await judgeFile(mode, file)
+    const judgment = await judgeFile(mode, file, policy.rules)
     if (judgment.unrecognised) unrecognised.push(file)
     if (judgment.unchecked) unchecked.push(judgment.unchecked)
     introduced.push(...judgment.findings)

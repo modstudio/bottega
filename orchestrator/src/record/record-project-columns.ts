@@ -35,6 +35,7 @@ export type HostedProjectColumns = {
   docs: string | null
   signals: string | null
   review: string | null
+  testSubstance: string | null
   release: string | null
   states: string | null
   tracker: string | null
@@ -62,6 +63,7 @@ export const PROJECT_SETTING_COLUMNS = {
   secretPaths: 'secretPaths',
   signals: 'signals',
   review: 'review',
+  testSubstance: 'testSubstance',
   states: 'states',
   tracker: 'tracker',
   trunk: 'landingBranch',
@@ -173,6 +175,10 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.review]: document(
       settings.review,
       `project ${project} settings.review`,
+    ),
+    [PROJECT_SETTING_COLUMNS.testSubstance]: document(
+      settings.testSubstance,
+      `project ${project} settings.testSubstance`,
     ),
     [PROJECT_SETTING_COLUMNS.release]: document(
       settings.release,

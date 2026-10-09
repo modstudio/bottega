@@ -10,6 +10,11 @@ import {
   type TestSubstanceInput,
   type TestSubstanceJudgment,
 } from '../../shared/test-substance/test-substance.ts'
+import {
+  type PhpPolicyResolution,
+  resolvePhpPolicyRules,
+  unreadPhpPolicyRulesLine,
+} from './test-substance-project-policy.ts'
 
 export const MAX_TEST_FILE_BYTES = 1024 * 1024
 
@@ -180,6 +185,8 @@ export async function testSubstanceJudgeCommand(
   text: string,
   rawToolInput: boolean,
   judge: (input: TestSubstanceInput) => Promise<TestSubstanceJudgment> = judgeTestSubstance,
+  resolvePolicy: (path: string) => PhpPolicyResolution = resolvePhpPolicyRules,
+  report: (line: string) => void = console.error,
 ): Promise<TestSubstanceJudgment> {
   let value: unknown
   try {
@@ -208,5 +215,11 @@ export async function testSubstanceJudgeCommand(
     return { status: 'unchecked', findings: [], reason: reconstruction.reason }
   }
   const tooLarge = proposedContentLimit(reconstruction.input)
-  return tooLarge ?? judge(reconstruction.input)
+  if (tooLarge) return tooLarge
+  if (!file.endsWith('.php')) return judge(reconstruction.input)
+  const policy = resolvePolicy(file)
+  if (policy.notReadReason) {
+    report(`test-substance-guard: ${file}: ${unreadPhpPolicyRulesLine(policy.notReadReason)}`)
+  }
+  return judge({ ...reconstruction.input, phpPolicyRules: policy.rules })
 }

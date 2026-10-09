@@ -11,6 +11,7 @@ import type {
   ReleaseSettings,
   ReviewSettings,
   SignalsSettings,
+  TestSubstanceSettings,
 } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
@@ -163,6 +164,8 @@ export type ProjectSettings = {
   signals?: SignalsSettings
   /** Catalogue lenses selected by tier and changed path for this project. */
   review?: ReviewSettings
+  /** PHP policy rules enforced in addition to the universal test-substance rules. */
+  testSubstance?: TestSubstanceSettings
   /**
    * Whether dispatch refuses tracked modifications in this project's main
    * checkout. Default ON: absent and true both enforce it. A project opts out
