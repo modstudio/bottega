@@ -182,7 +182,8 @@ export function projects(opts?: { retired?: boolean }, database: Database = db()
 
 export function projectRowByName(name: string, d = db()): Project | null {
   const r = d.query('SELECT * FROM project WHERE name = ?').get(name) as
-    Parameters<typeof parse>[0] | null
+    | Parameters<typeof parse>[0]
+    | null
   return r ? parse(r) : null
 }
 

@@ -225,8 +225,8 @@ function productionResolveCheckout(
   const landingCommit = recordedLandingCommit(identity.project, expectedBranch, d)
   const landingIsHeadOrAncestor = Boolean(
     landingCommit &&
-    headCommit &&
-    gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+      headCommit &&
+      gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
   )
   const trunk = projectByName(identity.project, d)?.settings.trunk?.trim()
   const trunkTip = trunk
