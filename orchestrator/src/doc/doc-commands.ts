@@ -13,7 +13,8 @@ import {
   type DocStatus,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
-import { selectCanonWriteTree } from './doc-canon-tree.ts'
+import type { CanonLintInputCollector } from '../canon/canon-files.ts'
+import type { SelectedCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
 import {
   collectDocReferenceProjects,
@@ -51,6 +52,14 @@ type DocPresentation = {
   stdinIsTTY: boolean
   cwd(): string
   exitCode?(code: number): void
+}
+type DocCommandPorts = {
+  selectCanonWriteTree(input: {
+    scope: string
+    subject: string | null
+    cwd?: string
+  }): SelectedCanonWriteTree | undefined
+  collectCanonLintInput: CanonLintInputCollector
 }
 
 export function validateUserAddress(user: boolean, hasSubject: boolean): void {
@@ -122,8 +131,9 @@ function commandCanonTree(
   subject: string | null,
   flags: DocFlags,
   presentation: DocPresentation,
-): ReturnType<typeof selectCanonWriteTree> {
-  const tree = selectCanonWriteTree({ scope, subject, cwd: flags.flag('cwd') })
+  ports: DocCommandPorts,
+): SelectedCanonWriteTree | undefined {
+  const tree = ports.selectCanonWriteTree({ scope, subject, cwd: flags.flag('cwd') })
   if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
   return tree
 }
@@ -302,6 +312,7 @@ async function handleSetDocCommand(
   flags: DocFlags,
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null; owner: string | null },
+  ports: DocCommandPorts,
 ): Promise<boolean> {
   if (sub === 'status') return handleStatusDocCommand(sub, argv, flags, presentation, address)
   if (sub !== 'set') return false
@@ -314,7 +325,7 @@ async function handleSetDocCommand(
       'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
     )
   }
-  const canonTree = commandCanonTree(address.scope, address.subject, flags, presentation)
+  const canonTree = commandCanonTree(address.scope, address.subject, flags, presentation, ports)
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
     : !presentation.stdinIsTTY
@@ -340,6 +351,7 @@ async function handleSetDocCommand(
     ...tree,
     expectedRevision: flag('expect'),
     canonTree,
+    collectCanonLintInput: ports.collectCanonLintInput,
   })
   const root = repoRootForDoc(doc, canonTree?.root)
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
@@ -399,6 +411,7 @@ export async function docCommand(
   argv: string[],
   flags: DocFlags,
   presentation: DocPresentation,
+  ports: DocCommandPorts,
 ): Promise<void> {
   const { has, flag } = flags
   validateUserAddress(has('user'), has('subject'))
@@ -407,7 +420,8 @@ export async function docCommand(
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
-  if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
+  if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
+    return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)
@@ -435,7 +449,7 @@ export async function docCommand(
       throw new Error(
         'orch doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]',
       )
-    const canonTree = commandCanonTree(scope, subject, flags, presentation)
+    const canonTree = commandCanonTree(scope, subject, flags, presentation, ports)
     const removed = await removeDoc(
       scope,
       subject,
@@ -445,6 +459,7 @@ export async function docCommand(
         author: flag('author'),
         expectedRevision: flag('expect'),
         canonTree,
+        collectCanonLintInput: ports.collectCanonLintInput,
       },
       owner,
     )

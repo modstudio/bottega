@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { createDocsMcpServer } from '../mcp/mcp.ts'
@@ -16,6 +17,7 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from '../review/review-commands.ts'
+import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
@@ -92,7 +94,11 @@ async function command(args: string[], stdin = '') {
     },
   }
   try {
-    if (args[0] === 'doc') await docCommand(args[1] ?? 'list', args, flags, presentation)
+    if (args[0] === 'doc')
+      await docCommand(args[1] ?? 'list', args, flags, presentation, {
+        selectCanonWriteTree,
+        collectCanonLintInput,
+      })
     else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
     else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation)
   } catch (error) {

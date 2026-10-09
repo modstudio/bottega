@@ -304,6 +304,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       '../../../shared/docs.ts',
+      '../canon/canon-files.ts',
       '../canon/canon.ts',
       '../worker-store-write.ts',
       './doc-canon-tree.ts',

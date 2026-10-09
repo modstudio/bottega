@@ -1,8 +1,10 @@
 // concern: cli
 /** Registers run detail and listing adapters. Must not own run behavior. */
 import type { Command } from 'commander'
+import { processStartTime } from '../../../shared/process-identity.ts'
 import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
+import { sampleProcesses } from '../idle-kill.ts'
 import { job } from '../jobs/jobs.ts'
 import { runListingCommand } from '../run/run-listing.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
@@ -53,6 +55,8 @@ export function register(program: Command): void {
         strandedRecovery,
         thinOutputWarning: (row) =>
           thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) }),
+        processObservation: { sampleProcesses, processStartTime },
+        clock: Date.now,
       })
     })
 }
