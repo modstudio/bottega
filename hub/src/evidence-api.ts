@@ -3,13 +3,8 @@ import {
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
 import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
-import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
-import {
-  deleteIntervalKeys,
-  deleteIntervals,
-  upsertDays,
-  upsertIntervals,
-} from './hosted-evidence.ts'
+import type { DayEvidence, IntervalEvidence } from './hosted-evidence.ts'
+import { deleteIntervals, upsertDays, upsertIntervals } from './hosted-evidence.ts'
 
 const TEST_REFUSAL =
   'hub evidence API refuses real identity and database clients unless stubs are injected in tests'
@@ -19,7 +14,6 @@ type Dependencies = {
   putIntervals?: typeof upsertIntervals
   putDays?: typeof upsertDays
   removeIntervals?: typeof deleteIntervals
-  removeIntervalKeys?: typeof deleteIntervalKeys
 }
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Tenant = {
@@ -53,10 +47,20 @@ async function identity(
     : null
 }
 
-function batch(body: unknown, field: 'rows' | 'keys' | 'ids'): unknown[] | null {
+function batch(body: unknown, field: 'rows' | 'ids'): unknown[] | null {
   if (!body || typeof body !== 'object') return null
   const value = (body as Record<string, unknown>)[field]
   return Array.isArray(value) && value.length <= 500 ? value : null
+}
+
+function missingRecordId(rows: unknown[]): boolean {
+  return rows.some(
+    (row) =>
+      !row ||
+      typeof row !== 'object' ||
+      typeof (row as Record<string, unknown>).id !== 'string' ||
+      (row as Record<string, unknown>).id === '',
+  )
 }
 
 async function putIntervalBatch(
@@ -67,6 +71,14 @@ async function putIntervalBatch(
 ) {
   const rows = batch(body, 'rows')
   if (!rows) return Response.json({ error: 'rows must contain at most 500 items' }, { status: 400 })
+  if (missingRecordId(rows))
+    return Response.json(
+      {
+        error:
+          'every interval row requires id; upgrade the client to one with intervalRecordId support',
+      },
+      { status: 400 },
+    )
   if (process.env.NODE_ENV === 'test' && !dependencies.putIntervals) throw new Error(TEST_REFUSAL)
   return Response.json(
     await (dependencies.putIntervals ?? upsertIntervals)(
@@ -80,6 +92,11 @@ async function putIntervalBatch(
 async function putDayBatch(body: unknown, config: Config, who: Tenant, dependencies: Dependencies) {
   const rows = batch(body, 'rows')
   if (!rows) return Response.json({ error: 'rows must contain at most 500 items' }, { status: 400 })
+  if (missingRecordId(rows))
+    return Response.json(
+      { error: 'every day row requires id; upgrade the client to one with dayRecordId support' },
+      { status: 400 },
+    )
   if (process.env.NODE_ENV === 'test' && !dependencies.putDays) throw new Error(TEST_REFUSAL)
   return Response.json(
     await (dependencies.putDays ?? upsertDays)(
@@ -97,7 +114,6 @@ async function deleteIntervalBatch(
   dependencies: Dependencies,
 ) {
   const ids = batch(body, 'ids')
-  const keys = batch(body, 'keys')
   if (ids) {
     if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervals)
       throw new Error(TEST_REFUSAL)
@@ -109,18 +125,7 @@ async function deleteIntervalBatch(
       ),
     )
   }
-  if (keys) {
-    if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervalKeys)
-      throw new Error(TEST_REFUSAL)
-    return Response.json(
-      await (dependencies.removeIntervalKeys ?? deleteIntervalKeys)(
-        config.recordDatabaseUrl,
-        who,
-        keys as IntervalKey[],
-      ),
-    )
-  }
-  return Response.json({ error: 'ids or keys must contain at most 500 items' }, { status: 400 })
+  return Response.json({ error: 'ids must contain at most 500 items' }, { status: 400 })
 }
 
 export async function evidenceApi(

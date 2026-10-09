@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { applyHostedIntervalWrite, type HostedIntervalCopy } from '../test/hosted-interval-fake.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
@@ -20,6 +21,13 @@ const identity = (capability = true, intervalRecordId = true, dayRecordId = true
     ? { targetSpaceIntervalEvidence: true, intervalRecordId, dayRecordId }
     : {},
 })
+
+const identityFetch = async () =>
+  Response.json({
+    user: { id: 'user-1' },
+    activeSpaceId: 'space-active',
+    memberships: [{ space_id: 'space-active', slug: 'active' }],
+  })
 
 function interval(ref: string, project: string | null): IntervalEvidence & { id: string } {
   return {
@@ -72,7 +80,7 @@ function insertInterval(row: IntervalEvidence & { id: string }) {
   })
 }
 
-const keyOf = (row: IntervalEvidence & { id?: string }) => row.id!
+const keyOf = (row: IntervalEvidence) => row.id
 
 function seedPrePushMove() {
   const row = interval('1', 'two')
@@ -89,61 +97,13 @@ function seedPrePushMove() {
   const hosted: HostedIntervalCopy[] = [
     {
       spaceId: 'space-a',
-      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      id: row.id,
       source: row.source,
       ref: row.ref,
       start_at: row.start_at,
     },
   ]
   return { row, hosted }
-}
-
-type HostedIntervalCopy = {
-  spaceId: string
-  id: string
-  source: string
-  ref: string
-  start_at: string
-}
-
-function applyHostedIntervalWrite(
-  hosted: HostedIntervalCopy[],
-  method: string,
-  spaceId: string,
-  body: Record<string, unknown>,
-) {
-  const ids = (body.ids as string[] | undefined) ?? []
-  const keys = (body.keys as HostedIntervalCopy[] | undefined) ?? []
-  if (method === 'DELETE') {
-    hosted.splice(
-      0,
-      hosted.length,
-      ...hosted.filter(
-        (row) =>
-          row.spaceId !== spaceId ||
-          !(
-            ids.includes(row.id) ||
-            keys.some(
-              (key) =>
-                key.source === row.source && key.ref === row.ref && key.start_at === row.start_at,
-            )
-          ),
-      ),
-    )
-    return
-  }
-  if (method === 'PUT')
-    hosted.push(
-      ...((body.rows as IntervalEvidence[]) ?? [])
-        .filter((row) => row.id)
-        .map((row) => ({
-          spaceId,
-          id: row.id!,
-          source: row.source,
-          ref: row.ref,
-          start_at: row.start_at,
-        })),
-    )
 }
 
 function syncFetch(
@@ -171,7 +131,7 @@ function syncFetch(
     if (recordSpace === options.failSpace)
       return Response.json({ error: 'destination unavailable' }, { status: 503 })
     if (options.hosted && recordSpace)
-      applyHostedIntervalWrite(options.hosted, init?.method ?? 'GET', recordSpace, body)
+      return applyHostedIntervalWrite(options.hosted, init?.method ?? 'GET', recordSpace, body)
     return Response.json({ ok: true })
   }
 }
@@ -391,7 +351,7 @@ describe('evidence sync planning', () => {
     ).toEqual({ destination_space_id: 'space-a' })
   })
 
-  test('moves an acknowledgement only after sending new and deleting old', async () => {
+  test('moves an acknowledgement only after deleting old and sending new', async () => {
     const row = interval('1', 'two')
     insertInterval(row)
     writeTransaction((conn) =>
@@ -415,7 +375,6 @@ describe('evidence sync planning', () => {
       registeredProjects: registered,
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
-      ['DELETE', 'space-a'],
       ['DELETE', 'space-a'],
       ['PUT', 'space-b'],
     ])
@@ -452,7 +411,6 @@ describe('evidence sync planning', () => {
       registeredProjects: registered,
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
-      ['DELETE', 'space-a'],
       ['DELETE', 'space-a'],
       ['PUT', 'space-b'],
     ])
@@ -609,7 +567,6 @@ describe('evidence sync planning', () => {
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
       ['DELETE', 'space-a'],
-      ['DELETE', 'space-a'],
       ['PUT', 'space-b'],
     ])
     expect(
@@ -745,12 +702,70 @@ describe('evidence sync planning', () => {
       registeredProjects: registered,
     })
     expect(writes.map((write) => [write.method, write.recordSpace, write.body])).toEqual([
-      ['PUT', 'space-a', { rows: [{ ...replacement, ref: original.ref }] }],
       ['DELETE', 'space-a', { ids: [original.id] }],
+      ['PUT', 'space-a', { rows: [{ ...replacement, ref: original.ref }] }],
     ])
   })
 
-  test('a vanished tuple acknowledgement deletes by tuple one last time', async () => {
+  test('a row recreated with the same tuple replaces its predecessor on the first sync', async () => {
+    const original = interval('1', 'one')
+    const replacement = { ...original, id: '00000000-0000-4000-8000-000000000002' }
+    insertInterval(replacement)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger
+             (table_name,local_key,content_hash,synced_at,destination_space_id)
+           VALUES ('interval',?,?,?,?)`,
+        )
+        .run(original.id, contentHash(original), '2026-10-01T00:00:00.000Z', 'space-a'),
+    )
+    const hosted: HostedIntervalCopy[] = [
+      {
+        spaceId: 'space-a',
+        id: original.id,
+        source: original.source,
+        ref: original.ref,
+        start_at: original.start_at,
+      },
+    ]
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes, { hosted }),
+      registeredProjects: registered,
+    })
+
+    expect(writes.map((write) => [write.method, write.recordSpace, write.body])).toEqual([
+      ['DELETE', 'space-a', { ids: [original.id] }],
+      ['PUT', 'space-a', { rows: [replacement] }],
+    ])
+    expect(hosted).toEqual([
+      {
+        spaceId: 'space-a',
+        id: replacement.id,
+        source: replacement.source,
+        ref: replacement.ref,
+        start_at: replacement.start_at,
+      },
+    ])
+    expect(
+      db()
+        .query<{ local_key: string; destination_space_id: string }, []>(
+          `SELECT local_key, destination_space_id
+             FROM record_ledger WHERE table_name='interval'`,
+        )
+        .all(),
+    ).toEqual([{ local_key: replacement.id, destination_space_id: 'space-a' }])
+  })
+
+  test('a non-UUID ledger key reports one issue, sends no request, and stays in place', async () => {
     const current = interval('1', 'one')
     insertInterval(current)
     writeTransaction((conn) => {
@@ -772,20 +787,29 @@ describe('evidence sync planning', () => {
       recordSpace: string | null
       body: Record<string, unknown>
     }> = []
-    await syncEvidence({
+    const result = await syncEvidence({
       baseUrl: 'https://hub.example.test',
       token: 'session',
       fetch: syncFetch(writes),
       registeredProjects: registered,
     })
-    expect(writes).toEqual([
+    expect(writes).toEqual([])
+    expect(result.interval.issues).toEqual([
       {
-        method: 'DELETE',
-        recordSpace: 'space-b',
-        body: {
-          keys: [{ source: 'orch', ref: 'orch:gone', start_at: '2026-10-08T00:00:00.000Z' }],
-        },
+        project: null,
+        reason:
+          'interval ledger row \'["orch","orch:gone","2026-10-08T00:00:00.000Z"]\' is not keyed by UUID; it was left in place',
       },
+    ])
+    expect(
+      db()
+        .query<{ local_key: string }, []>(
+          `SELECT local_key FROM record_ledger WHERE table_name='interval' ORDER BY local_key`,
+        )
+        .all(),
+    ).toEqual([
+      { local_key: current.id },
+      { local_key: '["orch","orch:gone","2026-10-08T00:00:00.000Z"]' },
     ])
   })
 
@@ -848,9 +872,8 @@ describe('evidence sync planning', () => {
 })
 
 describe('evidence API', () => {
-  test('DELETE by id calls the id remover and DELETE by tuple calls the key remover', async () => {
+  test('DELETE by id calls the id remover and a keys body is refused', async () => {
     const ids: string[] = []
-    const keys: unknown[] = []
     const idResponse = await evidenceApi(
       new Request('https://hub.example.test/v1/evidence/intervals', {
         method: 'DELETE',
@@ -891,21 +914,30 @@ describe('evidence API', () => {
         }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
-      {
-        fetch: async () =>
-          Response.json({
-            user: { id: 'user-1' },
-            activeSpaceId: 'space-active',
-            memberships: [{ space_id: 'space-active', slug: 'active' }],
-          }),
-        removeIntervalKeys: async (_url, _tenant, values) => {
-          keys.push(...values)
-          return { deleted: values.length }
-        },
-      },
+      { fetch: identityFetch },
     )
-    expect(keyResponse?.status).toBe(200)
-    expect(keys).toEqual([{ source: 'orch', ref: 'orch:1', start_at: '2026-10-08T00:00:00.000Z' }])
+    expect(keyResponse?.status).toBe(400)
+    expect(await keyResponse?.json()).toEqual({ error: 'ids must contain at most 500 items' })
+  })
+
+  test('PUT refuses interval and day rows without ids with an upgrade remedy', async () => {
+    for (const [route, capability] of [
+      ['intervals', 'intervalRecordId'],
+      ['days', 'dayRecordId'],
+    ] as const) {
+      const response = await evidenceApi(
+        new Request(`https://hub.example.test/v1/evidence/${route}`, {
+          method: 'PUT',
+          headers: { authorization: 'Bearer fixture', 'content-type': 'application/json' },
+          body: JSON.stringify({ rows: [{}] }),
+        }),
+        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://record' },
+        { fetch: identityFetch },
+      )
+      expect(response?.status).toBe(400)
+      if (!response) throw new Error('evidence route was not handled')
+      expect((await response.json()).error).toContain(capability)
+    }
   })
 
   test('a non-member interval target returns 403 before the write service', async () => {
@@ -930,7 +962,7 @@ describe('evidence API', () => {
           }),
         putIntervals: async () => {
           wrote = true
-          return { upserted: 0, rekeyed: 0 }
+          return { upserted: 0 }
         },
       },
     )
@@ -964,7 +996,7 @@ describe('evidence API', () => {
           }),
         putDays: async (_url, tenant) => {
           boundSpace = tenant.spaceId
-          return { upserted: 0, rekeyed: 0 }
+          return { upserted: 0 }
         },
       },
     )
