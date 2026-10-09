@@ -273,6 +273,7 @@ function updateTrackerTask(
   t: TrackerTask,
   row: TrackerIdentityRow,
   effectiveKey: string,
+  at: string,
   times: TrackerObservationTimes,
 ) {
   conn
@@ -291,7 +292,7 @@ function updateTrackerTask(
       times.updatedAt,
       t.assignee,
       times.closedAt,
-      times.lastSeen,
+      at,
       row.record_id,
     )
 }
@@ -355,7 +356,7 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
   const effectiveKey = row ? trackerLabelAfterCollisionCheck(conn, t, row) : t.key
   const changed = differs(t, row ?? undefined, effectiveKey)
   const times = trackerObservationTimes(t, row ?? undefined, at, effectiveKey)
-  if (row) updateTrackerTask(conn, t, row, effectiveKey, times)
+  if (row) updateTrackerTask(conn, t, row, effectiveKey, at, times)
   else insertTrackerTask(conn, t, times)
   refreshTrackerClaim(conn, t, at)
   return { stored: row, times, changed }

@@ -252,15 +252,19 @@ describe('tracker assignees', () => {
     const firstAt = '2026-09-23T10:00:00.000Z'
     const secondAt = '2026-09-24T10:00:00.000Z'
     cacheTrackerTask(trackerTask, firstAt)
-    cacheTrackerTask(trackerTask, secondAt)
+    const second = cacheTrackerTask(trackerTask, secondAt)[0]!
 
     expect(
       db()
-        .query<{ opened_at: string; updated_at: string; closed_at: string | null }, []>(
-          "SELECT opened_at,updated_at,closed_at FROM task WHERE key='ALP-1'",
+        .query<
+          { opened_at: string; updated_at: string; closed_at: string | null; last_seen: string },
+          []
+        >(
+          "SELECT opened_at,updated_at,closed_at,last_seen FROM task WHERE key='ALP-1'",
         )
         .get(),
-    ).toEqual({ opened_at: firstAt, updated_at: firstAt, closed_at: null })
+    ).toEqual({ opened_at: firstAt, updated_at: firstAt, closed_at: null, last_seen: secondAt })
+    expect(second.observation.times).toMatchObject({ openedAt: firstAt, updatedAt: firstAt })
   })
 
   test('resolves an id once and reuses the cached display name', async () => {
@@ -448,9 +452,14 @@ describe('tracker assignees', () => {
         .query(`SELECT opened_at,updated_at FROM task WHERE external_id='collision-target'`)
         .get(),
     ).toEqual(afterFirst)
-    expect({ taskKey: second.observation.taskKey, times: second.observation.times }).toEqual({
+    expect({
+      taskKey: second.observation.taskKey,
+      openedAt: second.observation.times.openedAt,
+      updatedAt: second.observation.times.updatedAt,
+    }).toEqual({
       taskKey: first.observation.taskKey,
-      times: first.observation.times,
+      openedAt: first.observation.times.openedAt,
+      updatedAt: first.observation.times.updatedAt,
     })
     expect(
       db()
