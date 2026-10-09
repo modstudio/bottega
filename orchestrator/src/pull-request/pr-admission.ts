@@ -7,6 +7,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
+import { applicableReviewLenses } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
@@ -14,7 +15,6 @@ import {
   reviewsForTriage,
   serializePathSet,
 } from '../review/review-group.ts'
-import { applicableReviewLenses } from '../review/review-applicability.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
