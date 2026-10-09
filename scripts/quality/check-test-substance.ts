@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   resolvePhpPolicyRules,
@@ -69,10 +70,53 @@ async function guardJavaScriptFixtures(failures: string[]) {
       continue
     }
     const produced = new Set(report.findings.map((finding) => finding.rule))
+    for (const finding of report.findings) {
+      if (finding.testName.includes('clean:')) {
+        failures.push(`${runner}: clean case ${finding.testName} produced ${finding.rule}`)
+      }
+    }
     for (const rule of guardedRules(runner)) {
       if (!produced.has(rule))
         failures.push(`${runner}: ${rule} produced no finding on its fixture`)
     }
+    const genuineCases = [
+      ['genuine: fixed literal comparison', 'no-trivial-assertions'],
+      ['genuine: calls helpers without assertions', 'no-assertion'],
+      ...(runner === 'vitest'
+        ? ([['has an unawaited assertion', 'async-test-assertions']] as const)
+        : []),
+    ] as const
+    for (const [testName, rule] of genuineCases) {
+      if (
+        !report.findings.some(
+          (finding) => finding.testName.includes(testName) && finding.rule === rule,
+        )
+      ) {
+        failures.push(`${runner}: genuine case ${testName} produced no ${rule} finding`)
+      }
+    }
+  }
+
+  const reexportFile = `${fixtureDirectory}test-substance-reexport.fixtures.ts`
+  const reexportReport = await testSubstanceReport(reexportFile, readFileSync(reexportFile, 'utf8'))
+  if (reexportReport.runner !== 'bun' || reexportReport.findings.length) {
+    failures.push('runner re-export fixture was not judged cleanly with bun rules')
+  }
+
+  const browserFile = `${fixtureDirectory}test-substance-browser.fixtures.ts`
+  const browserContent = readFileSync(browserFile, 'utf8')
+  const browserReport = await testSubstanceReport(browserFile, browserContent)
+  const browserJudgment = await judgeTestSubstance({
+    file: `${fixtureDirectory}browser.test.ts`,
+    before: null,
+    after: browserContent,
+  })
+  if (
+    browserReport.runner !== 'browser' ||
+    browserJudgment.status !== 'ok' ||
+    browserJudgment.reason !== 'browser tests are not judged'
+  ) {
+    failures.push('browser fixture was not excluded with the browser-test reason')
   }
 }
 
@@ -128,6 +172,7 @@ function printFinding(finding: TestFinding) {
 }
 
 type FileJudgment = {
+  browser: boolean
   findings: TestFinding[]
   unchecked?: string
   unrecognised: boolean
@@ -140,13 +185,15 @@ async function judgeFile(
 ): Promise<FileJudgment> {
   const beforeContent = contentAt(mode.kind === 'staged' ? 'HEAD' : mode.ref, file)
   const judgment = await judgeTestSubstance({
-    file,
+    file: resolve(file),
     before: beforeContent ?? null,
     after: afterContent(mode, file),
     phpPolicyRules,
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
+  const browser = judgment.reason === 'browser tests are not judged'
   return {
+    browser,
     findings: judgment.findings.map(({ test, ...finding }) => ({
       ...finding,
       file,
@@ -184,8 +231,10 @@ async function main() {
   const introduced: TestFinding[] = []
   const unchecked: string[] = []
   const unrecognised: string[] = []
+  let browserFiles = 0
   for (const file of files) {
     const judgment = await judgeFile(mode, file, phpPolicyRules)
+    if (judgment.browser) browserFiles += 1
     if (judgment.unrecognised) unrecognised.push(file)
     if (judgment.unchecked) unchecked.push(judgment.unchecked)
     introduced.push(...judgment.findings)
@@ -198,7 +247,7 @@ async function main() {
     for (const finding of introduced) printFinding(finding)
   }
   const elapsedMs = performance.now() - startedAt
-  const summary = `test substance: judged ${files.length} file(s), ${unrecognised.length} runner not recognised, ${(elapsedMs / 1000).toFixed(2)}s`
+  const summary = `test substance: judged ${files.length} file(s), ${browserFiles} browser test file(s), ${unrecognised.length} runner not recognised, ${(elapsedMs / 1000).toFixed(2)}s`
   if (introduced.length || unchecked.length) {
     console.error(summary)
     console.error(`${introduced.length} finding(s), ${unchecked.length} unchecked file(s)`)

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import parser from '@typescript-eslint/parser'
 import vitestPlugin from '@vitest/eslint-plugin'
 import { ESLint, type Linter } from 'eslint'
@@ -14,8 +16,9 @@ import {
   type TestFinding,
   type TestWaiver,
 } from './test-substance'
+import { vitestAsyncAssertionRule } from './vitest-async-assertion'
 
-type Runner = 'bun' | 'vitest' | 'unrecognised'
+type Runner = 'browser' | 'bun' | 'vitest' | 'unrecognised'
 
 export type SubstanceReport = {
   findings: TestFinding[]
@@ -50,6 +53,7 @@ const SHARED_GUARDED_RULES = [
 ] as const
 
 export function guardedRules(runner: Exclude<Runner, 'unrecognised'>): readonly string[] {
+  if (runner === 'browser') return []
   return runner === 'bun'
     ? [...SHARED_GUARDED_RULES, 'expect-without-matcher']
     : [...SHARED_GUARDED_RULES, 'async-test-assertions', 'valid-expect']
@@ -108,13 +112,16 @@ function testLocations(file: string, content: string): TestLocation[] {
   return locations
 }
 
-function runnerFor(content: string): Runner {
-  const source = ts.createSourceFile('runner.ts', content, ts.ScriptTarget.Latest, true)
+const RUNNER_EXTENSIONS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
+const MAX_IMPORTED_FILE_BYTES = 1024 * 1024
+
+function directRunner(source: ts.SourceFile): Runner {
   let runner: Runner = 'unrecognised'
   function recognize(specifier: ts.Expression | undefined) {
     if (!specifier || !ts.isStringLiteralLike(specifier)) return
     if (specifier.text === 'bun:test') runner = 'bun'
     if (specifier.text === 'vitest') runner = 'vitest'
+    if (specifier.text === '@playwright/test') runner = 'browser'
   }
   function visit(node: ts.Node) {
     if (runner !== 'unrecognised') return
@@ -131,24 +138,72 @@ function runnerFor(content: string): Runner {
   return runner
 }
 
+function relativeFile(file: string, specifier: string) {
+  const base = resolve(dirname(file), specifier)
+  return [
+    ...RUNNER_EXTENSIONS.map((extension) => `${base}${extension}`),
+    ...RUNNER_EXTENSIONS.slice(1).map((extension) => join(base, `index${extension}`)),
+  ].find(existsSync)
+}
+
+function runnerFor(file: string, content: string): Runner {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
+  const direct = directRunner(source)
+  if (direct !== 'unrecognised') return direct
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) {
+      continue
+    }
+    if (!statement.moduleSpecifier.text.startsWith('.')) continue
+    const importedTest = statement.importClause?.namedBindings
+    if (!importedTest || !ts.isNamedImports(importedTest)) continue
+    if (!importedTest.elements.some((element) => element.name.text === 'test')) continue
+    const importedFile = relativeFile(file, statement.moduleSpecifier.text)
+    if (!importedFile) continue
+    try {
+      if (statSync(importedFile).size > MAX_IMPORTED_FILE_BYTES) continue
+      const importedSource = ts.createSourceFile(
+        importedFile,
+        readFileSync(importedFile, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+      )
+      if (importedSource.parseDiagnostics.length) continue
+      const runner = directRunner(importedSource)
+      if (runner === 'unrecognised') continue
+      const exportsTest = importedSource.statements.some(
+        (candidate) =>
+          ts.isExportDeclaration(candidate) &&
+          candidate.exportClause &&
+          ts.isNamedExports(candidate.exportClause) &&
+          candidate.exportClause.elements.some((element) => element.name.text === 'test'),
+      )
+      if (exportsTest) return runner
+    } catch {}
+  }
+  return 'unrecognised'
+}
+
 function rules(prefix: string, names: readonly string[]): Linter.RulesRecord {
   return Object.fromEntries(names.map((name) => [`${prefix}/${name}`, 'error']))
 }
 
-function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = true) {
+function eslint(file: string, runner: Runner, sonar: boolean, custom = true, runnerRules = true) {
   const plugins: Record<string, ESLint.Plugin> = {}
   const configuredRules: Linter.RulesRecord = {}
   if (custom) {
     plugins['test-substance'] = {
       rules: {
         'expect-without-matcher': expectWithoutMatcherRule,
-        'no-assertion': noAssertionRule,
+        'no-assertion': noAssertionRule(file),
         'self-comparison': selfComparisonRule,
+        'async-test-assertions': vitestAsyncAssertionRule,
       },
     }
     configuredRules['test-substance/no-assertion'] = 'error'
     configuredRules['test-substance/self-comparison'] = 'error'
     if (runner === 'bun') configuredRules['test-substance/expect-without-matcher'] = 'error'
+    if (runner === 'vitest') configuredRules['test-substance/async-test-assertions'] = 'error'
   }
   const settings: Record<string, unknown> = {}
   if (sonar) {
@@ -157,9 +212,7 @@ function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = tru
       configuredRules,
       rules(
         'sonarjs',
-        runner === 'bun'
-          ? SONAR_RULES.filter((rule) => rule !== 'async-test-assertions')
-          : SONAR_RULES,
+        SONAR_RULES.filter((rule) => rule !== 'async-test-assertions'),
       ),
     )
   }
@@ -170,10 +223,12 @@ function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = tru
   }
   if (runnerRules && runner === 'vitest') {
     plugins.vitest = vitestPlugin as ESLint.Plugin
-    Object.assign(configuredRules, rules('vitest', [...SHARED_RUNNER_RULES, 'valid-expect']))
+    Object.assign(configuredRules, rules('vitest', SHARED_RUNNER_RULES))
+    configuredRules['vitest/valid-expect'] = ['error', { maxArgs: 2 }]
   }
 
   return new ESLint({
+    allowInlineConfig: false,
     overrideConfigFile: true,
     overrideConfig: [
       {
@@ -235,8 +290,20 @@ async function lintMessages(file: string, content: string, runner: Runner) {
   // extension are all this config needs, so keep installed orch able to judge
   // a test in any registered project by linting under its basename.
   const lintFile = file.split(/[\\/]/).at(-1) ?? file
-  if (runner !== 'bun')
-    return (await eslint(runner, true).lintText(content, { filePath: lintFile }))[0]!
+  if (runner !== 'bun') {
+    const result = (await eslint(file, runner, true).lintText(content, { filePath: lintFile }))[0]!
+    return {
+      ...result,
+      messages: result.messages.filter(
+        (message) =>
+          !(
+            runner === 'vitest' &&
+            message.ruleId === 'vitest/valid-expect' &&
+            message.message.startsWith('Async assertions must be awaited')
+          ),
+      ),
+    }
+  }
 
   // The SonarJS pass for bun files replaces bun:test with vitest only in the module
   // specifier of import and export declarations, located through the parse, never by
@@ -262,10 +329,10 @@ async function lintMessages(file: string, content: string, runner: Runner) {
   for (const replacement of replacements.reverse()) {
     sonarContent = `${sonarContent.slice(0, replacement.start)}vitest${sonarContent.slice(replacement.end)}`
   }
-  const [sonarResult] = await eslint('bun', true, false, false).lintText(sonarContent, {
+  const [sonarResult] = await eslint(file, 'bun', true, false, false).lintText(sonarContent, {
     filePath: lintFile,
   })
-  const [runnerResult] = await eslint('bun', false).lintText(content, { filePath: lintFile })
+  const [runnerResult] = await eslint(file, 'bun', false).lintText(content, { filePath: lintFile })
   return {
     ...runnerResult!,
     messages: [...sonarResult!.messages, ...runnerResult!.messages],
@@ -273,7 +340,9 @@ async function lintMessages(file: string, content: string, runner: Runner) {
 }
 
 export async function testSubstanceReport(file: string, content: string): Promise<SubstanceReport> {
-  const runner = runnerFor(content)
+  if (!isAbsolute(file)) throw new Error('test-substance requires an absolute test file path')
+  const runner = runnerFor(file, content)
+  if (runner === 'browser') return { findings: [], runner }
   const locations = testLocations(file, content)
   const result = await lintMessages(file, content, runner)
   const fatal = result.messages.find((message) => message.fatal)
