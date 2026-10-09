@@ -40,10 +40,11 @@ const mapped = (row: LocalRow): Subject => ({
   updatedAt: row.updated_at,
 })
 
+const unknownProject = (project: string): Error =>
+  new Error(`unknown project "${project}"; cleared by: orch project list`)
+
 const assertRegisteredProject = (project: string, database: Database = db()): void => {
-  if (!projectRowByName(project, database)) {
-    throw new Error(`unknown project "${project}"; cleared by: orch project list`)
-  }
+  if (!projectRowByName(project, database)) throw unknownProject(project)
 }
 
 export function listSubjects(
@@ -161,7 +162,7 @@ function localAdd(input: {
   definition: string
 }): Subject {
   const project = projectByName(input.project)
-  if (!project) throw new Error(`unknown project "${input.project}"; cleared by: orch project list`)
+  if (!project) throw unknownProject(input.project)
   const at = nowIso()
   const position = db()
     .query<{ position: number }, [number]>(
