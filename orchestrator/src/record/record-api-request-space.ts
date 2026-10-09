@@ -5,6 +5,7 @@ import type { Context, Hono, Next } from 'hono'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import {
   recordSpaceAccessDecision,
+  recordRequestNature,
   recordSpaceRequestDecision,
 } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -36,7 +37,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     }
     if (decision.spaceId !== null) {
       const access = recordSpaceAccessDecision(
-        context.req.method === 'GET' || context.req.method === 'HEAD' ? 'read' : 'write',
+        recordRequestNature(context.req.method),
         decision.spaceId,
         memberships,
       )
@@ -53,4 +54,8 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   app.use('/v1/subjects', requestedSpace)
   app.use('/v1/subjects/*', requestedSpace)
   app.use('/v1/settings/permission', requestedSpace)
+  app.use('/v1/config/*', requestedSpace)
+  app.use('/v1/runs/*', requestedSpace)
+  app.use('/v1/snapshots', requestedSpace)
+  app.use('/v1/snapshots/*', requestedSpace)
 }

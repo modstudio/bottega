@@ -4,6 +4,7 @@ import {
 } from '../../shared/record-space-membership.ts'
 import {
   recordSpaceAccessDecision,
+  recordRequestNature,
   recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
 import type { DayEvidence, IntervalEvidence } from './hosted-evidence.ts'
@@ -166,7 +167,11 @@ export async function evidenceApi(
       },
       { status: 403 },
     )
-  const access = recordSpaceAccessDecision('write', decision.spaceId!, who.memberships)
+  const access = recordSpaceAccessDecision(
+    recordRequestNature(request.method),
+    decision.spaceId!,
+    who.memberships,
+  )
   if (!access.allowed)
     return Response.json({ error: access.error, remedy: access.remedy }, { status: 403 })
   const tenant = { ...who, spaceId: decision.spaceId! }

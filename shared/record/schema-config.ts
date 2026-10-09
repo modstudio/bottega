@@ -22,6 +22,7 @@ import {
   spaceIdentity,
   tenantPolicies,
   user,
+  writeMembershipPredicate,
 } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
@@ -35,10 +36,7 @@ const keyIdCheck = (column: AnyPgColumn) =>
 function actorPolicies(table: string, spaceId: AnyPgColumn, userId?: AnyPgColumn) {
   const ownsSpace = sql`${spaceId} = ${currentSpace}`
   const ownsUser = userId ? sql`${userId} IS NULL OR ${userId} = ${currentUser}` : sql`true`
-  const mayWrite = sql`EXISTS (
-    SELECT 1 FROM membership m
-    WHERE m.space_id = ${spaceId} AND m.user_id = ${currentUser} AND m.permission = 'write'
-  )`
+  const mayWrite = writeMembershipPredicate(spaceId, currentUser)
   const readsRow = sql`(${ownsSpace}) AND (${ownsUser})`
   const writesRow = sql`(${ownsSpace}) AND (${ownsUser}) AND (${mayWrite})`
 

@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { blockedOutboxLines, quarantinedOutboxLines } from './record-sync-command.ts'
+import {
+  blockedOutboxLines,
+  quarantinedOutboxLines,
+  readOnlyDeferredLines,
+} from './record-sync-command.ts'
 
 test('sync presentation names each quarantined row with its kind and error', () => {
   expect(
@@ -22,4 +26,11 @@ test('sync presentation names a row blocked by its retired parent', () => {
       { id: 29153, kind: 'question', parentRecordId: '01990000-0000-7000-8000-parent' },
     ]),
   ).toEqual(['blocked 29153\tquestion\tretired parent 01990000-0000-7000-8000-parent'])
+})
+
+test('sync presentation reports read-only deferred rows by space', () => {
+  // Production break watched: omit read-only deferred rows from sync presentation.
+  expect(readOnlyDeferredLines([{ spaceId: 'space-a', rows: 2 }])).toEqual([
+    'deferred 2\tread-only space space-a',
+  ])
 })

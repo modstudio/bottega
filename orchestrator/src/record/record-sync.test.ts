@@ -924,3 +924,61 @@ test('two declared projects bind their own spaces in separate transactions', asy
   expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
   local.close()
 })
+
+test('a read-only destination is deferred per row and retried after permission changes', async () => {
+  // Production break watched: classify the read-only refusal as row-fatal and quarantine it.
+  const local = localOutbox(2, 'read-only-project')
+  const second = JSON.parse(
+    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
+  ) as Record<string, unknown>
+  second.projectName = 'write-project'
+  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
+  const remote = fakePostgres()
+  const readOnlySpace = '01990000-0000-7000-8000-000000000003'
+  const base = options(local, remote)
+  const projectSpaces = {
+    'read-only-project': 'read-only-space',
+    'write-project': 'platform',
+  }
+
+  expect(
+    await syncRecord({
+      ...base,
+      memberships: [
+        { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'read' },
+        ...base.memberships,
+      ],
+      projectSpaces,
+    }),
+  ).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 1,
+    quarantined: [],
+    readOnlyDeferred: [{ spaceId: readOnlySpace, rows: 1 }],
+  })
+  expect(
+    local
+      .query<
+        { attempts: number; last_error: string; quarantined_at: string | null },
+        []
+      >('SELECT attempts,last_error,quarantined_at FROM outbox WHERE id=1')
+      .get(),
+  ).toEqual({
+    attempts: 1,
+    last_error: expect.stringContaining(`record space ${readOnlySpace} membership is read-only`),
+    quarantined_at: null,
+  })
+
+  expect(
+    await syncRecord({
+      ...base,
+      memberships: [
+        { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'write' },
+        ...base.memberships,
+      ],
+      projectSpaces,
+    }),
+  ).toMatchObject({ pushed: 1, failed: 0, pending: 0, quarantined: [] })
+  local.close()
+})

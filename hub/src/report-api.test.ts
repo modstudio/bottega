@@ -84,3 +84,44 @@ test('email unsubscribe lookup and one-click POST need no session', async () => 
   })
   expect(await unsubscribe?.json()).toEqual({ unsubscribed: true })
 })
+
+test('read-only membership refuses send creation and mirroring', async () => {
+  // Production break watched: gate only report-subscription writes.
+  let writes = 0
+  const dependencies = {
+    fetch: (async () =>
+      Response.json({
+        user: { id: userId },
+        activeSpaceId: ownSpace,
+        memberships: [{ space_id: ownSpace, slug: 'own', permission: 'read' }],
+      })) as unknown as typeof fetch,
+    appendSend: () => {
+      writes++
+      return {}
+    },
+    mirror: () => {
+      writes++
+      return {}
+    },
+  }
+  for (const [path, method] of [
+    ['/v1/sends', 'POST'],
+    ['/v1/sends/mirror', 'PUT'],
+  ]) {
+    const response = await reportApi(
+      new Request(`https://hub.example.test${path}`, {
+        method,
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: '{}',
+      }),
+      config,
+      dependencies,
+    )
+    expect(response?.status).toBe(403)
+    expect(await response?.json()).toEqual({
+      error: `record space ${ownSpace} membership is read-only`,
+      remedy: 'A space owner or admin can change the membership permission.',
+    })
+  }
+  expect(writes).toBe(0)
+})

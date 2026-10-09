@@ -2,7 +2,10 @@
 /** Authenticated hosted endpoint for idempotent operator-waiting email delivery. */
 
 import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
-import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
+import {
+  recordRequestNature,
+  recordSpaceAccessDecision,
+} from '../../shared/record-space-request.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   OperatorEmailBudgetExceededError,
@@ -55,7 +58,7 @@ export async function operatorWaitingEmailApi(
       { status: 401 },
     )
   const access = recordSpaceAccessDecision(
-    'write',
+    recordRequestNature(request.method),
     identity.activeSpaceId,
     parseRecordSpaceMemberships(identity.memberships),
   )

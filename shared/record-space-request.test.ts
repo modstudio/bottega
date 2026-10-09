@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { recordSpaceAccessDecision, recordSpaceRequestDecision } from './record-space-request.ts'
+import {
+  recordRequestNature,
+  recordSpaceAccessDecision,
+  recordSpaceRequestDecision,
+} from './record-space-request.ts'
 
 const SPACE_A_ID = '01990000-0000-7000-8000-000000000003'
 const SPACE_B_ID = '01990000-0000-7000-8000-000000000004'
@@ -7,6 +11,15 @@ const memberships = [
   { spaceId: SPACE_A_ID, slug: 'active', permission: 'read' },
   { spaceId: SPACE_B_ID, slug: 'declared', permission: 'write' },
 ]
+
+test('GET and HEAD are reads while every other HTTP method is a write', () => {
+  // Production break watched: treat PUT as a read alongside GET and HEAD.
+  expect(recordRequestNature('GET')).toBe('read')
+  expect(recordRequestNature('HEAD')).toBe('read')
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+    expect(recordRequestNature(method)).toBe('write')
+  }
+})
 
 describe('record space request', () => {
   test('keeps the active space without a request', () => {

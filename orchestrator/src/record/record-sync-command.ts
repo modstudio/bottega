@@ -19,6 +19,12 @@ export function blockedOutboxLines(
   )
 }
 
+export function readOnlyDeferredLines(
+  rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['readOnlyDeferred']>,
+): string[] {
+  return rows.map((row) => `deferred ${row.rows}\tread-only space ${row.spaceId}`)
+}
+
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
@@ -52,4 +58,5 @@ export async function syncCommand(
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
+  for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)
 }

@@ -8,6 +8,11 @@ export type RecordSpaceAccessDecision =
   | { allowed: true }
   | { allowed: false; error: string; remedy: string }
 
+/** Classify an HTTP request for hosted-space authorization. */
+export function recordRequestNature(method: string): 'read' | 'write' {
+  return method === 'GET' || method === 'HEAD' ? 'read' : 'write'
+}
+
 /** Decide whether the caller's membership permits the requested operation. */
 export function recordSpaceAccessDecision(
   nature: 'read' | 'write',

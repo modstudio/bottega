@@ -4,6 +4,7 @@ import {
 } from '../../shared/record-space-membership.ts'
 import {
   recordSpaceAccessDecision,
+  recordRequestNature,
   recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
 import {
@@ -196,7 +197,7 @@ export async function noteApi(
       403,
     )
   const access = recordSpaceAccessDecision(
-    request.method === 'GET' || request.method === 'HEAD' ? 'read' : 'write',
+    recordRequestNature(request.method),
     who.spaceId,
     who.memberships,
   )
