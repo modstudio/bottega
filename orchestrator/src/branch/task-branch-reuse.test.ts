@@ -33,7 +33,7 @@ describe('task branch nominating session ownership', () => {
       commitCount: 2,
       mergeBase: 'def456',
       projectId: 1,
-      projectName: 'bottega',
+      projectName: 'project',
       nominatingRuns: [
         { id: 7000, sessionId: 'session-a' },
         { id: 7001, sessionId: 'session-a' },
