@@ -15,7 +15,8 @@ export type DocsHomeModel = {
 }
 
 export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
-  const roots = buildDocTree(items.filter((item) => item.audiences.includes('customer')))
+  // The public catalogue holds only what the public may read, so nothing is cut here.
+  const roots = buildDocTree(items)
   const ordered = roots.flatMap(function visit(node): DocsTreeItem[] {
     return [node, ...node.children.flatMap(visit)]
   })
