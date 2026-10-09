@@ -188,14 +188,6 @@ function runHookRepeated(
   return runHookRepeatedResult(path, payload, fixture, times, pendingValues).outputs
 }
 
-function runStopHookRepeated(
-  payload: string,
-  fixture: ReturnType<typeof createHookFixture>,
-  pendingValues: Array<Array<{ id: string; text: string; requiresAcknowledgement: boolean }>>,
-) {
-  return runHookRepeatedResult(guardHook, payload, fixture, pendingValues.length, pendingValues)
-}
-
 const hookOutput = JSON.stringify({
   delivery: [
     {
@@ -907,35 +899,31 @@ test('PostToolUse runs correctly without following an unreadable marker symlink'
   expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
 
-test('Stop blocks three times and allows the fourth with a system message', () => {
+test('Stop keeps its acknowledgement budget and emits one ordinary delivery once', () => {
   const item = createHookFixture(hookOutput)
-  const pendingValues = Array.from({ length: 4 }, () => JSON.parse(hookOutput).delivery)
-  const values = runHookRepeated(
+  const pendingValues = [
+    ...Array.from({ length: 4 }, () => JSON.parse(hookOutput).delivery),
+    [{ id: '8', text: 'ordinary message', requiresAcknowledgement: false }],
+    [],
+  ]
+  const result = runHookRepeatedResult(
     guardHook,
     JSON.stringify({ session_id: 'reader' }),
     item,
-    4,
+    pendingValues.length,
     pendingValues,
-  ).map((value) => JSON.parse(value))
+  )
+  const values = result.outputs.slice(0, 4).map((value) => JSON.parse(value))
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
   expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
   expect(values[3].systemMessage).toStartWith(
     'This architect session is stopping with 1 unacknowledged board notice.',
   )
-})
-
-test('Stop emits one unread ordinary delivery once and stamps exactly what it emitted', () => {
-  const item = createHookFixture(hookOutput)
-  const result = runStopHookRepeated(JSON.stringify({ session_id: 'reader' }), item, [
-    [{ id: '8', text: 'ordinary message', requiresAcknowledgement: false }],
-    [],
-  ])
-
-  expect(JSON.parse(result.outputs[0]!)).toEqual({
+  expect(JSON.parse(result.outputs[4]!)).toEqual({
     decision: 'block',
     reason: 'ordinary message',
   })
-  expect(result.outputs[1]).toBe('')
+  expect(result.outputs[5]).toBe('')
   expect(result.delivered).toEqual([['reader', ['8']]])
 })
 
