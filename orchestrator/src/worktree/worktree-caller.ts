@@ -96,6 +96,26 @@ export function checkoutHasUncommittedWork(cwd: string): boolean {
   return Boolean(gitOk(['status', '--porcelain', '--untracked-files=all'], cwd))
 }
 
+/** Select canonical paths for listed worktrees other than the caller's own. */
+export function otherWorktreePaths(
+  porcelain: string,
+  callerPath: string,
+  canonicalize: (path: string) => string,
+): string[] {
+  const canonicalCaller = canonicalize(callerPath)
+  const paths: string[] = []
+  for (const line of porcelain.split('\n')) {
+    if (!line.startsWith('worktree ')) continue
+    try {
+      const path = canonicalize(line.slice('worktree '.length))
+      if (path !== canonicalCaller) paths.push(path)
+    } catch {
+      // A path that cannot be resolved cannot contain an existing source path.
+    }
+  }
+  return paths
+}
+
 export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorkingState {
   assertCallerAncestry(cwd, worktree)
 
@@ -111,11 +131,11 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
     .toString()
     .split('\0')
     .filter(Boolean)
-  const otherWorktrees = (gitOk(['worktree', 'list', '--porcelain'], cwd) ?? '')
-    .split('\n')
-    .filter((line) => line.startsWith('worktree '))
-    .map((line) => realpathSync(line.slice('worktree '.length)))
-    .filter((path) => path !== realpathSync(cwd))
+  const otherWorktrees = otherWorktreePaths(
+    gitOk(['worktree', 'list', '--porcelain'], cwd) ?? '',
+    cwd,
+    realpathSync,
+  )
   const copied: string[] = []
   for (const relative of untracked) {
     const source = join(cwd, relative)
