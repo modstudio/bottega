@@ -85,6 +85,7 @@ const LATEST_MIGRATIONS = [
   '0018_task_document_number',
   '0019_interval_record_id',
   '0020_day_record_id',
+  '0021_note_uuid_identity',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
@@ -167,7 +168,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '2c41f5d8ee7f3a7d58623d9c4f933f2d218d272f9061102e8f30a6ced4150a53',
+      '0c2b927af1de54e6dfd97b28497128f49a7be744bbdafc36e46eb839f9c2c7e7',
     )
     d.close()
   })

@@ -59,12 +59,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/cli-program.ts',
-    line: 256,
+    line: 257,
     reason: 'task import is a source-checkout maintenance command and needs its registered project',
   },
   {
     path: 'hub/src/cli-program.ts',
-    line: 270,
+    line: 271,
     reason: 'task import reads checkout git history only in that source maintenance command',
   },
   {

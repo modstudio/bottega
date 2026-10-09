@@ -20,6 +20,7 @@ import {
   type NoteAnchor,
   parseNoteAnchor,
   promoteNote,
+  resolveNoteReference,
   staleNotes,
 } from './note.ts'
 
@@ -36,7 +37,7 @@ const hosted = {
       at = new Date().toISOString()
     const number = Number(url.pathname.split('/')[3])
     const shape = (note: ReturnType<typeof getNote>) => ({
-      id: crypto.randomUUID(),
+      id: note.record_id,
       number: note.id,
       project: note.project,
       project_name: note.project,
@@ -54,7 +55,7 @@ const hosted = {
     })
     if (url.pathname === '/v1/notes' && init?.method === 'POST') {
       if (body.sameAs) {
-        const old = getNote(body.sameAs)
+        const old = getNote(resolveNoteReference(String(body.sameAs), 'workshop'))
         return Response.json({
           ...shape(old),
           anchors: JSON.stringify([...old.anchors, JSON.parse(body.anchor)]),
@@ -85,8 +86,8 @@ const hosted = {
       })
     }
     if (url.pathname === '/v1/notes/merge') {
-      const target = getNote(body.target),
-        source = getNote(body.source)
+      const target = getNote(resolveNoteReference(String(body.target), 'workshop')),
+        source = getNote(resolveNoteReference(String(body.source), 'workshop'))
       return Response.json({
         note: {
           ...shape(target),
@@ -98,13 +99,13 @@ const hosted = {
     }
     if (url.pathname.endsWith('/drop'))
       return Response.json({
-        ...shape(getNote(number)),
+        ...shape(getNote(resolveNoteReference(String(number), 'workshop'))),
         stale_at: at,
         stale_reason: `dropped: ${body.reason}`,
         last_seen_at: at,
       })
     if (url.pathname.endsWith('/acknowledgements')) {
-      const note = getNote(number)
+      const note = getNote(resolveNoteReference(String(number), 'workshop'))
       const hostedNote = shape(note)
       return Response.json({
         note: hostedNote,
@@ -128,9 +129,12 @@ const hosted = {
   },
 }
 const fileNote = (input: Parameters<typeof createNote>[0]) => createNote(input, { hosted })
-const merge = (target: number, source: number) => mergeNote(target, source, { hosted })
-const drop = (id: number, reason: string) => dropNote(id, reason, { hosted })
-const acknowledge = (id: number, session: string) => acknowledgeNote(id, session, { hosted })
+const recordId = (number: number) => resolveNoteReference(String(number), 'workshop')
+const merge = (target: number, source: number) =>
+  mergeNote(recordId(target), recordId(source), { hosted })
+const drop = (id: number, reason: string) => dropNote(recordId(id), reason, { hosted })
+const acknowledge = (id: number, session: string) =>
+  acknowledgeNote(recordId(id), session, { hosted })
 
 describe('suggestion notes', () => {
   describe('local-authoritative note writes', () => {
@@ -155,8 +159,8 @@ describe('suggestion notes', () => {
       writeTransaction((conn) =>
         conn
           .query(
-            `INSERT INTO note (id,record_id,project,text,anchors,sightings,created_at,last_seen_at)
-             VALUES (40,?,?,?,'[]',1,?,?)`,
+            `INSERT INTO note (id,record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+             VALUES (40,?,40,?,?,'[]',1,?,?)`,
           )
           .run(
             crypto.randomUUID(),
@@ -174,6 +178,28 @@ describe('suggestion notes', () => {
         })
       ).note
       expect(created.id).toBe(41)
+    })
+
+    test('resolves note labels, session-project numbers, unique fallback numbers and UUIDs', () => {
+      const workshopId = crypto.randomUUID()
+      const alphaId = crypto.randomUUID()
+      writeTransaction((conn) =>
+        conn.exec(`
+          INSERT INTO note(id,record_id,number,project,text,anchors,created_at,last_seen_at)
+          VALUES (41,'${workshopId}',41,'workshop','workshop note','[]','2026-01-01','2026-01-01'),
+                 (42,'${alphaId}',42,'alpha','alpha note','[]','2026-01-01','2026-01-01')
+        `),
+      )
+      expect(resolveNoteReference('workshop#41', 'alpha')).toBe(workshopId)
+      expect(resolveNoteReference('41', 'workshop')).toBe(workshopId)
+      expect(resolveNoteReference('42', 'workshop')).toBe(alphaId)
+      expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
+        'no note alpha#41; use a project#number label or run `hub note list`',
+      )
+      expect(resolveNoteReference(alphaId, 'workshop')).toBe(alphaId)
+      expect(() => resolveNoteReference('99', 'workshop')).toThrow(
+        'no note workshop#99; use a project#number label or run `hub note list`',
+      )
     })
 
     test('orch note succeeding with no hosted record files locally', async () => {
@@ -209,7 +235,7 @@ describe('suggestion notes', () => {
       const same = await createNote({
         text: `Local note ${unique} again`,
         cwd: '/fixtures/repos/workshop',
-        sameAs: created.id,
+        sameAs: created.record_id,
       })
       expect(same.note.id).toBe(created.id)
       expect(same.note.sightings).toBe(2)
@@ -220,11 +246,11 @@ describe('suggestion notes', () => {
           .query('UPDATE note SET anchors=? WHERE id=?')
           .run(JSON.stringify([{ ...same.note.anchors[0], session_id: session }]), same.note.id),
       )
-      const kept = await acknowledgeNote(same.note.id, session)
+      const kept = await acknowledgeNote(same.note.record_id, session)
       expect(kept.alreadyAcknowledged).toBe(false)
-      expect((await acknowledgeNote(same.note.id, session)).alreadyAcknowledged).toBe(true)
+      expect((await acknowledgeNote(same.note.record_id, session)).alreadyAcknowledged).toBe(true)
 
-      const promoted = await promoteNote(same.note.id)
+      const promoted = await promoteNote(same.note.record_id)
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
     })
 
@@ -236,7 +262,7 @@ describe('suggestion notes', () => {
           forceNew: true,
         })
       ).note
-      const promoted = await promoteNote(created.id)
+      const promoted = await promoteNote(created.record_id)
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
 
       const another = (
@@ -246,7 +272,7 @@ describe('suggestion notes', () => {
           forceNew: true,
         })
       ).note
-      await expect(promoteNote(another.id, { existingTaskKey: 'LOC-999' })).rejects.toThrow(
+      await expect(promoteNote(another.record_id, { existingTaskKey: 'LOC-999' })).rejects.toThrow(
         '--task is valid only for a project that owns its tracker',
       )
     })
@@ -266,26 +292,26 @@ describe('suggestion notes', () => {
           forceNew: true,
         })
       ).note
-      await expect(mergeNote(one.id, one.id)).rejects.toThrow('a note cannot be merged with itself')
-      const merged = await mergeNote(one.id, two.id)
+      await expect(mergeNote(one.record_id, one.record_id)).rejects.toThrow(
+        'a note cannot be merged with itself',
+      )
+      const merged = await mergeNote(one.record_id, two.record_id)
       expect(merged.sightings).toBe(2)
       expect(merged.anchors).toHaveLength(2)
-      expect(() => getNote(two.id)).toThrow(`no note ${two.id}`)
+      expect(() => getNote(two.record_id)).toThrow(`no note ${two.record_id}`)
 
-      const dropped = await dropNote(one.id, 'superseded')
+      const dropped = await dropNote(one.record_id, 'superseded')
       expect(dropped.stale_reason).toBe('dropped: superseded')
 
       const old = '2026-07-01T00:00:00.000Z'
-      const doomed = Number(
-        writeTransaction(
-          (conn) =>
-            conn
-              .query(
-                `INSERT INTO note(id,project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason)
-                 VALUES (9001,'workshop','reap me','[]',1,?,?,?,?)`,
-              )
-              .run(old, old, '2026-07-02T00:00:00.000Z', 'gone').lastInsertRowid,
-        ),
+      const doomed = crypto.randomUUID()
+      writeTransaction((conn) =>
+        conn
+          .query(
+            `INSERT INTO note(id,record_id,number,project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason)
+             VALUES (9001,?,9001,'workshop','reap me','[]',1,?,?,?,?)`,
+          )
+          .run(doomed, old, old, '2026-07-02T00:00:00.000Z', 'gone'),
       )
       const result = await staleNotes({
         runExists: async () => new Set(),
@@ -456,7 +482,7 @@ describe('suggestion notes', () => {
       })
     ).note
     expect((await merge(one.id, two.id)).sightings).toBe(2)
-    expect(() => getNote(two.id)).toThrow(`no note ${two.id}`)
+    expect(() => getNote(two.record_id)).toThrow(`no note ${two.record_id}`)
 
     expect((await drop(one.id, 'superseded')).stale_reason).toBe('dropped: superseded')
   })
@@ -541,20 +567,24 @@ describe('suggestion notes', () => {
       { ...base, commit: 'old-commit' },
     ]
     const ids = writeTransaction((conn) =>
-      anchors.map((anchor, index) =>
-        Number(
-          conn
-            .query(
-              `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at) VALUES ('workshop',?,?,2,?,?)`,
-            )
-            .run(
-              `stale fixture ${index}`,
-              JSON.stringify([anchor]),
-              new Date().toISOString(),
-              new Date().toISOString(),
-            ).lastInsertRowid,
-        ),
-      ),
+      anchors.map((anchor, index) => {
+        const number = 9100 + index
+        conn
+          .query(
+            `INSERT INTO note(id,record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+             VALUES (?,?,?,'workshop',?,?,2,?,?)`,
+          )
+          .run(
+            number,
+            crypto.randomUUID(),
+            number,
+            `stale fixture ${index}`,
+            JSON.stringify([anchor]),
+            new Date().toISOString(),
+            new Date().toISOString(),
+          )
+        return number
+      }),
     )
     const result = await staleNotes({
       runExists: async () => new Set(),
@@ -588,17 +618,30 @@ describe('suggestion notes', () => {
         session_id: null,
       },
     ])
-    const add = (sightings: number, promoted: string | null, seen = old) =>
+    let next = 9200
+    const add = (sightings: number, promoted: string | null, seen = old) => {
+      const number = next++
+      const recordId = crypto.randomUUID()
       writeTransaction((conn) =>
-        Number(
-          conn
-            .query(
-              `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task)
-       VALUES ('workshop',?,?,?, ?,?,'2026-07-02T00:00:00.000Z','gone',?)`,
-            )
-            .run(`reap ${Math.random()}`, anchor, sightings, old, seen, promoted).lastInsertRowid,
-        ),
+        conn
+          .query(
+            `INSERT INTO note(id,record_id,number,project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task)
+             VALUES (?,?,?,'workshop',?,?,?, ?,?,'2026-07-02T00:00:00.000Z','gone',?)`,
+          )
+          .run(
+            number,
+            recordId,
+            number,
+            `reap ${Math.random()}`,
+            anchor,
+            sightings,
+            old,
+            seen,
+            promoted,
+          ),
       )
+      return { number, recordId }
+    }
     const doomed = add(1, null)
     const repeated = add(2, null)
     const recent = add(1, null, '2026-09-01T00:00:00.000Z')
@@ -608,8 +651,8 @@ describe('suggestion notes', () => {
       hosted,
     })
     expect(result.deleted).toBeGreaterThanOrEqual(1)
-    expect(() => getNote(doomed)).toThrow(`no note ${doomed}`)
-    expect(getNote(repeated).id).toBe(repeated)
-    expect(getNote(recent).id).toBe(recent)
+    expect(() => getNote(doomed.recordId)).toThrow(`no note ${doomed.recordId}`)
+    expect(getNote(repeated.recordId).id).toBe(repeated.number)
+    expect(getNote(recent.recordId).id).toBe(recent.number)
   })
 })

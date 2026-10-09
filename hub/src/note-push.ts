@@ -1,4 +1,3 @@
-import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from './db.ts'
 import { hostedMirrorNotes, hostedNoteCounts, type NoteClientOptions } from './note-client.ts'
 
@@ -7,8 +6,8 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
     .query<Record<string, unknown>, []>('SELECT * FROM note ORDER BY id')
     .all()
     .map((row) => ({
-      id: (row.record_id as string) ?? newRecordId(),
-      number: row.id as number,
+      id: row.record_id as string,
+      number: row.number as number,
       project: row.project as string,
       project_name: row.project as string,
       text: row.text as string,
@@ -24,27 +23,22 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
       updated_at: row.last_seen_at as string,
       deleted_at: null,
     }))
-  const byNumber = new Map(notes.map((row) => [row.number, row]))
   const acknowledgementRows = db()
     .query<Record<string, unknown>, []>(
-      'SELECT * FROM note_acknowledgement ORDER BY note_id,session_id',
+      'SELECT * FROM note_acknowledgement ORDER BY note_record_id,session_id',
     )
     .all()
   const local = { note: notes.length, note_acknowledgement: acknowledgementRows.length }
   if (options.dryRun) return { local, hosted: null, match: null }
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   for (let index = 0; index < notes.length; index += 500) {
-    const mirrored = await hostedMirrorNotes(
-      { notes: notes.slice(index, index + 500) },
-      requestOptions,
-    )
-    for (const identity of mirrored.noteIds) byNumber.get(identity.number)!.id = identity.id
+    await hostedMirrorNotes({ notes: notes.slice(index, index + 500) }, requestOptions)
   }
   const acknowledgements = acknowledgementRows.map((row) => {
-    const note = byNumber.get(row.note_id as number)!
+    const note = notes.find((candidate) => candidate.id === row.note_record_id)!
     return {
-      id: (row.record_id as string) ?? newRecordId(),
-      note_id: note.id,
+      id: row.record_id as string,
+      note_id: row.note_record_id as string,
       project_name: note.project,
       session_id: row.session_id as string,
       acknowledged_at: row.acknowledged_at as string,
