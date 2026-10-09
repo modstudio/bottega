@@ -63,14 +63,14 @@ describe('filed issue coordinator inputs', () => {
       source.indexOf('const fix =', source.indexOf('fixRun = await run({')),
     )
     const lens = reviewSource.slice(
-      reviewSource.indexOf('lensRun = await run({'),
-      reviewSource.indexOf('const review =', reviewSource.indexOf('lensRun = await run({')),
+      reviewSource.indexOf("runId = await detach('review-lens'"),
+      reviewSource.indexOf('await waitUntilRoutingCounts(runId)'),
     )
     expect(diagnosis).toContain("job: 'diagnose'")
     expect(diagnosis).not.toContain('seed:')
     expect(fix).toContain("job: 'issue-worker'")
     expect(fix).toContain('seed: fixSeed ?? undefined')
-    expect(lens).toContain("job: 'review-lens'")
+    expect(lens).toContain("detach('review-lens'")
     expect(lens).toContain('review: worktree.branch')
     expect(lens).not.toContain('seed:')
   })
