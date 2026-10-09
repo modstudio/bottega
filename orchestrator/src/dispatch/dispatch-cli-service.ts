@@ -20,7 +20,7 @@ import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, requiredMcpServer } from '../mcp/mcp-preflight.ts'
-import { projectByName, stackAt } from '../project/projects.ts'
+import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -62,6 +62,27 @@ type CallerCheckoutDecision = {
   notice: string | null
 }
 
+type DispatchLaunchCwdDecision = { launchCwd: string; refusal: null } | { refusal: string }
+
+export function dispatchLaunchCwdDecision(input: {
+  namedProject: { name: string; path: string } | null
+  cwdWasGiven: boolean
+  cwd: string
+  cwdProject: { name: string } | null
+}): DispatchLaunchCwdDecision {
+  if (!input.namedProject) return { launchCwd: input.cwd, refusal: null }
+  if (!input.cwdWasGiven) return { launchCwd: input.namedProject.path, refusal: null }
+  if (!input.cwdProject || input.cwdProject.name === input.namedProject.name) {
+    return { launchCwd: input.cwd, refusal: null }
+  }
+  return {
+    refusal:
+      `--repo names project ${input.namedProject.name}, but --cwd is inside project ` +
+      `${input.cwdProject.name}; drop one of --repo or --cwd, or point --cwd inside ` +
+      `project ${input.namedProject.name}`,
+  }
+}
+
 export function callerCheckoutDecision(input: {
   launchCwd: string
   explicitCwd: string | null
@@ -88,12 +109,26 @@ export function callerCheckoutDecision(input: {
   }
 }
 
-function resolveCallerCheckout(launchCwd: string, explicitCwd?: string): CallerCheckoutDecision {
+function resolveCallerCheckout(
+  launchCwd: string,
+  explicitCwd?: string,
+  explicitRepo?: string,
+): CallerCheckoutDecision {
   const selected = explicitCwd ? realpathSync(explicitCwd) : launchCwd
-  const facts = callerCheckoutFacts(selected)
+  const namedProject = explicitRepo ? projectByName(explicitRepo) : null
+  const selection = dispatchLaunchCwdDecision({
+    namedProject,
+    cwdWasGiven: explicitCwd !== undefined,
+    cwd: selected,
+    cwdProject: explicitCwd ? projectAt(selected) : null,
+  })
+  if (!('launchCwd' in selection)) throw new Error(selection.refusal)
+  const effectiveCwd = selection.launchCwd
+  const effectiveExplicitCwd = explicitCwd !== undefined || namedProject ? effectiveCwd : undefined
+  const facts = callerCheckoutFacts(effectiveCwd)
   return callerCheckoutDecision({
     launchCwd,
-    explicitCwd: explicitCwd ? selected : null,
+    explicitCwd: effectiveExplicitCwd ?? null,
     ...facts,
   })
 }
@@ -348,7 +383,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       resolveBase,
       isWorktreeRelativeRef,
       implicitReviewWarning,
-      resolveCallerCheckout: (cwd) => resolveCallerCheckout(presentation.cwd(), cwd),
+      resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
       lookupTaskKey: async (project, key) => {
         const registered = projectByName(project)
