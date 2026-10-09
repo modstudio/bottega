@@ -9,6 +9,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/install-root.ts',
   '../../../shared/state-directory.ts',
   '../artifact-paths.ts',
+  '../close/retained-branch.ts',
   '../collect/collect.ts',
   '../failure/failure.ts',
   '../mcp/mcp-probe.ts',

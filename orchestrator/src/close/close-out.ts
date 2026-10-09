@@ -64,7 +64,11 @@ import {
   prepareReaderScratchCloseOut,
   readerScratchReleaseDetail,
 } from './reader-scratch-close-out.ts'
-import { retainedBranchForCloseOut } from './retained-branch.ts'
+import {
+  retainedBranchForCloseOut,
+  retainedBranchPruneCommand,
+  retainedBranchReason,
+} from './retained-branch.ts'
 
 export type CloseOutResult = {
   runId: number
@@ -918,6 +922,23 @@ function settlementLivenessResult(result: CloseOutAttemptResult): CloseOutAttemp
   )
 }
 
+function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAttemptResult {
+  if (!['released', 'absent', 'forgotten'].includes(result.outcome)) return result
+  const retained = db()
+    .query('SELECT branch_kept,repo,launch_key FROM run WHERE id=?')
+    .get(result.runId) as {
+    branch_kept: string | null
+    repo: string | null
+    launch_key: string | null
+  }
+  if (!retained.branch_kept) return result
+  const reason = retainedBranchReason(retained.branch_kept)
+  if (result.detail.includes(reason)) return result
+  const prune = retainedBranchPruneCommand(retained.repo, retained.launch_key)
+  result.detail += `; ${reason}${prune ? `; prune after landing: ${prune}` : ''}`
+  return result
+}
+
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
   runId: number,
@@ -943,6 +964,7 @@ export function closeOutRun(
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
   }
   if (!options.dryRun) {
+    result = appendRetainedBranchDetail(result)
     writeTransaction(() => {
       result = settlementLivenessResult(result)
       result.detail = releaseAbsentCloseOutResidue({

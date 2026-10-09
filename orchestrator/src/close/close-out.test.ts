@@ -82,7 +82,7 @@ function closeOutFixture(
   db()
     .query(
       `UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=?,
-       base_commit=?, worktree_source='git', head_commit=? WHERE id=?`,
+       base_commit=?, worktree_source='git', head_commit=?, launch_key='DEV-647' WHERE id=?`,
     )
     .run(project, tree, tree, branch, branch, head, head, id)
   if (landingObservation) {
@@ -140,6 +140,12 @@ test('a recreated released tree path survives a second close-out', () => {
   try {
     const first = closeOutRun(fixture.id, { intent: 'terminal' })
     expect(first.outcome).toBe('released')
+    expect(first.detail).toContain(
+      `DEV-647-orch-${fixture.id} is kept so this run's commits stay recoverable until the task lands`,
+    )
+    expect(first.detail).toContain(
+      `prune after landing: orch branches prune --project close-out-${fixture.id} --key DEV-647`,
+    )
     expect(existsSync(fixture.tree)).toBe(false)
     expect(db().query('SELECT worktree FROM run WHERE id=?').get(fixture.id)).toEqual({
       worktree: null,

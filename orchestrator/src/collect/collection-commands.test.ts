@@ -42,3 +42,26 @@ test('result tells the caller how to open a released writing tree', () => {
 
   expect(lines.join('\n')).toContain(`branch:    DEV-1084-work\n  open tree:  orch tree open ${id}`)
 })
+
+test('result explains why a released writing branch remains and how to prune it', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', repo: 'fixture-project' })
+  db()
+    .query('UPDATE run SET minted_branch=?,branch_kept=?,launch_key=?,worktree=NULL WHERE id=?')
+    .run('DEV-1199-orch-1', 'DEV-1199-orch-1', 'DEV-1199', id)
+  const lines: string[] = []
+
+  resultCommand(db(), ['result', String(id)], () => '', {
+    log: (...values) => lines.push(values.join(' ')),
+    error: (...values) => lines.push(values.join(' ')),
+    exit: (code) => {
+      throw new Error(`unexpected exit ${code}`)
+    },
+  })
+
+  expect(lines.join('\n')).toContain(
+    "retained:  DEV-1199-orch-1 is kept so this run's commits stay recoverable until the task lands",
+  )
+  expect(lines.join('\n')).toContain(
+    'prune:     orch branches prune --project fixture-project --key DEV-1199',
+  )
+})
