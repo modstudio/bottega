@@ -56,6 +56,10 @@ export const hubModuleSpecs = [
   { file: 'hub/src/task-document-label.ts', allowed: [] },
   { file: 'hub/src/ingest/interval-replace.ts', allowed: [] },
   {
+    file: 'hub/src/note-cli.ts',
+    allowed: ['./attribute.ts', './note.ts', './note-promote-cli.ts', './note-push.ts'],
+  },
+  {
     file: 'hub/src/task-write-destination.ts',
     allowed: [
       './hosted-write-mode.ts',

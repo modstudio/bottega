@@ -7,13 +7,6 @@
     "key": "hub/src/cli-program.ts\u0000task"
   },
   {
-    "file": "hub/src/cli-program.ts",
-    "function": "note",
-    "line": 653,
-    "score": 71,
-    "key": "hub/src/cli-program.ts\u0000note"
-  },
-  {
     "file": "hub/src/ingest/git.ts",
     "function": "scanGit",
     "line": 58,

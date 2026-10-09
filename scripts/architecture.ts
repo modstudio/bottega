@@ -349,12 +349,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
   ]),
   module('hub/src/report-renderer.ts', ['../../shared/compact-number.ts', './measures.ts']),
-  module('hub/src/note-cli.ts', [
-    './attribute.ts',
-    './note.ts',
-    './note-promote-cli.ts',
-    './note-push.ts',
-  ]),
   module('hub/src/report-delivery.ts', ['./measures.ts', './report-renderer.ts']),
   module('hub/src/report-delivery-hosted.ts', [
     'node:os',
