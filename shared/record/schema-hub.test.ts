@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import { getTableColumns } from 'drizzle-orm'
+import { PLATFORM_SLUG } from '../brand.ts'
 import { hubSend, hubTaskComment, hubTaskDocument, hubTaskStatusEvent } from './schema-hub.ts'
 
 const migration = (name: string) =>
@@ -151,7 +152,7 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
       id uuid PRIMARY KEY, space_id uuid NOT NULL, note_id uuid NOT NULL
     );
     INSERT INTO space VALUES
-      ('01990000-0000-7000-8000-000000000001','bottega'),
+      ('01990000-0000-7000-8000-000000000001','${PLATFORM_SLUG}'),
       ('01990000-0000-7000-8000-000000000002','stopal');
     INSERT INTO project VALUES
       ('01990000-0000-7000-8000-000000000011','01990000-0000-7000-8000-000000000001','stopal'),

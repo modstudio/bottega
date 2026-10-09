@@ -6,7 +6,7 @@ import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
 import { noteApi } from './note-api.ts'
 import { applyHostedNoteChanges } from './note-cache.ts'
-import { hostedNoteChanges } from './note-client.ts'
+import { hostedDropNote, hostedNoteChanges } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
 
 beforeAll(resetFixtureStore)
@@ -76,6 +76,32 @@ describe('hosted-only note safety', () => {
         },
       }),
     ).rejects.toThrow('deploy the hub server at or after the per-project note counter change')
+  })
+
+  test('a note operation for another space refuses a server without target-space support', async () => {
+    let noteRouteCalled = false
+    await expect(
+      hostedDropNote('01990000-0000-7000-8000-000000000001', 'resolved', {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        recordSpace: 'space-b',
+        fetch: async (input) => {
+          if (new URL(input).pathname === '/v1/tasks/identity')
+            return Response.json({
+              userId: 'user-1',
+              activeSpaceId: 'space-a',
+              memberships: [
+                { spaceId: 'space-a', slug: 'active' },
+                { spaceId: 'space-b', slug: 'target' },
+              ],
+              capabilities: { projectNoteCounters: true },
+            })
+          noteRouteCalled = true
+          return Response.json({ error: 'unexpected route' }, { status: 500 })
+        },
+      }),
+    ).rejects.toThrow('deploy the hub server at or after the target-space notes change')
+    expect(noteRouteCalled).toBe(false)
   })
 
   test('number seeding never goes below an existing number', () => {
