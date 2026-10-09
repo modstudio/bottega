@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
+  resolvePhpPolicyRules,
+  unreadPhpPolicyRulesLine,
+} from '../../orchestrator/src/test-substance-project-policy'
+import {
   isTestFile,
   judgeTestSubstance,
   PHP_POLICY_RULES,
@@ -129,13 +133,17 @@ type FileJudgment = {
   unrecognised: boolean
 }
 
-async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
+async function judgeFile(
+  mode: Mode,
+  file: string,
+  phpPolicyRules: Parameters<typeof judgeTestSubstance>[0]['phpPolicyRules'],
+): Promise<FileJudgment> {
   const beforeContent = contentAt(mode.kind === 'staged' ? 'HEAD' : mode.ref, file)
   const judgment = await judgeTestSubstance({
     file,
     before: beforeContent ?? null,
     after: afterContent(mode, file),
-    phpPolicyRules: [],
+    phpPolicyRules,
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
   return {
@@ -147,6 +155,16 @@ async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
     unchecked: judgment.status === 'unchecked' ? `${file}: ${judgment.reason}` : undefined,
     unrecognised,
   }
+}
+
+function gatePhpPolicyRules() {
+  const policy = resolvePhpPolicyRules(process.cwd())
+  if (policy.notReadReason) console.error(unreadPhpPolicyRulesLine(policy.notReadReason))
+  return policy.rules
+}
+
+function gatePhpPolicyRulesFor(files: string[]) {
+  return files.some((file) => file.endsWith('.php')) ? gatePhpPolicyRules() : []
 }
 
 async function main() {
@@ -162,11 +180,12 @@ async function main() {
   }
 
   const files = changedTestFiles(mode)
+  const phpPolicyRules = gatePhpPolicyRulesFor(files)
   const introduced: TestFinding[] = []
   const unchecked: string[] = []
   const unrecognised: string[] = []
   for (const file of files) {
-    const judgment = await judgeFile(mode, file)
+    const judgment = await judgeFile(mode, file, phpPolicyRules)
     if (judgment.unrecognised) unrecognised.push(file)
     if (judgment.unchecked) unchecked.push(judgment.unchecked)
     introduced.push(...judgment.findings)

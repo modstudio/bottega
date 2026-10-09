@@ -93,6 +93,73 @@ describe('test-substance judge verb', () => {
     expect(received).toEqual(['createMock'])
   })
 
+  test('raw PHP input enforces the injected project policy rules', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'test-substance-policy-'))
+    try {
+      const phpFile = join(root, 'tests/Feature/FooTest.php')
+      const php = `<?php
+final class FooTest {
+  public function testNamed(): void { $this->createMock(Foo::class); }
+}`
+      const input = JSON.stringify(payload('Write', { file_path: phpFile, content: php }))
+      const enforced = await testSubstanceJudgeCommand(input, true, undefined, () => ({
+        rules: ['createMock'],
+      }))
+      const universalOnly = await testSubstanceJudgeCommand(input, true, undefined, () => ({
+        rules: [],
+      }))
+
+      expect(enforced).toMatchObject({
+        status: 'refused',
+        findings: [expect.objectContaining({ rule: 'createMock' })],
+      })
+      expect(universalOnly).toEqual({ status: 'ok', findings: [], reason: '' })
+    } finally {
+      rmSync(root, { recursive: true })
+    }
+  })
+
+  test('a project-policy lookup failure still judges universal rules and reports it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'test-substance-policy-failure-'))
+    try {
+      const phpFile = join(root, 'tests/Feature/FooTest.php')
+      const reports: string[] = []
+      let received: readonly string[] | undefined
+      const result = await testSubstanceJudgeCommand(
+        JSON.stringify(payload('Write', { file_path: phpFile, content: '<?php' })),
+        true,
+        async (input) => {
+          received = input.phpPolicyRules
+          return decision('ok')
+        },
+        () => ({ rules: [], notReadReason: 'store missing' }),
+        (line) => reports.push(line),
+      )
+
+      expect(result.status).toBe('ok')
+      expect(received).toEqual([])
+      expect(reports).toEqual([
+        expect.stringContaining("the project's PHP policy rules were not read: store missing"),
+      ])
+    } finally {
+      rmSync(root, { recursive: true })
+    }
+  })
+
+  test('raw non-PHP input performs no project-policy lookup', async () => {
+    let lookups = 0
+    await testSubstanceJudgeCommand(
+      JSON.stringify(payload('Write', { content: 'test("works", () => expect(1).toBe(1))' })),
+      true,
+      async () => decision('ok'),
+      () => {
+        lookups += 1
+        return { rules: [] }
+      },
+    )
+    expect(lookups).toBe(0)
+  })
+
   test('raw tool input with a marker but unsupported extension returns ok without reading', async () => {
     const result = await testSubstanceJudgeCommand(
       JSON.stringify(payload('Write', { file_path: '/missing/example.test.mtsx', content: 'x' })),

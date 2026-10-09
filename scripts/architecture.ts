@@ -449,7 +449,11 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../../../shared/process-identity.ts',
   ]),
-  module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
+  module('orchestrator/src/project/project-injection.ts', [
+    'zod',
+    '../../../shared/trackers.ts',
+    '../../../shared/test-substance/test-substance.ts',
+  ]),
   module('orchestrator/src/project/project-hosted-write.ts', [
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',

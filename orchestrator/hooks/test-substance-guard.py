@@ -102,6 +102,8 @@ def main():
     if result.returncode != 0:
         detail = result.stderr.strip().replace("\n", " ") or f"exit {result.returncode}"
         return unchecked(path, f"judge failed ({detail})")
+    if result.stderr:
+        print(result.stderr.rstrip(), file=sys.stderr)
     try:
         judgment = json.loads(result.stdout)
     except json.JSONDecodeError as error:

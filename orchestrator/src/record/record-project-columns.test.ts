@@ -30,6 +30,11 @@ const samples = {
     column: 'review',
     value: '{"lenses":[{"lens":"correctness"}]}',
   },
+  testSubstance: {
+    setting: { phpPolicyRules: ['createMock'] },
+    column: 'testSubstance',
+    value: '{"phpPolicyRules":["createMock"]}',
+  },
   states: { setting: { todo: 'open' }, column: 'states', value: '{"todo":"open"}' },
   tracker: { setting: { kind: 'hub' }, column: 'tracker', value: '{"kind":"hub"}' },
   trunk: { setting: 'develop', column: 'landingBranch', value: 'develop' },

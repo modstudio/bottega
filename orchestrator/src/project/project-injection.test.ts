@@ -81,6 +81,21 @@ describe('project workflow injection', () => {
     ])
   })
 
+  test('refuses unknown and repeated PHP policy rules with the register remedy', () => {
+    const unknownRuleErrors = validateProjectSettings({
+      testSubstance: { phpPolicyRules: ['unknown-rule'] },
+    } as unknown as Project['settings']).join('\n')
+    expect(unknownRuleErrors).toContain('unknown PHP policy rule')
+    expect(unknownRuleErrors).toContain('valid rules:')
+    expect(unknownRuleErrors).toContain('orch project set <project> --settings')
+    expect(
+      validateProjectSettings({
+        testSubstance: { phpPolicyRules: ['createMock', 'createMock'] },
+      }),
+    ).toEqual([expect.stringContaining('PHP policy rule "createMock" is repeated')])
+    expect(validateProjectSettings({ testSubstance: { phpPolicyRules: [] } })).toEqual([])
+  })
+
   test('validates a rung live command as a non-empty string', () => {
     expect(
       validateProjectSettings({

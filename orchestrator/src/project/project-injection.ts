@@ -2,6 +2,10 @@
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
 import { z } from 'zod'
 import {
+  PHP_POLICY_RULES,
+  type PhpPolicyRule,
+} from '../../../shared/test-substance/test-substance.ts'
+import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
   refuseNonCursorProjectId,
@@ -56,6 +60,29 @@ const reviewSchema = strictObject({
   ),
 })
 
+const testSubstanceSchema = strictObject({
+  phpPolicyRules: z
+    .array(
+      z.custom<PhpPolicyRule>(
+        (rule) => typeof rule === 'string' && PHP_POLICY_RULES.includes(rule as PhpPolicyRule),
+        `unknown PHP policy rule; valid rules: ${PHP_POLICY_RULES.join(', ')}; set with: orch project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+      ),
+    )
+    .superRefine((rules, context) => {
+      const seen = new Set<string>()
+      for (const [index, rule] of rules.entries()) {
+        if (seen.has(rule)) {
+          context.addIssue({
+            code: 'custom',
+            path: [index],
+            message: `PHP policy rule "${rule}" is repeated; use each valid rule at most once; set with: orch project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+          })
+        }
+        seen.add(rule)
+      }
+    }),
+})
+
 const gateSchema = z.string().trim().min(1)
 const trunkSchema = z.string().trim().min(1)
 // The shared shape keeps protocol open so hub can read any stored row; the
@@ -73,6 +100,7 @@ export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
 export type SignalsSettings = z.infer<typeof signalsSchema>
 export type ReviewSettings = z.infer<typeof reviewSchema>
+export type TestSubstanceSettings = z.infer<typeof testSubstanceSchema>
 type ResolvedDocs = DocsSettings & {
   server?: string
   read: string[]
@@ -205,6 +233,7 @@ type InjectionSettings = {
   docs?: DocsSettings
   signals?: SignalsSettings
   review?: ReviewSettings
+  testSubstance?: TestSubstanceSettings
   mainStack?: { consumers: string[]; requiredServices?: string[] }
 }
 
@@ -353,7 +382,7 @@ export function resolveDeclaredFacts<Project extends InjectableProject>(
 
 type ValidatedInjectionSettings = Pick<
   InjectionSettings,
-  'tracker' | 'trunk' | 'release' | 'docs' | 'signals' | 'gate' | 'review'
+  'tracker' | 'trunk' | 'release' | 'docs' | 'signals' | 'gate' | 'review' | 'testSubstance'
 >
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
@@ -365,6 +394,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['docs', docsSchema],
     ['signals', signalsSchema],
     ['review', reviewSchema],
+    ['testSubstance', testSubstanceSchema],
     ['gate', gateSchema],
     ['trunk', trunkSchema],
   ] as const) {
