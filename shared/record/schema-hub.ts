@@ -7,6 +7,7 @@ import {
   bigint,
   check,
   doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -23,6 +24,27 @@ import { project, RECORD_OWNER_ROLE, space, spaceIdentity, tenantPolicies, user 
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
+
+export const HUB_CHANGE_SOURCES = {
+  rows: [
+    'hub_task',
+    'hub_task_comment',
+    'hub_task_document',
+    'hub_task_status_event',
+    'hub_send',
+    'hub_interval',
+    'hub_day',
+    'hub_note',
+    'hub_note_acknowledgement',
+  ],
+  children: {
+    hub_send_recipient: 'hub_send',
+  },
+} as const
+
+export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
+  hub_report_subscription: 'Hosted configuration is not mirrored to local machine stores.',
+} as const
 
 export const hubChangeHead = pgTable.withRLS(
   'hub_change_head',
@@ -386,6 +408,7 @@ export const hubSend = pgTable.withRLS(
     periodEnd: timestamp('period_end', { withTimezone: true }),
   },
   (table) => [
+    unique('hub_send_space_id_unique').on(table.spaceId, table.id),
     uniqueIndex('hub_send_subscription_period_unique')
       .on(table.subscriptionId, table.periodEnd)
       .where(sql`${table.test} = 0`),
@@ -420,15 +443,18 @@ export const hubSendRecipient = pgTable.withRLS(
   {
     id: identity(),
     spaceId: spaceIdentity(),
-    sendId: uuid('send_id')
-      .notNull()
-      .references(() => hubSend.id),
+    sendId: uuid('send_id').notNull(),
     userId: uuid('user_id').references(() => user.id),
     name: text().notNull(),
     email: text().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.spaceId, table.sendId],
+      foreignColumns: [hubSend.spaceId, hubSend.id],
+      name: 'hub_send_recipient_space_send_fk',
+    }),
     unique('hub_send_recipient_unique').on(table.sendId, table.userId),
     pgPolicy('hub_send_recipient_space_select', {
       for: 'select',

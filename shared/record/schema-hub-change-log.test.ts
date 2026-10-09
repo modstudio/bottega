@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
+import { HUB_CHANGE_SOURCE_EXCLUSIONS, HUB_CHANGE_SOURCES } from './schema-hub.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
 const spaceA = '01990000-0000-7000-8000-000000001240'
@@ -13,18 +14,7 @@ const intervalId = '01990000-0000-7000-8000-000000001243'
 const movedTaskId = '01990000-0000-7000-8000-000000001244'
 const sendId = '01990000-0000-7000-8000-000000001245'
 const recipientId = '01990000-0000-7000-8000-000000001246'
-
-const syncedTables = [
-  'hub_task',
-  'hub_task_comment',
-  'hub_task_document',
-  'hub_task_status_event',
-  'hub_send',
-  'hub_interval',
-  'hub_day',
-  'hub_note',
-  'hub_note_acknowledgement',
-] as const
+const wrongSpaceRecipientId = '01990000-0000-7000-8000-000000001247'
 
 async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
   for (const statement of migration.sql) await transaction.exec(statement)
@@ -92,6 +82,34 @@ afterAll(async () => {
 })
 
 test('change-log triggers cover every synced table and recipient changes map to sends', async () => {
+  const candidateTables = (
+    await database.query<{ table_name: string }>(`
+      SELECT table_name
+      FROM information_schema.tables candidate
+      WHERE table_schema='public'
+        AND table_type='BASE TABLE'
+        AND table_name LIKE 'hub\\_%' ESCAPE '\\'
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema=candidate.table_schema
+            AND table_name=candidate.table_name
+            AND column_name='space_id'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema=candidate.table_schema
+            AND table_name=candidate.table_name
+            AND column_name IN ('updated_at','deleted_at')
+        )
+      ORDER BY table_name
+    `)
+  ).rows.map(({ table_name }) => table_name)
+  const classifiedTables = new Set<string>([
+    ...HUB_CHANGE_SOURCES.rows,
+    ...Object.keys(HUB_CHANGE_SOURCE_EXCLUSIONS),
+  ])
+  expect(candidateTables.filter((table) => !classifiedTables.has(table))).toEqual([])
+
   const rows = (
     await database.query<{
       table_name: string
@@ -109,12 +127,14 @@ test('change-log triggers cover every synced table and recipient changes map to 
         AND c.relname = ANY($1::text[])
       ORDER BY c.relname
     `,
-      [[...syncedTables, 'hub_send_recipient']],
+      [[...HUB_CHANGE_SOURCES.rows, ...Object.keys(HUB_CHANGE_SOURCES.children)]],
     )
   ).rows
 
-  expect(rows).toHaveLength(syncedTables.length + 1)
-  for (const table of syncedTables) {
+  expect(rows).toHaveLength(
+    HUB_CHANGE_SOURCES.rows.length + Object.keys(HUB_CHANGE_SOURCES.children).length,
+  )
+  for (const table of HUB_CHANGE_SOURCES.rows) {
     expect(rows).toContainEqual({
       table_name: table,
       function_name: 'hub_change_log_row',
@@ -122,12 +142,14 @@ test('change-log triggers cover every synced table and recipient changes map to 
       trigger_type: 29,
     })
   }
-  expect(rows).toContainEqual({
-    table_name: 'hub_send_recipient',
-    function_name: 'hub_change_log_send_recipient',
-    enabled: 'O',
-    trigger_type: 29,
-  })
+  for (const table of Object.keys(HUB_CHANGE_SOURCES.children)) {
+    expect(rows).toContainEqual({
+      table_name: table,
+      function_name: 'hub_change_log_send_recipient',
+      enabled: 'O',
+      trigger_type: 29,
+    })
+  }
 })
 
 test('tenant and owner writes append gapless, space-scoped change entries', async () => {
@@ -246,6 +268,36 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
   ).toEqual([{ row_id: sendId, occurrences: 2 }])
 
   await resetSession(database)
+  const changeStateBeforeInvalidRecipient = (
+    await database.query<{ space_id: string; sequence: number; entries: number }>(`
+      SELECT h.space_id::text, h.sequence::int, count(c.*)::int entries
+      FROM hub_change_head h
+      LEFT JOIN hub_change c ON c.space_id=h.space_id
+      GROUP BY h.space_id,h.sequence
+      ORDER BY h.space_id
+    `)
+  ).rows
+  await bindActor(database, spaceB)
+  await expect(
+    database.query(
+      `INSERT INTO hub_send_recipient (id,space_id,send_id,name,email,created_at)
+       VALUES ($1,$2,$3,'Wrong space','wrong-space@example.com',now())`,
+      [wrongSpaceRecipientId, spaceB, sendId],
+    ),
+  ).rejects.toThrow()
+  await resetSession(database)
+  expect(
+    (
+      await database.query<{ space_id: string; sequence: number; entries: number }>(`
+        SELECT h.space_id::text, h.sequence::int, count(c.*)::int entries
+        FROM hub_change_head h
+        LEFT JOIN hub_change c ON c.space_id=h.space_id
+        GROUP BY h.space_id,h.sequence
+        ORDER BY h.space_id
+      `)
+    ).rows,
+  ).toEqual(changeStateBeforeInvalidRecipient)
+
   await database.exec(`
     SET ROLE ${RECORD_OWNER_ROLE};
     ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
