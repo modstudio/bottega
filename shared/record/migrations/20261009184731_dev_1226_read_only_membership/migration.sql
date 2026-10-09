@@ -662,12 +662,12 @@ ALTER POLICY "hub_report_subscription_recipient_space_update" ON "hub_report_sub
       AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
       AND m.permission = 'write'
   )));--> statement-breakpoint
-ALTER POLICY "hub_report_subscription_recipient_space_delete" ON "hub_report_subscription_recipient" TO public USING (("hub_report_subscription_recipient"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (
+ALTER POLICY "hub_report_subscription_recipient_space_delete" ON "hub_report_subscription_recipient" TO public USING ((("hub_report_subscription_recipient"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
     WHERE m.space_id = "hub_report_subscription_recipient"."space_id"
       AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
       AND m.permission = 'write'
-  )));--> statement-breakpoint
+  ))) OR (("hub_report_subscription_recipient"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND ("hub_report_subscription_recipient"."unsubscribe_token" = nullif(current_setting('app.unsubscribe_token', true), ''))));--> statement-breakpoint
 ALTER POLICY "hub_task_space_insert" ON "hub_task" TO public WITH CHECK (("hub_task"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
     WHERE m.space_id = "hub_task"."space_id"
@@ -831,18 +831,26 @@ ALTER POLICY "config_entry_space_delete" ON "config_entry" TO public USING (("co
   )));--> statement-breakpoint
 ALTER POLICY "config_secret_actor_insert" ON "config_secret" TO "record_actor" WITH CHECK (("config_secret"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND ("config_secret"."user_id" IS NULL OR "config_secret"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "config_secret"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "config_secret"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "config_secret_actor_update" ON "config_secret" TO "record_actor" USING (("config_secret"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND ("config_secret"."user_id" IS NULL OR "config_secret"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "config_secret"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "config_secret"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   ))) WITH CHECK (("config_secret"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND ("config_secret"."user_id" IS NULL OR "config_secret"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "config_secret"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "config_secret"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "config_secret_actor_delete" ON "config_secret" TO "record_actor" USING (("config_secret"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND ("config_secret"."user_id" IS NULL OR "config_secret"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "config_secret"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "config_secret"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "machine_public_key_space_insert" ON "machine_public_key" TO public WITH CHECK (("machine_public_key"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (
     SELECT 1 FROM membership m
@@ -869,31 +877,47 @@ ALTER POLICY "machine_public_key_space_delete" ON "machine_public_key" TO public
   )));--> statement-breakpoint
 ALTER POLICY "secret_dek_actor_insert" ON "secret_dek" TO "record_actor" WITH CHECK (("secret_dek"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "secret_dek_actor_update" ON "secret_dek" TO "record_actor" USING (("secret_dek"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   ))) WITH CHECK (("secret_dek"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "secret_dek_actor_delete" ON "secret_dek" TO "record_actor" USING (("secret_dek"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "secret_dek_wrap_actor_insert" ON "secret_dek_wrap" TO "record_actor" WITH CHECK (("secret_dek_wrap"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek_wrap"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek_wrap"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "secret_dek_wrap_actor_update" ON "secret_dek_wrap" TO "record_actor" USING (("secret_dek_wrap"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek_wrap"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek_wrap"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   ))) WITH CHECK (("secret_dek_wrap"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek_wrap"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek_wrap"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));--> statement-breakpoint
 ALTER POLICY "secret_dek_wrap_actor_delete" ON "secret_dek_wrap" TO "record_actor" USING (("secret_dek_wrap"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid) AND (true) AND (EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = "secret_dek_wrap"."space_id" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.permission = 'write'
+    WHERE m.space_id = "secret_dek_wrap"."space_id"
+      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND m.permission = 'write'
   )));

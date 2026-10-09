@@ -87,3 +87,53 @@ test('read-only members are refused before remaining tenant write routes run', a
   }
   expect(writes).toEqual([])
 })
+
+test('remaining tenant write routes judge and bind the requested destination space', async () => {
+  // Production break watched: judge the active space or omit the requested destination binding.
+  const destinations: Array<string | undefined> = []
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', {
+      ...identity,
+      memberships: [
+        { ...identity.memberships[0]!, permission: 'read' },
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'space-b',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    })
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  for (const path of [
+    '/v1/config/entries/key',
+    '/v1/runs/run-id/score',
+    '/v1/runs/run-id/void',
+    '/v1/runs/run-id/unvoid',
+    '/v1/snapshots/state',
+  ]) {
+    app.all(path, (context) => {
+      destinations.push(context.get('destinationSpaceId'))
+      return context.json({ ok: true })
+    })
+  }
+
+  for (const [path, method] of [
+    ['/v1/config/entries/key', 'PUT'],
+    ['/v1/runs/run-id/score', 'PUT'],
+    ['/v1/runs/run-id/void', 'POST'],
+    ['/v1/runs/run-id/unvoid', 'POST'],
+    ['/v1/snapshots/state', 'PUT'],
+  ]) {
+    const response = await app.request(path, {
+      method,
+      headers: { 'x-record-space': 'space-b' },
+    })
+    expect(response.status).toBe(200)
+  }
+  expect(destinations).toEqual(Array.from({ length: 5 }, () => 'space-b'))
+})

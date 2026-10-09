@@ -28,12 +28,13 @@ export const spaceIdentity = () =>
     .references(() => space.id)
 
 /** Require the bound actor to hold write permission for a row's space. */
-export const writeMembershipPredicate = (owner: AnyPgColumn, currentUser?: SQL) => {
-  const separator = currentUser ? sql.raw(' AND ') : sql.raw('\n      AND ')
-  const actor = currentUser ?? sql`nullif(current_setting('app.user_id', true), '')::uuid`
+export const writeMembershipPredicate = (owner: AnyPgColumn) => {
+  const actor = sql`nullif(current_setting('app.user_id', true), '')::uuid`
   return sql`EXISTS (
     SELECT 1 FROM membership m
-    WHERE m.space_id = ${owner}${separator}m.user_id = ${actor}${separator}m.permission = 'write'
+    WHERE m.space_id = ${owner}
+      AND m.user_id = ${actor}
+      AND m.permission = 'write'
   )`
 }
 

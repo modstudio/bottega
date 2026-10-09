@@ -36,7 +36,7 @@ const keyIdCheck = (column: AnyPgColumn) =>
 function actorPolicies(table: string, spaceId: AnyPgColumn, userId?: AnyPgColumn) {
   const ownsSpace = sql`${spaceId} = ${currentSpace}`
   const ownsUser = userId ? sql`${userId} IS NULL OR ${userId} = ${currentUser}` : sql`true`
-  const mayWrite = writeMembershipPredicate(spaceId, currentUser)
+  const mayWrite = writeMembershipPredicate(spaceId)
   const readsRow = sql`(${ownsSpace}) AND (${ownsUser})`
   const writesRow = sql`(${ownsSpace}) AND (${ownsUser}) AND (${mayWrite})`
 

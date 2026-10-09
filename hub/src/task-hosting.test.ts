@@ -576,6 +576,44 @@ describe('hosted-only task safety', () => {
     })
   })
 
+  test('every task write route refuses a read-only membership before dispatch', async () => {
+    // Production break watched: remove the access decision before task route dispatch.
+    for (const [method, pathname] of [
+      ['POST', '/v1/tasks'],
+      ['PATCH', '/v1/tasks/DEV-1'],
+      ['POST', '/v1/tasks/DEV-1/close'],
+      ['POST', '/v1/tasks/DEV-1/comments'],
+      ['POST', '/v1/tasks/DEV-1/documents'],
+      ['PATCH', '/v1/tasks/DEV-1/documents/document-1'],
+      ['DELETE', '/v1/tasks/DEV-1/documents/document-1'],
+      ['PUT', '/v1/tasks/mirror'],
+      ['POST', '/v1/tasks/presence'],
+      ['DELETE', '/v1/tasks'],
+    ]) {
+      const response = await taskApi(
+        new Request(`https://hub.example.test${pathname}`, {
+          method,
+          headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        }),
+        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://test' },
+        {
+          fetch: async () =>
+            Response.json({
+              user: { id: 'user-a' },
+              activeSpaceId: 'space-a',
+              memberships: [{ space_id: 'space-a', slug: 'active', permission: 'read' }],
+            }),
+        },
+      )
+      expect(response?.status).toBe(403)
+      expect(await response?.json()).toEqual({
+        error: 'record space space-a membership is read-only',
+        remedy: 'A space owner or admin can change the membership permission.',
+      })
+    }
+  })
+
   test('task clients carry presence pairs and bulk-delete confirmation in request bodies', async () => {
     const requests: Array<{ path: string; method: string; body: unknown }> = []
     const fetch = async (input: string, init?: RequestInit) => {
