@@ -4,11 +4,12 @@ import { dirname, join } from 'node:path'
 import {
   borrowedCheckoutOf,
   git,
+  gitInput,
   gitOk,
   repoRootOf,
   targetGitEnvironment,
 } from '../git/git-environment.ts'
-import type { WorktreeTool } from '../project/projects.ts'
+import { projectAt, type WorktreeTool } from '../project/projects.ts'
 import {
   attributeWorktree,
   type RecordWorktree,
@@ -36,9 +37,15 @@ export function createReadOnlyWorktree(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const }
   try {
+    const landingBranch = projectAt(repoRoot)?.settings.trunk?.trim() || null
+    const remoteTrackingRefs = landingRemoteTrackingRefs(
+      snapshotRemoteTrackingRefs(repoRoot),
+      landingBranch,
+    )
     git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
+    restoreRemoteTrackingRefs(path, remoteTrackingRefs)
     provisionWorktree(repoRoot, path, provision, 'the project register row', provisionTimeoutMs)
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
@@ -50,6 +57,61 @@ export function createReadOnlyWorktree(
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\ncleanup: ${cleanup.detail}`,
     )
+  }
+}
+
+export type RemoteTrackingRef = { ref: string; object: string }
+
+/** Select only each remote's copy of the registered landing branch. */
+export function landingRemoteTrackingRefs(
+  refs: RemoteTrackingRef[],
+  landingBranch: string | null,
+): RemoteTrackingRef[] {
+  if (!landingBranch) return []
+  const prefix = 'refs/remotes/'
+  return refs.filter(({ ref }) => {
+    if (!ref.startsWith(prefix)) return false
+    const remoteAndBranch = ref.slice(prefix.length)
+    const separator = remoteAndBranch.indexOf('/')
+    return separator > 0 && remoteAndBranch.slice(separator + 1) === landingBranch
+  })
+}
+
+/** Parse readable ref candidates, ignoring output that cannot identify both fields. */
+export function parseRemoteTrackingRefs(output: string): RemoteTrackingRef[] {
+  const refs: RemoteTrackingRef[] = []
+  for (const line of output.split('\n')) {
+    const fields = line.split('\t')
+    if (fields.length !== 2) continue
+    const [ref, object] = fields
+    if (!ref || !object) continue
+    refs.push({ ref, object })
+  }
+  return refs
+}
+
+/** Read private candidates before the clone's transport configuration is removed. */
+function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
+  try {
+    return parseRemoteTrackingRefs(
+      git(['for-each-ref', '--format=%(refname)%09%(objectname)', 'refs/remotes/'], repoRoot),
+    )
+  } catch {
+    return []
+  }
+}
+
+function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
+  for (const ref of refs) {
+    try {
+      gitInput(
+        ['update-ref', '--stdin'],
+        path,
+        new TextEncoder().encode(`update ${ref.ref} ${ref.object}\n`),
+      )
+    } catch {
+      // A borrowed revision name is optional; the reader clone remains usable without it.
+    }
   }
 }
 
