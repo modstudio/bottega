@@ -2,12 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { formatCollectLeg, hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
-import {
-  classifyHostedChangeDelete,
-  classifyHostedChangeUpsert,
-  HOSTED_NOTE_CHANGES_CURSOR_KEY,
-  pullHostedNoteChanges,
-} from './hosted-change-cache.ts'
+import { HOSTED_NOTE_CHANGES_CURSOR_KEY, pullHostedNoteChanges } from './hosted-change-cache.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import {
   applyHostedAcknowledgement,
@@ -134,14 +129,6 @@ function storeCursor(value: string, space = 'space-one') {
 const pull = (fetch: TestFetch, registeredProjects = registered.slice(0, 1)) =>
   pullHostedNoteChanges({ ...options, fetch, registeredProjects })
 
-test('change classifications depend only on the gathered row values', () => {
-  expect(classifyHostedChangeDelete('space-one', 'space-one')).toBe('apply')
-  expect(classifyHostedChangeDelete(null, 'space-one')).toBe('skip')
-  expect(classifyHostedChangeDelete('space-two', 'space-one')).toBe('skip')
-  expect(classifyHostedChangeUpsert({ text: 'same' }, { text: 'same' })).toBe('no-op')
-  expect(classifyHostedChangeUpsert({ text: 'before' }, { text: 'after' })).toBe('changed')
-})
-
 test('the note family starts and resets through the full note pull including counters', async () => {
   let fullPulls = 0
   const fetch = routeFetch({
@@ -182,9 +169,9 @@ test('note upserts distinguish a timestamp no-op from a changed row', async () =
           {
             sequence: 14,
             table: 'hub_note',
-            id: otherNoteId,
+            id: noteId,
             op: 'upsert',
-            row: note({ id: otherNoteId, number: 5, text: 'new' }),
+            row: note({ text: 'new' }),
           },
         ],
       }),
@@ -192,6 +179,14 @@ test('note upserts distinguish a timestamp no-op from a changed row', async () =
   const report = await pull(fetch)
   expect(report?.upsertsNoop).toBe(1)
   expect(report?.upsertsChanged).toBe(1)
+  const evidence = db()
+    .query<{ differing_columns: string; row_id: string }, []>(
+      'SELECT differing_columns,row_id FROM hosted_change_evidence',
+    )
+    .all()
+  expect(evidence).toEqual([{ differing_columns: '["text"]', row_id: noteId }])
+  expect(JSON.stringify(evidence)).not.toContain('remember this')
+  expect(JSON.stringify(evidence)).not.toContain('new')
 })
 
 test('note deletes apply only in the row own space', async () => {
@@ -226,6 +221,14 @@ test('note deletes apply only in the row own space', async () => {
   )
   expect(applied?.spaces.find((row) => row.spaceId === 'space-one')?.deletesApplied).toBe(1)
   expect(db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId)).toBeNull()
+  expect(
+    db()
+      .query<{ kind: string }, []>(
+        'SELECT kind FROM hosted_change_evidence ORDER BY observed_at,record_id',
+      )
+      .all()
+      .map((row) => row.kind),
+  ).toEqual(['skipped-delete', 'applied-delete'])
 })
 
 test('acknowledgement deletes use their note space and skip an absent note', async () => {
@@ -473,12 +476,27 @@ test('a note collision refuses the page and leaves its cursor in place', async (
   const fetch = routeFetch({
     changes: () =>
       page({
-        next: 13,
-        changes: [{ sequence: 13, table: 'hub_note', id: noteId, op: 'upsert', row: note() }],
+        next: 14,
+        changes: [
+          {
+            sequence: 13,
+            table: 'hub_note',
+            id: otherNoteId,
+            op: 'upsert',
+            row: note({ id: otherNoteId, text: 'would roll back' }),
+          },
+          { sequence: 14, table: 'hub_note', id: noteId, op: 'upsert', row: note() },
+        ],
       }),
   })
   await expect(pull(fetch)).rejects.toThrow('belongs to UUID')
   expect(cursor()).toBe('12')
+  expect(db().query('SELECT 1 FROM hosted_change_evidence').all()).toEqual([])
+  expect(
+    db()
+      .query<{ text: string }, [string]>('SELECT text FROM note WHERE record_id=?')
+      .get(otherNoteId)?.text,
+  ).toBe('remember this')
 })
 
 test('one change family failing leaves the other family result intact', async () => {

@@ -41,7 +41,7 @@ test('note project counter migration preserves rows and acknowledgements', () =>
   )
   d.query("INSERT INTO seq(name,next) VALUES ('note',100)").run()
 
-  expect(applyMigrations(d)).toEqual(['0022_note_project_counter'])
+  expect(applyMigrations(d)).toEqual(['0022_note_project_counter', '0023_hosted_change_evidence'])
   expect(d.query('SELECT project,next FROM note_counter ORDER BY project').all()).toEqual([
     { project: 'alpha', next: 42 },
     { project: PLATFORM_NAME.toLowerCase(), next: 2 },
