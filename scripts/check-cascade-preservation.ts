@@ -464,6 +464,30 @@ function probeChoices(
   )
 }
 
+function assertSeedableSelfReferences(
+  table: string,
+  columns: readonly TableInfo[],
+  foreignKeys: readonly { from: string; table: string }[],
+): void {
+  const key = foreignKeys.find((candidate) => {
+    const column = columns.find((value) => value.name === candidate.from)
+    return candidate.table === table && column && (column.notnull || column.pk)
+  })
+  if (key) {
+    throw `self-referencing foreign key ${table}.${key.from} is NOT NULL and cannot be seeded mechanically`
+  }
+}
+
+function nullSelfReferences(
+  table: string,
+  foreignKeys: readonly { from: string; table: string }[],
+  values: Map<string, ProbeValue>,
+): void {
+  for (const key of foreignKeys) {
+    if (key.table === table) values.set(key.from, null)
+  }
+}
+
 function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
   const names = tableNames(database)
   const targetRows = probeTargetRows(database, names)
@@ -481,17 +505,6 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
       const foreignKeys = database
         .query(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`)
         .all() as { from: string; table: string; to: string }[]
-      const requiredSelfReference = foreignKeys.find((key) => {
-        const column = columns.find((candidate) => candidate.name === key.from)
-        return key.table === table && column && (column.notnull || column.pk)
-      })
-      if (requiredSelfReference) {
-        failures.set(
-          table,
-          `self-referencing foreign key ${table}.${requiredSelfReference.from} is NOT NULL and cannot be seeded mechanically`,
-        )
-        continue
-      }
       const foreignColumns = new Set(foreignKeys.map((key) => key.from))
       const checks = checkExpressions(tableSql(database, table))
       const required = columns.filter(
@@ -506,10 +519,9 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
         ? `INSERT INTO ${quoteIdentifier(table)} (${required.map((column) => quoteIdentifier(column.name)).join(', ')}) VALUES (${required.map(() => '?').join(', ')})`
         : `INSERT INTO ${quoteIdentifier(table)} DEFAULT VALUES`
       try {
+        assertSeedableSelfReferences(table, columns, foreignKeys)
         const values = constrainedValues(database, required, checks, choices)
-        for (const key of foreignKeys) {
-          if (key.table === table) values.set(key.from, null)
-        }
+        nullSelfReferences(table, foreignKeys, values)
         database.query(sql).run(...required.map((column) => values.get(column.name) ?? null))
         const count = rowCount(database, table)
         if (count >= (targetRows.get(table) ?? 1)) pending.delete(table)
