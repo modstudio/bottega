@@ -185,12 +185,7 @@ function statementCallRoots(source: ts.SourceFile) {
   return roots
 }
 
-function runnerFor(file: string, content: string): Runner {
-  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
-  const [direct] = importedRunners(source)
-  if (direct) return direct
-
-  const called = statementCallRoots(source)
+function valueImports(source: ts.SourceFile) {
   const valueBindings = new Set<string>()
   const relativeImports: Array<{ bindings: string[]; specifier: string }> = []
   for (const statement of source.statements) {
@@ -202,10 +197,14 @@ function runnerFor(file: string, content: string): Runner {
       relativeImports.push({ bindings, specifier: statement.moduleSpecifier.text })
     }
   }
-  if (['test', 'it', 'describe'].some((name) => called.has(name) && !valueBindings.has(name))) {
-    return 'unrecognised'
-  }
+  return { relativeImports, valueBindings }
+}
 
+function runnerFromRelativeImports(
+  file: string,
+  relativeImports: Array<{ bindings: string[]; specifier: string }>,
+  called: Set<string>,
+): Runner {
   const runners = new Set<Exclude<Runner, 'unrecognised'>>()
   for (const { bindings, specifier } of relativeImports) {
     if (!bindings.some((binding) => called.has(binding))) continue
@@ -214,6 +213,19 @@ function runnerFor(file: string, content: string): Runner {
     for (const runner of importedRunners(imported.parsed.source)) runners.add(runner)
   }
   return runners.size === 1 ? [...runners][0]! : 'unrecognised'
+}
+
+function runnerFor(file: string, content: string): Runner {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
+  const [direct] = importedRunners(source)
+  if (direct) return direct
+
+  const called = statementCallRoots(source)
+  const { relativeImports, valueBindings } = valueImports(source)
+  if (['test', 'it', 'describe'].some((name) => called.has(name) && !valueBindings.has(name))) {
+    return 'unrecognised'
+  }
+  return runnerFromRelativeImports(file, relativeImports, called)
 }
 
 function rules(prefix: string, names: readonly string[]): Linter.RulesRecord {
