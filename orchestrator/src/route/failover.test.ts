@@ -127,6 +127,7 @@ test('the detached spec mapping forwards every field to run', () => {
         mergeBase: 'def456',
         projectId: 1,
         projectName: 'project',
+        nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
         runIds: [11],
         trunk: 'main',
         worktree: null,

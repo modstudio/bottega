@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
   type GitHubPullRequest,
@@ -9,6 +11,7 @@ import {
   decideTaskBranchPullRequestCheck,
   isTaskBranchSuperseded,
   type TaskBranchRunRow,
+  taskBranchCandidacySql,
   taskBranchLandingRefusalMessage,
   taskBranchReuseNotice,
 } from './task-branch.ts'
@@ -23,6 +26,17 @@ const row = (
   parent_run_id: parentRunId,
   branch,
   launch_base: launchBase,
+})
+
+test('failure-kind mutation: an abandoned run is not a task-branch candidate', () => {
+  const kept = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
+  const abandoned = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
+  db().query("UPDATE run SET failure_kind='abandoned' WHERE id=?").run(abandoned)
+  const rows = db()
+    .query(`SELECT candidate.id FROM run candidate WHERE ${taskBranchCandidacySql('candidate')}`)
+    .all() as { id: number }[]
+  expect(rows.map((candidate) => candidate.id)).toContain(kept)
+  expect(rows.map((candidate) => candidate.id)).not.toContain(abandoned)
 })
 
 describe('task branch supersession', () => {
@@ -238,6 +252,10 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
       mergeBase: 'def456',
       projectId: 1,
       projectName: 'project',
+      nominatingRuns: [
+        { id: 5186, sessionId: 'session-a' },
+        { id: 5190, sessionId: 'session-a' },
+      ],
       runIds: [5186, 5190],
       trunk: 'main',
       worktree: null,

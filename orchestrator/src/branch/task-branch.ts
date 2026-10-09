@@ -32,6 +32,7 @@ export type TaskBranchCandidate = {
   mergeBase: string
   projectId: number
   projectName: string
+  nominatingRuns: { id: number; sessionId: string | null }[]
   runIds: number[]
   trunk: string
   worktree: Worktree | null
@@ -257,8 +258,10 @@ export function isTaskBranchSuperseded(branch: string, rows: readonly TaskBranch
   )
 }
 
-function taskBranchCandidacySql(runAlias = 'candidate'): string {
-  return `${runAlias}.status <> 'stopped'`
+export function taskBranchCandidacySql(runAlias = 'candidate'): string {
+  return (
+    `${runAlias}.status <> 'stopped' AND ` + `COALESCE(${runAlias}.failure_kind, '') <> 'abandoned'`
+  )
 }
 
 function taskBranchGit(cwd: string, ...args: string[]): string {
@@ -314,7 +317,8 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     .query(
       `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
      SELECT candidate.id, candidate.parent_run_id, candidate.branch,
-            candidate.launch_base, candidate.worktree, candidate.worktree_source
+            candidate.launch_base, candidate.session_id, candidate.worktree,
+            candidate.worktree_source
        FROM candidate
       WHERE candidate.launch_key=?
         AND (candidate.project_id=? OR (candidate.project_id IS NULL AND candidate.repo=?))
@@ -324,6 +328,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       ORDER BY candidate.id`,
     )
     .all(launchKey, project.id, project.name) as (TaskBranchRunRow & {
+    session_id: string | null
     worktree: string | null
     worktree_source: string | null
   })[]
@@ -394,6 +399,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       mergeBase,
       projectId: project.id,
       projectName: project.name,
+      nominatingRuns: branchRows.map((row) => ({ id: row.id, sessionId: row.session_id })),
       runIds: branchRows.map((row) => row.id),
       trunk,
       worktree: path

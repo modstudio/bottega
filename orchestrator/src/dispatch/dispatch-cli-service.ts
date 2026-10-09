@@ -217,7 +217,7 @@ function resolveTaskBranchForDispatch(
   reportReuse: boolean,
   error: (...values: unknown[]) => void,
 ): ReturnType<typeof resolveTaskBranch> {
-  const candidate = resolveCompatibleTaskBranch(cwd, key)
+  const candidate = resolveCompatibleTaskBranch(cwd, key, sessionId())
   if (candidate && reportReuse) error(taskBranchReuseNotice(candidate))
   return candidate
 }

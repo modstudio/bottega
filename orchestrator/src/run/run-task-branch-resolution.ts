@@ -8,6 +8,9 @@ export function taskBranchResolution(
   supplied: TaskBranchCandidate | null | undefined,
   callerCwd: string,
   key: string,
+  dispatchingSession: string | null,
 ): TaskBranchCandidate | null {
-  return supplied !== undefined ? supplied : resolveCompatibleTaskBranch(callerCwd, key)
+  return supplied !== undefined
+    ? supplied
+    : resolveCompatibleTaskBranch(callerCwd, key, dispatchingSession)
 }

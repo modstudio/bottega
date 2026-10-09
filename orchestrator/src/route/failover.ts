@@ -29,6 +29,7 @@ export type ResolvedTaskBranch = {
   mergeBase: string
   projectId: number
   projectName: string
+  nominatingRuns: { id: number; sessionId: string | null }[]
   runIds: number[]
   trunk: string
   worktree: RetryWorktree | null

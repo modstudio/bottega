@@ -1,9 +1,53 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideTaskBranchReuse,
+  decideTaskBranchSessionReuse,
   type TaskBranchReuseFacts,
   taskBranchDivergenceRefusal,
+  taskBranchSessionRefusal,
 } from './task-branch-reuse.ts'
+
+describe('task branch nominating session ownership', () => {
+  test('same-session mutation: changing includes to excludes refuses the owner', () => {
+    expect(decideTaskBranchSessionReuse('session-a', ['session-a'])).toEqual({ action: 'reuse' })
+  })
+
+  test('other-session mutation: accepting any non-null owner permits cross-session reuse', () => {
+    expect(decideTaskBranchSessionReuse('session-b', ['session-a'])).toEqual({ action: 'refuse' })
+  })
+
+  test('mixed-session mutation: requiring every nominator to match refuses an owned branch', () => {
+    expect(decideTaskBranchSessionReuse('session-b', ['session-a', 'session-b'])).toEqual({
+      action: 'reuse',
+    })
+  })
+
+  test('no-session mutation: treating null as equal silently reuses an unattributed branch', () => {
+    expect(decideTaskBranchSessionReuse(null, [null])).toEqual({ action: 'refuse' })
+  })
+
+  test('message-field mutation: the refusal names branch, tip, runs, sessions, and both bases', () => {
+    const message = taskBranchSessionRefusal({
+      branch: 'DEV-1225-orch-7000',
+      tip: 'abc123',
+      commitCount: 2,
+      mergeBase: 'def456',
+      projectId: 1,
+      projectName: 'bottega',
+      nominatingRuns: [
+        { id: 7000, sessionId: 'session-a' },
+        { id: 7001, sessionId: 'session-a' },
+      ],
+      runIds: [7000, 7001],
+      trunk: 'main',
+      worktree: null,
+    })
+    expect(message).toContain('DEV-1225-orch-7000 tip abc123')
+    expect(message).toContain('runs 7000, 7001: session-a')
+    expect(message).toContain('--base main')
+    expect(message).toContain('--base DEV-1225-orch-7000')
+  })
+})
 
 const facts = (overrides: Partial<TaskBranchReuseFacts> = {}): TaskBranchReuseFacts => ({
   callerOnTrunk: false,

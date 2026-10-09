@@ -303,6 +303,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       opts.resolvedTaskBranch,
       callerCwd,
       attachableTaskKey!,
+      opts.ownerSession ?? sessionId(),
     )
     if (resolvedTaskBranch && !resolvedTaskBranch.worktree && worktreeTool?.create) {
       // A command-backed declaration cannot attach an existing ref; it retains

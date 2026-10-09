@@ -7,6 +7,34 @@
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
 
+export type TaskBranchSessionReuseDecision = { action: 'reuse' } | { action: 'refuse' }
+
+/** Decide whether a candidate has a nominating run owned by the dispatching session. */
+export function decideTaskBranchSessionReuse(
+  dispatchingSession: string | null,
+  nominatingRunSessions: readonly (string | null)[],
+): TaskBranchSessionReuseDecision {
+  return dispatchingSession !== null && nominatingRunSessions.includes(dispatchingSession)
+    ? { action: 'reuse' }
+    : { action: 'refuse' }
+}
+
+/** Compose the refusal for implicit reuse across a session boundary. */
+export function taskBranchSessionRefusal(candidate: TaskBranchCandidate): string {
+  const owners = new Map<string, number[]>()
+  for (const run of candidate.nominatingRuns) {
+    const owner = run.sessionId ?? 'no session'
+    owners.set(owner, [...(owners.get(owner) ?? []), run.id])
+  }
+  const ownership = [...owners].map(([owner, ids]) => `runs ${ids.join(', ')}: ${owner}`).join('; ')
+  return (
+    `refusing task branch ${candidate.branch} tip ${candidate.tip}: ` +
+    `nominating run ownership (${ownership}) does not include the dispatching session.\n` +
+    `cleared by: repeat the dispatch with --base ${candidate.trunk} to start a fresh branch, ` +
+    `or --base ${candidate.branch} to build on it deliberately`
+  )
+}
+
 export type TaskBranchReuseFacts = {
   callerOnTrunk: boolean
   candidateIsAncestorOfCaller: boolean
@@ -100,7 +128,14 @@ function compatibleTaskBranch(
 export function resolveCompatibleTaskBranch(
   cwd: string,
   launchKey: string,
+  dispatchingSession: string | null,
 ): TaskBranchCandidate | null {
   const candidate = resolveTaskBranch(cwd, launchKey)
-  return candidate ? compatibleTaskBranch(cwd, candidate) : null
+  if (!candidate) return null
+  const sessionDecision = decideTaskBranchSessionReuse(
+    dispatchingSession,
+    candidate.nominatingRuns.map((run) => run.sessionId),
+  )
+  if (sessionDecision.action === 'refuse') throw new Error(taskBranchSessionRefusal(candidate))
+  return compatibleTaskBranch(cwd, candidate)
 }
