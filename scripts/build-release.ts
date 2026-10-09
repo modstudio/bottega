@@ -8,9 +8,11 @@ import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
 import { resolveStateRoot } from '../shared/state-directory.ts'
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
+export const ORCH_CLI_PAYLOAD = 'orchestrator/src/cli/orch'
+export const ORCH_CLI_ENTRYPOINT = `${ORCH_CLI_PAYLOAD}/entry.ts`
 
 export const DECLARED_PAYLOAD_PATHS = [
-  'orchestrator/src/cli/orch.ts',
+  ORCH_CLI_PAYLOAD,
   'hub/src/cli.ts',
   'orchestrator/src/run/exec.ts',
   'orchestrator/src/database/store-write-lock.c',
@@ -74,6 +76,20 @@ async function bundle(source: string, destination: string): Promise<void> {
   await run(['bun', 'build', '--target=bun', '--outfile', destination, source])
 }
 
+async function bundleDirectory(source: string, destination: string): Promise<void> {
+  mkdirSync(destination, { recursive: true })
+  await run([
+    'bun',
+    'build',
+    '--target=bun',
+    '--outdir',
+    destination,
+    '--entry-naming',
+    'entry.ts',
+    source,
+  ])
+}
+
 function copyDirectory(source: string, destination: string): void {
   mkdirSync(join(destination, '..'), { recursive: true })
   cpSync(source, destination, { recursive: true, preserveTimestamps: true })
@@ -111,7 +127,7 @@ export async function buildRelease(tag: string): Promise<string> {
   rmSync(archive, { force: true })
 
   await run(['bun', 'run', 'build'], join(repositoryRoot, 'hub/web'))
-  await bundle('orchestrator/src/cli/orch.ts', join(payloadRoot, 'orchestrator/src/cli/orch.ts'))
+  await bundleDirectory('orchestrator/src/cli/orch.ts', join(payloadRoot, ORCH_CLI_PAYLOAD))
   await bundle('hub/src/cli.ts', join(payloadRoot, 'hub/src/cli.ts'))
   await bundle('orchestrator/src/run/exec.ts', join(payloadRoot, 'orchestrator/src/run/exec.ts'))
   await bundle('retrieval/src/search-cli.ts', join(payloadRoot, 'retrieval/src/search-cli.ts'))
@@ -149,7 +165,7 @@ export async function buildRelease(tag: string): Promise<string> {
   )
 
   for (const [name, entrypoint] of [
-    ['orch', 'orchestrator/src/cli/orch.ts'],
+    ['orch', ORCH_CLI_ENTRYPOINT],
     ['hub', 'hub/src/cli.ts'],
     ['retrieval-search', 'retrieval/src/search-cli.ts'],
   ] as const) {
