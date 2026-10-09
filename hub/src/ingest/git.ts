@@ -214,11 +214,30 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
   try {
     const mirrored = [...tasks.values()].flatMap((task) => {
       const stored = db()
-        .query<StoredGitTask, [string, string]>(
-          `SELECT * FROM task WHERE project=? AND key=? AND source='git'`,
-        )
+        .query<StoredGitTask, [string, string]>(`SELECT * FROM task WHERE project=? AND key=?`)
         .get(task.project, task.key)
-      return stored ? [stored] : []
+      if (!stored) return []
+      if (stored.source === 'git') return [stored]
+      return [
+        {
+          record_id: stored.record_id,
+          next_document_number: stored.next_document_number,
+          key: task.key,
+          project: task.project,
+          title: null,
+          status: null,
+          status_category: null,
+          parent_key: null,
+          body: null,
+          assignee: null,
+          opened_at: task.first,
+          closed_at: null,
+          source: 'git' as const,
+          first_seen: at,
+          last_seen: at,
+          updated_at: task.last,
+        },
+      ]
     })
     for (let index = 0; index < mirrored.length; index += 500) {
       try {

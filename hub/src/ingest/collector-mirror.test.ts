@@ -415,7 +415,9 @@ test('git ingestion leaves a tracker-sourced task with the same key unchanged', 
   }
 
   expect(db().query(`SELECT * FROM task WHERE key='ALP-23'`).get()).toEqual(before)
-  expect(mirroredTaskRows.some((row) => row.key === 'ALP-23')).toBeFalse()
+  expect(mirroredTaskRows.find((row) => row.key === 'ALP-23')).toEqual(
+    expect.objectContaining({ source: 'git', opened_at: '2025-12-01' }),
+  )
 })
 
 test('a refused first git mirror batch does not stop a later deliverable batch', async () => {
