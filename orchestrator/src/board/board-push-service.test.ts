@@ -24,6 +24,7 @@ import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const interruptHook = resolve(import.meta.dir, '../../hooks/board-interrupt.py')
 const guardHook = resolve(import.meta.dir, '../../hooks/board-ack-guard.py')
+const commonHook = resolve(import.meta.dir, '../../hooks/board_hook_common.py')
 const postingCwd = resolve(import.meta.dir, '../../..')
 const hookRoots: string[] = []
 
@@ -121,6 +122,7 @@ function runHook(
 type RepeatedHookResult = {
   outputs: string[]
   delivered: Array<[string, string[]]>
+  emittedLimit: number | null
 }
 
 function runHookRepeatedResult(
@@ -142,7 +144,7 @@ function runHookRepeatedResult(
     'pending_values = json.loads(sys.argv[4])',
     'if pending_values is not None:',
     '    pending_iterator = iter(pending_values)',
-    '    module.pending = lambda session, recently_injected=None: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
+    '    module.pending = lambda session, recently_injected=None, exclude_acknowledgements=False: (lambda value: ([item for item in value if not (exclude_acknowledgements and item["requiresAcknowledgement"])], None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
     'delivered = []',
     'def mark_delivered(session, ids):',
     '    delivered.append([session, ids])',
@@ -154,7 +156,7 @@ function runHookRepeatedResult(
     '    sys.stdin = io.StringIO(sys.argv[2])',
     '    with contextlib.redirect_stdout(output): module.main()',
     '    outputs.append(output.getvalue())',
-    'print(json.dumps({"outputs": outputs, "delivered": delivered}))',
+    'print(json.dumps({"outputs": outputs, "delivered": delivered, "emittedLimit": getattr(module, "STOP_EMITTED_ID_LIMIT", None)}))',
   ].join('\n')
   const result = Bun.spawnSync(
     [
@@ -675,6 +677,47 @@ test('recent reminders are removed before bounding without changing pending ackn
   )
 })
 
+test('ordinary-only delivery excludes required notices before bounding', async () => {
+  const clock = Date.parse('2026-10-08T12:40:00.000Z')
+  const session = 'ordinary-only-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const required = Array.from({ length: BOARD_DELIVERY_MAX_MESSAGES }, (_, index) =>
+    postNotice(
+      {
+        audience: `session:${session}`,
+        title: `Required ${index}`,
+        body: 'Acknowledge me',
+        ackRequired: true,
+      },
+      {},
+      clock + index,
+    ),
+  )
+  const ordinary = postNotice(
+    { audience: `session:${session}`, title: 'Ordinary', body: 'Show me' },
+    {},
+    clock + required.length,
+  )
+
+  const result = await pendingBoardDelivery({
+    session,
+    budgetMs: 0,
+    includeAcknowledgementReminders: true,
+    excludeAcknowledgementRequired: true,
+    clock: clock + required.length + 1,
+  })
+
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.id)])
+  expect(result.pendingAcknowledgements.map((notice) => notice.id)).toEqual(
+    required.map((notice) => String(notice.id)),
+  )
+})
+
 test('recently-injected ids do not suppress messages never delivered to the session', async () => {
   const clock = Date.parse('2026-10-08T12:45:00.000Z')
   const session = 'unread-reminder-reader'
@@ -910,6 +953,53 @@ test('Stop records emitted ids before a failing stamp and blocks once per arrivi
   expect(hook.outputs[1]).toBe('')
   expect(JSON.parse(hook.outputs[2]!)).toEqual({ decision: 'block', reason: 'second' })
   expect(hook.outputs[3]).toBe('')
+})
+
+test('Stop bounds ids retained after repeated stamp failures', () => {
+  const item = createHookFixture(hookOutput)
+  const pendingValues = Array.from({ length: 101 }, (_, index) => [
+    { id: String(index + 1), text: `message ${index + 1}`, requiresAcknowledgement: false },
+  ])
+  const result = runHookRepeatedResult(
+    guardHook,
+    JSON.stringify({ session_id: 'reader' }),
+    item,
+    pendingValues.length,
+    pendingValues,
+    true,
+  )
+  const markerRoot = join(item.root, 'board-hook-state', 'stop')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  const value = JSON.parse(readFileSync(marker, 'utf8'))
+
+  expect(result.emittedLimit).toBeGreaterThan(0)
+  expect(value.emitted_ids).toHaveLength(result.emittedLimit!)
+  expect(value.emitted_ids.at(-1)).toBe('101')
+})
+
+test('marker replacement preserves the prior value when serialization fails', () => {
+  const root = mkdtempSync(join(tmpdir(), 'board-marker-'))
+  hookRoots.push(root)
+  const marker = join(root, 'marker')
+  writeFileSync(marker, JSON.stringify({ previous: true }), { mode: 0o600 })
+  const runner = [
+    'import importlib.util, json, sys',
+    'spec = importlib.util.spec_from_file_location("board_hook_common_test", sys.argv[1])',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
+    'print(json.dumps({"written": module.write_marker(sys.argv[2], {"partial": "value", "broken": object()})}))',
+  ].join('\n')
+
+  const result = Bun.spawnSync(['python3', '-c', runner, commonHook, marker], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ...process.env, ORCH_BOARD_HOOK_STATE: root },
+  })
+
+  expect(result.exitCode).toBe(0)
+  expect(JSON.parse(result.stdout.toString())).toEqual({ written: false })
+  expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ previous: true })
+  expect(readdirSync(root)).toEqual(['marker'])
 })
 
 test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {

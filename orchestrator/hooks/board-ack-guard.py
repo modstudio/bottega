@@ -15,6 +15,8 @@ from board_hook_common import (
     write_marker,
 )
 
+STOP_EMITTED_ID_LIMIT = 100
+
 
 def stop_state(session: str) -> tuple[str, int | None, list[str]]:
     """The session's Stop state, or a None count when the marker cannot be read."""
@@ -56,7 +58,7 @@ def main() -> int:
             or not os.path.exists(store_path())
         ):
             return 0
-        delivery, overflow, notices = pending(session)
+        delivery, overflow, notices = pending(session, exclude_acknowledgements=True)
         path, count, emitted = stop_state(session)
         if count is None:
             return 0
@@ -69,11 +71,7 @@ def main() -> int:
             except Exception:
                 pass
 
-        ordinary = [
-            item
-            for item in delivery
-            if not item["requiresAcknowledgement"] and item["id"] not in previously_emitted
-        ]
+        ordinary = [item for item in delivery if item["id"] not in previously_emitted]
         ordinary_ids = [item["id"] for item in ordinary]
         limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
         acknowledgement_block = bool(notices) and count < limit
@@ -82,7 +80,10 @@ def main() -> int:
             next_count = 0
         if not write_marker(
             path,
-            {"blocks": next_count, "emitted_ids": [*emitted, *ordinary_ids]},
+            {
+                "blocks": next_count,
+                "emitted_ids": ([*emitted, *ordinary_ids])[-STOP_EMITTED_ID_LIMIT:],
+            },
         ):
             return 0
 

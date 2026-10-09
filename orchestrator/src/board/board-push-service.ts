@@ -23,6 +23,7 @@ type DeliveryInput = {
   session: string
   budgetMs: number
   includeAcknowledgementReminders?: boolean
+  excludeAcknowledgementRequired?: boolean
   recentlyInjectedIds?: string[]
   clock?: number
   database?: Database
@@ -152,7 +153,11 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
         ),
       ]
     : unread
-  const selected = boundedBoardDelivery(candidates)
+  const selected = boundedBoardDelivery(
+    input.excludeAcknowledgementRequired
+      ? candidates.filter((message) => !message.requiresAcknowledgement)
+      : candidates,
+  )
   return {
     delivery: selected.messages,
     overflow: selected.overflow,
