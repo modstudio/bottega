@@ -16,15 +16,14 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     ? taskRecordIdFor(conn, row.promoted_task, row.project)
     : null
   conn
-    .query(`INSERT INTO note(record_id,id,number,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET id=excluded.id,
+    .query(`INSERT INTO note(record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
     number=excluded.number,project=excluded.project,text=excluded.text,area=excluded.area,anchors=excluded.anchors,
     sightings=excluded.sightings,created_at=excluded.created_at,last_seen_at=excluded.last_seen_at,
     stale_at=excluded.stale_at,stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task,
     promoted_task_record_id=excluded.promoted_task_record_id`)
     .run(
       row.id,
-      row.number,
       row.number,
       row.project,
       row.text,
@@ -38,6 +37,10 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
       row.promoted_task,
       promotedTaskRecordId,
     )
+  conn
+    .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
+      ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
+    .run(row.project, row.number + 1)
 }
 export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledgement) {
   if (row.deleted_at) {
@@ -58,6 +61,12 @@ export function applyHostedNoteChanges(changes: Awaited<ReturnType<typeof hosted
     })
     changes.acknowledgements.forEach((row) => {
       applyHostedAcknowledgement(conn, row)
+    })
+    changes.projectCounters.forEach((counter) => {
+      conn
+        .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
+          ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
+        .run(counter.project, counter.next)
     })
     conn
       .query(

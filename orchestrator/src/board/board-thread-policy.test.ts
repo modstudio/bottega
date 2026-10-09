@@ -116,7 +116,10 @@ test('participants are unique, ordered, and exclude the replier', () => {
 
 test('note filing lease decisions distinguish filed, active, and stale leases', () => {
   const clock = Date.parse('2026-10-05T12:00:00.000Z')
-  expect(noteFilingLeaseDecision(42, null, clock)).toEqual({ kind: 'filed', noteId: 42 })
+  expect(noteFilingLeaseDecision('note-record-id', null, clock)).toEqual({
+    kind: 'filed',
+    noteId: 'note-record-id',
+  })
   expect(noteFilingLeaseDecision(null, null, clock)).toEqual({ kind: 'take' })
   expect(
     noteFilingLeaseDecision(

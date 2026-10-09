@@ -164,7 +164,11 @@ export const hubNote = pgTable.withRLS(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
-    unique('hub_note_space_number_unique').on(table.spaceId, table.number),
+    unique('hub_note_space_project_number_unique').on(
+      table.spaceId,
+      table.projectName,
+      table.number,
+    ),
     index('hub_note_promoted_task_id_idx').on(table.promotedTaskId),
     check('hub_note_sightings_check', sql`${table.sightings} > 0`),
     ...tenantPolicies('hub_note', table.spaceId),

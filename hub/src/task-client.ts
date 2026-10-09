@@ -23,6 +23,7 @@ export type HostedTaskIdentity = {
     targetSpaceIntervalEvidence?: boolean
     intervalRecordId?: boolean
     dayRecordId?: boolean
+    projectNoteCounters?: boolean
   }
 }
 
@@ -61,6 +62,16 @@ const DAY_RECORD_ID_REMEDY = 'deploy the hub server at or after the day UUID ide
 export function assertDayRecordId(identity: HostedTaskIdentity) {
   if (identity.capabilities?.dayRecordId !== true)
     throw new Error(`hosted hub does not advertise day record id support; ${DAY_RECORD_ID_REMEDY}`)
+}
+
+const PROJECT_NOTE_COUNTERS_REMEDY =
+  'deploy the hub server at or after the per-project note counter change'
+
+export function assertProjectNoteCounters(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.projectNoteCounters !== true)
+    throw new Error(
+      `hosted hub does not advertise per-project note counter support; ${PROJECT_NOTE_COUNTERS_REMEDY}`,
+    )
 }
 
 function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
@@ -350,6 +361,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).dayRecordId === true,
+      projectNoteCounters:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).projectNoteCounters === true,
     },
   }
 }

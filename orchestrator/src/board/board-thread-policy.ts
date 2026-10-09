@@ -18,11 +18,11 @@ export function boardThreadState(input: {
 
 export type NoteFilingLeaseDecision =
   | { kind: 'take' }
-  | { kind: 'filed'; noteId: string | number }
+  | { kind: 'filed'; noteId: string }
   | { kind: 'in-progress'; retryAt: number }
 
 export function noteFilingLeaseDecision(
-  noteId: string | number | null,
+  noteId: string | null,
   filingStartedAt: string | null,
   clock: number,
 ): NoteFilingLeaseDecision {

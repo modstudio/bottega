@@ -32,7 +32,6 @@ import {
   type NoteClientOptions,
 } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
-import { nextNoteNumber } from './note-number.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
 import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
@@ -109,7 +108,6 @@ export function parseExplicitNoteAnchor(value: unknown, cwd = process.cwd()): No
 }
 
 export type NoteRow = {
-  id: number
   record_id: string
   number: number
   label: string
@@ -181,20 +179,17 @@ function noteRow(
   return row
 }
 
-function mintLocalNoteNumber(conn: Database): number {
-  const highest = BigInt(
-    conn.query<{ max: number | null }, []>('SELECT max(id) max FROM note').get()?.max ?? 0,
-  )
-  const sequence = conn
-    .query<{ next: number }, [string]>('SELECT next FROM seq WHERE name = ?')
-    .get('note')
-  const number = Number(nextNoteNumber(highest, BigInt(sequence?.next ?? 1)))
+function mintLocalNoteNumber(conn: Database, project: string): number {
+  const number =
+    conn.query<{ next: number }, [string]>('SELECT next FROM note_counter WHERE project=?').get(
+      project,
+    )?.next ?? 1
   conn
     .query(
-      `INSERT INTO seq (name, next) VALUES (?, ?)
-       ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
+      `INSERT INTO note_counter (project, next) VALUES (?, ?)
+       ON CONFLICT(project) DO UPDATE SET next = MAX(note_counter.next, excluded.next)`,
     )
-    .run('note', number + 1)
+    .run(project, number + 1)
   return number
 }
 
@@ -323,7 +318,7 @@ export function listNotes(
   const rows = db()
     .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, (string | number)[]>(
       `SELECT note.* FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-     ORDER BY note.last_seen_at DESC, note.id DESC`,
+     ORDER BY note.last_seen_at DESC, note.record_id DESC`,
     )
     .all(...values)
   return rows.map(decode)
@@ -416,13 +411,13 @@ export async function acknowledgeNote(
 
 function noteCandidates(text: string, project?: string): NoteCandidate[] {
   const notes = listNotes({ ...(project ? { project } : {}), stale: false })
-  const byId = new Map(notes.map((note) => [String(note.id), note]))
+  const byId = new Map(notes.map((note) => [note.record_id, note]))
   return duplicateCandidates(
     notes.map(
       (note): TaskRow => ({
-        record_id: String(note.id),
+        record_id: note.record_id,
         external_id: null,
-        key: String(note.id),
+        key: note.record_id,
         project: note.project,
         title: note.text,
         status: null,
@@ -543,15 +538,14 @@ export async function createNote(
   if (mode === 'local-authoritative') {
     const at = nowIso()
     const recordId = writeTransaction((conn) => {
-      const number = mintLocalNoteNumber(conn)
+      const number = mintLocalNoteNumber(conn, anchor.project)
       const recordId = newRecordId()
       conn
         .query(
-          `INSERT INTO note (id,record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at)
-       VALUES (?,?,?,?,?,?,?,1,?,?)`,
+          `INSERT INTO note (record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at)
+       VALUES (?,?,?,?,?,?,1,?,?)`,
         )
         .run(
-          number,
           recordId,
           number,
           anchor.project,
@@ -685,7 +679,7 @@ export async function dropNote(
 export type StaleResult = {
   marked: number
   deleted: number
-  reasons: { id: number; recordId: string; label: string; reason: string }[]
+  reasons: { recordId: string; label: string; reason: string }[]
 }
 
 type StaleDeps = {
@@ -763,19 +757,19 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
   const reasons = notes.flatMap((note) => {
     const reason = vanishedReason(note, existingRuns, runGit)
-    return reason ? [{ id: note.id, recordId: note.record_id, label: note.label, reason }] : []
+    return reason ? [{ recordId: note.record_id, label: note.label, reason }] : []
   })
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
-  const markedIds = new Set(reasons.map((row) => row.id))
+  const markedIds = new Set(reasons.map((row) => row.recordId))
   const deletedRows = db()
-    .query<{ id: number; record_id: string; stale_at: string | null }, [string]>(
-      `SELECT id,record_id,stale_at FROM note
+    .query<{ record_id: string; stale_at: string | null }, [string]>(
+      `SELECT record_id,stale_at FROM note
        WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
     )
     .all(cutoff)
-    .filter((row) => row.stale_at !== null || markedIds.has(row.id))
-  const deletedIds = deletedRows.map((row) => row.id)
+    .filter((row) => row.stale_at !== null || markedIds.has(row.record_id))
+  const deletedIds = deletedRows.map((row) => row.record_id)
   const url = deps.hosted?.baseUrl ?? process.env.HUB_HOSTED_URL
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
     throw new Error(
@@ -786,24 +780,24 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     return writeTransaction((conn) => {
       for (const item of reasons) {
         conn
-          .query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL')
-          .run(at, item.reason, item.id)
+          .query('UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL')
+          .run(at, item.reason, item.recordId)
       }
       const found = deletedIds.flatMap((id) => {
         const row = conn
-          .query<{ id: number }, [number, string]>(
-            `SELECT id FROM note WHERE id=? AND stale_at IS NOT NULL AND sightings=1
+          .query<{ record_id: string }, [string, string]>(
+            `SELECT record_id FROM note WHERE record_id=? AND stale_at IS NOT NULL AND sightings=1
              AND promoted_task IS NULL AND last_seen_at <= ?`,
           )
           .get(id, cutoff)
-        return row ? [row.id] : []
+        return row ? [row.record_id] : []
       })
       if (found.length < deletedIds.length)
         throw new Error(
           'local cache is behind the record; the next maintenance pass will recompute',
         )
       confirmCount(found.length, deletedIds.length, 'bulk-only')
-      for (const id of found) conn.query('DELETE FROM note WHERE id=?').run(id)
+      for (const id of found) conn.query('DELETE FROM note WHERE record_id=?').run(id)
       return { marked: reasons.length, deleted: found.length, reasons }
     })
   }
@@ -819,10 +813,10 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   writeTransaction((conn) => {
     for (const item of reasons) {
       conn
-        .query('UPDATE note SET stale_at=?, stale_reason=? WHERE id=? AND stale_at IS NULL')
-        .run(at, item.reason, item.id)
+        .query('UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL')
+        .run(at, item.reason, item.recordId)
     }
-    for (const id of deletedIds) conn.query('DELETE FROM note WHERE id=?').run(id)
+    for (const id of deletedIds) conn.query('DELETE FROM note WHERE record_id=?').run(id)
   })
   return { marked: result.marked, deleted: result.deleted, reasons }
 }

@@ -23,13 +23,15 @@ describe('hosted-only note safety', () => {
   })
 
   test('a push against a hosted note of the same number with a different record_id is refused', () => {
-    const incoming = { id: 'id-new', number: 12, spaceId: 'space-a' }
+    const incoming = { id: 'id-new', number: 12, project: 'workshop', spaceId: 'space-a' }
     const existing = { id: 'id-hosted', spaceId: 'space-a' }
     const decision = noteMirrorCollision(incoming, null, existing)
     expect(decision.action).toBe('refuse')
     if (decision.action !== 'refuse') throw new Error('expected refusal')
-    expect(decision.reason).toContain('note 12')
+    expect(decision.reason).toContain('workshop#12')
     expect(decision.reason).toContain('id-hosted')
+    expect(decision.reason).toContain('id-new')
+    expect(decision.reason).toContain('hub note list')
     expect(noteMirrorCollision(incoming, incoming, incoming)).toEqual({ action: 'update-same-row' })
     expect(noteMirrorCollision(incoming, null, null)).toEqual({ action: 'insert' })
   })
@@ -55,8 +57,8 @@ describe('hosted-only note safety', () => {
     const id = crypto.randomUUID()
     writeTransaction((conn) =>
       conn
-        .query(`INSERT INTO note(id,record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
-          VALUES (989,?,989,'workshop','promotion failure','[]',1,?,?)`)
+        .query(`INSERT INTO note(record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+          VALUES (?,989,'workshop','promotion failure','[]',1,?,?)`)
         .run(id, at, at),
     )
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
@@ -110,11 +112,13 @@ describe('hosted-only note safety', () => {
           deleted_at: null,
         },
       ],
+      projectCounters: [{ project: 'workshop', next: 1_000 }],
       cursor: at,
     })
     applyHostedNoteChanges({
       notes: [row(990, 'new', null), row(991, 'gone', at)],
       acknowledgements: [],
+      projectCounters: [{ project: 'workshop', next: 900 }],
       cursor: at,
     })
     expect(getNote(ids.get(990)!).text).toBe('new')
@@ -126,5 +130,8 @@ describe('hosted-only note safety', () => {
         .get(),
     ).toEqual({ note_record_id: ids.get(990)! })
     expect(() => getNote(ids.get(991)!)).toThrow(`no note ${ids.get(991)!}`)
+    expect(
+      db().query<{ next: number }, []>("SELECT next FROM note_counter WHERE project='workshop'").get(),
+    ).toEqual({ next: 1_000 })
   })
 })

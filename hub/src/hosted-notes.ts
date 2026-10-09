@@ -90,7 +90,12 @@ export async function listHostedNotes(
       const stamp = new Date(row.updated_at).toISOString()
       return stamp > latest ? stamp : latest
     }, since)
-    return { notes, acknowledgements, cursor }
+    const projectCounters = rows<{ project: string; next: string }>(
+      await tx`SELECT p.name project,s.next::text next FROM seq s JOIN project p
+        ON p.space_id=s.space_id AND p.id=s.project_id
+        WHERE s.space_id=${identity.spaceId}::uuid AND s.name='note' ORDER BY p.name`,
+    ).map((row) => ({ project: row.project, next: Number(row.next) }))
+    return { notes, acknowledgements, projectCounters, cursor }
   })
 }
 
@@ -106,22 +111,22 @@ export async function getHostedNote(url: string, identity: TaskIdentity, recordI
   )
 }
 
-async function lockNoteNumbers(tx: SQL, identity: TaskIdentity) {
-  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${identity.spaceId}:note`}, 0))`
+async function lockNoteNumbers(tx: SQL, identity: TaskIdentity, project: string) {
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${identity.spaceId}:${project}:note`}, 0))`
 }
 
 export function noteMirrorCollision(
-  incoming: { id: string; number: number; spaceId: string },
-  existingById: { id: string; number: number; spaceId: string } | null,
+  incoming: { id: string; number: number; project: string; spaceId: string },
+  existingById: { id: string; number: number; project: string; spaceId: string } | null,
   existingByNumber: { id: string; spaceId: string } | null,
 ) {
-  return mirrorCollisionDecision(
-    { id: incoming.id, spaceId: incoming.spaceId, naturalKey: `note ${incoming.number}` },
+  const decision = mirrorCollisionDecision(
+    { id: incoming.id, spaceId: incoming.spaceId, naturalKey: `${incoming.project}#${incoming.number}` },
     existingById
       ? {
           id: existingById.id,
           spaceId: existingById.spaceId,
-          naturalKey: `note ${existingById.number}`,
+          naturalKey: `${existingById.project}#${existingById.number}`,
         }
       : null,
     {
@@ -131,12 +136,15 @@ export function noteMirrorCollision(
           ? {
               id: existingByNumber.id,
               spaceId: existingByNumber.spaceId,
-              naturalKey: `note ${incoming.number}`,
+              naturalKey: `${incoming.project}#${incoming.number}`,
             }
           : null,
       },
     },
   )
+  return decision.action === 'refuse'
+    ? { action: 'refuse' as const, reason: `${decision.reason}; inspect with hub note list` }
+    : decision
 }
 
 export async function createHostedNote(
@@ -166,16 +174,18 @@ export async function createHostedNote(
         WHERE space_id=${identity.spaceId}::uuid AND id=${input.sameAs}::uuid RETURNING *,number::int number`,
       )[0]!
     }
-    await lockNoteNumbers(tx, identity)
     const project = rows<{ id: string }>(
       await tx`SELECT id FROM project
       WHERE space_id=${identity.spaceId}::uuid AND name=${input.project}`,
     )[0]
     if (!project) throw new Error(`unknown project '${input.project}'`)
+    await lockNoteNumbers(tx, identity, input.project)
     const maxima = rows<{ highest: string; next: string }>(
       await tx`SELECT
-      COALESCE((SELECT max(number) FROM hub_note WHERE space_id=${identity.spaceId}::uuid),0)::text highest,
-      COALESCE((SELECT max(next) FROM seq WHERE space_id=${identity.spaceId}::uuid AND name='note'),1)::text next`,
+      COALESCE((SELECT max(number) FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+        AND project_name=${input.project}),0)::text highest,
+      COALESCE((SELECT next FROM seq WHERE space_id=${identity.spaceId}::uuid
+        AND project_id=${project.id}::uuid AND name='note'),1)::text next`,
     )[0]!
     const number = nextNoteNumber(BigInt(maxima.highest), BigInt(maxima.next))
     await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
@@ -424,23 +434,26 @@ export async function reapHostedNotes(
 }
 
 async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedNote) {
+  await lockNoteNumbers(tx, identity, row.project_name)
   const promotedReference = hostedTaskReference('hub_note', row)
   const promotedTaskId = promotedReference.key
     ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
     : null
   const existingByNumber = rows<{ id: string; space_id: string }>(
     await tx`SELECT id, space_id FROM hub_note
-      WHERE space_id=${identity.spaceId}::uuid AND number=${row.number} FOR UPDATE`,
+      WHERE space_id=${identity.spaceId}::uuid AND project_name=${row.project_name}
+      AND number=${row.number} FOR UPDATE`,
   )[0]
-  const existingById = rows<{ id: string; number: number; space_id: string }>(
-    await tx`SELECT id, number::int number, space_id FROM hub_note WHERE id=${row.id}::uuid FOR UPDATE`,
+  const existingById = rows<{ id: string; number: number; project_name: string; space_id: string }>(
+    await tx`SELECT id, number::int number, project_name, space_id FROM hub_note WHERE id=${row.id}::uuid FOR UPDATE`,
   )[0]
   const collision = noteMirrorCollision(
-    { id: row.id, number: row.number, spaceId: identity.spaceId },
+    { id: row.id, number: row.number, project: row.project_name, spaceId: identity.spaceId },
     existingById
       ? {
           id: existingById.id,
           number: Number(existingById.number),
+          project: existingById.project_name,
           spaceId: existingById.space_id,
         }
       : null,
@@ -470,6 +483,13 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
        RETURNING number::int number,id`,
         )[0]
   if (!written) throw new Error(`hosted note ${row.number} mirror wrote nothing`)
+  const project = rows<{ id: string }>(
+    await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND name=${row.project_name}`,
+  )[0]
+  if (project)
+    await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
+      (${identity.spaceId}::uuid,${project.id}::uuid,'note',${row.number + 1})
+      ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
   return written
 }
 
@@ -485,7 +505,6 @@ export async function mirrorHostedNotes(
   if (body.notes.length + (body.acknowledgements?.length ?? 0) > 500)
     throw new Error('mirror accepts at most 500 rows')
   return tenant(url, identity, async (tx) => {
-    await lockNoteNumbers(tx, identity)
     const noteIds: Array<{ number: number; id: string }> = []
     for (const row of body.notes) noteIds.push(await mirrorOneHostedNote(tx, identity, row))
     for (const row of body.acknowledgements ?? [])
@@ -496,18 +515,20 @@ export async function mirrorHostedNotes(
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
       ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET acknowledged_at=excluded.acknowledged_at,
        sightings=excluded.sightings,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
-    const highest = rows<{ next: string }>(
-      await tx`SELECT (COALESCE(max(number),0)+1)::text next FROM hub_note
-      WHERE space_id=${identity.spaceId}::uuid`,
-    )[0]!.next
     for (const item of body.raiseProjects ?? []) {
       const project = rows<{ id: string }>(
         await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND name=${item.project}`,
       )[0]
-      if (project)
+      if (project) {
+        await lockNoteNumbers(tx, identity, item.project)
+        const highest = rows<{ next: string }>(
+          await tx`SELECT (COALESCE(max(number),0)+1)::text next FROM hub_note
+            WHERE space_id=${identity.spaceId}::uuid AND project_name=${item.project}`,
+        )[0]!.next
         await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
         (${identity.spaceId}::uuid,${project.id}::uuid,'note',${BigInt(highest) > BigInt(item.next) ? BigInt(highest) : BigInt(item.next)})
         ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
+      }
     }
     return { upserted: body.notes.length + (body.acknowledgements?.length ?? 0), noteIds }
   })
