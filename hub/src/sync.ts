@@ -365,9 +365,7 @@ export async function syncEvidence(
   if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
   const intervalRows = localIntervals()
   const intervalLedger = ledger('interval')
-  const invalidIntervalLedger = intervalLedger.filter(
-    (row) => !hasRecordIdShape(row.local_key),
-  )
+  const invalidIntervalLedger = intervalLedger.filter((row) => !hasRecordIdShape(row.local_key))
   const validIntervalLedger = intervalLedger.filter((row) => hasRecordIdShape(row.local_key))
   const day = diffDays(localDays(), ledger('day'))
   const result: SyncResult = {
