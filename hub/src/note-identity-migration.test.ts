@@ -32,7 +32,11 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     VALUES (41,'session-a','2026-01-02',1,NULL),
            (42,'session-b','2026-01-02',1,'00000000-0000-4000-8000-000000000142');
   `)
-  expect(applyMigrations(d)).toEqual(['0021_note_uuid_identity', '0022_note_project_counter'])
+  expect(applyMigrations(d)).toEqual([
+    '0021_note_uuid_identity',
+    '0022_note_project_counter',
+    '0023_hosted_change_evidence',
+  ])
   expect(
     d
       .query<{ number: number; record_id: string }, []>(

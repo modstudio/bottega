@@ -43,25 +43,33 @@ export function runHostedChangeEvidenceCommand(argv: string[]) {
   const selected = filters(argv)
   const json = argv.includes('--json')
   if (argv.includes('--summary')) {
-    const rows = summarizeHostedChangeEvidence(selected)
-    if (json)
-      console.log(
-        JSON.stringify(
-          rows.map((row) => ({
-            table: row.table,
-            differing_columns: row.differingColumns,
-            count: row.count,
-          })),
-        ),
-      )
-    else if (!rows.length) console.log('no hosted change evidence')
-    else
-      for (const row of rows) {
-        const columns = row.differingColumns.join(',') || '(none)'
-        console.log(`${row.table}  ${columns}  ${row.count}`)
-      }
+    printSummary(selected, json)
     return
   }
+  printEvents(selected, json)
+}
+
+function printSummary(selected: HostedChangeEvidenceFilters, json: boolean) {
+  const rows = summarizeHostedChangeEvidence(selected)
+  if (json)
+    console.log(
+      JSON.stringify(
+        rows.map((row) => ({
+          table: row.table,
+          differing_columns: row.differingColumns,
+          count: row.count,
+        })),
+      ),
+    )
+  else if (!rows.length) console.log('no hosted change evidence')
+  else
+    for (const row of rows) {
+      const columns = row.differingColumns.join(',') || '(none)'
+      console.log(`${row.table}  ${columns}  ${row.count}`)
+    }
+}
+
+function printEvents(selected: HostedChangeEvidenceFilters, json: boolean) {
   const rows = listHostedChangeEvidence(selected)
   if (json)
     console.log(
