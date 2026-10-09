@@ -99,11 +99,17 @@ export const recordModules: RecordModule[] = [
     './outbox-secret-audit.ts',
     './outbox-redaction.ts',
     './record-doctor.ts',
+    './record-public-doc-designation.ts',
     './record-space-move.ts',
     './record-space.ts',
     './record-tunnel-error.ts',
   ]),
   module('orchestrator/src/record/record-tunnel-error.ts', []),
+  module('orchestrator/src/record/record-public-doc-designation.ts', [
+    'bun',
+    '../../../shared/record-remedies.ts',
+    './record-session.ts',
+  ]),
   module('orchestrator/src/record/record-release-check.ts', [
     '../postgres/postgres-migrate.ts',
     './record-release-decision.ts',

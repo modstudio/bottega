@@ -17,6 +17,12 @@ import {
 import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
 import {
+  clearPublicDocProject,
+  designatePublicDocProject,
+  listPublicDocProjects,
+  type PublicDocDesignation,
+} from './record-public-doc-designation.ts'
+import {
   acceptRecordInvitation,
   createRecordSpace,
   inviteToActiveRecordSpace,
@@ -33,6 +39,14 @@ type Presentation = { log(value: string): void; exitCode?(code: number): void }
 function recordUrl(): string {
   const url = process.env.ORCH_RECORD_URL
   if (!url) throw new Error('ORCH_RECORD_URL is required for record operations')
+  return url
+}
+
+function recordOwnerUrl(): string {
+  const url = process.env.ORCH_RECORD_MIGRATE_URL
+  if (!url) {
+    throw new Error('ORCH_RECORD_MIGRATE_URL is required to manage public document designations')
+  }
   return url
 }
 
@@ -57,6 +71,63 @@ export async function recordMigrateCommand(presentation: Presentation): Promise<
       `record migration confirmation failed: applied ${after}; shipped ${shipped}; resolve the schema mismatch before deploying`,
     )
   }
+}
+
+export async function recordPublicDocDesignateCommand(
+  spaceSlug: string,
+  projectName: string,
+  presentation: Presentation,
+): Promise<void> {
+  const result = await designatePublicDocProject({
+    actorUrl: recordUrl(),
+    ownerUrl: recordOwnerUrl(),
+    spaceSlug,
+    projectName,
+  })
+  presentation.log(
+    result.changed
+      ? `designated ${spaceSlug}\t${projectName}\t${result.spaceId}\t${result.projectId}`
+      : `already designated ${spaceSlug}\t${projectName}\t${result.spaceId}\t${result.projectId}`,
+  )
+}
+
+export async function recordPublicDocListCommand(
+  options: { json: boolean },
+  presentation: Presentation,
+): Promise<void> {
+  const rows = await listPublicDocProjects({ actorUrl: recordUrl(), ownerUrl: recordOwnerUrl() })
+  for (const line of renderPublicDocDesignationList(rows, options.json)) presentation.log(line)
+}
+
+export function renderPublicDocDesignationList(
+  rows: readonly PublicDocDesignation[],
+  json: boolean,
+): string[] {
+  if (json) return [JSON.stringify(rows)]
+  if (!rows.length) return ['no project is designated']
+  const lines: string[] = []
+  for (const row of rows) {
+    lines.push(
+      row.resolvable
+        ? `${row.space_slug}\t${row.project_name}\t${row.space_id}\t${row.project_id}`
+        : `-\t-\t${row.space_id}\t${row.project_id}\tunresolvable`,
+    )
+  }
+  return lines
+}
+
+export async function recordPublicDocClearCommand(
+  spaceSlug: string,
+  projectName: string,
+  presentation: Presentation,
+): Promise<void> {
+  const result = await clearPublicDocProject({
+    actorUrl: recordUrl(),
+    ownerUrl: recordOwnerUrl(),
+    spaceSlug,
+    projectName,
+  })
+  presentation.log(`cleared ${spaceSlug}\t${projectName}\t${result.spaceId}\t${result.projectId}`)
 }
 
 export async function recordSpaceListCommand(presentation: Presentation): Promise<void> {

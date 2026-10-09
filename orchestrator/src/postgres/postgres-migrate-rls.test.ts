@@ -289,6 +289,7 @@ realPostgres('RLS proof against real Postgres', () => {
     spaces: [SPACE_A, SPACE_B, actorUrl!],
     projects: [PROJECT_A, PROJECT_A2, PROJECT_B],
     ownerUserId: USER_A,
+    session: () => [authUserA, tokenA, recordSession.setToken],
     admin: (statement) => succeeds('postgres', 'postgres', statement),
     psql,
   })

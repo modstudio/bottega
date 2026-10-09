@@ -40,20 +40,16 @@ spaces, memberships, and invitations. Put its connection URL in the
 `RECORD_AUTH_DATABASE_URL` Fly secret shown above. Application data continues to use
 `record_actor` through `ORCH_RECORD_URL`.
 
-After migrating, designate a public document project as the PostgreSQL administrator. Row
-security hides every space and project from the migration owner, so the same statement run as
-that role matches nothing and inserts nothing; confirm the statement reports one inserted row.
-The migrations ship no designation row. A space-only designation does not exist; each
-designation names one project in its space:
+After migrating, designate a public document project with the signed-in record user and the
+migration-owner connection. The migrations ship no designation row. A space-only designation
+does not exist; each designation names one project in its space:
 
-```sql
-INSERT INTO public_doc_space (space_id, project_id)
-SELECT space.id, project.id
-FROM space
-JOIN project ON project.space_id = space.id
-WHERE space.slug = '<public-space-slug>'
-  AND project.name = '<public-project-name>';
+```sh
+orch record public-doc designate <public-space-slug> <public-project-name>
 ```
+
+Use `orch record public-doc list` to inspect designations. Run
+`orch record public-doc clear <public-space-slug> <public-project-name>` to remove one.
 
 For browser clients, set `RECORD_API_ALLOWED_ORIGINS` to a comma-separated list of exact
 origins. This enables credentialed CORS for those origins and also configures Better Auth's

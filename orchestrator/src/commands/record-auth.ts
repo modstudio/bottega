@@ -10,6 +10,9 @@ import {
   recordAuditSecretsCommand,
   recordDoctorCommand,
   recordMigrateCommand,
+  recordPublicDocClearCommand,
+  recordPublicDocDesignateCommand,
+  recordPublicDocListCommand,
   recordRedactSyncedCommand,
   recordSpaceAcceptCommand,
   recordSpaceCreateCommand,
@@ -64,6 +67,33 @@ export function register(program: Command): void {
   record
     .command('migrate')
     .action(() => hostedCommand('orch record migrate', () => recordMigrateCommand(presentation)))
+  const publicDoc = record.command('public-doc')
+  publicDoc
+    .command('designate')
+    .argument('<space-slug>')
+    .argument('<project-name>')
+    .action((spaceSlug, projectName) =>
+      hostedCommand('orch record public-doc designate', () =>
+        recordPublicDocDesignateCommand(String(spaceSlug), String(projectName), presentation),
+      ),
+    )
+  publicDoc
+    .command('list')
+    .option('--json')
+    .action((options) =>
+      hostedCommand('orch record public-doc list', () =>
+        recordPublicDocListCommand({ json: Boolean(options.json) }, presentation),
+      ),
+    )
+  publicDoc
+    .command('clear')
+    .argument('<space-slug>')
+    .argument('<project-name>')
+    .action((spaceSlug, projectName) =>
+      hostedCommand('orch record public-doc clear', () =>
+        recordPublicDocClearCommand(String(spaceSlug), String(projectName), presentation),
+      ),
+    )
   record
     .command('audit-secrets')
     .option('--json')

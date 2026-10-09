@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { closeDatabaseForFixture, registerOpenHooks } from '../database/db.ts'
-import { recordAuditSecretsCommand, recordSpaceMoveProjectCommand } from './record-command.ts'
+import {
+  recordAuditSecretsCommand,
+  recordSpaceMoveProjectCommand,
+  renderPublicDocDesignationList,
+} from './record-command.ts'
 
 const project = {
   id: 1,
@@ -11,6 +15,32 @@ const project = {
   retiredAt: null,
   settings: { space: 'source' },
 }
+
+test('break: omitting unresolved rows makes list hide an existing public designation', () => {
+  const rows = [
+    {
+      space_id: 'space-a',
+      project_id: 'project-a',
+      space_slug: 'alpha',
+      project_name: 'one',
+      resolvable: true,
+    },
+    {
+      space_id: 'space-b',
+      project_id: 'project-b',
+      space_slug: null,
+      project_name: null,
+      resolvable: false,
+    },
+  ]
+  expect(renderPublicDocDesignationList(rows, false)).toEqual([
+    'alpha\tone\tspace-a\tproject-a',
+    '-\t-\tspace-b\tproject-b\tunresolvable',
+  ])
+  expect(JSON.parse(renderPublicDocDesignationList(rows, true)[0]!)).toEqual(rows)
+  expect(renderPublicDocDesignationList([], false)).toEqual(['no project is designated'])
+  expect(renderPublicDocDesignationList([], true)).toEqual(['[]'])
+})
 
 describe('record space move-project command', () => {
   test('dry run reports every considered table and does not rewrite the register', async () => {
