@@ -365,7 +365,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerOwnedCanonPrivacyProof(
     () => ({ spaceId: authSpaceA, ownerUserId: authUserA, otherUserId: authUserB }),
-    SPACE_A,
+    [SPACE_A, SPACE_B, PROJECT_A, PROJECT_B],
   )
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {

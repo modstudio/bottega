@@ -12,6 +12,7 @@ import type {
   RecordDocImportInput,
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
+import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import { RecordBoardError } from '../../src/record/record-board-contract.ts'
 
 export function idleBoardDeps(): RecordBoardDeps {
@@ -36,6 +37,30 @@ export function idleBoardDeps(): RecordBoardDeps {
     releaseBoardClaim: unused,
     listBoardClaims: unused,
     releaseBoardTaskClaims: unused,
+  }
+}
+
+const subject = {
+  id: '01990000-0000-7000-8000-000000000001',
+  project: 'one',
+  name: 'One',
+  definition: 'One subject.',
+  position: 0,
+  parentId: null,
+  state: 'active' as const,
+  retiredAt: null,
+  createdAt: '2026-10-08T00:00:00.000Z',
+  updatedAt: '2026-10-08T00:00:00.000Z',
+}
+
+export function idleSubjectDeps(): RecordSubjectRouteDeps {
+  return {
+    listSubjects: async () => [],
+    addSubject: async () => subject,
+    renameSubject: async () => subject,
+    defineSubject: async () => subject,
+    reorderSubjects: async () => [],
+    retireSubject: async () => subject,
   }
 }
 

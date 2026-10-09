@@ -65,6 +65,7 @@ import { registerOperatorTools } from './mcp-operator-tools.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
+import { registerSubjectTools } from './mcp-subject-tools.ts'
 
 const text = (value: unknown, isError = false) => ({
   content: [
@@ -730,6 +731,7 @@ export function createDocsMcpServer(): McpServer {
   )
 
   registerDocTools(server, { selectDocWriteTree, collectCanonLintInput })
+  registerSubjectTools(server)
 
   server.registerTool(
     'inspect_port_baseline',

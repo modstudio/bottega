@@ -19,6 +19,7 @@ import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
+import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import type {
@@ -73,7 +74,7 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-type Deps = {
+type Deps = RecordSubjectRouteDeps & {
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }
@@ -329,6 +330,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   }
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })
+  registerRecordSubjectRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)

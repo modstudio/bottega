@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { idleBoardDeps } from '../../test/fixtures/record-api.ts'
+import { idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -90,13 +90,13 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
       throw new Error('not implemented')
     },
     revokeMachineKey: async () => undefined,
+    ...idleSubjectDeps(),
     ...idleBoardDeps(),
     ...overrides,
   })
 }
 
 const expiresAt = '2026-10-06T00:00:00.000Z'
-
 test('board post refuses an invalid body at the route edge', async () => {
   const app = appWith(identity)
   const response = await app.request('/v1/board/messages', {

@@ -282,6 +282,12 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'Enforce the hosted doc schema concern boundary.',
   ),
   boundary(
+    'postgres-schema-subjects-boundary',
+    'shared/record/schema-subjects.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted subject schema concern boundary.',
+  ),
+  boundary(
     'postgres-schema-hub-boundary',
     'shared/record/schema-hub.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],

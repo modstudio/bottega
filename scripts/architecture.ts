@@ -24,6 +24,7 @@ import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
+import { subjectModules } from './architecture-subject-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 
@@ -90,6 +91,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
   ]),
   ...docModules,
+  ...subjectModules,
   ...metricModules,
   module('orchestrator/src/doc/local-doc-write.ts', [
     '../../../shared/docs.ts',

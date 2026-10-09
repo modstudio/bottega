@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { cloneRepository } from '../../../shared/test-git-repository.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
@@ -28,10 +29,10 @@ function putCanon(
   const id = (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, status, created_at, updated_at)
-         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', ?, ?, ?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, status, created_at, updated_at, record_id)
+         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', ?, ?, ?, ?) RETURNING id`,
       )
-      .get(subject, projectId, slug, slug, body, status, AT, AT) as { id: number }
+      .get(subject, projectId, slug, slug, body, status, AT, AT, newRecordId()) as { id: number }
   ).id
   db()
     .query(

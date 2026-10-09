@@ -10,6 +10,7 @@ import { operatorRouter } from './routers/operator.ts'
 import { projectRouter } from './routers/project.ts'
 import { recordRouter } from './routers/record.ts'
 import { runRouter } from './routers/run.ts'
+import { subjectRouter } from './routers/subject.ts'
 import { workRouter } from './routers/work.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -18,6 +19,7 @@ export const appRouter = t.router({
   board: boardRouter,
   project: projectRouter,
   doc: docRouter,
+  subject: subjectRouter,
   run: runRouter,
   work: workRouter,
   insight: insightRouter,

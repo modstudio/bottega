@@ -173,6 +173,39 @@ test('execution probe chooses a value permitted by a CHECK constraint', () => {
   ])
 })
 
+test('execution probe seeds nullable exclusive-or columns with an integer flag', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE parent (id INTEGER PRIMARY KEY);
+        CREATE TABLE child (
+          id INTEGER PRIMARY KEY,
+          parent_id INTEGER NOT NULL REFERENCES parent(id) ON DELETE CASCADE,
+          left_value TEXT,
+          right_value TEXT,
+          active_side INTEGER NOT NULL CHECK(active_side IN (0,1)),
+          CHECK((left_value IS NULL) <> (right_value IS NULL)),
+          CHECK(
+            (active_side = 0 AND left_value IS NOT NULL AND right_value IS NULL) OR
+            (active_side = 1 AND left_value IS NULL AND right_value IS NOT NULL)
+          )
+        );`,
+    },
+    { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
+  ])
+
+  expect(result.unprobed).toEqual([])
+  expect(result.risks).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['replay'],
+    },
+  ])
+})
+
 test('names a table whose CHECK constraints cannot be satisfied mechanically', () => {
   const result = probeMigrations([
     {

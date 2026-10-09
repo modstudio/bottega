@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { consumeDoc, importDocs, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
@@ -929,10 +930,10 @@ describe('scoped operator docs', () => {
   test('docsForRun refuses a document whose provenance was bypassed', () => {
     db()
       .query(
-        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
-       VALUES ('global', NULL, 'untracked', 'Untracked', 'body', ?, ?)`,
+        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at, record_id)
+       VALUES ('global', NULL, 'untracked', 'Untracked', 'body', ?, ?, ?)`,
       )
-      .run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z')
+      .run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z', newRecordId())
     expect(() => docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toThrow(
       'doc global/_/untracked has no revision; refusing run',
     )

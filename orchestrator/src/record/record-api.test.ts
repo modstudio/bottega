@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { idleBoardDeps } from '../../test/fixtures/record-api.ts'
+import { idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import {
@@ -99,13 +99,13 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
       throw new Error('not implemented')
     },
     revokeMachineKey: async () => undefined,
+    ...idleSubjectDeps(),
     ...idleBoardDeps(),
     ...overrides,
   })
 }
 
 const id = '01990000-0000-7000-8000-000000000001'
-
 describe('record API', () => {
   test('a document destination binds a member space while no header keeps the active space', async () => {
     const calls: Array<{ spaceId: string; spaceIds: string[] }> = []

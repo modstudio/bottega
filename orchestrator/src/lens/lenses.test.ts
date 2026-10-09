@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
@@ -169,9 +170,9 @@ describe('lens catalogue', () => {
       VALUES (8005,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`)
       .run()
     live
-      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,created_at,updated_at,project_id)
-      VALUES (8006,'project','one','probe','Probe','body','now','now',NULL)`)
-      .run()
+      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,created_at,updated_at,project_id,record_id)
+      VALUES (8006,'project','one','probe','Probe','body','now','now',NULL,?)`)
+      .run(newRecordId())
     live
       .query(`INSERT INTO doc_revision
       (id,doc_id,scope,subject,slug,op,title,body,author,reason,at,project_id)

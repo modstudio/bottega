@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { installRecordApiClient, unusedBoardClientMethods } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
+import { subjectClient } from '../subject/subject-client.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
 
@@ -49,6 +50,47 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
 }
 
 describe('record cache pull', () => {
+  test('routes a subject write to the project destination instead of the active space', async () => {
+    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    let destination: string | undefined
+    const subject = {
+      id: newRecordId(),
+      project: 'alpha',
+      name: 'One',
+      definition: 'One.',
+      position: 0,
+      parentId: null,
+      state: 'active' as const,
+      retiredAt: null,
+      createdAt: '2026-10-08T12:00:00.000Z',
+      updatedAt: '2026-10-08T12:00:00.000Z',
+    }
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: 'space-active',
+          personalSpaceId: 'space-active',
+          memberships: [
+            { space_id: 'space-active', slug: 'active' },
+            { space_id: 'space-alpha', slug: 'alpha' },
+          ],
+        }),
+        addProjectSubject: async (_input, target) => {
+          destination = target?.destinationSpaceId
+          return subject
+        },
+      }),
+    )
+    await subjectClient.add({
+      id: subject.id,
+      project: subject.project,
+      name: subject.name,
+      definition: subject.definition,
+    })
+    expect(destination).toBe('space-alpha')
+  })
+
   test('refuses a pull when the record session has no active space', async () => {
     let queried = false
     installRecordApiClient(
@@ -178,6 +220,119 @@ describe('record cache pull', () => {
         .get()?.body,
     ).toBe('project copy')
     expect(db().query("SELECT 1 FROM doc WHERE slug='unreachable'").get()).toBeNull()
+  })
+
+  test('does not apply a subject pulled from a space that does not own its project', async () => {
+    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    const updatedAt = '2026-10-08T12:00:00.000Z'
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: 'space-active',
+          personalSpaceId: 'space-active',
+          memberships: [
+            { space_id: 'space-active', slug: 'active' },
+            { space_id: 'space-alpha', slug: 'alpha' },
+          ],
+        }),
+        listProjectSubjects: async (_query, destination) => ({
+          items:
+            destination?.destinationSpaceId === 'space-active'
+              ? [
+                  {
+                    id: newRecordId(),
+                    project: 'alpha',
+                    name: 'Wrong space',
+                    definition: 'Must not be cached.',
+                    position: 0,
+                    parentId: null,
+                    state: 'active' as const,
+                    retiredAt: null,
+                    createdAt: updatedAt,
+                    updatedAt,
+                  },
+                ]
+              : [],
+          nextCursor: null,
+        }),
+      }),
+    )
+    expect(await pullRecordCache(db())).toMatchObject({ subjects: 0, skippedSubjects: 1 })
+    expect(db().query('SELECT 1 FROM subject').get()).toBeNull()
+    const cursor = db()
+      .query<{ value: string }, []>(
+        "SELECT value FROM schema_meta WHERE key='record_subjects_cursor:space-active'",
+      )
+      .get()?.value
+    expect(cursor && JSON.parse(cursor)).toEqual({
+      at: updatedAt,
+      id: expect.any(String),
+    })
+  })
+
+  test('pulls equal-timestamp subjects across a page boundary and resumes after both', async () => {
+    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    const updatedAt = '2026-10-08T12:00:00.000Z'
+    const firstId = newRecordId()
+    const secondId = newRecordId()
+    const subject = (id: string, name: string, position: number) => ({
+      id,
+      project: 'alpha',
+      name,
+      definition: `${name}.`,
+      position,
+      parentId: null,
+      state: 'active' as const,
+      retiredAt: null,
+      createdAt: updatedAt,
+      updatedAt,
+    })
+    const seen: Array<{ order?: string; cursor?: { at: string; id: string } }> = []
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: 'space-active',
+          personalSpaceId: 'space-active',
+          memberships: [
+            { space_id: 'space-active', slug: 'active' },
+            { space_id: 'space-alpha', slug: 'alpha' },
+          ],
+        }),
+        listProjectSubjects: async (query, destination) => {
+          if (destination?.destinationSpaceId !== 'space-alpha') {
+            return { items: [], nextCursor: null }
+          }
+          seen.push({ order: query.order, cursor: query.cursor })
+          if (!query.cursor) return { items: [subject(firstId, 'First', 0)], nextCursor: 'more' }
+          if (query.cursor.id === firstId) {
+            return { items: [subject(secondId, 'Second', 1)], nextCursor: null }
+          }
+          return { items: [], nextCursor: null }
+        },
+      }),
+    )
+
+    expect(await pullRecordCache(db())).toMatchObject({ subjects: 2 })
+    expect(await pullRecordCache(db())).toMatchObject({ subjects: 0 })
+    expect(
+      db().query<{ id: string }, []>('SELECT id FROM subject ORDER BY position').all(),
+    ).toEqual([{ id: firstId }, { id: secondId }])
+    expect(seen).toEqual([
+      { order: 'updated', cursor: undefined },
+      { order: 'updated', cursor: { at: updatedAt, id: firstId } },
+      { order: 'updated', cursor: { at: updatedAt, id: secondId } },
+    ])
+    expect(
+      JSON.parse(
+        db()
+          .query<{ value: string }, []>(
+            "SELECT value FROM schema_meta WHERE key='record_subjects_cursor:space-alpha'",
+          )
+          .get()!.value,
+      ),
+    ).toEqual({ at: updatedAt, id: secondId })
   })
 
   test('keeps a cursor per space when the active space changes', async () => {

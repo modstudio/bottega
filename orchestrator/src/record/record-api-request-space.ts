@@ -11,7 +11,7 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 
-/** Install destination authorization only on project and document operations. */
+/** Install destination authorization on project-owned record operations. */
 export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   const requestedSpace = async (context: Context<ApiEnvironment>, next: Next) => {
     if (context.req.method === 'GET' && context.req.path === '/v1/docs/search') return next()
@@ -38,5 +38,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   app.use('/v1/projects/*', requestedSpace)
   app.use('/v1/docs', requestedSpace)
   app.use('/v1/docs/*', requestedSpace)
+  app.use('/v1/subjects', requestedSpace)
+  app.use('/v1/subjects/*', requestedSpace)
   app.use('/v1/settings/permission', requestedSpace)
 }

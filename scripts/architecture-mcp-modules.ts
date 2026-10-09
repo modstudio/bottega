@@ -73,6 +73,12 @@ export const mcpModules: McpModule[] = [
     '../worker-store-write.ts',
     './mcp-doc-write.ts',
   ]),
+  module('orchestrator/src/mcp/mcp-subject-tools.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../../../shared/subjects.ts',
+    '../subject/subjects.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-search-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',

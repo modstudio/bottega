@@ -88,6 +88,66 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
   }
 })
 
+test('document identity migration backfills UUIDs and makes record_id required and fully unique', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-doc-identity-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex(
+    (entry) => entry.tag === '0090_doc_record_identity_and_subject',
+  )
+  const prior = journal.slice(0, migration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    database
+      .query(
+        `INSERT INTO doc
+         (scope,subject,slug,title,body,delivery,created_at,updated_at,record_id)
+         VALUES ('global',NULL,'identity','Identity','Body','demand','2026-10-08','2026-10-08',NULL)`,
+      )
+      .run()
+    expect(applyMigrations(database)).toEqual(
+      pendingMigrationsFrom('0090_doc_record_identity_and_subject'),
+    )
+    const identity = database.query<{ record_id: string }, []>('SELECT record_id FROM doc').get()!
+    expect(identity.record_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(
+      database
+        .query<{ notnull: number }, []>(
+          `SELECT "notnull" FROM pragma_table_info('doc') WHERE name='record_id'`,
+        )
+        .get()?.notnull,
+    ).toBe(1)
+    expect(
+      database
+        .query<{ unique: number; partial: number }, []>(
+          `SELECT "unique",partial FROM pragma_index_list('doc') WHERE name='doc_record_id'`,
+        )
+        .get(),
+    ).toEqual({ unique: 1, partial: 0 })
+    expect(() =>
+      database
+        .query(
+          `INSERT INTO doc
+           (scope,subject,slug,title,body,delivery,created_at,updated_at,record_id)
+           VALUES ('global',NULL,'missing','Missing','Body','demand','2026-10-08','2026-10-08',NULL)`,
+        )
+        .run(),
+    ).toThrow()
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('board origin snapshot migration backfills an existing architect notice', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-board-origin-'))
   mkdirSync(join(folder, 'meta'))
@@ -686,8 +746,8 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
 
     const insertDoc = database.query(
       `INSERT INTO doc
-        (scope,subject,slug,title,body,delivery,created_at,updated_at,owner)
-       VALUES (?,?,?,?,?,'inject','2026-01-02','2026-01-02','user-1')`,
+        (scope,subject,slug,title,body,delivery,created_at,updated_at,owner,record_id)
+       VALUES (?,?,?,?,?,'inject','2026-01-02','2026-01-02','user-1','invalid-owner-test')`,
     )
     expect(() => insertDoc.run('project', 'target', 'private', 'Private', 'body')).toThrow()
     expect(() =>

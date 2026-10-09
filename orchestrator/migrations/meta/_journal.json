@@ -631,6 +631,13 @@
       "when": 1790884800017,
       "tag": "0089_doc_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "6",
+      "when": 1790884800018,
+      "tag": "0090_doc_record_identity_and_subject",
+      "breakpoints": true
     }
   ]
 }
