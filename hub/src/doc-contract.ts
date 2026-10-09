@@ -1,17 +1,5 @@
 import { z } from 'zod'
-import { DOC_KINDS, DOC_STATUSES, hostedDocAudiences } from '../../shared/docs.ts'
-
-export const HostedDocAudiencesSchema = z
-  .array(z.string())
-  .nonempty()
-  .transform((audiences, context) => {
-    try {
-      return hostedDocAudiences(audiences)
-    } catch (error) {
-      context.addIssue({ code: 'custom', message: (error as Error).message })
-      return z.NEVER
-    }
-  })
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../shared/docs.ts'
 
 export const DocTreeItemSchema = z.object({
   id: z.string(),
@@ -22,7 +10,7 @@ export const DocTreeItemSchema = z.object({
   updatedAt: z.string(),
   scope: z.string(),
   subject: z.string().nullable(),
-  audiences: HostedDocAudiencesSchema,
+  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   delivery: z.enum(['inject', 'demand']).optional(),
   summary: z.string().optional(),
   featured: z.boolean().optional(),
@@ -33,11 +21,11 @@ export const DocTreeItemSchema = z.object({
 
 export const DocSchema = DocTreeItemSchema.extend({ body: z.string() })
 
-const DocSearchMatchSchema = z.object({
+export const DocSearchMatchSchema = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),
-  audiences: HostedDocAudiencesSchema,
+  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   status: z.enum(DOC_STATUSES).default('current'),
   kind: z.enum(DOC_KINDS).default('working'),
   snippet: z.string(),
