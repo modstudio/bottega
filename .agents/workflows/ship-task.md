@@ -22,8 +22,9 @@ modes:
     steps:
       - rebase-trunk
       - sequence: review
-      - acceptance
       - sequence: sync
+      - run-gate
+      - acceptance
       - sequence: land
       - sequence: release
   - slug: merge
@@ -31,8 +32,9 @@ modes:
     steps:
       - rebase-trunk
       - sequence: review
-      - acceptance
       - sequence: sync
+      - run-gate
+      - acceptance
       - sequence: land
 ---
 Review, gate, merge, promote through the project's release rungs as far as the operator's level allows, and close the task once no release rung remains unreached. The `merge` mode stops after merge and leaves promotion and closing to the caller.

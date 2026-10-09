@@ -39,6 +39,7 @@ modes:
       - blast-radius
       - sequence: review
       - sequence: sync
+      - run-gate
       - sequence: land
       - sequence: release
   - slug: cohort
@@ -57,6 +58,7 @@ modes:
       - blast-radius
       - sequence: review
       - sequence: sync
+      - run-gate
       - sequence: land
       - promote-release
       - observe-release
